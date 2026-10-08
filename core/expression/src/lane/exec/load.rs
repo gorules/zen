@@ -473,7 +473,121 @@ impl Executor {
         }
     }
 
-    #[inline]
+    pub(super) fn view_field<M: LaneSet>(
+        dst: &Reg,
+        src: &Reg,
+        key: &Arc<str>,
+        nested: bool,
+        active: M,
+        f: &mut Frame<M>,
+        ctx: &mut Context,
+    ) {
+        let Some(parent) = ctx.view(f.program, *src) else {
+            return;
+        };
+        let Some(field) = parent.field(key).copied() else {
+            for lane in Lanes::of(active) {
+                f.set(*dst, lane, Variable::Null);
+            }
+            return;
+        };
+        let field = ctx.text(field);
+        if let (true, Values::Struct { .. }, None) = (nested, field.values, parent.validity) {
+            ctx.register(f.program, *dst, field);
+            f.views.push(*dst);
+            return;
+        }
+        Self::fill_with(f, *dst, &field, active, |f, lane| {
+            f.elements.get(lane).copied().unwrap_or_default() as usize
+        });
+        if parent.validity.is_some() {
+            for lane in Lanes::of(active) {
+                let index = f.elements.get(lane).copied().unwrap_or_default() as usize;
+                if !parent.valid(index) {
+                    f.set(*dst, lane, Variable::Null);
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(super) fn prefix(bytes: &[u8]) -> u64 {
+        let mut word = [0u8; 8];
+        let n = bytes.len().min(8);
+        word[..n].copy_from_slice(&bytes[..n]);
+        u64::from_le_bytes(word)
+    }
+
+    fn eq_cached<M: LaneSet>(f: &mut Frame<M>, offsets: &[i32], data: &[u8], k: &[u8], base: usize) -> Option<M> {
+        let width = f.width;
+        let window = offsets.get(base..=base + width)?;
+        let at = Self::prefixes(f, offsets, data, base)?;
+        let entry = &f.prefixes[at];
+        let (n, key) = (u32::try_from(k.len()).ok()?, Self::prefix(k));
+        let long = k.len() > 8;
+        let mut word = M::none(width);
+        for (chunk, (lens, words)) in entry.lens.chunks(64).zip(entry.words.chunks(64)).enumerate() {
+            let mut bits = 0u64;
+            for (i, (len, prefix)) in lens.iter().zip(words).enumerate() {
+                bits |= (((*len == n) & (*prefix == key)) as u64) << i;
+            }
+            if long {
+                let lo = chunk * 64;
+                let mut rest = bits;
+                while rest != 0 {
+                    let i = rest.trailing_zeros() as usize;
+                    rest &= rest - 1;
+                    let lane = lo + i;
+                    if data.get(window[lane] as usize..window[lane + 1] as usize) != Some(k) {
+                        bits &= !(1u64 << i);
+                    }
+                }
+            }
+            word.set_word(chunk, bits);
+        }
+        Some(word)
+    }
+
+    pub(super) fn prefixes<M: LaneSet>(f: &mut Frame<M>, offsets: &[i32], data: &[u8], base: usize) -> Option<usize> {
+        let width = f.width;
+        let window = offsets.get(base..=base + width)?;
+        let id = Some((data.as_ptr() as usize, offsets.as_ptr() as usize, base));
+        let at = match f.prefixes.iter().position(|p| p.id == id) {
+            Some(at) => at,
+            None => {
+                let at = match f.prefixes.iter().position(|p| p.id.is_none()) {
+                    Some(at) => at,
+                    None if f.prefixes.len() < 8 => {
+                        f.prefixes.push(Default::default());
+                        f.prefixes.len() - 1
+                    }
+                    None => 0,
+                };
+                let entry = &mut f.prefixes[at];
+                entry.id = id;
+                entry.words.resize(width, 0);
+                entry.lens.resize(width, 0);
+                for ((w, len), prefix) in window.windows(2).zip(entry.lens.iter_mut()).zip(entry.words.iter_mut()) {
+                    let (a, b) = (w[0] as usize, w[1] as usize);
+                    let size = b.wrapping_sub(a);
+                    let fits = a <= b && b <= data.len();
+                    let wide = data.get(a..a.saturating_add(8)).and_then(|x| <[u8; 8]>::try_from(x).ok());
+                    *prefix = match (fits, wide) {
+                        (true, Some(bytes)) => u64::from_le_bytes(bytes) & u64::MAX.checked_shr(64 - 8 * size.min(8) as u32).unwrap_or(0),
+                        (true, None) => data.get(a..b).map_or(0, Self::prefix),
+                        (false, _) => 0,
+                    };
+                    *len = match fits {
+                        true => u32::try_from(size).unwrap_or(u32::MAX),
+                        false => u32::MAX,
+                    };
+                }
+                at
+            }
+        };
+        Some(at)
+    }
+
     fn same(x: &[u8], k: &[u8]) -> bool {
         x.len() == k.len() && x.iter().zip(k).all(|(a, b)| a == b)
     }
@@ -514,16 +628,23 @@ impl Executor {
                 }
             }
             Some(Some(column)) => {
-                let texts = match (&k, f.dense) {
-                    (Variable::String(_), true) => column.texts(ctx.base, f.width),
-                    _ => None,
-                };
                 let bytes = match column.values {
                     Values::Text { offsets, data } => Some((offsets, data.as_bytes())),
                     Values::Utf8 { offsets, data } => Some((offsets, data)),
                     _ => None,
                 };
+                let texts = match (&k, f.dense, bytes) {
+                    (Variable::String(_), true, None) => column.texts(ctx.base, f.width),
+                    _ => None,
+                };
+                let window = match (f.dense, bytes, k.as_str()) {
+                    (true, Some((offsets, data)), Some(k)) => {
+                        Self::eq_cached(f, offsets, data, k.as_bytes(), ctx.base).map(|w: M| w & column.valid_mask(ctx.base, f.width))
+                    }
+                    _ => None,
+                };
                 match (texts, bytes, k.as_str()) {
+                    _ if window.is_some() => word = window.unwrap_or(word),
                     (Some(texts), _, Some(k)) => {
                         let valid = active & column.valid_mask(ctx.base, f.width);
                         let k = k.as_bytes();
@@ -533,12 +654,10 @@ impl Executor {
                         let k = k.as_bytes();
                         for lane in Lanes::of(active) {
                             let row = ctx.base + f.rows[lane] as usize;
-                            let hit = column.valid(row)
-                                && offsets
-                                    .get(row)
-                                    .zip(offsets.get(row + 1))
-                                    .and_then(|(a, b)| data.get(*a as usize..*b as usize))
-                                    .is_some_and(|x| Self::same(x, k));
+                            let hit = match (column.valid(row), offsets.get(row), offsets.get(row + 1)) {
+                                (true, Some(&a), Some(&b)) => (b - a) as usize == k.len() && data.get(a as usize..b as usize).is_some_and(|x| Self::same(x, k)),
+                                _ => false,
+                            };
                             word.put(lane, hit);
                         }
                     }
@@ -1037,7 +1156,19 @@ impl Executor {
             }
             (Kind::List, Values::List { offsets, child }) => {
                 let child = child.column();
-                if child.validity.is_some() || !matches!(child.values, Values::Scaled { .. } | Values::Text { .. } | Values::Bool { .. }) {
+                if child.validity.is_some()
+                    || !matches!(
+                        child.values,
+                        Values::Scaled { .. }
+                            | Values::Text { .. }
+                            | Values::Bool { .. }
+                            | Values::Utf8 { .. }
+                            | Values::LargeUtf8 { .. }
+                            | Values::Strs(_)
+                            | Values::I64(_)
+                            | Values::Dec(_)
+                    )
+                {
                     slow = active;
                 } else {
                     for lane in Lanes::of(active) {
@@ -1075,6 +1206,37 @@ impl Executor {
                                     f.items.push(Item::Bool(Column::bit(bits, offset + i)));
                                 }
                             }
+                            Values::I64(values) => match values.get(a..b) {
+                                Some(values) => values.iter().for_each(|v| f.items.push(Item::Num(*v, 0))),
+                                None => {
+                                    slow.set(lane);
+                                    continue;
+                                }
+                            },
+                            Values::Dec(values) => match values.get(a..b) {
+                                Some(values) => values.iter().for_each(|v| {
+                                    f.items.push(match Scaled::parts(v) {
+                                        Some((m, s)) => Item::Num(m, s),
+                                        None => Item::Value(Variable::Number(*v)),
+                                    })
+                                }),
+                                None => {
+                                    slow.set(lane);
+                                    continue;
+                                }
+                            },
+                            Values::Utf8 { offsets: co, data } if Self::block(f, co.get(a..=b).map(|o| o.iter().map(|x| *x as i64)), data) => {}
+                            Values::LargeUtf8 { offsets: co, data } if Self::block(f, co.get(a..=b).map(|o| o.iter().copied()), data) => {}
+                            Values::Utf8 { .. } | Values::LargeUtf8 { .. } | Values::Strs(_) => {
+                                if (a..b).any(|i| child.text(i).is_none()) {
+                                    slow.set(lane);
+                                    continue;
+                                }
+                                for i in a..b {
+                                    let (x, y) = f.intern(child.text(i).unwrap_or_default());
+                                    f.items.push(Item::Text(x, y));
+                                }
+                            }
                             _ => {
                                 slow.set(lane);
                                 continue;
@@ -1093,6 +1255,42 @@ impl Executor {
             f.wide[d] &= !(active & !slow);
         }
         Self::fill_slow(f, dst, column, slow, index);
+    }
+
+    fn block<M: LaneSet>(f: &mut Frame<M>, offsets: Option<impl Iterator<Item = i64> + Clone>, data: &[u8]) -> bool {
+        let Some(offsets) = offsets else {
+            return false;
+        };
+        let mut bounds = offsets.clone();
+        let (Some(first), Some(last)) = (bounds.next(), offsets.clone().last()) else {
+            return false;
+        };
+        let (Ok(lo), Ok(hi)) = (usize::try_from(first), usize::try_from(last)) else {
+            return false;
+        };
+        let Some(text) = data.get(lo..hi).and_then(|bytes| std::str::from_utf8(bytes).ok()) else {
+            return false;
+        };
+        let mut previous = lo;
+        for offset in offsets.clone() {
+            let Ok(at) = usize::try_from(offset) else {
+                return false;
+            };
+            if at < previous || at > hi || !text.is_char_boundary(at - lo) {
+                return false;
+            }
+            previous = at;
+        }
+        let base = f.arena.len();
+        f.arena.push_str(text);
+        let mut start = lo;
+        for end in offsets.skip(1) {
+            let end = end as usize;
+            let (x, y) = ((base + start - lo) as u32, (base + end - lo) as u32);
+            f.items.push(Item::Text(x, y));
+            start = end;
+        }
+        true
     }
 
     pub(super) fn fill_slow<M: LaneSet>(

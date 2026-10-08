@@ -1,5 +1,7 @@
 use std::cell::OnceCell;
 use std::rc::Rc;
+use zen_types::symbol::Symbol;
+use zen_types::variable::VariableMap;
 use zen_expression::lane::{Column, Dictionary, Kind, Output, Shape, Values};
 use zen_expression::Variable;
 
@@ -192,6 +194,25 @@ impl Bits {
         }
     }
 
+    pub fn full(bits: &[u64], offset: usize, len: usize) -> bool {
+        let (mut at, end) = (offset, offset + len);
+        while at < end {
+            let Some(word) = bits.get(at >> 6) else {
+                return false;
+            };
+            let (shift, take) = (at & 63, (64 - (at & 63)).min(end - at));
+            let mask = match take {
+                64 => u64::MAX,
+                _ => (1u64 << take) - 1,
+            };
+            if (word >> shift) & mask != mask {
+                return false;
+            }
+            at += take;
+        }
+        true
+    }
+
     pub fn none(bits: &[u64]) -> bool {
         bits.iter().all(|w| *w == 0)
     }
@@ -222,6 +243,15 @@ impl Array {
             bits.iter_mut().zip(out.failed()).for_each(|(v, failed)| *v &= !failed);
         }
         let scalar = matches!(out.shape(), Shape::Scalar);
+        if let (true, Some((keys, offsets, data))) = (scalar, out.codes()) {
+            let mut valid = valid.unwrap_or_else(|| Bits::ones(rows));
+            keys.iter().enumerate().filter(|(_, code)| **code < 0).for_each(|(row, _)| Bits::set(&mut valid, row, false));
+            let dict = Dict::Text {
+                offsets: offsets.to_vec(),
+                data: data.to_string(),
+            };
+            return Array::coded_with(keys.into(), Rc::new(dict), valid);
+        }
         let values = match out.kind() {
             Kind::Num if scalar => {
                 let (mant, scale) = out.take_numbers();
@@ -396,6 +426,7 @@ impl Array {
         }
         let valid = column
             .validity
+            .filter(|(bits, offset)| !Bits::full(bits, *offset, positions.iter().max().map_or(0, |m| m + 1)))
             .map(|(bits, offset)| Bits::of(rows, |i| Bits::get(bits, offset + positions[i])));
         let values = match column.values {
             Values::Scaled { mant, scale } => Store::Scaled {
@@ -407,18 +438,19 @@ impl Array {
                 scale: vec![0; rows],
             },
             Values::Dec(values) => {
-                let parts = positions
-                    .iter()
-                    .map(|&p| match values.get(p) {
-                        Some(d) => Some((i64::try_from(d.mantissa()).ok()?, u8::try_from(d.scale()).ok()?)),
-                        None => Some((0, 0)),
-                    })
-                    .collect::<Option<Vec<(i64, u8)>>>();
+                let mut mant = Vec::with_capacity(rows);
+                let mut scale = Vec::with_capacity(rows);
+                let parts = positions.iter().try_for_each(|&p| {
+                    let (m, s) = match values.get(p) {
+                        Some(d) => (i64::try_from(d.mantissa()).ok()?, u8::try_from(d.scale()).ok()?),
+                        None => (0, 0),
+                    };
+                    mant.push(m);
+                    scale.push(s);
+                    Some(())
+                });
                 match parts {
-                    Some(parts) => {
-                        let (mant, scale) = parts.into_iter().unzip();
-                        Store::Scaled { mant, scale }
-                    }
+                    Some(()) => Store::Scaled { mant, scale },
                     None => {
                         return Array {
                             values: Store::Any(positions.iter().map(|&p| column.variable(p)).collect()),
@@ -646,9 +678,259 @@ pub(crate) enum Leaf<'a> {
     Typed(Rc<Array>),
     Picked(Rc<Picked<'a>>),
     Stitched(Rc<Stitched<'a>>),
+    Records(Rc<Records<'a>>),
+}
+
+pub(crate) type Field<'a> = (Symbol, Leaf<'a>, Rc<[u64]>);
+
+#[derive(Debug)]
+pub(crate) struct Records<'a> {
+    rows: usize,
+    offsets: Vec<i32>,
+    valid: Vec<u64>,
+    fields: Vec<Field<'a>>,
+    nulled: Option<Rc<[u64]>>,
+    dense: OnceCell<Rc<[Variable]>>,
+    lanes: OnceCell<(Vec<Vec<u64>>, Option<Vec<u64>>)>,
+}
+
+impl<'a> Records<'a> {
+    pub const LANE_VIEW: bool = true;
+
+    pub fn new(rows: usize, offsets: Vec<i32>, valid: Vec<u64>, fields: Vec<Field<'a>>, nulled: Option<Rc<[u64]>>) -> Records<'a> {
+        Records {
+            rows,
+            offsets,
+            valid,
+            fields,
+            nulled,
+            dense: OnceCell::new(),
+            lanes: OnceCell::new(),
+        }
+    }
+
+    fn lanes(&self) -> &(Vec<Vec<u64>>, Option<Vec<u64>>) {
+        self.lanes.get_or_init(|| {
+            let count = self.count();
+            let fields = self
+                .fields
+                .iter()
+                .map(|(_, leaf, present)| leaf.validity(count).iter().zip(present.iter()).map(|(v, p)| v & p).collect())
+                .collect();
+            let alive = self.nulled.as_ref().map(|nulled| {
+                let mut bits: Vec<u64> = nulled.iter().map(|w| !w).collect();
+                bits.resize(count.div_ceil(64), u64::MAX);
+                Bits::trim(&mut bits, count);
+                bits
+            });
+            (fields, alive)
+        })
+    }
+
+    pub fn parts(&self) -> Vec<(&str, Column<'_>)> {
+        let (valid, _) = self.lanes();
+        self.fields
+            .iter()
+            .zip(valid)
+            .map(|((key, leaf, _), bits)| {
+                (
+                    key.as_str(),
+                    Column {
+                        values: leaf.column().values,
+                        validity: Some((bits.as_slice(), 0)),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    pub fn item<'c>(&'c self, fields: &'c [(&'c str, Column<'c>)]) -> Column<'c> {
+        let (_, alive) = self.lanes();
+        Column {
+            values: Values::Struct { fields, len: self.count() },
+            validity: alive.as_ref().map(|bits| (bits.as_slice(), 0)),
+        }
+    }
+
+    pub fn list<'c>(&'c self, item: &'c Column<'c>) -> Column<'c> {
+        Column {
+            values: Values::List {
+                offsets: &self.offsets,
+                child: Dictionary::Column(item),
+            },
+            validity: Some((&self.valid, 0)),
+        }
+    }
+
+    pub fn nulled(&self) -> Option<&[u64]> {
+        self.nulled.as_deref()
+    }
+
+    pub fn valid(&self, row: usize) -> bool {
+        Bits::get(&self.valid, row)
+    }
+
+    pub fn range(&self, row: usize) -> Option<(usize, usize)> {
+        match self.valid(row) {
+            true => Some((usize::try_from(*self.offsets.get(row)?).ok()?, usize::try_from(*self.offsets.get(row + 1)?).ok()?)),
+            false => None,
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.offsets.last().and_then(|o| usize::try_from(*o).ok()).unwrap_or(0)
+    }
+
+    pub fn fields(&self) -> &[Field<'a>] {
+        &self.fields
+    }
+
+    pub fn offsets(&self) -> &[i32] {
+        &self.offsets
+    }
+
+    pub fn validity(&self) -> &[u64] {
+        &self.valid
+    }
+
+    pub fn object(fields: &[Field<'a>], item: usize) -> Variable {
+        if fields.iter().any(|(key, _, _)| key.as_str().contains('.')) {
+            let object = Variable::empty_object();
+            for (key, leaf, present) in fields {
+                if Bits::get(present, item) {
+                    object.dot_insert(key.as_str(), leaf.get(item));
+                }
+            }
+            return object;
+        }
+        let mut map = VariableMap::with_capacity(fields.len());
+        for (key, leaf, present) in fields {
+            if Bits::get(present, item) {
+                map.insert(key.clone(), leaf.get(item));
+            }
+        }
+        Variable::from_object(map)
+    }
+
+    pub fn get(&self, row: usize) -> Variable {
+        match self.range(row) {
+            Some((start, end)) => Variable::from_array(
+                (start..end)
+                    .map(|item| match self.nulled.as_ref().is_some_and(|n| Bits::get(n, item)) {
+                        true => Variable::Null,
+                        false => Self::object(&self.fields, item),
+                    })
+                    .collect(),
+            ),
+            None => Variable::Null,
+        }
+    }
+
+    fn dense(&self) -> &Rc<[Variable]> {
+        self.dense.get_or_init(|| (0..self.rows).map(|row| self.get(row)).collect())
+    }
+}
+
+pub(crate) enum Items<'a> {
+    Input { column: Column<'a>, mask: Option<Rc<[u64]>> },
+    Records(Rc<Records<'a>>),
+}
+
+impl<'a> Items<'a> {
+    pub fn range(&self, row: usize) -> Option<(usize, usize)> {
+        match self {
+            Items::Input { column, mask } => match mask.as_ref().is_none_or(|m| Bits::get(m, row)) {
+                true => column.range(row),
+                false => None,
+            },
+            Items::Records(records) => records.range(row),
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        match self {
+            Items::Input { column, .. } => match column.values {
+                Values::List { child, .. } => child.column().len(),
+                _ => 0,
+            },
+            Items::Records(records) => records.count(),
+        }
+    }
+
+    pub fn fields(&self) -> Option<Vec<Field<'a>>> {
+        match self {
+            Items::Records(records) if records.nulled.is_some() => None,
+            Items::Records(records) => Some(records.fields.clone()),
+            Items::Input { column, .. } => {
+                let Values::List {
+                    child: Dictionary::Column(child),
+                    ..
+                } = column.values
+                else {
+                    return None;
+                };
+                let Values::Struct { fields, len } = child.values else {
+                    return None;
+                };
+                let rows = match child.validity {
+                    Some((bits, offset)) => Some(Bits::window(bits, offset, len)),
+                    None => None,
+                };
+                Some(
+                    fields
+                        .iter()
+                        .map(|(name, field)| {
+                            let mut present = match field.validity {
+                                Some((bits, offset)) => Bits::window(bits, offset, len),
+                                None => Bits::ones(len),
+                            };
+                            if let Some(rows) = &rows {
+                                present.iter_mut().zip(rows).for_each(|(p, r)| *p &= r);
+                            }
+                            (Symbol::from(*name), Leaf::input(*field, len), Rc::from(present))
+                        })
+                        .collect(),
+                )
+            }
+        }
+    }
 }
 
 impl<'a> Leaf<'a> {
+    pub fn items(&self) -> Option<Items<'a>> {
+        match self {
+            Leaf::Records(records) => Some(Items::Records(records.clone())),
+            Leaf::Input(input) => Self::struct_list(input.column).then(|| Items::Input { column: input.column, mask: None }),
+            Leaf::Masked(masked) => match &masked.inner {
+                Leaf::Input(input) if Self::struct_list(input.column) => Some(Items::Input {
+                    column: input.column,
+                    mask: Some(masked.bits.clone()),
+                }),
+                Leaf::Records(records) => {
+                    let valid: Vec<u64> = records.valid.iter().zip(masked.bits.iter()).map(|(v, m)| v & m).collect();
+                    Some(Items::Records(Rc::new(Records::new(records.rows, records.offsets.clone(), valid, records.fields.clone(), records.nulled.clone()))))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn records(&self) -> Option<Rc<Records<'a>>> {
+        match self {
+            Leaf::Records(records) => Some(records.clone()),
+            Leaf::Masked(masked) if matches!(masked.inner, Leaf::Records(_)) => match self.items() {
+                Some(Items::Records(records)) => Some(records),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn struct_list(column: Column) -> bool {
+        matches!(column.values, Values::List { child: Dictionary::Column(child), .. } if matches!(child.values, Values::Struct { .. }))
+    }
+
     pub fn typed(array: Array) -> Leaf<'a> {
         Leaf::Typed(Rc::new(array))
     }
@@ -709,6 +991,7 @@ impl<'a> Leaf<'a> {
             (Leaf::Typed(a), Leaf::Typed(b)) => Rc::ptr_eq(a, b),
             (Leaf::Picked(a), Leaf::Picked(b)) => Rc::ptr_eq(a, b),
             (Leaf::Stitched(a), Leaf::Stitched(b)) => Rc::ptr_eq(a, b),
+            (Leaf::Records(a), Leaf::Records(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -827,6 +1110,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Any(values) => values.get(row).cloned().unwrap_or(Variable::Null),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).map_or(Variable::Null, |(leaf, at)| leaf.get(at)),
+            Leaf::Records(records) => records.get(row),
             _ => self.column().variable(row),
         }
     }
@@ -836,6 +1120,9 @@ impl<'a> Leaf<'a> {
             Leaf::Any(values) => values.iter().any(|v| matches!(v, Variable::Object(_))),
             Leaf::Picked(picked) => picked.source.objects(),
             Leaf::Stitched(stitched) => stitched.sources.iter().any(Leaf::objects),
+            Leaf::Records(records) => records.fields.iter().any(|(key, leaf, _)| key.as_str().starts_with('$') || leaf.objects()),
+            Leaf::Masked(masked) if matches!(masked.inner, Leaf::Records(_)) => masked.inner.objects(),
+            Leaf::Scattered(scattered) if matches!(scattered.inner, Leaf::Records(_)) => scattered.inner.objects(),
             _ => match self.column().values {
                 Values::Any(values) => values.iter().any(|v| matches!(v, Variable::Object(_))),
                 Values::Dict {
@@ -853,6 +1140,7 @@ impl<'a> Leaf<'a> {
             Leaf::Typed(typed) => Leaf::typed(typed.pick(positions)),
             Leaf::Input(input) => Leaf::typed(Array::gather(&input.column, positions)),
             Leaf::Masked(_) | Leaf::Scattered(_) => Leaf::typed(Array::gather(&self.column(), positions)),
+            Leaf::Records(_) => Leaf::Any(positions.iter().map(|&i| self.get(i)).collect()),
             Leaf::Picked(picked) => {
                 let composed: Vec<usize> = positions.iter().map(|&i| picked.positions[i]).collect();
                 picked.source.dense(&composed)
@@ -915,6 +1203,7 @@ impl<'a> Leaf<'a> {
                 .dense
                 .get_or_init(|| self.dense(&(0..stitched.located.len()).collect::<Vec<_>>()))
                 .column(),
+            Leaf::Records(records) => Column::new(Values::Any(records.dense())),
         }
     }
 
@@ -922,6 +1211,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Any(values) => values.get(row).is_none_or(|v| matches!(v, Variable::Null)),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_none_or(|(leaf, at)| leaf.null(at)),
+            Leaf::Records(records) => !records.valid(row),
             _ => ColumnBuilder::null_at(&self.column(), row),
         }
     }
@@ -932,7 +1222,7 @@ impl<'a> Leaf<'a> {
             Leaf::Masked(masked) => Bits::get(&masked.bits, row),
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
-            Leaf::Any(_) => true,
+            Leaf::Any(_) | Leaf::Records(_) => true,
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_some_and(|(leaf, at)| leaf.valid_at(at)),
         }
     }
@@ -947,7 +1237,7 @@ impl<'a> Leaf<'a> {
                 Some(bits) => Bits::window(bits, 0, rows),
                 None => Bits::ones(rows),
             },
-            Leaf::Any(_) => Bits::ones(rows),
+            Leaf::Any(_) | Leaf::Records(_) => Bits::ones(rows),
             Leaf::Masked(masked) => Bits::window(&masked.bits, 0, rows),
             Leaf::Scattered(_) => match self.column().validity {
                 Some((bits, offset)) => Bits::window(bits, offset, rows),
@@ -972,7 +1262,7 @@ impl<'a> Leaf<'a> {
                 Some(dense) => dense.valued(rows),
                 None => Bits::gather(&picked.source.valued(picked.source.len()), &picked.positions),
             },
-            Leaf::Stitched(_) => Bits::of(rows, |row| !self.null(row)),
+            Leaf::Stitched(_) | Leaf::Records(_) => Bits::of(rows, |row| !self.null(row)),
             Leaf::Typed(typed) if matches!(typed.values, Store::Coded { ref dict, .. } if !matches!(**dict, Dict::Any(_))) => {
                 let Store::Coded { codes, .. } = &typed.values else {
                     return Bits::of(rows, |row| !self.null(row));
@@ -1054,6 +1344,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Any(values) => matches!(values.get(row), Some(Variable::Bool(true))),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_some_and(|(leaf, at)| leaf.truthy(at)),
+            Leaf::Records(_) => false,
             _ => {
                 let column = self.column();
                 match column.values {
@@ -1100,6 +1391,7 @@ impl<'a> Leaf<'a> {
             Leaf::Typed(typed) => typed.len(),
             Leaf::Picked(picked) => picked.positions.len(),
             Leaf::Stitched(stitched) => stitched.located.len(),
+            Leaf::Records(records) => records.rows,
         }
     }
 }

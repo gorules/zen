@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::ops::Index;
-use zen_expression::lane::{Column, Columns, LaneProgram, LaneRunner, Output, Values};
+use zen_expression::lane::{Column, Columns, Fusion, LaneProgram, LaneRunner, Output, Values};
 use zen_expression::variable::VariableType;
 use zen_expression::{ExpressionKind, Isolate, Scope, Variable};
 
@@ -194,6 +194,8 @@ impl Differential {
         let Ok(program) = LaneProgram::compile(expression, self.kind.clone()) else {
             return;
         };
+        let inputs: Vec<Value> = inputs.iter().cycle().take(inputs.len().max(72)).cloned().collect();
+        let inputs = inputs.as_slice();
         let owned = Owned::build(inputs);
         let texts: Vec<Vec<&str>> = owned
             .texts
@@ -2331,6 +2333,10 @@ struct SpecLane {
     failures: Vec<String>,
     compared: usize,
     unstable: usize,
+    kernels: usize,
+    compiled: usize,
+    rows: usize,
+    hits: usize,
 }
 
 impl SpecLane {
@@ -2421,6 +2427,34 @@ impl SpecLane {
             }
         };
         let scopes = || cases.iter().map(|c| Self::scope(c)).collect::<Vec<_>>();
+        let plain = program.without_kernel();
+        self.compiled += 1;
+        match program.has_kernel() {
+            true => self.kernels += 1,
+            false => self.failures.push(format!("{expression} | compiled without a kernel")),
+        }
+        for case in cases.iter() {
+            self.rows += 1;
+            if self.guarded(|_| program.try_kernel(&Self::scope(case))).flatten().is_some() {
+                self.hits += 1;
+            }
+        }
+        for (case, want) in cases.iter().zip(&want) {
+            let got = match self.guarded(|r| r.evaluate_one(&plain, &Self::scope(case)).map(conformance::Spec::settle)) {
+                Some(got) => Self::normalize(&kind, got),
+                None => Err(format!("{}: lane", conformance::Spec::PANIC)),
+            };
+            let got = match (want, got) {
+                (Err(w), Err(g))
+                    if w.starts_with(conformance::Spec::PANIC)
+                        && g.starts_with(conformance::Spec::PANIC) =>
+                {
+                    Err(w.clone())
+                }
+                (_, got) => got,
+            };
+            self.compare("width 1 without kernel", case, want, got);
+        }
         for (case, want) in cases.iter().zip(&want) {
             let got = match self.guarded(|r| r.evaluate_one(&program, &Self::scope(case)).map(conformance::Spec::settle)) {
                 Some(got) => Self::normalize(&kind, got),
@@ -2449,6 +2483,12 @@ impl SpecLane {
             .unwrap_or_else(|| Self::panicked(n));
         for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
             self.compare("batch", case, want, Self::normalize(&kind, got));
+        }
+        let batch = self
+            .guarded(|r| r.evaluate(&plain, &scopes()))
+            .unwrap_or_else(|| Self::panicked(n));
+        for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
+            self.compare("batch without kernel", case, want, Self::normalize(&kind, got));
         }
         if let Ok(specialized) = program.specialize(&scopes()) {
             for (case, want) in cases.iter().zip(&want) {
@@ -2502,6 +2542,10 @@ fn lane_matches_spec() {
         failures: Vec::new(),
         compared: 0,
         unstable: 0,
+        kernels: 0,
+        compiled: 0,
+        rows: 0,
+        hits: 0,
     };
     let mut standard = Differential::new(ExpressionKind::Standard);
     let mut unary = Differential::new(ExpressionKind::Unary);
@@ -2520,10 +2564,14 @@ fn lane_matches_spec() {
         }
     }
     eprintln!(
-        "spec cases {} | lane row comparisons {} | skipped {} cases whose stack result is nondeterministic",
+        "spec cases {} | lane row comparisons {} | skipped {} cases whose stack result is nondeterministic | kernels for {} of {} compiled groups, {}/{} rows settled in the kernel",
         cases.len(),
         lane.compared,
-        lane.unstable
+        lane.unstable,
+        lane.kernels,
+        lane.compiled,
+        lane.hits,
+        lane.rows
     );
     let shown: Vec<String> = lane.failures.iter().take(60).cloned().collect();
     assert!(
@@ -2817,7 +2865,7 @@ fn lane_regression_malformed_offsets_on_fast_paths() {
     let data = "aébc".as_bytes();
     for offsets in [[3i32, 1, 3], [0, 3, 1], [1, i32::MIN, 3]] {
         let columns = Columns::new(2).column("s", Column::new(Values::Utf8 { offsets: &offsets, data }));
-        Rows::check(&columns, &["s", "s == 'é'", "s == 'aé'", "upper(s)", "len(s)", "s in ['é', 'aé']"]);
+        Rows::check(&columns, &["s", "s == 'é'", "s == 'aé'", "upper(s)", "len(s)", "s in ['é', 'aé']", "s == 'é' ? 1 : (s == 'aé' ? 2 : 3)"]);
         let large: Vec<i64> = offsets.iter().map(|o| *o as i64).collect();
         let columns = Columns::new(2).column("s", Column::new(Values::LargeUtf8 { offsets: &large, data }));
         Rows::check(&columns, &["s == 'é'", "s == 'aé'"]);
@@ -3032,4 +3080,561 @@ fn lane_isolated_cells_keep_evaluating_after_a_fault() {
     assert_eq!(table[1], vec![false, true, false, false]);
     assert_eq!(table[2], vec![true, true, false, true]);
     assert_eq!(table[3], vec![true, true, false, false]);
+}
+
+enum FieldBuf {
+    Scaled(Vec<i64>, Vec<u8>),
+    Utf8(Vec<i32>, Vec<u8>),
+    Bool(Vec<u64>),
+    Any(Vec<Variable>),
+    Struct(Vec<(String, FieldBuf, Vec<u64>)>),
+}
+
+struct StructLists {
+    rows: usize,
+    offsets: Vec<i32>,
+    valid: Vec<u64>,
+    fields: Vec<(String, FieldBuf, Vec<u64>)>,
+    items: usize,
+    present: Vec<u64>,
+    scalars: Vec<(String, Vec<i64>, Vec<u8>)>,
+}
+
+impl FieldBuf {
+    fn of(cells: &[Option<Value>]) -> (FieldBuf, Vec<u64>) {
+        let mut valid = vec![0u64; cells.len().div_ceil(64).max(1)];
+        cells.iter().enumerate().filter(|(_, c)| c.is_some()).for_each(|(i, _)| valid[i / 64] |= 1 << (i % 64));
+        let present: Vec<&Value> = cells.iter().flatten().collect();
+        let buf = if !present.is_empty() && present.iter().all(|v| v.is_object()) {
+            let mut names: Vec<String> = Vec::new();
+            for v in &present {
+                for k in v.as_object().into_iter().flat_map(|m| m.keys()) {
+                    if !names.contains(k) {
+                        names.push(k.clone());
+                    }
+                }
+            }
+            FieldBuf::Struct(
+                names
+                    .into_iter()
+                    .map(|n| {
+                        let sub: Vec<Option<Value>> = cells.iter().map(|c| c.as_ref().and_then(|v| v.get(&n)).filter(|v| !v.is_null()).cloned()).collect();
+                        let (buf, valid) = FieldBuf::of(&sub);
+                        (n, buf, valid)
+                    })
+                    .collect(),
+            )
+        } else if !present.is_empty() && present.iter().all(|v| v.is_number()) {
+            let parts: Vec<(i64, u8)> = cells
+                .iter()
+                .map(|c| match c {
+                    Some(v) => {
+                        let d: Decimal = v.to_string().parse().unwrap_or_default();
+                        (i64::try_from(d.mantissa()).unwrap_or(0), d.scale() as u8)
+                    }
+                    None => (0, 0),
+                })
+                .collect();
+            FieldBuf::Scaled(parts.iter().map(|p| p.0).collect(), parts.iter().map(|p| p.1).collect())
+        } else if !present.is_empty() && present.iter().all(|v| v.is_string()) {
+            let mut offsets = vec![0i32];
+            let mut data = Vec::new();
+            for c in cells {
+                if let Some(Value::String(s)) = c {
+                    data.extend_from_slice(s.as_bytes());
+                }
+                offsets.push(data.len() as i32);
+            }
+            FieldBuf::Utf8(offsets, data)
+        } else if !present.is_empty() && present.iter().all(|v| v.is_boolean()) {
+            let mut bits = vec![0u64; cells.len().div_ceil(64).max(1)];
+            cells.iter().enumerate().filter(|(_, c)| matches!(c, Some(Value::Bool(true)))).for_each(|(i, _)| bits[i / 64] |= 1 << (i % 64));
+            FieldBuf::Bool(bits)
+        } else {
+            FieldBuf::Any(cells.iter().map(|c| c.clone().map_or(Variable::Null, Variable::from)).collect())
+        };
+        (buf, valid)
+    }
+
+    fn values<'a>(&'a self, structs: &'a [Vec<(&'a str, Column<'a>)>], next: &mut usize) -> Values<'a> {
+        match self {
+            FieldBuf::Scaled(mant, scale) => Values::Scaled { mant, scale },
+            FieldBuf::Utf8(offsets, data) => Values::Utf8 { offsets, data },
+            FieldBuf::Bool(bits) => Values::Bool { bits, offset: 0 },
+            FieldBuf::Any(values) => Values::Any(values),
+            FieldBuf::Struct(_) => {
+                let fields = &structs[*next];
+                *next += 1;
+                Values::Struct { fields, len: fields.first().map_or(0, |(_, c)| c.len()) }
+            }
+        }
+    }
+
+    fn nested<'a>(&'a self, out: &mut Vec<&'a [(String, FieldBuf, Vec<u64>)]>) {
+        if let FieldBuf::Struct(fields) = self {
+            for (_, buf, _) in fields {
+                buf.nested(out);
+            }
+            out.push(fields);
+        }
+    }
+}
+
+impl StructLists {
+    fn new(rows: &[Value]) -> Self {
+        let mut offsets = vec![0i32];
+        let mut valid = vec![0u64; rows.len().div_ceil(64)];
+        let mut items: Vec<Option<Value>> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            if let Some(Value::Array(list)) = row.get("accounts") {
+                valid[i / 64] |= 1 << (i % 64);
+                items.extend(list.iter().map(|v| Some(v.clone()).filter(|v| !v.is_null())));
+            }
+            offsets.push(items.len() as i32);
+        }
+        let (FieldBuf::Struct(fields), present) = FieldBuf::of(&items) else {
+            panic!("accounts must hold objects");
+        };
+        let scalars = ["cap"]
+            .iter()
+            .map(|k| {
+                let parts: Vec<(i64, u8)> = rows
+                    .iter()
+                    .map(|r| {
+                        let d: Decimal = r.get(*k).map(|v| v.to_string()).unwrap_or_default().parse().unwrap_or_default();
+                        (i64::try_from(d.mantissa()).unwrap_or(0), d.scale() as u8)
+                    })
+                    .collect();
+                (k.to_string(), parts.iter().map(|p| p.0).collect(), parts.iter().map(|p| p.1).collect())
+            })
+            .collect();
+        Self {
+            rows: rows.len(),
+            offsets,
+            valid,
+            fields,
+            items: items.len(),
+            present,
+            scalars,
+        }
+    }
+
+    fn check(&self, expressions: &[&str]) {
+        let mut order: Vec<&[(String, FieldBuf, Vec<u64>)]> = Vec::new();
+        for (_, buf, _) in &self.fields {
+            buf.nested(&mut order);
+        }
+        let built: Vec<Vec<(&str, Column)>> = order
+            .iter()
+            .map(|fields| {
+                let mut next = 0usize;
+                fields
+                    .iter()
+                    .map(|(name, buf, valid)| (name.as_str(), Column::with_validity(buf.values(&[], &mut next), valid, 0)))
+                    .collect()
+            })
+            .collect();
+        let mut next = 0usize;
+        let top: Vec<(&str, Column)> = self
+            .fields
+            .iter()
+            .map(|(name, buf, valid)| (name.as_str(), Column::with_validity(buf.values(&built, &mut next), valid, 0)))
+            .collect();
+        let account = Column::with_validity(Values::Struct { fields: &top, len: self.items }, &self.present, 0);
+        let mut columns = Columns::new(self.rows).column(
+            "accounts",
+            Column::with_validity(Values::List { offsets: &self.offsets, child: (&account).into() }, &self.valid, 0),
+        );
+        for (name, mant, scale) in &self.scalars {
+            columns = columns.column(name, Column::new(Values::Scaled { mant, scale }));
+        }
+        let mut runner = LaneRunner::new();
+        let mut failures = Vec::new();
+        for e in expressions {
+            let program = LaneProgram::standard(e).expect("compile");
+            for program in [program.clone(), program.specialize_columns(&columns).expect("specialize")] {
+                let mut out = Output::new();
+                runner.evaluate_columns_into(&program, &columns, &mut out);
+                let mut values = Vec::new();
+                runner.evaluate_columns(&program, &columns, |_, r| values.push(r.map(|v| v.to_value()).ok()));
+                for r in 0..columns.rows {
+                    let want = Isolate::with_environment(columns.row(r)).run_standard(e).map(|v| v.to_value()).ok();
+                    let got = out.variable(r).and_then(|x| x.ok()).map(|v| v.to_value());
+                    if got != want || values.get(r) != Some(&want) {
+                        failures.push(format!("{e} row {r}\n  want {want:?}\n  typed {got:?}\n  value {:?}", values.get(r)));
+                        break;
+                    }
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    fn rows(count: usize) -> Vec<Value> {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut n = |m: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % m
+        };
+        (0..count)
+            .map(|i| {
+                let accounts: Vec<Value> = (0..n(6))
+                    .map(|k| {
+                        let mut a = serde_json::Map::new();
+                        match n(7) {
+                            0 => {}
+                            1 => {
+                                a.insert("balance".into(), Value::Null);
+                            }
+                            2 => {
+                                a.insert("balance".into(), json!(Decimal::new(n(100000) as i64, 2)));
+                            }
+                            _ => {
+                                a.insert("balance".into(), json!(n(5000)));
+                            }
+                        }
+                        let kind = ["savings", "checking", "loan"][n(3) as usize];
+                        a.insert("kind".into(), json!(kind));
+                        if n(5) != 0 {
+                            a.insert("active".into(), json!(n(3) != 0));
+                        }
+                        a.insert("x".into(), match n(3) {
+                            0 => json!(k),
+                            1 => json!("t"),
+                            _ => Value::Null,
+                        });
+                        if n(4) != 0 {
+                            let (score, tag) = (n(100), ["a", "b"][n(2) as usize]);
+                            a.insert("meta".into(), json!({"score": score, "tag": tag}));
+                        }
+                        Value::Object(a)
+                    })
+                    .collect();
+                match i % 11 {
+                    7 => json!({"cap": n(50)}),
+                    9 => json!({"cap": n(50), "accounts": null}),
+                    _ => json!({"cap": n(50), "accounts": accounts}),
+                }
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn lane_struct_lists_match_the_stack_vm() {
+    let rows = StructLists::rows(150);
+    StructLists::new(&rows).check(&[
+        "len(accounts)",
+        "sum(map(accounts, #.balance ?? 0))",
+        "sum(map(filter(accounts, #.active), #.balance ?? 0))",
+        "sum(map(filter(accounts, #.active), #.balance))",
+        "avg(map(accounts, #.balance))",
+        "min(map(filter(accounts, #.active), #.balance))",
+        "max(map(accounts, #.balance))",
+        "avg(map(filter(accounts, #.active), #.balance))",
+        "sum(map(accounts, #.kind))",
+        "sum(map(filter(accounts, #.x), #.balance))",
+        "sum(map(filter(accounts, #.kind), #.balance))",
+        "sum(map(accounts, #.missing))",
+        "cap > 10 ? sum(map(accounts, #.balance)) : sum(map(filter(accounts, #.active), #.balance))",
+        "count(accounts, #.kind == 'loan')",
+        "count(accounts, #.active)",
+        "some(accounts, (#.balance ?? 0) > 1000)",
+        "all(accounts, #.active)",
+        "none(accounts, #.kind == 'loan')",
+        "one(accounts, #.kind == 'savings')",
+        "map(accounts, #.kind)",
+        "map(accounts, upper(#.kind))",
+        "map(accounts, (#.balance ?? 0) * 2)",
+        "map(accounts, #.balance)",
+        "map(accounts, #.active)",
+        "filter(accounts, (#.balance ?? 0) > 100)",
+        "map(accounts, #)",
+        "accounts[0].balance",
+        "map(accounts, #.meta.score)",
+        "sum(map(accounts, #.meta.score ?? 0))",
+        "map(accounts, #.meta)",
+        "map(accounts, #.x)",
+        "map(accounts, #.missing)",
+        "map(accounts, {k: #.kind, b: #.balance})",
+        "flatMap(accounts, [#.kind, #.kind])",
+        "sum(map(accounts, (#.balance ?? 0) * count(accounts, #.active)))",
+        "count(accounts, (#.balance ?? 0) > cap * 10)",
+        "map(filter(accounts, #.kind != 'loan'), #.kind)",
+        "max(map(accounts, #.balance ?? 0))",
+        "sum(map(accounts, #.balance))",
+        "len(filter(accounts, #.active))",
+        "len(filter(accounts, (#.balance ?? 0) > 1000 and #.active))",
+        "count(filter(accounts, #.active), #.kind == 'loan')",
+        "map(filter(accounts, #.active), #.balance ?? 0)",
+        "some(filter(accounts, #.active), #.kind == 'loan')",
+        "all(filter(accounts, #.active), (#.balance ?? 0) >= 0)",
+        "filter(filter(accounts, #.active), #.kind == 'loan')",
+        "sum(map(filter(filter(accounts, #.active), #.kind != 'loan'), #.balance ?? 0))",
+        "len(filter(accounts, #.active)) + count(accounts, #.active)",
+        "map(filter(accounts, #.active), #)",
+        "map(filter(accounts, #.active), #.meta.tag)",
+        "count(accounts, #.meta.tag == 'a')",
+        "sum(map(filter(accounts, (#.meta.score ?? 0) > 50), #.meta.score))",
+        "map(accounts, #.meta.missing)",
+        "map(accounts, (#.meta.score ?? 0) + (#.balance ?? 0))",
+        "map(accounts, #.meta == null)",
+        "map(accounts, #.meta.score > 10 and #.active)",
+        "accounts[1].kind",
+        "accounts[0].meta.score",
+        "accounts[5].balance",
+        "accounts[0]",
+        "accounts[0].missing",
+        "accounts[0].meta",
+        "(accounts[0].balance ?? 0) + (accounts[1].balance ?? 0)",
+    ]);
+}
+
+#[test]
+fn lane_struct_lists_with_null_items() {
+    let rows: Vec<Value> = (0..90)
+        .map(|i| match i % 5 {
+            0 => json!({"cap": i, "accounts": [{"balance": i, "kind": "loan", "active": true}, null, {"balance": 3, "kind": "savings"}]}),
+            1 => json!({"cap": i, "accounts": [null]}),
+            2 => json!({"cap": i, "accounts": []}),
+            3 => json!({"cap": i}),
+            _ => json!({"cap": i, "accounts": [{"balance": 1.5, "kind": "checking", "active": false}]}),
+        })
+        .collect();
+    StructLists::new(&rows).check(&[
+        "map(accounts, #.balance)",
+        "sum(map(accounts, #.balance ?? 0))",
+        "count(accounts, #.kind == 'loan')",
+        "map(accounts, #)",
+        "len(filter(accounts, #.active))",
+        "map(filter(accounts, #.kind != 'loan'), #.kind)",
+        "some(accounts, # == null)",
+    ]);
+}
+
+struct Fused;
+
+impl Fused {
+    fn rows(count: usize) -> Vec<Value> {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut n = |m: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % m
+        };
+        (0..count)
+            .map(|_| {
+                let mut row = serde_json::Map::new();
+                for key in ["x", "y"] {
+                    match n(9) {
+                        0 => {}
+                        1 => {
+                            row.insert(key.into(), Value::Null);
+                        }
+                        2 => {
+                            row.insert(key.into(), serde_json::from_str(&Decimal::new(n(100_000) as i64 - 50_000, 3).to_string()).unwrap_or_default());
+                        }
+                        _ => {
+                            row.insert(key.into(), json!(n(40) as i64 - 10));
+                        }
+                    }
+                }
+                if n(6) != 0 {
+                    row.insert("s".into(), json!(["gold", "silver", "bronze", "", "goldfish"][n(5) as usize]));
+                }
+                Value::Object(row)
+            })
+            .collect()
+    }
+
+    fn columns<'a>(rows: &[Value], numbers: &'a mut Vec<(Vec<i64>, Vec<u8>, Vec<u64>)>, text: &'a mut (Vec<i32>, Vec<u8>, Vec<u64>)) -> Columns<'a> {
+        for key in ["x", "y"] {
+            let mut column = (Vec::new(), Vec::new(), vec![0u64; rows.len().div_ceil(64)]);
+            for (r, row) in rows.iter().enumerate() {
+                let d: Option<Decimal> = row.get(key).filter(|v| v.is_number()).and_then(|v| v.to_string().parse().ok());
+                let (m, s) = d.map_or((0, 0), |d| (i64::try_from(d.mantissa()).unwrap_or(0), d.scale() as u8));
+                column.0.push(m);
+                column.1.push(s);
+                if d.is_some() {
+                    column.2[r / 64] |= 1 << (r % 64);
+                }
+            }
+            numbers.push(column);
+        }
+        text.0.push(0);
+        text.2.resize(rows.len().div_ceil(64), 0);
+        for (r, row) in rows.iter().enumerate() {
+            if let Some(Value::String(v)) = row.get("s") {
+                text.1.extend_from_slice(v.as_bytes());
+                text.2[r / 64] |= 1 << (r % 64);
+            }
+            text.0.push(text.1.len() as i32);
+        }
+        let mut columns = Columns::new(rows.len());
+        for (key, (mant, scale, valid)) in ["x", "y"].iter().zip(numbers.iter()) {
+            columns = columns.column(key, Column::with_validity(Values::Scaled { mant, scale }, valid, 0));
+        }
+        columns.column("s", Column::with_validity(Values::Utf8 { offsets: &text.0, data: &text.1 }, &text.2, 0))
+    }
+
+    fn expected(env: Variable, entries: &[Fusion]) -> Option<Vec<Value>> {
+        let mut outputs = Vec::new();
+        for entry in entries {
+            let mut isolate = Isolate::with_environment(env.depth_clone(usize::MAX));
+            let (key, value) = match entry {
+                Fusion::Output { key, source } | Fusion::Hidden { key, source } => (key, isolate.run_standard(source).ok()?),
+                Fusion::Rules { key, rules } => {
+                    let mut chosen = Variable::Null;
+                    for (cells, value) in rules {
+                        let mut matched = true;
+                        for (field, cell) in cells {
+                            let reference = isolate.run_standard(field).ok()?;
+                            isolate.set_reference_value(reference).ok()?;
+                            if !isolate.run_unary(cell).ok()? {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        if matched {
+                            chosen = isolate.run_standard(value).ok()?;
+                            break;
+                        }
+                    }
+                    (key, chosen)
+                }
+            };
+            if !key.is_empty() {
+                env.dot_insert(key, value.clone());
+            }
+            if !matches!(entry, Fusion::Hidden { .. }) {
+                outputs.push(value.to_value());
+            }
+        }
+        Some(outputs)
+    }
+
+    fn check(rows: &[Value], entries: &[Fusion]) {
+        let (mut numbers, mut text) = (Vec::new(), (Vec::new(), Vec::new(), Vec::new()));
+        let columns = Self::columns(rows, &mut numbers, &mut text);
+        let generic = LaneProgram::compile_fused(entries).expect("fused program");
+        let mut runner = LaneRunner::new();
+        for program in [generic.clone(), generic.specialize_columns(&columns).expect("specialize")] {
+            let mut outs: Vec<Output> = Vec::new();
+            let mut failed = vec![false; rows.len()];
+            runner.evaluate_columns_many(&program, &columns, &mut outs, |row, _, _| failed[row] = true);
+            for (r, row) in rows.iter().enumerate() {
+                let want = Self::expected(columns.row(r), entries);
+                let got = match failed[r] {
+                    true => None,
+                    false => outs.iter().map(|o| o.variable(r).and_then(|v| v.ok()).map(|v| v.to_value())).collect::<Option<Vec<_>>>(),
+                };
+                assert_eq!(got, want, "row {r} {row}");
+            }
+        }
+    }
+
+    fn output(key: &str, source: &str) -> Fusion {
+        Fusion::Output { key: key.to_string(), source: source.to_string() }
+    }
+}
+
+#[test]
+fn lane_fused_programs_match_sequential_evaluation() {
+    let rows = Fused::rows(700);
+    Fused::check(
+        &rows,
+        &[
+            Fused::output("a.total", "(x ?? 0) + (y ?? 0)"),
+            Fused::output("a.flag", "a.total > 10"),
+            Fused::output("", "a.total * 2"),
+            Fused::output("a.label", "a.flag ? 'big' : (a.total > 0 ? 'mid' : 'small')"),
+            Fused::output("a.net", "a.total - (y ?? 1) - (x ?? 2)"),
+            Fused::output("a.n", "a.label == 'big' ? a.net : -1"),
+            Fused::output("a.total", "a.total * 3"),
+            Fused::output("b", "a.total + a.n.missing"),
+            Fused::output("c", "s == 'gold' and a.flag"),
+            Fused::output("d", "s == 'gold' ? 1 : (s == 'silver' ? 2.5 : (s == '' ? -1 : 0))"),
+            Fused::output("e", "((s == 'goldfish') == true) ? 'F' : (((s == 'bronze') == true) ? 'B' : null)"),
+            Fused::output("f", "s == 'gold' ? true : (s == 'bronze' ? false : true)"),
+            Fused::output("g", "a.label == 'big' ? 'B' : (a.label == 'mid' ? 'M' : 'S')"),
+            Fused::output("", "x / y"),
+        ],
+    );
+    Fused::check(
+        &rows,
+        &[
+            Fused::output("a.risk", "(x ?? 0) > 5 ? 'high' : ((x ?? 0) > 0 ? 'mid' : 'low')"),
+            Fusion::Hidden { key: "__fuse0".to_string(), source: "upper(s ?? '')".to_string() },
+            Fusion::Rules {
+                key: "a.discount".to_string(),
+                rules: vec![
+                    (vec![("s".to_string(), "'gold'".to_string()), ("a.risk".to_string(), "'low'".to_string())], "0.15".to_string()),
+                    (vec![("s".to_string(), "'gold'".to_string()), ("a.risk".to_string(), "'mid'".to_string())], "0.1".to_string()),
+                    (vec![("__fuse0".to_string(), "'SILVER'".to_string())], "x".to_string()),
+                    (vec![("a.risk".to_string(), "'low', 'mid'".to_string()), ("y".to_string(), "> 3".to_string())], "y * 2".to_string()),
+                    (vec![], "0".to_string()),
+                ],
+            },
+            Fused::output("a.net", "(x ?? 0) - a.discount"),
+            Fused::output("a.eligible", "a.risk != 'high' and a.discount > 0"),
+        ],
+    );
+}
+
+#[test]
+fn lane_fused_programs_reject_unresolvable_reads() {
+    for entries in [
+        vec![Fused::output("a.total", "x + 1"), Fused::output("b", "a")],
+        vec![Fused::output("a.total", "x + 1"), Fused::output("b", "map([1, 2], a.total + #)")],
+        vec![Fused::output("a.total", "x + 1"), Fused::output("b", "$root")],
+        vec![Fused::output("a.total", "x + 1"), Fused::output("a", "2")],
+        vec![Fused::output("a", "x + 1"), Fused::output("a.total", "2")],
+    ] {
+        assert!(LaneProgram::compile_fused(&entries).is_err());
+    }
+}
+
+#[test]
+fn lane_switches_over_coded_and_plain_strings() {
+    let texts = ["gold", "silver", "", "goldfish", "a-much-longer-tier-name"];
+    let offsets: Vec<i32> = std::iter::once(0)
+        .chain(texts.iter().scan(0i32, |at, t| {
+            *at += t.len() as i32;
+            Some(*at)
+        }))
+        .collect();
+    let data: String = texts.concat();
+    let dictionary = Column::new(Values::Text { offsets: &offsets, data: &data });
+    let keys: Vec<i32> = (0..300).map(|i| (i * 7 % 6) as i32 - 1).collect();
+    let valid: Vec<u64> = vec![u64::MAX ^ 0b1001, u64::MAX, u64::MAX ^ (1 << 40), u64::MAX, u64::MAX];
+    let mut plain_offsets = vec![0i32];
+    let mut plain = Vec::new();
+    for (i, key) in keys.iter().enumerate() {
+        if let Some(text) = usize::try_from(*key).ok().and_then(|k| texts.get(k)) {
+            if i % 5 != 3 {
+                plain.extend_from_slice(text.as_bytes());
+            }
+        }
+        plain_offsets.push(plain.len() as i32);
+    }
+    let columns = Columns::new(300)
+        .column("t", Column::with_validity(Values::Dict { keys: &keys, values: (&dictionary).into() }, &valid, 0))
+        .column("u", Column::with_validity(Values::Utf8 { offsets: &plain_offsets, data: &plain }, &valid, 0));
+    let expressions = [
+        "t == 'gold' ? 1 : (t == 'silver' ? 2 : 3)",
+        "t == 'goldfish' ? 'F' : (t == '' ? 'E' : (t == 'a-much-longer-tier-name' ? 'L' : 'O'))",
+        "t == 'gold' ? true : (t == 'gold' ? false : null)",
+        "u == 'gold' ? 1 : (u == 'silver' ? 2 : 3)",
+        "u == 'goldfish' ? 'F' : (u == '' ? 'E' : (u == 'a-much-longer-tier-name' ? 'L' : 'O'))",
+        "(u == 'gold' ? 1 : (u == 'silver' ? 2 : 3)) + (t == 'gold' ? 10 : (t == 'silver' ? 20 : 30))",
+    ];
+    for expression in expressions.iter().take(5) {
+        let program = LaneProgram::standard(expression).expect("compile");
+        let switched = program.program().steps.iter().any(|step| matches!(step.op, zen_expression::lane::Op::Switch(_)));
+        assert!(switched, "{expression}");
+    }
+    Rows::check(&columns, &expressions);
 }

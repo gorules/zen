@@ -194,11 +194,10 @@ impl CellSet {
     const FEW: usize = 8;
 
     fn prefix(text: &[u8]) -> u64 {
-        let mut word = [0u8; 8];
-        let take = text.len().min(7);
-        word[..take].copy_from_slice(&text[..take]);
-        word[7] = text.len().min(255) as u8;
-        u64::from_le_bytes(word)
+        text.iter()
+            .take(7)
+            .enumerate()
+            .fold((text.len().min(255) as u64) << 56, |word, (at, byte)| word | u64::from(*byte) << (at * 8))
     }
 
     fn text(&self, text: &[u8]) -> Option<&Vec<u64>> {
@@ -206,7 +205,7 @@ impl CellSet {
             Some(few) => {
                 let prefix = Self::prefix(text);
                 few.iter()
-                    .find(|(p, k, _)| *p == prefix && k.as_ref() == text)
+                    .find(|(p, k, _)| *p == prefix && (text.len() < 8 || k.as_ref() == text))
                     .map(|(_, _, v)| v)
             }
             None => self.strs.get(text),

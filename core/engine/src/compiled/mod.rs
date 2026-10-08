@@ -1,12 +1,13 @@
 mod bound;
 mod plan;
 pub(crate) mod policy;
-pub use columnar::{ColumnarOutput, OutputColumn};
+pub use columnar::{ColumnarOutput, OutputColumn, RecordsView};
 mod schedule;
 mod table;
 mod columnar;
 mod data;
 mod schema;
+mod shred;
 mod typed;
 
 use crate::decision_graph::cleaner::VariableCleaner;
@@ -47,7 +48,7 @@ use zen_expression::lane::{Binding, Columns};
 use zen_expression::lane::{LaneProgram, LaneRunner, SourceInfo};
 use zen_expression::{Isolate, Scope, Variable};
 use zen_types::decision::{
-    DecisionNode, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
+    DecisionNode, DecisionNodeContent, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
     TransformAttributes, TransformExecutionMode,
 };
 
@@ -157,6 +158,13 @@ pub(crate) struct State<'a> {
     failed: usize,
     results: Vec<Option<Variable>>,
     pub(crate) endings: Vec<(Rc<[usize]>, Vec<Data<'a>>)>,
+    nesting: Nesting<'a>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Nesting<'a> {
+    parents: Option<&'a [Option<Variable>]>,
+    iteration: u8,
 }
 
 pub(crate) enum Source<'a> {
@@ -572,9 +580,24 @@ impl CompiledGraph {
             .iter()
             .filter_map(|nid| {
                 let step = self.step_at(*nid)?;
-                let pieces = state.nodes.get(nid.index())?;
-                (!pieces.is_empty())
-                    .then(|| (step.node.name.clone(), Data::gather(pieces, rows).materialized()))
+                let pieces = state.nodes.get(nid.index()).filter(|pieces| !pieces.is_empty())?;
+                let column = Data::gather(pieces, rows).materialized();
+                let column = match (&step.kind, state.nesting.parents) {
+                    (Kind::Input, Some(parents)) => column
+                        .iter()
+                        .zip(rows.iter())
+                        .map(|(value, &row)| match parents.get(row).cloned().flatten() {
+                            Some(parent) => {
+                                let view = value.depth_clone(1);
+                                view.dot_insert(Variable::nodes_key().as_ref(), parent);
+                                view
+                            }
+                            None => value.clone(),
+                        })
+                        .collect(),
+                    _ => column,
+                };
+                Some((step.node.name.clone(), column))
             })
             .collect();
         (0..rows.len())
@@ -635,6 +658,7 @@ impl CompiledGraph {
         source: &Source<'a>,
         count: usize,
         columnar: bool,
+        nesting: Nesting<'a>,
     ) -> State<'a> {
         let mut state = State {
             nodes: vec![Vec::new(); self.steps.len()],
@@ -642,8 +666,9 @@ impl CompiledGraph {
             results: vec![None; count],
             endings: Vec::new(),
             failed: 0,
+            nesting,
         };
-        if max_depth == 0 {
+        if nesting.iteration >= max_depth {
             for error in state.errors.iter_mut() {
                 *error = Some(Box::new(EvaluationError::DepthLimitExceeded));
             }
@@ -693,7 +718,9 @@ impl CompiledGraph {
                             [single] => Self::ending(&single[i]),
                             _ => GraphWalker::merge_ending(columns.iter().map(|c| &c[i])),
                         };
-                        VariableCleaner::new().clean(&result);
+                        if state.nesting.parents.is_none() {
+                            VariableCleaner::new().clean(&result);
+                        }
                         state.results[row] = Some(result);
                     }
                 }
@@ -726,7 +753,7 @@ impl CompiledGraph {
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let start = Instant::now();
         let state = self
-            .run(content, extensions, max_depth, &Source::Rows(inputs), inputs.len(), false)
+            .run(content, extensions, max_depth, &Source::Rows(inputs), inputs.len(), false, Nesting::default())
             .await;
         let performance = format!("{:.1?}", start.elapsed());
         state
@@ -772,7 +799,7 @@ impl CompiledGraph {
         with_nodes: bool,
         columnar: bool,
     ) -> (Vec<Option<Variable>>, Vec<NodeColumn<'a>>) {
-        match (step.nodes, columnar && step.statics.is_some()) {
+        match (step.nodes, columnar && step.statics.is_some() && state.nesting.parents.is_none()) {
             (false, _) => (Vec::new(), Vec::new()),
             (true, true) => (Vec::new(), self.node_columns(step, state, visible, rows, with_nodes)),
             (true, false) => match with_nodes {
@@ -1012,31 +1039,10 @@ impl CompiledGraph {
 
         if matches!(step.kind, Kind::Host) {
             let materialized = data.materialized();
-            if let DecisionNodeKind::FunctionNode { content: FunctionNodeContent::Version2(content) } = &step.node.kind {
-                let config = NodeContextConfig {
-                    max_depth,
-                    trace: false,
-                    ..Default::default()
-                };
-                let inputs = materialized.iter().enumerate().map(|(i, value)| (value.clone(), nodes.get(i).cloned().flatten())).collect();
-                let results = FunctionV2NodeHandler::batch(&step.node.id, content, extensions, &config, inputs).await;
-                let mut values = Vec::with_capacity(rows.len());
-                for (i, result) in results.into_iter().enumerate() {
-                    match result {
-                        Ok(v) => values.push(v),
-                        Err(error) => {
-                            Self::fault(state, rows[i], error);
-                            values.push(Variable::Null);
-                        }
-                    }
-                }
-                state.nodes[event.node.index()].push(Rc::new(Data::plain(rows.clone(), values.into())));
-                return;
-            }
+            let results = Self::hosted(step, &materialized, &nodes, extensions, max_depth, state.nesting.iteration, state.errors.len() > 1).await;
             let mut values = Vec::with_capacity(rows.len());
-            for (i, value) in materialized.iter().enumerate() {
-                let nodes = nodes.get(i).cloned().flatten();
-                match Self::host(step, value.clone(), nodes, extensions, max_depth, state.errors.len() > 1).await {
+            for (i, result) in results.into_iter().enumerate() {
+                match result {
                     Ok(v) => values.push(v),
                     Err(error) => {
                         Self::fault(state, rows[i], error);
@@ -1064,30 +1070,7 @@ impl CompiledGraph {
                 (Data::plain(rows.clone(), values), Vec::new())
             }
             Kind::Input | Kind::Output => {
-                let materialized = data.materialized();
-                let validator = Self::validator(step, content, extensions);
-                let mut values = Vec::with_capacity(rows.len());
-                let mut failures = Vec::new();
-                for (i, value) in materialized.iter().enumerate() {
-                    let nodes = nodes.get(i).cloned().flatten();
-                    if let Some((validator, schema)) = &validator {
-                        if validator.is_valid(VariableNode::new(value, &Guards::default())) {
-                            values.push(match step.kind {
-                                Kind::Input => DeclaredDates::prepare(value, Some(schema))
-                                    .unwrap_or_else(|| value.clone()),
-                                _ => value.clone(),
-                            });
-                            continue;
-                        }
-                    }
-                    match self.boundary(step, value.clone(), nodes, content, extensions).await {
-                        Ok(v) => values.push(v),
-                        Err(e) => {
-                            failures.push((i, e));
-                            values.push(Variable::Null);
-                        }
-                    }
-                }
+                let (values, failures) = self.bounded(step, &data.materialized(), &nodes, content, extensions).await;
                 (Data::plain(rows.clone(), values.into()), failures)
             }
             Kind::Node { .. } => self.node(step, rows, source, &data, &nodes, &extra),
@@ -1099,8 +1082,173 @@ impl CompiledGraph {
         state.nodes[event.node.index()].push(Rc::new(output));
     }
 
+    async fn nested(
+        step: &Step,
+        content: &DecisionNodeContent,
+        inputs: &[Variable],
+        nodes: &[Option<Variable>],
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+    ) -> Option<Vec<Result<Variable, NodeError>>> {
+        let transform = &content.transform_attributes;
+        let plain = transform.input_field.is_none()
+            && transform.output_path.is_none()
+            && !transform.pass_through
+            && matches!(transform.execution_mode, TransformExecutionMode::Single);
+        if inputs.len() < 2 || iteration.saturating_add(1) >= max_depth || !plain {
+            return None;
+        }
+        let loader = extensions.loader();
+        let graph = loader.load(content.key.as_ref()).await.ok()?.into_graph_arc()?;
+        let graph = match graph.compiled_cache.is_some() && graph.resolved_schemas.is_some() {
+            true => graph,
+            false => {
+                let mut owned = (*graph).clone();
+                owned.compile();
+                let _ = owned.resolve_schemas(loader).await;
+                Arc::new(owned)
+            }
+        };
+        let compiled = graph.compiled_plan.as_deref()?.usable(&graph)?;
+        let extensions = NodeHandlerExtensions {
+            function_runtime: Default::default(),
+            compiled_cache: graph.compiled_cache.clone(),
+            dt_indexes: graph.dt_indexes.clone(),
+            validator_cache: Arc::new(std::cell::OnceCell::from(graph.validator_cache.clone())),
+            ..extensions.clone()
+        };
+        let parents: Vec<Option<Variable>> = (0..inputs.len()).map(|row| nodes.get(row).cloned().flatten()).collect();
+        let nesting = Nesting {
+            parents: Some(&parents),
+            iteration: iteration + 1,
+        };
+        let state = Box::pin(compiled.run(&graph, &extensions, max_depth, &Source::Rows(inputs), inputs.len(), false, nesting)).await;
+        Some(
+            state
+                .errors
+                .into_iter()
+                .zip(state.results)
+                .map(|(error, result)| match error {
+                    Some(error) => Err(NodeError {
+                        node_id: step.node.id.clone(),
+                        trace: None,
+                        source: error.to_string().into(),
+                    }),
+                    None => Ok(result.unwrap_or_else(Variable::empty_object)),
+                })
+                .collect(),
+        )
+    }
+
+    async fn hosted(
+        step: &Step,
+        inputs: &[Variable],
+        nodes: &[Option<Variable>],
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+        batched: bool,
+    ) -> Vec<Result<Variable, NodeError>> {
+        if let DecisionNodeKind::DecisionNode { content } = &step.node.kind {
+            if let Some(results) = Self::nested(step, content, inputs, nodes, extensions, max_depth, iteration).await {
+                return results;
+            }
+        }
+        if let DecisionNodeKind::FunctionNode { content: FunctionNodeContent::Version2(content) } = &step.node.kind {
+            let config = NodeContextConfig {
+                max_depth,
+                trace: false,
+                ..Default::default()
+            };
+            let inputs = inputs.iter().enumerate().map(|(i, value)| (value.clone(), nodes.get(i).cloned().flatten())).collect();
+            return FunctionV2NodeHandler::batch(&step.node.id, content, extensions, &config, iteration, inputs).await;
+        }
+        let mut results = Vec::with_capacity(inputs.len());
+        for (i, value) in inputs.iter().enumerate() {
+            let nodes = nodes.get(i).cloned().flatten();
+            results.push(Self::host(step, value.clone(), nodes, extensions, max_depth, iteration, batched).await);
+        }
+        results
+    }
+
+    async fn bounded(
+        &self,
+        step: &Step,
+        inputs: &[Variable],
+        nodes: &[Option<Variable>],
+        content: &Arc<GraphContent>,
+        extensions: &NodeHandlerExtensions,
+    ) -> (Vec<Variable>, Vec<(usize, String)>) {
+        let validator = Self::validator(step, content, extensions);
+        let mut values = Vec::with_capacity(inputs.len());
+        let mut failures = Vec::new();
+        for (i, value) in inputs.iter().enumerate() {
+            let nodes = nodes.get(i).cloned().flatten();
+            if let Some((validator, schema)) = &validator {
+                if validator.is_valid(VariableNode::new(value, &Guards::default())) {
+                    values.push(match step.kind {
+                        Kind::Input => DeclaredDates::prepare(value, Some(schema)).unwrap_or_else(|| value.clone()),
+                        _ => value.clone(),
+                    });
+                    continue;
+                }
+            }
+            match self.boundary(step, value.clone(), nodes, content, extensions).await {
+                Ok(v) => values.push(v),
+                Err(e) => {
+                    failures.push((i, e));
+                    values.push(Variable::Null);
+                }
+            }
+        }
+        (values, failures)
+    }
+
+    fn rowwise<'a>(&self, runner: &mut LaneRunner, step: &Step, data: Data<'a>, nodes: &[Option<Variable>]) -> (Data<'a>, Vec<(usize, String)>) {
+        let rows: Rc<[usize]> = (0..data.len()).collect();
+        let based = match &step.kind {
+            Kind::Node { transform, .. } if !transform.looped => transform.base.as_deref(),
+            _ => None,
+        };
+        let foreign = matches!(&step.kind, Kind::Node { body: Body::Expression { walked: true, .. }, .. })
+            || matches!(&data.shape, data::Shape::Plain(values) if values.iter().any(Self::foreign))
+            || Self::foreign_base(&data, based);
+        if foreign {
+            let mut failures = Vec::new();
+            let values: Col = data
+                .materialized()
+                .iter()
+                .enumerate()
+                .map(|(i, value)| match Self::walked(step, value.clone(), nodes.get(i).cloned().flatten(), true) {
+                    Ok(output) => output,
+                    Err(message) => {
+                        failures.push((i, message));
+                        Variable::Null
+                    }
+                })
+                .collect();
+            return (Data::plain(rows, values), failures);
+        }
+        self.node_with(runner, step, &rows, &Source::Rows(&[]), &data, nodes, &[])
+    }
+
     fn node<'a>(
         &self,
+        step: &Step,
+        rows: &Rc<[usize]>,
+        source: &Source<'a>,
+        data: &Data<'a>,
+        nodes: &[Option<Variable>],
+        extra: &[NodeColumn<'a>],
+    ) -> (Data<'a>, Vec<(usize, String)>) {
+        Self::RUNNER.with_borrow_mut(|runner| self.node_with(runner, step, rows, source, data, nodes, extra))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn node_with<'a>(
+        &self,
+        runner: &mut LaneRunner,
         step: &Step,
         rows: &Rc<[usize]>,
         source: &Source<'a>,
@@ -1111,7 +1259,7 @@ impl CompiledGraph {
         let Kind::Node { body, transform } = &step.kind else {
             return (Data::plain(rows.clone(), Rc::from(Vec::new())), Vec::new());
         };
-        Self::RUNNER.with_borrow_mut(|runner| {
+        {
             let wide = rows.len() > 1 || matches!(source, Source::Columns(_));
             let rebase = match (&transform.input_field, &transform.base, transform.looped) {
                 (None, _, false) => Some(None),
@@ -1162,7 +1310,7 @@ impl CompiledGraph {
                     (Data::plain(rows.clone(), values), failures)
                 }
             }
-        })
+        }
     }
 
     fn foreign_base(data: &Data, rebase: Option<&str>) -> bool {
@@ -1416,6 +1564,7 @@ impl CompiledGraph {
         nodes: Option<Variable>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
+        iteration: u8,
         batched: bool,
     ) -> Result<Variable, NodeError> {
         let node = &step.node;
@@ -1432,7 +1581,7 @@ impl CompiledGraph {
             input,
             nodes,
             extensions,
-            iteration: 0,
+            iteration,
             trace: None,
             config: NodeContextConfig {
                 max_depth,
@@ -1744,8 +1893,7 @@ impl CompiledGraph {
         }
         match Self::item_data(step, body, inputs, nodes) {
             Some(data) => {
-                let (output, failures) =
-                    Self::bound(step, &data, &[], &[], None, |bound| Self::layered(runner, body, false, &data, bound, None));
+                let (output, failures) = Self::item_run(runner, step, body, &data);
                 let values = output.materialized();
                 let mut results: Vec<Result<Variable, String>> = values.iter().cloned().map(Ok).collect();
                 for (item, message) in failures.into_iter().rev() {
@@ -1803,11 +1951,8 @@ impl CompiledGraph {
         }
     }
 
-    fn item_data<'a>(step: &Step, body: &Body, inputs: &[Variable], nodes: &[Option<Variable>]) -> Option<Data<'a>> {
-        if inputs.len() < 2 || step.root || step.dynamic || nodes.iter().any(Option::is_some) {
-            return None;
-        }
-        if matches!(&step.kind, Kind::Node { transform, .. } if transform.base.is_some()) {
+    fn item_keys(step: &Step, body: &Body) -> Option<Vec<Arc<str>>> {
+        if step.root || step.dynamic || matches!(&step.kind, Kind::Node { transform, .. } if transform.base.is_some()) {
             return None;
         }
         let programs: Vec<&LaneProgram> = match body {
@@ -1831,9 +1976,18 @@ impl CompiledGraph {
             keys.iter()
                 .any(|b| b.strip_prefix(a.as_ref()).is_some_and(|rest| rest.starts_with('.')))
         });
-        if overlapping {
+        (!overlapping).then_some(keys)
+    }
+
+    fn item_run<'a>(runner: &mut LaneRunner, step: &Step, body: &Body, data: &Data<'a>) -> (Data<'a>, Vec<(usize, String)>) {
+        Self::bound(step, data, &[], &[], None, |bound| Self::layered(runner, body, false, data, bound, None))
+    }
+
+    fn item_data<'a>(step: &Step, body: &Body, inputs: &[Variable], nodes: &[Option<Variable>]) -> Option<Data<'a>> {
+        if inputs.len() < 2 || nodes.iter().any(Option::is_some) {
             return None;
         }
+        let keys = Self::item_keys(step, body)?;
         let mut leaves = Vec::with_capacity(keys.len());
         let mut present = Vec::with_capacity(keys.len());
         for key in &keys {

@@ -862,6 +862,31 @@ impl<'a> Data<'a> {
         Some(bits)
     }
 
+    pub fn present(&self, path: &str) -> (Leaf<'a>, Vec<u64>) {
+        let rows = self.len();
+        if let (Binding::Column(index), Shape::Patched { leaves, nulls, .. }) = (self.binding(path).0, &self.shape) {
+            let bits = self.presence_bits(index).unwrap_or_else(|| {
+                let mut bits = Bits::ones(rows).to_vec();
+                if let Some(nulls) = nulls {
+                    bits.iter_mut().zip(nulls.iter()).for_each(|(b, n)| *b &= !n);
+                }
+                bits
+            });
+            return (leaves[index].1.clone(), bits);
+        }
+        let mut bits = vec![0u64; rows.div_ceil(64)];
+        let values: Col = (0..rows)
+            .map(|row| match Self::lookup(&self.materialize_row(row), path) {
+                Some(value) => {
+                    Bits::set(&mut bits, row, true);
+                    value
+                }
+                None => Variable::Null,
+            })
+            .collect();
+        (Leaf::Any(values), bits)
+    }
+
     pub fn leaves(&self) -> &[(Arc<str>, Leaf<'a>)] {
         match &self.shape {
             Shape::Plain(_) => &[],

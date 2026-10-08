@@ -27,6 +27,7 @@ pub(crate) enum Shape {
     Text,
     Null,
     Dyn,
+    List,
     Unknown,
 }
 
@@ -306,6 +307,9 @@ impl Node {
     }
 
     pub fn merge(a: &Node, b: &Node, masks: &mut Masks, slots: &mut dyn Slots) -> Result<Node, String> {
+        if a.leaf.is_some() || b.leaf.is_some() {
+            return Self::child(a, b, M::All, M::None, M::None, masks, slots);
+        }
         let (oa, ob) = (a.obj(), b.obj());
         let rr = masks.and(oa, ob);
         let rb = masks.and_not(ob, oa);
@@ -342,7 +346,7 @@ impl Node {
         let pb = b.leaf.map_or(M::None, |l| l.present);
         let pa = a.leaf.map_or(M::None, |l| l.present);
         let (oa, ob) = (a.obj(), b.obj());
-        let dynamic = |leaf: Option<Ref>| leaf.is_some_and(|l| !slots.shape(l.slot).scalar());
+        let dynamic = |leaf: Option<Ref>| leaf.is_some_and(|l| !slots.shape(l.slot).scalar() && slots.shape(l.slot) != Shape::List);
         let (a_dyn, b_dyn) = (dynamic(a.leaf), dynamic(b.leaf));
         let a_object = a_dyn || oa != M::None;
         let b_object = b_dyn || ob != M::None;

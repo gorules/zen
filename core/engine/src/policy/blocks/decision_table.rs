@@ -34,6 +34,16 @@ pub(crate) struct TableSelection {
     input_bits: Option<Vec<u8>>,
 }
 
+impl TableSelection {
+    pub(crate) fn used(used_cells: Vec<(u32, Arc<str>)>) -> Self {
+        Self {
+            matched_rows: Vec::new(),
+            used_cells,
+            input_bits: None,
+        }
+    }
+}
+
 pub(crate) const ROW_ID_KEY: &str = "_id";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

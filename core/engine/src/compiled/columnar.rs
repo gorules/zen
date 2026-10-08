@@ -15,9 +15,27 @@ use zen_expression::Variable;
 
 pub struct OutputColumn<'a>(pub(crate) Leaf<'a>);
 
+pub struct RecordsView<'c> {
+    pub offsets: &'c [i32],
+    pub valid: Vec<u64>,
+    pub fields: Vec<(&'c str, Column<'c>, &'c [u64])>,
+}
+
 impl OutputColumn<'_> {
     pub fn column(&self) -> Column<'_> {
         self.0.column()
+    }
+
+    pub fn records(&self) -> Option<RecordsView<'_>> {
+        let records = match &self.0 {
+            Leaf::Records(records) => records,
+            _ => return None,
+        };
+        Some(RecordsView {
+            offsets: records.offsets(),
+            valid: records.validity().to_vec(),
+            fields: records.fields().iter().map(|(key, leaf, present)| (key.as_str(), leaf.column(), present.as_ref())).collect(),
+        })
     }
 
     pub fn get(&self, row: usize) -> Variable {
@@ -102,6 +120,11 @@ impl CompiledGraph {
                 child: Dictionary::Text { .. } | Dictionary::Scaled { .. } | Dictionary::Bool { .. },
                 ..
             } => false,
+            Values::List {
+                child: Dictionary::Column(child),
+                ..
+            } if Self::scalar_struct(child) => false,
+            Values::Struct { .. } if Self::scalar_struct(&column) => false,
             Values::List { .. } | Values::Dict { values: Dictionary::Column(_), .. } => {
                 (0..rows).any(|row| dated(&column.variable(row)))
             }
@@ -117,6 +140,13 @@ impl CompiledGraph {
                     .collect(),
             ),
             false => Leaf::input(Self::validated(column, rows), rows),
+        }
+    }
+
+    fn scalar_struct(column: &Column) -> bool {
+        match column.values {
+            Values::Struct { fields, .. } => fields.iter().all(|(_, field)| !matches!(field.values, Values::Any(_) | Values::List { .. } | Values::Struct { .. } | Values::Dict { values: Dictionary::Any(_) | Dictionary::Column(_), .. })),
+            _ => false,
         }
     }
 
@@ -336,14 +366,14 @@ impl CompiledGraph {
     ) -> ColumnarOutput<'a> {
         if let (true, Some(plan)) = (max_depth > 0, self.plan.as_ref()) {
             if let Some(failures) = self.planned_input(content, extensions, columns).await {
-                if let Some(output) = plan.evaluate(self, content, columns, failures) {
+                if let Some(output) = plan.evaluate(self, content, extensions, max_depth, columns, failures).await {
                     return output;
                 }
             }
         }
         let count = columns.rows;
         let source = Source::Columns(Rc::new(Self::input_data(columns)));
-        let state = self.run(content, extensions, max_depth, &source, count, true).await;
+        let state = self.run(content, extensions, max_depth, &source, count, true, crate::compiled::Nesting::default()).await;
         let groups: Vec<Group<'a>> = state
             .endings
             .iter()

@@ -120,6 +120,7 @@ impl FunctionV2NodeHandler {
         content: &FunctionContent,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
+        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let source = extensions
@@ -128,7 +129,7 @@ impl FunctionV2NodeHandler {
             .and_then(|stripped| stripped.get(content.source.as_ref()).cloned())
             .unwrap_or_else(|| strip::TypeStripper::strip(content.source.deref()));
         if isolation::Isolation::shareable(source.as_ref()) || rows.len() < 2 {
-            return Self::run(id, &source, extensions, config, rows).await;
+            return Self::run(id, &source, extensions, config, iteration, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -136,7 +137,7 @@ impl FunctionV2NodeHandler {
                 function_runtime: Default::default(),
                 ..extensions.clone()
             };
-            results.extend(Self::run(id, &source, &fresh, config, vec![row]).await);
+            results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
         }
         results
     }
@@ -146,6 +147,7 @@ impl FunctionV2NodeHandler {
         source: &Arc<str>,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
+        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let failed = |source: Box<dyn std::error::Error>| NodeError {
@@ -180,7 +182,7 @@ impl FunctionV2NodeHandler {
             .await;
         let tick = || started.store(base.elapsed().as_nanos() as u64, Ordering::Relaxed);
         let results = function
-            .call_rows(&module_name, (0, config.max_depth, config.trace), rows, &tick)
+            .call_rows(&module_name, (iteration, config.max_depth, config.trace), rows, &tick)
             .await;
         function.runtime().set_interrupt_handler(None).await;
         results

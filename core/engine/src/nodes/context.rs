@@ -120,6 +120,25 @@ where
             return Ok(());
         }
 
+        {
+            let guards = Guards::default();
+            let mut first = None;
+            let mut nullable = false;
+            for error in validator.iter_errors(VariableNode::new(value, &guards)) {
+                if Self::nullable(value, &error.instance_path().to_string()) {
+                    nullable = true;
+                    break;
+                }
+                first.get_or_insert(error);
+            }
+            if !nullable {
+                return match first {
+                    Some(error) => Err(ValidationErrorJson::from(error)).node_context(self),
+                    None => Ok(()),
+                };
+            }
+        }
+
         let current = value.deep_clone();
         let mut removed: HashSet<String> = HashSet::default();
         loop {
@@ -153,6 +172,30 @@ where
         match chosen < errors.len() {
             true => Err(errors.swap_remove(chosen)).node_context(self),
             false => Ok(()),
+        }
+    }
+
+    fn nullable(value: &Variable, pointer: &str) -> bool {
+        let segments: Vec<String> = pointer
+            .split('/')
+            .skip(1)
+            .map(|s| s.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        match (Self::node_at(value, &segments), segments.split_last()) {
+            (None, _) => false,
+            (Some(Variable::Null), Some((_, parents))) => matches!(Self::node_at(value, parents), Some(Variable::Object(_))),
+            (Some(target), _) => Self::holds_null(&target),
+        }
+    }
+
+    fn holds_null(value: &Variable) -> bool {
+        match value {
+            Variable::Object(object) => object
+                .borrow()
+                .iter()
+                .any(|(_, field)| matches!(field, Variable::Null) || Self::holds_null(field)),
+            Variable::Array(array) => array.borrow().iter().any(Self::holds_null),
+            _ => false,
         }
     }
 

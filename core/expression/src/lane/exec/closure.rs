@@ -7,7 +7,8 @@ use crate::lane::columns::{Column, Values};
 use crate::lane::mask::{LaneSet, Lanes, Mask};
 use crate::lane::ops::Ops;
 use crate::lane::output::Item;
-use crate::lane::program::{ClosureOp, Kind, Reg};
+use crate::lane::builtins::Out;
+use crate::lane::program::{ClosureOp, FoldOp, Kind, Op, Reg, Step};
 use crate::lane::scaled::Scaled;
 use crate::variable::Variable;
 use crate::vm::VMError;
@@ -167,17 +168,36 @@ impl Executor {
         if c.sequential || matches!(c.kind, ClosureFunction::FlatMap) || active.is_empty() {
             return false;
         }
-        let Some((child, column)) = Self::list_children(c, ctx) else {
+        let source = match Self::selection(c, f, ctx) {
+            Some(child) => Some((child, None)),
+            None => Self::list_children(c, ctx).map(|(child, column)| (child, Some(column))),
+        };
+        let Some((child, column)) = source else {
             return false;
         };
         let child = &child;
+        let mut picks: Vec<u32> = Vec::new();
         let mut ranges = std::mem::take(&mut f.ranges);
         ranges.clear();
         ranges.resize(f.width, (0, 0));
         let (mut lo, mut hi) = (None, 0usize);
         for lane in Lanes::of(active) {
-            let row = ctx.base + f.rows[lane] as usize;
-            let Some((a, b)) = column.range(row) else {
+            let range = match &column {
+                Some(column) => column.range(ctx.base + f.rows[lane] as usize),
+                None => match f.generic(c.list, lane) {
+                    true => None,
+                    false => {
+                        let (x, y) = f.lists[f.at(c.list, lane)];
+                        let a = picks.len();
+                        f.items.rows(x as usize, y as usize).map(|rows| {
+                            picks.extend(rows.iter().map(|r| *r as u32));
+                            (a, picks.len())
+                        })
+                    }
+                },
+            };
+            let Some((a, b)) = range else {
+                f.ranges = ranges;
                 return false;
             };
             match lo {
@@ -192,12 +212,27 @@ impl Executor {
             return false;
         };
         let total = hi - lo;
+        let selected = column.is_none();
+        let index = |v: usize| match selected {
+            true => picks.get(v).copied().unwrap_or_default() as usize,
+            false => v,
+        };
         let (element, out) = (c.body.element.unwrap_or_default(), c.body.out as usize);
         let predicate = !matches!(c.kind, ClosureFunction::Map);
         if !predicate && f.kinds[c.dst as usize] != Kind::List {
             return false;
         }
         let items = f.items.len();
+        if !predicate && Self::project(c, child, f, lo..lo + total, selected.then_some(&picks)) {
+            let base = c.dst as usize * f.width;
+            for lane in Lanes::of(active) {
+                let (a, b) = (ranges[lane].0 - lo, ranges[lane].1 - lo);
+                f.lists[base + lane] = ((items + a) as u32, (items + b) as u32);
+            }
+            f.boxed[c.dst as usize] &= !active;
+            f.ranges = ranges;
+            return true;
+        }
         let mut scratch = std::mem::take(&mut f.scratch);
         let Scratch {
             truths,
@@ -222,8 +257,16 @@ impl Executor {
                 }
             }
         }
+        let projected = predicate
+            && Self::project_truths(c, child, truths, lo..lo + total, selected.then_some(&picks));
+        if predicate && !projected {
+            truths.fill(0);
+        }
         let mut ok = true;
-        let mut start = 0usize;
+        let mut start = match projected {
+            true => total,
+            false => 0,
+        };
         while start < total {
             let end = (start + M::LANES).min(total);
             let width = end - start;
@@ -240,9 +283,10 @@ impl Executor {
                     Some((f, &parents[start..end], &c.imports)),
                 ),
             }
-            if !Self::fill_dense(frame, element, child, lo + start) {
+            let viewed = Self::elements(c, frame, child, ctx, width, |lane| index(lo + start + lane));
+            if !viewed && (selected || !Self::fill_dense(frame, element, child, lo + start)) {
                 Self::fill_with(frame, element, child, M::all(width), |_, lane| {
-                    lo + start + lane
+                    index(lo + start + lane)
                 });
             }
             Self::execute(&c.body, rest, ctx);
@@ -325,24 +369,44 @@ impl Executor {
                 f.lists[base + lane] = ((items + a) as u32, (items + b) as u32);
             }
             f.boxed[c.dst as usize] &= !active;
+        } else if ok && f.kinds[c.dst as usize] == Kind::List && c.select && !selected && matches!(child.values, Values::Struct { .. }) {
+            let base = c.dst as usize * f.width;
+            let mut at = f.items.len();
+            f.items.extend_rows(truths, 0, total, lo);
+            for lane in Lanes::of(active) {
+                let (a, b) = (ranges[lane].0 - lo, ranges[lane].1 - lo);
+                let end = at + Self::ones(truths, a, b);
+                f.lists[base + lane] = (at as u32, end as u32);
+                at = end;
+            }
+            ctx.register(f.program, c.dst, *child);
+            f.boxed[c.dst as usize] &= !active;
         } else if ok && f.kinds[c.dst as usize] == Kind::List {
             let base = c.dst as usize * f.width;
             for lane in Lanes::of(active) {
                 let (a, b) = (ranges[lane].0 - lo, ranges[lane].1 - lo);
                 let start = f.items.len() as u32;
                 match (child.values, child.validity.is_some()) {
-                    (Values::I64(v), false) if lo + b <= v.len() => {
+                    (Values::Struct { .. }, _) if c.select => {
+                        for i in (a..b).filter(|i| Mask::bit(truths, *i)) {
+                            f.items.push(Item::Row(index(lo + i) as u32));
+                        }
+                    }
+                    (Values::I64(v), false) if !selected && lo + b <= v.len() => {
                         f.items
                             .extend_selected(v.get(lo..).unwrap_or_default(), truths, a, b)
                     }
                     _ => {
                         for i in (a..b).filter(|i| Mask::bit(truths, *i)) {
-                            let item = Self::child_item(child, lo + i, f);
+                            let item = Self::child_item(child, index(lo + i), f);
                             f.items.push(item);
                         }
                     }
                 }
                 f.lists[base + lane] = (start, f.items.len() as u32);
+            }
+            if c.select && matches!(child.values, Values::Struct { .. }) {
+                ctx.register(f.program, c.dst, *child);
             }
             f.boxed[c.dst as usize] &= !active;
         } else if ok {
@@ -352,7 +416,7 @@ impl Executor {
                     ClosureFunction::Filter => Variable::from_array(
                         (a..b)
                             .filter(|i| Mask::bit(truths, *i))
-                            .map(|i| child.variable(lo + i))
+                            .map(|i| child.variable(index(lo + i)))
                             .collect(),
                     ),
                     kind => {
@@ -372,6 +436,104 @@ impl Executor {
         f.scratch = scratch;
         f.ranges = ranges;
         ok
+    }
+
+    fn projected<'c>(c: &ClosureOp, child: &Column<'c>, kind: Kind) -> Option<Column<'c>> {
+        let (Some(element), [Step { op: Op::Field { dst, src, key, .. }, .. }]) =
+            (c.body.element, c.body.steps.as_slice())
+        else {
+            return None;
+        };
+        let plain = *src == element
+            && *dst == c.body.out
+            && c.body.kinds.get(*dst as usize) == Some(&kind)
+            && c.imports.is_empty()
+            && child.validity.is_none();
+        child.field(key).filter(|_| plain).copied()
+    }
+
+    fn project_truths(
+        c: &ClosureOp,
+        child: &Column,
+        truths: &mut [u64],
+        span: std::ops::Range<usize>,
+        picks: Option<&[u32]>,
+    ) -> bool {
+        let Some(field) = Self::projected(c, child, Kind::Bool) else {
+            return false;
+        };
+        let Values::Bool { bits, offset } = field.values else {
+            return false;
+        };
+        for (k, i) in span.enumerate() {
+            let row = match picks {
+                Some(picks) => picks.get(i).map(|p| *p as usize),
+                None => Some(i),
+            };
+            let valid = row.filter(|row| {
+                field.validity.is_none_or(|(valid, at)| Column::bit(valid, at + row))
+            });
+            match (valid, truths.get_mut(k / 64)) {
+                (Some(row), Some(word)) => *word |= (Column::bit(bits, offset + row) as u64) << (k % 64),
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    fn project<M: LaneSet>(
+        c: &ClosureOp,
+        child: &Column,
+        f: &mut Frame<M>,
+        span: std::ops::Range<usize>,
+        picks: Option<&[u32]>,
+    ) -> bool {
+        let Some(field) = Self::projected(c, child, Kind::Num) else {
+            return false;
+        };
+        let valid = match (field.validity, picks) {
+            (None, _) => true,
+            (Some(_), None) => span.clone().all(|i| field.valid(i)),
+            (Some(_), Some(picks)) => picks
+                .get(span.clone())
+                .is_some_and(|picks| picks.iter().all(|p| field.valid(*p as usize))),
+        };
+        if !valid {
+            return false;
+        }
+        let items = f.items.len();
+        let done = match (field.values, picks) {
+            (Values::Scaled { mant, scale }, None) => mant
+                .get(span.clone())
+                .zip(scale.get(span))
+                .map(|(m, s)| f.items.extend_nums(m, s))
+                .is_some(),
+            (Values::Scaled { mant, scale }, Some(picks)) => picks.get(span).is_some_and(|picks| {
+                f.items.extend_parts(picks.iter().map(|p| {
+                    let p = *p as usize;
+                    mant.get(p).zip(scale.get(p)).map(|(m, s)| (*m, *s))
+                }))
+            }),
+            (Values::I64(values), None) => values.get(span).is_some_and(|values| {
+                f.items.extend_parts(values.iter().map(|n| Some((*n, 0))))
+            }),
+            (Values::I64(values), Some(picks)) => picks.get(span).is_some_and(|picks| {
+                f.items.extend_parts(picks.iter().map(|p| values.get(*p as usize).map(|n| (*n, 0))))
+            }),
+            (Values::Dec(values), None) => values
+                .get(span)
+                .is_some_and(|values| f.items.extend_parts(values.iter().map(Scaled::parts))),
+            (Values::Dec(values), Some(picks)) => picks.get(span).is_some_and(|picks| {
+                f.items.extend_parts(
+                    picks.iter().map(|p| values.get(*p as usize).and_then(Scaled::parts)),
+                )
+            }),
+            _ => false,
+        };
+        if !done {
+            f.items.truncate(items);
+        }
+        done
     }
 
     pub(super) fn child_item<M: LaneSet>(child: &Column, index: usize, f: &mut Frame<M>) -> Item {
@@ -405,6 +567,9 @@ impl Executor {
     ) {
         if Self::sweep(c, active, f, rest, ctx) {
             return;
+        }
+        if let Some(column) = Self::selection(c, f, ctx) {
+            return Self::selected(c, &column, active, f, rest, ctx);
         }
         let decisive = matches!(
             c.kind,
@@ -503,13 +668,36 @@ impl Executor {
         f.scratch = scratch;
     }
 
-    pub(super) fn body<M: LaneSet>(
+    pub(super) fn elements<'c, M: LaneSet>(
+        c: &ClosureOp,
+        frame: &mut Frame<M>,
+        child: &Column<'c>,
+        ctx: &mut Context<'c>,
+        width: usize,
+        index: impl Fn(usize) -> usize,
+    ) -> bool {
+        let (Values::Struct { .. }, Some(element)) = (child.values, c.body.element) else {
+            return false;
+        };
+        ctx.register(c.body.id, element, *child);
+        if !frame.views.contains(&element) {
+            frame.views.push(element);
+        }
+        frame.elements.clear();
+        frame.elements.extend((0..width).map(|lane| index(lane) as u32));
+        if c.body.whole(element) {
+            Self::fill_with(frame, element, child, M::all(width), |_, lane| index(lane));
+        }
+        true
+    }
+
+    pub(super) fn body<'c, M: LaneSet>(
         c: &ClosureOp,
         scratch: &mut Scratch,
-        column: Option<&Column>,
+        column: Option<&Column<'c>>,
         f: &mut Frame<M>,
         rest: &mut [Frame<M>],
-        ctx: &mut Context,
+        ctx: &mut Context<'c>,
     ) {
         let element = c.body.element.unwrap_or_default();
         let out = c.body.out;
@@ -559,9 +747,11 @@ impl Executor {
             match column {
                 Some(column) => {
                     let slots = &slots[start..end];
-                    Self::fill_with(child, element, column, M::all(width), |_, lane| {
-                        slots[lane].1 as usize
-                    });
+                    if !Self::elements(c, child, column, ctx, width, |lane| slots[lane].1 as usize) {
+                        Self::fill_with(child, element, column, M::all(width), |_, lane| {
+                            slots[lane].1 as usize
+                        });
+                    }
                 }
                 None => {
                     for (lane, (_, value)) in items[start..end].iter_mut().enumerate() {
@@ -768,6 +958,164 @@ impl Executor {
         f.scratch = scratch;
     }
 
+    fn selection<'c, M: LaneSet>(c: &ClosureOp, f: &Frame<M>, ctx: &Context<'c>) -> Option<Column<'c>> {
+        match (&c.source, f.kinds.get(c.list as usize)) {
+            (None, Some(Kind::List)) => ctx.view(f.program, c.list),
+            _ => None,
+        }
+    }
+
+    fn selected<'c, M: LaneSet>(
+        c: &ClosureOp,
+        column: &Column<'c>,
+        active: M,
+        f: &mut Frame<M>,
+        rest: &mut [Frame<M>],
+        ctx: &mut Context<'c>,
+    ) {
+        let base = c.list as usize * f.width;
+        let rows = Lanes::of(active).all(|lane| {
+            let (a, b) = f.lists[base + lane];
+            !f.generic(c.list, lane) && (a..b).all(|i| f.items.row(i as usize).is_some())
+        });
+        let mut scratch = std::mem::take(&mut f.scratch);
+        scratch.items.clear();
+        scratch.slots.clear();
+        scratch.spans.clear();
+        for lane in Lanes::of(active) {
+            let (a, b) = f.lists[base + lane];
+            match (rows, f.generic(c.list, lane)) {
+                (true, _) => {
+                    let start = scratch.slots.len();
+                    scratch
+                        .slots
+                        .extend((a..b).filter_map(|i| f.items.row(i as usize)).map(|row| (lane as u32, row)));
+                    scratch.spans.push((lane, start, scratch.slots.len()));
+                }
+                (false, true) => {
+                    let start = scratch.items.len();
+                    if let Variable::Array(items) = f.value(c.list, lane) {
+                        scratch.items.extend(items.borrow().iter().map(|v| (lane as u32, v.clone())));
+                    }
+                    scratch.spans.push((lane, start, scratch.items.len()));
+                }
+                (false, false) => {
+                    let start = scratch.items.len();
+                    for i in a..b {
+                        let value = match f.items.row(i as usize) {
+                            Some(row) => column.variable(row as usize),
+                            None => f.items.get(i as usize).variable(&f.arena),
+                        };
+                        scratch.items.push((lane as u32, value));
+                    }
+                    scratch.spans.push((lane, start, scratch.items.len()));
+                }
+            }
+        }
+        Self::body(c, &mut scratch, rows.then_some(column), f, rest, ctx);
+        let Scratch {
+            items,
+            slots,
+            spans,
+            results,
+            failures,
+            truths,
+            settled,
+            ..
+        } = &mut scratch;
+        for (lane, start, end) in spans.iter().copied() {
+            let out = Outcomes::new((results, failures, truths, settled), start, end);
+            let r = match rows {
+                true => Self::finish(c.kind, out, |i| column.variable(slots[start + i].1 as usize)),
+                false => Self::finish(c.kind, out, |i| items[start + i].1.clone()),
+            };
+            f.put(c.dst, lane, r);
+        }
+        f.scratch = scratch;
+    }
+
+    pub(super) fn fold<M: LaneSet>(op: &FoldOp, active: M, f: &mut Frame<M>, ctx: &Context) {
+        let done = Self::fold_lanes(op, active, f, ctx);
+        f.masks[op.rest as usize] = active & !done;
+    }
+
+    fn fold_lanes<M: LaneSet>(op: &FoldOp, active: M, f: &mut Frame<M>, ctx: &Context) -> M {
+        let none = f.none();
+        let Some(Some(column)) = ctx.column(op.site) else {
+            return none;
+        };
+        let Values::List { child, .. } = column.values else {
+            return none;
+        };
+        let child = child.column();
+        if !matches!(child.values, Values::Struct { .. }) || child.validity.is_some() || f.kind(op.dst) != Kind::Num {
+            return none;
+        }
+        let Some(input) = FoldInput::of(&child, &op.field, op.filter.as_deref()) else {
+            return none;
+        };
+        let function = op.function;
+        let done = match (function, input.valid, input.filter, input.numbers) {
+            (crate::functions::InternalFunction::Sum, None, None, Numbers::Scaled(mant, scale)) => {
+                Self::fold_rows(op, column, active, f, ctx, |a, b| FoldInput::sum_scaled(mant.get(a..b)?, scale.get(a..b)?))
+            }
+            (crate::functions::InternalFunction::Sum, _, _, Numbers::Decs(values)) => {
+                Self::fold_rows(op, column, active, f, ctx, |a, b| input.walk(a, b, |i| Scaled::parts(values.get(i)?)))
+            }
+            (crate::functions::InternalFunction::Sum, _, _, Numbers::Scaled(mant, scale)) => {
+                Self::fold_rows(op, column, active, f, ctx, |a, b| input.walk(a, b, |i| Some((*mant.get(i)?, *scale.get(i)?))))
+            }
+            (crate::functions::InternalFunction::Sum, _, _, _) => Self::fold_rows(op, column, active, f, ctx, |a, b| input.sum(a, b)),
+            _ => Self::fold_rows(op, column, active, f, ctx, |a, b| {
+                if !(a..b).all(|i| input.kept(i).is_some()) {
+                    return None;
+                }
+                let values = (a..b).filter(|i| input.kept(*i) == Some(true)).map(|i| input.number(i));
+                match Self::reduce(function, values) {
+                    Some(Out::Num(n)) => Scaled::parts(&n),
+                    _ => None,
+                }
+            }),
+        };
+        let d = op.dst as usize;
+        f.wide[d] &= !done;
+        f.boxed[d] &= !done;
+        done
+    }
+
+    #[inline(always)]
+    fn fold_rows<M: LaneSet>(
+        op: &FoldOp,
+        column: &Column,
+        active: M,
+        f: &mut Frame<M>,
+        ctx: &Context,
+        total: impl Fn(usize, usize) -> Option<(i64, u8)>,
+    ) -> M {
+        let mut done = f.none();
+        let base = op.dst as usize * f.width;
+        let offsets = match (column.values, column.validity) {
+            (Values::List { offsets, .. }, None) => Some(offsets),
+            _ => None,
+        };
+        for lane in Lanes::of(active) {
+            let row = ctx.base + f.rows[lane] as usize;
+            let range = match offsets {
+                Some(offsets) => match (offsets.get(row), offsets.get(row + 1)) {
+                    (Some(&a), Some(&b)) if 0 <= a && a <= b => Some((a as usize, b as usize)),
+                    _ => column.range(row),
+                },
+                None => column.range(row),
+            };
+            if let Some((m, s)) = range.and_then(|(a, b)| total(a, b)) {
+                f.mant[base + lane] = m;
+                f.scales[base + lane] = s;
+                done.set(lane);
+            }
+        }
+        done
+    }
+
     pub(super) fn list_children<'c>(
         c: &ClosureOp,
         ctx: &Context<'c>,
@@ -931,5 +1279,125 @@ impl ClosureFunction {
             ClosureFunction::All => trues == total,
             _ => trues == 0,
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Numbers<'c> {
+    Scaled(&'c [i64], &'c [u8]),
+    Ints(&'c [i64]),
+    Decs(&'c [rust_decimal::Decimal]),
+    Other(Column<'c>),
+}
+
+type Bitmap<'c> = Option<(&'c [u64], usize)>;
+
+struct FoldInput<'c> {
+    numbers: Numbers<'c>,
+    valid: Bitmap<'c>,
+    filter: Option<(&'c [u64], usize, Bitmap<'c>)>,
+}
+
+impl<'c> FoldInput<'c> {
+    fn of(child: &Column<'c>, field: &str, filter: Option<&str>) -> Option<Self> {
+        let column = *child.field(field)?;
+        let numbers = match column.values {
+            Values::Scaled { mant, scale } => Numbers::Scaled(mant, scale),
+            Values::I64(values) => Numbers::Ints(values),
+            Values::Dec(values) => Numbers::Decs(values),
+            _ => Numbers::Other(column),
+        };
+        let filter = match filter {
+            None => None,
+            Some(key) => match child.field(key).copied() {
+                Some(Column { values: Values::Bool { bits, offset }, validity }) => Some((bits, offset, validity)),
+                _ => return None,
+            },
+        };
+        Some(Self {
+            numbers,
+            valid: column.validity,
+            filter,
+        })
+    }
+
+    #[inline(always)]
+    fn number(&self, i: usize) -> Option<(i64, u8)> {
+        if let Some((bits, offset)) = self.valid {
+            if !Column::bit(bits, offset + i) {
+                return None;
+            }
+        }
+        match self.numbers {
+            Numbers::Scaled(mant, scale) => Some((*mant.get(i)?, *scale.get(i)?)),
+            Numbers::Ints(values) => Some((*values.get(i)?, 0)),
+            Numbers::Decs(values) => Scaled::parts(values.get(i)?),
+            Numbers::Other(column) => Executor::child_number(&column, i),
+        }
+    }
+
+    #[inline(always)]
+    fn kept(&self, i: usize) -> Option<bool> {
+        let Some((bits, offset, valid)) = self.filter else {
+            return Some(true);
+        };
+        if let Some((mask, at)) = valid {
+            if !Column::bit(mask, at + i) {
+                return None;
+            }
+        }
+        Some(Column::bit(bits, offset + i))
+    }
+
+    #[inline(always)]
+    fn accumulate(acc: (i64, u8), x: (i64, u8)) -> Option<(i64, u8)> {
+        match (acc.0 == 0, x.0 == 0, acc.1 == x.1) {
+            (true, _, _) => Some(x),
+            (false, true, _) => Some(acc),
+            (false, false, true) => Some((acc.0.checked_add(x.0)?, acc.1)),
+            (false, false, false) => Scaled::add(acc, x, false),
+        }
+    }
+
+    #[inline]
+    fn sum(&self, a: usize, b: usize) -> Option<(i64, u8)> {
+        match (self.valid, self.filter, self.numbers) {
+            (None, None, Numbers::Scaled(mant, scale)) => Self::sum_scaled(mant.get(a..b)?, scale.get(a..b)?),
+            (_, _, Numbers::Scaled(mant, scale)) => self.walk(a, b, |i| Some((*mant.get(i)?, *scale.get(i)?))),
+            (_, _, Numbers::Ints(values)) => self.walk(a, b, |i| Some((*values.get(i)?, 0))),
+            (_, _, Numbers::Decs(values)) => self.walk(a, b, |i| Scaled::parts(values.get(i)?)),
+            (_, _, Numbers::Other(column)) => self.walk(a, b, |i| Executor::child_number(&column, i)),
+        }
+    }
+
+    #[inline(always)]
+    fn sum_scaled(mant: &[i64], scale: &[u8]) -> Option<(i64, u8)> {
+        let mut acc = (0i64, 0u8);
+        for (m, s) in mant.iter().zip(scale) {
+            acc = match *s == acc.1 {
+                true => (acc.0.checked_add(*m)?, acc.1),
+                false => Self::accumulate(acc, (*m, *s))?,
+            };
+        }
+        Some(acc)
+    }
+
+    #[inline(always)]
+    fn walk(&self, a: usize, b: usize, number: impl Fn(usize) -> Option<(i64, u8)>) -> Option<(i64, u8)> {
+        let mut acc = (0i64, 0u8);
+        for i in a..b {
+            let kept = self.kept(i)?;
+            let valid = self.valid.is_none_or(|(bits, offset)| Column::bit(bits, offset + i));
+            let x = match (kept, valid, number(i)) {
+                (false, _, _) => (0, acc.1),
+                (true, true, Some(x)) => x,
+                (true, _, _) => return None,
+            };
+            acc = match x.1 == acc.1 {
+                true => (acc.0.checked_add(x.0)?, acc.1),
+                false => Self::accumulate(acc, x)?,
+            };
+        }
+        Some(acc)
     }
 }

@@ -4,8 +4,8 @@ use crate::functions::{ClosureFunction, FunctionKind, InternalFunction, MethodRe
 use crate::intellisense::type_provider::TypesProvider;
 use crate::lane::ops::Ops;
 use crate::lane::program::{
-    Binary, ClosureOp, Const, Input, Kind, Layout, Load, LoadCall, MaskId, NumCmp, NumOp,
-    ObjectKey, Op, Operand, Program, Reg, Step,
+    Binary, ClosureOp, Const, FoldOp, Input, Kind, Layout, Load, LoadCall, MaskId, NumCmp, NumOp,
+    ObjectKey, Op, Operand, Program, Reg, Step, Subject, SwitchOp,
 };
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
@@ -97,6 +97,7 @@ pub struct LaneCompiler<'a> {
     site_keys: Vec<Option<String>>,
     shared: Option<Vec<(String, Reg)>>,
     dollar: Option<Vec<(String, Reg)>>,
+    named: Option<Vec<(String, Reg)>>,
     folding: bool,
     pure: ahash::HashMap<usize, bool>,
     unresolved: bool,
@@ -135,6 +136,7 @@ impl<'a> LaneCompiler<'a> {
             site_keys: Vec::new(),
             shared: None,
             dollar: None,
+            named: None,
             folding,
             pure: Default::default(),
             unresolved: false,
@@ -264,6 +266,7 @@ impl<'a> LaneCompiler<'a> {
             site_keys: Vec::new(),
             shared: (!assigns).then(Vec::new),
             dollar: resolvable.then(Vec::new),
+            named: None,
             folding: false,
             pure: Default::default(),
             unresolved: false,
@@ -327,7 +330,132 @@ impl<'a> LaneCompiler<'a> {
         Ok(program)
     }
 
-    fn dollar_static(node: &Node, closure: bool) -> bool {
+    pub fn compile_named(roots: &[(&'a str, &'a Node<'a>, bool)], hints: Option<&'a Hints>) -> Result<Program> {
+        let keyed: Vec<&str> = roots.iter().map(|(k, _, _)| *k).filter(|k| !k.is_empty()).collect();
+        let nested = keyed
+            .iter()
+            .any(|a| keyed.iter().any(|b| b.strip_prefix(*a).is_some_and(|rest| rest.starts_with('.'))));
+        if nested || roots.iter().any(|(_, n, _)| Self::assigns(n)) {
+            return Err(CompilerError::UnexpectedErrorNode);
+        }
+        let mut compiler = LaneCompiler {
+            stack: vec![Builder::default()],
+            aliases: Vec::new(),
+            writes_env: false,
+            hints,
+            types: None,
+            keys: Vec::new(),
+            site_keys: Vec::new(),
+            shared: Some(Vec::new()),
+            dollar: None,
+            named: Some(Vec::new()),
+            folding: false,
+            pure: Default::default(),
+            unresolved: false,
+        };
+        let mut outputs = Vec::with_capacity(roots.len());
+        for (key, root, output) in roots.iter() {
+            if *output {
+                compiler.emit(Op::Stage { index: outputs.len() as u16 });
+            }
+            let out = compiler.node(root)?;
+            if compiler.unresolved || compiler.writes_env {
+                return Err(CompilerError::UnexpectedErrorNode);
+            }
+            let out = match compiler.top().pinned.contains(&out) {
+                true => {
+                    let kind = compiler.top().kind(out);
+                    let copy = compiler.alloc_kind(kind);
+                    compiler.emit(Op::Move { dst: copy, src: out });
+                    copy
+                }
+                false => out,
+            };
+            compiler.top().pinned.push(out);
+            if *output {
+                outputs.push(out);
+            }
+            if let (false, Some(named)) = (key.is_empty(), compiler.named.as_mut()) {
+                match named.iter_mut().find(|(k, _)| k == key) {
+                    Some(entry) => entry.1 = out,
+                    None => named.push((key.to_string(), out)),
+                }
+            }
+        }
+        if outputs.is_empty() {
+            let out = compiler.constant(Const::Null);
+            outputs.push(out);
+        }
+        let mut builder = compiler.stack.pop().unwrap_or_default();
+        builder.program.out = outputs.last().copied().unwrap_or_default();
+        builder.program.outputs = outputs;
+        let mut program = builder.seal();
+        program.keys = compiler.keys;
+        let sites = compiler.site_keys.len() as u16;
+        program.site_keys = compiler.site_keys;
+        program.finish(sites);
+        Ok(program)
+    }
+
+    fn named_relation(&self, node: &Node) -> Option<(Reg, Vec<Arc<str>>)> {
+        let named = self.named.as_ref().filter(|n| !n.is_empty())?;
+        let path = match node {
+            Node::Root => return Some((Reg::MAX, Vec::new())),
+            Node::Identifier(_) | Node::Member { .. } => self.member_fast(node)?,
+            _ => return None,
+        };
+        let mut segments: Vec<Arc<str>> = Vec::with_capacity(path.len());
+        let mut opaque = false;
+        for target in &path {
+            match target {
+                FetchFastTarget::Begin => {}
+                FetchFastTarget::String(s) if !s.contains('.') && !s.is_empty() => segments.push(s.clone()),
+                FetchFastTarget::Root => return Some((Reg::MAX, Vec::new())),
+                _ => {
+                    opaque = true;
+                    break;
+                }
+            }
+        }
+        if segments.first().is_some_and(|s| s.starts_with('$')) {
+            return Some((Reg::MAX, Vec::new()));
+        }
+        let key = segments.join(".");
+        let related = |k: &str| {
+            k == key
+                || k.strip_prefix(key.as_str()).is_some_and(|rest| rest.starts_with('.'))
+                || key.strip_prefix(k).is_some_and(|rest| rest.starts_with('.'))
+        };
+        let (k, reg) = named.iter().find(|(k, _)| related(k))?;
+        let inside = key == *k || key.strip_prefix(k.as_str()).is_some_and(|rest| rest.starts_with('.'));
+        match (inside && !opaque && self.stack.len() == 1, k.split('.').count()) {
+            (true, depth) => Some((*reg, segments[depth..].to_vec())),
+            (false, _) => Some((Reg::MAX, Vec::new())),
+        }
+    }
+
+    fn resolve_named(&mut self, node: &'a Node<'a>) -> Option<Result<Reg>> {
+        let (mut reg, rest) = self.named_relation(node)?;
+        if reg == Reg::MAX {
+            self.unresolved = true;
+            return Some(Ok(self.constant(Const::Null)));
+        }
+        for key in &rest {
+            let site = self.site(None);
+            let dst = self.alloc();
+            self.emit(Op::Field {
+                dst,
+                src: reg,
+                key: key.clone(),
+                site,
+                nested: false,
+            });
+            reg = dst;
+        }
+        Some(Ok(reg))
+    }
+
+    pub(crate) fn dollar_static(node: &Node, closure: bool) -> bool {
         let mut base = node;
         let mut chain = false;
         let mut dotted = false;
@@ -437,6 +565,7 @@ impl<'a> LaneCompiler<'a> {
                 src: reg,
                 key: Arc::from(*key),
                 site,
+                nested: false,
             });
             reg = dst;
         }
@@ -451,7 +580,7 @@ impl<'a> LaneCompiler<'a> {
 
     fn cached_load(&mut self, key: &Option<String>) -> Option<Reg> {
         let key = key.as_ref()?;
-        if self.stack.len() != 1 || self.top().mask != 0 {
+        if self.stack.len() != 1 {
             return None;
         }
         let shared = self.shared.as_ref()?;
@@ -597,6 +726,10 @@ impl<'a> LaneCompiler<'a> {
                 node,
                 property: Node::String(p),
             } if !p.contains('.') => self.node_key(node).map(|k| format!("{k}.{p}")),
+            Node::FunctionCall {
+                kind: FunctionKind::Closure(ClosureFunction::Filter),
+                arguments,
+            } => arguments.first().and_then(|list| self.node_key(list)),
             _ => None,
         }
     }
@@ -650,6 +783,9 @@ impl<'a> LaneCompiler<'a> {
 
     fn load_of(&self, node: &'a Node<'a>) -> Option<(Load, Option<String>)> {
         if self.dollar.is_some() && Self::dollar_rooted(node) {
+            return None;
+        }
+        if self.named_relation(node).is_some() {
             return None;
         }
         match node {
@@ -1065,6 +1201,186 @@ impl<'a> LaneCompiler<'a> {
         dst
     }
 
+    fn element_field(body: &Program) -> Option<Arc<str>> {
+        match body.steps.as_slice() {
+            [Step {
+                op: Op::Field { dst, src, key, .. },
+                ..
+            }] if Some(*src) == body.element && *dst == body.out => Some(key.clone()),
+            _ => None,
+        }
+    }
+
+    fn fold_region(&mut self, start: usize, mask: MaskId, function: InternalFunction, dst: Reg) {
+        if self.top().kind(dst) != Kind::Num {
+            return;
+        }
+        let steps = &self.top().program.steps[start..];
+        if steps.iter().any(|step| step.mask != mask) {
+            return;
+        }
+        let plain = |c: &ClosureOp| c.imports.is_empty() && !c.sequential;
+        let shape = match steps {
+            [Step { op: Op::Closure(filter), .. }, Step { op: Op::Closure(map), .. }, Step { op: Op::Call { dst: out, args, .. }, .. }]
+                if filter.kind == ClosureFunction::Filter
+                    && map.kind == ClosureFunction::Map
+                    && map.source.is_none()
+                    && map.list == filter.dst
+                    && plain(filter)
+                    && plain(map)
+                    && *out == dst
+                    && matches!(args.as_ref(), [Input::Reg(r)] if *r == map.dst) =>
+            {
+                filter.source.as_ref().map(|(_, site)| *site).zip(Self::element_field(&filter.body)).zip(Self::element_field(&map.body)).map(
+                    |((site, filter), field)| (site, Some(filter), field),
+                )
+            }
+            [Step { op: Op::Closure(map), .. }, Step { op: Op::Call { dst: out, args, .. }, .. }]
+                if map.kind == ClosureFunction::Map && plain(map) && *out == dst && matches!(args.as_ref(), [Input::Reg(r)] if *r == map.dst) =>
+            {
+                map.source.as_ref().map(|(_, site)| *site).zip(Self::element_field(&map.body)).map(|(site, field)| (site, None, field))
+            }
+            _ => None,
+        };
+        let Some((site, filter, field)) = shape else {
+            return;
+        };
+        let rest = self.top().mask();
+        let builder = self.top();
+        builder.program.steps[start..].iter_mut().for_each(|step| step.mask = rest);
+        builder.program.steps.insert(
+            start,
+            Step {
+                mask,
+                op: Op::Fold(Box::new(FoldOp {
+                    dst,
+                    function,
+                    site,
+                    filter,
+                    field,
+                    rest,
+                })),
+            },
+        );
+    }
+
+    fn unwrap(node: &'a Node<'a>) -> &'a Node<'a> {
+        match node {
+            Node::Parenthesized(inner) => Self::unwrap(inner),
+            other => other,
+        }
+    }
+
+    fn equality(node: &'a Node<'a>) -> Option<(&'a Node<'a>, &'a str)> {
+        match Self::unwrap(node) {
+            Node::Binary {
+                left,
+                operator: Operator::Comparison(ComparisonOperator::Equal),
+                right,
+            } => match (Self::unwrap(left), Self::unwrap(right)) {
+                (subject, Node::String(text)) => Some((subject, text)),
+                (inner @ Node::Binary { .. }, Node::Bool(true)) => match Self::unwrap(inner) {
+                    Node::Binary {
+                        left,
+                        operator: Operator::Comparison(ComparisonOperator::Equal),
+                        right,
+                    } => match Self::unwrap(right) {
+                        Node::String(text) => Some((Self::unwrap(left), *text)),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn switch_arms(&self, node: &'a Node<'a>) -> Option<(&'a Node<'a>, Vec<(&'a str, Const)>, Const)> {
+        let mut arms = Vec::new();
+        let mut subject: Option<(&'a Node<'a>, String)> = None;
+        let mut current = node;
+        let fallback = loop {
+            match Self::unwrap(current) {
+                Node::Conditional {
+                    condition,
+                    on_true,
+                    on_false,
+                } => {
+                    let (target, text) = Self::equality(condition)?;
+                    let key = Self::path_key(&self.member_fast(target)?)?;
+                    match &subject {
+                        Some((_, k)) if *k != key => return None,
+                        Some(_) => {}
+                        None => subject = Some((target, key)),
+                    }
+                    arms.push((text, Self::literal(Self::unwrap(on_true))?));
+                    current = on_false;
+                }
+                other => break Self::literal(other)?,
+            }
+        };
+        let (target, _) = subject?;
+        (arms.len() >= 2).then_some((target, arms, fallback))
+    }
+
+    fn switch(&mut self, node: &'a Node<'a>) -> Result<Reg> {
+        let Some((subject, arms, fallback)) = self.switch_arms(node) else {
+            return Err(CompilerError::UnexpectedErrorNode);
+        };
+        let kinds: Vec<Kind> = arms
+            .iter()
+            .map(|(_, value)| value)
+            .chain(std::iter::once(&fallback))
+            .map(|value| match value {
+                Const::Number(_) => Kind::Num,
+                Const::Bool(_) => Kind::Bool,
+                Const::String(_) => Kind::Str,
+                _ => Kind::Dyn,
+            })
+            .collect();
+        let kind = match kinds.iter().all(|k| *k == kinds[0]) {
+            true => kinds[0],
+            false => Kind::Dyn,
+        };
+        let cases: Box<[Arc<str>]> = arms.iter().map(|(text, _)| Arc::from(*text)).collect();
+        let values: Box<[u16]> = arms
+            .into_iter()
+            .map(|(_, value)| value)
+            .chain(std::iter::once(fallback))
+            .map(|value| self.const_id(value))
+            .collect();
+        let dst = self.alloc_kind(kind);
+        let switch = |subject: Subject, rest: MaskId| {
+            Op::Switch(Box::new(SwitchOp {
+                dst,
+                subject,
+                cases: cases.clone(),
+                values: values.clone(),
+                rest,
+            }))
+        };
+        match self.load_of(subject) {
+            Some((_, key)) => {
+                let site = self.site(key);
+                let rest = self.top().mask();
+                self.emit(switch(Subject::Site(site), rest));
+                self.under(rest, |c| {
+                    let a = c.node(subject)?;
+                    c.release(a);
+                    c.emit(switch(Subject::Reg(a), rest));
+                    Ok(())
+                })?;
+            }
+            None => {
+                let a = self.node(subject)?;
+                self.release(a);
+                self.emit(switch(Subject::Reg(a), 0));
+            }
+        }
+        Ok(dst)
+    }
+
     fn string(&mut self, a: Reg) -> Reg {
         self.call(
             FunctionKind::Internal(InternalFunction::String),
@@ -1094,19 +1410,41 @@ impl<'a> LaneCompiler<'a> {
     }
 
     fn fold(&mut self, node: &'a Node<'a>) -> Option<Reg> {
+        let value = self.fold_value(node)?;
+        Some(self.constant(value))
+    }
+
+    pub(crate) fn folder() -> Self {
+        LaneCompiler {
+            stack: vec![Builder::default()],
+            aliases: Vec::new(),
+            writes_env: false,
+            hints: None,
+            types: None,
+            keys: Vec::new(),
+            site_keys: Vec::new(),
+            shared: None,
+            dollar: None,
+            named: None,
+            folding: false,
+            pure: Default::default(),
+            unresolved: false,
+        }
+    }
+
+    pub(crate) fn fold_value(&mut self, node: &'a Node<'a>) -> Option<Const> {
         if self.folding || Self::literal(node).is_some() || !self.pure(node) {
             return None;
         }
         let program = Self::build(node, None, None, true).ok()?;
-        let value = match crate::lane::LaneRunner::constant(&program)? {
+        Some(match crate::lane::LaneRunner::constant(&program)? {
             Variable::Null => Const::Null,
             Variable::Bool(b) => Const::Bool(b),
             Variable::Number(n) => Const::Number(n),
             Variable::String(s) => Const::String(Arc::from(s.as_str())),
             v @ Variable::Dynamic(_) if !Date::sourced(&v) => Const::Date(Date::of(&v)?.0),
             _ => return None,
-        };
-        Some(self.constant(value))
+        })
     }
 
     #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
@@ -1204,7 +1542,7 @@ impl<'a> LaneCompiler<'a> {
         }
     }
 
-    fn assigns(node: &Node) -> bool {
+    pub(crate) fn assigns(node: &Node) -> bool {
         let found = std::cell::Cell::new(false);
         let found_ref = &found;
         node.walk(move |n| {
@@ -1217,6 +1555,11 @@ impl<'a> LaneCompiler<'a> {
 
     #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn node(&mut self, node: &'a Node<'a>) -> Result<Reg> {
+        if self.named.is_some() {
+            if let Some(resolved) = self.resolve_named(node) {
+                return resolved;
+            }
+        }
         if self.dollar.is_some() && self.stack.len() == 1 {
             if let Some(resolved) = self.resolve_dollar(node) {
                 return resolved;
@@ -1366,6 +1709,7 @@ impl<'a> LaneCompiler<'a> {
                             src,
                             key: Arc::from(*key),
                             site,
+                            nested: false,
                         });
                         dst
                     }
@@ -1461,6 +1805,7 @@ impl<'a> LaneCompiler<'a> {
                 self.emit(Op::SelectConst { dst, cond, a, b });
                 dst
             }
+            Node::Conditional { .. } if self.switch_arms(node).is_some() => self.switch(node)?,
             Node::Conditional {
                 condition,
                 on_true,
@@ -1528,6 +1873,22 @@ impl<'a> LaneCompiler<'a> {
                     if let Some(dst) = self.load_call(kind, arguments) {
                         return Ok(dst);
                     }
+                    if let (
+                        FunctionKind::Internal(
+                            function @ (InternalFunction::Sum | InternalFunction::Avg | InternalFunction::Min | InternalFunction::Max),
+                        ),
+                        [Node::FunctionCall {
+                            kind: FunctionKind::Closure(ClosureFunction::Map),
+                            ..
+                        }],
+                    ) = (kind, *arguments)
+                    {
+                        let (start, mask) = (self.top().program.steps.len(), self.top().mask);
+                        let args = arguments.iter().map(|a| self.arg(a)).collect::<Result<Vec<_>>>()?;
+                        let dst = self.call(kind.clone(), args);
+                        self.fold_region(start, mask, *function, dst);
+                        return Ok(dst);
+                    }
                     let args = arguments
                         .iter()
                         .map(|a| self.arg(a))
@@ -1592,6 +1953,7 @@ impl<'a> LaneCompiler<'a> {
                         body,
                         imports,
                         sequential,
+                        select: false,
                     })));
                     dst
                 }

@@ -1,8 +1,14 @@
+mod columnar;
+mod entity;
 mod schedule;
+mod shred;
+mod table;
+
+pub use columnar::PolicyColumnarOutput;
 
 use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};
 use crate::policy::blocks::{Block, ExecutionContext};
-use crate::policy::evaluator::{Driver, EvalArtifact, InstanceSlot, Iterated, Pick, Picked};
+use crate::policy::evaluator::{Driver, EvalArtifact, InstanceSlot, Iterated, Iteration, Pick, Picked};
 use crate::workspace::types::BlockRef;
 use zen_expression::lane::SourceInfo;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
@@ -26,7 +32,42 @@ enum Native {
         ir: Arc<MatchIr>,
         conditions: Vec<Option<LaneProgram>>,
         values: Vec<Option<LaneProgram>>,
+        pick: Option<Box<LaneProgram>>,
+        constants: Vec<Option<Fixed>>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Fixed {
+    Null,
+    Bool(bool),
+    Number(rust_decimal::Decimal),
+    Text(Arc<str>),
+}
+
+impl Fixed {
+    pub(crate) fn of(runner: &mut LaneRunner, program: &LaneProgram) -> Option<Self> {
+        let p = program.program();
+        if !p.site_keys.is_empty() || p.opaque() || p.writes_env || p.chain || !p.timeless() {
+            return None;
+        }
+        match runner.evaluate_one(program, &Scope::default()).ok()? {
+            Variable::Null => Some(Fixed::Null),
+            Variable::Bool(b) => Some(Fixed::Bool(b)),
+            Variable::Number(n) => Some(Fixed::Number(n)),
+            Variable::String(s) => Some(Fixed::Text(Arc::from(&*s))),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn variable(&self) -> Variable {
+        match self {
+            Fixed::Null => Variable::Null,
+            Fixed::Bool(b) => Variable::Bool(*b),
+            Fixed::Number(n) => Variable::Number(*n),
+            Fixed::Text(s) => Variable::String(s.as_ref().into()),
+        }
+    }
 }
 
 impl Native {
@@ -35,6 +76,23 @@ impl Native {
             true => Some(None),
             false => LaneProgram::standard(source).ok().map(Some),
         }
+    }
+
+    fn pick(ir: &MatchIr) -> Option<Box<LaneProgram>> {
+        let mut source = String::new();
+        let mut open = 0usize;
+        let mut tail = String::from("null");
+        for (index, arm) in ir.arms.iter().enumerate() {
+            if arm.condition.is_empty() {
+                tail = index.to_string();
+                break;
+            }
+            source.push_str(&format!("(({}) == true) ? {index} : (", arm.condition));
+            open += 1;
+        }
+        source.push_str(&tail);
+        source.push_str(&")".repeat(open));
+        LaneProgram::standard(&source).ok().map(Box::new)
     }
 
     fn compile(kind: &BlockKind) -> Option<Self> {
@@ -53,19 +111,22 @@ impl Native {
                     .map(|c| LaneProgram::standard(&c.expression).ok())
                     .collect::<Option<Vec<_>>>()?,
             }),
-            BlockKind::Match(ir) => Some(Native::Match {
-                ir: ir.clone(),
-                conditions: ir
-                    .arms
-                    .iter()
-                    .map(|arm| Self::optional(&arm.condition))
-                    .collect::<Option<Vec<_>>>()?,
-                values: ir
-                    .arms
-                    .iter()
-                    .map(|arm| Self::optional(&arm.value))
-                    .collect::<Option<Vec<_>>>()?,
-            }),
+            BlockKind::Match(ir) => {
+                let values = ir.arms.iter().map(|arm| Self::optional(&arm.value)).collect::<Option<Vec<_>>>()?;
+                let mut runner = LaneRunner::new();
+                let constants = values.iter().map(|value| Fixed::of(&mut runner, value.as_ref()?)).collect();
+                Some(Native::Match {
+                    ir: ir.clone(),
+                    conditions: ir
+                        .arms
+                        .iter()
+                        .map(|arm| Self::optional(&arm.condition))
+                        .collect::<Option<Vec<_>>>()?,
+                    values,
+                    pick: Self::pick(ir),
+                    constants,
+                })
+            }
             _ => None,
         }
     }
@@ -74,7 +135,7 @@ impl Native {
 type Write = Option<(Arc<str>, Variable)>;
 
 struct Lane {
-    row: usize,
+    owner: usize,
     index: usize,
     root: Variable,
     slot: InstanceSlot,
@@ -89,8 +150,14 @@ pub(crate) struct PolicyPlan {
     blocks: Blocks,
     natives: Vec<Option<Native>>,
     iterated: Vec<bool>,
+    tables: Vec<Option<table::TableNative>>,
+    members: Vec<Option<Native>>,
     roots: Vec<Arc<str>>,
     root: Arc<Segment>,
+    special: std::sync::RwLock<ahash::HashMap<(usize, u64), Arc<LaneProgram>>>,
+    iterations: Vec<Option<Iteration>>,
+    safe: std::sync::OnceLock<Vec<Iteration>>,
+    fusions: columnar::Fusions,
 }
 
 struct Rows<'a> {
@@ -100,6 +167,16 @@ struct Rows<'a> {
 }
 
 impl Rows<'_> {
+    fn ensure(&mut self) {
+        let rows = self.failures.len();
+        if self.drivers.len() < rows {
+            self.drivers.resize_with(rows, || None);
+        }
+        if self.picks.len() < rows {
+            self.picks.resize_with(rows, Vec::new);
+        }
+    }
+
     fn alive(&self, rows: &mut Vec<usize>) {
         rows.retain(|&row| self.failures[row].is_none());
     }
@@ -111,7 +188,7 @@ impl Rows<'_> {
     }
 
     fn picked(&self, row: usize, block: usize) -> Option<&Picked> {
-        self.picks[row].iter().find(|(b, _)| *b == block).map(|(_, p)| p)
+        self.picks.get(row)?.iter().find(|(b, _)| *b == block).map(|(_, p)| p)
     }
 }
 
@@ -142,13 +219,76 @@ impl PolicyPlan {
             }
             .segment(&[]),
         );
+        let tables = blocks
+            .rules
+            .iter()
+            .map(|rule| match &rule.kind {
+                BlockKind::DecisionTable(ir) => table::TableNative::compile(ir),
+                _ => None,
+            })
+            .collect();
+        let members = blocks
+            .rules
+            .iter()
+            .map(|rule| artifact.iteration(rule).and_then(|_| Native::compile(&rule.kind)))
+            .collect();
+        let iterations = blocks.rules.iter().map(|rule| artifact.iteration(rule)).collect();
         Self {
             blocks,
             natives,
             iterated,
+            tables,
+            members,
             roots,
             root,
+            special: std::sync::RwLock::new(ahash::HashMap::default()),
+            iterations,
+            safe: std::sync::OnceLock::new(),
+            fusions: columnar::Fusions::default(),
         }
+    }
+
+    fn signature(columns: &zen_expression::lane::Columns) -> u64 {
+        use std::hash::{Hash, Hasher};
+        use zen_expression::lane::{Column, Dictionary, Values};
+        let mut hasher = ahash::AHasher::default();
+        let shape = |column: &Column, hasher: &mut ahash::AHasher| {
+            std::mem::discriminant(&column.values).hash(hasher);
+            column.validity.is_some().hash(hasher);
+        };
+        for (name, column) in &columns.columns {
+            name.hash(&mut hasher);
+            shape(column, &mut hasher);
+            if let Values::List { child, .. } = column.values {
+                let child = match child {
+                    Dictionary::Column(child) => *child,
+                    other => other.column(),
+                };
+                shape(&child, &mut hasher);
+                if let Values::Struct { fields, .. } = child.values {
+                    for (field, column) in fields {
+                        field.hash(&mut hasher);
+                        shape(column, &mut hasher);
+                    }
+                }
+            }
+        }
+        hasher.finish()
+    }
+
+    fn special(&self, program: &LaneProgram, columns: &zen_expression::lane::Columns) -> Option<Arc<LaneProgram>> {
+        let key = (program.program().id as usize, Self::signature(columns));
+        if let Some(found) = self.special.read().ok().and_then(|cache| cache.get(&key).cloned()) {
+            return Some(found);
+        }
+        let built = Arc::new(program.specialize_columns(columns).ok()?);
+        if let Ok(mut cache) = self.special.write() {
+            if cache.len() > 4096 {
+                cache.clear();
+            }
+            cache.insert(key, built.clone());
+        }
+        Some(built)
     }
 
     fn lane_safe(artifact: &EvalArtifact, owner: &BlockRef, rule: &Block, iter_path: &str) -> bool {
@@ -436,7 +576,7 @@ impl PolicyPlan {
         delegated
     }
 
-    fn lanes(&self, block: usize, rows: &[usize], state: &mut Rows) -> (Vec<Lane>, Vec<(usize, Iterated)>) {
+    fn lanes(&self, block: usize, rows: &[usize], state: &mut Rows) -> (Vec<Lane>, Vec<(usize, Iterated, std::ops::Range<usize>)>) {
         let rule = &self.blocks.rules[block];
         let mut lanes = Vec::new();
         let mut captured = Vec::new();
@@ -457,12 +597,13 @@ impl PolicyPlan {
                     None => continue,
                 },
             };
+            let (start, owner) = (lanes.len(), captured.len());
             for (index, bound) in driver.instance_scopes(&iterated).into_iter().enumerate() {
                 if let Some((root, slot)) = bound {
-                    lanes.push(Lane { row, index, root, slot });
+                    lanes.push(Lane { owner, index, root, slot });
                 }
             }
-            captured.push((row, iterated));
+            captured.push((row, iterated, start..lanes.len()));
         }
         (lanes, captured)
     }
@@ -479,10 +620,10 @@ impl PolicyPlan {
         let scopes: Vec<Scope> = lanes.iter().map(|l| Scope::new(l.root.shallow_clone())).collect();
         let arms = Self::arms(ir, conditions, scopes);
         let mut delegated = Vec::new();
-        for (row, iterated) in captured {
+        for (row, iterated, span) in captured {
             let mut picks: Vec<Pick> = iterated.instances().iter().map(|_| Pick::Unconditional).collect();
             let mut failed = false;
-            for (lane, arm) in lanes.iter().zip(&arms).filter(|(l, _)| l.row == row) {
+            for (lane, arm) in lanes[span.clone()].iter().zip(&arms[span]) {
                 match arm {
                     Arm::Failed => failed = true,
                     Arm::Matched(matched_arm) => picks[lane.index] = Self::selection(matched_arm.clone()),
@@ -522,7 +663,7 @@ impl PolicyPlan {
             Native::Match { ir, values, .. } => {
                 let key = (!ir.key.is_empty()).then(|| ir.key.clone());
                 let arm_of = |lane: &Lane| {
-                    let (_, iterated) = captured.iter().find(|(r, _)| *r == lane.row)?;
+                    let (_, iterated, _) = captured.get(lane.owner)?;
                     match iterated.picks().get(lane.index)? {
                         Pick::Match(selection) => {
                             let id = selection.matched_arm.as_ref()?;
@@ -550,8 +691,8 @@ impl PolicyPlan {
             }
         }
         let mut delegated = Vec::new();
-        for (row, iterated) in captured {
-            let failed = lanes.iter().zip(&writes).any(|(l, w)| l.row == row && w.is_none());
+        for (row, iterated, span) in captured {
+            let failed = writes[span.clone()].iter().any(Option::is_none);
             if failed {
                 match iterated.picks().is_empty() {
                     true => delegated.push(row),
@@ -565,7 +706,7 @@ impl PolicyPlan {
                 }
                 continue;
             }
-            for (lane, write) in lanes.iter().zip(&writes).filter(|(l, _)| l.row == row) {
+            for (lane, write) in lanes[span.clone()].iter().zip(&writes[span]) {
                 if let Some(Some((path, value))) = write {
                     ExecutionContext::write_into(&lane.root, None, path, value.clone());
                 }

@@ -317,6 +317,8 @@ struct Engines {
     census: BTreeMap<String, usize>,
     compared: usize,
     columnar: usize,
+    hosted: usize,
+    nested: usize,
 }
 
 impl Engines {
@@ -350,8 +352,10 @@ impl Engines {
         }
         let rows: Vec<Value> = suite.cases.iter().map(|c| c.input.to_value()).collect();
         let cycled_rows: Vec<Value> = (0..rows.len() * 3).map(|i| rows[i % rows.len()].clone()).collect();
-        for built in Built::new(&rows).into_iter().chain(Built::lists(&rows)).chain(Built::new(&cycled_rows)) {
-            let columns = built.columns();
+        for built in Built::new(&rows).into_iter().chain(Built::lists(&rows)).chain(Built::new(&cycled_rows)).chain(Built::nested(&rows)).chain(Built::nested(&cycled_rows)) {
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            let columns = built.columns_with(&structs);
             let output = run.compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
@@ -399,6 +403,60 @@ impl Engines {
                 Differential::compare(suite, case, "engine", &want, &engine, &mut self.failures);
             }
             self.compared += 1;
+        }
+        if !run.blocking.is_empty() && run.gate {
+            return;
+        }
+        let mut goal_sets: Vec<&Vec<String>> = suite.cases.iter().map(|c| &c.goals).collect();
+        goal_sets.dedup();
+        for goals in goal_sets {
+            let cases: Vec<&Case> = suite.cases.iter().filter(|c| &c.goals == goals).collect();
+            let rows: Vec<Value> = cases.iter().map(|c| c.input.to_value()).collect();
+            let cycled: Vec<Value> = (0..rows.len() * 3).map(|i| rows[i % rows.len()].clone()).collect();
+            let targets: Vec<Arc<str>> = goals.iter().map(|g| Arc::from(g.as_str())).collect();
+            for built in Built::new(&rows).into_iter().chain(Built::lists(&rows)).chain(Built::new(&cycled)) {
+                self.policy_columns(suite, &run, &cases, &targets, &built.columns());
+            }
+            for built in Built::nested(&rows).into_iter().chain(Built::nested(&cycled)) {
+                let fields = built.fields();
+                let structs = built.structs(&fields);
+                self.nested += built.rows;
+                self.policy_columns(suite, &run, &cases, &targets, &built.columns_with(&structs));
+            }
+        }
+    }
+
+    fn policy_columns(&mut self, suite: &Suite, run: &PolicyRun, cases: &[&Case], targets: &[Arc<str>], columns: &zen_expression::lane::Columns) {
+        let Ok(output) = run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), targets, columns) else {
+            return;
+        };
+        self.hosted += output.hosted;
+        for row in 0..columns.rows {
+            let input = columns.row(row);
+            let request = EvaluateRequest {
+                policy_path: Arc::from(PolicyRun::MAIN),
+                input: input.depth_clone(64),
+                goals: targets.to_vec(),
+                trace: false,
+            };
+            let want = run.workspace.evaluate_with_driver(&request).map(|r| Built::normalized(r.output.to_value())).map_err(|e| format!("{e:?}"));
+            let got = match &output.errors[row] {
+                Some(error) => Err(format!("{error:?}")),
+                None => Ok(Built::normalized(output.row(row).to_value())),
+            };
+            self.columnar += 1;
+            if got != want {
+                let case = cases
+                    .iter()
+                    .find(|c| Built::normalized(c.input.to_value()) == Built::normalized(input.to_value()))
+                    .copied()
+                    .unwrap_or(cases[0]);
+                self.failures.push(format!(
+                    "{} columnar | input {}\n  reference {want:?}\n  columnar  {got:?}",
+                    suite.location(case),
+                    input.to_value()
+                ));
+            }
         }
     }
 }
@@ -503,6 +561,6 @@ fn policy_engines_match_driver() {
         Guard::run(label, &mut failures, || engines.policy(suite));
         engines.failures.extend(failures);
     }
-    eprintln!("policy engines: {} cases, {} mismatches", engines.compared, engines.failures.len());
+    eprintln!("policy engines: {} cases, {} columnar rows ({} with struct lists, {} hosted per row), {} mismatches", engines.compared, engines.columnar, engines.nested, engines.hosted, engines.failures.len());
     Differential::assert(problems, engines.failures);
 }

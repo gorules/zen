@@ -5,6 +5,7 @@ mod export;
 mod frame;
 mod load;
 mod number;
+mod switch;
 mod text;
 
 use crate::functions::{FunctionKind, InternalFunction};
@@ -30,15 +31,25 @@ pub struct Executor;
 
 impl Executor {
     fn member_call<M: LaneSet>(dst: Reg, kind: &FunctionKind, args: &[Input], active: M, f: &mut Frame<M>) -> M {
-        let (FunctionKind::Internal(InternalFunction::Contains), [Input::Reg(a), Input::Const(id)]) = (kind, args) else {
+        let (FunctionKind::Internal(InternalFunction::Contains), [Input::Reg(a), b]) = (kind, args) else {
             return f.none();
         };
-        let Some(Variable::String(needle)) = f.consts.get(*id as usize).cloned() else {
-            return f.none();
+        let constant = match b {
+            Input::Const(id) => match f.consts.get(*id as usize).cloned() {
+                Some(Variable::String(needle)) => Some(needle),
+                _ => return f.none(),
+            },
+            Input::Reg(r) if f.kind(*r) == Kind::Str => None,
+            Input::Reg(_) => return f.none(),
         };
         let (mut word, mut done) = (f.none(), f.none());
-        let needle_bytes = needle.as_bytes();
         for lane in Lanes::of(active) {
+            let needle: &str = match (&constant, b) {
+                (Some(needle), _) => needle.as_str(),
+                (None, Input::Reg(r)) if !f.generic(*r, lane) => f.text_at(*r, lane),
+                _ => continue,
+            };
+            let needle_bytes = needle.as_bytes();
             if f.kind(*a) == Kind::List && !f.generic(*a, lane) {
                 let (lo, hi) = f.lists[f.at(*a, lane)];
                 let mut hit = Some(false);
@@ -50,7 +61,7 @@ impl Executor {
                                 break;
                             }
                         }
-                        Item::Value(Variable::String(s)) if s.as_str() == needle.as_str() => {
+                        Item::Value(Variable::String(s)) if s.as_str() == needle => {
                             hit = Some(true);
                             break;
                         }
@@ -77,7 +88,7 @@ impl Executor {
             if items.iter().any(|item| matches!(item, Variable::Dynamic(_))) {
                 continue;
             }
-            word.put(lane, items.iter().any(|item| matches!(item, Variable::String(s) if s.as_str() == needle.as_str())));
+            word.put(lane, items.iter().any(|item| matches!(item, Variable::String(s) if s.as_str() == needle)));
             done.set(lane);
         }
         match f.kind(dst) {
@@ -91,6 +102,31 @@ impl Executor {
                     f.set(dst, lane, Variable::Bool(word.get(lane)));
                 }
             }
+        }
+        done
+    }
+
+    fn length_call<M: LaneSet>(dst: Reg, kind: &FunctionKind, args: &[Input], active: M, f: &mut Frame<M>) -> M {
+        let (FunctionKind::Internal(InternalFunction::Len), [Input::Reg(a)]) = (kind, args) else {
+            return f.none();
+        };
+        if f.kind(*a) != Kind::List {
+            return f.none();
+        }
+        let mut done = f.none();
+        for lane in Lanes::of(active) {
+            if f.generic(*a, lane) {
+                continue;
+            }
+            let (lo, hi) = f.lists[f.at(*a, lane)];
+            let n = hi.saturating_sub(lo) as i64;
+            match f.kind(dst) {
+                Kind::Num => {
+                    f.put_scaled(dst, lane, n, 0);
+                }
+                _ => f.set(dst, lane, Variable::Number(n.into())),
+            }
+            done.set(lane);
         }
         done
     }
@@ -122,6 +158,43 @@ impl Executor {
         }
     }
 
+    fn eq_text<M: LaneSet>(f: &Frame<M>, reg: Reg, k: &[u8], lanes: M) -> M {
+        let base = reg as usize * f.width;
+        let arena = f.arena.as_bytes();
+        let n = k.len();
+        let key = (n <= 8).then(|| {
+            let mut bytes = [0u8; 8];
+            bytes[..n].copy_from_slice(k);
+            let keep = match n {
+                8 => u64::MAX,
+                n => (1u64 << (n * 8)) - 1,
+            };
+            (u64::from_le_bytes(bytes), keep)
+        });
+        let mut memo = [((u32::MAX, u32::MAX), false); 4];
+        let mut word = f.none();
+        for lane in Lanes::of(lanes) {
+            let span = f.spans[base + lane];
+            let slot = (span.0 as usize ^ (span.1 as usize).rotate_left(2)) & 3;
+            let hit = match memo[slot].0 == span {
+                true => memo[slot].1,
+                false => {
+                    let (a, b) = (span.0 as usize, span.1 as usize);
+                    let hit = match (arena.get(a..b), key, arena.get(a..a + 8).and_then(|x| <[u8; 8]>::try_from(x).ok())) {
+                        (None, _, _) => f.text_at(reg, lane).as_bytes() == k,
+                        (Some(x), _, _) if x.len() != n => false,
+                        (Some(_), Some((key, keep)), Some(bytes)) => u64::from_le_bytes(bytes) & keep == key,
+                        (Some(x), _, _) => x == k,
+                    };
+                    memo[slot] = (span, hit);
+                    hit
+                }
+            };
+            word.put(lane, hit);
+        }
+        word
+    }
+
     pub fn run<M: LaneSet>(
         program: &Program,
         frames: &mut [Frame<M>],
@@ -151,6 +224,7 @@ impl Executor {
     ) {
         let width = rows.len();
         frame.prepare(program, width);
+        frame.views.clear();
         frame.rows.clear();
         frame.rows.extend_from_slice(rows);
         frame.dense = parent.is_none()
@@ -186,6 +260,11 @@ impl Executor {
             let active = frame.masks[step.mask as usize] & frame.alive;
             if active.is_empty() {
                 continue;
+            }
+            if !frame.views.is_empty() {
+                if let Some(dst) = step.op.dst() {
+                    frame.views.retain(|r| *r != dst);
+                }
             }
             Self::step(&step.op, active, frame, rest, ctx);
         }
@@ -245,11 +324,13 @@ impl Executor {
             }
             Op::Env { dst, key, site } => Self::env(dst, key, site, active, f, ctx),
             Op::Path { dst, path, site } => Self::path(dst, path, site, active, f, ctx),
+            Op::Field { dst, src, key, nested, .. } if f.views.contains(src) => Self::view_field(dst, src, key, *nested, active, f, ctx),
             Op::Field {
                 dst,
                 src,
                 key,
                 site,
+                ..
             } => Self::field(dst, src, key, site, active, f),
             Op::LoadEq {
                 dst,
@@ -261,6 +342,8 @@ impl Executor {
             Op::LoadIn { dst, a, load, site } => Self::load_in(dst, a, load, site, active, f, ctx),
             Op::Coalesce { dst, a, id } => Self::coalesce(dst, a, id, active, f),
             Op::LoadCall(c) => Self::load_call(c, active, f, ctx),
+            Op::Fold(fold) => Self::fold(fold, active, f, ctx),
+            Op::Switch(switch) => Self::switch(switch, active, f, ctx),
             _ => Self::cold(op, active, f, rest, ctx),
         }
     }
@@ -409,6 +492,10 @@ impl Executor {
                         Err(err) => f.fail(lane, err),
                     }
                 }
+                let all = M::all(f.width);
+                if slow.is_empty() && (t | e) == all && f.select_const(*dst, t, &va, &vb) {
+                    return;
+                }
                 for (lanes, v) in [(t, va), (e, vb)] {
                     match (f.kind(*dst), v) {
                         (Kind::Num, Variable::Number(n)) => f.fill_num(*dst, lanes, n),
@@ -468,6 +555,9 @@ impl Executor {
                         },
                     ),
                 };
+                if active == M::all(f.width) && (ta | tb) == active && f.select_typed(*dst, *a, *b, m) {
+                    return;
+                }
                 if ta.any() {
                     f.copy_typed(*dst, *a, ta);
                 }
@@ -511,9 +601,7 @@ impl Executor {
                 }
                 if let (Kind::Str, Const::String(k)) = (f.kind(*a), value) {
                     let fast = active & !f.boxed[*a as usize];
-                    for lane in Lanes::of(fast) {
-                        word.put(lane, f.text_at(*a, lane) == k.as_ref());
-                    }
+                    word = Self::eq_text(f, *a, k.as_bytes(), fast);
                     slow = active & f.boxed[*a as usize];
                 }
                 if let (Kind::Num, Const::Number(k)) = (f.kind(*a), value) {
@@ -859,6 +947,7 @@ impl Executor {
                         | Self::date_call(*dst, kind, args, active, f);
                 }
                 done |= Self::member_call(*dst, kind, args, active & !done, f);
+                done |= Self::length_call(*dst, kind, args, active & !done, f);
                 done |= Self::identity_call(*dst, kind, args, active & !done, f);
                 done |= Self::boxed_call(*dst, kind, args, active & !done, f);
                 let mut hint = 0usize;

@@ -79,12 +79,31 @@ pub(crate) enum Op {
     Null { out: SlotId },
     Coalesce { from: Ref, value: Literal, out: SlotId },
     MergeRows { a: Node, b: Node, parts: [M; 3], present: M, out: SlotId },
+    Rows(Box<RowsOp>),
+    Join { inputs: Vec<Ref>, out: SlotId, strict: bool, ending: bool },
+    Loop { node: NodeIndex, list: Ref, out: SlotId },
+}
+
+pub(crate) struct RowsOp {
+    pub node: NodeIndex,
+    pub view: Node,
+    pub nodes: Option<Vec<(Arc<str>, Ref)>>,
+    pub out: SlotId,
+    pub keys: Vec<(Arc<str>, SlotId, M)>,
+}
+
+pub(crate) struct RowsCond {
+    pub index: usize,
+    pub node: NodeIndex,
+    pub input: Ref,
+    pub nodes: Option<Vec<(Arc<str>, Ref)>>,
 }
 
 pub(crate) enum Cond {
     Always,
     Never,
     Lane(Box<LaneOp>),
+    Rows(Box<RowsCond>),
 }
 
 pub(crate) enum SegEnd {
@@ -103,6 +122,7 @@ pub(crate) struct SegPlan {
     pub masks: Masks,
     pub ops: Vec<Op>,
     pub end: SegEnd,
+    pub hosted: Vec<String>,
     views: Vec<(NodeIndex, Node)>,
 }
 
@@ -112,6 +132,8 @@ struct Builder<'g> {
     catalog: Catalog,
     views: Vec<(NodeIndex, Node)>,
     objects: Vec<(Node, Ref)>,
+    hosted: Vec<String>,
+    null: Option<SlotId>,
 }
 
 #[derive(Default)]
@@ -347,8 +369,15 @@ impl<'g> Builder<'g> {
             Resolved::Object(mut node) if node.leaf.is_none() => {
                 let obj = node.obj.unwrap_or(M::None);
                 if obj != M::All {
-                    let null = self.slot(Shape::Null);
-                    self.catalog.ops.push(Op::Null { out: null });
+                    let null = match self.null.filter(|slot| (*slot as usize) < self.catalog.slots.len()) {
+                        Some(slot) => slot,
+                        None => {
+                            let slot = self.slot(Shape::Null);
+                            self.catalog.ops.push(Op::Null { out: slot });
+                            self.null = Some(slot);
+                            slot
+                        }
+                    };
                     let missing = self.masks.not(obj);
                     node.leaf = Some(Ref { slot: null, present: missing });
                 }
@@ -475,7 +504,7 @@ impl<'g> Builder<'g> {
         let mode = match (table.first_hit(), table.collects(), &transform.output_path) {
             (true, _, _) => TableMode::First,
             (false, true, _) => TableMode::Collected,
-            (false, false, Some(_)) => TableMode::Rows,
+            (false, false, _) if transform.output_path.is_some() || !transform.pass_through => TableMode::Rows,
             _ => return Err("collect table".into()),
         };
         let mut reads: Vec<(Arc<str>, Option<Ref>)> = Vec::new();
@@ -512,11 +541,18 @@ impl<'g> Builder<'g> {
                     matched: M::All,
                     mode,
                 }));
-                let mut out = Node::root(M::All);
-                if let Some(path) = &transform.output_path {
-                    out.insert(path, Ref { slot, present: M::All }, M::All)?;
+                match &transform.output_path {
+                    Some(path) => {
+                        let mut out = Node::root(M::All);
+                        out.insert(path, Ref { slot, present: M::All }, M::All)?;
+                        out
+                    }
+                    None => Node {
+                        leaf: Some(Ref { slot, present: M::All }),
+                        obj: None,
+                        fields: Vec::new(),
+                    },
                 }
-                out
             }
             _ => {
                 let paths = table.output_paths();
@@ -565,12 +601,195 @@ impl<'g> Builder<'g> {
         }
     }
 
+    fn whole(&mut self, view: &Node) -> Ref {
+        if let Some(leaf) = view.leaf.filter(|leaf| leaf.present == M::All) {
+            return leaf;
+        }
+        if let Some((_, found)) = self.objects.iter().find(|(n, _)| n == view) {
+            return Ref { slot: found.slot, present: M::All };
+        }
+        let out = self.slot(Shape::Dyn);
+        self.catalog.ops.push(Op::Materialize { node: view.clone(), out });
+        self.objects.push((view.clone(), Ref { slot: out, present: view.obj.unwrap_or(M::None) }));
+        Ref { slot: out, present: M::All }
+    }
+
+    fn nodes(&mut self, step: &Step, visible: &[NodeIndex]) -> Option<Vec<(Arc<str>, Ref)>> {
+        if !step.nodes || !crate::ZEN_CONFIG.nodes_in_context.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        let views: Vec<(Arc<str>, Node)> = visible
+            .iter()
+            .filter_map(|nid| Some((self.graph.step_at(*nid)?.node.name.clone(), self.view(*nid)?)))
+            .collect();
+        Some(views.into_iter().map(|(name, view)| (name, self.whole(&view))).collect())
+    }
+
+    fn rows(&mut self, node: NodeIndex, step: &Step, input: &Node, visible: &[NodeIndex]) -> Node {
+        let nodes = self.nodes(step, visible);
+        let out = self.slot(Shape::Dyn);
+        let keyed = self.attempt(|b| b.keyed(step));
+        let (view, keys) = keyed.unwrap_or_else(|_| {
+            let leaf = Node {
+                leaf: Some(Ref { slot: out, present: M::All }),
+                obj: None,
+                fields: Vec::new(),
+            };
+            (leaf, Vec::new())
+        });
+        self.catalog.ops.push(Op::Rows(Box::new(RowsOp {
+            node,
+            view: input.clone(),
+            nodes,
+            out,
+            keys,
+        })));
+        let merged = match &step.kind {
+            Kind::Node { transform, .. } if transform.pass_through && view.leaf.is_none() => self.attempt(|b| Node::merge(input, &view, &mut b.masks, &mut b.catalog)).ok(),
+            _ => Some(view),
+        };
+        merged.unwrap_or_else(|| {
+            if let Some(Op::Rows(op)) = self.catalog.ops.last_mut() {
+                op.keys.clear();
+            }
+            Node {
+                leaf: Some(Ref { slot: out, present: M::All }),
+                obj: None,
+                fields: Vec::new(),
+            }
+        })
+    }
+
+    fn keyed(&mut self, step: &Step) -> Result<(Node, Vec<(Arc<str>, SlotId, M)>), String> {
+        let (keys, empty, transform) = match &step.kind {
+            Kind::Node {
+                body: Body::Expression { keys, empty, .. },
+                transform,
+            } => (keys, empty, transform),
+            Kind::Node {
+                body: Body::Table(table),
+                transform,
+            } if table.first_hit() && transform.output_path.is_none() && transform.input_field.is_none() && !transform.looped => {
+                let mut out = Node::root(M::All);
+                let mut slots = Vec::new();
+                for path in table.output_paths().iter() {
+                    if path.is_empty() || path.contains('$') || path.split('.').any(str::is_empty) {
+                        return Err("opaque".into());
+                    }
+                    let slot = self.slot(Shape::Dyn);
+                    let present = self.masks.produced();
+                    out.insert(path, Ref { slot, present }, M::None)?;
+                    slots.push((path.clone(), slot, present));
+                }
+                out.objects_from_leaves(&mut self.masks);
+                out.obj = Some(M::All);
+                return Ok((out, slots));
+            }
+            _ => return Err("opaque".into()),
+        };
+        if transform.looped || keys.is_empty() || keys.iter().any(|k| k.is_empty() || k.contains('$') || k.split('.').any(str::is_empty)) {
+            return Err("opaque".into());
+        }
+        let mut out = Node::root(M::All);
+        let mut slots = Vec::with_capacity(keys.len());
+        for (key, empty) in keys.iter().zip(empty.iter()) {
+            if keys.iter().filter(|k| *k == key).count() > 1 {
+                return Err("duplicate key".into());
+            }
+            let path: Arc<str> = match &transform.output_path {
+                Some(prefix) => Arc::from(format!("{prefix}.{key}")),
+                None => key.clone(),
+            };
+            match empty {
+                true => out.insert_object(&path, M::All)?,
+                false => {
+                    let slot = self.slot(Shape::Dyn);
+                    out.insert(&path, Ref { slot, present: M::All }, M::All)?;
+                    slots.push((path, slot, M::All));
+                }
+            }
+        }
+        Ok((out, slots))
+    }
+
+    fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, String>) -> Result<T, String> {
+        let (slots, ops, objects, masks) = (self.catalog.slots.len(), self.catalog.ops.len(), self.objects.len(), self.masks.clone());
+        f(self).inspect_err(|_| {
+            self.catalog.slots.truncate(slots);
+            self.catalog.ops.truncate(ops);
+            self.objects.truncate(objects);
+            self.masks = masks;
+        })
+    }
+
+    fn reason(step: &Step) -> String {
+        match &step.node.kind {
+            crate::model::DecisionNodeKind::FunctionNode { .. } => "function".into(),
+            crate::model::DecisionNodeKind::DecisionNode { .. } => "decision".into(),
+            crate::model::DecisionNodeKind::CustomNode { .. } => "custom".into(),
+            crate::model::DecisionNodeKind::OutputNode { .. } => "output schema".into(),
+            _ => "rows".into(),
+        }
+    }
+
+    fn looped(&mut self, node: NodeIndex, step: &Step, input: &Node) -> Result<Node, String> {
+        let Kind::Node { transform, .. } = &step.kind else {
+            return Err("not a loop".into());
+        };
+        let (Some(path), Some((program, _)), false) = (&transform.output_path, &transform.input_field, step.nodes) else {
+            return Err("loop".into());
+        };
+        let source = program.path().ok_or("loop source")?;
+        let list = self.read(input, source, None)?.ok_or("loop source absent")?;
+        let out = self.slot(Shape::List);
+        self.catalog.ops.push(Op::Loop { node, list, out });
+        let leaf = Node {
+            leaf: Some(Ref { slot: out, present: M::All }),
+            obj: None,
+            fields: Vec::new(),
+        };
+        let output = Node::wrap(leaf, path);
+        match transform.pass_through {
+            true => Node::merge(input, &output, &mut self.masks, &mut self.catalog),
+            false => Ok(output),
+        }
+    }
+
     fn view(&self, node: NodeIndex) -> Option<Node> {
         self.views.iter().rev().find(|(n, _)| *n == node).map(|(_, v)| v.clone())
     }
 
+    fn join(&mut self, views: &[Node], ending: bool) -> Node {
+        let inputs = views.iter().map(|view| self.whole(view)).collect();
+        let out = self.slot(Shape::Dyn);
+        self.catalog.ops.push(Op::Join { inputs, out, strict: !ending, ending });
+        Node {
+            leaf: Some(Ref { slot: out, present: M::All }),
+            obj: None,
+            fields: Vec::new(),
+        }
+    }
+
+    fn relax(&mut self, data: &Node) {
+        let Some(leaf) = data.leaf else {
+            return;
+        };
+        for op in self.catalog.ops.iter_mut().rev() {
+            if let Op::Join { out, strict, .. } = op {
+                if *out == leaf.slot {
+                    *strict = false;
+                    return;
+                }
+            }
+        }
+    }
+
     fn data(&mut self, parents: &[NodeIndex]) -> Result<Node, String> {
-        let mut parents = parents.iter().filter_map(|p| self.view(*p)).collect::<Vec<_>>().into_iter();
+        let views: Vec<Node> = parents.iter().filter_map(|p| self.view(*p)).collect();
+        if views.iter().any(|view| view.leaf.is_some()) {
+            return Ok(self.join(&views, false));
+        }
+        let mut parents = views.into_iter();
         let mut acc = match parents.next() {
             Some(head) => head.head(),
             None => Node::root(M::All),
@@ -588,20 +807,46 @@ impl<'g> Builder<'g> {
                 Kind::Input => self.input(layout)?,
                 _ => self.data(&event.parents)?,
             };
-            let output = match &step.kind {
-                Kind::Input | Kind::Output | Kind::Switch { .. } => data,
-                Kind::Node { body: Body::Expression { .. }, .. } => self.expression(event.node, step, &data)?,
-                Kind::Node { body: Body::Table(table), .. } => self.table(event.node, step, table, &data)?,
-                Kind::Host => return Err("host".into()),
+            let planned = match &step.kind {
+                Kind::Input | Kind::Switch { .. } => Ok(data.clone()),
+                Kind::Output if !step.schema => {
+                    self.relax(&data);
+                    Ok(data.clone())
+                }
+                Kind::Output | Kind::Host => Err(Self::reason(step)),
+                Kind::Node { .. } => match Plan::analyze_step(step) {
+                    Err(reason) => Err(reason),
+                    Ok(()) => match &step.kind {
+                        Kind::Node { transform, .. } if transform.looped => self.attempt(|b| b.looped(event.node, step, &data)),
+                        Kind::Node { body: Body::Table(table), .. } => self.attempt(|b| b.table(event.node, step, table, &data)),
+                        _ => self.attempt(|b| b.expression(event.node, step, &data)),
+                    },
+                },
+            };
+            let output = match planned {
+                Ok(output) => output,
+                Err(reason) => {
+                    self.hosted.push(reason);
+                    self.relax(&data);
+                    let hosted = self.rows(event.node, step, &data, &event.visible);
+                    match (&step.kind, data.leaf.is_none()) {
+                        (Kind::Output, true) => data.clone(),
+                        _ => hosted,
+                    }
+                }
             };
             self.views.push((event.node, output));
         }
         let end = match &segment.end {
             End::Finish(endings) => {
+                let views: Vec<Node> = endings.iter().filter_map(|ending| self.view(*ending)).collect();
                 let mut acc = Node::root(M::All);
-                for ending in endings.iter() {
-                    if let Some(view) = self.view(*ending) {
-                        acc = Node::merge(&acc, &view, &mut self.masks, &mut self.catalog)?;
+                match views.iter().any(|view| view.leaf.is_some()) {
+                    true => acc = self.join(&views, true),
+                    false => {
+                        for view in &views {
+                            acc = Node::merge(&acc, view, &mut self.masks, &mut self.catalog)?;
+                        }
                     }
                 }
                 let mut output = Vec::new();
@@ -611,7 +856,7 @@ impl<'g> Builder<'g> {
                 }
                 SegEnd::Finish(output)
             }
-            End::Switch { node, parents, .. } => {
+            End::Switch { node, parents, visible, .. } => {
                 let step = self.graph.step_at(*node).ok_or("missing switch")?;
                 let Kind::Switch { first, conditions } = &step.kind else {
                     return Err("not a switch".into());
@@ -623,8 +868,21 @@ impl<'g> Builder<'g> {
                         Condition::Always => Cond::Always,
                         Condition::Never => Cond::Never,
                         Condition::Program(program) => {
-                            let out = self.slot(Shape::Bool);
-                            let op = self.lane(*node, Program::Condition(index), program, &input, None, vec![out])?;
+                            let lane = self.attempt(|b| {
+                                let out = b.slot(Shape::Bool);
+                                b.lane(*node, Program::Condition(index), program, &input, None, vec![out])
+                            });
+                            let Ok(op) = lane.inspect_err(|reason| self.hosted.push(format!("condition: {reason}"))) else {
+                                let whole = self.whole(&input);
+                                let nodes = self.nodes(step, visible);
+                                built.push(Cond::Rows(Box::new(RowsCond {
+                                    index,
+                                    node: *node,
+                                    input: whole,
+                                    nodes,
+                                })));
+                                continue;
+                            };
                             match op.uniform && program.program().timeless() {
                                 true => {
                                     let scope = zen_expression::Scope::default();
@@ -638,6 +896,9 @@ impl<'g> Builder<'g> {
                             }
                         }
                     });
+                }
+                if built.iter().all(|cond| !matches!(cond, Cond::Lane(_))) {
+                    self.relax(&input);
                 }
                 SegEnd::Switch {
                     first: *first,
@@ -653,12 +914,25 @@ impl<'g> Builder<'g> {
             masks: self.masks,
             ops: self.catalog.ops,
             end,
+            hosted: self.hosted,
             views: self.views,
         })
     }
 }
 
 impl SegPlan {
+    fn collect(&self, hosted: &mut Vec<String>) -> Result<(), String> {
+        hosted.extend(self.hosted.iter().cloned());
+        if let SegEnd::Switch { children, .. } = &self.end {
+            if let Ok(children) = children.read() {
+                for (_, child) in children.iter() {
+                    child.as_ref().as_ref().map_err(String::clone)?.collect(hosted)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn child(&self, graph: &CompiledGraph, layout: &Layout, key: &[u64]) -> Bound {
         let SegEnd::Switch { children, ids, .. } = &self.end else {
             return Arc::new(Err("not a switch".into()));
@@ -684,6 +958,8 @@ impl SegPlan {
             },
             views: self.views.clone(),
             objects: Vec::new(),
+            hosted: Vec::new(),
+            null: None,
         };
         let built: Bound = Arc::new(builder.segment(segment, layout).map(Arc::new));
         if let Ok(mut cache) = children.write() {
@@ -694,10 +970,7 @@ impl SegPlan {
 }
 
 impl Plan {
-    pub fn analyze(graph: &CompiledGraph) -> Result<Plan, String> {
-        for step in graph.steps.iter().flatten() {
-            Self::analyze_step(step)?;
-        }
+    pub fn analyze(_graph: &CompiledGraph) -> Result<Plan, String> {
         Ok(Plan {
             roots: RwLock::new(Vec::new()),
         })
@@ -707,23 +980,30 @@ impl Plan {
         let schema = step.schema && !matches!(step.kind, Kind::Input);
         let nodes = step.nodes && step.statics.is_none();
         if nodes || step.root || step.dynamic || schema {
-            return Err(format!("node {} needs rows", step.node.name));
+            return Err(match (nodes, step.root, step.dynamic) {
+                (true, _, _) => "nodes".into(),
+                (_, true, _) => "root".into(),
+                (_, _, true) => "dynamic".into(),
+                _ => "schema".into(),
+            });
         }
         match &step.kind {
             Kind::Input | Kind::Output | Kind::Switch { .. } => Ok(()),
-            Kind::Node { transform, .. } => match transform.looped {
-                true => Err("loop".into()),
-                false => Ok(()),
-            },
+            Kind::Node { .. } => Ok(()),
             Kind::Host => Err("host".into()),
         }
     }
 
     pub fn verdict(&self, graph: &CompiledGraph, columns: &Columns) -> Result<(), String> {
         let (_, root) = self.root(graph, columns).ok_or("layout")?;
-        match root.as_ref() {
-            Ok(_) => Ok(()),
-            Err(reason) => Err(reason.clone()),
+        let plan = root.as_ref().as_ref().map_err(String::clone)?;
+        let mut hosted = Vec::new();
+        plan.collect(&mut hosted)?;
+        hosted.sort();
+        hosted.dedup();
+        match hosted.is_empty() {
+            true => Ok(()),
+            false => Err(format!("mixed: {}", hosted.join(", "))),
         }
     }
 
@@ -738,7 +1018,7 @@ impl Plan {
                 Dictionary::Text { .. } => 2,
                 _ => 3,
             },
-            Values::List { .. } | Values::Any(_) => 3,
+            Values::List { .. } | Values::Struct { .. } | Values::Any(_) => 3,
         }
     }
 
@@ -773,6 +1053,8 @@ impl Plan {
             catalog: Catalog::default(),
             views: Vec::new(),
             objects: Vec::new(),
+            hosted: Vec::new(),
+            null: None,
         };
         let built: Bound = Arc::new(builder.segment(graph.root.clone(), &layout).map(Arc::new));
         if let Ok(mut cache) = self.roots.write() {

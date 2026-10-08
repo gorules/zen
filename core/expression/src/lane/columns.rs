@@ -39,6 +39,10 @@ pub enum Values<'a> {
         offsets: &'a [i32],
         child: Dictionary<'a>,
     },
+    Struct {
+        fields: &'a [(&'a str, Column<'a>)],
+        len: usize,
+    },
     Any(&'a [Variable]),
 }
 
@@ -133,10 +137,21 @@ impl<'a> Column<'a> {
             Values::Utf8 { .. } | Values::Text { .. } | Values::LargeUtf8 { .. } | Values::Strs(_) => Kind::Str,
             Values::Dict { values, .. } => values.kind(),
             Values::List { child, .. } => match child.column().values {
-                Values::Scaled { .. } | Values::Text { .. } | Values::Bool { .. } if child.column().validity.is_none() => Kind::List,
+                Values::Scaled { .. }
+                | Values::Text { .. }
+                | Values::Bool { .. }
+                | Values::Utf8 { .. }
+                | Values::LargeUtf8 { .. }
+                | Values::Strs(_)
+                | Values::I64(_)
+                | Values::Dec(_)
+                    if child.column().validity.is_none() =>
+                {
+                    Kind::List
+                }
                 _ => Kind::Dyn,
             },
-            Values::Any(_) => Kind::Dyn,
+            Values::Struct { .. } | Values::Any(_) => Kind::Dyn,
         }
     }
 
@@ -223,7 +238,15 @@ impl<'a> Column<'a> {
             Values::Strs(v) => v.len(),
             Values::Dict { keys, .. } => keys.len(),
             Values::List { offsets, .. } => offsets.len().saturating_sub(1),
+            Values::Struct { len, .. } => len,
             Values::Any(v) => v.len(),
+        }
+    }
+
+    pub fn field(&self, name: &str) -> Option<&'a Column<'a>> {
+        match self.values {
+            Values::Struct { fields, .. } => fields.iter().find(|(n, _)| *n == name).map(|(_, c)| c),
+            _ => None,
         }
     }
 
@@ -415,6 +438,16 @@ impl<'a> Column<'a> {
                     .unwrap_or_default();
                 Variable::from_array(items)
             }
+            Values::Struct { fields, .. } => {
+                let mut map = zen_types::variable::VariableMap::with_capacity(fields.len());
+                for (name, column) in fields {
+                    let value = column.variable(row);
+                    if !matches!(value, Variable::Null) || column.valid(row) {
+                        map.insert(zen_types::symbol::Symbol::from(*name), value);
+                    }
+                }
+                Variable::from_object(map)
+            }
             _ => self
                 .text(row)
                 .map_or(Variable::Null, |s| Variable::String(s.into())),
@@ -458,6 +491,33 @@ impl<'a> Columns<'a> {
             (false, Some(i)) => Binding::Column(i),
             (false, None) => Binding::Absent,
         }
+    }
+
+    pub fn row_of(&self, roots: &[std::sync::Arc<str>], row: usize) -> Variable {
+        let object = Variable::empty_object();
+        for (path, column) in &self.columns {
+            let wanted = roots.iter().any(|root| {
+                path.strip_prefix(root.as_ref())
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+            });
+            if !wanted {
+                continue;
+            }
+            let nested = matches!(column.values, Values::Any(_))
+                && self.columns.iter().any(|(other, _)| {
+                    other
+                        .strip_prefix(path.as_ref() as &str)
+                        .is_some_and(|rest| rest.starts_with('.'))
+                });
+            let value = match nested {
+                true => column.variable(row).depth_clone(usize::MAX),
+                false => column.variable(row),
+            };
+            if !matches!(value, Variable::Null) || column.valid(row) {
+                object.dot_insert(path, value);
+            }
+        }
+        object
     }
 
     pub fn row(&self, row: usize) -> Variable {

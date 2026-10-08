@@ -97,6 +97,15 @@ impl Workspace {
         self.db.evaluate_batch(requests)
     }
 
+    pub fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+    ) -> Result<crate::compiled::policy::PolicyColumnarOutput<'a>, EvaluationError> {
+        self.db.evaluate_columns(policy_path, goals, columns)
+    }
+
     #[doc(hidden)]
     pub fn evaluate_with_driver(
         &self,

@@ -290,6 +290,7 @@ pub enum Op {
         src: Reg,
         key: Arc<str>,
         site: u16,
+        nested: bool,
     },
     LoadEq {
         dst: Reg,
@@ -334,6 +335,33 @@ pub enum Op {
         key: Arc<str>,
         value: Reg,
     },
+    Fold(Box<FoldOp>),
+    Switch(Box<SwitchOp>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Subject {
+    Reg(Reg),
+    Site(u16),
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchOp {
+    pub dst: Reg,
+    pub subject: Subject,
+    pub cases: Box<[Arc<str>]>,
+    pub values: Box<[u16]>,
+    pub rest: MaskId,
+}
+
+#[derive(Debug, Clone)]
+pub struct FoldOp {
+    pub dst: Reg,
+    pub function: crate::functions::InternalFunction,
+    pub site: u16,
+    pub filter: Option<Arc<str>>,
+    pub field: Arc<str>,
+    pub rest: MaskId,
 }
 
 #[derive(Debug, Clone)]
@@ -375,6 +403,7 @@ pub struct ClosureOp {
     pub body: Program,
     pub imports: Box<[(Reg, Reg)]>,
     pub sequential: bool,
+    pub select: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -415,17 +444,174 @@ pub enum Layout {
     List(Box<[Layout]>),
 }
 
+impl Op {
+    pub(crate) fn dst(&self) -> Option<Reg> {
+        match self {
+            Op::Const { dst, .. }
+            | Op::Env { dst, .. }
+            | Op::RootEnv { dst }
+            | Op::Path { dst, .. }
+            | Op::Fetch { dst, .. }
+            | Op::Negate { dst, .. }
+            | Op::Not { dst, .. }
+            | Op::Binary { dst, .. }
+            | Op::Interval { dst, .. }
+            | Op::InRange { dst, .. }
+            | Op::Slice { dst, .. }
+            | Op::Len { dst, .. }
+            | Op::Array { dst, .. }
+            | Op::Object { dst, .. }
+            | Op::Join { dst, .. }
+            | Op::Concat { dst, .. }
+            | Op::Extreme { dst, .. }
+            | Op::Call { dst, .. }
+            | Op::Method { dst, .. }
+            | Op::Merge { dst, .. }
+            | Op::Move { dst, .. }
+            | Op::AssignBegin { dst }
+            | Op::Num { dst, .. }
+            | Op::Cmp { dst, .. }
+            | Op::EqConst { dst, .. }
+            | Op::Field { dst, .. }
+            | Op::LoadEq { dst, .. }
+            | Op::LoadIn { dst, .. }
+            | Op::EqAny { dst, .. }
+            | Op::InConst { dst, .. }
+            | Op::Coalesce { dst, .. }
+            | Op::SelectConst { dst, .. } => Some(*dst),
+            Op::Closure(c) => Some(c.dst),
+            Op::Fold(fold) => Some(fold.dst),
+            Op::Switch(switch) => Some(switch.dst),
+            Op::LoadCall(call) => Some(call.dst),
+            Op::Branch { .. }
+            | Op::NullBranch { .. }
+            | Op::AssignStep { .. }
+            | Op::Fail { .. }
+            | Op::Stage { .. }
+            | Op::Rewind
+            | Op::DollarInsert { .. } => None,
+        }
+    }
+
+    pub(crate) fn reads(&self, reg: Reg) -> bool {
+        let input = |i: &Input| matches!(i, Input::Reg(r) if *r == reg);
+        let operand = |o: &Operand| matches!(o, Operand::Reg(r) if *r == reg);
+        match self {
+            Op::Const { .. }
+            | Op::Env { .. }
+            | Op::RootEnv { .. }
+            | Op::Path { .. }
+            | Op::LoadEq { .. }
+            | Op::Fail { .. }
+            | Op::Stage { .. }
+            | Op::Rewind
+            | Op::Fold(_)
+            | Op::AssignBegin { .. } => false,
+            Op::Fetch { a, b, .. } | Op::Binary { a, b, .. } | Op::Interval { a, b, .. } | Op::Concat { a, b, .. } | Op::Merge { a, b, .. } => {
+                *a == reg || *b == reg
+            }
+            Op::Negate { a, .. }
+            | Op::Not { a, .. }
+            | Op::InRange { a, .. }
+            | Op::Len { a, .. }
+            | Op::NullBranch { a, .. }
+            | Op::EqConst { a, .. }
+            | Op::LoadIn { a, .. }
+            | Op::EqAny { a, .. }
+            | Op::InConst { a, .. }
+            | Op::Coalesce { a, .. } => *a == reg,
+            Op::Slice { a, to, from, .. } => *a == reg || *to == reg || *from == reg,
+            Op::Array { items, .. } => items.contains(&reg),
+            Op::Object { pairs, .. } => pairs
+                .iter()
+                .any(|(k, v)| *v == reg || matches!(k, ObjectKey::Reg(r) if *r == reg)),
+            Op::Join { parts, .. } => parts.iter().any(input),
+            Op::Extreme { items, .. } => items.iter().any(operand),
+            Op::Call { args, .. } | Op::Method { args, .. } => args.iter().any(input),
+            Op::Branch { cond, .. } | Op::SelectConst { cond, .. } => *cond == reg,
+            Op::Move { src, .. } | Op::Field { src, .. } => *src == reg,
+            Op::AssignStep { object, key, value } => *object == reg || *key == reg || *value == reg,
+            Op::Closure(c) => c.list == reg || c.imports.iter().any(|(from, _)| *from == reg),
+            Op::Switch(switch) => switch.subject == Subject::Reg(reg),
+            Op::Num { a, b, .. } | Op::Cmp { a, b, .. } => operand(a) || operand(b),
+            Op::LoadCall(call) => call.args.contains(&reg) || call.scratch == reg || call.call.reads(reg),
+            Op::DollarInsert { value, .. } => *value == reg,
+        }
+    }
+}
+
 impl Program {
+    pub(crate) fn whole(&self, reg: Reg) -> bool {
+        self.out == reg
+            || self.outputs.contains(&reg)
+            || self
+                .steps
+                .iter()
+                .any(|step| !matches!(&step.op, Op::Field { src, .. } if *src == reg) && step.op.reads(reg))
+    }
+
     pub fn finish(&mut self, sites: u16) {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.frames = self.depth() + 1;
         self.sites = sites;
         self.id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        for step in &mut self.steps {
-            if let Op::Closure(c) = &mut step.op {
-                c.body.finish(sites);
+        let flags: Vec<bool> = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(at, step)| match &step.op {
+                Op::Closure(c) => matches!(c.kind, ClosureFunction::Filter) && self.selects(at, c.dst),
+                Op::Field { dst, .. } => self.fields_only(at, *dst),
+                _ => false,
+            })
+            .collect();
+        for (step, flag) in self.steps.iter_mut().zip(flags) {
+            match &mut step.op {
+                Op::Closure(c) => {
+                    c.select = flag;
+                    c.body.finish(sites);
+                }
+                Op::Field { nested, .. } => *nested = flag,
+                _ => {}
             }
         }
+    }
+
+    fn fields_only(&self, at: usize, reg: Reg) -> bool {
+        let mask = self.steps[at].mask;
+        for step in &self.steps[at + 1..] {
+            let read = !matches!(&step.op, Op::Field { src, .. } if *src == reg) && step.op.reads(reg);
+            if read {
+                return false;
+            }
+            if step.op.dst() == Some(reg) && step.mask == mask {
+                return true;
+            }
+        }
+        self.out != reg && !self.outputs.contains(&reg)
+    }
+
+    fn selects(&self, at: usize, reg: Reg) -> bool {
+        let mask = self.steps[at].mask;
+        for step in &self.steps[at + 1..] {
+            let allowed = match &step.op {
+                Op::Closure(c) if c.list == reg => c.source.is_none() && !c.imports.iter().any(|(from, _)| *from == reg),
+                Op::Len { a, .. } if *a == reg => true,
+                Op::Call {
+                    kind: FunctionKind::Internal(crate::functions::InternalFunction::Len),
+                    args,
+                    ..
+                } if matches!(args.as_ref(), [Input::Reg(r)] if *r == reg) => true,
+                op => !op.reads(reg),
+            };
+            if !allowed {
+                return false;
+            }
+            if step.op.dst() == Some(reg) && step.mask == mask {
+                return true;
+            }
+        }
+        self.out != reg && !self.outputs.contains(&reg)
     }
 
     pub fn pure(&self) -> bool {
@@ -523,6 +709,155 @@ impl Program {
             Op::LoadCall(c) => matches!(bound.get(c.site as usize), None | Some(Binding::Row)),
             _ => false,
         }
+    }
+
+    pub fn row_roots(&self, bound: &[Binding]) -> Option<Vec<Arc<str>>> {
+        let mut roots = Vec::new();
+        self.collect_roots(bound, &mut roots).then_some(roots)
+    }
+
+    fn root_of(load: &Load) -> Option<Arc<str>> {
+        match load {
+            Load::Env(key) => Some(key.clone()),
+            Load::Path(path) => match path.as_ref() {
+                [FetchFastTarget::Begin, FetchFastTarget::String(key), ..] => Some(key.clone()),
+                _ => None,
+            },
+        }
+    }
+
+    fn collect_roots(&self, bound: &[Binding], roots: &mut Vec<Arc<str>>) -> bool {
+        let rowed = |site: u16| matches!(bound.get(site as usize), None | Some(Binding::Row));
+        let add = |load: Load, roots: &mut Vec<Arc<str>>| match Self::root_of(&load) {
+            Some(root) => {
+                if !roots.contains(&root) {
+                    roots.push(root);
+                }
+                true
+            }
+            None => false,
+        };
+        for step in &self.steps {
+            let ok = match &step.op {
+                Op::Env { key, site, .. } if rowed(*site) => add(Load::Env(key.clone()), roots),
+                Op::Path { path, site, .. } if rowed(*site) => add(Load::Path(path.clone()), roots),
+                Op::LoadEq { load, site, .. } | Op::LoadIn { load, site, .. } if rowed(*site) => add(load.clone(), roots),
+                Op::LoadCall(c) if rowed(c.site) => add(c.load.clone(), roots),
+                Op::RootEnv { .. } | Op::AssignBegin { .. } | Op::AssignStep { .. } | Op::Rewind | Op::DollarInsert { .. } => false,
+                Op::Closure(c) => {
+                    let source = match &c.source {
+                        Some((load, site)) if rowed(*site) => add(load.clone(), roots),
+                        _ => true,
+                    };
+                    source && c.body.collect_roots(bound, roots)
+                }
+                _ => true,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn site_of(op: &Op) -> Option<u16> {
+        match op {
+            Op::Env { site, .. } | Op::Path { site, .. } | Op::LoadEq { site, .. } | Op::LoadIn { site, .. } => Some(*site),
+            Op::LoadCall(call) => Some(call.site),
+            Op::Closure(c) => c.source.as_ref().map(|(_, site)| *site),
+            Op::Fold(fold) => Some(fold.site),
+            Op::Switch(switch) => match switch.subject {
+                Subject::Site(site) => Some(site),
+                Subject::Reg(_) => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn source_fields(&self, key: &str) -> Option<Vec<Arc<str>>> {
+        let mut fields = Vec::new();
+        self.collect_fields(key, &self.site_keys, &mut fields).then_some(fields)
+    }
+
+    fn collect_fields(&self, key: &str, keys: &[Option<String>], fields: &mut Vec<Arc<str>>) -> bool {
+        let related = |other: &str| {
+            other == key
+                || other.strip_prefix(key).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+                || key.strip_prefix(other).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+        };
+        let site_key = |site: u16| keys.get(site as usize).and_then(|k| k.as_deref());
+        let mut lists: Vec<Reg> = Vec::new();
+        for step in &self.steps {
+            let op = &step.op;
+            let source = Self::site_of(op).and_then(site_key);
+            let derived = match op {
+                Op::Closure(c) if source == Some(key) || (c.source.is_none() && lists.contains(&c.list)) => {
+                    let element = c.body.element;
+                    let clean = c.imports.iter().all(|(from, _)| !lists.contains(from))
+                        && element != Some(c.body.out)
+                        && c.body.steps.iter().all(|inner| match (&inner.op, element) {
+                            (Op::Field { src, key, .. }, Some(el)) if *src == el => {
+                                if !fields.contains(key) {
+                                    fields.push(key.clone());
+                                }
+                                true
+                            }
+                            (op, Some(el)) => !op.reads(el),
+                            (_, None) => true,
+                        });
+                    if !clean {
+                        return false;
+                    }
+                    matches!(c.kind, ClosureFunction::Filter)
+                }
+                Op::Fold(fold) if source == Some(key) => {
+                    for field in std::iter::once(&fold.field).chain(fold.filter.iter()) {
+                        if !fields.contains(field) {
+                            fields.push(field.clone());
+                        }
+                    }
+                    false
+                }
+                _ if source.is_some_and(related) => return false,
+                Op::Len { .. } => false,
+                Op::Call {
+                    kind: FunctionKind::Internal(crate::functions::InternalFunction::Len),
+                    ..
+                } => false,
+                op if lists.iter().any(|r| op.reads(*r)) => return false,
+                _ => false,
+            };
+            if let Op::Closure(c) = op {
+                if !c.body.collect_nested(key, keys) {
+                    return false;
+                }
+            }
+            if let Some(dst) = op.dst() {
+                lists.retain(|r| *r != dst);
+                if derived {
+                    lists.push(dst);
+                }
+            }
+        }
+        true
+    }
+
+    fn collect_nested(&self, key: &str, keys: &[Option<String>]) -> bool {
+        let related = |other: &str| {
+            other == key
+                || other.strip_prefix(key).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+                || key.strip_prefix(other).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+        };
+        self.steps.iter().all(|step| {
+            let own = Self::site_of(&step.op)
+                .and_then(|site| keys.get(site as usize).and_then(|k| k.as_deref()))
+                .is_none_or(|k| !related(k));
+            let nested = match &step.op {
+                Op::Closure(c) => c.body.collect_nested(key, keys),
+                _ => true,
+            };
+            own && nested
+        })
     }
 
     pub fn depth(&self) -> usize {

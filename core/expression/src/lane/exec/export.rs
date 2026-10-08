@@ -327,6 +327,28 @@ impl<M: LaneSet> Frame<M> {
                 }
                 self.boxed[r] & lanes & !failed
             }
+            Kind::Str if out.coding() => {
+                let boxed = self.boxed[r] & lanes & !failed;
+                let plain = lanes & !failed & !boxed;
+                let mut seen: Vec<((u32, u32), i32)> = Vec::new();
+                for lane in 0..n {
+                    if !plain.get(lane) {
+                        out.push_empty();
+                        continue;
+                    }
+                    let span = self.spans[base + lane];
+                    match (out.coding(), seen.iter().find(|(s, _)| *s == span)) {
+                        (true, Some((_, code))) => out.push_code(*code),
+                        _ => {
+                            out.push_text(self.arena.get(span.0 as usize..span.1 as usize).unwrap_or_default());
+                            if let Some(code) = out.last_code() {
+                                seen.push((span, code));
+                            }
+                        }
+                    }
+                }
+                boxed
+            }
             Kind::Str => {
                 let boxed = self.boxed[r] & lanes & !failed;
                 let spans = &self.spans[base..base + n];

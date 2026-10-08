@@ -38,19 +38,145 @@ impl Scaled {
 
     pub(crate) fn divide(a: (i64, u8), b: (i64, u8)) -> Option<(i64, u8)> {
         let ((m1, s1), (m2, s2)) = (a, b);
-        if m1 == 0 || m2 == 0 {
+        if m2 == 0 {
             return None;
         }
-        if s1 < s2 {
-            return None;
+        if m1 == 0 {
+            return Some((0, 0));
         }
-        let (n, scale) = (m1 as i128, s1 - s2);
-        let d = m2 as i128;
-        (n % d == 0)
-            .then(|| i64::try_from(n / d).ok())
-            .flatten()
-            .map(|q| (q, scale))
+        if m2.unsigned_abs() > u32::MAX as u64 {
+            let (n, d) = (m1 as i128, m2 as i128);
+            if n % d != 0 {
+                return None;
+            }
+            let q = n / d;
+            return match s1 >= s2 {
+                true => i64::try_from(q).ok().map(|q| (q, s1 - s2)),
+                false => {
+                    let q = q.checked_mul(10i128.checked_pow((s2 - s1) as u32)?)?;
+                    i64::try_from(q).ok().map(|q| (q, 0))
+                }
+            };
+        }
+        Self::terminating(m1, s1, m2, s2)
     }
+
+    fn terminating(m1: i64, s1: u8, m2: i64, s2: u8) -> Option<(i64, u8)> {
+        const LOW64: u128 = 1 << 64;
+        const LIMIT: u128 = 1 << 96;
+        let d = u32::try_from(m2.unsigned_abs()).ok()? as u64;
+        let negative = (m1 < 0) != (m2 < 0);
+        let n = m1.unsigned_abs();
+        let first = n % d;
+        if first != 0 {
+            let mut odd = d >> d.trailing_zeros();
+            while odd % 5 == 0 {
+                odd /= 5;
+            }
+            if odd > 1 && n % odd != 0 {
+                return None;
+            }
+        }
+        let mut q = (n / d) as u128;
+        let mut r = first;
+        let mut scale = s1 as i32 - s2 as i32;
+        loop {
+            let power = match r {
+                0 if scale >= 0 => break,
+                0 => 9.min(-scale),
+                _ if scale == 28 => {
+                    let twice = r << 1;
+                    if twice > d || (twice == d && q & 1 == 1) {
+                        q += 1;
+                        if q >= LIMIT {
+                            return None;
+                        }
+                    }
+                    break;
+                }
+                _ if q >= LOW64 => return None,
+                _ if scale > 19 => 28 - scale,
+                _ => 9,
+            };
+            scale += power;
+            let factor = Self::POW10[power as usize] as u64;
+            q = q.checked_mul(factor as u128).filter(|q| *q < LIMIT)?;
+            let scaled = r * factor;
+            q += (scaled / d) as u128;
+            r = scaled % d;
+            if q >= LIMIT {
+                return None;
+            }
+        }
+        if first != 0 {
+            Self::unscale(&mut q, &mut scale);
+        }
+        let q = i64::try_from(q).ok()?;
+        Some((if negative { -q } else { q }, scale as u8))
+    }
+
+    #[inline]
+    fn unscale(q: &mut u128, scale: &mut i32) {
+        while *q & 0xFFFF_FFFF == 0 && *scale >= 8 && Self::strip(q, 100_000_000) {
+            *scale -= 8;
+        }
+        for (bits, step, power) in [(0xF, 4, 10_000u64), (0x3, 2, 100), (0x1, 1, 10)] {
+            if *q & bits == 0 && *scale >= step && Self::strip(q, power) {
+                *scale -= step;
+            }
+        }
+    }
+
+    pub(crate) fn power(divisor: (i64, u8)) -> Option<u32> {
+        let m = divisor.0;
+        (m > 0).then_some(())?;
+        (0..=9u32).find(|&k| Self::POW10[k as usize] == m)
+    }
+
+    #[inline]
+    pub(crate) fn divide_power(a: (i64, u8), k: u32, s2: u8) -> Option<(i64, u8)> {
+        let (m1, s1) = a;
+        if m1 == 0 {
+            return Some((0, 0));
+        }
+        let scale = s1 as i32 - s2 as i32;
+        if !(0..=19).contains(&scale) {
+            return Self::divide(a, (Self::POW10[k as usize], s2));
+        }
+        if k >= 2 && m1 % 10 != 0 && m1 != i64::MIN {
+            return Some((m1, (scale + k as i32) as u8));
+        }
+        let (mut m, mut t) = (m1.unsigned_abs(), 0u32);
+        while t < k && m % 10 == 0 {
+            m /= 10;
+            t += 1;
+        }
+        let (q, scale) = match (t == k, 9 - k + t == 8, m.trailing_zeros() >= 24) {
+            (true, _, _) => (m, scale),
+            (false, true, true) => (m, scale + 1),
+            (false, true, false) => (m.checked_mul(10)?, scale + 2),
+            (false, false, _) => (m, scale + (k - t) as i32),
+        };
+        let q = i64::try_from(q).ok()?;
+        Some((if m1 < 0 { -q } else { q }, scale as u8))
+    }
+
+    #[inline]
+    fn strip(q: &mut u128, power: u64) -> bool {
+        match u64::try_from(*q) {
+            Ok(small) if small % power == 0 => {
+                *q = (small / power) as u128;
+                true
+            }
+            Ok(_) => false,
+            Err(_) if *q % power as u128 == 0 => {
+                *q /= power as u128;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
 
     pub(crate) fn remainder(a: (i64, u8), b: (i64, u8)) -> Option<(i64, u8)> {
         let ((m1, s1), (m2, s2)) = (a, b);
@@ -296,6 +422,49 @@ impl Kernel {
     }
 
     #[inline]
+    pub(crate) fn add_mixed(a: (&[i64], &[u8]), b: (&[i64], &[u8]), subtract: bool, m: &mut [i64], s: &mut [u8]) -> bool {
+        let ((xa, sa), (xb, sb)) = (a, b);
+        let mut flag = false;
+        for (((((o, sc), x), y), p), q) in m.iter_mut().zip(s.iter_mut()).zip(xa).zip(xb).zip(sa).zip(sb) {
+            let top = (*p).max(*q);
+            let (ka, kb) = ((top - p) as usize, (top - q) as usize);
+            let fa = Scaled::POW10[ka.min(18)] as i128;
+            let fb = Scaled::POW10[kb.min(18)] as i128;
+            let (wx, wy) = (*x as i128 * fa, *y as i128 * fb);
+            let r = match subtract {
+                true => wx - wy,
+                false => wx + wy,
+            };
+            let both = *x != 0 && *y != 0;
+            let outside = |v: i128| v < i64::MIN as i128 || v > i64::MAX as i128;
+            let general = outside(r) || outside(wx) || outside(wy) || ka > 18 || kb > 18;
+            let negate = *x == 0 && subtract && *y == i64::MIN;
+            flag |= (both && general) | negate;
+            let (rm, rs) = match (*x == 0, *y == 0) {
+                (true, _) => (if subtract { y.wrapping_neg() } else { *y }, *q),
+                (false, true) => (*x, *p),
+                (false, false) => (r as i64, top),
+            };
+            *o = rm;
+            *sc = rs;
+        }
+        flag
+    }
+
+    pub(crate) fn multiply_mixed(a: (&[i64], &[u8]), b: (&[i64], &[u8]), m: &mut [i64], s: &mut [u8]) -> bool {
+        let ((xa, sa), (xb, sb)) = (a, b);
+        let mut flag = false;
+        for (((((o, sc), x), y), p), q) in m.iter_mut().zip(s.iter_mut()).zip(xa).zip(xb).zip(sa).zip(sb) {
+            let (r, of) = x.overflowing_mul(*y);
+            let top = p + q;
+            flag |= of | (top > 28);
+            *o = r;
+            *sc = if r == 0 { 0 } else { top };
+        }
+        flag
+    }
+
+    #[inline]
     pub(crate) fn threshold<M: LaneSet>(
         values: &[i64],
         k: i64,
@@ -486,6 +655,98 @@ mod tests {
             Scaled::write(m, s, &mut out);
             assert_eq!(out, Decimal::new(m, s as u32).to_string(), "{m}e-{s}");
         }
+    }
+
+    #[test]
+    fn division_matches_rust_decimal() {
+        let mut rng = Rng(0x9E3779B97F4A7C15);
+        let mut hits = 0usize;
+        for round in 0..2_000_000 {
+            let (sa, sb) = (rng.scale(), rng.scale());
+            let a = rng.mantissa();
+            let b = match round % 3 {
+                0 => [1, 2, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 1000, 3, 6, 7, 12, 1024, 3125][rng.next(23) as usize]
+                    * if rng.next(2) == 0 { 1 } else { -1 },
+                _ => rng.mantissa(),
+            };
+            let (x, y) = (Decimal::new(a, sa as u32), Decimal::new(b, sb as u32));
+            if let Some((m, s)) = Scaled::divide((a, sa), (b, sb)) {
+                let expected = x.checked_div(y);
+                assert!(
+                    expected.is_some_and(|e| exact(m, s, e)),
+                    "divide {x} / {y} -> {m}e-{s} vs {expected:?}"
+                );
+                hits += 1;
+            }
+        }
+        assert!(hits > 500_000, "{hits}");
+    }
+
+    #[test]
+    fn power_division_matches_general_division() {
+        let mut rng = Rng(0x51A3_77E1_9C2B_0D45);
+        for round in 0..2_000_000 {
+            let (sa, sb) = (rng.scale(), rng.scale());
+            let a = match round % 6 {
+                0 => rng.mantissa() % 1_000_000,
+                1 => (rng.mantissa() % 100_000) * Scaled::POW10[rng.next(8) as usize],
+                2 => (rng.mantissa() % 4096) << (20 + rng.next(12)),
+                3 => ((rng.mantissa() % 4096) << 24) * Scaled::POW10[rng.next(4) as usize],
+                _ => rng.mantissa(),
+            };
+            let k = rng.next(10) as u32;
+            let b = Scaled::POW10[k as usize];
+            assert_eq!(Scaled::power((b, sb)), Some(k));
+            assert_eq!(Scaled::divide_power((a, sa), k, sb), Scaled::divide((a, sa), (b, sb)), "{a}e-{sa} / {b}e-{sb}");
+        }
+    }
+
+    #[test]
+    fn mixed_multiply_matches_scalar_multiply() {
+        let mut rng = Rng(0x0DDB_A11C_AFE5_1234);
+        for _ in 0..50_000 {
+            let a: Vec<i64> = (0..64).map(|_| rng.mantissa()).collect();
+            let b: Vec<i64> = (0..64).map(|_| rng.mantissa()).collect();
+            let sa: Vec<u8> = (0..64).map(|_| rng.scale()).collect();
+            let sb: Vec<u8> = (0..64).map(|_| rng.scale()).collect();
+            let (mut m, mut s) = (vec![0i64; 64], vec![0u8; 64]);
+            if Kernel::multiply_mixed((&a, &sa), (&b, &sb), &mut m, &mut s) {
+                continue;
+            }
+            for i in 0..64 {
+                assert_eq!(Scaled::multiply((a[i], sa[i]), (b[i], sb[i])), Some((m[i], s[i])));
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_add_matches_scalar_add() {
+        let mut rng = Rng(0x7A11_5EED_0BAD_F00D);
+        let mut checked = 0usize;
+        for round in 0..50_000 {
+            let small = round % 2 == 0;
+            let pick = |rng: &mut Rng| match (small, rng.next(5)) {
+                (_, 0) => 0,
+                (true, _) => rng.mantissa() % 100_000,
+                (false, _) => rng.mantissa(),
+            };
+            let width = 8;
+            let a: Vec<i64> = (0..width).map(|_| pick(&mut rng)).collect();
+            let b: Vec<i64> = (0..width).map(|_| pick(&mut rng)).collect();
+            let sa: Vec<u8> = (0..width).map(|_| if small { rng.scale() % 8 } else { rng.scale() }).collect();
+            let sb: Vec<u8> = (0..width).map(|_| if small { rng.scale() % 8 } else { rng.scale() }).collect();
+            let (mut m, mut s) = (vec![0i64; width], vec![0u8; width]);
+            for subtract in [false, true] {
+                if Kernel::add_mixed((&a, &sa), (&b, &sb), subtract, &mut m, &mut s) {
+                    continue;
+                }
+                checked += 1;
+                for i in 0..width {
+                    assert_eq!(Scaled::add((a[i], sa[i]), (b[i], sb[i]), subtract), Some((m[i], s[i])));
+                }
+            }
+        }
+        assert!(checked > 10_000, "{checked}");
     }
 
     #[test]

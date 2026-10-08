@@ -220,11 +220,14 @@ impl Executor {
             let uniform = (ok == M::all(width))
                 .then(|| Frame::<M>::uniform(ya, ok).zip(Frame::<M>::uniform(yb, ok)))
                 .flatten();
-            let vector = uniform.is_some_and(|(x, y)| !match op {
-                NumOp::Multiply => Kernel::multiply((xa, x), (xb, y), m, s),
-                NumOp::Subtract => Kernel::add((xa, x), (xb, y), true, m, s),
-                _ => Kernel::add((xa, x), (xb, y), false, m, s),
-            });
+            let vector = match (uniform, op, ok == M::all(width)) {
+                (Some((x, y)), NumOp::Multiply, _) => !Kernel::multiply((xa, x), (xb, y), m, s),
+                (Some((x, y)), NumOp::Subtract, _) => !Kernel::add((xa, x), (xb, y), true, m, s),
+                (Some((x, y)), _, _) => !Kernel::add((xa, x), (xb, y), false, m, s),
+                (None, NumOp::Multiply, true) => !Kernel::multiply_mixed((xa, ya), (xb, yb), m, s),
+                (None, NumOp::Add | NumOp::Subtract, true) => !Kernel::add_mixed((xa, ya), (xb, yb), op == NumOp::Subtract, m, s),
+                _ => false,
+            };
             done = match vector {
                 true => ok,
                 false => {
@@ -359,6 +362,64 @@ impl Executor {
         done
     }
 
+    pub(super) fn divide_const<M: LaneSet>(
+        dst: Reg,
+        a: Operand,
+        divisor: Decimal,
+        lanes: M,
+        f: &mut Frame<M>,
+    ) -> M {
+        let Some(parts) = Scaled::parts(&divisor) else {
+            return Self::lane_num(NumOp::Divide, dst, a, Operand::Num(divisor), lanes, f);
+        };
+        let power = Scaled::power(parts);
+        let width = f.width;
+        if let (Some(k), Operand::Reg(r)) = (power, a) {
+            let source = r as usize;
+            if lanes == M::all(width) && (f.wide[source] & lanes).is_empty() && f.kinds[source] == Kind::Num {
+                let (from, to) = (source * width, dst as usize * width);
+                if from != to {
+                    f.mant.copy_within(from..from + width, to);
+                    f.scales.copy_within(from..from + width, to);
+                }
+                let mut failed = f.none();
+                let (mant, scales) = (&mut f.mant[to..to + width], &mut f.scales[to..to + width]);
+                for (chunk, (mant, scales)) in mant.chunks_mut(64).zip(scales.chunks_mut(64)).enumerate() {
+                    let mut bits = 0u64;
+                    for (i, (m, s)) in mant.iter_mut().zip(scales.iter_mut()).enumerate() {
+                        match Scaled::divide_power((*m, *s), k, parts.1) {
+                            Some((q, scale)) => {
+                                *m = q;
+                                *s = scale;
+                            }
+                            None => bits |= 1 << i,
+                        }
+                    }
+                    failed.set_word(chunk, bits);
+                }
+                let done = lanes & !failed;
+                f.wide[dst as usize] &= !done;
+                f.boxed[dst as usize] &= !done;
+                return done;
+            }
+        }
+        let mut done = f.none();
+        for lane in Lanes::of(lanes) {
+            let Some(x) = Self::scaled_at(a, lane, f) else {
+                continue;
+            };
+            let result = match power {
+                Some(k) => Scaled::divide_power(x, k, parts.1),
+                None => Scaled::divide(x, parts),
+            };
+            if let Some((m, s)) = result {
+                f.put_scaled(dst, lane, m, s);
+                done.set(lane);
+            }
+        }
+        done
+    }
+
     pub(super) fn lane_cmp<M: LaneSet>(
         op: NumCmp,
         a: Operand,
@@ -392,10 +453,11 @@ impl Executor {
         let fast = active & !slow;
         let d = dst as usize;
         f.boxed[d] &= !fast;
-        let done = match (op, f.width < Self::NARROW) {
-            (NumOp::Add | NumOp::Subtract | NumOp::Multiply, false) => {
+        let done = match (op, f.width < Self::NARROW, b) {
+            (NumOp::Add | NumOp::Subtract | NumOp::Multiply, false, _) => {
                 Self::scaled_num(op, dst, a, b, fast, f)
             }
+            (NumOp::Divide, _, Operand::Num(n)) => Self::divide_const(dst, a, n, fast, f),
             _ => Self::lane_num(op, dst, a, b, fast, f),
         };
         for lane in Lanes::of(fast & !done) {
@@ -648,7 +710,7 @@ impl Executor {
 
 impl NumOp {
     #[inline(always)]
-    pub(super) fn scaled(self, x: (i64, u8), y: (i64, u8)) -> Option<(i64, u8)> {
+    pub(crate) fn scaled(self, x: (i64, u8), y: (i64, u8)) -> Option<(i64, u8)> {
         match self {
             NumOp::Multiply => Scaled::multiply(x, y),
             NumOp::Subtract => Scaled::add(x, y, true),
@@ -671,7 +733,7 @@ impl NumCmp {
     }
 
     #[inline(always)]
-    pub(super) fn test(self, o: std::cmp::Ordering) -> bool {
+    pub(crate) fn test(self, o: std::cmp::Ordering) -> bool {
         match self {
             NumCmp::Equal => o.is_eq(),
             NumCmp::Order(Compare::More) => o.is_gt(),

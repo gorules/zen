@@ -337,7 +337,31 @@ pub(crate) struct Collected<'a> {
 }
 
 impl Table {
+    fn reachable(content: &DecisionTableContent) -> Option<DecisionTableContent> {
+        if !matches!(content.hit_policy, DecisionTableHitPolicy::First) || content.outputs.iter().any(|o| o.write_path().1) {
+            return None;
+        }
+        let ids: Vec<&Arc<str>> = content.inputs.iter().map(|i| &i.id).chain(content.outputs.iter().map(|o| &o.id)).collect();
+        let mut seen: std::collections::HashSet<Vec<&str>> = std::collections::HashSet::with_capacity(content.rules.len());
+        let keep: Vec<bool> = content
+            .rules
+            .iter()
+            .map(|rule| seen.insert(ids.iter().map(|id| rule.get(*id).map_or("", |c| c.as_ref())).collect()))
+            .collect();
+        if keep.iter().all(|k| *k) {
+            return None;
+        }
+        let rules = content.rules.iter().zip(&keep).filter(|(_, keep)| **keep).map(|(rule, _)| rule.clone()).collect();
+        Some(DecisionTableContent {
+            rules: Arc::new(rules),
+            ..content.clone()
+        })
+    }
+
     pub fn compile(content: &DecisionTableContent) -> Result<Self, String> {
+        if let Some(reduced) = Self::reachable(content) {
+            return Self::compile(&reduced);
+        }
         let rules = content.rules.len();
         let words = rules.div_ceil(64).max(1);
         let bit = |bits: &mut Vec<u64>, rule: usize| bits[rule / 64] |= 1 << (rule % 64);

@@ -310,8 +310,10 @@ async fn columnar_graphs_match_the_walker() {
             continue;
         };
         let cycled: Vec<Value> = (0..variants.len() * 4).map(|i| variants[i % variants.len()].clone()).collect();
-        for built in std::iter::once(built).chain(Built::lists(&variants)).chain(Built::new(&cycled)) {
-            let columns = built.columns();
+        for built in std::iter::once(built).chain(Built::lists(&variants)).chain(Built::new(&cycled)).chain(Built::nested(&variants)).chain(Built::nested(&cycled)) {
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            let columns = built.columns_with(&structs);
             let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
@@ -335,6 +337,89 @@ async fn columnar_graphs_match_the_walker() {
     let mut kinds: Vec<&str> = failures.iter().filter_map(|f| f.split_whitespace().next()).collect();
     kinds.dedup();
     assert!(failures.is_empty(), "{} mismatches in {kinds:?}:\n{}", failures.len(), failures.iter().take(15).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[tokio::test]
+async fn struct_inputs_match_the_walker() {
+    use zen_expression::lane::{Column, Columns, Values};
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    let mut failures: Vec<String> = Vec::new();
+    let mut compared = 0usize;
+    for fixture in Fixture::load_all() {
+        if NETWORK_BOUND.contains(&fixture.name.as_str()) || TIME_BOUND.contains(&fixture.name.as_str()) {
+            continue;
+        }
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        compiled.compile();
+        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+            continue;
+        }
+        let walker = compiled.interpreted();
+        let variants = fixture.variants();
+        let rows: Vec<Value> = (0..variants.len() * 3).map(|i| variants[i % variants.len()].clone()).collect();
+        let scalar = |v: &Value| !matches!(v, Value::Object(_) | Value::Array(_));
+        let Some(key) = rows
+            .iter()
+            .filter_map(|r| r.as_object())
+            .flat_map(|m| m.iter())
+            .find(|(_, v)| v.as_object().is_some_and(|o| !o.is_empty() && o.values().all(scalar)))
+            .map(|(k, _)| k.clone())
+        else {
+            continue;
+        };
+        let usable = rows.iter().all(|r| r.get(&key).is_none_or(|v| v.is_null() || v.as_object().is_some_and(|o| o.values().all(scalar))));
+        if !usable {
+            continue;
+        }
+        let inner: Vec<Value> = rows.iter().map(|r| r.get(&key).filter(|v| v.is_object()).cloned().unwrap_or(json!({}))).collect();
+        let rest: Vec<Value> = rows
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if let Some(m) = r.as_object_mut() {
+                    m.remove(&key);
+                    if m.is_empty() {
+                        m.insert("__pad".into(), json!(1));
+                    }
+                }
+                r
+            })
+            .collect();
+        let (Some(inner_built), Some(rest_built)) = (Built::new(&inner), Built::new(&rest)) else {
+            continue;
+        };
+        if inner_built.rows != rows.len() || rest_built.rows != rows.len() || inner_built.paths.iter().any(|p| p.contains('.')) {
+            continue;
+        }
+        let inner_columns = inner_built.columns();
+        let fields: Vec<(&str, Column)> = inner_columns.columns.clone();
+        let mut valid = vec![0u64; rows.len().div_ceil(64)];
+        rows.iter().enumerate().filter(|(_, r)| r.get(&key).is_some_and(Value::is_object)).for_each(|(i, _)| valid[i / 64] |= 1 << (i % 64));
+        let rest_columns = rest_built.columns();
+        let mut columns = Columns::new(rows.len());
+        for (path, column) in rest_columns.columns.iter().filter(|(p, _)| *p != "__pad") {
+            columns = columns.column(path, *column);
+        }
+        columns = columns.column(&key, Column::with_validity(Values::Struct { fields: &fields, len: rows.len() }, &valid, 0));
+        let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        for row in 0..rows.len() {
+            let input = columns.row(row);
+            let want = match walker.evaluate(input.clone()).await {
+                Ok(r) => Ok(Built::normalized(r.result.to_value())),
+                Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
+            };
+            let got = match &output.errors[row] {
+                Some(e) => Err(serde_json::to_value(&**e).map(|v| v.to_string()).unwrap_or_default()),
+                None => Ok(Built::normalized(output.row(row).to_value())),
+            };
+            compared += 1;
+            if got != want {
+                failures.push(format!("{} {}\n  walker   {want:?}\n  columnar {got:?}", fixture.name, input.to_value()));
+            }
+        }
+    }
+    println!("struct inputs: compared {compared} rows");
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
 #[tokio::test]
@@ -377,16 +462,22 @@ async fn columnar_graph_throughput() {
             continue;
         }
         let walker = compiled.interpreted();
-        let variants = fixture.typed_variants();
+        let variants = match std::env::var("BENCH_VALID").is_ok() && !fixture.inputs.is_empty() {
+            true => fixture.inputs.clone(),
+            false => fixture.typed_variants(),
+        };
         let inputs: Vec<Value> = (0..rows).map(|i| variants[i % variants.len()].clone()).collect();
-        let built = match std::env::var("BENCH_LISTS").is_ok() {
-            true => Built::lists(&inputs).or_else(|| Built::new(&inputs)),
-            false => Built::new(&inputs),
+        let built = match (std::env::var("BENCH_NESTED").is_ok(), std::env::var("BENCH_LISTS").is_ok()) {
+            (true, _) => Built::nested(&inputs).or_else(|| Built::lists(&inputs)).or_else(|| Built::new(&inputs)),
+            (false, true) => Built::lists(&inputs).or_else(|| Built::new(&inputs)),
+            (false, false) => Built::new(&inputs),
         };
         let Some(built) = built else {
             continue;
         };
-        let columns = built.columns();
+        let fields = built.fields();
+        let structs = built.structs(&fields);
+        let columns = built.columns_with(&structs);
         let contexts: Vec<Variable> = (0..rows).map(|r| columns.row(r)).collect();
         let options = EvaluationOptions::default();
         if let Ok(seconds) = std::env::var("BENCH_PROFILE") {
@@ -643,8 +734,10 @@ async fn wide_inputs_match_the_walker() {
         }
         let mut columnar = 0usize;
         let mut compared = 0usize;
-        for built in Built::new(&inputs).into_iter().chain(Built::lists(&inputs)) {
-            let columns = built.columns();
+        for built in Built::new(&inputs).into_iter().chain(Built::lists(&inputs)).chain(Built::nested(&inputs)) {
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            let columns = built.columns_with(&structs);
             let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
@@ -695,11 +788,16 @@ async fn plan_census() {
     for fixture in Fixture::load_all() {
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        let Some(built) = Built::new(&fixture.typed_variants()) else {
+        let variants = match std::env::var("BENCH_VALID").is_ok() && !fixture.inputs.is_empty() {
+            true => fixture.inputs.clone(),
+            false => fixture.typed_variants(),
+        };
+        let Some(built) = Built::new(&variants) else {
             reasons.entry("no columns".into()).or_default().push(fixture.name.clone());
             continue;
         };
         let columns = built.columns();
+        let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
         let key = match compiled.plan_verdict(&columns) {
             None => "not compiled".to_string(),
             Some(Ok(())) => "planned".to_string(),

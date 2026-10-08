@@ -61,13 +61,19 @@ struct Requirement {
 struct Probe {
     segments: Vec<Arc<str>>,
     optional: Vec<bool>,
+    prefixes: Vec<String>,
 }
 
 impl Probe {
     fn new(paths: &DataModelPaths, path: &str) -> Self {
+        let segments: Vec<Arc<str>> = path.split('.').map(Arc::from).collect();
+        let prefixes = (0..segments.len())
+            .map(|i| segments[..=i].iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("."))
+            .collect();
         Self {
-            segments: path.split('.').map(Arc::from).collect(),
+            segments,
             optional: paths.optional_steps(path),
+            prefixes,
         }
     }
 
@@ -83,6 +89,100 @@ impl Probe {
             match next {
                 Some(Variable::Null) | None => return !self.optional[i..].iter().any(|o| *o),
                 Some(v) => current = v,
+            }
+        }
+        false
+    }
+}
+
+struct Steps<'p> {
+    probe: &'p Probe,
+    steps: Vec<(Option<usize>, Vec<usize>)>,
+}
+
+impl<'p> Steps<'p> {
+    fn new(probe: &'p Probe, columns: &zen_expression::lane::Columns) -> Self {
+        let steps = probe
+            .prefixes
+            .iter()
+            .map(|path| {
+                let exact = columns.columns.iter().position(|(p, _)| *p == path.as_str());
+                let under = columns
+                    .columns
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (p, _))| p.strip_prefix(path.as_str()).is_some_and(|rest| rest.starts_with('.')))
+                    .map(|(at, _)| at)
+                    .collect();
+                (exact, under)
+            })
+            .collect();
+        Self { probe, steps }
+    }
+
+    fn held(column: &zen_expression::lane::Column, row: usize) -> bool {
+        use zen_expression::lane::Values;
+        match column.values {
+            Values::Any(_) | Values::Dict { .. } => column.valid(row) && !matches!(column.variable(row), Variable::Null),
+            _ => column.valid(row),
+        }
+    }
+
+    fn solid(column: &zen_expression::lane::Column, rows: usize) -> bool {
+        use zen_expression::lane::Values;
+        let full = column.validity.is_none_or(|(bits, offset)| Self::ones(bits, offset, rows));
+        full && !matches!(column.values, Values::Any(_) | Values::Dict { .. })
+    }
+
+    fn ones(bits: &[u64], offset: usize, rows: usize) -> bool {
+        (0..rows.div_ceil(64)).all(|w| {
+            let take = (rows - (w << 6)).min(64);
+            let mask = match take {
+                64 => u64::MAX,
+                _ => (1u64 << take) - 1,
+            };
+            zen_expression::lane::Column::word(bits, offset + (w << 6), take) & mask == mask
+        })
+    }
+
+    fn always(&self, columns: &zen_expression::lane::Columns) -> bool {
+        let rows = columns.rows;
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                return Self::solid(column, rows) && (i + 1 == self.steps.len() || !matches!(column.values, zen_expression::lane::Values::Struct { .. }));
+            }
+            if !under.iter().any(|at| Self::solid(&columns.columns[*at].1, rows)) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn missing(&self, columns: &zen_expression::lane::Columns, row: usize) -> bool {
+        let absent = |i: usize| !self.probe.optional[i..].iter().any(|o| *o);
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                if !Self::held(column, row) {
+                    return absent(i);
+                }
+                if i + 1 == self.steps.len() {
+                    return false;
+                }
+                let nested = matches!(column.values, zen_expression::lane::Values::Any(_) | zen_expression::lane::Values::Struct { .. });
+                return match nested.then(|| column.variable(row)).unwrap_or(Variable::Null) {
+                    Variable::Object(_) => Probe {
+                        segments: self.probe.segments[i + 1..].to_vec(),
+                        optional: self.probe.optional[i + 1..].to_vec(),
+                        prefixes: Vec::new(),
+                    }
+                    .missing(&column.variable(row)),
+                    _ => false,
+                };
+            }
+            if !under.iter().any(|at| Self::held(&columns.columns[*at].1, row)) {
+                return absent(i);
             }
         }
         false
@@ -133,6 +233,23 @@ impl Db {
         self.check_evaluable(req)?;
         self.eval_artifact(&req.policy_path)
             .evaluate_with_driver(req, false)
+    }
+
+    pub fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+    ) -> Result<crate::compiled::policy::PolicyColumnarOutput<'a>, EvaluationError> {
+        let probe = EvaluateRequest {
+            policy_path: policy_path.clone(),
+            input: Variable::Null,
+            goals: goals.to_vec(),
+            trace: false,
+        };
+        self.check_evaluable(&probe)?;
+        let artifact = self.eval_artifact(policy_path);
+        Ok(artifact.plan(goals).evaluate_columns(&artifact, policy_path, goals, columns))
     }
 
     pub fn evaluate_batch(
@@ -354,6 +471,29 @@ impl EvalArtifact {
         Ok(())
     }
 
+    pub(crate) fn sure(&self, columns: &zen_expression::lane::Columns, goals: &[Arc<str>]) -> Option<Vec<bool>> {
+        if !goals.is_empty() || !self.reference_fields.is_empty() {
+            return None;
+        }
+        let mut sure = self.input_schema.sure(columns)?;
+        for check in &self.requirements().checks {
+            let primary = Steps::new(&check.primary, columns);
+            if primary.always(columns) {
+                continue;
+            }
+            let alternate = check.alternate.as_ref().map(|a| Steps::new(a, columns));
+            if alternate.as_ref().is_some_and(|a| a.always(columns)) {
+                continue;
+            }
+            for (row, sure) in sure.iter_mut().enumerate() {
+                if *sure && primary.missing(columns, row) && alternate.as_ref().is_none_or(|a| a.missing(columns, row)) {
+                    *sure = false;
+                }
+            }
+        }
+        Some(sure)
+    }
+
     fn requirements(&self) -> &Requirements {
         self.requirements.get_or_init(|| {
             let visible = &self.members;
@@ -512,7 +652,7 @@ pub(crate) enum Pick {
 }
 
 impl Pick {
-    fn collect_reads(&self, plan: &BlockReadPlan, out: &mut Vec<Arc<str>>) {
+    pub(crate) fn collect_reads(&self, plan: &BlockReadPlan, out: &mut Vec<Arc<str>>) {
         match self {
             Pick::Match(selection) => {
                 if let Some(arm_id) = &selection.matched_arm {

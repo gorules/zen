@@ -397,3 +397,199 @@ impl InputValidator<'_> {
         }
     }
 }
+
+struct Sureness<'s> {
+    schema: &'s InputSchema,
+    rows: usize,
+    sure: Vec<bool>,
+}
+
+impl Sureness<'_> {
+    fn number(column: &zen_expression::lane::Column) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        matches!(
+            column.values,
+            Values::Dec(_) | Values::Scaled { .. } | Values::I64(_) | Values::F64(_) | Values::Dict { values: Dictionary::Scaled { .. }, .. }
+        )
+    }
+
+    fn string(column: &zen_expression::lane::Column) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        matches!(
+            column.values,
+            Values::Utf8 { .. } | Values::Text { .. } | Values::LargeUtf8 { .. } | Values::Strs(_) | Values::Dict { values: Dictionary::Text { .. }, .. }
+        )
+    }
+
+    fn boolean(column: &zen_expression::lane::Column) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        matches!(column.values, Values::Bool { .. } | Values::Dict { values: Dictionary::Bool { .. }, .. })
+    }
+
+    fn scalar(&self, kind: &PropertyTypeIr, column: &zen_expression::lane::Column, at: usize) -> bool {
+        if !column.valid(at) {
+            return true;
+        }
+        match kind {
+            PropertyTypeIr::Number => Self::number(column) || matches!(column.variable(at), Variable::Number(_) | Variable::Null),
+            PropertyTypeIr::String => Self::string(column) || matches!(column.variable(at), Variable::String(_) | Variable::Null),
+            PropertyTypeIr::Boolean => Self::boolean(column) || matches!(column.variable(at), Variable::Bool(_) | Variable::Null),
+            PropertyTypeIr::Enum(values) => match column.variable(at) {
+                Variable::Null => true,
+                Variable::String(s) => values.iter().any(|v| v.as_ref() == s.as_str()),
+                _ => false,
+            },
+            PropertyTypeIr::Relationship { target } => self.objects(target, column, at),
+            PropertyTypeIr::Date | PropertyTypeIr::Reference { .. } => false,
+        }
+    }
+
+    fn objects(&self, target: &str, column: &zen_expression::lane::Column, at: usize) -> bool {
+        use zen_expression::lane::Values;
+        if !self.schema.entities.contains_key(target) {
+            return false;
+        }
+        match column.values {
+            Values::Struct { fields, .. } => self.structs(target, fields, at),
+            _ => false,
+        }
+    }
+
+    fn structs(&self, target: &str, fields: &[(&str, zen_expression::lane::Column)], at: usize) -> bool {
+        let Some(model) = self.schema.entities.get(target) else {
+            return false;
+        };
+        fields.iter().all(|(name, column)| match model.properties.iter().find(|p| p.name.as_ref() == *name) {
+            None => true,
+            Some(prop) => self.property(prop, column, at),
+        })
+    }
+
+    fn property(&self, prop: &Property, column: &zen_expression::lane::Column, at: usize) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        if !column.valid(at) {
+            return true;
+        }
+        match prop.array {
+            false => self.scalar(&prop.kind, column, at),
+            true => {
+                let Values::List { child, .. } = column.values else {
+                    return false;
+                };
+                let Some((a, b)) = column.range(at) else {
+                    return true;
+                };
+                let child = match child {
+                    Dictionary::Column(child) => *child,
+                    other => other.column(),
+                };
+                (a..b).all(|item| self.scalar(&prop.kind, &child, item))
+            }
+        }
+    }
+
+    fn typed(&self, prop: &Property, column: &zen_expression::lane::Column) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        match prop.array {
+            false => self.kinded(&prop.kind, column),
+            true => match column.values {
+                Values::List { child, .. } => {
+                    let child = match child {
+                        Dictionary::Column(child) => *child,
+                        other => other.column(),
+                    };
+                    self.kinded(&prop.kind, &child)
+                }
+                _ => false,
+            },
+        }
+    }
+
+    fn kinded(&self, kind: &PropertyTypeIr, column: &zen_expression::lane::Column) -> bool {
+        use zen_expression::lane::Values;
+        match kind {
+            PropertyTypeIr::Number => Self::number(column),
+            PropertyTypeIr::String => Self::string(column),
+            PropertyTypeIr::Boolean => Self::boolean(column),
+            PropertyTypeIr::Relationship { target } => match (column.values, self.schema.entities.get(target)) {
+                (Values::Struct { fields, .. }, Some(model)) => fields.iter().all(|(name, field)| match model.properties.iter().find(|p| p.name.as_ref() == *name) {
+                    None => true,
+                    Some(prop) => self.typed(prop, field),
+                }),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn mark(&mut self, column: &zen_expression::lane::Column, test: impl Fn(&Self, usize) -> bool) {
+        for row in 0..self.rows {
+            if self.sure[row] && column.valid(row) && !test(self, row) {
+                self.sure[row] = false;
+            }
+        }
+    }
+
+    fn path(&mut self, path: &str, column: &zen_expression::lane::Column) -> Option<()> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (first, rest) = segments.split_first()?;
+        if self.schema.ref_targets.contains(*first) {
+            return None;
+        }
+        if self.schema.roots.contains(*first) {
+            let mut entity: Arc<str> = Arc::from(*first);
+            for (depth, segment) in rest.iter().enumerate() {
+                let model = self.schema.entities.get(&entity)?.clone();
+                let Some(prop) = model.properties.iter().find(|p| p.name.as_ref() == *segment) else {
+                    return Some(());
+                };
+                if depth + 1 == rest.len() {
+                    if !self.typed(prop, column) {
+                        self.mark(column, |s, row| s.property(prop, column, row));
+                    }
+                    return Some(());
+                }
+                match (&prop.kind, prop.array) {
+                    (PropertyTypeIr::Relationship { target }, false) if self.schema.entities.contains_key(target) => entity = target.clone(),
+                    _ => {
+                        self.mark(column, |_, _| false);
+                        return Some(());
+                    }
+                }
+            }
+            let target = entity.clone();
+            self.mark(column, |s, row| s.objects(&target, column, row));
+            return Some(());
+        }
+        if let Some(prop) = self.schema.globals.get(*first) {
+            match rest.is_empty() {
+                true if self.typed(prop, column) => {}
+                true => self.mark(column, |s, row| s.property(prop, column, row)),
+                false => self.mark(column, |_, _| false),
+            }
+        }
+        Some(())
+    }
+}
+
+impl InputSchema {
+    pub(crate) fn sure(&self, columns: &zen_expression::lane::Columns) -> Option<Vec<bool>> {
+        let dated_global = self.globals.values().any(|p| match &p.kind {
+            PropertyTypeIr::Date => true,
+            PropertyTypeIr::Relationship { target } => self.dated.contains(target),
+            _ => false,
+        });
+        if !self.dated.is_empty() || !self.ref_targets.is_empty() || dated_global {
+            return None;
+        }
+        let mut sureness = Sureness {
+            schema: self,
+            rows: columns.rows,
+            sure: vec![true; columns.rows],
+        };
+        for (path, column) in &columns.columns {
+            sureness.path(path, column)?;
+        }
+        Some(sureness.sure)
+    }
+}

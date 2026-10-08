@@ -83,6 +83,14 @@ impl VariableMap {
     }
 
     #[inline]
+    pub fn slots(&self) -> Option<(&Shape, &[Variable])> {
+        match &self.0 {
+            Repr::Shaped { shape, values } => Some((shape, values)),
+            Repr::Dict(_) => None,
+        }
+    }
+
+    #[inline]
     pub fn shape_id(&self) -> Option<u64> {
         self.shape().map(|shape| shape.id())
     }

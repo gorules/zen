@@ -25,6 +25,7 @@ pub struct WriteSite {
 }
 
 pub use assertion::{AssertionDoc, AssertionIr};
+pub(crate) use assertion::ConditionOperator;
 pub(crate) use context::IntelliSenseSource;
 pub use context::{
     AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,

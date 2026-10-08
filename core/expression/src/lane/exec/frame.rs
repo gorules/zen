@@ -56,6 +56,17 @@ pub struct Frame<M: LaneSet = Mask> {
     pub(super) stage: u16,
     pub(super) stages: Vec<u16>,
     pub(super) soft: Vec<(usize, u16, Fault)>,
+    pub(super) views: Vec<Reg>,
+    pub(super) elements: Vec<u32>,
+    pub(super) prefixes: Vec<Prefixes>,
+    pub(super) picks: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct Prefixes {
+    pub(super) id: Option<(usize, usize, usize)>,
+    pub(super) words: Vec<u64>,
+    pub(super) lens: Vec<u32>,
 }
 
 #[derive(Debug, Default)]
@@ -374,6 +385,7 @@ impl<M: LaneSet> Frame<M> {
         self.width = width;
         self.stage = 0;
         self.soft.clear();
+        self.prefixes.iter_mut().for_each(|p| p.id = None);
         self.masks.iter_mut().for_each(|m| *m = M::none(width));
         self.alive = M::all(width);
         self.masks[0] = self.alive;
@@ -621,6 +633,85 @@ impl<M: LaneSet> Frame<M> {
             Kind::Dyn => self.none(),
             _ => !self.boxed[reg as usize],
         }
+    }
+
+    fn pick<T: Copy>(values: &mut [T], width: usize, pick: M, at: (usize, usize, usize)) {
+        let (d, a, b) = at;
+        for w in 0..width.div_ceil(64) {
+            let (bits, lo) = (pick.word(w), w * 64);
+            for j in 0..(width - lo).min(64) {
+                let lane = lo + j;
+                let from = match (bits >> j) & 1 {
+                    1 => a + lane,
+                    _ => b + lane,
+                };
+                values[d + lane] = values[from];
+            }
+        }
+    }
+
+    pub(super) fn select_typed(&mut self, dst: Reg, a: Reg, b: Reg, pick: M) -> bool {
+        let width = self.width;
+        let all = M::all(width);
+        let (d, ra, rb) = (dst as usize, a as usize, b as usize);
+        let kind = self.kinds[d];
+        let other = all & !pick;
+        let clean = self.kinds[ra] == kind
+            && self.kinds[rb] == kind
+            && (self.boxed[ra] & pick).is_empty()
+            && (self.boxed[rb] & other).is_empty();
+        let at = (d * width, ra * width, rb * width);
+        match (clean, kind) {
+            (true, Kind::Num) if (self.wide[ra] & pick).is_empty() && (self.wide[rb] & other).is_empty() => {
+                Self::pick(&mut self.mant, width, pick, at);
+                Self::pick(&mut self.scales, width, pick, at);
+                self.wide[d] &= !all;
+            }
+            (true, Kind::Str) => Self::pick(&mut self.spans, width, pick, at),
+            _ => return false,
+        }
+        self.boxed[d] &= !all;
+        true
+    }
+
+    pub(super) fn select_const(&mut self, dst: Reg, pick: M, a: &Variable, b: &Variable) -> bool {
+        let width = self.width;
+        let all = M::all(width);
+        let base = dst as usize * width;
+        match (self.kinds[dst as usize], a, b) {
+            (Kind::Num, Variable::Number(x), Variable::Number(y)) => {
+                let (Some(x), Some(y)) = (Scaled::parts(x), Scaled::parts(y)) else {
+                    return false;
+                };
+                for w in 0..width.div_ceil(64) {
+                    let (bits, lo) = (pick.word(w), w * 64);
+                    for j in 0..(width - lo).min(64) {
+                        let (m, s) = match (bits >> j) & 1 {
+                            1 => x,
+                            _ => y,
+                        };
+                        self.mant[base + lo + j] = m;
+                        self.scales[base + lo + j] = s;
+                    }
+                }
+                self.wide[dst as usize] &= !all;
+            }
+            (Kind::Str, Variable::String(x), Variable::String(y)) => {
+                let (x, y) = (self.intern(x), self.intern(y));
+                for w in 0..width.div_ceil(64) {
+                    let (bits, lo) = (pick.word(w), w * 64);
+                    for j in 0..(width - lo).min(64) {
+                        self.spans[base + lo + j] = match (bits >> j) & 1 {
+                            1 => x,
+                            _ => y,
+                        };
+                    }
+                }
+            }
+            _ => return false,
+        }
+        self.boxed[dst as usize] &= !all;
+        true
     }
 
     #[inline]

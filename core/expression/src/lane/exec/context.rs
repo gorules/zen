@@ -1,5 +1,5 @@
-use crate::lane::columns::{Column, Columns};
-use crate::lane::program::{Binding, Program};
+use crate::lane::columns::{Column, Columns, Values};
+use crate::lane::program::{Binding, Program, Reg};
 use crate::scope::Scope;
 
 pub enum Envs<'a> {
@@ -30,6 +30,8 @@ pub struct Context<'a> {
     pub columns: Option<&'a Columns<'a>>,
     pub bound: &'a [Binding],
     pub base: usize,
+    pub(super) views: Vec<(u64, Reg, Column<'a>)>,
+    pub(super) texts: Vec<(*const u8, Option<&'a str>)>,
 }
 
 impl<'a> Context<'a> {
@@ -48,6 +50,8 @@ impl<'a> Context<'a> {
             columns: None,
             bound: &[],
             base: 0,
+            views: Vec::new(),
+            texts: Vec::new(),
         }
     }
 
@@ -63,6 +67,43 @@ impl<'a> Context<'a> {
         ctx.bound = bound;
         ctx.base = base;
         ctx
+    }
+
+    pub(super) fn view(&self, program: u64, reg: Reg) -> Option<Column<'a>> {
+        self.views
+            .iter()
+            .rev()
+            .find(|(p, r, _)| *p == program && *r == reg)
+            .map(|(_, _, c)| *c)
+    }
+
+    pub(super) fn text(&mut self, column: Column<'a>) -> Column<'a> {
+        let Values::Utf8 { offsets, data } = column.values else {
+            return column;
+        };
+        let key = data.as_ptr();
+        let text = match self.texts.iter().find(|(k, _)| *k == key) {
+            Some((_, text)) => *text,
+            None => {
+                let text = std::str::from_utf8(data).ok();
+                self.texts.push((key, text));
+                text
+            }
+        };
+        match text {
+            Some(data) => Column {
+                values: Values::Text { offsets, data },
+                validity: column.validity,
+            },
+            None => column,
+        }
+    }
+
+    pub(super) fn register(&mut self, program: u64, reg: Reg, column: Column<'a>) {
+        match self.views.iter_mut().find(|(p, r, _)| *p == program && *r == reg) {
+            Some(slot) => slot.2 = column,
+            None => self.views.push((program, reg, column)),
+        }
     }
 
     #[inline]

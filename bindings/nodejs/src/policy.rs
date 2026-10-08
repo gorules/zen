@@ -142,6 +142,13 @@ pub struct PolicyInputProperty {
     pub path: String,
     #[napi(ts_type = "PolicyVariableType")]
     pub resolved_type: Value,
+    /// The caller may leave it out: it is optional or has a default.
+    pub optional: bool,
+    /// Who supplies it: the request, or the host (features, calls, entities read from the store).
+    #[napi(ts_type = "'request' | 'host'")]
+    pub supplied_by: String,
+    /// Filled in when the caller leaves it out.
+    pub default: Option<Value>,
 }
 
 #[napi(object)]
@@ -780,6 +787,12 @@ impl Workspace {
             .map(|p| PolicyInputProperty {
                 path: p.path.to_string(),
                 resolved_type: variable_type_to_json(&p.resolved_type),
+                optional: p.optional,
+                supplied_by: match p.supplied_by {
+                    zen_engine::policy::SuppliedBy::Host => "host".to_string(),
+                    zen_engine::policy::SuppliedBy::Request => "request".to_string(),
+                },
+                default: p.default,
             })
             .collect())
     }

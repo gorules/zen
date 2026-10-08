@@ -12,7 +12,7 @@ use crate::workspace::graph::analysis::{
 use crate::workspace::reads::ReadView;
 
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest};
+use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest, SuppliedBy};
 
 impl Db {
     pub(crate) fn graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
@@ -161,6 +161,9 @@ impl Db {
 
     pub(crate) fn graph_inputs(&self, path: &str) -> Vec<InputProperty> {
         let path_arc: Arc<str> = Arc::from(path);
+        if let Some(properties) = self.graph_entity_inputs(&path_arc) {
+            return properties;
+        }
         let Some(analysis) = self.graph_analysis(&path_arc) else {
             return Vec::new();
         };
@@ -169,9 +172,8 @@ impl Db {
                 let mut properties: Vec<InputProperty> = fields
                     .borrow()
                     .iter()
-                    .map(|(key, resolved_type)| InputProperty {
-                        path: Arc::from(key.as_ref()),
-                        resolved_type: resolved_type.shallow_clone(),
+                    .map(|(key, resolved_type)| {
+                        InputProperty::request(Arc::from(key.as_ref()), resolved_type.shallow_clone())
                     })
                     .collect();
                 properties.sort_by(|a, b| a.path.cmp(&b.path));
@@ -180,13 +182,55 @@ impl Db {
             VariableType::Any => analysis
                 .inferred_inputs
                 .iter()
-                .map(|path| InputProperty {
-                    path: path.clone(),
-                    resolved_type: VariableType::Any,
-                })
+                .map(|path| InputProperty::request(path.clone(), VariableType::Any))
                 .collect(),
             _ => Vec::new(),
         }
+    }
+
+    /// A request typed by an entity, as the caller sends it: the entity's
+    /// fields, a reference as its id; what the host supplies marked so.
+    fn graph_entity_inputs(&self, path: &Arc<str>) -> Option<Vec<InputProperty>> {
+        let snap = self.snapshot();
+        let content = snap.graphs.get(path).cloned()?;
+        let content = content.as_graph()?;
+        let target = content.request_target()?;
+        let entities: HashMap<Arc<str>, Arc<DataModelIr>> = self
+            .graph_entity_blocks(&content.imports)
+            .into_iter()
+            .map(|b| (b.ir.name.clone(), b.ir))
+            .collect();
+        let dictionaries: HashMap<Arc<str>, Arc<crate::policy::ir::DictionaryIr>> = self
+            .graph_dictionary_blocks(&content.imports)
+            .into_iter()
+            .map(|b| (b.ir.name.clone(), b.ir))
+            .collect();
+        let entity = entities.get(&target)?;
+        let mut properties: Vec<InputProperty> = entity
+            .properties
+            .iter()
+            .map(|property| {
+                let mut visited: HashSet<Arc<str>> = HashSet::default();
+                InputProperty {
+                    path: property.name.clone(),
+                    resolved_type: DataModelIr::wire_property_type(
+                        property,
+                        &entities,
+                        &dictionaries,
+                        &mut visited,
+                    ),
+                    optional: property.optional || property.default.is_some(),
+                    supplied_by: if property.supply.is_some() {
+                        SuppliedBy::Host
+                    } else {
+                        SuppliedBy::Request
+                    },
+                    default: property.default.as_deref().cloned(),
+                }
+            })
+            .collect();
+        properties.sort_by(|a, b| a.path.cmp(&b.path));
+        Some(properties)
     }
 
     pub(crate) fn graph_outputs(&self, path: &str) -> Vec<OutputProperty> {

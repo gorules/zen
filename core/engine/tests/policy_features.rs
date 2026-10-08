@@ -5,7 +5,7 @@
 use serde_json::json;
 use std::sync::Arc;
 use zen_engine::policy::{
-    Cursor, CursorTarget, EvaluateRequest, EvaluationError, PolicyWorkspace, ScopeRequest,
+    Cursor, CursorTarget, EvaluateRequest, EvaluationError, PolicyWorkspace, ScopeRequest, SuppliedBy,
     Severity,
 };
 use zen_expression::variable::{Variable, VariableType};
@@ -751,4 +751,64 @@ fn calls_and_derived_fields_are_ordered_by_what_they_read() {
         found.iter().any(|m| m.contains("`maxStaleness` of call 'risk_score' is a duration like 30s, 5m or 1h, not `5 minutes`")),
         "{found:#?}"
     );
+}
+
+#[test]
+fn a_call_reads_a_parent_through_root() {
+    let doc = |request: &str, when: &str| {
+        let mut doc = fraud("true");
+        let card = doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap();
+        card.push(json!({ "id": "c9", "name": "card_score", "type": "number",
+            "model": { "datasource": "fraud", "request": request, "when": when } }));
+        let mut ws = PolicyWorkspace::new();
+        ws.set_policy("p", serde_json::from_value(doc).unwrap());
+        ws
+    };
+    let errors = |ws: &PolicyWorkspace| -> Vec<String> {
+        ws.diagnostics("p")
+            .into_iter()
+            .filter(|d| d.severity == Severity::Error)
+            .map(|d| d.message)
+            .collect()
+    };
+
+    // The card has no way back to the transaction: `$root` is the request.
+    let ws = doc("{ holder_country, amount: $root.transaction.amount }", "$root.transaction.amount > 100");
+    assert!(errors(&ws).is_empty(), "{:#?}", errors(&ws));
+
+    // A path the request doesn't have; and the parent without `$root`.
+    let found = errors(&doc("{ amount: $root.transaction.amout }", ""));
+    assert!(found.iter().any(|m| m.contains("amout")), "{found:#?}");
+    let found = errors(&doc("{ amount: transaction.amount }", ""));
+    assert!(!found.is_empty(), "a bare parent read is not the instance's: {found:#?}");
+
+    // Completions after `$root.`: the request's entities; not offered as a field.
+    let ws = doc("$root.", "");
+    let after_root = labels(&ws, &cursor("dm-card", "$root.".len(), CursorTarget::ModelRequest { id: Arc::from("c9") }));
+    assert!(after_root.iter().any(|l| l == "transaction"), "{after_root:?}");
+    let ws = doc("", "");
+    let fields = labels(&ws, &cursor("dm-card", 0, CursorTarget::ModelRequest { id: Arc::from("c9") }));
+    assert!(fields.iter().any(|l| l == "holder_country"), "{fields:?}");
+    assert!(!fields.iter().any(|l| l == "$root"), "{fields:?}");
+}
+
+#[test]
+fn inputs_say_who_supplies_them_and_whether_they_can_be_left_out() {
+    let mut doc = fraud("true");
+    let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+    txn.push(json!({ "id": "t7", "name": "channel", "type": "string", "default": "card" }));
+    txn.push(json!({ "id": "t8", "name": "note", "type": "string", "optional": true }));
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+    let inputs = ws.inputs(&ScopeRequest::for_policy("p"));
+    let find = |path: &str| inputs.iter().find(|p| p.path.as_ref() == path).unwrap_or_else(|| panic!("{path} in {inputs:#?}"));
+
+    let amount = find("transaction.amount");
+    assert!(!amount.optional && amount.supplied_by == SuppliedBy::Request);
+    let channel = find("transaction.channel");
+    assert!(channel.optional && channel.default == Some(json!("card")));
+    assert!(find("transaction.note").optional);
+    // The card is reference data with features: the host supplies it.
+    let card = find("card");
+    assert!(card.supplied_by == SuppliedBy::Host && card.optional, "{card:#?}");
 }

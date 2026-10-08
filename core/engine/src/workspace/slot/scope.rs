@@ -122,12 +122,18 @@ impl Db {
             CursorTarget::ModelInput { .. } => {
                 Some(CursorScope::value(enriched.declared_scope(), None))
             }
-            // What a call sends: the instance, as its derived features read it.
-            CursorTarget::ModelRequest { .. } => Some(CursorScope::value(object(own()), None)),
+            // What a call sends: the instance, as its derived features read
+            // it; `$root` the whole request (a parent the instance can't reach).
+            CursorTarget::ModelRequest { .. } => {
+                let mut fields = own();
+                fields.insert(Rc::from("$root"), enriched.declared_scope());
+                Some(CursorScope::value(object(fields), None))
+            }
             // The call's value: the reply (`response`) beside the instance.
             CursorTarget::ModelResponse { .. } => {
                 let mut fields = own();
                 fields.insert(Rc::from("response"), VariableType::Any);
+                fields.insert(Rc::from("$root"), enriched.declared_scope());
                 Some(CursorScope::value(object(fields), None))
             }
             // `when` reads the instance; a call written with named `inputs`
@@ -144,7 +150,9 @@ impl Db {
                 if model.get("inputs").is_some() {
                     Some(CursorScope::condition(enriched.declared_scope()))
                 } else {
-                    Some(CursorScope::condition(object(own())))
+                    let mut fields = own();
+                    fields.insert(Rc::from("$root"), enriched.declared_scope());
+                    Some(CursorScope::condition(object(fields)))
                 }
             }
             _ => None,

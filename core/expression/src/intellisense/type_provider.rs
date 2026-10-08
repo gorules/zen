@@ -176,7 +176,16 @@ impl TypesProvider {
             }
 
             Node::Pointer => V(scope.pointer_data.clone()),
-            Node::Root => V(scope.root_data.clone()),
+            // A host may give `$root` its own type: a `$root` key in the data
+            // (no expression can name such a key, `$root` being its own token).
+            Node::Root => V(match &scope.root_data {
+                VariableType::Object(fields) => fields
+                    .borrow()
+                    .get("$root")
+                    .cloned()
+                    .unwrap_or_else(|| scope.root_data.clone()),
+                _ => scope.root_data.clone(),
+            }),
 
             Node::Slice { node, from, to } => {
                 let node_type = self.determine(node, scope.clone());

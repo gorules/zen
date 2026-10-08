@@ -617,6 +617,12 @@ export interface PolicyGuardedProperty {
 export interface PolicyInputProperty {
   path: string
   resolvedType: PolicyVariableType
+  /** The caller may leave it out: it is optional or has a default. */
+  optional: boolean
+  /** Who supplies it: the request, or the host (features, calls, entities read from the store). */
+  suppliedBy: 'request' | 'host'
+  /** Filled in when the caller leaves it out. */
+  default?: any
 }
 
 export interface PolicyInspectResult {

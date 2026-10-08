@@ -26,7 +26,7 @@ pub use types::{
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
-    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
+    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError, SuppliedBy,
     InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
     RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
     SlotRole, Span, Trace, WriteConflict, WriteTrace,

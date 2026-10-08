@@ -3,13 +3,14 @@ use std::sync::Arc;
 use ahash::{HashMap, HashSet};
 use zen_expression::variable::VariableType;
 
-use crate::policy::ir::DataModelIr;
+use crate::policy::ir::{DataModelIr, Records};
 use crate::policy::queries::dependency::{DependencyGraph, PathPrefix};
 use crate::policy::queries::scope::PropertyScope;
 use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::types::{
     Dictionary, DictionaryEntryInfo, Entity, EntityField, FieldOrigin, Global, InputProperty,
     OutputProperty, PropertyKind, ScopeRequest,
+    SuppliedBy,
 };
 
 impl Db {
@@ -159,14 +160,22 @@ impl Db {
             })
             .map(|vp| {
                 let mut visited: HashSet<Arc<str>> = HashSet::default();
+                let property = &vp.property;
                 InputProperty {
                     path: vp.dotted_path(),
                     resolved_type: DataModelIr::wire_property_type(
-                        &vp.property,
+                        property,
                         entities,
                         &unit.dictionaries,
                         &mut visited,
                     ),
+                    optional: property.optional || property.default.is_some(),
+                    supplied_by: if property.supply.is_some() {
+                        SuppliedBy::Host
+                    } else {
+                        SuppliedBy::Request
+                    },
+                    default: property.default.as_deref().cloned(),
                 }
             })
             .collect();
@@ -179,9 +188,18 @@ impl Db {
             let entity_type =
                 DataModelIr::wire_object(target, entities, &unit.dictionaries, &mut visited);
             if !matches!(entity_type, VariableType::Any) {
+                // A referenced entity's records: sent by the caller, unless it
+                // comes from the store or a source (events, reference data,
+                // features).
+                let hosted = entities.get(target).is_some_and(|dm| {
+                    dm.records != Records::Plain || dm.properties.iter().any(|p| p.supply.is_some())
+                });
                 result.push(InputProperty {
                     path: target.clone(),
                     resolved_type: entity_type.array(),
+                    optional: hosted,
+                    supplied_by: if hosted { SuppliedBy::Host } else { SuppliedBy::Request },
+                    default: None,
                 });
             }
         }

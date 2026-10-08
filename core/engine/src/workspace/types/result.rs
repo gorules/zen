@@ -113,6 +113,35 @@ pub struct WriteConflict {
 pub struct InputProperty {
     pub path: Arc<str>,
     pub resolved_type: VariableType,
+    /// The caller may leave it out: it is optional or has a default.
+    pub optional: bool,
+    /// Who supplies it: the request, or the host (a feature, a call, a
+    /// value computed per event, an entity read from the store or a source).
+    pub supplied_by: SuppliedBy,
+    /// Filled in when the caller leaves it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SuppliedBy {
+    Request,
+    Host,
+}
+
+impl InputProperty {
+    /// A value the request carries, required unless its type is nullable.
+    pub fn request(path: Arc<str>, resolved_type: VariableType) -> Self {
+        let optional = matches!(resolved_type, VariableType::Nullable(_) | VariableType::Any);
+        Self {
+            path,
+            resolved_type,
+            optional,
+            supplied_by: SuppliedBy::Request,
+            default: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

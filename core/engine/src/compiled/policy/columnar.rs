@@ -1,4 +1,5 @@
 mod fuse;
+mod typed;
 
 pub(super) use fuse::Fusions;
 use super::schedule::{Demand, End, Event, Segment};
@@ -25,6 +26,8 @@ pub struct PolicyColumnarOutput<'a> {
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<EvaluationError>>,
     pub hosted: usize,
+    pub typed: usize,
+    pub laned: usize,
 }
 
 impl PolicyColumnarOutput<'_> {
@@ -56,6 +59,8 @@ impl PolicyColumnarOutput<'_> {
             columns: Sheet::columns(shredder.finish()),
             errors,
             hosted: rows,
+            typed: 0,
+            laned: 0,
         }
     }
 }
@@ -381,6 +386,7 @@ struct Pass<'s, 'a> {
     kin: Vec<(usize, Rc<[usize]>, Rc<[usize]>, bool, OnceCell<Option<Rc<[i32]>>>)>,
     delegated: bool,
     fell: usize,
+    counts: (usize, usize),
 }
 
 impl<'s, 'a> Pass<'s, 'a> {
@@ -1880,7 +1886,7 @@ impl PolicyPlan {
             (false, false) => (0..rows).filter(|&row| !fallback[row]).collect(),
         };
         let mut runner = Self::RUNNER.with_borrow_mut(std::mem::take);
-        let (sheet, fallback, errors, owned, fell) = {
+        let (sheet, fallback, errors, owned, fell, counts) = {
             let runner = &mut runner;
             let mut pass = Pass {
                 plan: self,
@@ -1905,6 +1911,7 @@ impl PolicyPlan {
                 kin: Vec::new(),
                 delegated: false,
                 fell: 0,
+                counts: (0, 0),
                 owners: self.iterations.iter().map(|iteration| iteration.as_ref().map(|(_, path, _)| path.clone())).collect(),
             };
             pass.walk(self.root.clone(), live);
@@ -1923,7 +1930,7 @@ impl PolicyPlan {
                     .collect(),
             };
             erred |= pass.delegated;
-            (pass.sheet, pass.fallback, pass.state.failures, owned, pass.fell)
+            (pass.sheet, pass.fallback, pass.state.failures, owned, pass.fell, pass.counts)
         };
         Self::RUNNER.with_borrow_mut(|slot| *slot = runner);
         let mut errors = errors;
@@ -1942,6 +1949,8 @@ impl PolicyPlan {
                 columns,
                 errors,
                 hosted: 0,
+                typed: counts.0,
+                laned: counts.1,
             };
         }
         let requests: Vec<EvaluateRequest> = hosted.iter().map(|&row| request(row)).collect();
@@ -1963,6 +1972,8 @@ impl PolicyPlan {
             columns: Sheet::columns(shredder.finish()),
             errors,
             hosted: hosted.len(),
+            typed: counts.0,
+            laned: counts.1,
         }
     }
 }

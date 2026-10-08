@@ -1,0 +1,361 @@
+use crate::typed::num::Dec;
+use std::fmt;
+
+pub type NodeId = u32;
+pub type DictId = u16;
+pub type ListId = u16;
+pub type ColId = u16;
+pub type FieldId = u16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Kind {
+    Num(Option<u8>),
+    Bool,
+    Code(DictId),
+    Text,
+    Null,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ty {
+    pub kind: Kind,
+    pub nullable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Scope {
+    Row,
+    Elem(ListId),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Lit {
+    Null,
+    Num(Dec),
+    Bool(bool),
+    Code(DictId, i32),
+    Text(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Arith {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Cmp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fold {
+    Sum,
+    Count,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Func {
+    StartsWith,
+    EndsWith,
+    Len,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Range {
+    pub lo: Dec,
+    pub lo_closed: bool,
+    pub hi: Dec,
+    pub hi_closed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Op {
+    Column(ColId),
+    Field(ListId, FieldId),
+    Parent(NodeId),
+    Const(Lit),
+    Neg(NodeId),
+    Not(NodeId),
+    Arith(Arith, NodeId, NodeId),
+    Cmp(Cmp, NodeId, NodeId),
+    And(NodeId, NodeId),
+    Or(NodeId, NodeId),
+    If(NodeId, NodeId, NodeId),
+    Coalesce(NodeId, NodeId),
+    InSet(NodeId, Vec<Lit>),
+    InRange(NodeId, Range),
+    Fold { fold: Fold, list: ListId, filter: Option<NodeId>, value: Option<NodeId> },
+    FirstMatch { conds: Vec<NodeId>, strict: bool },
+    Pick(NodeId, Vec<NodeId>),
+    Call(Func, Vec<NodeId>),
+    Classify(NodeId, DictId),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Node {
+    pub op: Op,
+    pub ty: Ty,
+    pub scope: Scope,
+}
+
+#[derive(Clone, Debug)]
+pub struct Output {
+    pub name: String,
+    pub node: NodeId,
+    pub scope: Scope,
+    pub ty: Ty,
+}
+
+#[derive(Clone, Debug)]
+pub struct ColumnDef {
+    pub path: String,
+    pub ty: Ty,
+}
+
+#[derive(Clone, Debug)]
+pub struct ListDef {
+    pub path: String,
+    pub alias: Option<String>,
+    pub fields: Vec<ColumnDef>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DictKind {
+    Literals,
+    Classes,
+}
+
+#[derive(Clone, Debug)]
+pub struct Dict {
+    pub kind: DictKind,
+    pub values: Vec<Box<str>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Schema {
+    pub columns: Vec<ColumnDef>,
+    pub lists: Vec<ListDef>,
+    pub dicts: Vec<Dict>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Hir {
+    pub schema: Schema,
+    pub nodes: Vec<Node>,
+    pub outputs: Vec<Output>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsupported(pub String);
+
+impl fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unsupported: {}", self.0)
+    }
+}
+
+impl std::error::Error for Unsupported {}
+
+impl Unsupported {
+    pub fn new(what: impl Into<String>) -> Self {
+        Self(what.into())
+    }
+}
+
+impl Ty {
+    pub const fn new(kind: Kind, nullable: bool) -> Self {
+        Self { kind, nullable }
+    }
+
+    pub const fn num(scale: Option<u8>) -> Self {
+        Self::new(Kind::Num(scale), false)
+    }
+
+    pub const fn boolean() -> Self {
+        Self::new(Kind::Bool, false)
+    }
+}
+
+impl Dict {
+    pub fn code(&self, value: &str) -> Option<i32> {
+        self.values.iter().position(|v| v.as_ref() == value).and_then(|i| i32::try_from(i).ok())
+    }
+
+    pub fn text(&self, code: i32) -> Option<&str> {
+        usize::try_from(code).ok().and_then(|i| self.values.get(i)).map(|v| v.as_ref())
+    }
+}
+
+impl Schema {
+    pub fn column(&self, path: &str) -> Option<ColId> {
+        self.columns.iter().position(|c| c.path == path).and_then(|i| ColId::try_from(i).ok())
+    }
+
+    pub fn list(&self, path: &str) -> Option<ListId> {
+        self.lists.iter().position(|l| l.path == path).and_then(|i| ListId::try_from(i).ok())
+    }
+
+    pub fn field(&self, list: ListId, name: &str) -> Option<FieldId> {
+        self.lists.get(list as usize)?.fields.iter().position(|f| f.path == name).and_then(|i| FieldId::try_from(i).ok())
+    }
+}
+
+impl Op {
+    pub fn inputs(&self) -> Vec<NodeId> {
+        match self {
+            Op::Column(_) | Op::Field(..) | Op::Const(_) => Vec::new(),
+            Op::Parent(a) | Op::Neg(a) | Op::Not(a) | Op::InSet(a, _) | Op::InRange(a, _) | Op::Classify(a, _) => vec![*a],
+            Op::Arith(_, a, b) | Op::Cmp(_, a, b) | Op::And(a, b) | Op::Or(a, b) | Op::Coalesce(a, b) => vec![*a, *b],
+            Op::If(c, t, e) => vec![*c, *t, *e],
+            Op::Fold { filter, value, .. } => filter.iter().chain(value.iter()).copied().collect(),
+            Op::FirstMatch { conds, .. } => conds.clone(),
+            Op::Pick(sel, arms) => std::iter::once(*sel).chain(arms.iter().copied()).collect(),
+            Op::Call(_, args) => args.clone(),
+        }
+    }
+
+    pub fn remap(&self, f: impl Fn(NodeId) -> NodeId) -> Op {
+        match self {
+            Op::Column(_) | Op::Field(..) | Op::Const(_) => self.clone(),
+            Op::Parent(a) => Op::Parent(f(*a)),
+            Op::Neg(a) => Op::Neg(f(*a)),
+            Op::Not(a) => Op::Not(f(*a)),
+            Op::Classify(a, d) => Op::Classify(f(*a), *d),
+            Op::Arith(op, a, b) => Op::Arith(*op, f(*a), f(*b)),
+            Op::Cmp(op, a, b) => Op::Cmp(*op, f(*a), f(*b)),
+            Op::And(a, b) => Op::And(f(*a), f(*b)),
+            Op::Or(a, b) => Op::Or(f(*a), f(*b)),
+            Op::If(c, t, e) => Op::If(f(*c), f(*t), f(*e)),
+            Op::Coalesce(a, b) => Op::Coalesce(f(*a), f(*b)),
+            Op::InSet(a, set) => Op::InSet(f(*a), set.clone()),
+            Op::InRange(a, r) => Op::InRange(f(*a), *r),
+            Op::Fold { fold, list, filter, value } => Op::Fold { fold: *fold, list: *list, filter: filter.map(&f), value: value.map(&f) },
+            Op::FirstMatch { conds, strict } => Op::FirstMatch { conds: conds.iter().map(|c| f(*c)).collect(), strict: *strict },
+            Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
+            Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
+        }
+    }
+}
+
+impl Hir {
+    pub fn node(&self, id: NodeId) -> &Node {
+        &self.nodes[id as usize]
+    }
+
+    pub fn dict(&self, id: DictId) -> &Dict {
+        &self.schema.dicts[id as usize]
+    }
+
+    pub fn output(&self, name: &str) -> Option<usize> {
+        self.outputs.iter().position(|o| o.name == name)
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Kind::Num(Some(s)) => write!(f, "num/{s}"),
+            Kind::Num(None) => write!(f, "num/*"),
+            Kind::Bool => write!(f, "bool"),
+            Kind::Code(d) => write!(f, "code#{d}"),
+            Kind::Text => write!(f, "text"),
+            Kind::Null => write!(f, "null"),
+        }
+    }
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.nullable {
+            true => write!(f, "{}?", self.kind),
+            false => write!(f, "{}", self.kind),
+        }
+    }
+}
+
+impl fmt::Display for Scope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Scope::Row => write!(f, "row"),
+            Scope::Elem(l) => write!(f, "elem{l}"),
+        }
+    }
+}
+
+impl fmt::Display for Lit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Lit::Null => write!(f, "null"),
+            Lit::Num(d) => write!(f, "{d}"),
+            Lit::Bool(b) => write!(f, "{b}"),
+            Lit::Code(d, c) => write!(f, "code#{d}:{c}"),
+            Lit::Text(t) => write!(f, "{t:?}"),
+        }
+    }
+}
+
+impl Hir {
+    fn body(&self, op: &Op) -> String {
+        let ids = |xs: &[NodeId]| xs.iter().map(|x| format!("%{x}")).collect::<Vec<_>>().join(", ");
+        match op {
+            Op::Column(c) => format!("column {}", self.schema.columns.get(*c as usize).map_or("?", |c| c.path.as_str())),
+            Op::Field(l, x) => {
+                format!("field {l}.{}", self.schema.lists.get(*l as usize).and_then(|l| l.fields.get(*x as usize)).map_or("?", |c| c.path.as_str()))
+            }
+            Op::Parent(a) => format!("parent %{a}"),
+            Op::Const(l) => format!("const {l}"),
+            Op::Neg(a) => format!("neg %{a}"),
+            Op::Not(a) => format!("not %{a}"),
+            Op::Classify(a, d) => format!("classify %{a} dict {d}"),
+            Op::Arith(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
+            Op::Cmp(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
+            Op::And(a, b) => format!("and %{a}, %{b}"),
+            Op::Or(a, b) => format!("or %{a}, %{b}"),
+            Op::If(c, t, e) => format!("if %{c} then %{t} else %{e}"),
+            Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
+            Op::InSet(a, set) => format!("inset %{a} [{}]", set.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", ")),
+            Op::InRange(a, r) => format!("inrange %{a} {}{}..{}{}", if r.lo_closed { "[" } else { "(" }, r.lo, r.hi, if r.hi_closed { "]" } else { ")" }),
+            Op::Fold { fold, list, filter, value } => format!(
+                "fold {fold:?} list {list} filter {} value {}",
+                filter.map_or("-".to_string(), |x| format!("%{x}")),
+                value.map_or("-".to_string(), |x| format!("%{x}"))
+            )
+            .to_lowercase(),
+            Op::FirstMatch { conds, strict } => format!("firstmatch{} [{}]", if *strict { " strict" } else { "" }, ids(conds)),
+            Op::Pick(sel, arms) => format!("pick %{sel} [{}]", ids(arms)),
+            Op::Call(func, args) => format!("call {func:?}({})", ids(args)).to_lowercase(),
+        }
+    }
+}
+
+impl fmt::Display for Hir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, c) in self.schema.columns.iter().enumerate() {
+            writeln!(f, "column {i} {} : {}", c.path, c.ty)?;
+        }
+        for (l, list) in self.schema.lists.iter().enumerate() {
+            writeln!(f, "list {l} {} as {}", list.path, list.alias.as_deref().unwrap_or("-"))?;
+            for (i, c) in list.fields.iter().enumerate() {
+                writeln!(f, "  field {i} {} : {}", c.path, c.ty)?;
+            }
+        }
+        for (d, dict) in self.schema.dicts.iter().enumerate() {
+            writeln!(f, "dict {d} {:?} {:?}", dict.kind, dict.values)?;
+        }
+        for (i, node) in self.nodes.iter().enumerate() {
+            writeln!(f, "%{i} = {} : {} @{}", self.body(&node.op), node.ty, node.scope)?;
+        }
+        for (i, o) in self.outputs.iter().enumerate() {
+            writeln!(f, "out {i} {:?} = %{} : {} @{}", o.name, o.node, o.ty, o.scope)?;
+        }
+        Ok(())
+    }
+}

@@ -10,7 +10,7 @@ mod mask;
 mod ops;
 mod output;
 mod program;
-mod scaled;
+pub(crate) mod scaled;
 mod source;
 
 pub use cells::{CellEnv, CellSet, Pieces};

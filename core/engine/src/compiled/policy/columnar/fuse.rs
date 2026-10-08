@@ -4,14 +4,19 @@ use crate::compiled::policy::{Native, PolicyPlan};
 use crate::compiled::typed::{Array, Bits, Leaf, Store};
 use crate::policy::blocks::{AssertionIr, BlockKind, ConditionOperator, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
-use std::sync::{Arc, RwLock};
+use std::rc::Rc;
+use super::typed::TypedGroup;
+use std::sync::{Arc, OnceLock, RwLock};
 use zen_expression::lane::{Fusion, LaneProgram};
+
+type Variants = ahash::HashMap<(Vec<usize>, bool), Vec<Arc<TypedGroup>>>;
 
 #[derive(Default)]
 pub(crate) struct Fusions {
     groups: RwLock<ahash::HashMap<Vec<usize>, Option<Arc<Fused>>>>,
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
     tables: RwLock<ahash::HashMap<usize, bool>>,
+    pub(super) typed: RwLock<Variants>,
 }
 
 pub(crate) struct Effects {
@@ -30,7 +35,7 @@ pub(crate) struct Fused {
     sinks: Vec<Sink>,
 }
 
-enum Sink {
+pub(super) enum Sink {
     Write(Arc<str>),
     Assert(Arc<AssertionIr>),
 }
@@ -42,6 +47,13 @@ struct Unit<'p> {
 }
 
 impl Fusions {
+    const TYPED: bool = true;
+
+    pub(super) fn enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var("ZEN_TYPED").map_or(Self::TYPED, |value| value.trim() != "0"))
+    }
+
     fn table(&self, block: usize, ir: &DecisionTableIr) -> bool {
         if let Some(found) = self.tables.read().ok().and_then(|cache| cache.get(&block).copied()) {
             return found;
@@ -133,40 +145,49 @@ impl Fused {
         let mut entries: Vec<Fusion> = Vec::new();
         let mut sinks = Vec::with_capacity(blocks.len());
         for &block in blocks {
-            if let BlockKind::DecisionTable(ir) = &plan.blocks.rules[block].kind {
-                let (hidden, tables) = Self::table(ir, block)?;
-                entries.extend(hidden);
-                for entry in tables {
-                    if let Fusion::Rules { key, .. } = &entry {
-                        sinks.push(Sink::Write(Arc::from(key.as_str())));
-                    }
-                    entries.push(entry);
-                }
-                continue;
-            }
-            let native = match member {
-                true => Pass::native(plan, block)?,
-                false => plan.natives[block].as_ref()?,
-            };
-            match native {
-                Native::Expression { key, program } => {
-                    entries.push(Fusion::Output { key: key.to_string(), source: program.source()?.to_string() });
-                    sinks.push(Sink::Write(key.clone()));
-                }
-                Native::Match { ir, .. } => {
-                    entries.push(Fusion::Output { key: ir.key.to_string(), source: Self::ternary(ir) });
-                    sinks.push(Sink::Write(ir.key.clone()));
-                }
-                Native::Assertion { ir, .. } => {
-                    entries.extend(ir.conditions.iter().map(|c| Fusion::Output { key: String::new(), source: c.expression.to_string() }));
-                    sinks.push(Sink::Assert(ir.clone()));
-                }
-            }
+            let (unit, sunk) = Self::entries(plan, block, member)?;
+            entries.extend(unit);
+            sinks.extend(sunk);
         }
         let outputs = entries.iter().filter(|entry| !matches!(entry, Fusion::Hidden { .. })).count();
         let program = LaneProgram::compile_fused(&entries).ok()?;
         let p = program.program();
         (!(p.writes_env || p.chain || p.opaque() || p.rows) && p.outputs.len() == outputs).then_some(Self { program, sinks })
+    }
+
+    pub(super) fn entries(plan: &PolicyPlan, block: usize, member: bool) -> Option<(Vec<Fusion>, Vec<Sink>)> {
+        let mut entries: Vec<Fusion> = Vec::new();
+        let mut sinks = Vec::new();
+        if let BlockKind::DecisionTable(ir) = &plan.blocks.rules[block].kind {
+            let (hidden, tables) = Self::table(ir, block)?;
+            entries.extend(hidden);
+            for entry in tables {
+                if let Fusion::Rules { key, .. } = &entry {
+                    sinks.push(Sink::Write(Arc::from(key.as_str())));
+                }
+                entries.push(entry);
+            }
+            return Some((entries, sinks));
+        }
+        let native = match member {
+            true => Pass::native(plan, block)?,
+            false => plan.natives[block].as_ref()?,
+        };
+        match native {
+            Native::Expression { key, program } => {
+                entries.push(Fusion::Output { key: key.to_string(), source: program.source()?.to_string() });
+                sinks.push(Sink::Write(key.clone()));
+            }
+            Native::Match { ir, .. } => {
+                entries.push(Fusion::Output { key: ir.key.to_string(), source: Self::ternary(ir) });
+                sinks.push(Sink::Write(ir.key.clone()));
+            }
+            Native::Assertion { ir, .. } => {
+                entries.extend(ir.conditions.iter().map(|c| Fusion::Output { key: String::new(), source: c.expression.to_string() }));
+                sinks.push(Sink::Assert(ir.clone()));
+            }
+        }
+        Some((entries, sinks))
     }
 
     fn fusable(ir: &DecisionTableIr) -> bool {
@@ -267,12 +288,42 @@ impl<'s, 'a> Pass<'s, 'a> {
             }
         };
         fresh(self, rows);
+        let typed = Fusions::enabled();
         for item in self.schedule(&events, rows) {
             fresh(self, rows);
             if rows.is_empty() {
                 break;
             }
             let blocks: Vec<usize> = item.units.iter().map(|(block, _, _)| *block).collect();
+            if let (Some(_), true) = (item.domain, typed) {
+                if let Some(entity) = self.regroup(&item, rows) {
+                    let mut at = 0;
+                    while at < item.units.len() {
+                        fresh(self, rows);
+                        if rows.is_empty() {
+                            break;
+                        }
+                        let consumed = self.typed(&item.units[at..], entity, rows);
+                        if consumed > 0 {
+                            self.counts.0 += consumed;
+                            at += consumed;
+                            continue;
+                        }
+                        let (_, start, len) = item.units[at];
+                        for event in &events[start..start + len] {
+                            fresh(self, rows);
+                            if rows.is_empty() {
+                                break;
+                            }
+                            self.event(*event, rows);
+                        }
+                        self.counts.1 += 1;
+                        at += 1;
+                    }
+                    continue;
+                }
+            }
+            self.counts.1 += item.units.len();
             let group = match (item.domain, blocks.len() > 1) {
                 (Some(domain), true) => self.regroup(&item, rows).and_then(|entity| {
                     let fused = self.plan.fusions.get(self.plan, &blocks, domain.is_some())?;
@@ -434,49 +485,43 @@ impl<'s, 'a> Pass<'s, 'a> {
             None => {
                 let (leaves, failed) = self.run_outs(&fused.program, rows);
                 self.fail(rows, &failed);
-                let mut leaves = leaves.into_iter();
-                for sink in &fused.sinks {
-                    match sink {
-                        Sink::Write(key) => {
-                            let leaf = leaves.next().unwrap_or_else(|| Leaf::nulls(rows.len()));
-                            self.write(key, leaf, rows);
-                        }
-                        Sink::Assert(ir) if Self::conjunction(ir) => {
-                            let mut bits = Bits::ones(rows.len());
-                            for leaf in leaves.by_ref().take(ir.conditions.len()) {
-                                bits.iter_mut().zip(leaf.truths(rows.len())).for_each(|(b, t)| *b &= t);
-                            }
-                            let leaf = Leaf::typed(Array::parts(Store::Bool(bits), None, rows.len()));
-                            self.write(&ir.output, leaf, rows);
-                        }
-                        Sink::Assert(ir) => {
-                            let truths: Vec<Vec<u64>> = leaves.by_ref().take(ir.conditions.len()).map(|leaf| leaf.truths(rows.len())).collect();
-                            let bits = Self::folded(ir, &truths, rows.len());
-                            let leaf = Leaf::typed(Array::parts(Store::Bool(bits), None, rows.len()));
-                            self.write(&ir.output, leaf, rows);
-                        }
-                    }
-                }
+                self.sink(&fused.sinks, leaves, None, rows);
             }
             Some(at) => {
                 let (kids, parents) = self.kids(at, rows);
                 let (leaves, failed) = self.member_outs(at, &fused.program, &kids, &parents);
                 self.member_fail(&parents, &failed);
-                let mut leaves = leaves.into_iter();
-                for sink in &fused.sinks {
-                    match sink {
-                        Sink::Write(key) => {
-                            let leaf = leaves.next().unwrap_or_else(|| Leaf::nulls(kids.len()));
-                            self.member_write(at, key, leaf, &kids);
-                        }
-                        Sink::Assert(ir) => {
-                            let truths: Vec<Vec<u64>> = leaves.by_ref().take(ir.conditions.len()).map(|leaf| leaf.truths(kids.len())).collect();
-                            let bits = Self::folded(ir, &truths, kids.len());
-                            let leaf = Leaf::typed(Array::parts(Store::Bool(bits), None, kids.len()));
-                            self.member_write(at, &ir.output, leaf, &kids);
-                        }
+                self.sink(&fused.sinks, leaves, Some((at, &kids)), rows);
+            }
+        }
+    }
+
+    pub(super) fn sink(&mut self, sinks: &[Sink], leaves: Vec<Leaf<'a>>, member: Option<(usize, &Rc<[usize]>)>, rows: &[usize]) {
+        let count = member.map_or(rows.len(), |(_, kids)| kids.len());
+        let mut leaves = leaves.into_iter();
+        for sink in sinks {
+            let leaf = match sink {
+                Sink::Write(_) => leaves.next().unwrap_or_else(|| Leaf::nulls(count)),
+                Sink::Assert(ir) if member.is_none() && Self::conjunction(ir) => {
+                    let mut bits = Bits::ones(count);
+                    for leaf in leaves.by_ref().take(ir.conditions.len()) {
+                        bits.iter_mut().zip(leaf.truths(count)).for_each(|(b, t)| *b &= t);
                     }
+                    Leaf::typed(Array::parts(Store::Bool(bits), None, count))
                 }
+                Sink::Assert(ir) => {
+                    let truths: Vec<Vec<u64>> = leaves.by_ref().take(ir.conditions.len()).map(|leaf| leaf.truths(count)).collect();
+                    let bits = Self::folded(ir, &truths, count);
+                    Leaf::typed(Array::parts(Store::Bool(bits), None, count))
+                }
+            };
+            let key = match sink {
+                Sink::Write(key) => key,
+                Sink::Assert(ir) => &ir.output,
+            };
+            match member {
+                None => self.write(key, leaf, rows),
+                Some((at, kids)) => self.member_write(at, key, leaf, kids),
             }
         }
     }

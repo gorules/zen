@@ -319,6 +319,8 @@ struct Engines {
     columnar: usize,
     hosted: usize,
     nested: usize,
+    typed: usize,
+    laned: usize,
 }
 
 impl Engines {
@@ -431,6 +433,8 @@ impl Engines {
             return;
         };
         self.hosted += output.hosted;
+        self.typed += output.typed;
+        self.laned += output.laned;
         for row in 0..columns.rows {
             let input = columns.row(row);
             let request = EvaluateRequest {
@@ -562,5 +566,7 @@ fn policy_engines_match_driver() {
         engines.failures.extend(failures);
     }
     eprintln!("policy engines: {} cases, {} columnar rows ({} with struct lists, {} hosted per row), {} mismatches", engines.compared, engines.columnar, engines.nested, engines.hosted, engines.failures.len());
+    eprintln!("policy engines: {} typed units, {} laned units", engines.typed, engines.laned);
+    assert!(std::env::var("ZEN_TYPED").is_ok_and(|v| v.trim() == "0") || engines.typed > 0, "no policy unit ran typed");
     Differential::assert(problems, engines.failures);
 }

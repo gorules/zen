@@ -527,11 +527,55 @@ impl Anchor {
     }
 
     fn workspace() -> PolicyWorkspace {
-        let literal = conformance::literal::Parser::document(Self::POLICY).expect("policy literal");
+        Self::workspace_with(Self::POLICY)
+    }
+
+    fn workspace_with(policy: &str) -> PolicyWorkspace {
+        let literal = conformance::literal::Parser::document(policy).expect("policy literal");
         let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
         let mut ws = PolicyWorkspace::new();
         ws.set_policy("anchor", serde_json::from_value(document).expect("policy json"));
         ws
+    }
+
+    fn typed() -> bool {
+        std::env::var("ZEN_TYPED").map_or(true, |v| v.trim() != "0")
+    }
+
+    fn check(ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) -> (usize, usize, usize) {
+        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], columns).expect("columnar");
+        for row in 0..columns.rows {
+            let request = EvaluateRequest {
+                policy_path: Arc::from("anchor"),
+                input: columns.row(row),
+                goals: Vec::new(),
+                trace: false,
+            };
+            let want = ws
+                .evaluate_with_driver(&request)
+                .map(|r| Built::normalized(r.output.to_value()))
+                .map_err(|e| format!("{e:?}"));
+            let got = match &output.errors[row] {
+                Some(error) => Err(format!("{error:?}")),
+                None => Ok(Built::normalized(output.row(row).to_value())),
+            };
+            if got != want {
+                failures.push(format!("row {row} input {}\n  driver   {want:?}\n  columnar {got:?}", columns.row(row).to_value()));
+            }
+        }
+        (output.typed, output.laned, output.hosted)
+    }
+
+    fn checked(ws: &PolicyWorkspace, values: &[Value], failures: &mut Vec<String>) -> Vec<(usize, usize, usize)> {
+        let mut counts = Vec::new();
+        let built = Built::new(values).expect("flat columns");
+        counts.push(Self::check(ws, &built.columns(), failures));
+        if let Some(built) = Built::nested(values) {
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            counts.push(Self::check(ws, &built.columns_with(&structs), failures));
+        }
+        counts
     }
 
     fn time(rows: usize, mut f: impl FnMut() -> f64) -> f64 {
@@ -651,6 +695,7 @@ impl Anchor {
 fn policy_columnar_shredded_irregular_lists() {
     let mut values = Anchor::rows(96, 11);
     let odd = [
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": -0.0, "accounts": [{"balance": 3, "kind": "loan", "active": true}]}}),
         json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2}}),
         json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": []}}),
         json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": [{"balance": 10, "kind": "loan"}]}}),
@@ -712,6 +757,95 @@ fn policy_columnar_shredded_irregular_lists() {
         }
         assert!(output.hosted < columns.rows / 2, "shredded flat input mostly hosted: {}", output.hosted);
     }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
+fn policy_anchor_is_fully_typed() {
+    let ws = Anchor::workspace();
+    let mut failures = Vec::new();
+    let counts = Anchor::checked(&ws, &Anchor::rows(1024, 7), &mut failures);
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    for (typed, laned, hosted) in counts {
+        assert_eq!(hosted, 0, "anchor rows hosted");
+        if Anchor::typed() {
+            assert_eq!((typed, laned), (8, 0), "anchor units typed / laned");
+        }
+    }
+}
+
+#[test]
+fn policy_typed_falls_back_per_unit() {
+    let policy = Anchor::POLICY.replace(
+        "    {match: \"customer.risk\"",
+        "    {expression: \"customer.label\", value: \"string(customer.age)\"},\n    {match: \"customer.risk\"",
+    );
+    assert_ne!(policy, Anchor::POLICY);
+    let ws = Anchor::workspace_with(&policy);
+    let mut failures = Vec::new();
+    let counts = Anchor::checked(&ws, &Anchor::rows(256, 5), &mut failures);
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    for (typed, laned, hosted) in counts {
+        assert_eq!(hosted, 0, "rows hosted");
+        if Anchor::typed() {
+            assert!(typed > 0 && laned > 0, "units typed {typed}, laned {laned}");
+            assert_eq!(typed + laned, 9, "units typed {typed}, laned {laned}");
+        }
+    }
+}
+
+#[test]
+fn policy_typed_extremes() {
+    let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
+    let overflow = [
+        customer(json!([{"balance": 9223372036854775807i64, "kind": "loan", "active": true}])),
+        customer(json!([{"balance": 4611686018427387904i64, "kind": "savings", "active": true}, {"balance": 4611686018427387904i64, "kind": "savings", "active": true}])),
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 9223372036854775807i64, "accounts": [{"balance": 3, "kind": "loan", "active": true}]}}),
+    ];
+    let odd = [
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": -0.0, "accounts": [{"balance": 3, "kind": "loan", "active": true}]}}),
+        customer(json!([])),
+        customer(json!([{"balance": 0, "kind": "loan", "active": true}, {"balance": 0, "kind": "savings", "active": false}])),
+        customer(json!([{"balance": 12.5, "kind": "checking", "active": true}, {"balance": 0.000000001, "kind": "savings", "active": true}])),
+        customer(json!([{"balance": 0.00, "kind": "savings", "active": true}, {"balance": 1.50, "kind": "loan", "active": true}])),
+        customer(json!([{"balance": -250, "kind": "other", "active": true}, {"balance": 7, "kind": "", "active": false}])),
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 0.25, "accounts": [{"balance": 100, "kind": "savings", "active": true}]}}),
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2}}),
+        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": null}}),
+        json!({"customer": {"age": null, "income": 4000, "tier": "gold", "rate": 2, "accounts": []}}),
+        json!({"customer": {"age": 30, "income": null, "tier": null, "rate": null, "accounts": []}}),
+        json!({"customer": {"age": 17, "income": 0, "tier": "platinum", "rate": 0, "accounts": [{"balance": 5000, "kind": "loan", "active": true}]}}),
+        json!({"customer": {"age": 18, "income": 0.01, "tier": "silver", "rate": 1.000, "accounts": [{"balance": 1, "kind": "checking", "active": false}]}}),
+        json!({"customer": {"age": 64, "income": 1.10, "tier": "bronze", "rate": 0.00, "accounts": [{"balance": 0.10, "kind": "loan", "active": true}, {"balance": 3.333, "kind": "checking", "active": true}]}}),
+    ];
+    let nulls = [
+        customer(json!([{"balance": -0.0, "kind": "loan", "active": true}])),
+        customer(json!([{"balance": null, "kind": null, "active": null}])),
+        customer(json!([{"balance": 5, "kind": "loan"}, {"kind": "savings", "active": true}])),
+        customer(json!([null])),
+    ];
+    let mut values = Anchor::rows(128, 13);
+    for (at, row) in odd.into_iter().enumerate() {
+        values.insert(at * 7 + 2, row);
+    }
+    for (at, row) in overflow.iter().enumerate() {
+        values.insert(at * 31 + 5, row.clone());
+    }
+    let ws = Anchor::workspace();
+    let mut failures = Vec::new();
+    let counts = Anchor::checked(&ws, &values, &mut failures);
+    assert_eq!(counts.len(), 2, "flat and struct-list columns");
+    for (typed, laned, hosted) in counts {
+        eprintln!("extremes typed {typed} laned {laned} hosted {hosted}");
+        if Anchor::typed() {
+            assert_eq!((typed, laned), (8, 0), "anchor units typed / laned");
+            assert_eq!(hosted, overflow.len(), "hosted rows");
+        }
+    }
+    for (at, row) in nulls.into_iter().enumerate() {
+        values.insert(at * 11 + 3, row);
+    }
+    Anchor::checked(&ws, &values, &mut failures);
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 

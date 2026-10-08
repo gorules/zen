@@ -1,0 +1,310 @@
+use crate::lane::Fusion;
+use crate::typed::tests::data::{ColSpec, Enc, ListSpec, Mock, Spec};
+use crate::typed::{Class, DictKind, Hir, Kind, Lowering, Op, Resolve, Resolved};
+
+struct Anchor;
+
+impl Anchor {
+    fn spec() -> Spec {
+        Spec {
+            columns: vec![
+                ColSpec::new("customer.age", Class::Num, Enc::Scaled),
+                ColSpec::new("customer.income", Class::Num, Enc::Scaled),
+                ColSpec::new("customer.tier", Class::Text, Enc::Text),
+                ColSpec::new("customer.rate", Class::Num, Enc::Scaled),
+            ],
+            lists: vec![ListSpec {
+                path: "customer.accounts",
+                alias: "account",
+                fields: vec![
+                    ColSpec::new("balance", Class::Num, Enc::Scaled),
+                    ColSpec::new("kind", Class::Text, Enc::Text),
+                    ColSpec::new("active", Class::Bool, Enc::Bool),
+                    ColSpec::new("fee", Class::Num, Enc::Scaled),
+                    ColSpec::new("label", Class::Text, Enc::Text),
+                ],
+            }],
+        }
+    }
+
+    fn out(key: &str, source: &str) -> Vec<Fusion> {
+        vec![Fusion::Output { key: key.to_string(), source: source.to_string() }]
+    }
+
+    fn member() -> Vec<Vec<Fusion>> {
+        vec![
+            Self::out("account.fee", "account.balance * customer.rate / 100 * (account.kind == 'loan' ? 2 : 1)"),
+            Self::out("account.label", "((account.kind == 'savings') == true) ? ('S') : (((account.kind == 'checking') == true) ? ('C') : ('L'))"),
+        ]
+    }
+
+    fn root() -> Vec<Vec<Fusion>> {
+        let rule = |tier: &str, risk: &str, value: &str| {
+            let cells =
+                [("customer.tier", tier), ("customer.risk", risk)].iter().filter(|(_, c)| !c.is_empty()).map(|(f, c)| (f.to_string(), c.to_string())).collect();
+            (cells, value.to_string())
+        };
+        vec![
+            Self::out("customer.total", "sum(map(filter(customer.accounts, #.active), #.balance))"),
+            Self::out("customer.fees", "sum(map(customer.accounts, #.fee))"),
+            Self::out(
+                "customer.risk",
+                "((customer.total > customer.income * 2) == true) ? ('high') : (((customer.total > customer.income) == true) ? ('mid') : ('low'))",
+            ),
+            vec![Fusion::Rules {
+                key: "customer.discount".to_string(),
+                rules: vec![
+                    rule("'gold'", "'low'", "0.15"),
+                    rule("'gold'", "'mid'", "0.1"),
+                    rule("'silver'", "'low'", "0.1"),
+                    rule("'silver'", "'mid'", "0.05"),
+                    rule("", "'low'", "0.02"),
+                    rule("", "", "0"),
+                ],
+            }],
+            Self::out("customer.net", "customer.total - customer.fees - customer.discount"),
+            vec![
+                Fusion::Output { key: String::new(), source: "customer.age >= 18".to_string() },
+                Fusion::Output { key: String::new(), source: "customer.risk != 'high'".to_string() },
+            ],
+        ]
+    }
+
+    fn lower(member: bool, units: Vec<Vec<Fusion>>) -> Hir {
+        let spec = Self::spec();
+        let mut lowering = Lowering::new(member.then_some(("account", "customer.accounts")));
+        let mut mock = Mock { spec: &spec, member: member.then_some(0) };
+        for unit in units {
+            lowering.unit(&unit, &mut mock).expect("unit");
+        }
+        lowering.finish()
+    }
+
+    const MEMBER: &'static str = r#"column 0 customer.rate : num/*?
+list 0 customer.accounts as account
+  field 0 balance : num/*?
+  field 1 kind : text?
+dict 0 Classes ["loan", "savings", "checking"]
+dict 1 Literals ["C", "L", "S"]
+%0 = field 0.balance : num/*? @elem0
+%1 = column customer.rate : num/*? @row
+%2 = parent %1 : num/*? @elem0
+%3 = mul %0, %2 : num/* @elem0
+%4 = const 100 : num/0 @row
+%5 = div %3, %4 : num/* @elem0
+%6 = field 0.kind : text? @elem0
+%7 = classify %6 dict 0 : code#0? @elem0
+%8 = const code#0:0 : code#0 @row
+%9 = eq %7, %8 : bool @elem0
+%10 = const 2 : num/0 @row
+%11 = const 1 : num/0 @row
+%12 = if %9 then %10 else %11 : num/0 @elem0
+%13 = mul %5, %12 : num/* @elem0
+%14 = const code#0:1 : code#0 @row
+%15 = eq %7, %14 : bool @elem0
+%16 = const code#0:2 : code#0 @row
+%17 = eq %7, %16 : bool @elem0
+%18 = const code#1:0 : code#1 @row
+%19 = const code#1:1 : code#1 @row
+%20 = if %17 then %18 else %19 : code#1 @elem0
+%21 = const code#1:2 : code#1 @row
+%22 = if %15 then %21 else %20 : code#1 @elem0
+out 0 "account.fee" = %13 : num/* @elem0
+out 1 "account.label" = %22 : code#1 @elem0
+"#;
+
+    const ROOT: &'static str = r#"column 0 customer.income : num/*?
+column 1 customer.tier : text?
+column 2 customer.age : num/*?
+list 0 customer.accounts as -
+  field 0 balance : num/*?
+  field 1 kind : text?
+  field 2 active : bool?
+  field 3 fee : num/*?
+  field 4 label : text?
+dict 0 Literals ["mid", "low", "high"]
+dict 1 Classes ["gold", "silver"]
+%0 = field 0.active : bool? @elem0
+%1 = field 0.balance : num/*? @elem0
+%2 = fold sum list 0 filter %0 value %1 : num/* @row
+%3 = field 0.fee : num/*? @elem0
+%4 = fold sum list 0 filter - value %3 : num/* @row
+%5 = column customer.income : num/*? @row
+%6 = const 2 : num/0 @row
+%7 = mul %5, %6 : num/* @row
+%8 = gt %2, %7 : bool @row
+%9 = const true : bool @row
+%10 = gt %2, %5 : bool @row
+%11 = const code#0:0 : code#0 @row
+%12 = const code#0:1 : code#0 @row
+%13 = if %10 then %11 else %12 : code#0 @row
+%14 = const code#0:2 : code#0 @row
+%15 = if %8 then %14 else %13 : code#0 @row
+%16 = column customer.tier : text? @row
+%17 = classify %16 dict 1 : code#1? @row
+%18 = const code#1:0 : code#1 @row
+%19 = eq %17, %18 : bool @row
+%20 = eq %15, %12 : bool @row
+%21 = and %19, %20 : bool @row
+%22 = eq %15, %11 : bool @row
+%23 = and %19, %22 : bool @row
+%24 = const code#1:1 : code#1 @row
+%25 = eq %17, %24 : bool @row
+%26 = and %25, %20 : bool @row
+%27 = and %25, %22 : bool @row
+%28 = firstmatch strict [%21, %23, %26, %27, %20, %9] : num/0 @row
+%29 = const 0.15 : num/2 @row
+%30 = const 0.1 : num/1 @row
+%31 = const 0.05 : num/2 @row
+%32 = const 0.02 : num/2 @row
+%33 = const 0 : num/0 @row
+%34 = pick %28 [%29, %30, %30, %31, %32, %33] : num/* @row
+%35 = sub %2, %4 : num/* @row
+%36 = sub %35, %34 : num/* @row
+%37 = column customer.age : num/*? @row
+%38 = const 18 : num/0 @row
+%39 = ge %37, %38 : bool @row
+%40 = ne %15, %14 : bool @row
+out 0 "customer.total" = %2 : num/* @row
+out 1 "customer.fees" = %4 : num/* @row
+out 2 "customer.risk" = %15 : code#0 @row
+out 3 "customer.discount" = %34 : num/* @row
+out 4 "customer.net" = %36 : num/* @row
+out 5 "" = %39 : bool @row
+out 6 "" = %40 : bool @row
+"#;
+}
+
+struct Probe {
+    asked: Vec<String>,
+}
+
+impl Resolve for Probe {
+    fn path(&mut self, path: &str) -> Resolved {
+        self.asked.push(path.to_string());
+        match path {
+            "c.n" | "c.m" => Resolved::Column(Class::Num),
+            "c.t" | "c.u" => Resolved::Column(Class::Text),
+            "c.b" => Resolved::Column(Class::Bool),
+            "c.f" => Resolved::Column(Class::Num),
+            "c.weird" => Resolved::Unsupported,
+            _ => Resolved::Absent,
+        }
+    }
+
+    fn alias(&mut self, _: &str) -> Resolved {
+        Resolved::Unsupported
+    }
+}
+
+impl Probe {
+    fn new() -> Self {
+        Self { asked: Vec::new() }
+    }
+
+    fn unit(lowering: &mut Lowering, probe: &mut Probe, key: &str, source: &str) -> Result<(), crate::typed::Unsupported> {
+        lowering.unit(&[Fusion::Output { key: key.to_string(), source: source.to_string() }], probe)
+    }
+}
+
+#[test]
+fn anchor_member_group() {
+    let hir = Anchor::lower(true, Anchor::member());
+    assert_eq!(hir.to_string(), Anchor::MEMBER);
+}
+
+#[test]
+fn anchor_root_group() {
+    let hir = Anchor::lower(false, Anchor::root());
+    assert_eq!(hir.to_string(), Anchor::ROOT);
+}
+
+#[test]
+fn unit_rolls_back() {
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.x", "c.n + 1").expect("first");
+    let failed = lowering.unit(
+        &[
+            Fusion::Output { key: "c.y".to_string(), source: "c.m * 2".to_string() },
+            Fusion::Output { key: "c.z".to_string(), source: "c.t == 'a' ? c.weird : 1".to_string() },
+        ],
+        &mut probe,
+    );
+    assert!(failed.is_err());
+    assert_eq!((lowering.units(), lowering.outputs()), (1, 1));
+    Probe::unit(&mut lowering, &mut probe, "c.w", "c.y ?? c.x").expect("third");
+    let hir = lowering.finish();
+    assert_eq!(hir.outputs.len(), 2);
+    assert!(hir.schema.columns.iter().all(|c| c.path != "c.m" && c.path != "c.t"), "{hir}");
+    assert!(hir.schema.dicts.is_empty(), "{hir}");
+    assert!(probe.asked.contains(&"c.y".to_string()));
+}
+
+#[test]
+fn text_compares_classify() {
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.a", "c.t == 'gold'").expect("eq");
+    Probe::unit(&mut lowering, &mut probe, "c.b", "c.t in ['gold', 'silver']").expect("in");
+    Probe::unit(&mut lowering, &mut probe, "c.c", "'x' != c.t").expect("ne");
+    Probe::unit(&mut lowering, &mut probe, "c.d", "c.t == null").expect("null");
+    Probe::unit(&mut lowering, &mut probe, "c.e", "c.u not in ['a']").expect("other column");
+    let hir = lowering.finish();
+    let classify: Vec<_> = hir.nodes.iter().filter(|n| matches!(n.op, Op::Classify(..))).collect();
+    assert_eq!(classify.len(), 2, "{hir}");
+    assert!(hir.schema.dicts.iter().all(|d| d.kind == DictKind::Classes), "{hir}");
+    assert_eq!(hir.schema.dicts[0].values.iter().map(|v| v.as_ref()).collect::<Vec<_>>(), ["gold", "silver", "x"]);
+    assert!(hir.outputs.iter().all(|o| o.ty.kind == Kind::Bool));
+}
+
+#[test]
+fn strict_rules_lower_to_firstmatch() {
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    let rules = vec![(vec![("c.n".to_string(), "> 5".to_string())], "'hi'".to_string()), (Vec::new(), "'lo'".to_string())];
+    lowering.unit(&[Fusion::Rules { key: "c.r".to_string(), rules }], &mut probe).expect("rules");
+    let hir = lowering.finish();
+    assert!(hir.nodes.iter().any(|n| matches!(n.op, Op::FirstMatch { strict: true, .. })), "{hir}");
+    assert!(matches!(hir.outputs[0].ty.kind, Kind::Code(_)));
+    assert!(!hir.outputs[0].ty.nullable, "{hir}");
+}
+
+#[test]
+fn unsupported_shapes() {
+    let cases = [
+        ("computed text", "c.t == c.u"),
+        ("text output", "c.t"),
+        ("text branch", "c.b ? c.t : 'x'"),
+        ("dictionary mixing", "(c.n > 1 ? 'a' : 'b') == c.t"),
+        ("text ordering", "c.t > 'a'"),
+        ("unsupported path", "c.weird + 1"),
+        ("null arithmetic", "c.absent + 1"),
+        ("function", "string(c.n)"),
+        ("modulo", "c.n % 2"),
+        ("closure over a column", "sum(map(c.n, #))"),
+    ];
+    for (what, source) in cases {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_err(), "{what}: {source}");
+        assert_eq!(lowering.outputs(), 0);
+    }
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.o", "c.n + 1").expect("write");
+    assert!(Probe::unit(&mut lowering, &mut probe, "c.p", "c.o.x").is_err(), "read inside a written value");
+    assert!(Probe::unit(&mut lowering, &mut probe, "c.o.x", "1").is_ok());
+    assert!(Probe::unit(&mut lowering, &mut probe, "c.q", "c.o").is_err(), "read of a partially written value");
+}
+
+#[test]
+fn absent_paths_read_null() {
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.o", "c.missing ?? c.n").expect("coalesce");
+    Probe::unit(&mut lowering, &mut probe, "c.p", "c.missing == null").expect("compare");
+    let hir = lowering.finish();
+    assert_eq!(hir.schema.columns.len(), 1, "{hir}");
+    assert_eq!(probe.asked.iter().filter(|p| *p == "c.missing").count(), 1);
+}

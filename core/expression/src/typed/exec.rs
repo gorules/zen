@@ -413,13 +413,16 @@ impl<'e, 'x> Exec<'e, 'x> {
         let words = self.words.min(Reg::WORDS);
         let mut m = [0u64; Reg::WORDS];
         for w in 0..words {
-            m[w] = ovf[w] & !d.fault[w] & d.valid[w];
+            m[w] = ovf[w] & !d.fault[w];
         }
         if m[..words].iter().all(|w| *w == 0) {
             return;
         }
         self.over(act, &m, |i| match f(i) {
-            Ok(Some(v)) => d.keep(rep, i, v),
+            Ok(Some(v)) => {
+                K::set(&mut d.valid, i, true);
+                d.keep(rep, i, v)
+            }
             Ok(None) => K::set(&mut d.valid, i, false),
             Err(()) => K::set(&mut d.fault, i, true),
         });
@@ -1347,6 +1350,17 @@ impl<'e, 'x> Exec<'e, 'x> {
                 })
             }
             Ins::Out { slot, src, rep, scope } => self.out(*slot, &regs[*src as usize], *rep, *scope, out),
+            Ins::Keep { slot, src } => {
+                let r = &regs[*src as usize];
+                let w0 = start / 64;
+                if let Some(s) = out.slot_mut(*slot as usize) {
+                    for w in 0..words {
+                        if let Some(k) = s.keep.get_mut(w0 + w) {
+                            *k = r.bits[w] & r.valid[w] & !r.fault[w] & self.tail(w);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1734,7 +1748,7 @@ impl<'e, 'x> Exec<'e, 'x> {
         }
         let parent = match scope {
             Scope::Row => None,
-            Scope::Elem(l) => self.feeds.lists.get(l as usize).map(|l| &l.parent),
+            Scope::Elem(l) => self.feeds.lists.get(l as usize).map(|l| &l.root),
         };
         for w in 0..words {
             let mut f = r.fault[w] & self.tail(w);

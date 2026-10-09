@@ -47,9 +47,16 @@ impl Lab {
                 (!out.faults().get(row)).then(|| {
                     out.slots()
                         .iter()
-                        .map(|slot| match slot.scope {
-                            Scope::Row => Self::val(slot, hir, row),
-                            Scope::Elem(l) => Val::List(frame.range(l as usize, row).map(|e| Self::val(slot, hir, e)).collect()),
+                        .map(|slot| match (slot.offsets.as_deref(), slot.scope) {
+                            (_, Scope::Row) => Self::val(slot, hir, row),
+                            (None, Scope::Elem(l)) => Val::List(frame.elements(l as usize, row).into_iter().map(|e| Self::val(slot, hir, e)).collect()),
+                            (Some(offsets), Scope::Elem(l)) => {
+                                let items = |o: usize| Val::List((offsets[o] as usize..offsets[o + 1] as usize).map(|e| Self::val(slot, hir, e)).collect());
+                                match hir.schema.owner(Scope::Elem(l)) {
+                                    Some(Scope::Elem(p)) => Val::List(frame.elements(p as usize, row).into_iter().map(items).collect()),
+                                    _ => items(row),
+                                }
+                            }
                         })
                         .collect()
                 })
@@ -156,7 +163,7 @@ fn workloads_match_vm_and_interp() {
         let rows = workload.rows(1024);
         let lab = Lab::new(workload, rows);
         let program = Program::new(lab.hir.clone()).expect("program");
-        lab.check(&program, &SIZES, name != "W6");
+        lab.check(&program, &SIZES, !Workload::FAULTY.contains(&name));
     }
 }
 

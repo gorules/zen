@@ -961,6 +961,63 @@ async fn graph_typed_reads_dynamic_slots() {
 }
 
 #[tokio::test]
+async fn graph_typed_lists_and_closures() {
+    let mut noise = Noise::new(17);
+    let tags = ["a", "vip", "b"];
+    let mut rows: Vec<Value> = (0..300)
+        .map(|_| {
+            let xs: Vec<Value> = (0..noise.below(6)).map(|_| json!(format!("{}.{}", noise.below(40) as i64 - 10, noise.below(10)).parse::<serde_json::Number>().map(Value::Number).unwrap_or(Value::Null))).collect();
+            let tg: Vec<Value> = (0..noise.below(3)).map(|_| json!(tags[noise.below(3)])).collect();
+            let items: Vec<Value> = (0..noise.below(5))
+                .map(|_| {
+                    let cells: Vec<Value> = (0..noise.below(3)).map(|_| json!({"p": noise.below(50)})).collect();
+                    json!({"qty": noise.below(8), "price": noise.below(500), "ok": noise.below(3) != 0, "cells": cells})
+                })
+                .collect();
+            json!({"xs": xs, "tags": tg, "items": items, "limit": noise.below(20), "n": noise.below(12) as i64 - 3})
+        })
+        .collect();
+    let odd = [
+        json!({"xs": null, "tags": ["vip"], "items": null, "limit": 3, "n": 1}),
+        json!({"xs": [1, null, 3], "tags": [], "items": [], "limit": 2, "n": 3}),
+        json!({"xs": ["a", 2], "tags": ["b", 7], "items": [{"qty": 1, "price": 2, "ok": null, "cells": []}], "limit": 1, "n": 2}),
+        json!({"xs": [9223372036854775807i64, 9223372036854775807i64], "tags": ["a"], "items": [{"qty": 9223372036854775807i64, "price": 3, "ok": true, "cells": [{"p": 9223372036854775807i64}, {"p": 1}]}], "limit": 0, "n": 0}),
+        json!({"xs": [0.00, -0.0, 1.50], "tags": ["vip", "vip"], "items": [{"qty": 2, "price": 1.25, "ok": true, "cells": null}], "limit": null, "n": null}),
+        json!({"limit": 5, "n": 5}),
+        json!({"xs": [], "tags": null, "items": [{"qty": 3}, {"price": 4, "ok": false, "cells": [{"q": 1}]}], "limit": 1, "n": -1}),
+        json!({"xs": [79228162514264337593543950335u128], "tags": ["a"], "items": [{"qty": 1, "price": 0.000000001, "ok": true, "cells": [{"p": 0.5}]}], "limit": 1, "n": 1}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        rows.insert(at * 29 + 5, row);
+    }
+    let nodes = vec![
+        Chain::expression(
+            "lists",
+            &[
+                ("total", "sum(xs)"),
+                ("pos", "filter(xs, # > limit)"),
+                ("doubled", "map(xs, # * 2)"),
+                ("has", "n in xs"),
+                ("vip", "'vip' in tags"),
+                ("qtys", "map(filter(items, #.ok), #.qty)"),
+                ("ct", "count(filter(items, #.ok), #.price > limit)"),
+                ("cells", "sum(map(items, sum(map(#.cells, #.p))))"),
+                ("safe", "sum(map(items ?? [], #.qty))"),
+                ("copy", "xs ?? []"),
+                ("hit", "contains(xs, 2)"),
+            ],
+        ),
+        Chain::expression("later", &[("big", "len(filter(doubled, # > 10))"), ("sumd", "sum(doubled)"), ("anyq", "some(qtys, # > 3)"), ("lo", "min(map(items, #.price))")]),
+    ];
+    let mut failures = Vec::new();
+    let (typed, laned) = Chain::checked(Chain::graph(nodes), &rows, &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    if Chain::typed() {
+        assert!(typed > 0, "units typed {typed}, laned {laned}");
+    }
+}
+
+#[tokio::test]
 async fn graph_typed_extremes() {
     let mut rows = Chain::rows(200, 9);
     let odd = [

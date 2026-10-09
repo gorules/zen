@@ -24,46 +24,130 @@ pub(crate) struct Interp<'a, 'x> {
     hir: &'a Hir,
     feeds: &'a Feeds<'x>,
     row: usize,
-    elem: usize,
-    rows: Vec<Option<R<'a>>>,
-    elems: Vec<Option<R<'a>>>,
+    elem: Vec<usize>,
+    cache: Vec<Option<R<'a>>>,
 }
 
 impl<'a, 'x> Interp<'a, 'x> {
     pub(crate) fn run(hir: &'a Hir, feeds: &'a Feeds<'x>) -> Vec<Option<Vec<Val>>> {
         let n = hir.nodes.len();
-        let mut walk = Interp { hir, feeds, row: 0, elem: 0, rows: vec![None; n], elems: vec![None; n] };
+        let mut walk = Interp { hir, feeds, row: 0, elem: vec![0; hir.schema.lists.len()], cache: vec![None; n] };
         let mut out = Vec::with_capacity(feeds.rows);
         for row in 0..feeds.rows {
             walk.row = row;
-            walk.rows.fill(None);
+            walk.cache.fill(None);
             let mut values = Vec::with_capacity(hir.outputs.len());
             let mut faulted = false;
             for output in &hir.outputs {
-                match output.scope {
-                    Scope::Row => match walk.eval(output.node) {
-                        Ok(v) => values.push(walk.val(v, output.ty.kind)),
-                        Err(Fault) => faulted = true,
-                    },
+                let owner = match output.collect {
+                    Some(_) => hir.schema.owner(output.scope).unwrap_or(Scope::Row),
+                    None => output.scope,
+                };
+                let value = match owner {
+                    Scope::Row => walk.output(output),
                     Scope::Elem(l) => {
-                        let list = &feeds.lists[l as usize];
-                        let range = list.offsets[row] as usize..list.offsets[row + 1] as usize;
                         let mut items = Vec::new();
-                        for e in range {
-                            walk.elem = e;
-                            walk.elems.fill(None);
-                            match walk.eval(output.node) {
-                                Ok(v) => items.push(walk.val(v, output.ty.kind)),
-                                Err(Fault) => faulted = true,
+                        let mut fault = false;
+                        for e in walk.elements(l) {
+                            walk.enter(l, e);
+                            match walk.output(output) {
+                                Ok(v) => items.push(v),
+                                Err(Fault) => fault = true,
                             }
                         }
-                        values.push(Val::List(items));
+                        match fault {
+                            true => Err(Fault),
+                            false => Ok(Val::List(items)),
+                        }
                     }
+                };
+                match value {
+                    Ok(v) => values.push(v),
+                    Err(Fault) => faulted = true,
                 }
             }
             out.push((!faulted).then_some(values));
         }
         out
+    }
+
+    fn owner(&self, list: u16) -> usize {
+        match self.hir.schema.lists[list as usize].parent {
+            None => self.row,
+            Some(p) => self.elem[p as usize],
+        }
+    }
+
+    fn elements(&self, list: u16) -> Vec<usize> {
+        match self.hir.schema.lists[list as usize].parent {
+            None => {
+                let l = &self.feeds.lists[list as usize];
+                (l.offsets[self.row] as usize..l.offsets[self.row + 1] as usize).collect()
+            }
+            Some(p) => {
+                let l = &self.feeds.lists[list as usize];
+                self.elements(p).into_iter().flat_map(|o| l.offsets[o] as usize..l.offsets[o + 1] as usize).collect()
+            }
+        }
+    }
+
+    fn enter(&mut self, list: u16, e: usize) {
+        self.elem[list as usize] = e;
+        let schema = &self.hir.schema;
+        for (at, node) in self.hir.nodes.iter().enumerate() {
+            if schema.within(node.scope, Scope::Elem(list)) {
+                self.cache[at] = None;
+            }
+        }
+    }
+
+    fn range(&self, list: u16, empty: bool) -> Result<std::ops::Range<usize>, Fault> {
+        let l = &self.feeds.lists[list as usize];
+        let owner = self.owner(list);
+        if l.faulted.as_ref().is_some_and(|f| K::get(f, owner)) {
+            return Err(Fault);
+        }
+        match l.null.as_ref().is_some_and(|null| K::get(null, owner)) {
+            true if empty => Ok(0..0),
+            true => Err(Fault),
+            false => Ok(l.offsets[owner] as usize..l.offsets[owner + 1] as usize),
+        }
+    }
+
+    fn output(&mut self, output: &crate::typed::Output) -> Result<Val, Fault> {
+        let Some(c) = output.collect else {
+            let v = self.eval(output.node)?;
+            return Ok(self.val(v, output.ty.kind));
+        };
+        let range = self.range(c.list, c.empty)?;
+        let saved = self.elem[c.list as usize];
+        let mut items = Vec::new();
+        let mut result = Ok(());
+        for e in range {
+            self.enter(c.list, e);
+            let keep = match c.keep {
+                None => true,
+                Some(k) => match self.eval(k) {
+                    Ok(V::Bool(b)) => b,
+                    _ => {
+                        result = Err(Fault);
+                        break;
+                    }
+                },
+            };
+            if !keep {
+                continue;
+            }
+            match self.eval(output.node) {
+                Ok(v) => items.push(self.val(v, output.ty.kind)),
+                Err(Fault) => {
+                    result = Err(Fault);
+                    break;
+                }
+            }
+        }
+        self.enter(c.list, saved);
+        result.map(|_| Val::List(items))
     }
 
     fn val(&self, v: V, kind: Kind) -> Val {
@@ -79,19 +163,11 @@ impl<'a, 'x> Interp<'a, 'x> {
 
     fn eval(&mut self, id: NodeId) -> R<'a> {
         let at = id as usize;
-        let elem = matches!(self.hir.nodes[at].scope, Scope::Elem(_));
-        let cached = match elem {
-            true => self.elems[at],
-            false => self.rows[at],
-        };
-        if let Some(r) = cached {
+        if let Some(r) = self.cache[at] {
             return r;
         }
         let r = self.compute(id);
-        match elem {
-            true => self.elems[at] = Some(r),
-            false => self.rows[at] = Some(r),
-        }
+        self.cache[at] = Some(r);
         r
     }
 
@@ -141,7 +217,7 @@ impl<'a, 'x> Interp<'a, 'x> {
         let node = &hir.nodes[id as usize];
         match &node.op {
             Op::Column(c) => Self::read(&self.feeds.columns[*c as usize], self.row),
-            Op::Field(l, f) => Self::read(&self.feeds.fields[*l as usize][*f as usize], self.elem),
+            Op::Field(l, f) => Self::read(&self.feeds.fields[*l as usize][*f as usize], self.elem[*l as usize]),
             Op::Parent(a) => self.eval(*a),
             Op::Const(lit) => Ok(Self::lit(lit)),
             Op::Classify(a, d) => match self.eval(*a)? {
@@ -216,19 +292,13 @@ impl<'a, 'x> Interp<'a, 'x> {
                 V::Num(x) => Ok(V::Bool(Self::within(x, r))),
                 _ => Err(Fault),
             },
-            Op::Fold { fold, list, filter, value } => {
-                let l = &self.feeds.lists[*list as usize];
-                if l.null.as_ref().is_some_and(|null| K::get(null, self.row)) {
-                    return Err(Fault);
-                }
-                let range = l.offsets[self.row] as usize..l.offsets[self.row + 1] as usize;
-                let saved = (self.elem, std::mem::take(&mut self.elems));
-                self.elems = vec![None; hir.nodes.len()];
+            Op::Fold { fold, list, filter, value, empty } => {
+                let range = self.range(*list, *empty)?;
+                let saved = self.elem[*list as usize];
                 let mut kept = Vec::new();
                 let mut result = Ok(());
                 for e in range {
-                    self.elem = e;
-                    self.elems.fill(None);
+                    self.enter(*list, e);
                     if let Some(f) = filter {
                         match self.eval(*f) {
                             Ok(V::Bool(true)) => {}
@@ -246,8 +316,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 let mut ones = 0;
                 if result.is_ok() && *fold != Fold::Count {
                     for e in kept.iter().copied() {
-                        self.elem = e;
-                        self.elems.fill(None);
+                        self.enter(*list, e);
                         let Some(v) = value else {
                             result = Err(Fault);
                             break;
@@ -271,8 +340,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                         }
                     }
                 }
-                self.elem = saved.0;
-                self.elems = saved.1;
+                self.enter(*list, saved);
                 result?;
                 let sum = || values.iter().try_fold(Decimal::ZERO, |acc, v| acc.checked_add(*v)).ok_or(Fault);
                 Ok(match fold {

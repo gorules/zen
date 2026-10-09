@@ -11,7 +11,7 @@ use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::walker::GraphWalker;
 use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::compiled::bound::{Bound, Outs};
-use crate::compiled::shred::{Normalizer, Seen, Shredder};
+use crate::compiled::shred::{Listing, Normalizer, Seen, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer};
 use crate::compiled::data::Shape as DataShape;
 use crate::compiled::{Body, ColumnarOutput, CompiledGraph, Condition, Kind, OutputColumn};
@@ -54,6 +54,8 @@ type Origin<'s, 'a> = Option<(&'s Leaf<'a>, &'s Option<Rc<[u64]>>)>;
 type Group<'a> = (Option<Rc<[usize]>>, Vec<(Arc<str>, Leaf<'a>, Option<Rc<[u64]>>)>);
 type Lowered = (Outputs, Option<Vec<u32>>, Option<Vec<u64>>, Option<Vec<u64>>);
 type Shown<'a> = (Leaf<'a>, Option<Rc<[u64]>>);
+type Cached<'a> = (SlotId, Rc<str>, Option<Rc<Listing<'a>>>);
+type Prepared<'a> = (Rc<Listing<'a>>, Option<Vec<u64>>, Option<Vec<u64>>);
 
 pub(crate) struct Store<'a> {
     rows: usize,
@@ -72,6 +74,7 @@ pub(crate) struct Store<'a> {
     hints: Vec<(SlotId, Rc<[i32]>, usize)>,
     views: Vec<(SlotId, bool, Option<Shown<'a>>)>,
     viewed: Vec<(SlotId, M, bool, Leaf<'a>)>,
+    listings: std::cell::RefCell<Vec<Cached<'a>>>,
     counts: (usize, usize),
 }
 
@@ -126,6 +129,7 @@ impl<'a> Store<'a> {
             hints: Vec::new(),
             views: Vec::new(),
             viewed: Vec::new(),
+            listings: std::cell::RefCell::new(Vec::new()),
             counts: (0, 0),
         }
     }
@@ -148,6 +152,21 @@ impl<'a> Store<'a> {
         self.masked.retain(|(slot, m, _)| kept(*slot, *m));
         self.views.retain(|(slot, ..)| kept(*slot, M::All));
         self.viewed.retain(|(slot, m, ..)| kept(*slot, *m));
+        self.listings.get_mut().retain(|(slot, ..)| kept(*slot, M::All));
+    }
+
+    fn listing(&self, slot: SlotId, chain: &[&str]) -> Option<Rc<Listing<'a>>> {
+        let key = chain.join("\n");
+        if let Some((.., found)) = self.listings.borrow().iter().find(|(s, k, _)| *s == slot && k.as_ref() == key) {
+            return found.clone();
+        }
+        let built = match chain.split_last() {
+            None => Listing::leaf(&self.leaf(slot), self.rows),
+            Some((field, rest)) => self.listing(slot, rest).and_then(|parent| parent.nested(field)),
+        }
+        .map(Rc::new);
+        self.listings.borrow_mut().push((slot, Rc::from(key), built.clone()));
+        built
     }
 
     fn leaf(&self, slot: SlotId) -> Leaf<'a> {
@@ -824,12 +843,15 @@ impl<'a> Run<'_, 'a> {
         let seen: Vec<(SlotId, Seen)> = op.keys.iter().map(|slot| (*slot, Normalizer::seen(&self.store.leaf(*slot), rows))).collect();
         let key: Vec<Seen> = seen.iter().map(|(_, seen)| *seen).collect();
         let graph = self.graph;
+        let store = &self.store;
+        let lister = |slot: SlotId, chain: &[&str]| store.listing(slot, chain).map(|listing| listing.classes());
         let pieces = op.variant(&key, units.len(), || {
             Grouping {
                 graph,
                 masks: &seg.masks,
                 slots: &seg.slots,
                 seen: &seen,
+                listing: Some(&lister),
             }
             .pieces(units)
         });
@@ -946,11 +968,20 @@ impl<'a> Run<'_, 'a> {
                     return;
                 };
                 at += 1;
-                if let Some(select) = &select {
+                let listed = slot.offsets.is_some();
+                if let (Some(select), false) = (&select, listed) {
                     slot.valid.resize(select.len(), 0);
                     slot.valid.iter_mut().zip(select).for_each(|(valid, chosen)| *valid &= chosen);
                 }
                 match (target, unit) {
+                    (Target::Slot(id), _) if listed => {
+                        let leaf = op.exports.leaf(slot, &mut dicts);
+                        let leaf = match &select {
+                            Some(select) => Leaf::masked(leaf, &Rc::from(select.as_slice())),
+                            None => leaf,
+                        };
+                        leaves.push((*id, leaf));
+                    }
                     (Target::Slot(id), _) => leaves.push((*id, op.exports.leaf(slot, &mut dicts))),
                     (Target::Choice, Op::Table(table)) => self.choice(table, slot, &mut leaves, &mut masks),
                     (Target::Choice, _) => {}
@@ -1044,7 +1075,7 @@ impl<'a> Run<'_, 'a> {
             .map(|read| self.store.hints.iter().find(|(slot, _, _)| *slot == read.slot).map(|(_, codes, size)| (codes.clone(), *size)))
             .collect();
         let long = op.program.instructions() >= TypedOp::LONG * op.columns.len();
-        let attempt = op.sparse.load(Ordering::Relaxed) == 0;
+        let attempt = op.sparse.load(Ordering::Relaxed) == 0 && op.lists.is_empty();
         let raw: Vec<Leaf<'a>> = op.columns.iter().map(|read| self.store.leaf(read.slot)).collect();
         let keyed = attempt
             && raw.iter().zip(&hints).all(|(leaf, hint)| {
@@ -1097,8 +1128,37 @@ impl<'a> Run<'_, 'a> {
                     positions.iter().for_each(|&row| Bits::set(&mut bits, row, true));
                     bits
                 });
+                let mut listed: Vec<Prepared<'a>> = Vec::with_capacity(op.lists.len());
+                for (read, chain) in &op.lists {
+                    let chain: Vec<&str> = chain.iter().map(|field| field.as_ref()).collect();
+                    let listing = self.store.listing(read.slot, &chain)?;
+                    let (validity, faults) = match (chain.is_empty(), Store::implied(seg, *read)) {
+                        (true, false) => {
+                            let mask = self.store.mask(seg, read.present);
+                            let mut validity = listing.validity.as_deref().map_or_else(|| Bits::ones(rows), <[u64]>::to_vec);
+                            let mut faults = listing.hosted.as_deref().map_or_else(|| vec![0u64; rows.div_ceil(64)], <[u64]>::to_vec);
+                            for row in (0..rows).filter(|&row| !Bits::get(&mask, row)) {
+                                match listing.offsets[row] == listing.offsets[row + 1] {
+                                    true => Bits::set(&mut validity, row, false),
+                                    false => Bits::set(&mut faults, row, true),
+                                }
+                            }
+                            (Some(validity), Some(faults))
+                        }
+                        _ => (None, None),
+                    };
+                    listed.push((listing, validity, faults));
+                }
                 let mut batch = Batch::new(rows);
                 leaves.iter().for_each(|leaf| batch.push_column(leaf.column()));
+                for ((listing, validity, faults), def) in listed.iter().zip(&op.program.hir().schema.lists) {
+                    let validity = validity.as_deref().or(listing.validity.as_deref()).map(|bits| (bits, 0));
+                    let list = zen_expression::typed::List::new(&listing.offsets, validity, listing.columns(&def.fields)?);
+                    batch.push_list(match faults.as_deref().or(listing.hosted.as_deref()) {
+                        Some(bits) => list.faults(bits, 0),
+                        None => list,
+                    });
+                }
                 op.program.run(&batch, &mut out, select.as_deref()).ok()?;
                 Some((out, None, select, prefault))
             }

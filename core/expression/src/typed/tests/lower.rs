@@ -1,6 +1,7 @@
 use crate::lane::Fusion;
 use crate::typed::tests::data::{ColSpec, Enc, ListSpec, Mock, Spec};
-use crate::typed::{Class, DictKind, Hir, Hit, Kind, Lowering, Op, Resolve, Resolved, TableRule, TableSpec};
+use crate::typed::{Class, DictKind, Hir, Hit, Kind, Lowering, Op, Program, Resolve, Resolved, TableRule, TableSpec};
+use std::sync::Arc;
 
 struct Anchor;
 
@@ -19,6 +20,7 @@ impl Anchor {
                 ColSpec::new("customer.rate", Class::Num, Enc::Scaled),
             ],
             lists: vec![ListSpec {
+                parent: None,
                 path: "customer.accounts",
                 alias: "account",
                 fields: vec![
@@ -197,12 +199,22 @@ impl Resolve for Probe {
             "c.b" => Resolved::Column(Class::Bool),
             "c.f" => Resolved::Column(Class::Num),
             "c.weird" => Resolved::Unsupported,
+            "c.xs" => Resolved::List { fields: vec![(Arc::from(""), Class::Num)] },
+            "c.ts" => Resolved::List { fields: vec![(Arc::from(""), Class::Text)] },
+            "c.items" => Resolved::List { fields: vec![(Arc::from("q"), Class::Num), (Arc::from("n"), Class::Text)] },
             _ => Resolved::Absent,
         }
     }
 
     fn alias(&mut self, _: &str) -> Resolved {
         Resolved::Unsupported
+    }
+
+    fn nested(&mut self, chain: &[&str]) -> Resolved {
+        match chain {
+            ["c.items", "subs", ..] => Resolved::List { fields: vec![(Arc::from("v"), Class::Num)] },
+            _ => Resolved::Unsupported,
+        }
     }
 }
 
@@ -318,6 +330,46 @@ fn unsupported_shapes() {
     assert!(Probe::unit(&mut lowering, &mut probe, "c.p", "c.o.x").is_err(), "read inside a written value");
     assert!(Probe::unit(&mut lowering, &mut probe, "c.o.x", "1").is_ok());
     assert!(Probe::unit(&mut lowering, &mut probe, "c.q", "c.o").is_err(), "read of a partially written value");
+}
+
+#[test]
+fn list_shapes() {
+    let supported = [
+        "sum(c.xs)",
+        "filter(c.xs, # > 1)",
+        "map(c.items, #.q * 2)",
+        "c.n in c.xs",
+        "'a' in c.ts",
+        "contains(c.xs, 1)",
+        "count(filter(c.items, #.q > 1), #.q < 5)",
+        "sum(map(c.items, sum(map(#.subs, #.v))))",
+        "c.xs ?? []",
+        "len(filter(c.xs, # > 0))",
+    ];
+    for source in supported {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_ok(), "{source}");
+        let hir = lowering.finish();
+        Program::new(hir.clone()).unwrap_or_else(|e| panic!("{source}: {e}\n{hir}"));
+    }
+    let unsupported = [
+        ("filter over a computed map", "filter(map(c.xs, # * 2), # > 1)"),
+        ("quantifier over a computed map", "some(map(c.xs, # * 2), # > 1)"),
+        ("membership in a computed map", "1 in map(c.xs, # * 2)"),
+        ("text list output", "map(c.items, #.n)"),
+        ("objects as values", "filter(c.items, #.q > 1)"),
+        ("sum of objects", "sum(c.items)"),
+        ("list as a scalar", "c.xs + 1"),
+        ("nested too deep", "sum(map(c.items, sum(map(#.subs, sum(map(#.deep, sum(map(#.deeper, #.v))))))))"),
+    ];
+    for (what, source) in unsupported {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_err(), "{what}: {source}");
+        assert_eq!(lowering.outputs(), 0);
+        assert!(lowering.finish().schema.lists.is_empty(), "{what}: rolled back");
+    }
 }
 
 #[test]

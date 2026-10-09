@@ -1,3 +1,4 @@
+use crate::typed::batch::Feeds;
 use crate::typed::hir::{DictId, Hir, Kind, Scope, Unsupported};
 use crate::typed::kernel::K;
 use crate::typed::num::Dec;
@@ -20,6 +21,8 @@ pub struct Slot {
     pub valid: Vec<u64>,
     pub fault: Faults,
     pub wide: Vec<(usize, Decimal)>,
+    pub offsets: Option<Vec<i32>>,
+    pub(crate) keep: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -106,6 +109,11 @@ impl Slot {
         self.len = len;
         self.wide.clear();
         let words = K::words(len);
+        if let Some(offsets) = &mut self.offsets {
+            offsets.clear();
+            self.keep.clear();
+            self.keep.resize(words, u64::MAX);
+        }
         self.valid.clear();
         self.valid.resize(words, u64::MAX);
         match &mut self.data {
@@ -185,7 +193,18 @@ impl Outputs {
                 Kind::Code(_) => Data::Code(Vec::new()),
                 Kind::Text => return Err(Unsupported::new(format!("text output {}", o.name))),
             };
-            slots.push(Slot { name: o.name.clone(), scope: o.scope, kind: o.ty.kind, len: 0, data, valid: Vec::new(), fault: Faults::default(), wide: Vec::new() });
+            slots.push(Slot {
+                name: o.name.clone(),
+                scope: o.scope,
+                kind: o.ty.kind,
+                len: 0,
+                data,
+                valid: Vec::new(),
+                fault: Faults::default(),
+                wide: Vec::new(),
+                offsets: o.collect.map(|_| Vec::new()),
+                keep: Vec::new(),
+            });
         }
         Ok(Self { rows: 0, slots, faults: Faults::default() })
     }
@@ -225,5 +244,72 @@ impl Outputs {
 
     pub(crate) fn parts(&mut self) -> (&mut [Slot], &mut Faults) {
         (&mut self.slots, &mut self.faults)
+    }
+
+    pub(crate) fn collect(&mut self, hir: &Hir, feeds: &Feeds, select: Option<&[u64]>) {
+        for (at, o) in hir.outputs.iter().enumerate() {
+            let Some(c) = o.collect else {
+                continue;
+            };
+            let Some(list) = feeds.lists.get(c.list as usize) else {
+                continue;
+            };
+            if let (false, Some(null)) = (c.empty, &list.null) {
+                for owner in (0..list.owners()).filter(|&o| K::get(null, o)) {
+                    let row = feeds.row_of(c.list as usize, owner);
+                    if select.is_none_or(|sel| K::get(sel, row)) {
+                        self.faults.set(row);
+                        if let Some(slot) = self.slots.get_mut(at) {
+                            slot.fault.set(row);
+                        }
+                    }
+                }
+            }
+            if let Some(slot) = self.slots.get_mut(at) {
+                slot.compact(&list.offsets);
+            }
+        }
+    }
+}
+
+impl Slot {
+    fn compact(&mut self, offsets: &[i32]) {
+        let len = self.len;
+        let kept: Vec<usize> = (0..len).filter(|&e| K::get(&self.keep, e)).collect();
+        let mut out = Vec::with_capacity(offsets.len());
+        let mut at = 0usize;
+        out.push(0i32);
+        for w in offsets.windows(2) {
+            let hi = usize::try_from(w[1]).unwrap_or(0);
+            while at < kept.len() && kept[at] < hi {
+                at += 1;
+            }
+            out.push(i32::try_from(at).unwrap_or(i32::MAX));
+        }
+        if kept.len() != len {
+            let mut valid = vec![0u64; K::words(kept.len())];
+            for (to, &from) in kept.iter().enumerate() {
+                K::set(&mut valid, to, K::get(&self.valid, from));
+            }
+            self.valid = valid;
+            match &mut self.data {
+                Data::Num { mant, scale } => {
+                    *mant = kept.iter().map(|&e| mant[e]).collect();
+                    *scale = kept.iter().map(|&e| scale[e]).collect();
+                }
+                Data::Bool(bits) => {
+                    let mut packed = vec![0u64; K::words(kept.len())];
+                    for (to, &from) in kept.iter().enumerate() {
+                        K::set(&mut packed, to, K::get(bits, from));
+                    }
+                    *bits = packed;
+                }
+                Data::Code(codes) => *codes = kept.iter().map(|&e| codes[e]).collect(),
+            }
+            let wide = std::mem::take(&mut self.wide);
+            self.wide = wide.into_iter().filter_map(|(e, d)| kept.binary_search(&e).ok().map(|to| (to, d))).collect();
+            self.len = kept.len();
+        }
+        self.offsets = Some(out);
     }
 }

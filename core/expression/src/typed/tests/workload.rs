@@ -77,7 +77,61 @@ impl Block {
 }
 
 impl Workload {
-    pub(crate) const NAMES: [&'static str; 7] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7"];
+    pub(crate) const NAMES: [&'static str; 10] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10"];
+
+    pub(crate) const FAULTY: [&'static str; 4] = ["W6", "W8", "W9", "W10"];
+
+    const W8_KEYS: [(&'static str, &'static str); 24] = [
+        ("total", "sum(xs)"),
+        ("mean", "avg(xs)"),
+        ("lo", "min(xs)"),
+        ("hi", "max(filter(xs, # > 0))"),
+        ("pos", "filter(xs, # > x.limit)"),
+        ("doubled", "map(xs, # * 2)"),
+        ("sumd", "sum($.doubled)"),
+        ("big", "filter($.doubled, # > 10)"),
+        ("cnt", "len(filter(xs, # >= 0))"),
+        ("has", "x.n in xs"),
+        ("vip", "'vip' in tags"),
+        ("nvip", "'vip' not in tags"),
+        ("c2", "contains(xs, 2)"),
+        ("qtys", "map(filter(items, #.ok), #.qty)"),
+        ("flags", "map(items, #.qty > 2)"),
+        ("ct", "count(filter(items, #.ok), #.price > x.limit)"),
+        ("sm", "sum(map(items ?? [], #.price * #.qty))"),
+        ("lbl", "map(items, #.ok ? 'Y' : 'N')"),
+        ("tc", "count(tags, # == 'a')"),
+        ("nn", "len(xs)"),
+        ("e", "sum(xs ?? [])"),
+        ("q", "some($.qtys, # > 3)"),
+        ("same", "xs ?? []"),
+        ("again", "$.pos"),
+    ];
+
+    const W9_KEYS: [(&'static str, &'static str); 11] = [
+        ("c.total", "sum(map(c.companies, sum(map(#.depts, #.cost))))"),
+        ("c.heads", "sum(map(c.companies, sum(map(#.depts, len(#.emps)))))"),
+        ("c.pay", "sum(map(c.companies, sum(map(#.depts, sum(map(filter(#.emps, #.active), #.salary))))))"),
+        ("c.anyBig", "some(c.companies, some(#.depts, #.size > c.limit))"),
+        ("c.cnt", "count(c.companies, #.big and len(#.depts) > 1)"),
+        ("c.mx", "max(map(c.companies, #.rev))"),
+        ("c.rich", "map(filter(c.companies, #.rev > c.limit), #.rev)"),
+        ("c.sc", "sum(c.scores)"),
+        ("c.hit", "c.limit in c.scores"),
+        ("c.top", "map(c.companies, len(#.depts))"),
+        ("c.deep", "count(c.companies, some(#.depts, all(#.emps, #.active)))"),
+    ];
+
+    const W10_KEYS: [(&'static str, &'static str); 8] = [
+        ("co.cost", "sum(map(co.depts, #.cost))"),
+        ("co.n", "len(co.depts)"),
+        ("co.big", "some(co.depts, #.size > co.rev)"),
+        ("co.pay", "sum(map(co.depts, sum(map(#.emps, #.salary))))"),
+        ("co.share", "co.rev / (sum(map(c.companies, #.rev)) + 1)"),
+        ("co.sizes", "map(co.depts, #.size * 2)"),
+        ("co.hit", "c.limit in c.scores"),
+        ("co.act", "count(co.depts, some(#.emps, #.active))"),
+    ];
 
     const KINDS: [&'static str; 3] = ["savings", "checking", "loan"];
     const TIERS: [&'static str; 3] = ["gold", "silver", "bronze"];
@@ -180,6 +234,9 @@ impl Workload {
             "W5" => Self::w5(),
             "W6" => Self::w6(),
             "W7" => Self::w7(),
+            "W8" => Self::w8(),
+            "W9" => Self::w9(),
+            "W10" => Self::w10(),
             _ => Self::w4(),
         }
     }
@@ -205,6 +262,8 @@ impl Workload {
             "W3" => Self::w3_rows(count),
             "W5" => Self::w5_rows(count),
             "W6" | "W7" => Self::w6_rows(count),
+            "W8" => Self::w8_rows(count),
+            "W9" | "W10" => Self::w9_rows(count),
             _ => Self::w4_rows(count),
         }
     }
@@ -216,6 +275,8 @@ impl Workload {
             "W3" => Self::w3_extremes(),
             "W5" => Self::w5_extremes(),
             "W6" | "W7" => Self::w6_extremes(),
+            "W8" => Self::w8_extremes(),
+            "W9" | "W10" => Self::w9_extremes(),
             _ => Self::w4_extremes(),
         }
     }
@@ -255,6 +316,7 @@ impl Workload {
             spec: Spec {
                 columns: vec![Self::col("customer.rate", Class::Num, Enc::Scaled)],
                 lists: vec![ListSpec {
+                    parent: None,
                     path: "customer.accounts",
                     alias: "account",
                     fields: vec![Self::col("balance", Class::Num, Enc::Dec), Self::col("kind", Class::Text, Enc::Dict)],
@@ -287,6 +349,7 @@ impl Workload {
                     Self::col("customer.tier", Class::Text, Enc::Text),
                 ],
                 lists: vec![ListSpec {
+                    parent: None,
                     path: "customer.accounts",
                     alias: "account",
                     fields: vec![
@@ -387,6 +450,7 @@ impl Workload {
         Spec {
             columns: vec![Self::col("c.limit", Class::Num, Enc::Scaled)],
             lists: vec![ListSpec {
+                parent: None,
                 path: "c.items",
                 alias: "item",
                 fields: vec![Self::col("qty", Class::Num, Enc::I64), Self::col("price", Class::Num, Enc::Dec), Self::col("ok", Class::Bool, Enc::Bool)],
@@ -400,6 +464,189 @@ impl Workload {
 
     fn w7() -> Workload {
         Workload { name: "W7", spec: Self::w6_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W7_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn list(parent: Option<usize>, path: &'static str, alias: &'static str, fields: Vec<ColSpec>) -> ListSpec {
+        ListSpec { parent, path, alias, fields }
+    }
+
+    fn w8() -> Workload {
+        Workload {
+            name: "W8",
+            spec: Spec {
+                columns: vec![Self::col("x.limit", Class::Num, Enc::Scaled), Self::col("x.n", Class::Num, Enc::I64)],
+                lists: vec![
+                    Self::list(None, "xs", "x", vec![Self::col("", Class::Num, Enc::Dec)]),
+                    Self::list(None, "tags", "t", vec![Self::col("", Class::Text, Enc::Dict)]),
+                    Self::list(
+                        None,
+                        "items",
+                        "item",
+                        vec![Self::col("qty", Class::Num, Enc::I64), Self::col("price", Class::Num, Enc::Scaled), Self::col("ok", Class::Bool, Enc::Bool)],
+                    ),
+                ],
+            },
+            dialect: Dialect::Graph,
+            member: None,
+            blocks: Self::W8_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect(),
+        }
+    }
+
+    fn w9_spec() -> Spec {
+        Spec {
+            columns: vec![Self::col("c.limit", Class::Num, Enc::Scaled)],
+            lists: vec![
+                Self::list(
+                    None,
+                    "c.companies",
+                    "co",
+                    vec![Self::col("rev", Class::Num, Enc::Scaled), Self::col("big", Class::Bool, Enc::Bool), Self::col("depts", Class::Num, Enc::Items)],
+                ),
+                Self::list(
+                    Some(0),
+                    "depts",
+                    "d",
+                    vec![Self::col("size", Class::Num, Enc::I64), Self::col("cost", Class::Num, Enc::Scaled), Self::col("emps", Class::Num, Enc::Items)],
+                ),
+                Self::list(Some(1), "emps", "e", vec![Self::col("salary", Class::Num, Enc::Dec), Self::col("active", Class::Bool, Enc::Bool)]),
+                Self::list(None, "c.scores", "s", vec![Self::col("", Class::Num, Enc::Scaled)]),
+            ],
+        }
+    }
+
+    fn w9() -> Workload {
+        Workload { name: "W9", spec: Self::w9_spec(), dialect: Dialect::Policy, member: None, blocks: Self::W9_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w10() -> Workload {
+        Workload { name: "W10", spec: Self::w9_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W10_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w8_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(23);
+        let tags = ["a", "b", "vip", "c"];
+        (0..count)
+            .map(|r| {
+                let xs: Vec<Vec<Value>> = match rng.pick(30) {
+                    0 => vec![Vec::new()],
+                    _ => (0..if r % 97 == 3 { 1300 } else { rng.pick(6) as usize })
+                        .map(|_| match rng.pick(60) {
+                            0 => vec![Value::Null],
+                            _ => vec![Self::d(rng.pick(4001) as i64 - 1000, rng.pick(3) as u8)],
+                        })
+                        .collect(),
+                };
+                let tg: Vec<Vec<Value>> = (0..rng.pick(4)).map(|_| vec![Self::s(tags[rng.pick(4) as usize])]).collect();
+                let items: Vec<Vec<Value>> = match rng.pick(25) {
+                    0 => vec![Vec::new()],
+                    _ => (0..rng.pick(5))
+                        .map(|_| {
+                            let ok = match rng.pick(50) {
+                                0 => Value::Null,
+                                k => Value::Bool(k % 3 != 0),
+                            };
+                            vec![Self::n(rng.pick(8) as i64), Self::d(rng.pick(50_000) as i64, 2), ok]
+                        })
+                        .collect(),
+                };
+                let limit = match rng.pick(40) {
+                    0 => Value::Null,
+                    _ => Self::d(rng.pick(2000) as i64, 1),
+                };
+                Row { columns: vec![limit, Self::n(rng.pick(20) as i64 - 10)], lists: vec![xs, tg, items] }
+            })
+            .collect()
+    }
+
+    fn w8_extremes() -> Vec<Row> {
+        let row = |limit: Value, n: Value, xs: Vec<Value>, items: Vec<[Value; 3]>| Row {
+            columns: vec![limit, n],
+            lists: vec![xs.into_iter().map(|x| vec![x]).collect(), vec![vec![Self::s("vip")]], items.into_iter().map(|i| i.to_vec()).collect()],
+        };
+        let t = || Value::Bool(true);
+        vec![
+            row(Self::n(1), Self::n(2), Vec::new(), Vec::new()),
+            row(Self::n(1), Value::Null, vec![Value::Null, Self::n(3)], Vec::new()),
+            row(Self::n(1), Self::n(2), vec![Self::n(i64::MAX), Self::n(i64::MAX)], vec![[Self::n(i64::MAX), Self::n(3), t()]]),
+            row(Self::d(5, 1), Self::n(0), vec![Self::d(1, 28), Self::d(-1, 28), Self::d(0, 3)], vec![[Self::n(2), Self::d(0, 2), t()]]),
+            row(Value::Null, Self::n(2), vec![Self::n(2), Self::d(20, 1)], vec![[Self::n(1), Self::n(1), Value::Null]]),
+            row(Self::n(1), Self::n(7), vec![Self::n(i64::MIN)], vec![[Self::n(9), Self::n(i64::MIN), t()]]),
+            row(Self::n(1), Self::n(5), vec![Self::d(15, 1), Self::d(150, 2), Self::n(-0)], Vec::new()),
+        ]
+    }
+
+    fn w9_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(29);
+        (0..count)
+            .map(|r| {
+                let companies: Vec<Vec<Value>> = match rng.pick(40) {
+                    0 => vec![Vec::new()],
+                    _ => (0..if r % 131 == 7 { 300 } else { rng.pick(5) as usize })
+                        .map(|_| {
+                            let depts = match rng.pick(20) {
+                                0 => Value::Null,
+                                _ => Value::Items(
+                                    (0..rng.pick(4))
+                                        .map(|_| {
+                                            let emps = match rng.pick(25) {
+                                                0 => Value::Null,
+                                                _ => Value::Items(
+                                                    (0..rng.pick(4))
+                                                        .map(|_| {
+                                                            let active = match rng.pick(30) {
+                                                                0 => Value::Null,
+                                                                k => Value::Bool(k % 2 == 0),
+                                                            };
+                                                            vec![Self::d(rng.pick(900_000) as i64, rng.pick(3) as u8), active]
+                                                        })
+                                                        .collect(),
+                                                ),
+                                            };
+                                            vec![Self::n(rng.pick(50) as i64), Self::d(rng.pick(100_000) as i64, 2), emps]
+                                        })
+                                        .collect(),
+                                ),
+                            };
+                            let big = match rng.pick(30) {
+                                0 => Value::Null,
+                                k => Value::Bool(k % 2 == 1),
+                            };
+                            vec![Self::d(rng.pick(1_000_000) as i64, 1), big, depts]
+                        })
+                        .collect(),
+                };
+                let scores: Vec<Vec<Value>> = match rng.pick(30) {
+                    0 => vec![Vec::new()],
+                    _ => (0..rng.pick(5)).map(|_| vec![Self::d(rng.pick(300) as i64, 1)]).collect(),
+                };
+                Row { columns: vec![Self::d(rng.pick(400) as i64, 1)], lists: vec![companies, scores] }
+            })
+            .collect()
+    }
+
+    fn w9_extremes() -> Vec<Row> {
+        let emp = |salary: Value, active: Value| vec![salary, active];
+        let dept = |size: Value, cost: Value, emps: Value| vec![size, cost, emps];
+        let company = |rev: Value, big: Value, depts: Value| vec![rev, big, depts];
+        let t = || Value::Bool(true);
+        let row = |limit: Value, companies: Vec<Vec<Value>>, scores: Vec<Value>| Row { columns: vec![limit], lists: vec![companies, scores.into_iter().map(|s| vec![s]).collect()] };
+        vec![
+            row(Self::n(1), Vec::new(), Vec::new()),
+            row(Self::n(1), vec![company(Self::n(5), t(), Value::Items(Vec::new()))], vec![Self::n(1)]),
+            row(Self::n(1), vec![company(Self::n(5), t(), Value::Null)], vec![Self::n(2)]),
+            row(
+                Self::n(1),
+                vec![company(Self::n(i64::MAX), t(), Value::Items(vec![dept(Self::n(1), Self::n(i64::MAX), Value::Items(vec![emp(Self::n(i64::MAX), t()), emp(Self::n(i64::MAX), t())]))]))],
+                vec![Self::n(i64::MAX), Self::n(i64::MAX)],
+            ),
+            row(Value::Null, vec![company(Self::n(3), Value::Null, Value::Items(vec![dept(Self::n(1), Self::n(2), Value::Null)]))], vec![Value::Null]),
+            row(
+                Self::d(5, 1),
+                vec![company(Self::d(-1, 28), t(), Value::Items(vec![dept(Value::Null, Self::d(0, 3), Value::Items(vec![emp(Value::Null, t())]))]))],
+                vec![Self::d(5, 1), Self::d(50, 2)],
+            ),
+            row(Self::n(-1), vec![company(Self::d(0, 2), Value::Bool(false), Value::Items(vec![dept(Self::n(1), Self::n(1), Value::Items(Vec::new()))]))], Vec::new()),
+        ]
     }
 
     fn w5_rows(count: usize) -> Vec<Row> {

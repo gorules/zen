@@ -3,7 +3,8 @@ use crate::lane::Fusion;
 use crate::lexer::{ArithmeticOperator, Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator};
 use crate::parser::{Node as Ast, Parser};
 use crate::typed::hir::{
-    Arith, Cmp, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Ty, Unsupported,
+    Arith, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Ty,
+    Unsupported,
 };
 use crate::typed::num::Dec;
 use bumpalo::Bump;
@@ -25,6 +26,7 @@ pub enum Resolved {
     Keyed(Class, Arc<str>),
     Output(usize),
     List { fields: Vec<(Arc<str>, Class)> },
+    KeyedList(Arc<str>, Vec<(Arc<str>, Class)>),
     Absent,
     Unsupported,
 }
@@ -53,6 +55,10 @@ pub struct TableSpec {
 pub trait Resolve {
     fn path(&mut self, path: &str) -> Resolved;
     fn alias(&mut self, field: &str) -> Resolved;
+    fn nested(&mut self, chain: &[&str]) -> Resolved {
+        let _ = chain;
+        Resolved::Unsupported
+    }
 }
 
 pub struct Lowering {
@@ -60,7 +66,7 @@ pub struct Lowering {
     nodes: Vec<Node>,
     index: HashMap<Node, NodeId>,
     outputs: Vec<Output>,
-    names: Vec<(String, NodeId)>,
+    names: Vec<(String, Named)>,
     absent: Vec<String>,
     literal: Option<DictId>,
     classes: Vec<(NodeId, DictId)>,
@@ -86,7 +92,23 @@ struct Mark {
 struct Ctx {
     scope: Scope,
     pointer: Option<ListId>,
+    item: Option<NodeId>,
     dollar: Option<NodeId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Seq {
+    list: ListId,
+    keep: Option<NodeId>,
+    value: Option<NodeId>,
+    empty: bool,
+    pure: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Named {
+    Node(NodeId),
+    Seq(Seq),
 }
 
 enum Base<'a> {
@@ -112,10 +134,12 @@ impl TableRule {
 }
 
 impl Lowering {
+    const DEPTH: u32 = 3;
+
     pub fn new(member: Option<(&str, &str)>) -> Self {
         let mut schema = Schema::default();
         let member = member.map(|(alias, path)| {
-            schema.lists.push(ListDef { path: path.to_string(), alias: Some(alias.to_string()), fields: Vec::new() });
+            schema.lists.push(ListDef { path: path.to_string(), alias: Some(alias.to_string()), fields: Vec::new(), parent: None });
             0
         });
         Self {
@@ -218,6 +242,12 @@ impl Lowering {
         let mut live = vec![false; self.nodes.len()];
         for o in &self.outputs {
             live[o.node as usize] = true;
+            if let Some(c) = o.collect {
+                live[c.item as usize] = true;
+                if let Some(k) = c.keep {
+                    live[k as usize] = true;
+                }
+            }
         }
         for id in (0..self.nodes.len()).rev() {
             if live[id] {
@@ -238,23 +268,37 @@ impl Lowering {
         self.index.clear();
         for o in &mut self.outputs {
             o.node = remap[o.node as usize];
+            if let Some(c) = &mut o.collect {
+                c.item = remap[c.item as usize];
+                c.keep = c.keep.map(|k| remap[k as usize]);
+            }
         }
     }
 
     fn ctx(&self) -> Ctx {
         match self.member {
-            Some(list) => Ctx { scope: Scope::Elem(list), pointer: None, dollar: None },
-            None => Ctx { scope: Scope::Row, pointer: None, dollar: None },
+            Some(list) => Ctx { scope: Scope::Elem(list), pointer: None, item: None, dollar: None },
+            None => Ctx { scope: Scope::Row, pointer: None, item: None, dollar: None },
         }
     }
 
     fn entry(&mut self, entry: &Fusion, r: &mut dyn Resolve) -> Result<(), Unsupported> {
         let ctx = self.ctx();
         match entry {
-            Fusion::Output { key, source } => {
-                let id = self.parse(source, false, ctx, r)?;
-                self.output(key, id, ctx.scope, true)
-            }
+            Fusion::Output { key, source } => self.parsed(source, false, ctx, r, |this, ast, ctx, r| match Self::listy(ast) {
+                true => {
+                    let seq = this.seq(ast, ctx, r)?;
+                    this.collect(key, seq, ctx.scope)
+                }
+                false => match this.expr(ast, ctx, r) {
+                    Ok(id) => this.output(key, id, ctx.scope, true),
+                    Err(e) if Self::passable(ast) => match this.seq(ast, ctx, r) {
+                        Ok(seq) => this.collect(key, seq, ctx.scope),
+                        Err(_) => Err(e),
+                    },
+                    Err(e) => Err(e),
+                },
+            }),
             Fusion::Hidden { key, source } => {
                 let id = self.parse(source, false, ctx, r)?;
                 self.output(key, id, ctx.scope, false)
@@ -373,6 +417,17 @@ impl Lowering {
     }
 
     fn parse(&mut self, source: &str, unary: bool, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        self.parsed(source, unary, ctx, r, |this, ast, ctx, r| this.expr(ast, ctx, r))
+    }
+
+    fn parsed<T>(
+        &mut self,
+        source: &str,
+        unary: bool,
+        ctx: Ctx,
+        r: &mut dyn Resolve,
+        lower: impl FnOnce(&mut Self, &Ast, Ctx, &mut dyn Resolve) -> Result<T, Unsupported>,
+    ) -> Result<T, Unsupported> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(&bump, source).map_err(|e| Unsupported::new(format!("lex {source:?}: {e}")))?;
@@ -382,12 +437,12 @@ impl Lowering {
             false => parser.standard().parse(),
         };
         parsed.error().map_err(|e| Unsupported::new(format!("parse {source:?}: {e}")))?;
-        self.expr(parsed.root, ctx, r)
+        lower(self, parsed.root, ctx, r)
     }
 
     fn output(&mut self, name: &str, id: NodeId, scope: Scope, export: bool) -> Result<(), Unsupported> {
         if !export {
-            self.names.push((name.to_string(), id));
+            self.names.push((name.to_string(), Named::Node(id)));
             return Ok(());
         }
         let id = match self.kind(id) {
@@ -409,10 +464,66 @@ impl Lowering {
             _ => return Err(Unsupported::new(format!("output {name} scope mismatch"))),
         };
         if !name.is_empty() {
-            self.names.push((name.to_string(), id));
+            self.names.push((name.to_string(), Named::Node(id)));
         }
         let ty = self.nodes[id as usize].ty;
-        self.outputs.push(Output { name: name.to_string(), node: id, scope, ty });
+        self.outputs.push(Output { name: name.to_string(), node: id, scope, ty, collect: None });
+        Ok(())
+    }
+
+    fn listy(ast: &Ast) -> bool {
+        match ast {
+            Ast::Parenthesized(inner) => Self::listy(inner),
+            Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map | ClosureFunction::Filter), .. } => true,
+            _ => false,
+        }
+    }
+
+    fn passable(ast: &Ast) -> bool {
+        match ast {
+            Ast::Parenthesized(inner) => Self::passable(inner),
+            Ast::Identifier(_) | Ast::Member { .. } => true,
+            Ast::Binary { left, operator: Operator::Logical(LogicalOperator::NullishCoalescing), right: Ast::Array([]) } => Self::passable(left),
+            _ => false,
+        }
+    }
+
+    fn collect(&mut self, name: &str, seq: Seq, scope: Scope) -> Result<(), Unsupported> {
+        let inner = Scope::Elem(seq.list);
+        if self.schema.owner(inner) != Some(scope) {
+            return Err(Unsupported::new(format!("list output {name} outside its owner")));
+        }
+        let item = self.item(seq)?;
+        let item = match self.kind(item) {
+            Kind::Text => match self.lit(item) {
+                Some(Lit::Text(text)) => {
+                    let text = text.clone();
+                    let dict = self.literals();
+                    let code = self.code(dict, &text);
+                    self.konst(Lit::Code(dict, code))
+                }
+                _ => return Err(Unsupported::new(format!("text list output {name}"))),
+            },
+            Kind::Code(d) if self.schema.dicts[d as usize].kind == DictKind::Classes => return Err(Unsupported::new(format!("class list output {name}"))),
+            _ => item,
+        };
+        let item = self.parent(item, inner)?;
+        let node = match seq.keep {
+            None => item,
+            Some(keep) => {
+                let null = self.konst(Lit::Null);
+                let (arms, ty) = self.unify(vec![item, null])?;
+                let ids = [self.parent(keep, inner)?, self.parent(arms[0], inner)?, self.parent(arms[1], inner)?];
+                self.add(Op::If(ids[0], ids[1], ids[2]), ty, inner)
+            }
+        };
+        let keep = seq.keep.map(|k| self.parent(k, inner)).transpose()?;
+        if !name.is_empty() {
+            self.names.push((name.to_string(), Named::Seq(Seq { value: Some(item), keep, pure: true, ..seq })));
+        }
+        let ty = self.nodes[node as usize].ty;
+        let collect = Collect { list: seq.list, keep, item, empty: seq.empty };
+        self.outputs.push(Output { name: name.to_string(), node, scope: inner, ty, collect: Some(collect) });
         Ok(())
     }
 
@@ -489,12 +600,12 @@ impl Lowering {
 
     fn parent(&mut self, id: NodeId, scope: Scope) -> Lowered {
         let node = &self.nodes[id as usize];
-        match (node.scope, scope) {
-            (a, b) if a == b => Ok(id),
-            _ if matches!(node.op, Op::Const(_)) => Ok(id),
-            (Scope::Row, Scope::Elem(_)) => {
-                let ty = node.ty;
-                Ok(self.add(Op::Parent(id), ty, scope))
+        let (from, ty) = (node.scope, node.ty);
+        match self.schema.owner(scope) {
+            _ if from == scope || matches!(node.op, Op::Const(_)) => Ok(id),
+            Some(up) if self.schema.within(up, from) => {
+                let lifted = self.parent(id, up)?;
+                Ok(self.add(Op::Parent(lifted), ty, scope))
             }
             _ => Err(Unsupported::new("scope: element value used outside its list")),
         }
@@ -504,12 +615,13 @@ impl Lowering {
         let mut scope = Scope::Row;
         for id in ids {
             let node = &self.nodes[*id as usize];
-            if let (Scope::Elem(l), false) = (node.scope, matches!(node.op, Op::Const(_))) {
-                match scope {
-                    Scope::Row => scope = Scope::Elem(l),
-                    Scope::Elem(m) if m == l => {}
-                    Scope::Elem(_) => return Err(Unsupported::new("scope: two different lists")),
-                }
+            if matches!(node.op, Op::Const(_)) {
+                continue;
+            }
+            match (self.schema.within(node.scope, scope), self.schema.within(scope, node.scope)) {
+                (true, _) => scope = node.scope,
+                (false, true) => {}
+                (false, false) => return Err(Unsupported::new("scope: two different lists")),
             }
         }
         let mut lifted = Vec::with_capacity(ids.len());
@@ -593,16 +705,23 @@ impl Lowering {
         }
     }
 
-    fn named(&self, path: &str) -> Option<NodeId> {
-        self.names.iter().rev().find(|(name, _)| name == path).map(|(_, node)| *node)
+    fn named(&self, path: &str) -> Option<Named> {
+        self.names.iter().rev().find(|(name, _)| name == path).map(|(_, named)| *named)
     }
 
-    fn own(&self, path: &str) -> Option<NodeId> {
+    fn own(&self, path: &str) -> Option<Named> {
         let from = match self.graph {
             true => self.local.min(self.names.len()),
             false => 0,
         };
-        self.names[from..].iter().rev().find(|(name, _)| name == path).map(|(_, node)| *node)
+        self.names[from..].iter().rev().find(|(name, _)| name == path).map(|(_, named)| *named)
+    }
+
+    fn scalar(named: Named, path: &str) -> Lowered {
+        match named {
+            Named::Node(id) => Ok(id),
+            Named::Seq(_) => Err(Unsupported::new(format!("list {path} used as a value"))),
+        }
     }
 
     fn overlap(&self, path: &str) -> Result<(), Unsupported> {
@@ -620,11 +739,15 @@ impl Lowering {
         match base {
             Base::Pointer => {
                 let list = ctx.pointer.ok_or_else(|| Unsupported::new("# outside a closure"))?;
-                self.field(list, &rest, None, r)
+                match (ctx.item, rest.is_empty()) {
+                    (Some(item), true) => Ok(item),
+                    (Some(_), false) => Err(Unsupported::new("member of a mapped element")),
+                    (None, _) => self.field(list, &rest, None, r),
+                }
             }
             Base::Dollar if segments.is_empty() => ctx.dollar.ok_or_else(|| Unsupported::new("$ outside a table cell")),
             Base::Dollar if ctx.dollar.is_some() => Err(Unsupported::new("member of $ in a table cell")),
-            Base::Dollar => self.own(&rest).ok_or_else(|| Unsupported::new(format!("unknown $.{rest}"))),
+            Base::Dollar => Self::scalar(self.own(&rest).ok_or_else(|| Unsupported::new(format!("unknown $.{rest}")))?, &rest),
             Base::Ident(name) => {
                 let path = match rest.is_empty() {
                     true => name.to_string(),
@@ -634,8 +757,8 @@ impl Lowering {
                     return self.column(&path, r);
                 }
                 self.overlap(&path)?;
-                if let Some(id) = self.named(&path) {
-                    return Ok(id);
+                if let Some(named) = self.named(&path) {
+                    return Self::scalar(named, &path);
                 }
                 if let Some(list) = self.member {
                     if self.schema.lists[list as usize].alias.as_deref() == Some(name) {
@@ -654,7 +777,11 @@ impl Lowering {
         if self.graph {
             return match r.path(path) {
                 Resolved::Keyed(class, key) => self.keyed(class, &key),
-                Resolved::Output(at) => self.outputs.get(at).map(|o| o.node).ok_or_else(|| Unsupported::new(format!("output {at} of {path}"))),
+                Resolved::Output(at) => match self.outputs.get(at) {
+                    Some(Output { collect: None, node, .. }) => Ok(*node),
+                    Some(_) => Err(Unsupported::new(format!("list {path} used as a value"))),
+                    None => Err(Unsupported::new(format!("output {at} of {path}"))),
+                },
                 Resolved::Absent => Ok(self.konst(Lit::Null)),
                 _ => Err(Unsupported::new(format!("path {path}"))),
             };
@@ -680,7 +807,7 @@ impl Lowering {
                 Ok(self.konst(Lit::Null))
             }
             Resolved::Keyed(class, key) => self.keyed(class, &key),
-            Resolved::List { .. } => Err(Unsupported::new(format!("list {path} used as a value"))),
+            Resolved::List { .. } | Resolved::KeyedList(..) => Err(Unsupported::new(format!("list {path} used as a value"))),
             Resolved::Output(_) | Resolved::Unsupported => Err(Unsupported::new(format!("path {path}"))),
         }
     }
@@ -747,7 +874,10 @@ impl Lowering {
                 let test = match right {
                     Ast::Array(items) => self.inset(a, items, ctx, r)?,
                     Ast::Interval { left: lo, right: hi, left_bracket, right_bracket } => self.inrange(a, (lo, hi), (*left_bracket, *right_bracket), ctx, r)?,
-                    other => return Err(Unsupported::new(format!("in {}", <&'static str>::from(other)))),
+                    other => {
+                        let seq = self.seq(other, ctx, r)?;
+                        self.member(a, seq)?
+                    }
                 };
                 match operator {
                     Operator::Comparison(ComparisonOperator::NotIn) => self.not(test),
@@ -987,21 +1117,35 @@ impl Lowering {
 
     fn call(&mut self, kind: &FunctionKind, args: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         match (kind, args) {
-            (FunctionKind::Internal(InternalFunction::Sum), [arg]) if !matches!(arg, Ast::Array(_)) => {
-                let Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map), arguments: [source, body] } = arg else {
-                    return Err(Unsupported::new("sum over something other than map(...)"));
+            (FunctionKind::Internal(f @ (InternalFunction::Sum | InternalFunction::Min | InternalFunction::Max | InternalFunction::Avg)), [arg])
+                if !matches!(arg, Ast::Array(_)) =>
+            {
+                let seq = self.seq(arg, ctx, r)?;
+                let value = self.item(seq)?;
+                let fold = match f {
+                    InternalFunction::Sum => Fold::Sum,
+                    InternalFunction::Min => Fold::Min,
+                    InternalFunction::Max => Fold::Max,
+                    _ => Fold::Avg,
                 };
-                let (list, filter) = self.source(source, ctx, r)?;
-                let body = Self::closure(body)?;
-                self.fold(Fold::Sum, list, filter, Some(body), r)
+                self.fold(fold, seq, seq.keep, Some(value))
             }
             (FunctionKind::Closure(ClosureFunction::Count), [source, body]) => {
-                let list = self.list(source, ctx, r)?;
-                let body = Self::closure(body)?;
-                self.fold(Fold::Count, list, Some(body), None, r)
+                let seq = Self::pure(self.seq(source, ctx, r)?)?;
+                let test = self.predicate(seq, body, ctx, r)?;
+                let filter = match seq.keep {
+                    None => test,
+                    Some(keep) => self.logic(true, keep, test)?,
+                };
+                self.fold(Fold::Count, seq, Some(filter), None)
             }
-            (FunctionKind::Internal(InternalFunction::Len), [arg]) => match self.list(arg, ctx, r) {
-                Ok(list) => self.fold(Fold::Count, list, None, None, r),
+            (FunctionKind::Internal(InternalFunction::Contains), [list, x]) => {
+                let seq = self.seq(list, ctx, r)?;
+                let x = self.expr(x, ctx, r)?;
+                self.member(x, seq)
+            }
+            (FunctionKind::Internal(InternalFunction::Len), [arg]) => match self.seq(arg, ctx, r).and_then(Self::pure) {
+                Ok(seq) => self.fold(Fold::Count, seq, seq.keep, None),
                 Err(_) => {
                     let a = self.expr(arg, ctx, r)?;
                     self.require(a, |k| k == Kind::Text, "len")?;
@@ -1104,29 +1248,16 @@ impl Lowering {
                     }
                 }
             }
-            (FunctionKind::Internal(f @ (InternalFunction::Min | InternalFunction::Max | InternalFunction::Avg)), [arg]) => {
-                let Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map), arguments: [source, body] } = arg else {
-                    return Err(Unsupported::new(format!("{f:?} over something other than map(...)")));
-                };
-                let (list, filter) = self.source(source, ctx, r)?;
-                let body = Self::closure(body)?;
-                let fold = match f {
-                    InternalFunction::Min => Fold::Min,
-                    InternalFunction::Max => Fold::Max,
-                    _ => Fold::Avg,
-                };
-                self.fold(fold, list, filter, Some(body), r)
-            }
             (FunctionKind::Closure(c @ (ClosureFunction::Some | ClosureFunction::All | ClosureFunction::None | ClosureFunction::One)), [source, body]) => {
-                let (list, filter) = self.source(source, ctx, r)?;
-                let body = Self::closure(body)?;
+                let seq = Self::pure(self.seq(source, ctx, r)?)?;
+                let test = self.predicate(seq, body, ctx, r)?;
                 let fold = match c {
                     ClosureFunction::Some => Fold::Any,
                     ClosureFunction::All => Fold::All,
                     ClosureFunction::None => Fold::None,
                     _ => Fold::One,
                 };
-                self.fold(fold, list, filter, Some(body), r)
+                self.fold(fold, seq, seq.keep, Some(test))
             }
             (kind, _) => Err(Unsupported::new(format!("function {kind:?}"))),
         }
@@ -1144,64 +1275,194 @@ impl Lowering {
         }
     }
 
-    fn list(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Result<ListId, Unsupported> {
-        if ctx.scope != Scope::Row || ctx.pointer.is_some() {
-            return Err(Unsupported::new("nested list access"));
+    fn inner(ctx: Ctx, seq: Seq) -> Ctx {
+        Ctx { scope: Scope::Elem(seq.list), pointer: Some(seq.list), item: seq.value, dollar: ctx.dollar }
+    }
+
+    fn lifted(&mut self, id: NodeId, list: ListId) -> Lowered {
+        self.parent(id, Scope::Elem(list))
+    }
+
+    fn pure(seq: Seq) -> Result<Seq, Unsupported> {
+        match seq.pure {
+            true => Ok(seq),
+            false => Err(Unsupported::new("closure over a computed map")),
         }
-        let mut segments = Vec::new();
-        let Base::Ident(name) = Self::segments(ast, &mut segments)? else {
-            return Err(Unsupported::new("list source"));
-        };
-        let path = std::iter::once(name).chain(segments).collect::<Vec<_>>().join(".");
-        if self.named(&path).is_some() {
-            return Err(Unsupported::new(format!("list {path} is written")));
+    }
+
+    fn item(&mut self, seq: Seq) -> Lowered {
+        match seq.value {
+            Some(value) => Ok(value),
+            None => match self.schema.field(seq.list, "") {
+                Some(f) => {
+                    let ty = self.schema.lists[seq.list as usize].fields[f as usize].ty;
+                    Ok(self.add(Op::Field(seq.list, f), ty, Scope::Elem(seq.list)))
+                }
+                None => Err(Unsupported::new("element of a list of objects")),
+            },
         }
-        self.overlap(&path)?;
-        if let Some(list) = self.schema.list(&path) {
-            return Ok(list);
-        }
-        if self.schema.column(&path).is_some() {
-            return Err(Unsupported::new(format!("{path} is not a list")));
-        }
-        match r.path(&path) {
-            Resolved::List { fields } => {
-                let l = ListId::try_from(self.schema.lists.len()).map_err(|_| Unsupported::new("too many lists"))?;
-                let fields = fields.into_iter().map(|(name, class)| ColumnDef { path: name.to_string(), ty: class.ty() }).collect();
-                self.schema.lists.push(ListDef { path, alias: None, fields });
-                Ok(l)
+    }
+
+    fn seq(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Result<Seq, Unsupported> {
+        match ast {
+            Ast::Parenthesized(inner) => self.seq(inner, ctx, r),
+            Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Filter), arguments: [source, body] } => {
+                let seq = Self::pure(self.seq(source, ctx, r)?)?;
+                let body = Self::closure(body)?;
+                let test = self.expr(body, Self::inner(ctx, seq), r)?;
+                self.require(test, |k| k == Kind::Bool, "filter")?;
+                let test = self.lifted(test, seq.list)?;
+                let keep = match seq.keep {
+                    None => test,
+                    Some(keep) => self.logic(true, keep, test)?,
+                };
+                Ok(Seq { keep: Some(keep), ..seq })
             }
+            Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map), arguments: [source, body] } => {
+                let seq = Self::pure(self.seq(source, ctx, r)?)?;
+                let body = Self::closure(body)?;
+                let value = self.expr(body, Self::inner(ctx, seq), r)?;
+                let value = self.lifted(value, seq.list)?;
+                Ok(Seq { value: Some(value), pure: false, ..seq })
+            }
+            Ast::Binary { left, operator: Operator::Logical(LogicalOperator::NullishCoalescing), right: Ast::Array([]) } => {
+                let seq = self.seq(left, ctx, r)?;
+                Ok(Seq { empty: true, ..seq })
+            }
+            other => self.source(other, ctx, r),
+        }
+    }
+
+    fn plain(list: ListId) -> Seq {
+        Seq { list, keep: None, value: None, empty: false, pure: true }
+    }
+
+    fn produced(&self, at: usize, path: &str) -> Result<Seq, Unsupported> {
+        match self.outputs.get(at).and_then(|o| o.collect) {
+            Some(c) => Ok(Seq { list: c.list, keep: c.keep, value: Some(c.item), empty: c.empty, pure: true }),
+            None => Err(Unsupported::new(format!("{path} is not a list"))),
+        }
+    }
+
+    fn source(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Result<Seq, Unsupported> {
+        let mut segments = Vec::new();
+        let base = Self::segments(ast, &mut segments)?;
+        let rest = segments.join(".");
+        match base {
+            Base::Pointer => {
+                let parent = ctx.pointer.ok_or_else(|| Unsupported::new("# outside a closure"))?;
+                if ctx.item.is_some() || rest.is_empty() {
+                    return Err(Unsupported::new("list of lists"));
+                }
+                Ok(Self::plain(self.nested(parent, &rest, r)?))
+            }
+            Base::Dollar if ctx.dollar.is_some() || rest.is_empty() => Err(Unsupported::new("list source $")),
+            Base::Dollar => match self.own(&rest) {
+                Some(Named::Seq(seq)) => Ok(seq),
+                _ => Err(Unsupported::new(format!("$.{rest} is not a list"))),
+            },
+            Base::Ident(name) => {
+                let path = match rest.is_empty() {
+                    true => name.to_string(),
+                    false => format!("{name}.{rest}"),
+                };
+                match self.graph {
+                    true => self.keyed_list(&path, r),
+                    false => self.root_list(name, &rest, &path, r),
+                }
+            }
+        }
+    }
+
+    fn keyed_list(&mut self, path: &str, r: &mut dyn Resolve) -> Result<Seq, Unsupported> {
+        match r.path(path) {
+            Resolved::KeyedList(key, fields) => {
+                if let Some(list) = self.schema.list(&key) {
+                    return Ok(Self::plain(list));
+                }
+                Ok(Self::plain(self.declare(key.to_string(), fields, None)?))
+            }
+            Resolved::Output(at) => self.produced(at, path),
             _ => Err(Unsupported::new(format!("{path} is not a list"))),
         }
     }
 
-    fn source<'a>(&mut self, ast: &'a Ast<'a>, ctx: Ctx, r: &mut dyn Resolve) -> Result<(ListId, Option<&'a Ast<'a>>), Unsupported> {
-        match ast {
-            Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Filter), arguments: [inner, body] } => {
-                Ok((self.list(inner, ctx, r)?, Some(Self::closure(body)?)))
+    fn root_list(&mut self, name: &str, rest: &str, path: &str, r: &mut dyn Resolve) -> Result<Seq, Unsupported> {
+        self.overlap(path)?;
+        match self.named(path) {
+            Some(Named::Seq(seq)) => return Ok(seq),
+            Some(Named::Node(_)) => return Err(Unsupported::new(format!("{path} is not a list"))),
+            None => {}
+        }
+        if let Some(member) = self.member {
+            if self.schema.lists[member as usize].alias.as_deref() == Some(name) {
+                return match rest.is_empty() {
+                    true => Err(Unsupported::new(format!("whole element {name}"))),
+                    false => Ok(Self::plain(self.nested(member, rest, r)?)),
+                };
             }
-            other => Ok((self.list(other, ctx, r)?, None)),
+        }
+        if let Some(list) = self.schema.list(path) {
+            return Ok(Self::plain(list));
+        }
+        if self.schema.column(path).is_some() {
+            return Err(Unsupported::new(format!("{path} is not a list")));
+        }
+        match r.path(path) {
+            Resolved::List { fields } => Ok(Self::plain(self.declare(path.to_string(), fields, None)?)),
+            _ => Err(Unsupported::new(format!("{path} is not a list"))),
         }
     }
 
-    fn fold(&mut self, fold: Fold, list: ListId, filter: Option<&Ast>, value: Option<&Ast>, r: &mut dyn Resolve) -> Lowered {
-        let scope = Scope::Elem(list);
-        let inner = Ctx { scope, pointer: Some(list), dollar: None };
-        let filter = match filter {
-            Some(ast) => {
-                let id = self.expr(ast, inner, r)?;
-                self.require(id, |k| k == Kind::Bool, "filter")?;
-                Some(self.parent(id, scope)?)
-            }
-            None => None,
-        };
+    fn nested(&mut self, parent: ListId, field: &str, r: &mut dyn Resolve) -> Result<ListId, Unsupported> {
+        if let Some(list) = self.schema.nested(parent, field) {
+            return Ok(list);
+        }
+        if self.schema.depth(Scope::Elem(parent)) >= Self::DEPTH {
+            return Err(Unsupported::new(format!("list {field} nested too deep")));
+        }
+        if self.schema.field(parent, field).is_some() {
+            return Err(Unsupported::new(format!("{field} is not a list")));
+        }
+        let mut chain = self.schema.chain(parent);
+        chain.push(field);
+        match r.nested(&chain) {
+            Resolved::List { fields } => self.declare(field.to_string(), fields, Some(parent)),
+            _ => Err(Unsupported::new(format!("nested list {field}"))),
+        }
+    }
+
+    fn declare(&mut self, path: String, fields: Vec<(Arc<str>, Class)>, parent: Option<ListId>) -> Result<ListId, Unsupported> {
+        let l = ListId::try_from(self.schema.lists.len()).map_err(|_| Unsupported::new("too many lists"))?;
+        let fields = fields.into_iter().map(|(name, class)| ColumnDef { path: name.to_string(), ty: class.ty() }).collect();
+        self.schema.lists.push(ListDef { path, alias: None, fields, parent });
+        Ok(l)
+    }
+
+    fn predicate(&mut self, seq: Seq, body: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let test = self.expr(Self::closure(body)?, Self::inner(ctx, seq), r)?;
+        self.require(test, |k| k == Kind::Bool, "predicate")?;
+        self.lifted(test, seq.list)
+    }
+
+    fn member(&mut self, x: NodeId, seq: Seq) -> Lowered {
+        let seq = Self::pure(seq)?;
+        let item = self.item(seq)?;
+        let test = self.compare(Cmp::Eq, x, item)?;
+        let test = self.lifted(test, seq.list)?;
+        self.fold(Fold::Any, seq, seq.keep, Some(test))
+    }
+
+    fn fold(&mut self, fold: Fold, seq: Seq, filter: Option<NodeId>, value: Option<NodeId>) -> Lowered {
+        let list = seq.list;
+        let filter = filter.map(|f| self.lifted(f, list)).transpose()?;
         let value = match value {
-            Some(ast) => {
-                let id = self.expr(ast, inner, r)?;
+            Some(id) => {
                 match fold.quantifier() {
                     true => self.require(id, |k| k == Kind::Bool, "predicate")?,
                     false => self.require(id, |k| matches!(k, Kind::Num(_)), "fold value")?,
                 }
-                Some(self.parent(id, scope)?)
+                Some(self.lifted(id, list)?)
             }
             None => None,
         };
@@ -1212,6 +1473,7 @@ impl Lowering {
             (Fold::Any | Fold::All | Fold::None | Fold::One, _) => Ty::boolean(),
             _ => Ty::num(Some(0)),
         };
-        Ok(self.add(Op::Fold { fold, list, filter, value }, ty, Scope::Row))
+        let scope = self.schema.owner(Scope::Elem(list)).ok_or_else(|| Unsupported::new("fold owner"))?;
+        Ok(self.add(Op::Fold { fold, list, filter, value, empty: seq.empty }, ty, scope))
     }
 }

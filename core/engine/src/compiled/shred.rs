@@ -3,6 +3,7 @@ use crate::nodes::input::dates::DeclaredDates;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Dictionary, Values};
+use zen_expression::typed::{Class, ColumnDef};
 use zen_expression::Variable;
 use zen_types::variable::Shape;
 
@@ -16,6 +17,7 @@ pub(crate) enum Seen {
     Bool,
     Text,
     Null,
+    List,
     Mixed,
 }
 
@@ -35,6 +37,14 @@ pub(crate) struct Shredder {
     rows: usize,
     nodes: Vec<Trie>,
     columns: Vec<(Arc<str>, Vec<Variable>, Vec<u64>)>,
+}
+
+pub(crate) struct Listing<'a> {
+    pub offsets: Rc<[i32]>,
+    pub validity: Option<Rc<[u64]>>,
+    pub hosted: Option<Rc<[u64]>>,
+    pub children: usize,
+    pub fields: Vec<(Arc<str>, Leaf<'a>)>,
 }
 
 pub(crate) struct Shred {
@@ -218,14 +228,15 @@ impl Normalizer {
             Values::Bool { .. } => Seen::Bool,
             Values::Text { .. } | Values::Utf8 { .. } => Seen::Text,
             Values::Any(values) if !matches!(column.values, Values::Dict { .. }) => {
-                let mut counts = [0usize; 4];
+                let mut counts = [0usize; 5];
                 let live = values.iter().take(rows).enumerate().filter(|(row, value)| column.valid(*row) && !matches!(value, Variable::Null));
                 for (_, value) in live.take(Self::SAMPLE) {
                     let kind = match value {
                         Variable::Number(_) => 0,
                         Variable::Bool(_) => 1,
                         Variable::String(_) => 2,
-                        _ => 3,
+                        Variable::Array(_) => 3,
+                        _ => 4,
                     };
                     counts[kind] += 1;
                 }
@@ -233,12 +244,14 @@ impl Normalizer {
                 let (kind, most) = counts[..3].iter().enumerate().max_by_key(|(_, count)| **count).map_or((3, 0), |(kind, count)| (kind, *count));
                 match (total, most * 2 >= total, kind) {
                     (0, ..) => Seen::Null,
+                    (_, false, _) if counts[3] * 2 > total => Seen::List,
                     (_, true, 0) => Seen::Num,
                     (_, true, 1) => Seen::Bool,
                     (_, true, 2) => Seen::Text,
                     _ => Seen::Mixed,
                 }
             }
+            Values::List { .. } => Seen::List,
             _ => Seen::Mixed,
         }
     }
@@ -321,7 +334,7 @@ impl Normalizer {
                 offsets[next..].fill(i32::try_from(data.len()).ok()?);
                 Store::Text { offsets, data }
             }
-            Seen::Null | Seen::Mixed => return None,
+            Seen::Null | Seen::List | Seen::Mixed => return None,
         };
         let full = Bits::full(&valid, 0, rows);
         Some((Leaf::typed(Array::parts(store, (!full).then_some(valid), rows)), faults))
@@ -567,6 +580,8 @@ impl FieldBuilder {
 }
 
 struct ListBuilder {
+    nulls: bool,
+    primitive: bool,
     rows: usize,
     offsets: Vec<i32>,
     validity: Vec<u64>,
@@ -582,6 +597,8 @@ impl ListBuilder {
         let mut offsets = Vec::with_capacity(rows + 1);
         offsets.push(0);
         Self {
+            nulls: false,
+            primitive: false,
             rows,
             offsets,
             validity: Bits::ones(rows),
@@ -623,6 +640,16 @@ impl ListBuilder {
 
     #[inline(always)]
     fn item(&mut self, item: &Variable) -> Option<()> {
+        if self.primitive {
+            let field = self.fields.first_mut()?;
+            match item {
+                Variable::Object(_) | Variable::Array(_) => return None,
+                Variable::Null => field.missing(),
+                value => field.push(value, self.capacity),
+            }
+            self.children += 1;
+            return Some(());
+        }
         let Variable::Object(map) = item else {
             return None;
         };
@@ -631,16 +658,22 @@ impl ListBuilder {
         let touched = match map.slots() {
             Some((shape, values)) => {
                 let layout = self.layout(shape)?;
-                let (fields, capacity) = (&mut self.fields, self.capacity);
+                let (fields, capacity, nulls) = (&mut self.fields, self.capacity, self.nulls);
                 for (&at, value) in self.shapes[layout].1.iter().zip(values) {
-                    fields[at].push(value, capacity);
+                    match (nulls, value) {
+                        (true, Variable::Null) => fields[at].missing(),
+                        _ => fields[at].push(value, capacity),
+                    }
                 }
                 values.len()
             }
             None => {
                 for (hint, (key, value)) in map.iter().enumerate() {
                     let at = self.field(hint, key)?;
-                    self.fields[at].push(value, self.capacity);
+                    match (self.nulls, value) {
+                        (true, Variable::Null) => self.fields[at].missing(),
+                        _ => self.fields[at].push(value, self.capacity),
+                    }
                 }
                 map.len()
             }
@@ -724,5 +757,218 @@ impl Shred {
             builder.close()?;
         }
         Some(builder.finish())
+    }
+}
+
+impl<'a> Listing<'a> {
+    pub fn of(column: Column<'a>, owners: usize) -> Option<Listing<'a>> {
+        let validity = column
+            .validity
+            .filter(|(bits, offset)| !Bits::full(bits, *offset, owners))
+            .map(|(bits, offset)| Rc::from(Bits::window(bits, offset, owners)));
+        match column.values {
+            Values::List { offsets, child } => {
+                let offsets: Rc<[i32]> = offsets.get(..=owners)?.into();
+                match child {
+                    Dictionary::Any(_) => Self::shredded(&column, owners),
+                    Dictionary::Column(item) => match item.values {
+                        Values::Struct { fields, len } => {
+                            if item.validity.is_some_and(|(bits, offset)| !Bits::full(bits, offset, len)) {
+                                return None;
+                            }
+                            let fields = fields.iter().map(|(name, field)| (Arc::from(*name), Normalizer::lean(*field, len))).collect();
+                            Some(Listing { offsets, validity, hosted: None, children: len, fields })
+                        }
+                        Values::Any(_) | Values::List { .. } | Values::Dict { .. } => None,
+                        _ => {
+                            let len = item.len();
+                            Some(Listing { offsets, validity, hosted: None, children: len, fields: vec![(Arc::from(""), Normalizer::lean(*item, len))] })
+                        }
+                    },
+                    scalar => {
+                        let len = scalar.len();
+                        Some(Listing { offsets, validity, hosted: None, children: len, fields: vec![(Arc::from(""), Normalizer::lean(scalar.column(), len))] })
+                    }
+                }
+            }
+            Values::Any(_) => Self::shredded(&column, owners),
+            _ => None,
+        }
+    }
+
+    pub fn leaf(leaf: &Leaf<'a>, owners: usize) -> Option<Listing<'a>> {
+        match leaf {
+            Leaf::Input(input) => Listing::of(input.column, owners),
+            other => Self::copied(&other.column(), owners),
+        }
+    }
+
+    fn copied(column: &Column<'_>, owners: usize) -> Option<Listing<'a>> {
+        let validity = column
+            .validity
+            .filter(|(bits, offset)| !Bits::full(bits, *offset, owners))
+            .map(|(bits, offset)| Rc::from(Bits::window(bits, offset, owners)));
+        let Values::List { offsets, child } = column.values else {
+            return match column.values {
+                Values::Any(_) => Self::shredded(column, owners),
+                _ => None,
+            };
+        };
+        let store = match child {
+            Dictionary::Any(_) => return Self::shredded(column, owners),
+            Dictionary::Scaled { mant, scale } => Store::Scaled { mant: mant.to_vec(), scale: scale.to_vec() },
+            Dictionary::Text { offsets, data } => Store::Text { offsets: offsets.to_vec(), data: data.to_string() },
+            Dictionary::Bool { bits } => Store::Bool(bits.to_vec()),
+            Dictionary::Column(_) => return None,
+        };
+        let len = child.len();
+        Some(Listing {
+            offsets: offsets.get(..=owners)?.into(),
+            validity,
+            hosted: None,
+            children: len,
+            fields: vec![(Arc::from(""), Leaf::typed(Array::parts(store, None, len)))],
+        })
+    }
+
+    pub fn nested(&self, name: &str) -> Option<Listing<'a>> {
+        let (_, leaf) = self.fields.iter().rev().find(|(key, _)| key.as_ref() == name)?;
+        Listing::leaf(leaf, self.children)
+    }
+
+    pub fn columns<'s>(&'s self, names: &[ColumnDef]) -> Option<Vec<Column<'s>>> {
+        names.iter().map(|def| self.fields.iter().rev().find(|(name, _)| name.as_ref() == def.path).map(|(_, leaf)| leaf.column())).collect()
+    }
+
+    pub fn classes(&self) -> Vec<(Arc<str>, Class)> {
+        self.fields.iter().filter_map(|(name, leaf)| Some((name.clone(), Normalizer::class(&leaf.column().values)?))).collect()
+    }
+
+    fn items<'v>(column: &Column<'v>, row: usize) -> Option<Option<std::borrow::Cow<'v, [Variable]>>> {
+        if !column.valid(row) {
+            return Some(None);
+        }
+        match column.values {
+            Values::Any(values) => match values.get(row)? {
+                Variable::Null => Some(None),
+                Variable::Array(items) => Some(Some(std::borrow::Cow::Owned(items.borrow().clone()))),
+                _ => None,
+            },
+            Values::List { child: Dictionary::Any(items), .. } => column.range(row).and_then(|(a, b)| items.get(a..b)).map(|slice| Some(std::borrow::Cow::Borrowed(slice))),
+            _ => None,
+        }
+    }
+
+    fn sort(value: &Variable) -> Option<usize> {
+        match value {
+            Variable::Null => None,
+            Variable::Number(n) if Store::part(n).is_some() => Some(0),
+            Variable::String(_) => Some(1),
+            Variable::Bool(_) => Some(2),
+            _ => Some(3),
+        }
+    }
+
+    fn odd(items: &[Variable], objects: bool, sorts: &[(Arc<str>, usize)]) -> bool {
+        let wanted = |key: &str| sorts.iter().find(|(k, _)| k.as_ref() == key).map(|(_, sort)| *sort);
+        items.iter().any(|item| match (objects, item) {
+            (false, item) => Self::sort(item).is_some_and(|sort| Some(sort) != wanted("")),
+            (true, Variable::Object(map)) => map.borrow().iter().any(|(key, value)| Self::sort(value).is_some_and(|sort| Some(sort) != wanted(key))),
+            (true, _) => false,
+        })
+    }
+
+    fn shredded(column: &Column<'_>, owners: usize) -> Option<Listing<'a>> {
+        let mut capacity = 0;
+        let mut arrays = 0;
+        let mut objects = false;
+        let mut counts: Vec<(Arc<str>, [usize; 4])> = Vec::new();
+        let mut count = |key: &str, value: &Variable| {
+            let Some(sort) = Self::sort(value) else {
+                return;
+            };
+            match counts.iter_mut().find(|(k, _)| k.as_ref() == key) {
+                Some((_, c)) => c[sort] += 1,
+                None => {
+                    let mut c = [0usize; 4];
+                    c[sort] = 1;
+                    counts.push((Arc::from(key), c));
+                }
+            }
+        };
+        for row in 0..owners {
+            if let Some(Some(items)) = Self::items(column, row) {
+                arrays += 1;
+                capacity += items.len();
+                objects |= items.iter().any(|item| matches!(item, Variable::Object(_)));
+            }
+        }
+        if arrays == 0 {
+            return None;
+        }
+        for row in 0..owners {
+            if let Some(Some(items)) = Self::items(column, row) {
+                for item in items.iter() {
+                    match (objects, item) {
+                        (true, Variable::Object(map)) => map.borrow().iter().for_each(|(key, value)| count(key, value)),
+                        (true, _) => {}
+                        (false, item) => count("", item),
+                    }
+                }
+            }
+        }
+        let sorts: Vec<(Arc<str>, usize)> =
+            counts.into_iter().map(|(key, c)| (key, (0..4).max_by_key(|&sort| (c[sort], std::cmp::Reverse(sort))).unwrap_or(3))).collect();
+        let mut builder = ListBuilder::new(owners, capacity);
+        builder.nulls = true;
+        builder.primitive = !objects;
+        if builder.primitive {
+            builder.fields.push(FieldBuilder::new(Arc::from(""), 0, capacity));
+        }
+        for row in 0..owners {
+            match Self::items(column, row) {
+                Some(Some(items)) if Self::odd(&items, objects, &sorts) => builder.host(row),
+                Some(Some(items)) => builder.row(row, &items),
+                Some(None) => Bits::set(&mut builder.validity, row, false),
+                None => builder.host(row),
+            }
+            builder.close()?;
+        }
+        let hosted = (!builder.hosted.is_empty()).then(|| {
+            let mut bits = vec![0u64; owners.div_ceil(64)];
+            builder.hosted.iter().for_each(|&row| Bits::set(&mut bits, row, true));
+            Rc::from(bits)
+        });
+        let shred = builder.finish();
+        Some(Listing {
+            offsets: shred.offsets,
+            validity: shred.validity,
+            hosted,
+            children: shred.children,
+            fields: shred.fields.into_iter().map(|(name, array)| (name, Leaf::typed(array))).collect(),
+        })
+    }
+}
+
+impl Normalizer {
+    pub(crate) fn class(values: &Values) -> Option<Class> {
+        match values {
+            Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) => Some(Class::Num),
+            Values::Bool { .. } => Some(Class::Bool),
+            Values::Text { .. } | Values::Utf8 { .. } => Some(Class::Text),
+            Values::Dict { values, .. } => match values {
+                Dictionary::Scaled { .. } => Some(Class::Num),
+                Dictionary::Bool { .. } => Some(Class::Bool),
+                Dictionary::Text { .. } => Some(Class::Text),
+                Dictionary::Column(column) => match column.values {
+                    Values::Scaled { .. } => Some(Class::Num),
+                    Values::Bool { .. } => Some(Class::Bool),
+                    Values::Text { .. } | Values::Utf8 { .. } => Some(Class::Text),
+                    _ => None,
+                },
+                Dictionary::Any(_) => None,
+            },
+            _ => None,
+        }
     }
 }

@@ -79,6 +79,7 @@ pub(crate) enum Ins {
     Text { func: Func, dst: R, a: Arg, b: Option<Arg> },
     Math { func: Func, dst: R, args: Vec<(R, Rep)>, rep: Rep },
     Out { slot: u16, src: R, rep: Rep, scope: Scope },
+    Keep { slot: u16, src: R },
 }
 
 #[derive(Clone)]
@@ -101,7 +102,7 @@ pub(crate) enum Arm {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BufDef {
     pub(crate) scope: Scope,
-    pub(crate) fold: Option<(u16, Fold, Rep)>,
+    pub(crate) fold: Option<(u16, Fold, Rep, bool)>,
     pub(crate) stage: usize,
 }
 
@@ -174,7 +175,7 @@ impl Ins {
     pub(crate) fn regs(&mut self, f: &mut impl FnMut(&mut R, bool)) {
         match self {
             Ins::Load { dst, .. } | Ins::Gather { dst, .. } | Ins::Fill { dst, .. } | Ins::EqText { dst, .. } | Ins::Text { dst, .. } => f(dst, true),
-            Ins::Spill { src, .. } | Ins::Out { src, .. } => f(src, false),
+            Ins::Spill { src, .. } | Ins::Out { src, .. } | Ins::Keep { src, .. } => f(src, false),
             Ins::Fix { dst, a, b, .. }
             | Ins::Num { dst, a, b, .. }
             | Ins::CmpNum { dst, a, b, .. }

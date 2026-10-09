@@ -15,10 +15,15 @@ pub(crate) enum Target {
     Choice,
 }
 
+pub(crate) type Fields = Vec<(Arc<str>, Class)>;
+
+pub(crate) type Lister<'g> = &'g dyn Fn(SlotId, &[&str]) -> Option<Fields>;
+
 pub(crate) struct TypedOp {
     pub program: Typed,
     pub exports: Exports,
     pub columns: Vec<Ref>,
+    pub lists: Vec<(Ref, Vec<Arc<str>>)>,
     pub targets: Vec<Vec<Target>>,
     pub cost: Cost,
     pub sparse: AtomicU32,
@@ -43,6 +48,7 @@ pub(crate) struct Grouping<'g> {
     pub masks: &'g Masks,
     pub slots: &'g [SlotInfo],
     pub seen: &'g [(SlotId, Seen)],
+    pub listing: Option<Lister<'g>>,
 }
 
 enum Attempt {
@@ -68,6 +74,8 @@ struct Probe<'p> {
     masks: &'p Masks,
     slots: &'p [SlotInfo],
     seen: &'p [(SlotId, Seen)],
+    listing: Option<Lister<'p>>,
+    lists: Vec<(String, Ref)>,
     deferred: bool,
     reads: Vec<(Arc<str>, Option<Ref>)>,
     outputs: Vec<(SlotId, Vec<M>, usize)>,
@@ -79,11 +87,12 @@ impl TypedOp {
     pub const SPARSE: u32 = 16;
     pub const LONG: usize = 24;
 
-    fn new(program: Typed, columns: Vec<Ref>, targets: Vec<Vec<Target>>) -> Self {
+    fn new(program: Typed, columns: Vec<Ref>, lists: Vec<(Ref, Vec<Arc<str>>)>, targets: Vec<Vec<Target>>) -> Self {
         Self {
             exports: Exports::of(program.hir()),
             program,
             columns,
+            lists,
             targets,
             cost: Cost::new(),
             sparse: AtomicU32::new(0),
@@ -202,6 +211,7 @@ impl Resolve for Probe<'_> {
                 Some(Seen::Bool) => Class::Bool,
                 Some(Seen::Text) => Class::Text,
                 Some(Seen::Null) => return Resolved::Absent,
+                Some(Seen::List) => return self.listed(read),
                 Some(Seen::Mixed) => return Resolved::Unsupported,
                 None => {
                     self.deferred = true;
@@ -220,10 +230,34 @@ impl Resolve for Probe<'_> {
     fn alias(&mut self, _field: &str) -> Resolved {
         Resolved::Unsupported
     }
+
+    fn nested(&mut self, chain: &[&str]) -> Resolved {
+        let (Some((key, rest)), Some(listing)) = (chain.split_first(), self.listing) else {
+            return Resolved::Unsupported;
+        };
+        let Some((_, read)) = self.lists.iter().find(|(k, _)| k.as_str() == *key) else {
+            return Resolved::Unsupported;
+        };
+        match listing(read.slot, rest) {
+            Some(fields) => Resolved::List { fields },
+            None => Resolved::Unsupported,
+        }
+    }
 }
 
 impl Probe<'_> {
     const ATOMS: usize = 12;
+
+    fn listed(&mut self, read: Ref) -> Resolved {
+        let Some(fields) = self.listing.and_then(|listing| listing(read.slot, &[])) else {
+            return Resolved::Unsupported;
+        };
+        let key = format!("#{}:{:?}", read.slot, read.present);
+        if !self.lists.iter().any(|(k, _)| *k == key) {
+            self.lists.push((key.clone(), read));
+        }
+        Resolved::KeyedList(Arc::from(key), fields)
+    }
 
     fn covers(&self, m: M, slot: SlotId, implied: &[M]) -> bool {
         let mut atoms: Vec<M> = Vec::new();
@@ -334,6 +368,7 @@ impl Builder<'_> {
             masks: &self.masks,
             slots: &self.catalog.slots,
             seen: &[],
+            listing: None,
         }
     }
 
@@ -440,6 +475,8 @@ impl Grouping<'_> {
                 masks: self.masks,
                 slots: self.slots,
                 seen: self.seen,
+                listing: self.listing,
+                lists: Vec::new(),
                 deferred: false,
                 reads: Vec::new(),
                 outputs: Vec::new(),
@@ -519,16 +556,23 @@ impl Grouping<'_> {
             lowering.retain(|at| kept.get(at).copied().unwrap_or(true));
             match Typed::new(lowering.finish()) {
                 Ok(program) => {
-                    let columns = program
-                        .hir()
-                        .schema
+                    let schema = &program.hir().schema;
+                    let columns = schema
                         .columns
                         .iter()
                         .map(|column| probe.columns.iter().find(|(key, _)| *key == column.path).map(|(_, read)| *read))
                         .collect::<Option<Vec<Ref>>>();
-                    return match columns {
-                        Some(columns) => Attempt::Typed(Box::new(TypedOp::new(program, columns, targets)), consumed),
-                        None => Attempt::Failed,
+                    let lists = (0..schema.lists.len())
+                        .map(|at| {
+                            let chain = schema.chain(at as u16);
+                            let (key, rest) = chain.split_first()?;
+                            let (_, read) = probe.lists.iter().find(|(k, _)| k.as_str() == *key)?;
+                            Some((*read, rest.iter().map(|field| Arc::from(*field)).collect()))
+                        })
+                        .collect::<Option<Vec<(Ref, Vec<Arc<str>>)>>>();
+                    return match (columns, lists) {
+                        (Some(columns), Some(lists)) => Attempt::Typed(Box::new(TypedOp::new(program, columns, lists, targets)), consumed),
+                        _ => Attempt::Failed,
                     };
                 }
                 Err(_) if consumed == 1 => return Attempt::Failed,

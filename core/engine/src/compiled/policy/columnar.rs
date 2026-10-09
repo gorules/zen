@@ -8,11 +8,11 @@ use super::table::TableNative;
 use super::{Fixed, Native, PolicyPlan, Rows};
 use crate::compiled::bound::Outs;
 use crate::compiled::columnar::OutputColumn;
-use crate::compiled::shred::{Normalizer, Shred, Shredder};
+use crate::compiled::shred::{Listing, Normalizer, Shred, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf};
 use crate::policy::blocks::{AssertionIr, MatchIr, MatchSelection, TableSelection};
 use crate::policy::evaluator::{Driver, EvalArtifact, Iteration, Pick};
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -364,6 +364,8 @@ impl<'a> Sheet<'a> {
     }
 }
 
+type Listed<'a> = (Rc<str>, bool, Option<Rc<Listing<'a>>>);
+
 struct Pass<'s, 'a> {
     plan: &'s PolicyPlan,
     artifact: &'s EvalArtifact,
@@ -385,6 +387,7 @@ struct Pass<'s, 'a> {
     delegated: bool,
     fell: usize,
     counts: (usize, usize),
+    listed: RefCell<Vec<Listed<'a>>>,
 }
 
 impl<'s, 'a> Pass<'s, 'a> {
@@ -1910,6 +1913,7 @@ impl PolicyPlan {
                 delegated: false,
                 fell: 0,
                 counts: (0, 0),
+                listed: RefCell::new(Vec::new()),
                 owners: self.iterations.iter().map(|iteration| iteration.as_ref().map(|(_, path, _)| path.clone())).collect(),
             };
             pass.walk(self.root.clone(), live);

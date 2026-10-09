@@ -108,7 +108,7 @@ pub enum Op {
     Coalesce(NodeId, NodeId),
     InSet(NodeId, Vec<Lit>),
     InRange(NodeId, Range),
-    Fold { fold: Fold, list: ListId, filter: Option<NodeId>, value: Option<NodeId> },
+    Fold { fold: Fold, list: ListId, filter: Option<NodeId>, value: Option<NodeId>, empty: bool },
     FirstMatch { conds: Vec<NodeId>, strict: bool },
     Pick(NodeId, Vec<NodeId>),
     Call(Func, Vec<NodeId>),
@@ -122,12 +122,21 @@ pub struct Node {
     pub scope: Scope,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Collect {
+    pub list: ListId,
+    pub keep: Option<NodeId>,
+    pub item: NodeId,
+    pub empty: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Output {
     pub name: String,
     pub node: NodeId,
     pub scope: Scope,
     pub ty: Ty,
+    pub collect: Option<Collect>,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +150,7 @@ pub struct ListDef {
     pub path: String,
     pub alias: Option<String>,
     pub fields: Vec<ColumnDef>,
+    pub parent: Option<ListId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,11 +226,54 @@ impl Schema {
     }
 
     pub fn list(&self, path: &str) -> Option<ListId> {
-        self.lists.iter().position(|l| l.path == path).and_then(|i| ListId::try_from(i).ok())
+        self.lists.iter().position(|l| l.parent.is_none() && l.path == path).and_then(|i| ListId::try_from(i).ok())
     }
 
     pub fn field(&self, list: ListId, name: &str) -> Option<FieldId> {
         self.lists.get(list as usize)?.fields.iter().position(|f| f.path == name).and_then(|i| FieldId::try_from(i).ok())
+    }
+
+    pub fn nested(&self, parent: ListId, name: &str) -> Option<ListId> {
+        self.lists.iter().position(|l| l.parent == Some(parent) && l.path == name).and_then(|i| ListId::try_from(i).ok())
+    }
+
+    pub fn owner(&self, scope: Scope) -> Option<Scope> {
+        match scope {
+            Scope::Row => None,
+            Scope::Elem(l) => Some(self.lists.get(l as usize)?.parent.map_or(Scope::Row, Scope::Elem)),
+        }
+    }
+
+    pub fn depth(&self, scope: Scope) -> u32 {
+        let mut depth = 0;
+        let mut at = scope;
+        while let Some(up) = self.owner(at) {
+            depth += 1;
+            at = up;
+        }
+        depth
+    }
+
+    pub fn within(&self, inner: Scope, outer: Scope) -> bool {
+        let mut at = Some(inner);
+        while let Some(scope) = at {
+            if scope == outer {
+                return true;
+            }
+            at = self.owner(scope);
+        }
+        false
+    }
+
+    pub fn chain(&self, list: ListId) -> Vec<&str> {
+        let mut chain = Vec::new();
+        let mut at = Some(list);
+        while let Some(l) = at.and_then(|l| self.lists.get(l as usize)) {
+            chain.push(l.path.as_str());
+            at = l.parent;
+        }
+        chain.reverse();
+        chain
     }
 }
 
@@ -253,7 +306,7 @@ impl Op {
             Op::Coalesce(a, b) => Op::Coalesce(f(*a), f(*b)),
             Op::InSet(a, set) => Op::InSet(f(*a), set.clone()),
             Op::InRange(a, r) => Op::InRange(f(*a), *r),
-            Op::Fold { fold, list, filter, value } => Op::Fold { fold: *fold, list: *list, filter: filter.map(&f), value: value.map(&f) },
+            Op::Fold { fold, list, filter, value, empty } => Op::Fold { fold: *fold, list: *list, filter: filter.map(&f), value: value.map(&f), empty: *empty },
             Op::FirstMatch { conds, strict } => Op::FirstMatch { conds: conds.iter().map(|c| f(*c)).collect(), strict: *strict },
             Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
             Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
@@ -351,8 +404,9 @@ impl Hir {
             Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
             Op::InSet(a, set) => format!("inset %{a} [{}]", set.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", ")),
             Op::InRange(a, r) => format!("inrange %{a} {}{}..{}{}", if r.lo_closed { "[" } else { "(" }, r.lo, r.hi, if r.hi_closed { "]" } else { ")" }),
-            Op::Fold { fold, list, filter, value } => format!(
-                "fold {fold:?} list {list} filter {} value {}",
+            Op::Fold { fold, list, filter, value, empty } => format!(
+                "fold {fold:?}{} list {list} filter {} value {}",
+                if *empty { " empty" } else { "" },
                 filter.map_or("-".to_string(), |x| format!("%{x}")),
                 value.map_or("-".to_string(), |x| format!("%{x}"))
             )
@@ -370,7 +424,10 @@ impl fmt::Display for Hir {
             writeln!(f, "column {i} {} : {}", c.path, c.ty)?;
         }
         for (l, list) in self.schema.lists.iter().enumerate() {
-            writeln!(f, "list {l} {} as {}", list.path, list.alias.as_deref().unwrap_or("-"))?;
+            match list.parent {
+                Some(p) => writeln!(f, "list {l} {} in {p}", list.path)?,
+                None => writeln!(f, "list {l} {} as {}", list.path, list.alias.as_deref().unwrap_or("-"))?,
+            }
             for (i, c) in list.fields.iter().enumerate() {
                 writeln!(f, "  field {i} {} : {}", c.path, c.ty)?;
             }
@@ -382,7 +439,20 @@ impl fmt::Display for Hir {
             writeln!(f, "%{i} = {} : {} @{}", self.body(&node.op), node.ty, node.scope)?;
         }
         for (i, o) in self.outputs.iter().enumerate() {
-            writeln!(f, "out {i} {:?} = %{} : {} @{}", o.name, o.node, o.ty, o.scope)?;
+            match o.collect {
+                Some(c) => writeln!(
+                    f,
+                    "out {i} {:?} = collect list {} keep {}{} %{} : {} @{}",
+                    o.name,
+                    c.list,
+                    c.keep.map_or("-".to_string(), |k| format!("%{k}")),
+                    if c.empty { " empty" } else { "" },
+                    o.node,
+                    o.ty,
+                    o.scope
+                )?,
+                None => writeln!(f, "out {i} {:?} = %{} : {} @{}", o.name, o.node, o.ty, o.scope)?,
+            }
         }
         Ok(())
     }

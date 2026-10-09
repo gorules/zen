@@ -40,6 +40,8 @@ pub(crate) struct Build<'h> {
     keys: Vec<(u32, Scope)>,
     users: Vec<Vec<NodeId>>,
     outs: Vec<Vec<usize>>,
+    keeps: Vec<Vec<usize>>,
+    period: u32,
     cross: Vec<bool>,
     acc: Vec<usize>,
     code: Vec<Vec<Ins>>,
@@ -97,9 +99,14 @@ impl<'h> Build<'h> {
             }
         }
         let mut outs = vec![Vec::new(); n];
+        let mut keeps = vec![Vec::new(); n];
         for (k, o) in hir.outputs.iter().enumerate() {
             outs.get_mut(o.node as usize).ok_or_else(|| Unsupported::new("typed: bad output"))?.push(k);
+            if let Some(keep) = o.collect.and_then(|c| c.keep) {
+                keeps.get_mut(keep as usize).ok_or_else(|| Unsupported::new("typed: bad keep"))?.push(k);
+            }
         }
+        let deepest = (0..hir.schema.lists.len()).map(|l| hir.schema.depth(Scope::Elem(l as u16))).max().unwrap_or(0);
         let mut b = Build {
             hir,
             sig,
@@ -112,6 +119,8 @@ impl<'h> Build<'h> {
             keys: Vec::new(),
             users,
             outs,
+            keeps,
+            period: (deepest + 1).max(2),
             cross: vec![false; n],
             acc: vec![usize::MAX; n],
             code: Vec::new(),
@@ -210,15 +219,26 @@ impl<'h> Build<'h> {
         })
     }
 
+    fn depth(&self, scope: Scope) -> u32 {
+        self.hir.schema.depth(scope)
+    }
+
+    fn round(&self, level: u32, depth: u32) -> u32 {
+        let p = self.period;
+        level + (depth % p + p - level % p) % p
+    }
+
     fn levels(&mut self) -> Result<(), Unsupported> {
         let hir = self.hir;
+        let schema = &hir.schema;
         for (i, node) in hir.nodes.iter().enumerate() {
             if matches!(node.op, Op::Const(_)) {
                 continue;
             }
+            let depth = self.depth(node.scope);
             let mut l = match node.op {
-                Op::Field(..) => 1,
-                Op::Fold { .. } => 2,
+                Op::Field(..) => depth,
+                Op::Fold { .. } => depth + 2,
                 _ => 0,
             };
             for inp in node.op.inputs() {
@@ -226,19 +246,15 @@ impl<'h> Build<'h> {
                     continue;
                 }
                 let s = hir.nodes[inp as usize].scope;
-                let bump = match (node.scope, s, &node.op) {
-                    (Scope::Row, Scope::Row, _) => 0,
-                    (Scope::Elem(a), Scope::Elem(b), _) if a == b => 0,
-                    (Scope::Row, Scope::Elem(_), Op::Fold { .. }) => 1,
-                    (Scope::Elem(_), Scope::Row, Op::Parent(_)) => 1,
+                let bump = match &node.op {
+                    _ if s == node.scope => 0,
+                    Op::Fold { .. } if schema.owner(s) == Some(node.scope) => 1,
+                    Op::Parent(_) if schema.owner(node.scope) == Some(s) => 1,
                     _ => return Err(Unsupported::new("typed: scope crossing")),
                 };
                 l = l.max(self.level[inp as usize] + bump);
             }
-            self.level[i] = match node.scope {
-                Scope::Row => l + (l & 1),
-                Scope::Elem(_) => l | 1,
-            };
+            self.level[i] = self.round(l, depth);
         }
         for i in (0..hir.nodes.len()).rev() {
             let node = &hir.nodes[i];
@@ -253,7 +269,7 @@ impl<'h> Build<'h> {
                 };
                 latest = latest.min(lu);
             }
-            let l = latest & !1;
+            let l = latest - latest % self.period;
             if l > self.level[i] && latest != u32::MAX {
                 self.level[i] = l;
             }
@@ -268,11 +284,17 @@ impl<'h> Build<'h> {
         }
     }
 
-    fn const_level(scope: Scope) -> u32 {
-        match scope {
-            Scope::Row => 0,
-            Scope::Elem(_) => 1,
-        }
+    fn const_level(&self, scope: Scope) -> u32 {
+        self.depth(scope)
+    }
+
+    fn accumulates(&self, i: usize) -> u32 {
+        let node = &self.hir.nodes[i];
+        let Op::Fold { list, .. } = node.op else {
+            return 0;
+        };
+        let base = self.depth(Scope::Elem(list));
+        node.op.inputs().into_iter().filter(|x| !self.is_const(*x)).map(|x| self.level[x as usize]).fold(base, u32::max)
     }
 
     fn stages(&mut self) -> Result<(), Unsupported> {
@@ -289,12 +311,13 @@ impl<'h> Build<'h> {
             }
             add((self.level[i], node.scope));
             if let Op::Fold { list, .. } = node.op {
-                add((self.level[i] - 1, Scope::Elem(list)));
+                add((self.accumulates(i), Scope::Elem(list)));
             }
         }
         for o in &hir.outputs {
-            if self.is_const(o.node) {
-                add((Self::const_level(o.scope), o.scope));
+            let keep = o.collect.and_then(|c| c.keep).is_some_and(|k| self.is_const(k));
+            if self.is_const(o.node) || keep {
+                add((self.const_level(o.scope), o.scope));
             }
         }
         keys.sort_by_key(|(l, s)| (*l, Self::scope_ord(*s)));
@@ -305,7 +328,7 @@ impl<'h> Build<'h> {
             }
             self.stage[i] = find((self.level[i], node.scope))?;
             if let Op::Fold { list, .. } = node.op {
-                self.acc[i] = find((self.level[i] - 1, Scope::Elem(list)))?;
+                self.acc[i] = find((self.accumulates(i), Scope::Elem(list)))?;
             }
         }
         for (i, node) in hir.nodes.iter().enumerate() {
@@ -322,8 +345,8 @@ impl<'h> Build<'h> {
                 }
             }
             match node.op {
-                Op::Fold { list, fold, .. } => {
-                    let def = BufDef { scope: Scope::Row, fold: Some((list, fold, self.rep[i])), stage: self.acc[i] };
+                Op::Fold { list, fold, empty, .. } => {
+                    let def = BufDef { scope: node.scope, fold: Some((list, fold, self.rep[i], empty)), stage: self.acc[i] };
                     self.buf_of[i] = Some(self.new_buf(def)?);
                 }
                 _ if self.cross[i] => {
@@ -389,9 +412,16 @@ impl<'h> Build<'h> {
             self.code.push(Vec::new());
             let (level, scope) = self.keys[s];
             for (k, o) in hir.outputs.iter().enumerate() {
-                if self.is_const(o.node) && o.scope == scope && Self::const_level(scope) == level {
+                if o.scope != scope || self.const_level(scope) != level {
+                    continue;
+                }
+                if self.is_const(o.node) {
                     let src = self.konst_node(o.node)?;
                     self.emit(Ins::Out { slot: Self::slot(k)?, src, rep: self.rep[o.node as usize], scope: o.scope });
+                }
+                if let Some(keep) = o.collect.and_then(|c| c.keep).filter(|k| self.is_const(*k)) {
+                    let src = self.konst_node(keep)?;
+                    self.emit(Ins::Keep { slot: Self::slot(k)?, src });
                 }
             }
             for i in 0..hir.nodes.len() {
@@ -399,7 +429,7 @@ impl<'h> Build<'h> {
                     continue;
                 }
                 let feeds = self.users[i].iter().any(|&u| self.acc[u as usize] == s);
-                if !self.outs[i].is_empty() || self.cross[i] || feeds {
+                if !self.outs[i].is_empty() || !self.keeps[i].is_empty() || self.cross[i] || feeds {
                     self.ensure(i as NodeId)?;
                 }
             }
@@ -407,7 +437,7 @@ impl<'h> Build<'h> {
                 if self.acc[f] != s {
                     continue;
                 }
-                let Op::Fold { fold, list, filter, value } = hir.nodes[f].op else {
+                let Op::Fold { fold, list, filter, value, .. } = hir.nodes[f].op else {
                     continue;
                 };
                 let filter = filter.map(|x| self.val(x)).transpose()?;
@@ -475,6 +505,7 @@ impl<'h> Build<'h> {
             !matches!(self.hir.nodes[m].op, Op::Const(_))
                 && self.stage[m] == self.cur
                 && self.outs[m].is_empty()
+                && self.keeps[m].is_empty()
                 && !self.cross[m]
                 && self.rep[m] != Rep::Text
                 && !self.vreg.contains_key(&(self.cur, m as NodeId))
@@ -513,6 +544,9 @@ impl<'h> Build<'h> {
                 continue;
             }
             for &m in set {
+                if matches!(self.hir.nodes[m as usize].op, Op::Parent(_) | Op::Fold { .. }) {
+                    continue;
+                }
                 for inp in self.hir.nodes[m as usize].op.inputs() {
                     if !set.contains(&inp) && !self.is_const(inp) && self.rep[inp as usize] != Rep::Text {
                         self.val(inp)?;
@@ -950,6 +984,9 @@ impl<'h> Build<'h> {
         }
         for k in self.outs[at].clone() {
             self.emit(Ins::Out { slot: Self::slot(k)?, src: v, rep, scope: hir.outputs[k].scope });
+        }
+        for k in self.keeps[at].clone() {
+            self.emit(Ins::Keep { slot: Self::slot(k)?, src: v });
         }
         Ok(())
     }

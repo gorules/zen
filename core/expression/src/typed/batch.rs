@@ -17,6 +17,7 @@ pub struct Batch<'b> {
 pub struct List<'b> {
     offsets: &'b [i32],
     validity: Option<(&'b [u64], usize)>,
+    faults: Option<(&'b [u64], usize)>,
     fields: Vec<Column<'b>>,
 }
 
@@ -54,7 +55,9 @@ pub(crate) struct Feed<'x> {
 pub(crate) struct Lists {
     pub(crate) offsets: Vec<i32>,
     pub(crate) parent: Vec<u32>,
+    pub(crate) root: Vec<u32>,
     pub(crate) null: Option<Vec<u64>>,
+    pub(crate) faulted: Option<Vec<u64>>,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +67,7 @@ pub(crate) struct Feeds<'x> {
     pub(crate) fields: Vec<Vec<Feed<'x>>>,
     pub(crate) classes: Vec<Feed<'x>>,
     pub(crate) lists: Vec<Lists>,
+    pub(crate) parents: Vec<Option<u16>>,
 }
 
 struct Matcher<'d> {
@@ -109,13 +113,21 @@ impl<'b> Batch<'b> {
 
 impl<'b> List<'b> {
     pub fn new(offsets: &'b [i32], validity: Option<(&'b [u64], usize)>, fields: Vec<Column<'b>>) -> Self {
-        Self { offsets, validity, fields }
+        Self { offsets, validity, faults: None, fields }
+    }
+
+    pub fn faults(self, bits: &'b [u64], offset: usize) -> Self {
+        Self { faults: Some((bits, offset)), ..self }
     }
 }
 
 impl Lists {
     pub(crate) fn len(&self) -> usize {
         self.parent.len()
+    }
+
+    pub(crate) fn owners(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
     }
 }
 
@@ -453,38 +465,56 @@ impl<'x> Feeds<'x> {
         let mut fields = Vec::with_capacity(batch.lists.len());
         let mut lists = Vec::with_capacity(batch.lists.len());
         for (list, def) in batch.lists.iter().zip(&schema.lists) {
-            if list.fields.len() != def.fields.len() || list.offsets.len() <= rows {
+            let owners = match def.parent {
+                None => rows,
+                Some(p) => lists.get(p as usize).map(Lists::len).ok_or_else(|| Unsupported::new(format!("list {} before its parent", def.path)))?,
+            };
+            if list.fields.len() != def.fields.len() || list.offsets.len() <= owners {
                 return Err(Unsupported::new(format!("list {} does not match the program schema", def.path)));
             }
             let base = list.offsets[0];
-            let sorted = base >= 0 && list.offsets[..=rows].windows(2).fold(true, |ok, w| ok & (w[0] <= w[1]));
-            let total = usize::try_from(list.offsets[rows] as i64 - base as i64).ok().filter(|_| sorted).ok_or_else(|| Unsupported::new("list offsets"))?;
+            let sorted = base >= 0 && list.offsets[..=owners].windows(2).fold(true, |ok, w| ok & (w[0] <= w[1]));
+            let total = usize::try_from(list.offsets[owners] as i64 - base as i64).ok().filter(|_| sorted).ok_or_else(|| Unsupported::new("list offsets"))?;
             if list.fields.iter().any(|c| c.len() < base as usize + total) {
                 return Err(Unsupported::new(format!("list {} is shorter than its offsets", def.path)));
             }
-            let offsets: Vec<i32> = list.offsets[..=rows].iter().map(|o| o - base).collect();
+            let offsets: Vec<i32> = list.offsets[..=owners].iter().map(|o| o - base).collect();
             let mut parent = vec![0u32; total];
             for (r, w) in offsets.windows(2).enumerate() {
                 parent[w[0] as usize..w[1] as usize].fill(r as u32);
             }
+            let root = match def.parent.and_then(|p| lists.get(p as usize)) {
+                None => parent.clone(),
+                Some(up) => parent.iter().map(|&o| up.root.get(o as usize).copied().unwrap_or(0)).collect(),
+            };
             let base = base as usize;
-            let mut null: Option<Vec<u64>> = None;
-            if let Some((bits, offset)) = list.validity {
-                for r in 0..rows {
-                    if !K::get(bits, offset + r) {
-                        K::set(null.get_or_insert_with(|| vec![0u64; K::words(rows)]), r, true);
+            let marks = |bits: Option<(&[u64], usize)>, on: bool| -> Option<Vec<u64>> {
+                let (bits, offset) = bits?;
+                let mut out: Option<Vec<u64>> = None;
+                for o in 0..owners {
+                    if K::get(bits, offset + o) == on {
+                        K::set(out.get_or_insert_with(|| vec![0u64; K::words(owners)]), o, true);
                     }
                 }
+                out
+            };
+            let null = marks(list.validity, false);
+            if let Some(null) = &null {
+                if (0..owners).any(|o| K::get(null, o) && offsets[o] != offsets[o + 1]) {
+                    return Err(Unsupported::new(format!("list {} has elements under null entries", def.path)));
+                }
             }
+            let faulted = marks(list.faults, true);
             let len = parent.len();
             let mut feeds = Vec::with_capacity(list.fields.len());
             for (column, def) in list.fields.iter().zip(&def.fields) {
                 feeds.push(Feed::of(column, def, base, len)?);
             }
             fields.push(feeds);
-            lists.push(Lists { offsets, parent, null });
+            lists.push(Lists { offsets, parent, root, null, faulted });
         }
-        let mut feeds = Self { rows, columns, fields, classes: Vec::with_capacity(classes.len()), lists };
+        let parents = schema.lists.iter().map(|l| l.parent).collect();
+        let mut feeds = Self { rows, columns, fields, classes: Vec::with_capacity(classes.len()), lists, parents };
         for (origin, dict) in classes {
             let class = {
                 let (source, len) = match *origin {
@@ -506,11 +536,14 @@ impl<'x> Feeds<'x> {
                 rows.extend((0..self.rows).filter(|&r| K::get(faults, r)));
             }
         }
-        for (list, feeds) in self.lists.iter().zip(&self.fields) {
+        for (at, (list, feeds)) in self.lists.iter().zip(&self.fields).enumerate() {
             for feed in feeds {
                 if let Some(faults) = &feed.faults {
-                    rows.extend((0..list.len()).filter(|&e| K::get(faults, e)).map(|e| list.parent[e] as usize));
+                    rows.extend((0..list.len()).filter(|&e| K::get(faults, e)).map(|e| list.root[e] as usize));
                 }
+            }
+            if let Some(faulted) = &list.faulted {
+                rows.extend((0..list.owners()).filter(|&o| K::get(faulted, o)).map(|o| self.row_of(at, o)));
             }
         }
         rows.retain(|&r| select.is_none_or(|sel| K::get(sel, r)));
@@ -542,6 +575,14 @@ impl<'x> Feeds<'x> {
         match kind {
             Kind::Num(None) => feed.fixed,
             _ => None,
+        }
+    }
+
+    pub(crate) fn row_of(&self, list: usize, owner: usize) -> usize {
+        let up = self.parents.get(list).copied().flatten();
+        match up.and_then(|p| self.lists.get(p as usize)) {
+            Some(parent) => parent.root.get(owner).map_or(owner, |r| *r as usize),
+            None => owner,
         }
     }
 

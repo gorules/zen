@@ -120,6 +120,7 @@ impl Program {
             machine.exec(&plan, &feeds, out, select);
         });
         feeds.prefaults(out, select);
+        out.collect(&self.hir, &feeds, select);
         Ok(())
     }
 
@@ -205,14 +206,14 @@ impl Machine {
         for (buf, def) in bufs.iter_mut().zip(&plan.defs) {
             let len = feeds.len(def.scope);
             buf.sized(len);
-            if let Some((list, _, _)) = def.fold {
+            if let Some((list, _, _, empty)) = def.fold {
                 buf.mant.fill(0);
                 buf.scale.fill(0);
                 buf.codes.fill(0);
                 buf.bits.fill(0);
                 buf.fault.fill(0);
                 buf.valid.fill(u64::MAX);
-                if let Some(null) = feeds.lists.get(list as usize).and_then(|l| l.null.as_ref()) {
+                if let Some(null) = feeds.lists.get(list as usize).and_then(|l| l.null.as_ref()).filter(|_| !empty) {
                     for (f, n) in buf.fault.iter_mut().zip(null) {
                         *f |= n;
                     }
@@ -229,7 +230,7 @@ impl Machine {
                 start += Reg::LANES;
             }
             for (buf, def) in bufs.iter_mut().zip(&plan.defs) {
-                if let (Some((_, fold, rep)), true) = (def.fold, def.stage == at) {
+                if let (Some((_, fold, rep, _)), true) = (def.fold, def.stage == at) {
                     buf.finish(fold, rep);
                 }
             }

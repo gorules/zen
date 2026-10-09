@@ -115,6 +115,7 @@ fn empty_list_sum_has_scale_zero() {
     let spec = Spec {
         columns: Vec::new(),
         lists: vec![ListSpec {
+            parent: None,
             path: "c.items",
             alias: "item",
             fields: vec![ColSpec::new("fee", Class::Num, Enc::Scaled), ColSpec::new("on", Class::Bool, Enc::Bool)],
@@ -143,6 +144,7 @@ fn dyn_sums_match_vm() {
     let spec = Spec {
         columns: Vec::new(),
         lists: vec![ListSpec {
+            parent: None,
             path: "c.items",
             alias: "item",
             fields: vec![ColSpec::new("fee", Class::Num, Enc::Scaled), ColSpec::new("on", Class::Bool, Enc::Bool)],

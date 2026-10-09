@@ -841,6 +841,80 @@ fn policy_typed_member_tables_and_math() {
 }
 
 #[test]
+fn policy_typed_lists_and_closures() {
+    let policy = r#"{
+  models: {
+    customer: {limit: "number", rate: "number", tags: "string[]", scores: "number[]", companies: "company[]", holdings: "holding[]"},
+    company: {revenue: "number", active: "boolean", depts: "dept[]"},
+    holding: {value: "number", lots: "lot[]"},
+    dept: {size: "number", cost: "number"},
+    lot: {qty: "number"},
+  },
+  blocks: [
+    {expression: "company.cost", value: "sum(map(company.depts, #.cost))"},
+    {expression: "company.wide", value: "count(company.depts, #.size > customer.limit)"},
+    {expression: "company.sizes", value: "map(company.depts, #.size * 2)"},
+    {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+    {expression: "customer.lots", value: "sum(map(customer.holdings, sum(map(#.lots, #.qty))))"},
+    {expression: "customer.big", value: "map(filter(customer.holdings, #.value > customer.limit), #.value)"},
+    {expression: "customer.score", value: "sum(customer.scores)"},
+    {expression: "customer.vip", value: "'vip' in customer.tags"},
+    {expression: "customer.hit", value: "contains(customer.scores, 3)"},
+    {expression: "customer.scaled", value: "map(customer.scores, # * customer.rate)"},
+    {expression: "customer.kept", value: "count(filter(customer.holdings, #.value > 10), len(#.lots) > 1)"},
+    {expression: "customer.top", value: "max(map(customer.holdings, #.value))"},
+  ],
+}"#;
+    let mut state = 23u64;
+    let mut pick = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    let mut values: Vec<Value> = (0..300)
+        .map(|_| {
+            let companies: Vec<Value> = (0..pick(4))
+                .map(|_| {
+                    let depts: Vec<Value> = (0..pick(4)).map(|_| json!({"size": pick(30), "cost": pick(900) as f64 / 4.0})).collect();
+                    json!({"revenue": pick(10_000), "active": pick(3) != 0, "depts": depts})
+                })
+                .collect();
+            let holdings: Vec<Value> = (0..pick(4))
+                .map(|_| {
+                    let lots: Vec<Value> = (0..pick(4)).map(|_| json!({"qty": pick(100)})).collect();
+                    json!({"value": pick(50), "lots": lots})
+                })
+                .collect();
+            let scores: Vec<Value> = (0..pick(5)).map(|_| json!(pick(8))).collect();
+            let tags: Vec<Value> = (0..pick(3)).map(|_| json!(["a", "vip", "b"][pick(3) as usize])).collect();
+            json!({"customer": {"limit": pick(20), "rate": pick(4) as f64 / 2.0, "tags": tags, "scores": scores, "companies": companies, "holdings": holdings}})
+        })
+        .collect();
+    let odd = [
+        json!({"customer": {"limit": 1, "rate": 1, "tags": [], "scores": [], "companies": [], "holdings": []}}),
+        json!({"customer": {"limit": null, "rate": null, "tags": null, "scores": null, "companies": null, "holdings": null}}),
+        json!({"customer": {"limit": 2, "rate": 0.5, "tags": ["vip"], "scores": [9223372036854775807i64, 9223372036854775807i64], "companies": [{"revenue": 9223372036854775807i64, "active": true, "depts": [{"size": 1, "cost": 9223372036854775807i64}, {"size": 2, "cost": 9223372036854775807i64}]}], "holdings": [{"value": 1, "lots": [{"qty": 9223372036854775807i64}, {"qty": 9223372036854775807i64}]}]}}),
+        json!({"customer": {"limit": 3, "rate": 2, "tags": ["a"], "scores": [1.50, 0.00, 3], "companies": [{"revenue": 1, "active": null, "depts": null}], "holdings": [{"value": null, "lots": null}]}}),
+        json!({"customer": {"limit": 3, "rate": 2, "tags": ["a", 1], "scores": ["x"], "companies": [{"revenue": "lots", "depts": []}], "holdings": [{"value": 4}]}}),
+        json!({"customer": {"limit": 0, "rate": 0.25, "tags": [null], "scores": [null, 3], "companies": [{"revenue": 5, "active": false, "depts": [{"size": null, "cost": 0.000000001}]}], "holdings": [{"value": 30, "lots": [{"qty": 1}, {"qty": 2}]}]}}),
+        json!({"customer": {"limit": 5}}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        values.insert(at * 37 + 4, row);
+    }
+    let ws = Anchor::workspace_with(policy);
+    let mut failures = Vec::new();
+    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+        eprintln!("lists typed {typed} laned {laned} hosted {hosted}");
+        if Anchor::typed() {
+            assert!(typed > 0, "units typed {typed}, laned {laned}");
+        }
+    }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
 fn policy_typed_extremes() {
     let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
     let overflow = [

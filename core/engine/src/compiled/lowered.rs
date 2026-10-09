@@ -46,6 +46,9 @@ impl Exports {
     }
 
     pub fn leaf<'a>(&self, slot: &mut Slot, dicts: &mut [Option<Rc<Dict>>]) -> Leaf<'a> {
+        if let Some(offsets) = slot.offsets.take() {
+            return self.items(slot, &offsets);
+        }
         let len = slot.len;
         let dict = slot.dict();
         let array = match &slot.data {
@@ -91,6 +94,30 @@ impl Exports {
             }
         };
         Leaf::typed(array)
+    }
+
+    fn items<'a>(&self, slot: &Slot, offsets: &[i32]) -> Leaf<'a> {
+        let text = |code: i32| -> Option<&str> {
+            let (offsets, data) = self.dicts.get(usize::from(slot.dict()?))?;
+            let at = usize::try_from(code).ok()?;
+            data.get(usize::try_from(*offsets.get(at)?).ok()?..usize::try_from(*offsets.get(at + 1)?).ok()?)
+        };
+        let value = |at: usize| -> Variable {
+            match &slot.data {
+                Data::Num { .. } => slot.decimal(at).map_or(Variable::Null, Variable::Number),
+                Data::Bool(_) => slot.boolean(at).map_or(Variable::Null, Variable::Bool),
+                Data::Code(_) => slot.code(at).and_then(text).map_or(Variable::Null, |t| Variable::String(t.into())),
+            }
+        };
+        Leaf::Any(
+            offsets
+                .windows(2)
+                .map(|w| {
+                    let (lo, hi) = (usize::try_from(w[0]).unwrap_or(0), usize::try_from(w[1]).unwrap_or(0));
+                    Variable::from_array((lo..hi).map(value).collect())
+                })
+                .collect(),
+        )
     }
 
     pub fn dictionaries(&self) -> Vec<Option<Rc<Dict>>> {

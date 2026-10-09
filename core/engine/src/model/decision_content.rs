@@ -237,11 +237,10 @@ impl GraphContent {
     }
 
     pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
-        if self.request_preparation.0.is_none() {
-            if let Some(target) = self.request_target() {
-                let prepared = RequestPreparation::load(loader, &self.imports, &target).await?;
-                self.request_preparation = RequestPreparationCache(Some(Arc::new(prepared)));
-            }
+        if let Some(target) = self.request_target() {
+            self.request_preparation
+                .get_or_load(loader, &self.imports, &target)
+                .await?;
         }
         if self.resolved_schemas.is_some() {
             return Ok(());
@@ -342,10 +341,40 @@ mod tests {
     }
 }
 
-/// A graph's loaded Request entity preparation (equal whatever it holds, as
-/// the other caches of a graph are).
-#[derive(Clone, Default, Debug)]
-pub(crate) struct RequestPreparationCache(pub(crate) Option<Arc<RequestPreparation>>);
+/// A graph's Request entity preparation, loaded once: by `resolve_schemas`,
+/// or by the first evaluation that needs it (so content made without a
+/// caching loader doesn't load its imports on every request). Equal whatever
+/// it holds, as the other caches of a graph are; a clone starts with what is
+/// loaded.
+#[derive(Default, Debug)]
+pub(crate) struct RequestPreparationCache(std::sync::OnceLock<Arc<RequestPreparation>>);
+
+impl Clone for RequestPreparationCache {
+    fn clone(&self) -> Self {
+        let cell = std::sync::OnceLock::new();
+        if let Some(prepared) = self.0.get() {
+            let _ = cell.set(prepared.clone());
+        }
+        Self(cell)
+    }
+}
+
+impl RequestPreparationCache {
+    /// The preparation for `target`, loaded through `imports` the first time.
+    /// A failure isn't kept: the next call loads again.
+    pub(crate) async fn get_or_load(
+        &self,
+        loader: &DynamicLoader,
+        imports: &[Arc<str>],
+        target: &Arc<str>,
+    ) -> Result<Arc<RequestPreparation>, String> {
+        if let Some(prepared) = self.0.get() {
+            return Ok(prepared.clone());
+        }
+        let loaded = Arc::new(RequestPreparation::load(loader, imports, target).await?);
+        Ok(self.0.get_or_init(|| loaded).clone())
+    }
+}
 
 impl PartialEq for RequestPreparationCache {
     fn eq(&self, _: &Self) -> bool {

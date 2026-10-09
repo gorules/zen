@@ -4,15 +4,17 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::VariableType;
 
-use crate::policy::ir::DataModelIr;
+use crate::model::GraphContent;
+use crate::policy::ir::{DataModelIr, ParsedPolicy};
 use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::graph::analysis::{
     GraphAnalysis, GraphAnalyzer, GraphSignature, SignatureResolution,
 };
+use crate::workspace::graph::request::{merge_entities, RequestTypes};
 use crate::workspace::reads::ReadView;
 
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest, SuppliedBy};
+use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest};
 
 impl Db {
     pub(crate) fn graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
@@ -47,12 +49,14 @@ impl Db {
             .unwrap_or_default()
     }
 
-    pub(crate) fn graph_dictionary_blocks(&self, imports: &[Arc<str>]) -> Vec<DictionaryUnitEntry> {
+    /// The policies a graph's imports make visible: the imports and what
+    /// they import, breadth-first, each import in the order listed (as the
+    /// runtime loads them).
+    fn graph_import_closure(&self, imports: &[Arc<str>]) -> Vec<(Arc<str>, Arc<ParsedPolicy>)> {
         let snap = self.snapshot();
-        let mut seen: HashSet<Arc<str>> = HashSet::default();
         let mut visited: HashSet<Arc<str>> = HashSet::default();
         let mut queue: VecDeque<Arc<str>> = imports.iter().cloned().collect();
-        let mut out: Vec<DictionaryUnitEntry> = Vec::new();
+        let mut out: Vec<(Arc<str>, Arc<ParsedPolicy>)> = Vec::new();
         while let Some(path) = queue.pop_front() {
             if !visited.insert(path.clone()) {
                 continue;
@@ -60,6 +64,16 @@ impl Db {
             let Some(parsed) = snap.all_parsed.get(&path) else {
                 continue;
             };
+            queue.extend(parsed.policy.imports().iter().cloned());
+            out.push((path, parsed.clone()));
+        }
+        out
+    }
+
+    pub(crate) fn graph_dictionary_blocks(&self, imports: &[Arc<str>]) -> Vec<DictionaryUnitEntry> {
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        let mut out: Vec<DictionaryUnitEntry> = Vec::new();
+        for (path, parsed) in self.graph_import_closure(imports) {
             for block in &parsed.policy.dictionaries {
                 if !seen.insert(block.ir.name.clone()) {
                     continue;
@@ -70,32 +84,17 @@ impl Db {
                     ir: block.ir.clone(),
                 });
             }
-            queue.extend(parsed.policy.imports().iter().cloned());
         }
         out
     }
 
-    /// The entities a graph's imports make visible (the imports and what
-    /// they import), each with the policy that defines it; the first of a
-    /// name wins.
+    /// The entity blocks a graph's imports make visible, each with the
+    /// policy that declares it, in the order they're walked.
     pub(crate) fn graph_entity_blocks(&self, imports: &[Arc<str>]) -> Vec<EntityUnitEntry> {
-        let snap = self.snapshot();
-        let mut seen: HashSet<Arc<str>> = HashSet::default();
-        let mut visited: HashSet<Arc<str>> = HashSet::default();
-        let mut queue: VecDeque<Arc<str>> = imports.iter().cloned().collect();
         let mut out: Vec<EntityUnitEntry> = Vec::new();
-        while let Some(path) = queue.pop_front() {
-            if !visited.insert(path.clone()) {
-                continue;
-            }
-            let Some(parsed) = snap.all_parsed.get(&path) else {
-                continue;
-            };
+        for (path, parsed) in self.graph_import_closure(imports) {
             for block in &parsed.policy.data_models {
                 if block.ir.scope.is_global() || block.ir.name.is_empty() {
-                    continue;
-                }
-                if !seen.insert(block.ir.name.clone()) {
                     continue;
                 }
                 out.push(EntityUnitEntry {
@@ -104,17 +103,31 @@ impl Db {
                     ir: block.ir.clone(),
                 });
             }
-            queue.extend(parsed.policy.imports().iter().cloned());
         }
         out
     }
 
-    pub(crate) fn graph_dictionary_types(
+    /// The entities a graph's imports make visible: one declared in several
+    /// policies is one entity, as in a policy's unit (and at runtime).
+    pub(crate) fn graph_entities(
         &self,
         imports: &[Arc<str>],
+    ) -> HashMap<Arc<str>, Arc<DataModelIr>> {
+        let blocks = self.graph_entity_blocks(imports);
+        merge_entities(blocks.iter().map(|b| b.ir.as_ref()))
+    }
+
+    /// The dictionaries a graph's imports make visible, by name; the read is
+    /// recorded, with the entities when the graph's request is one.
+    pub(crate) fn graph_dictionary_types(
+        &self,
+        content: &GraphContent,
     ) -> HashMap<Arc<str>, VariableType> {
+        let imports = &content.imports;
         let mut out = HashMap::new();
-        let view = ReadView::Dictionaries(self.dictionary_view(imports));
+        let view = ReadView::Dictionaries(
+            self.dictionary_view(imports, content.request_target().is_some()),
+        );
         for import in imports {
             self.graph_dep_record_view(import, view.clone());
         }
@@ -179,54 +192,49 @@ impl Db {
                 properties.sort_by(|a, b| a.path.cmp(&b.path));
                 properties
             }
+            // What the graph reads, untyped: required, since nothing says
+            // the request may leave it out.
             VariableType::Any => analysis
                 .inferred_inputs
                 .iter()
-                .map(|path| InputProperty::request(path.clone(), VariableType::Any))
+                .map(|path| InputProperty {
+                    optional: false,
+                    ..InputProperty::request(path.clone(), VariableType::Any)
+                })
                 .collect(),
             _ => Vec::new(),
         }
     }
 
-    /// A request typed by an entity, as the caller sends it: the entity's
-    /// fields, a reference as its id; what the host supplies marked so.
+    /// A request typed by an entity, as the caller sends it and nodes read
+    /// it: the entity's fields, a reference as the record it names (as are
+    /// the references inside it); what the host supplies marked so.
     fn graph_entity_inputs(&self, path: &Arc<str>) -> Option<Vec<InputProperty>> {
         let snap = self.snapshot();
         let content = snap.graphs.get(path).cloned()?;
         let content = content.as_graph()?;
         let target = content.request_target()?;
-        let entities: HashMap<Arc<str>, Arc<DataModelIr>> = self
-            .graph_entity_blocks(&content.imports)
-            .into_iter()
-            .map(|b| (b.ir.name.clone(), b.ir))
-            .collect();
+        let entities = self.graph_entities(&content.imports);
         let dictionaries: HashMap<Arc<str>, Arc<crate::policy::ir::DictionaryIr>> = self
             .graph_dictionary_blocks(&content.imports)
             .into_iter()
             .map(|b| (b.ir.name.clone(), b.ir))
             .collect();
         let entity = entities.get(&target)?;
+        let types = RequestTypes {
+            entities: &entities,
+            dictionaries: &dictionaries,
+        };
         let mut properties: Vec<InputProperty> = entity
             .properties
             .iter()
             .map(|property| {
-                let mut visited: HashSet<Arc<str>> = HashSet::default();
-                InputProperty {
-                    path: property.name.clone(),
-                    resolved_type: DataModelIr::wire_property_type(
-                        property,
-                        &entities,
-                        &dictionaries,
-                        &mut visited,
-                    ),
-                    optional: property.optional || property.default.is_some(),
-                    supplied_by: if property.supply.is_some() {
-                        SuppliedBy::Host
-                    } else {
-                        SuppliedBy::Request
-                    },
-                    default: property.default.as_deref().cloned(),
-                }
+                InputProperty::of_property(
+                    property.name.clone(),
+                    property,
+                    types.field(property, 0),
+                    &entities,
+                )
             })
             .collect();
         properties.sort_by(|a, b| a.path.cmp(&b.path));

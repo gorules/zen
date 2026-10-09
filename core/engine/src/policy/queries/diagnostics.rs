@@ -2,17 +2,21 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use zen_expression::variable::VariableType;
 
 use crate::analysis::nullable::NullableOperand;
-use crate::policy::blocks::{AnalysisContext, BlockKind};
-use crate::policy::raw::BlockDoc;
-use crate::policy::ir::PropertyTypeIr;
+
+use crate::policy::blocks::{
+    AnalysisContext, BlockKind, IntelliSenseSource, ReadFlattener, SharedIntelliSense,
+};
+use crate::policy::ir::{is_duration, PropertyTypeIr};
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
+use crate::policy::raw::{call_inputs, BlockDoc, PropertyDoc};
 use crate::workspace::db::{AnalysisPass, Db, Unit};
 use crate::workspace::types::{
-    BlockRef, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
+    BlockRef, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind,
 };
 
 impl Db {
@@ -90,40 +94,17 @@ impl Db {
         let dictionary_types = Rc::new(unit.dictionary_types());
         let declared_paths = Rc::new(unit.data_model_paths.clone());
         let mut out = Vec::new();
+        // What each derived field and call reads, across the unit's entities
+        // (`transaction.risk_score` → `card.card_score`).
+        let mut depends: Vec<Depend> = Vec::new();
         for block in &policy.blocks {
             let BlockDoc::DataModel { id, data } = block else {
                 continue;
             };
-            // Own fields each derived feature or compute reads: name → (read, where).
-            let own_names: HashSet<&str> = data.properties.iter().map(|p| p.name.as_ref()).collect();
-            let mut depends: Vec<(&Arc<str>, Arc<str>, CursorTarget, Arc<str>, Option<(u32, u32)>)> =
-                Vec::new();
+            let own_names: HashSet<&str> =
+                data.properties.iter().map(|p| p.name.as_ref()).collect();
             for prop in &data.properties {
-                let mut targets = Vec::new();
-                if prop.feature.is_some() {
-                    targets.push(CursorTarget::FeatureExpr { id: prop.id.clone() });
-                }
-                if prop.compute.is_some() {
-                    targets.push(CursorTarget::ComputeExpr { id: prop.id.clone() });
-                }
-                if let Some(model) = &prop.model {
-                    if let Some(inputs) = model.get("inputs").and_then(serde_json::Value::as_object) {
-                        targets.extend(inputs.keys().map(|input| CursorTarget::ModelInput {
-                            id: prop.id.clone(),
-                            input: Arc::from(input.as_str()),
-                        }));
-                    }
-                    if model.get("when").is_some() {
-                        targets.push(CursorTarget::ModelWhen { id: prop.id.clone() });
-                    }
-                    if model.get("request").is_some() && model.get("inputs").is_none() {
-                        targets.push(CursorTarget::ModelRequest { id: prop.id.clone() });
-                    }
-                    if model.get("response").is_some() {
-                        targets.push(CursorTarget::ModelResponse { id: prop.id.clone() });
-                    }
-                }
-                for target in targets {
+                for target in Self::host_targets(prop) {
                     let Some(source) = data.expression(&target).filter(|s| !s.trim().is_empty())
                     else {
                         continue;
@@ -137,6 +118,7 @@ impl Db {
                     let Some(scope) = self.data_model_cursor_scope(&cursor) else {
                         continue;
                     };
+                    let scope_type = scope.scope.shallow_clone();
                     // As a rule block's expression: type errors and unknown names.
                     let mut cx = AnalysisContext::new(
                         scope.scope,
@@ -152,65 +134,430 @@ impl Db {
                         cx.analyze_standard(&source, Some(prop.id.clone()));
                     });
                     // Derived features and computes: null in, null out.
-                    let propagates = matches!(cursor.target, CursorTarget::ComputeExpr { .. })
-                        || matches!(cursor.target, CursorTarget::FeatureExpr { .. })
-                            && prop.feature.as_ref().is_some_and(|f| {
-                                f.window.as_ref().is_none_or(|w| w.list().is_empty())
-                            });
+                    let propagates = Self::propagates_null(prop, &cursor.target);
                     let summary = cx.finish();
-                    // Calls take part in the order too: what their request,
-                    // `when` and response read (a call with named inputs reads
-                    // the request, not the entity).
-                    let orders = propagates
-                        || match &cursor.target {
-                            CursorTarget::ModelRequest { .. } | CursorTarget::ModelResponse { .. } => true,
-                            CursorTarget::ModelWhen { .. } => prop
-                                .model
-                                .as_ref()
-                                .is_some_and(|m| m.get("inputs").is_none()),
-                            _ => false,
-                        };
-                    if orders {
-                        for read in &summary.reads {
+                    if Self::orders(prop, &cursor.target) {
+                        for read in summary.reads.iter().filter(|read| !read.via_alias) {
+                            let mut reads = Self::derivation_reads(&unit, &data.name, &read.path);
                             let first = read.path.split('.').next().unwrap_or_default();
-                            if !read.via_alias && own_names.contains(first) {
-                                depends.push((
-                                    &prop.name,
-                                    Arc::from(first),
-                                    cursor.target.clone(),
-                                    prop.id.clone(),
-                                    read.span,
-                                ));
+                            if reads.is_empty() && own_names.contains(first) {
+                                reads.push(Arc::from(format!("{}.{first}", data.name)));
                             }
+                            depends.extend(reads.into_iter().map(|to| Depend {
+                                from: Arc::from(format!("{}.{}", data.name, prop.name)),
+                                to,
+                                at: Some(DependSite {
+                                    block_id: id.clone(),
+                                    target: cursor.target.clone(),
+                                    prop_id: prop.id.clone(),
+                                    span: read.span,
+                                }),
+                            }));
                         }
                     }
-                    let diagnostics = summary.diagnostics.into_iter().filter(|d| {
-                        !(propagates && NullableOperand::null_propagates(d))
-                    });
+                    if matches!(cursor.target, CursorTarget::FeatureExpr { .. }) {
+                        out.extend(Self::feature_shape(
+                            path,
+                            id,
+                            prop,
+                            &source,
+                            &scope_type,
+                            &intellisense,
+                        ));
+                    }
+                    let diagnostics = summary
+                        .diagnostics
+                        .into_iter()
+                        .filter(|d| !(propagates && NullableOperand::null_propagates(d)));
                     out.extend(diagnostics.map(|mut d| {
-                        d.location.target.get_or_insert_with(|| cursor.target.clone());
+                        d.location
+                            .target
+                            .get_or_insert_with(|| cursor.target.clone());
                         d
                     }));
                 }
             }
-            out.extend(Self::derivation_cycles(path, id, &depends));
             out.extend(self.stored_relationship_diagnostics(path, id, data, &unit));
-            // How long a call's reply may be reused: a duration like 5m.
+            out.extend(Self::data_model_attribute_diagnostics(path, id, data));
+        }
+        // The data models of the unit's other policies: what they read, so
+        // a loop through them is found here too.
+        for entry in unit.data_models.iter().filter(|e| e.policy_path != *path) {
+            let Some(other) = self.raw_policy(&entry.policy_path) else {
+                continue;
+            };
+            let Some(BlockDoc::DataModel { data, .. }) = other
+                .blocks
+                .iter()
+                .find(|b| b.id() == Some(entry.block_id.as_ref()))
+            else {
+                continue;
+            };
             for prop in &data.properties {
-                let Some(staleness) = prop.model.as_ref().and_then(|m| m.get("maxStaleness")) else {
+                for target in Self::host_targets(prop)
+                    .into_iter()
+                    .filter(|t| Self::orders(prop, t))
+                {
+                    let Some(source) = data.expression(&target).filter(|s| !s.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    let mut reads = Vec::new();
+                    let deps = intellisense.borrow_mut().reads(&source);
+                    ReadFlattener::extend_from_deps(&deps, &None, &mut reads);
+                    for read in reads.iter().filter(|read| !read.via_alias) {
+                        depends.extend(
+                            Self::derivation_reads(&unit, &data.name, &read.path)
+                                .into_iter()
+                                .map(|to| Depend {
+                                    from: Arc::from(format!("{}.{}", data.name, prop.name)),
+                                    to,
+                                    at: None,
+                                }),
+                        );
+                    }
+                }
+            }
+        }
+        out.extend(Self::derivation_cycles(path, &depends));
+        out
+    }
+
+    /// The expressions on a property: a feature's, a compute's and a call's.
+    fn host_targets(prop: &PropertyDoc) -> Vec<CursorTarget> {
+        let mut targets = Vec::new();
+        if prop.feature.is_some() {
+            targets.push(CursorTarget::FeatureExpr {
+                id: prop.id.clone(),
+            });
+        }
+        if prop.compute.is_some() {
+            targets.push(CursorTarget::ComputeExpr {
+                id: prop.id.clone(),
+            });
+        }
+        if let Some(model) = &prop.model {
+            let inputs = call_inputs(model);
+            if let Some(inputs) = inputs.and_then(serde_json::Value::as_object) {
+                targets.extend(inputs.keys().map(|input| CursorTarget::ModelInput {
+                    id: prop.id.clone(),
+                    input: Arc::from(input.as_str()),
+                }));
+            }
+            if model.get("when").is_some() {
+                targets.push(CursorTarget::ModelWhen {
+                    id: prop.id.clone(),
+                });
+            }
+            if model.get("request").is_some() && inputs.is_none() {
+                targets.push(CursorTarget::ModelRequest {
+                    id: prop.id.clone(),
+                });
+            }
+            if model.get("response").is_some() {
+                targets.push(CursorTarget::ModelResponse {
+                    id: prop.id.clone(),
+                });
+            }
+        }
+        targets
+    }
+
+    /// Derived features and computes: null in, null out.
+    fn propagates_null(prop: &PropertyDoc, target: &CursorTarget) -> bool {
+        match target {
+            CursorTarget::ComputeExpr { .. } => true,
+            CursorTarget::FeatureExpr { .. } => prop
+                .feature
+                .as_ref()
+                .is_some_and(|f| f.window.as_ref().is_none_or(|w| w.list().is_empty())),
+            _ => false,
+        }
+    }
+
+    /// Whether what an expression reads must be there before the property:
+    /// derived features, computes and calls (their request, `when` and
+    /// response; a call with named inputs reads the request, not the entity).
+    fn orders(prop: &PropertyDoc, target: &CursorTarget) -> bool {
+        Self::propagates_null(prop, target)
+            || match target {
+                CursorTarget::ModelRequest { .. } | CursorTarget::ModelResponse { .. } => true,
+                CursorTarget::ModelWhen { .. } => prop
+                    .model
+                    .as_ref()
+                    .is_some_and(|m| call_inputs(m).is_none()),
+                _ => false,
+            }
+    }
+
+    /// The fields a read from `entity` needs, as `entity.field`: each step
+    /// through a reference or relationship (`card.txn_count` needs
+    /// `transaction.card` and `card.txn_count`), and `$root.<entity>.…` from
+    /// that entity.
+    fn derivation_reads(unit: &Unit, entity: &str, path: &str) -> Vec<Arc<str>> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (mut entity, mut rest) = match segments.split_first() {
+            Some((&"$root", rest)) => match rest.split_first() {
+                Some((root, rest)) => (*root, rest),
+                None => return Vec::new(),
+            },
+            _ => (entity, segments.as_slice()),
+        };
+        let mut out = Vec::new();
+        while let Some((field, tail)) = rest.split_first() {
+            let Some(prop) = unit
+                .entities
+                .get(entity)
+                .and_then(|dm| dm.properties.iter().find(|p| p.name.as_ref() == *field))
+            else {
+                break;
+            };
+            out.push(Arc::from(format!("{entity}.{field}")));
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target }
+                    if !tail.is_empty() && !prop.is_stored() =>
+                {
+                    entity = target.as_ref();
+                    rest = tail;
+                }
+                _ => break,
+            }
+        }
+        out
+    }
+
+    /// A feature's shape against its property: a list (`topK`, `lastN`,
+    /// `unique`) needs `array: true`, a single value can't have it. A
+    /// grouped feature (a map, on an `object` property) is either.
+    fn feature_shape(
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        prop: &PropertyDoc,
+        source: &Arc<str>,
+        scope: &VariableType,
+        intellisense: &SharedIntelliSense,
+    ) -> Option<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        use zen_expression::parser::Node;
+        const LISTS: [&str; 3] = ["topK", "lastN", "unique"];
+        const SINGLES: [&str; 19] = [
+            "sum",
+            "count",
+            "avg",
+            "min",
+            "max",
+            "median",
+            "mode",
+            "stddev",
+            "variance",
+            "percentile",
+            "countDistinct",
+            "first",
+            "last",
+            "argMax",
+            "argMin",
+            "skew",
+            "kurtosis",
+            "countDistinctApprox",
+            "percentileApprox",
+        ];
+        // A selector that gives the whole event (`argMax(t, t.amount)`,
+        // `first(t, cond)`) is no feature: a feature is a value. Same rule
+        // and wording as the feature store's.
+        let whole_event = intellisense
+            .borrow_mut()
+            .with_ast(source, false, |root, _| {
+                let mut node = root;
+                while let Node::Parenthesized(inner) = node {
+                    node = inner;
+                }
+                let Node::FunctionCall { kind, arguments } = node else {
+                    return None;
+                };
+                let name = kind.to_string();
+                // A plain column of the event: `t.merchant`, `#.amount`.
+                let column = |node: &Node| {
+                    let Node::Closure { body, .. } = node else {
+                        return false;
+                    };
+                    let mut node = *body;
+                    let mut steps = 0;
+                    while let Node::Member { node: inner, .. } = node {
+                        node = inner;
+                        steps += 1;
+                    }
+                    steps > 0 && matches!(node, Node::Identifier(_) | Node::Pointer)
+                };
+                match (name.as_str(), arguments.len()) {
+                    ("argMax" | "argMin", 2) => Some(format!(
+                        "`{name}(events, by)` gives the whole event; a feature is a value: name what to return before the column to rank by: `{name}(transactions as t, t.merchant, t.amount [, cond])`"
+                    )),
+                    ("first" | "last", 1) => Some(name),
+                    ("first" | "last", 2) if !column(arguments[1]) => Some(name),
+                    _ => None,
+                }
+            })
+            .flatten();
+        if let Some(found) = whole_event {
+            let message = if found.starts_with('`') {
+                found
+            } else {
+                format!(
+                    "`{found}` here gives the whole event; a feature is a value: name what to return, e.g. `{found}(transaction as t, t.merchant [, <condition>])`"
+                )
+            };
+            return Some(Diagnostic::error(
+                DiagnosticCode::FeatureShape,
+                DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
+                    .with_target(CursorTarget::FeatureExpr {
+                        id: prop.id.clone(),
+                    }),
+                message,
+            ));
+        }
+        if matches!(prop.property_type, PropertyTypeDoc::Object) {
+            return None;
+        }
+        let aggregate = intellisense
+            .borrow_mut()
+            .with_ast(source, false, |root, _| {
+                let mut node = root;
+                while let Node::Parenthesized(inner) = node {
+                    node = inner;
+                }
+                match node {
+                    Node::FunctionCall { kind, .. } => Some(kind.to_string()),
+                    _ => None,
+                }
+            })
+            .flatten();
+        let (list, shown) = match aggregate.as_deref() {
+            Some(name) if LISTS.contains(&name) => (true, format!(" (`{name}`)")),
+            Some(name) if SINGLES.contains(&name) => (false, format!(" (`{name}`)")),
+            // Derived: by its type, when known.
+            _ => {
+                let returns = IntelliSenseSource::analyze(
+                    &mut intellisense.borrow_mut(),
+                    source,
+                    ExpressionKind::Standard,
+                    scope,
+                )
+                .return_type
+                .shallow_clone();
+                let returns = match returns {
+                    VariableType::Nullable(inner) => inner.as_ref().shallow_clone(),
+                    other => other,
+                };
+                match returns {
+                    VariableType::Array(_) => (true, String::new()),
+                    VariableType::Number
+                    | VariableType::String
+                    | VariableType::Bool
+                    | VariableType::Date
+                    | VariableType::Enum(..) => (false, String::new()),
+                    _ => return None,
+                }
+            }
+        };
+        let message = match (list, prop.array) {
+            (true, false) => format!(
+                "`{}` is a list{shown}: set `array: true` on the property (its `type` is the items')",
+                prop.name
+            ),
+            (false, true) => format!(
+                "`{}` is a single value{shown}: remove `array: true` from the property",
+                prop.name
+            ),
+            _ => return None,
+        };
+        Some(Diagnostic::error(
+            DiagnosticCode::FeatureShape,
+            DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
+                .with_target(CursorTarget::FeatureExpr {
+                    id: prop.id.clone(),
+                }),
+            message,
+        ))
+    }
+
+    /// Attributes on a data model checked as written: old type names, the
+    /// durations of calls, and attributes that another one overrides.
+    fn data_model_attribute_diagnostics(
+        path: &Arc<str>,
+        id: &Arc<str>,
+        data: &crate::policy::raw::DataModelDoc,
+    ) -> Vec<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        let mut out = Vec::new();
+        let at = |prop: &PropertyDoc| {
+            DiagnosticLocation::expression(path.clone(), id.clone(), prop.id.clone(), None)
+        };
+        let present =
+            |value: &Option<serde_json::Value>| value.as_ref().is_some_and(|v| !v.is_null());
+        if present(&data.events) && present(&data.reference) {
+            out.push(Diagnostic::warning(
+                DiagnosticCode::IgnoredAttribute,
+                DiagnosticLocation::block(path.clone(), id.clone()),
+                format!("`{}` has both `events` and `reference`: its records are events, `reference` is ignored", data.name),
+            ));
+        }
+        // Old type names, still read: `decimal`/`integer` are numbers,
+        // `timestamp` a date.
+        for prop in &data.properties {
+            let (old, new) = match &prop.property_type {
+                PropertyTypeDoc::Decimal => ("decimal", "number"),
+                PropertyTypeDoc::Integer => ("integer", "number"),
+                PropertyTypeDoc::Timestamp => ("timestamp", "date"),
+                _ => continue,
+            };
+            out.push(Diagnostic::warning(
+                DiagnosticCode::DeprecatedType,
+                at(prop),
+                format!("`{}`: `{old}` is an old type name; use `{new}`", prop.name),
+            ));
+        }
+        // How long a call's reply may be reused (`maxStaleness`: 5m) and
+        // how long the call may take (`timeout`: 500ms).
+        const STALENESS: (&str, &[&str], &str) =
+            ("maxStaleness", &["s", "m", "h", "d"], "30s, 5m or 1h");
+        const TIMEOUT: (&str, &[&str], &str) =
+            ("timeout", &["ms", "s", "m", "h", "d"], "500ms, 2s or 1m");
+        for prop in &data.properties {
+            let Some(model) = prop.model.as_ref() else {
+                continue;
+            };
+            if call_inputs(model).is_some() && model.get("request").is_some_and(|r| !r.is_null()) {
+                out.push(Diagnostic::warning(
+                    DiagnosticCode::IgnoredAttribute,
+                    at(prop),
+                    format!(
+                        "call '{}' has both `inputs` and `request`: it sends the named `inputs`, `request` is ignored",
+                        prop.name
+                    ),
+                ));
+            }
+            for (key, units, like) in [STALENESS, TIMEOUT] {
+                let Some(duration) = model.get(key) else {
                     continue;
                 };
-                let text = staleness.as_str().unwrap_or_default();
-                if text.is_empty() || Self::is_staleness(text) {
+                let text = duration.as_str().unwrap_or_default();
+                // Empty means not set; anything but a duration string is wrong.
+                if duration.is_null()
+                    || (duration.is_string() && (text.is_empty() || is_duration(text, units)))
+                {
                     continue;
                 }
                 out.push(Diagnostic::error(
-                    DiagnosticCode::ParseError,
-                    DiagnosticLocation::expression(path.clone(), id.clone(), prop.id.clone(), None),
+                    DiagnosticCode::InvalidDuration,
+                    at(prop),
                     format!(
-                        "`maxStaleness` of call '{}' is a duration like 30s, 5m or 1h, not `{}`",
+                        "`{key}` of call '{}' is a duration like {like}, not `{}`",
                         prop.name,
-                        if staleness.is_string() { text.to_string() } else { staleness.to_string() }
+                        if duration.is_string() {
+                            text.to_string()
+                        } else {
+                            duration.to_string()
+                        }
                     ),
                 ));
             }
@@ -247,7 +594,7 @@ impl Db {
             }
             let mut problem = |message: String| {
                 out.push(Diagnostic::error(
-                    DiagnosticCode::ParseError,
+                    DiagnosticCode::InvalidRelationship,
                     DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None),
                     format!("`{}`: {message}", prop.name),
                 ));
@@ -257,7 +604,10 @@ impl Db {
                 continue;
             }
             let Some(target_ir) = unit.entities.get(target) else {
-                problem(format!("`{target}` isn't an entity"));
+                problem(match target.is_empty() {
+                    true => "`target` is missing".to_string(),
+                    false => format!("`{target}` isn't an entity"),
+                });
                 continue;
             };
             if let Some(on) = on {
@@ -292,7 +642,9 @@ impl Db {
                 let text = |key: &str| through.get(key).and_then(serde_json::Value::as_str);
                 let events = text("events").unwrap_or_default();
                 let events_ir = unit.entities.get(events);
-                if events_ir.is_none_or(|e| e.records != Records::Events) {
+                if events.is_empty() {
+                    problem("`through.events` is missing".into());
+                } else if events_ir.is_none_or(|e| e.records != Records::Events) {
                     problem(format!("`{events}` isn't an events entity"));
                 }
                 let reference_to = |field: &str| {
@@ -306,7 +658,9 @@ impl Db {
                 if let Some(events_ir) = events_ir.filter(|e| e.records == Records::Events) {
                     for (role, expected) in [("self", data.name.as_ref()), ("member", target.as_ref())] {
                         let field = text(role).unwrap_or_default();
-                        if reference_to(field).as_deref() != Some(expected) {
+                        if field.is_empty() {
+                            problem(format!("`through.{role}` is missing: it names a reference of `{}` to `{expected}`", events_ir.name));
+                        } else if reference_to(field).as_deref() != Some(expected) {
                             problem(format!(
                                 "`{role}` is `{field}`: it names a reference of `{}` to `{expected}`",
                                 events_ir.name
@@ -314,7 +668,9 @@ impl Db {
                         }
                     }
                 }
-                if !text("window").is_some_and(Self::is_duration) {
+                if text("window").is_none_or(str::is_empty) {
+                    problem("`through.window` is missing: a duration like 10m, 1h or 30d".into());
+                } else if !text("window").is_some_and(|w| is_duration(w, &["m", "h", "d"])) {
                     problem(format!(
                         "`window` is a duration like 10m, 1h or 30d, not `{}`",
                         text("window").unwrap_or_default()
@@ -325,39 +681,17 @@ impl Db {
         out
     }
 
-    /// A positive whole number of minutes, hours or days: `10m`, `1h`, `30d`.
-    fn is_duration(text: &str) -> bool {
-        let Some((digits, unit)) = text.split_at_checked(text.len().saturating_sub(1)) else {
-            return false;
-        };
-        matches!(unit, "m" | "h" | "d")
-            && !digits.is_empty()
-            && !digits.starts_with('0')
-            && digits.bytes().all(|b| b.is_ascii_digit())
-    }
-
-    /// A positive whole number of seconds, minutes, hours or days: `30s`, `5m`, `5h`, `1d`.
-    fn is_staleness(text: &str) -> bool {
-        let Some((digits, unit)) = text.split_at_checked(text.len().saturating_sub(1)) else {
-            return false;
-        };
-        matches!(unit, "s" | "m" | "h" | "d")
-            && !digits.is_empty()
-            && !digits.starts_with('0')
-            && digits.bytes().all(|b| b.is_ascii_digit())
-    }
-
     /// A derived field that needs its own value, directly (`x = x + 5`) or
-    /// through others (`a = b`, `b = a`): no order computes it. Reported on
-    /// each read that closes the loop.
-    fn derivation_cycles(
-        path: &Arc<str>,
-        block_id: &Arc<str>,
-        depends: &[(&Arc<str>, Arc<str>, CursorTarget, Arc<str>, Option<(u32, u32)>)],
-    ) -> Vec<Diagnostic> {
+    /// through others (`a = b`, `b = a`), in its entity or through another
+    /// (`transaction.risk_score` → `card.card_score` → back): no order
+    /// computes it. Reported on each read in this policy that closes the loop.
+    fn derivation_cycles(path: &Arc<str>, depends: &[Depend]) -> Vec<Diagnostic> {
         let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
-        for (from, to, ..) in depends {
-            edges.entry(from.as_ref()).or_default().push(to.as_ref());
+        for depend in depends {
+            edges
+                .entry(depend.from.as_ref())
+                .or_default()
+                .push(depend.to.as_ref());
         }
         // The way from `start` back to `goal`, if any.
         let way_back = |start: &str, goal: &str| -> Option<Vec<String>> {
@@ -378,31 +712,52 @@ impl Db {
             }
             None
         };
+        let split = |node: &str| -> (String, String) {
+            let (entity, field) = node.split_once('.').unwrap_or(("", node));
+            (entity.to_string(), field.to_string())
+        };
         let mut out = Vec::new();
-        for (from, to, target, prop_id, span) in depends {
-            let message = if from.as_ref() == to.as_ref() {
-                format!("`{from}` reads itself: it can't be computed from its own value")
+        for Depend { from, to, at } in depends {
+            let Some(at) = at else {
+                continue;
+            };
+            let (entity, field) = split(from);
+            let message = if from == to {
+                format!("`{field}` reads itself: it can't be computed from its own value")
             } else if let Some(trail) = way_back(to, from) {
+                // Within one entity by field name; across entities qualified.
+                let within = trail.iter().all(|node| split(node).0 == entity);
+                let show = |node: &str| {
+                    if within {
+                        split(node).1
+                    } else {
+                        node.to_string()
+                    }
+                };
                 format!(
-                    "`{from}` depends on itself: {from} → {}",
-                    trail.join(" → ")
+                    "`{}` depends on itself: {} → {}",
+                    show(from),
+                    show(from),
+                    trail
+                        .iter()
+                        .map(|node| show(node))
+                        .collect::<Vec<_>>()
+                        .join(" → ")
                 )
             } else {
                 continue;
             };
-            out.push(
-                Diagnostic::error(
-                    DiagnosticCode::CyclicDependency,
-                    DiagnosticLocation::expression(
-                        path.clone(),
-                        block_id.clone(),
-                        prop_id.clone(),
-                        *span,
-                    )
-                    .with_target(target.clone()),
-                    message,
-                ),
-            );
+            out.push(Diagnostic::error(
+                DiagnosticCode::CyclicDependency,
+                DiagnosticLocation::expression(
+                    path.clone(),
+                    at.block_id.clone(),
+                    at.prop_id.clone(),
+                    at.span,
+                )
+                .with_target(at.target.clone()),
+                message,
+            ));
         }
         out
     }
@@ -492,6 +847,7 @@ impl Db {
     }
 
     pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {
+        use crate::workspace::types::Severity;
         let unit = self.unit(entry);
         let enriched = self.enriched(entry);
 
@@ -505,6 +861,14 @@ impl Db {
             }
             candidates.extend(self.unit_scoped_diagnostics(&unit, member));
             candidates.extend(self.import_diagnostics(member));
+            // Data model errors (a derivation cycle, a bad `maxStaleness`, a
+            // stored relationship that can't be found) stop a compile too, so
+            // hosts don't repeat these checks.
+            candidates.extend(
+                self.data_model_expression_diagnostics(member)
+                    .into_iter()
+                    .filter(|d| d.severity == Severity::Error),
+            );
         }
         candidates.extend(self.scope_diagnostics(entry));
         candidates.extend(enriched.diagnostics.iter().cloned());
@@ -1112,6 +1476,21 @@ impl Db {
 
         out
     }
+}
+
+/// A derived field or call (`from`) needing another field (`to`), both
+/// `entity.field`; `at` where this policy reads it (else another's).
+struct Depend {
+    from: Arc<str>,
+    to: Arc<str>,
+    at: Option<DependSite>,
+}
+
+struct DependSite {
+    block_id: Arc<str>,
+    target: CursorTarget,
+    prop_id: Arc<str>,
+    span: Option<(u32, u32)>,
 }
 
 #[cfg(test)]

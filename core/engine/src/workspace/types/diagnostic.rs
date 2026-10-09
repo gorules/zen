@@ -177,6 +177,11 @@ pub enum DiagnosticCode {
     DuplicateProperty,
     DuplicateEnumValue,
     InvalidName,
+    InvalidRelationship,
+    InvalidDuration,
+    DeprecatedType,
+    FeatureShape,
+    IgnoredAttribute,
 
     ImportNotFound,
     CircularImport,

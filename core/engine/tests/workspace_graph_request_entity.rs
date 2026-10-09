@@ -4,7 +4,8 @@
 
 use serde_json::{json, Value};
 use zen_engine::model::DecisionContent;
-use zen_engine::policy::{DiagnosticCode, Severity, Workspace};
+use zen_engine::policy::{DiagnosticCode, ScopeRequest, Severity, Workspace};
+use zen_expression::variable::VariableType;
 
 fn document(value: Value) -> DecisionContent {
     serde_json::from_value(value).expect("valid decision content")
@@ -322,4 +323,310 @@ fn a_document_says_what_it_reads_from_its_request() {
     let reads = set(ws.reads("p")).expect("known");
     assert!(reads.contains(&"transaction.amount".to_string()), "{reads:?}");
     assert!(reads.iter().any(|r| r.starts_with("transaction.customer")), "{reads:?}");
+}
+
+#[test]
+fn a_read_it_cant_follow_reads_everything() {
+    // `$root.x` and another node's output (`$nodes.x`): the request, but not
+    // as a field of the entity it's typed by. Unknown, so everything.
+    for expression in ["$root.amount > 9000", "$nodes.in.amount > 9000"] {
+        let ws = workspace(json!({ "target": "transaction" }), &[("big", expression)]);
+        assert_eq!(ws.reads("g"), None, "{expression}");
+    }
+}
+
+#[test]
+fn reads_through_an_index_or_alias_are_never_lost() {
+    // Each is either followed (the entity's field is listed) or unknown
+    // (None: everything is computed); never silently left out.
+    for expression in [
+        "customer['risk_rating'] == 'high'",
+        "some([customer] as c, c.risk_rating == 'high')",
+        "count([amount] as a, a > 9000) > 0",
+    ] {
+        let ws = workspace(json!({ "target": "transaction" }), &[("x", expression)]);
+        if let Some(reads) = ws.reads("g") {
+            assert!(!reads.is_empty(), "{expression}: reads nothing");
+        }
+    }
+}
+
+fn input<'a>(
+    inputs: &'a [zen_engine::policy::InputProperty],
+    path: &str,
+) -> &'a zen_engine::policy::InputProperty {
+    inputs
+        .iter()
+        .find(|i| i.path.as_ref() == path)
+        .unwrap_or_else(|| panic!("{path} in {inputs:?}"))
+}
+
+fn object_fields(ty: &VariableType) -> Vec<String> {
+    let VariableType::Object(fields) = ty else {
+        panic!("expected an object, got {ty:?}");
+    };
+    let mut keys: Vec<String> = fields.borrow().keys().map(|k| k.to_string()).collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn inputs_carry_a_reference_as_its_record() {
+    // As nodes read it and the runtime takes it: `customer` is the record,
+    // and so is a reference inside a relationship's records.
+    let mut fields = transaction_fields();
+    fields.as_array_mut().unwrap().push(
+        json!({ "id": "lines", "name": "lines", "type": "relationship", "target": "line", "array": true, "optional": false }),
+    );
+    let mut models = models(fields);
+    models["blocks"].as_array_mut().unwrap().push(entity(
+        "b-line",
+        "line",
+        json!([
+            prop("qty", "number"),
+            { "id": "product", "name": "product", "type": "reference", "target": "customer", "array": false, "optional": false }
+        ]),
+    ));
+    let mut ws = Workspace::new();
+    ws.set_document("models/aml", document(models));
+    ws.set_document(
+        "g",
+        document(graph(&["models/aml"], json!({ "target": "transaction" }), &[("x", "amount")])),
+    );
+    let inputs = ws.inputs(&ScopeRequest::for_policy("g"));
+    let customer = input(&inputs, "customer");
+    assert_eq!(object_fields(&customer.resolved_type), vec!["id", "risk_rating"]);
+    assert!(!customer.optional);
+    let VariableType::Array(line) = &input(&inputs, "lines").resolved_type else {
+        panic!("lines: {inputs:?}");
+    };
+    let VariableType::Object(line) = line.as_ref() else {
+        panic!("line: {line:?}");
+    };
+    let product = line.borrow().get("product").cloned().expect("product");
+    assert_eq!(object_fields(&product), vec!["id", "risk_rating"]);
+    // Which inputs are references, and to what: a host that fills records
+    // in from ids takes the id there.
+    assert_eq!(customer.reference.as_deref(), Some("customer"));
+    let lines = input(&inputs, "lines");
+    assert_eq!(lines.reference, None);
+    assert_eq!(
+        lines.record_references.get("product").map(|t| t.as_ref()),
+        Some("customer")
+    );
+    assert_eq!(input(&inputs, "amount").reference, None);
+    assert!(input(&inputs, "amount").record_references.is_empty());
+}
+
+#[test]
+fn an_optional_field_is_nullable_in_a_graph() {
+    let mut fields = transaction_fields();
+    fields.as_array_mut().unwrap().push(
+        json!({ "id": "fee", "name": "fee", "type": "number", "array": false, "optional": true }),
+    );
+    let mut ws = Workspace::new();
+    ws.set_document("models/aml", document(models(fields)));
+    for (expression, flagged) in [("fee * 2", true), ("(fee ?? 0) * 2", false)] {
+        ws.set_document(
+            "g",
+            document(graph(&["models/aml"], json!({ "target": "transaction" }), &[("x", expression)])),
+        );
+        let errors = codes(&ws, "g", Severity::Error);
+        assert_eq!(!errors.is_empty(), flagged, "{expression}: {errors:?}");
+    }
+    let inputs = ws.inputs(&ScopeRequest::for_policy("g"));
+    let fee = input(&inputs, "fee");
+    assert!(fee.optional);
+    assert!(matches!(fee.resolved_type, VariableType::Nullable(_)), "{:?}", fee.resolved_type);
+}
+
+/// `g` imports `a` and `b`, both import `d` (a diamond). `b` declares
+/// `transaction.amount` a string, `d` a number with `txn_id`; `e`, imported
+/// by `b`, adds `flag` to it. Walked breadth-first (a, b, d, e), `b`'s
+/// `amount` comes first; every declaration's fields are merged.
+fn diamond() -> Vec<(&'static str, Value)> {
+    let policy = |imports: Value, blocks: Value| json!({ "imports": imports, "blocks": blocks });
+    vec![
+        ("a", policy(json!(["d"]), json!([]))),
+        ("b", policy(json!(["d", "e"]), json!([entity("b-t", "transaction", json!([prop("amount", "string")]))]))),
+        (
+            "d",
+            policy(json!([]), json!([entity("d-t", "transaction", json!([prop("amount", "number"), prop("txn_id", "string")]))])),
+        ),
+        ("e", policy(json!([]), json!([entity("e-t", "transaction", json!([prop("flag", "boolean")]))]))),
+    ]
+}
+
+fn diamond_graph() -> Value {
+    graph(
+        &["a", "b"],
+        json!({ "target": "transaction" }),
+        &[("shout", "amount + '!'"), ("id", "txn_id"), ("flagged", "flag == true")],
+    )
+}
+
+#[test]
+fn imports_are_walked_and_entities_merged_as_at_runtime() {
+    let mut ws = Workspace::new();
+    for (path, policy) in diamond() {
+        ws.set_document(path, document(policy));
+    }
+    ws.set_document("g", document(diamond_graph()));
+    let diagnostics = ws.diagnostics("g");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let inputs = ws.inputs(&ScopeRequest::for_policy("g"));
+    let paths: Vec<&str> = inputs.iter().map(|i| i.path.as_ref()).collect();
+    assert_eq!(paths, vec!["amount", "flag", "txn_id"]);
+    assert!(matches!(input(&inputs, "amount").resolved_type, VariableType::String));
+}
+
+#[tokio::test]
+async fn runtime_walks_imports_and_merges_entities_as_the_editor() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::DecisionEngine;
+
+    let loader = std::sync::Arc::new(MemoryLoader::default());
+    for (path, policy) in diamond() {
+        loader.add(path, document(policy));
+    }
+    loader.add("g", document(diamond_graph()));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let output = engine
+        .evaluate("g", json!({ "amount": "high", "txn_id": "X1", "flag": true }).into())
+        .await
+        .map(|response| response.result.to_value())
+        .map_err(|error| format!("{error:?}"))
+        .expect("a string amount is the entity's");
+    assert_eq!(output["shout"], json!("high!"), "{output}");
+    assert_eq!(output["flagged"], json!(true), "{output}");
+    let error = engine
+        .evaluate("g", json!({ "amount": 1, "txn_id": "X1", "flag": "yes" }).into())
+        .await
+        .map_err(|error| format!("{error:?}"))
+        .expect_err("must fail");
+    assert!(error.contains("'amount'") && error.contains("'flag'"), "{error}");
+}
+
+#[test]
+fn entities_referencing_each_other_type_quickly() {
+    // Eight entities, each referencing every other: opened a few links deep,
+    // not along every path through them.
+    let names: Vec<String> = (0..8).map(|i| format!("e{i}")).collect();
+    let blocks: Vec<Value> = names
+        .iter()
+        .map(|name| {
+            let mut fields = vec![prop("id", "string")];
+            for other in names.iter().filter(|o| *o != name) {
+                fields.push(json!({ "id": other, "name": other, "type": "reference", "target": other, "array": false, "optional": false }));
+            }
+            entity(&format!("b-{name}"), name, json!(fields))
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    let mut ws = Workspace::new();
+    ws.set_document("models/ring", document(json!({ "imports": [], "blocks": blocks })));
+    ws.set_document(
+        "g",
+        document(graph(
+            &["models/ring"],
+            json!({ "target": "e0" }),
+            &[("deep", "e1.e2.e3.e4.id"), ("far", "e1.e2.e3.e4.e5.id")],
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let inputs = ws.inputs(&ScopeRequest::for_policy("g"));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
+    // Four links are records; a fifth is unknown.
+    let errors: Vec<_> = diagnostics.iter().filter(|d| d.severity == Severity::Error).collect();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].code == DiagnosticCode::ImplicitAny && errors[0].message.contains("`far`"), "{errors:?}");
+    assert_eq!(inputs.len(), 8);
+}
+
+#[test]
+fn a_graph_without_an_entity_request_ignores_entity_edits() {
+    let schema =
+        json!({ "type": "object", "properties": { "amount": { "type": "number" } } }).to_string();
+    for (request, affected) in [(json!({ "schema": schema }), false), (json!({ "target": "transaction" }), true)] {
+        let mut ws = Workspace::new();
+        ws.set_document("models/aml", document(models(transaction_fields())));
+        ws.set_document("g", document(graph(&["models/aml"], request.clone(), &[("x", "amount")])));
+        let _ = ws.diagnostics("g");
+        let (cursor, _) = ws.changes_since(0);
+        let mut fields = transaction_fields();
+        fields.as_array_mut().unwrap().push(prop("extra", "number"));
+        ws.set_document("models/aml", document(models(fields)));
+        let (_, changed) = ws.changes_since(cursor);
+        assert_eq!(
+            changed.iter().any(|p| p.as_ref() == "g"),
+            affected,
+            "{request}: {changed:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_decision_loads_its_request_entity_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use zen_engine::loader::ClosureLoader;
+    use zen_engine::model::GraphContent;
+    use zen_engine::Decision;
+
+    let loads = Arc::new(AtomicUsize::new(0));
+    let counted = loads.clone();
+    let models = Arc::new(document(models(transaction_fields())));
+    let loader = ClosureLoader::new(move |_key: String| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        let models = models.clone();
+        async move { Ok(models) }
+    });
+    let content: GraphContent = serde_json::from_value(graph(
+        &["models/aml"],
+        json!({ "target": "transaction" }),
+        &[("big", "amount > 9000")],
+    ))
+    .unwrap();
+    let decision = Decision::from(content).with_loader(Arc::new(loader));
+    let request = json!({ "txn_id": "X1", "amount": 9500, "channel": "cash", "customer": { "id": "C1", "risk_rating": "low" } });
+    for _ in 0..3 {
+        let output = decision.evaluate(request.clone().into()).await.expect("evaluates");
+        assert_eq!(output.result.to_value()["big"], json!(true));
+    }
+    assert_eq!(loads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn runtime_rejects_a_schema_and_an_entity_together() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::DecisionEngine;
+
+    let schema =
+        json!({ "type": "object", "properties": { "amount": { "type": "number" } } }).to_string();
+    let loader = std::sync::Arc::new(MemoryLoader::default());
+    loader.add("models/aml", document(models(transaction_fields())));
+    loader.add(
+        "g",
+        document(graph(
+            &["models/aml"],
+            json!({ "schema": schema, "target": "transaction" }),
+            &[("x", "1")],
+        )),
+    );
+    let engine = DecisionEngine::default().with_loader(loader);
+    let error = engine
+        .evaluate("g", json!({ "amount": 1 }).into())
+        .await
+        .map_err(|error| format!("{error:?}"))
+        .expect_err("must fail");
+    assert!(
+        error.contains("the request is typed twice: by a schema and by an entity (`target`); keep one"),
+        "{error}"
+    );
+}
+
+#[test]
+fn reads_of_an_unknown_document_are_unknown() {
+    let ws = workspace(json!({ "target": "transaction" }), &[("x", "amount")]);
+    assert_eq!(ws.reads("missing"), None);
 }

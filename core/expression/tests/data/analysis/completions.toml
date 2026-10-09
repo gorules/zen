@@ -215,3 +215,25 @@ expression = "f"
 pos = 1
 input = '{"items": []}'
 includes = ["first", "filter", "flatMap"]
+
+[[test]]
+name = "sketch aggregates complete"
+expression = "countD"
+pos = 6
+input = '{"items": []}'
+includes = ["countDistinct", "countDistinctApprox"]
+
+[[test]]
+name = "argMax, argMin, skew, kurtosis and percentileApprox complete"
+expression = "a"
+pos = 1
+input = '{"items": []}'
+includes = ["argMax", "argMin"]
+
+[[test]]
+name = "join completes next to split"
+expression = "jo"
+pos = 2
+input = '{"tags": []}'
+includes = ["join"]
+excludes = ["split"]

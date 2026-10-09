@@ -291,7 +291,7 @@ pub enum ScopeDoc {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "PropertyDocWire")]
 pub struct PropertyDoc {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -326,6 +326,60 @@ pub struct PropertyDoc {
     pub rest: serde_json::Map<String, serde_json::Value>,
 }
 
+/// [`PropertyDoc`] as read. Two flattened fields both see every key: the
+/// tagged type takes `type`/`enum`/`scale`/`target`, and `rest` collects
+/// them again. Left there they would be written twice (a JSON string with
+/// duplicate keys, which doesn't read back) and override edits to the type.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PropertyDocWire {
+    id: Arc<str>,
+    name: Arc<str>,
+    #[serde(flatten)]
+    property_type: PropertyTypeDoc,
+    #[serde(default)]
+    array: bool,
+    #[serde(default)]
+    optional: bool,
+    #[serde(default)]
+    feature: Option<FeatureDoc>,
+    #[serde(default)]
+    compute: Option<Arc<str>>,
+    #[serde(default)]
+    column: Option<Arc<str>>,
+    #[serde(default)]
+    model: Option<serde_json::Value>,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(flatten)]
+    rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The keys [`PropertyTypeDoc`] reads (its tag and its variants' fields).
+const PROPERTY_TYPE_KEYS: [&str; 4] = ["type", "enum", "scale", "target"];
+
+impl From<PropertyDocWire> for PropertyDoc {
+    fn from(wire: PropertyDocWire) -> Self {
+        let mut rest = wire.rest;
+        for key in PROPERTY_TYPE_KEYS {
+            rest.remove(key);
+        }
+        Self {
+            id: wire.id,
+            name: wire.name,
+            property_type: wire.property_type,
+            array: wire.array,
+            optional: wire.optional,
+            feature: wire.feature,
+            compute: wire.compute,
+            column: wire.column,
+            model: wire.model,
+            required: wire.required,
+            rest,
+        }
+    }
+}
+
 /// A property computed by the host's feature store. The engine only needs
 /// its windows (which properties exist); everything else is kept as is.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -335,8 +389,29 @@ pub struct FeatureDoc {
     pub expr: Arc<str>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<WindowsDoc>,
+    /// The value when the feature is unknown (not covered): never null then.
+    /// `Some(null)` when written as `null`, kept as written.
+    #[serde(
+        default,
+        deserialize_with = "written",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<serde_json::Value>,
     #[serde(flatten)]
     pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A value as written, `null` included (`Some(null)`, not `None`).
+fn written<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(deserializer).map(Some)
+}
+
+/// A call's named `inputs` (the earlier format, which wins over `request`):
+/// `None` when absent or `null`.
+pub(crate) fn call_inputs(model: &serde_json::Value) -> Option<&serde_json::Value> {
+    model.get("inputs").filter(|inputs| !inputs.is_null())
 }
 
 /// One window (`"7d"`) or several (`["1h", "7d"]`).
@@ -384,15 +459,12 @@ pub enum PropertyTypeDoc {
     Number,
     Boolean,
     Date,
-    /// An exact decimal (`scale` digits after the point): a number here, kept
-    /// exact by the feature store.
-    Decimal {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<u32>,
-    },
-    /// A whole number: a number here.
+    /// An old name for `number` (a `scale` with it is dropped): still read,
+    /// with a warning to use `number`.
+    Decimal,
+    /// An old name for `number`: still read, with a warning.
     Integer,
-    /// An instant: a date here.
+    /// An old name for `date`: still read, with a warning.
     Timestamp,
     /// A structured value (a map, such as a feature grouped by a column):
     /// any value here.
@@ -433,7 +505,9 @@ mod tests {
         let props = &data["properties"];
         assert_eq!(props[0]["description"], "credit limit");
         assert_eq!(props[0]["unit"], "GBP");
-        assert_eq!(props[0]["scale"], 2);
+        // `decimal` is an old name for `number`; its `scale` is dropped.
+        assert_eq!(props[0]["type"], "decimal");
+        assert!(props[0].get("scale").is_none());
         assert_eq!(props[1]["ui"], serde_json::json!({ "pinned": true }));
         assert_eq!(props[1]["target"], "customer");
         assert_eq!(props[2]["column"], "status_cd");
@@ -441,6 +515,32 @@ mod tests {
         // Read back the same.
         let again: PolicyDocument = serde_json::from_value(out.clone()).unwrap();
         assert_eq!(serde_json::to_value(&again).unwrap(), out);
+    }
+
+    #[test]
+    fn property_type_keys_are_written_once() {
+        let doc_json = serde_json::json!({
+            "blocks": [{ "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "card",
+                "properties": [
+                    { "id": "p1", "name": "limit", "type": "decimal", "scale": 2, "unit": "GBP" },
+                    { "id": "p2", "name": "holder", "type": "reference", "target": "customer" },
+                    { "id": "p3", "name": "status", "type": "string", "enum": ["a", "b"] }
+                ]
+            } } }]
+        });
+        let doc: PolicyDocument = serde_json::from_value(doc_json).unwrap();
+        // As text: no key twice, so it reads back.
+        let text = serde_json::to_string(&doc).unwrap();
+        assert_eq!(text.matches("\"type\":\"reference\"").count(), 1, "{text}");
+        assert_eq!(text.matches("\"target\"").count(), 1, "{text}");
+        let again: PolicyDocument = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            serde_json::to_value(&again).unwrap(),
+            serde_json::to_value(&doc).unwrap()
+        );
+        // Unknown attributes are still kept.
+        assert!(text.contains("\"unit\":\"GBP\""), "{text}");
     }
 
     #[test]

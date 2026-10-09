@@ -24,6 +24,7 @@ pub enum InternalFunction {
     Extract,
     FuzzyMatch,
     Split,
+    Join,
 
     // Math
     Abs,
@@ -37,6 +38,7 @@ pub enum InternalFunction {
     Stddev,
     Variance,
     Percentile,
+    PercentileApprox,
     TopK,
     LastN,
     Floor,
@@ -166,6 +168,25 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 },
             }),
 
+            // `join(list, separator?)`: the inverse of `split`. Strings, numbers,
+            // bools and dates join; null items are skipped.
+            IF::Join => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::join),
+                signatures: [VT::String, VT::Number, VT::Bool, VT::Date]
+                    .into_iter()
+                    .flat_map(|item| {
+                        let list = VT::Nullable(Rc::new(item)).array();
+                        [
+                            FunctionSignature::single(list.clone(), VT::String),
+                            FunctionSignature {
+                                parameters: vec![list, VT::String],
+                                return_type: VT::String,
+                            },
+                        ]
+                    })
+                    .collect(),
+            }),
+
             IF::FuzzyMatch => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::fuzzy_match),
                 signatures: vec![
@@ -259,9 +280,12 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
-            IF::Mode => Rc::new(StaticFunction {
+            IF::Mode => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::mode),
-                signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+                signatures: vec![
+                    FunctionSignature::single(VT::Number.array(), VT::Number),
+                    FunctionSignature::single(VT::String.array(), VT::String),
+                ],
             }),
 
             IF::Stddev => Rc::new(StaticFunction {
@@ -276,6 +300,14 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
             IF::Percentile => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::percentile),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Number.array(), VT::Number],
+                    return_type: VT::Number,
+                },
+            }),
+
+            IF::PercentileApprox => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::percentile_approx),
                 signature: FunctionSignature {
                     parameters: vec![VT::Number.array(), VT::Number],
                     return_type: VT::Number,
@@ -493,6 +525,35 @@ pub(crate) mod imp {
         );
 
         Ok(V::from_array(arr))
+    }
+
+    /// The items as text, between separators (`,` by default): strings as
+    /// they are, numbers normalized (`1.50` is `1.5`), bools and dates as
+    /// `string()` renders them; null items are skipped. Lists and objects
+    /// fail.
+    pub fn join(args: Arguments) -> anyhow::Result<V> {
+        let array = args.array(0)?;
+        let separator = args.ostr(1)?.unwrap_or(",");
+        let items = array.borrow();
+        let mut out = String::new();
+        let mut first = true;
+        for item in items.iter() {
+            let text: std::borrow::Cow<str> = match item {
+                V::Null => continue,
+                V::String(s) => std::borrow::Cow::Borrowed(s.as_str()),
+                V::Number(n) => n.normalize().to_string().into(),
+                V::Bool(b) => b.to_string().into(),
+                V::Dynamic(d) if d.as_date().is_some() => d.to_string().into(),
+                other => anyhow::bail!("Cannot join type {}", other.type_name()),
+            };
+            if !first {
+                out.push_str(separator);
+            }
+            first = false;
+            out.push_str(&text);
+        }
+
+        Ok(V::String(out.into()))
     }
 
     pub fn flatten(args: Arguments) -> anyhow::Result<V> {
@@ -741,25 +802,41 @@ pub(crate) mod imp {
         }
     }
 
+    /// The most common value of numbers or strings; ties go to the largest.
     pub fn mode(args: Arguments) -> anyhow::Result<V> {
-        let a = __internal_number_array(&args, 0)?;
-        let mut counts = BTreeMap::new();
-        for num in a {
-            *counts.entry(num).or_insert(0) += 1;
+        let array = args.array(0)?;
+        let items = array.borrow();
+        if items.iter().all(|item| matches!(item, V::Number(_))) {
+            let mut counts = BTreeMap::new();
+            for item in items.iter() {
+                if let V::Number(n) = item {
+                    *counts.entry(*n).or_insert(0) += 1;
+                }
+            }
+            return counts
+                .into_iter()
+                .max_by_key(|&(_, count)| count)
+                .map(|(num, _)| V::Number(num))
+                .context("Empty array");
         }
 
-        let most_common = counts
+        let mut counts = BTreeMap::new();
+        for item in items.iter() {
+            let V::String(s) = item else {
+                anyhow::bail!("Expected an array of numbers or strings");
+            };
+            *counts.entry(s.clone()).or_insert(0usize) += 1;
+        }
+        counts
             .into_iter()
             .max_by_key(|&(_, count)| count)
-            .map(|(num, _)| num)
-            .context("Empty array")?;
-
-        Ok(V::Number(most_common))
+            .map(|(s, _)| V::String(s))
+            .context("Empty array")
     }
 
     /// Sample variance, exact in decimals: `(Σx² − (Σx)²/n) / (n − 1)`;
-    /// `None` below two values. Feature engines merging `(n, Σx, Σx²)`
-    /// across buckets use the same formula and get the same digits.
+    /// `None` below two values. Callers merging `(n, Σx, Σx²)` across
+    /// partial sums use the same formula and get the same digits.
     pub fn sample_variance(values: &[Decimal]) -> anyhow::Result<Option<Decimal>> {
         let mut sum = Decimal::ZERO;
         let mut squares = Decimal::ZERO;
@@ -889,6 +966,21 @@ pub(crate) mod imp {
         let q = args.number(1)?;
         a.sort();
         Ok(percentile_of(&a, q)?.map_or(V::Null, V::Number))
+    }
+
+    /// The DDSketch estimate (1% relative accuracy) of the value at a
+    /// fraction `q` (0 to 1) of the numbers: no interpolation.
+    pub fn percentile_approx(args: Arguments) -> anyhow::Result<V> {
+        let values = __internal_number_array(&args, 0)?;
+        let q = args.number(1)?;
+        if !(Decimal::ZERO..=Decimal::ONE).contains(&q) {
+            anyhow::bail!("Percentile must be between 0 and 1, got {q}");
+        }
+        let mut sketch = crate::functions::sketch::DdSketch::new();
+        for x in values {
+            sketch.insert(x);
+        }
+        Ok(sketch.quantile(q).map_or(V::Null, V::Number))
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

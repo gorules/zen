@@ -691,10 +691,13 @@ impl<'a> DependencyResolutionWalker<'a> {
                         let mut alias_found: Option<Rc<str>> = None;
                         let mut inner_reads = Vec::new();
                         let mut inner_refs = Vec::new();
+                        // A parameter (`topK`'s count) reads the outer scope,
+                        // once; resolved after the iteration.
+                        let mut parameters = Vec::new();
                         for &closure_node in &arguments[1..] {
                             let Node::Closure { body, alias } = closure_node else {
-                                self.resolve(closure_node, scope);
-                                return;
+                                parameters.push(closure_node);
+                                continue;
                             };
 
                             let mut inner_scope = scope.clone();
@@ -768,6 +771,10 @@ impl<'a> DependencyResolutionWalker<'a> {
                                     }
                                 }
                             }
+                        }
+
+                        for parameter in parameters {
+                            self.resolve(parameter, scope);
                         }
                     } else {
                         for arg in arguments.iter() {

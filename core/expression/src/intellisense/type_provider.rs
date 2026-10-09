@@ -587,9 +587,14 @@ impl TypesProvider {
                     let ptr_type_inner = ptr_type.deref().clone();
 
                     for i in 1..arguments.len() {
+                        // A parameter (`topK`'s count) is no callback: it
+                        // reads the outer scope.
                         let alias = match arguments[i] {
                             Node::Closure { alias, .. } => *alias,
-                            _ => None,
+                            _ => {
+                                type_list[i] = self.determine(arguments[i], scope.clone()).kind;
+                                continue;
+                            }
                         };
 
                         let mut closure_scope = IntelliSenseScope {
@@ -623,9 +628,7 @@ impl TypesProvider {
                     FunctionKind::Internal(InternalFunction::Values) => {
                         self.values_typecheck(&type_list, arguments)
                     }
-                    FunctionKind::Internal(_)
-                    | FunctionKind::Deprecated(_)
-                    | FunctionKind::Host(_) => {
+                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
                         };
@@ -636,8 +639,23 @@ impl TypesProvider {
                             self.set_coded_error(arguments[i], arg_error, code);
                         }
 
+                        // These return null on too little input (`stddev([5])`,
+                        // `percentile([], q)`): nullable in strict mode.
+                        let may_be_null = matches!(
+                            kind,
+                            FunctionKind::Internal(
+                                InternalFunction::Stddev
+                                    | InternalFunction::Variance
+                                    | InternalFunction::Percentile
+                                    | InternalFunction::PercentileApprox
+                            )
+                        );
                         TypeInfo {
-                            kind: typecheck.return_type,
+                            kind: if may_be_null {
+                                Self::maybe_nullable(typecheck.return_type, self.strict).kind
+                            } else {
+                                typecheck.return_type
+                            },
                             error: typecheck.general,
                         }
                     }
@@ -669,14 +687,115 @@ impl TypesProvider {
                             }
                         }
 
-                        // What an aggregate reads: the projection, else the items.
-                        let value_type = || match type_list.get(1) {
-                            Some(projection) => projection.clone(),
-                            None => type_list[0]
+                        if let Some(at) = c.parameter().filter(|&at| at < arguments.len()) {
+                            let parameter = &type_list[at];
+                            if !parameter
+                                .satisfies(&VariableType::Nullable(Rc::new(VariableType::Number)))
+                            {
+                                self.set_error(
+                                    arguments[at],
+                                    format!("Argument of type `{parameter}` is not a `number`."),
+                                );
+                            }
+                        }
+
+                        // What an aggregate reads: the projection, else the
+                        // items. Nulls are skipped, so never null. Selectors
+                        // return the item itself with one callback that is a
+                        // condition (`first(items, #.active)`) or ranks
+                        // (`argMax(items, #.amount)`), as the VM decides.
+                        let item_type = || {
+                            type_list[0]
                                 .iterator()
-                                .map(|t| t.deref().clone())
-                                .unwrap_or(VariableType::Any),
+                                .map(|t| t.unwrap_nullable().0.clone())
+                                .unwrap_or(VariableType::Any)
                         };
+                        let selects_item = arguments.len() == 2
+                            && match c {
+                                ClosureFunction::First | ClosureFunction::Last => {
+                                    matches!(type_list[1].unwrap_nullable().0, VariableType::Bool)
+                                }
+                                ClosureFunction::ArgMax | ClosureFunction::ArgMin => true,
+                                _ => false,
+                            };
+                        let value_type = match type_list.get(1) {
+                            Some(projection) if !selects_item => {
+                                projection.unwrap_nullable().0.clone()
+                            }
+                            _ => item_type(),
+                        };
+
+                        // Numeric aggregates need numbers (`min`, `max` also dates).
+                        let numeric = match c {
+                            ClosureFunction::Sum
+                            | ClosureFunction::Avg
+                            | ClosureFunction::Median
+                            | ClosureFunction::Stddev
+                            | ClosureFunction::Variance
+                            | ClosureFunction::Percentile
+                            | ClosureFunction::Skew
+                            | ClosureFunction::Kurtosis
+                            | ClosureFunction::PercentileApprox => Some(false),
+                            ClosureFunction::Min | ClosureFunction::Max => Some(true),
+                            _ => None,
+                        };
+                        if let Some(dates) = numeric {
+                            let accepted = match &value_type {
+                                VariableType::Any | VariableType::Number => true,
+                                VariableType::Date => dates,
+                                _ => false,
+                            };
+                            if !accepted {
+                                let expected = if dates {
+                                    "`number` or `date`"
+                                } else {
+                                    "`number`"
+                                };
+                                self.set_error(
+                                    arguments.get(1).copied().unwrap_or(arguments[0]),
+                                    format!(
+                                        "Aggregate must read a {expected}, but its type is `{value_type}`."
+                                    ),
+                                );
+                            }
+                        }
+
+                        // `argMax` and `argMin` rank by numbers or dates.
+                        if c.projections() == 2 {
+                            let by_at = arguments.len().min(3) - 1;
+                            if let Some(by) = type_list.get(by_at).filter(|_| by_at > 0) {
+                                let by = by.unwrap_nullable().0;
+                                if !matches!(
+                                    by,
+                                    VariableType::Any | VariableType::Number | VariableType::Date
+                                ) {
+                                    self.set_error(
+                                        arguments[by_at],
+                                        format!(
+                                            "Aggregate must rank by a `number` or `date`, but its type is `{by}`."
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+
+                        // `countDistinctApprox` hashes scalars, and a record
+                        // (a reference, `t.merchant`) as its id: not lists.
+                        if c == &ClosureFunction::CountDistinctApprox
+                            && matches!(value_type, VariableType::Array(_))
+                        {
+                            self.set_error(
+                                arguments.get(1).copied().unwrap_or(arguments[0]),
+                                format!(
+                                    "Aggregate must read a scalar, but its type is `{value_type}`."
+                                ),
+                            );
+                        }
+
+                        // Empty (or filtered-out) items: `sum` is 0, `count`,
+                        // `countDistinct` and `countDistinctApprox` count, the
+                        // others are null.
+                        let nullable = |kind| Self::maybe_nullable(kind, self.strict);
 
                         match c {
                             ClosureFunction::All => V(VariableType::Bool),
@@ -697,23 +816,27 @@ impl TypesProvider {
                                 V(VariableType::Array(Rc::new(element)))
                             }
                             ClosureFunction::Sum
-                            | ClosureFunction::Avg
+                            | ClosureFunction::CountDistinct
+                            | ClosureFunction::CountDistinctApprox => V(VariableType::Number),
+                            ClosureFunction::Avg
                             | ClosureFunction::Median
                             | ClosureFunction::Stddev
                             | ClosureFunction::Variance
                             | ClosureFunction::Percentile
-                            | ClosureFunction::CountDistinct => V(VariableType::Number),
+                            | ClosureFunction::Skew
+                            | ClosureFunction::Kurtosis
+                            | ClosureFunction::PercentileApprox => nullable(VariableType::Number),
                             ClosureFunction::TopK | ClosureFunction::LastN => {
-                                V(VariableType::Array(Rc::new(value_type())))
+                                V(VariableType::Array(Rc::new(value_type)))
                             }
                             ClosureFunction::Mode
                             | ClosureFunction::Min
                             | ClosureFunction::Max
                             | ClosureFunction::First
-                            | ClosureFunction::Last => V(value_type()),
-                            ClosureFunction::Unique => {
-                                V(VariableType::Array(Rc::new(value_type())))
-                            }
+                            | ClosureFunction::Last
+                            | ClosureFunction::ArgMax
+                            | ClosureFunction::ArgMin => nullable(value_type),
+                            ClosureFunction::Unique => V(VariableType::Array(Rc::new(value_type))),
                         }
                     }
                 }

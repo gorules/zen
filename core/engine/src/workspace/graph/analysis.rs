@@ -155,7 +155,7 @@ impl GraphTopology {
 
 impl<'a> GraphAnalyzer<'a> {
     pub(crate) fn new(db: &'a Db, path: Arc<str>, content: &'a GraphContent) -> Self {
-        let dictionary_types = db.graph_dictionary_types(&content.imports);
+        let dictionary_types = db.graph_dictionary_types(content);
         let request = Self::request_target(db, content);
         Self {
             db,
@@ -182,12 +182,10 @@ impl<'a> GraphAnalyzer<'a> {
         }) else {
             return RequestTarget::None;
         };
-        let blocks = db.graph_entity_blocks(&content.imports);
-        if !blocks.iter().any(|b| b.ir.name == target) {
+        let entities = db.graph_entities(&content.imports);
+        if !entities.contains_key(&target) {
             return RequestTarget::Missing(target);
         }
-        let entities: HashMap<Arc<str>, Arc<crate::policy::ir::DataModelIr>> =
-            blocks.into_iter().map(|b| (b.ir.name.clone(), b.ir)).collect();
         let dictionaries: HashMap<Arc<str>, Arc<crate::policy::ir::DictionaryIr>> = db
             .graph_dictionary_blocks(&content.imports)
             .into_iter()

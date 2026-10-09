@@ -143,3 +143,25 @@ fn on_and_through_are_checked() {
     }
 }
 
+
+#[test]
+fn a_missing_through_attribute_is_named() {
+    let ws = doc("avg(merchants as m, m.sales_30d)", vec![], json!({ "self": "receiver" }), "true");
+    let found = errors(&ws);
+    for expected in ["`through.events` is missing", "`through.window` is missing"] {
+        assert!(found.iter().any(|m| m.contains(expected)), "{expected}: {found:#?}");
+    }
+    let found = errors(&doc("avg(merchants as m, m.sales_30d)", vec![], json!({ "events": "txn", "window": "30d" }), "true"));
+    for expected in ["`through.self` is missing", "`through.member` is missing"] {
+        assert!(found.iter().any(|m| m.contains(expected)), "{expected}: {found:#?}");
+    }
+    assert!(!found.iter().any(|m| m.contains("``")), "{found:#?}");
+    // Its own code, not a parse error.
+    let codes: Vec<_> = ws
+        .diagnostics("p")
+        .into_iter()
+        .filter(|d| d.message.contains("through."))
+        .map(|d| serde_json::to_value(d.code).unwrap())
+        .collect();
+    assert!(!codes.is_empty() && codes.iter().all(|c| c == "INVALID_RELATIONSHIP"), "{codes:?}");
+}

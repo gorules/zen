@@ -308,3 +308,176 @@ diagnostics = [
     { source = "type_check", severity = "error" },
     { source = "type_check", severity = "error" },
 ]
+
+# ── join: the inverse of split ───────────────────────────────────────────────
+
+[[test]]
+name = "join strings with a separator"
+expression = "join(tags, ', ')"
+input = '{"tags": ["a", "b"]}'
+reads = [
+    { type = "direct", path = ["tags"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join without a separator"
+expression = "join(tags)"
+input = '{"tags": ["a", "b"]}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join numbers, bools and dates"
+expression = "join(ns, '-') + join(bs) + join([d('2024-01-01')])"
+input = '{"ns": [1, 2], "bs": [true]}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join nullable items"
+expression = "join(tags, '|')"
+input = '{"Object": {"tags": {"Array": {"Nullable": "String"}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join of unknown items"
+expression = "join(x, sep)"
+input = '{"Object": {"x": "Any", "sep": "Any"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join of a projection"
+expression = "join(map(items as t, t.name), ', ')"
+input = '{"items": [{"name": "a"}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "name"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "join of objects is a type error"
+expression = "join(items, ', ')"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+return_type = '"String"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"String"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "join of lists is a type error"
+expression = "join([[1], [2]])"
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "join separator must be a string"
+expression = "join(tags, 1)"
+input = '{"tags": ["a"]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "join of a string is a type error"
+expression = "join(name)"
+input = '{"name": "a"}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# ── Bare-array aggregates ────────────────────────────────────────────────────
+
+[[test]]
+name = "percentileApprox of a number list"
+expression = "percentileApprox(ns, 0.5)"
+input = '{"ns": [1, 2]}'
+reads = [
+    { type = "direct", path = ["ns"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "percentileApprox of a string list is a type error"
+expression = "percentileApprox(tags, 0.5)"
+input = '{"tags": ["a"]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "mode of a string list"
+expression = "mode(tags)"
+input = '{"tags": ["a", "b"]}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "lastN with an alias and no callback is the built-in"
+expression = "lastN(items as t, 2)"
+input = '{"items": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["items"] },
+]
+
+[test.loose]
+return_type = '{"Array":"Any"}'
+
+[test.strict]
+return_type = '{"Array":"Any"}'

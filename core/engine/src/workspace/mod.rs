@@ -2,6 +2,7 @@ pub(crate) mod affected;
 pub(crate) mod db;
 pub mod document_dependencies;
 pub(crate) mod editor;
+pub(crate) mod endpoint;
 pub(crate) mod graph;
 pub(crate) mod reads;
 pub(crate) mod search;
@@ -31,6 +32,8 @@ pub use types::{
     RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
     SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
+
+pub use endpoint::{EndpointKind, SchemaAudience};
 
 use types::Global;
 
@@ -131,6 +134,25 @@ impl Workspace {
 
     pub fn outputs(&self, req: &ScopeRequest) -> Vec<OutputProperty> {
         self.db.outputs(req)
+    }
+
+    /// What `path` serves: a graph, a policy with rules, or nothing.
+    pub fn endpoint(&self, path: &str) -> Option<EndpointKind> {
+        self.db.endpoint(path)
+    }
+
+    /// The request's JSON Schema for `audience`, without `$id`.
+    pub fn request_schema(
+        &self,
+        req: &ScopeRequest,
+        audience: SchemaAudience,
+    ) -> serde_json::Value {
+        self.db.request_schema(req, audience)
+    }
+
+    /// The response's JSON Schema, without `$id`.
+    pub fn response_schema(&self, req: &ScopeRequest) -> serde_json::Value {
+        self.db.response_schema(req)
     }
 
     pub fn conditional_schema(&self, req: &ScopeRequest) -> ConditionalSchema {

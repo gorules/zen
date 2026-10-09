@@ -143,7 +143,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 Opcode::FetchFast(path) => {
                     let mut steps = path.iter();
                     let mut variable = match steps.next() {
-                        Some(FetchFastTarget::Root) => root_scope.materialize(),
+                        Some(FetchFastTarget::Root) => root_of(root_scope),
                         Some(FetchFastTarget::Begin) => match steps.clone().next() {
                             Some(FetchFastTarget::String(key)) => {
                                 steps.next();
@@ -155,7 +155,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     };
 
                     variable = steps.fold(variable, |v, p| match p {
-                        FetchFastTarget::Root => root_scope.materialize(),
+                        FetchFastTarget::Root => root_of(root_scope),
                         FetchFastTarget::Begin => env.materialize(),
                         FetchFastTarget::String(key) => match v {
                             Object(obj) => {
@@ -201,7 +201,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     },
                 },
                 Opcode::FetchRootEnv => {
-                    self.push(env.materialize());
+                    self.push(root_of(&env));
                 }
                 Opcode::Negate => {
                     let a = self.pop()?;
@@ -313,6 +313,16 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             _ => {
                                 self.ip += j;
                             }
+                        }
+                    }
+                    Jump::IfNotBool => {
+                        let a = self.stack.last().ok_or_else(|| OpcodeErr {
+                            opcode: "JumpIfNotBool".into(),
+                            message: "Empty stack".into(),
+                        })?;
+
+                        if !matches!(a, Bool(_)) {
+                            self.ip += j;
                         }
                     }
                     Jump::IfEnd => {
@@ -1041,4 +1051,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
         self.pop()
     }
+}
+
+/// `$root`: the environment, unless the host gave it a `$root` key (no
+/// expression can name such a key, `$root` being its own token). The type
+/// provider reads the same key, so analysis and evaluation agree.
+fn root_of(scope: &Scope) -> Variable {
+    scope
+        .get_str("$root")
+        .unwrap_or_else(|| scope.materialize())
 }

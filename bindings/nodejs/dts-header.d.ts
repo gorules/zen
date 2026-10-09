@@ -67,7 +67,8 @@ export type PolicyFieldOrigin =
 export type PolicyFieldSupply =
   | { kind: 'feature'; base: string; expr: string; window?: string; default?: unknown }
   | { kind: 'compute'; expr: string }
-  | { kind: 'model'; datasource?: string };
+  | { kind: 'model'; datasource?: string }
+  | { kind: 'members'; by: 'key' | 'events' };
 export type PolicyDiagnosticCode =
   | 'UNDEFINED_VARIABLE'
   | 'TYPE_MISMATCH'
@@ -88,6 +89,11 @@ export type PolicyDiagnosticCode =
   | 'DUPLICATE_PROPERTY'
   | 'DUPLICATE_ENUM_VALUE'
   | 'INVALID_NAME'
+  | 'INVALID_RELATIONSHIP'
+  | 'INVALID_DURATION'
+  | 'DEPRECATED_TYPE'
+  | 'FEATURE_SHAPE'
+  | 'IGNORED_ATTRIBUTE'
   | 'MAX_DEPTH_EXCEEDED'
   | 'IMPORT_NOT_FOUND'
   | 'CIRCULAR_IMPORT'

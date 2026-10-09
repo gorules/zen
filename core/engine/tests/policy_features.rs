@@ -187,7 +187,7 @@ fn feature_attributes_round_trip() {
 }
 
 #[test]
-fn exact_types_and_computed_properties_type_check() {
+fn types_and_computed_properties_type_check() {
     let doc = json!({
         "blocks": [
             { "id": "dm-transaction", "type": "dataModel", "props": { "data": {
@@ -200,11 +200,11 @@ fn exact_types_and_computed_properties_type_check() {
                 "sparse": false,
                 "properties": [
                     { "id": "t1", "name": "txn_id", "type": "string", "column": "TXN_ID" },
-                    { "id": "t2", "name": "authorized_at", "type": "timestamp" },
-                    { "id": "t3", "name": "amount", "type": "decimal", "scale": 2 },
-                    { "id": "t4", "name": "items", "type": "integer" },
-                    { "id": "t5", "name": "fx_rate", "type": "decimal" },
-                    { "id": "t6", "name": "amount_gbp", "type": "decimal", "scale": 2, "compute": "amount * fx_rate" }
+                    { "id": "t2", "name": "authorized_at", "type": "date" },
+                    { "id": "t3", "name": "amount", "type": "number" },
+                    { "id": "t4", "name": "items", "type": "number" },
+                    { "id": "t5", "name": "fx_rate", "type": "number" },
+                    { "id": "t6", "name": "amount_gbp", "type": "number", "compute": "amount * fx_rate" }
                 ]
             } } },
             { "id": "big", "type": "expression", "props": { "data": {
@@ -238,10 +238,45 @@ fn exact_types_and_computed_properties_type_check() {
         assert_eq!(data[field], sent[field], "{field}");
     }
     for (prop, sent) in data["properties"].as_array().unwrap().iter().zip(sent["properties"].as_array().unwrap()) {
-        for field in ["type", "scale", "compute", "column"] {
+        for field in ["type", "compute", "column"] {
             assert_eq!(prop[field], sent[field], "{field} of {}", sent["name"]);
         }
     }
+
+    // Old type names still load and evaluate the same, with a warning each;
+    // a `scale` is dropped.
+    let mut old = doc.clone();
+    let props = old["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+    props[1]["type"] = json!("timestamp");
+    props[2]["type"] = json!("decimal");
+    props[2]["scale"] = json!(2);
+    props[3]["type"] = json!("integer");
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(old.clone()).unwrap());
+    let found = ws.diagnostics("p");
+    assert!(found.iter().all(|d| d.severity != Severity::Error), "{found:#?}");
+    for message in [
+        "`authorized_at`: `timestamp` is an old type name; use `date`",
+        "`amount`: `decimal` is an old type name; use `number`",
+        "`items`: `integer` is an old type name; use `number`",
+    ] {
+        assert!(
+            found.iter().any(|d| d.severity == Severity::Warning && d.message == message),
+            "{message} in {found:#?}"
+        );
+    }
+    let out = evaluate(
+        &ws,
+        json!({ "transaction": {
+            "txn_id": "T1", "authorized_at": "2026-02-14T10:00:00Z", "amount": 900,
+            "items": 2, "fx_rate": 1.2, "amount_gbp": 1080
+        } }),
+    )
+    .expect("evaluates");
+    assert_eq!(out["transaction"]["big"], json!(true), "{out}");
+    let parsed: zen_engine::policy::PolicyDocument = serde_json::from_value(old).unwrap();
+    let back = serde_json::to_value(&parsed).unwrap();
+    assert!(back["blocks"][0]["props"]["data"]["properties"][2].get("scale").is_none());
 }
 
 #[test]
@@ -273,8 +308,8 @@ fn a_model_output_is_nullable_unless_required() {
 fn host_expressions(derived: &str, compute: &str, model_input: &str, when: &str) -> PolicyWorkspace {
     let mut doc = fraud("true");
     let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
-    txn.push(json!({ "id": "t4", "name": "fx_rate", "type": "decimal" }));
-    txn.push(json!({ "id": "t5", "name": "amount_gbp", "type": "decimal", "compute": compute }));
+    txn.push(json!({ "id": "t4", "name": "fx_rate", "type": "number" }));
+    txn.push(json!({ "id": "t5", "name": "amount_gbp", "type": "number", "compute": compute }));
     txn.push(json!({ "id": "t6", "name": "fraud_score", "type": "number",
         "model": { "datasource": "fraud", "inputs": { "amount": model_input }, "when": when } }));
     let card = doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap();
@@ -419,7 +454,8 @@ fn entities_mark_what_the_host_supplies() {
     );
     assert_eq!(field("card", "burst_ratio")["supply"]["kind"], "feature");
     assert_eq!(field("transaction", "amount_gbp")["supply"], json!({ "kind": "compute", "expr": "amount * fx_rate" }));
-    assert_eq!(field("transaction", "amount_gbp")["exactType"], "decimal");
+    // Only a type that says more than the engine's (`object`) has an exact type.
+    assert!(field("transaction", "amount_gbp").get("exactType").is_none());
     assert_eq!(field("transaction", "fraud_score")["supply"], json!({ "kind": "model", "datasource": "fraud" }));
     assert_eq!(field("transaction", "amount")["origin"], "schema");
     assert!(field("transaction", "amount").get("supply").is_none());
@@ -456,7 +492,7 @@ fn params_come_from_feature_settings() {
 
     doc["blocks"].as_array_mut().unwrap().push(json!({ "id": "fs", "type": "featureSettings", "props": { "data": {
         "timezone": "Europe/London",
-        "params": [{ "name": "high_amount", "type": "decimal", "value": "1000.00" }]
+        "params": [{ "name": "high_amount", "type": "number", "value": "1000.00" }]
     } } }));
     let with = errors_of(doc);
     assert!(with.is_empty(), "{with:?}");
@@ -542,7 +578,7 @@ fn defaults_are_filled_before_blocks_run() {
             "name": "guest",
             "properties": [
                 { "id": "g1", "name": "tier", "type": "string", "default": "basic" },
-                { "id": "g2", "name": "visits", "type": "integer",
+                { "id": "g2", "name": "visits", "type": "number",
                   "feature": { "expr": "count(booking)", "window": "all", "default": 0 } }
             ] } } },
         { "id": "e", "type": "expression", "props": { "data": {
@@ -571,13 +607,13 @@ fn defaults_are_filled_before_blocks_run() {
 fn derived_features_read_as_of_and_date_functions() {
     let mut doc = fraud("true");
     let card = doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap();
-    card.push(json!({ "id": "c5", "name": "last_txn_at", "type": "timestamp",
+    card.push(json!({ "id": "c5", "name": "last_txn_at", "type": "date",
         "feature": { "expr": "last(transaction as t, t.authorized_at)", "window": "7d" } }));
     card.push(json!({ "id": "c6", "name": "secs_since_last", "type": "number",
         "feature": { "expr": "last_txn_at_7d == null ? null : d(asOf).diff(d(last_txn_at_7d), 'second')" } }));
     let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
-    txn.push(json!({ "id": "t4", "name": "authorized_at", "type": "timestamp" }));
-    txn.push(json!({ "id": "t5", "name": "hour", "type": "integer", "compute": "d(authorized_at).hour()" }));
+    txn.push(json!({ "id": "t4", "name": "authorized_at", "type": "date" }));
+    txn.push(json!({ "id": "t5", "name": "hour", "type": "number", "compute": "d(authorized_at).hour()" }));
     let errors = errors_of(doc.clone());
     assert!(errors.is_empty(), "{errors:?}");
 
@@ -741,6 +777,27 @@ fn calls_and_derived_fields_are_ordered_by_what_they_read() {
         "{found:#?}"
     );
 
+    // Compiling stops on it too, not only the editor.
+    let mut cyclic = fraud("true");
+    let txn = cyclic["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+    txn.push(json!({ "id": "t6", "name": "risk_score", "type": "number",
+        "model": { "datasource": "fraud", "request": "{ kyc: kyc_level }" } }));
+    txn.push(json!({ "id": "t7", "name": "kyc_level", "type": "number",
+        "model": { "datasource": "kyc", "request": "{ risk: risk_score }" } }));
+    let loader = Arc::new(zen_engine::loader::MemoryLoader::default());
+    loader.add(
+        "p",
+        zen_engine::model::DecisionContent::Policy(zen_engine::model::PolicyContent(Arc::new(
+            serde_json::from_value(cyclic).unwrap(),
+        ))),
+    );
+    let engine = zen_engine::DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(
+        failures.iter().any(|f| format!("{f:?}").contains("depends on itself")),
+        "{failures:#?}"
+    );
+
     // Through a derived field: risk_score → ratio → risk_score.
     let found = doc("{ ratio }", "{ amount }", "risk_score * 2", "");
     assert!(found.iter().any(|m| m.contains("`ratio` depends on itself")), "{found:#?}");
@@ -782,14 +839,34 @@ fn a_call_reads_a_parent_through_root() {
     let found = errors(&doc("{ amount: transaction.amount }", ""));
     assert!(!found.is_empty(), "a bare parent read is not the instance's: {found:#?}");
 
-    // Completions after `$root.`: the request's entities; not offered as a field.
+    // Completions after `$root.`: the request's entities; `$root` offered once.
     let ws = doc("$root.", "");
     let after_root = labels(&ws, &cursor("dm-card", "$root.".len(), CursorTarget::ModelRequest { id: Arc::from("c9") }));
     assert!(after_root.iter().any(|l| l == "transaction"), "{after_root:?}");
     let ws = doc("", "");
     let fields = labels(&ws, &cursor("dm-card", 0, CursorTarget::ModelRequest { id: Arc::from("c9") }));
     assert!(fields.iter().any(|l| l == "holder_country"), "{fields:?}");
-    assert!(!fields.iter().any(|l| l == "$root"), "{fields:?}");
+    assert_eq!(fields.iter().filter(|l| *l == "$root").count(), 1, "{fields:?}");
+}
+
+#[test]
+fn a_property_is_never_shadowed_by_a_name_feature_expressions_add() {
+    // `params` and `asOf` are the card's own here, not the settings or the instant.
+    let mut doc = fraud("true");
+    let card = doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap();
+    card.push(json!({ "id": "c7", "name": "params", "type": "number" }));
+    card.push(json!({ "id": "c8", "name": "asOf", "type": "string" }));
+    card.push(json!({ "id": "c9", "name": "doubled", "type": "number", "feature": { "expr": "params * 2" } }));
+    card.push(json!({ "id": "c10", "name": "as_of_len", "type": "number", "feature": { "expr": "len(asOf)" } }));
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+    let errors: Vec<_> = ws
+        .diagnostics("p")
+        .into_iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message)
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
 }
 
 #[test]
@@ -812,3 +889,303 @@ fn inputs_say_who_supplies_them_and_whether_they_can_be_left_out() {
     let card = find("card");
     assert!(card.supplied_by == SuppliedBy::Host && card.optional, "{card:#?}");
 }
+
+/// The fraud model with a call on the transaction: `model` merged into it.
+fn with_call(model: serde_json::Value) -> serde_json::Value {
+    let mut doc = fraud("true");
+    let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+    let mut call = json!({ "datasource": "fraud", "request": "{ amount }" });
+    call.as_object_mut().unwrap().extend(model.as_object().unwrap().clone());
+    txn.push(json!({ "id": "t6", "name": "risk_score", "type": "number", "model": call }));
+    doc
+}
+
+#[test]
+fn call_durations_are_checked() {
+    let found = |key: &str, value: serde_json::Value| errors_of(with_call(json!({ key: value })));
+    for ok in ["500ms", "2s", "1m", "1h", "1d", ""] {
+        assert!(found("timeout", json!(ok)).is_empty(), "timeout {ok}: {:?}", found("timeout", json!(ok)));
+    }
+    for bad in [json!("0s"), json!("05s"), json!(" 5s"), json!("5 ms"), json!("5"), json!("1w"), json!(500)] {
+        let errors = found("timeout", bad.clone());
+        assert!(
+            errors.iter().any(|m| m.contains("`timeout` of call 'risk_score' is a duration like 500ms")),
+            "timeout {bad}: {errors:?}"
+        );
+    }
+    // A reply is reused for seconds or more: no `ms`, no leading zero.
+    for ok in ["30s", "5m", "1h", "1d"] {
+        assert!(found("maxStaleness", json!(ok)).is_empty(), "maxStaleness {ok}");
+    }
+    for bad in ["500ms", "05m", "0s", "5 m"] {
+        let errors = found("maxStaleness", json!(bad));
+        assert!(errors.iter().any(|m| m.contains("`maxStaleness` of call 'risk_score'")), "maxStaleness {bad}: {errors:?}");
+    }
+    // Windows: minutes, hours and days only.
+    let mut doc = fraud("true");
+    doc["blocks"][1]["props"]["data"]["properties"][2]["feature"]["window"] = json!(["30s", "10m"]);
+    let errors = errors_of(doc);
+    assert!(errors.iter().any(|m| m.contains("window '30s'")), "{errors:?}");
+    assert!(!errors.iter().any(|m| m.contains("window '10m'")), "{errors:?}");
+}
+
+#[test]
+fn a_compute_is_null_when_what_it_reads_may_be() {
+    let errors = |fx_rate: serde_json::Value, compute: serde_json::Value| {
+        let mut doc = fraud("(transaction.amount_gbp > 1000) == true");
+        let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+        let mut fx = json!({ "id": "t4", "name": "fx_rate", "type": "number" });
+        fx.as_object_mut().unwrap().extend(fx_rate.as_object().unwrap().clone());
+        txn.push(fx);
+        let mut amount_gbp = json!({ "id": "t5", "name": "amount_gbp", "type": "number" });
+        amount_gbp.as_object_mut().unwrap().extend(compute.as_object().unwrap().clone());
+        txn.push(amount_gbp);
+        errors_of(doc)
+    };
+    let compute = json!({ "compute": "amount * fx_rate" });
+    // `fx_rate?` in, null out: rules handle it.
+    assert!(!errors(json!({ "optional": true }), compute.clone()).is_empty());
+    assert!(errors(json!({}), compute.clone()).is_empty(), "{:?}", errors(json!({}), compute.clone()));
+    // `required` or a `default` says it is always there.
+    let required = json!({ "compute": "amount * fx_rate", "required": true });
+    assert!(errors(json!({ "optional": true }), required).is_empty());
+    let defaulted = json!({ "compute": "amount * fx_rate", "default": 0 });
+    assert!(errors(json!({ "optional": true }), defaulted).is_empty());
+    // Null itself, or through another compute.
+    assert!(!errors(json!({}), json!({ "compute": "amount > 0 ? amount : null" })).is_empty());
+    let mut doc = fraud("(transaction.doubled > 1000) == true");
+    let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+    txn.push(json!({ "id": "t4", "name": "fx_rate", "type": "number", "optional": true }));
+    txn.push(json!({ "id": "t5", "name": "amount_gbp", "type": "number", "compute": "amount * fx_rate" }));
+    txn.push(json!({ "id": "t6", "name": "doubled", "type": "number", "compute": "amount_gbp * 2" }));
+    assert!(!errors_of(doc).is_empty());
+    // Through a reference: another entity's field may be missing.
+    assert!(!errors(json!({}), json!({ "compute": "card.holder_country == 'GB' ? 1 : 2" })).is_empty());
+}
+
+#[test]
+fn a_derivation_loop_through_another_entity_is_an_error() {
+    let doc = |card_request: &str| {
+        let mut doc = with_call(json!({ "request": "{ amount, card_score: card.card_score }" }));
+        let card = doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap();
+        card.push(json!({ "id": "c9", "name": "card_score", "type": "number",
+            "model": { "datasource": "fraud", "request": card_request } }));
+        errors_of(doc)
+    };
+    let found = doc("{ risk: $root.transaction.risk_score }");
+    for expected in [
+        "`transaction.risk_score` depends on itself: transaction.risk_score → card.card_score → transaction.risk_score",
+        "`card.card_score` depends on itself: card.card_score → transaction.risk_score → card.card_score",
+    ] {
+        assert!(found.iter().any(|m| m == expected), "{expected} in {found:#?}");
+    }
+    // Reading the transaction's request data, not what it derives: fine.
+    let found = doc("{ amount: $root.transaction.amount }");
+    assert!(!found.iter().any(|m| m.contains("itself")), "{found:#?}");
+
+    // Across policies: the card in an import.
+    let mut main = with_call(json!({ "request": "{ amount, card_score: card.card_score }" }));
+    let card = main["blocks"].as_array_mut().unwrap().remove(1);
+    let mut card = json!({ "blocks": [card] });
+    card["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap().push(json!({
+        "id": "c9", "name": "card_score", "type": "number",
+        "model": { "datasource": "fraud", "request": "{ risk: $root.transaction.risk_score }" } }));
+    main["imports"] = json!(["cards"]);
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("cards", serde_json::from_value(card).unwrap());
+    ws.set_policy("p", serde_json::from_value(main).unwrap());
+    let found: Vec<String> = ws.diagnostics("p").into_iter().map(|d| d.message).collect();
+    assert!(
+        found.iter().any(|m| m.starts_with("`transaction.risk_score` depends on itself")),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_list_feature_is_an_array_property() {
+    let errors = |prop: serde_json::Value| {
+        let mut doc = fraud("true");
+        let txn = doc["blocks"][0]["props"]["data"]["properties"].as_array_mut().unwrap();
+        txn.push(json!({ "id": "t4", "name": "merchant", "type": "string" }));
+        doc["blocks"][1]["props"]["data"]["properties"].as_array_mut().unwrap().push(prop);
+        errors_of(doc)
+    };
+    let top = "topK(transaction as t, t.merchant, 3)";
+    let found = errors(json!({ "id": "c5", "name": "top_merchants", "type": "string", "feature": { "expr": top, "window": "7d" } }));
+    assert!(
+        found.iter().any(|m| m == "`top_merchants` is a list (`topK`): set `array: true` on the property (its `type` is the items')"),
+        "{found:#?}"
+    );
+    let ok = errors(json!({ "id": "c5", "name": "top_merchants", "type": "string", "array": true, "feature": { "expr": top, "window": "7d" } }));
+    assert!(ok.is_empty(), "{ok:#?}");
+    let found = errors(json!({ "id": "c5", "name": "merchants", "type": "string", "array": true,
+        "feature": { "expr": "countDistinct(transaction as t, t.merchant)", "window": "7d" } }));
+    assert!(found.iter().any(|m| m.contains("`merchants` is a single value (`countDistinct`)")), "{found:#?}");
+    // A selector that gives the whole event is no feature, whatever the property's type.
+    for (expr, message) in [
+        ("argMax(transaction as t, t.amount)", "`argMax(events, by)` gives the whole event; a feature is a value: name what to return before the column to rank by: `argMax(transactions as t, t.merchant, t.amount [, cond])`"),
+        ("first(transaction)", "`first` here gives the whole event; a feature is a value: name what to return, e.g. `first(transaction as t, t.merchant [, <condition>])`"),
+        ("last(transaction as t, t.amount > 100)", "`last` here gives the whole event; a feature is a value: name what to return, e.g. `last(transaction as t, t.merchant [, <condition>])`"),
+    ] {
+        let found = errors(json!({ "id": "c5", "name": "pick", "type": "object", "feature": { "expr": expr, "window": "7d" } }));
+        assert!(found.iter().any(|m| m == message), "{expr}: {found:#?}");
+    }
+    // A column, or a value and a condition, is fine.
+    for expr in ["first(transaction as t, t.merchant)", "last(transaction as t, t.merchant, t.amount > 100)"] {
+        let found = errors(json!({ "id": "c5", "name": "pick", "type": "string", "feature": { "expr": expr, "window": "7d" } }));
+        assert!(found.iter().all(|m| !m.contains("whole event")), "{expr}: {found:#?}");
+    }
+    // The approximate and positional aggregates are single values too.
+    let found = errors(json!({ "id": "c5", "name": "biggest_merchant", "type": "string", "array": true,
+        "feature": { "expr": "argMax(transaction as t, t.merchant, t.amount)", "window": "7d" } }));
+    assert!(found.iter().any(|m| m.contains("`biggest_merchant` is a single value (`argMax`)")), "{found:#?}");
+    // Grouped: a map, on an `object` property.
+    let ok = errors(json!({ "id": "c5", "name": "by_merchant", "type": "object",
+        "feature": { "expr": "unique(transaction as t, t.merchant)", "window": "7d" } }));
+    assert!(ok.is_empty(), "{ok:#?}");
+    // Derived: by its type.
+    let found = errors(json!({ "id": "c5", "name": "pair", "type": "number", "feature": { "expr": "[spend_1d, spend_1d]" } }));
+    assert!(found.iter().any(|m| m.starts_with("`pair` is a list:")), "{found:#?}");
+    let found = errors(json!({ "id": "c5", "name": "half", "type": "number", "array": true, "feature": { "expr": "spend_1d / 2" } }));
+    assert!(found.iter().any(|m| m.starts_with("`half` is a single value:")), "{found:#?}");
+}
+
+#[test]
+fn an_attribute_another_overrides_is_a_warning() {
+    let warnings = |doc: serde_json::Value| -> Vec<String> {
+        let mut ws = PolicyWorkspace::new();
+        ws.set_policy("p", serde_json::from_value(doc).unwrap());
+        ws.diagnostics("p")
+            .into_iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .map(|d| d.message)
+            .collect()
+    };
+    let mut doc = fraud("true");
+    doc["blocks"][0]["props"]["data"]["reference"] = json!({});
+    let found = warnings(doc);
+    assert!(found.iter().any(|m| m.contains("`transaction` has both `events` and `reference`")), "{found:#?}");
+
+    let found = warnings(with_call(json!({ "inputs": { "amount": "transaction.amount" } })));
+    assert!(found.iter().any(|m| m.contains("call 'risk_score' has both `inputs` and `request`")), "{found:#?}");
+    // `"inputs": null` is no inputs: the request is what it sends.
+    let doc = with_call(json!({ "inputs": null, "request": "{ amount: amout }" }));
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc.clone()).unwrap());
+    assert!(!warnings(doc.clone()).iter().any(|m| m.contains("has both")));
+    let request = serde_json::to_value(CursorTarget::ModelRequest { id: Arc::from("t6") }).unwrap();
+    assert!(
+        ws.diagnostics("p").iter().any(|d| d.location.target.as_ref().map(|t| serde_json::to_value(t).unwrap())
+            == Some(request.clone())),
+        "the request is checked"
+    );
+    assert!(ws.facts("p").iter().any(|f| serde_json::to_value(&f.target).unwrap() == request));
+}
+
+#[test]
+fn a_feature_default_is_typed_and_written_once() {
+    let mut doc = fraud("true");
+    doc["blocks"][1]["props"]["data"]["properties"][2]["feature"]["default"] = json!(null);
+    let parsed: zen_engine::policy::PolicyDocument = serde_json::from_value(doc.clone()).unwrap();
+    let text = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(text.matches("\"default\":0").count(), 1, "{text}");
+    assert_eq!(text.matches("\"default\":null").count(), 1, "kept as written: {text}");
+    let back: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, serde_json::to_value(&parsed).unwrap());
+    assert_eq!(back["blocks"][1]["props"]["data"]["properties"][3]["feature"]["default"], json!(0));
+    // Read as the feature's default: never null.
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+    let card = ws.entities(&ScopeRequest::for_policy("p")).into_iter().find(|e| e.name.as_ref() == "card").unwrap();
+    let spend = serde_json::to_value(card.fields.iter().find(|f| f.name.as_ref() == "spend_1d").unwrap()).unwrap();
+    assert_eq!(spend["origin"]["supply"]["default"], json!(0), "{spend}");
+}
+
+#[test]
+fn defaults_fill_pool_items_and_nested_relationships() {
+    let doc = json!({ "blocks": [
+        { "id": "dm-booking", "type": "dataModel", "props": { "data": {
+            "name": "booking",
+            "properties": [
+                { "id": "b1", "name": "hotel", "type": "reference", "target": "hotel" },
+                { "id": "b2", "name": "rooms", "type": "relationship", "target": "room", "array": true }
+            ] } } },
+        { "id": "dm-hotel", "type": "dataModel", "props": { "data": {
+            "name": "hotel",
+            "properties": [
+                { "id": "h1", "name": "id", "type": "string" },
+                { "id": "h2", "name": "stars", "type": "number", "default": 3 },
+                { "id": "h3", "name": "opened", "type": "date", "default": "2020-06-01" }
+            ] } } },
+        { "id": "dm-room", "type": "dataModel", "props": { "data": {
+            "name": "room",
+            "properties": [
+                { "id": "r1", "name": "kind", "type": "string", "default": "double" },
+                { "id": "r2", "name": "starts", "type": "date", "default": "2026-03-01" }
+            ] } } },
+        { "id": "e1", "type": "expression", "props": { "data": {
+            "key": "booking.hotel_label", "value": "[booking.hotel.stars, booking.hotel.opened.year()]" } } },
+        { "id": "e2", "type": "expression", "props": { "data": {
+            "key": "booking.kinds", "value": "map(booking.rooms, #.kind)" } } },
+        { "id": "e3", "type": "expression", "props": { "data": {
+            "key": "booking.months", "value": "map(booking.rooms, #.starts.month())" } } }
+    ] });
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+    let errors: Vec<_> = ws.diagnostics("p").into_iter().filter(|d| d.severity == Severity::Error).collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+    let out = evaluate(
+        &ws,
+        json!({ "booking": { "hotel": "h1", "rooms": [{ "kind": null }, { "kind": "suite" }] }, "hotel": [{ "id": "h1" }] }),
+    )
+    .expect("evaluates");
+    assert_eq!(out["booking"]["hotel_label"], json!([3, 2020]), "{out}");
+    assert_eq!(out["booking"]["kinds"], json!(["double", "suite"]), "{out}");
+    assert_eq!(out["booking"]["months"], json!([3, 3]), "{out}");
+    let out = evaluate(
+        &ws,
+        json!({ "booking": { "hotel": "h1", "rooms": [{ "kind": "twin" }, { "starts": "2026-07-04" }] },
+                "hotel": [{ "id": "h1", "stars": 5, "opened": "1999-01-01" }] }),
+    )
+    .expect("evaluates");
+    assert_eq!(out["booking"]["hotel_label"], json!([5, 1999]), "{out}");
+    assert_eq!(out["booking"]["kinds"], json!(["twin", "double"]), "{out}");
+    assert_eq!(out["booking"]["months"], json!([3, 7]), "{out}");
+}
+
+#[test]
+fn only_the_entities_a_policy_touches_are_its_inputs() {
+    // An imported model declares `card_merchant` (a root: nothing references
+    // it); the policy only reads `transaction`, so only that is asked for.
+    let models = json!({ "blocks": [
+        { "id": "t", "type": "dataModel", "props": { "data": {
+            "name": "transaction",
+            "properties": [{ "id": "t1", "name": "amount", "type": "number" }] } } },
+        { "id": "cm", "type": "dataModel", "props": { "data": {
+            "name": "card_merchant", "key": ["card", "merchant"],
+            "properties": [
+                { "id": "c1", "name": "card", "type": "string" },
+                { "id": "c2", "name": "merchant", "type": "string" }
+            ] } } }
+    ] });
+    let policy = |value: &str| {
+        json!({ "imports": ["models"], "blocks": [
+            { "id": "e", "type": "expression", "props": { "data": {
+                "key": "transaction.big", "value": value } } }
+        ] })
+    };
+    let paths = |value: &str| {
+        let mut ws = PolicyWorkspace::new();
+        ws.set_policy("models", serde_json::from_value(models.clone()).unwrap());
+        ws.set_policy("p", serde_json::from_value(policy(value)).unwrap());
+        let mut paths: Vec<String> =
+            ws.inputs(&ScopeRequest::for_policy("p")).into_iter().map(|p| p.path.to_string()).collect();
+        paths.sort();
+        paths
+    };
+    assert_eq!(paths("transaction.amount > 9000"), vec!["transaction.amount"]);
+    // A read it can't follow: every root entity, as before.
+    let all = paths("$ != null");
+    assert!(all.iter().any(|p| p.starts_with("card_merchant")), "{all:?}");
+}
+

@@ -150,33 +150,52 @@ impl Db {
         let visible = &unit.members;
         let entities = &unit.entities;
         let (root_entities, ref_targets) = self.classify_root_entities(visible);
+        // Only the root entities its rules (and its imports') read or write: an
+        // imported model may declare entities this policy never touches. All of
+        // them when a read can't be followed (`$`, unresolved) or there are no
+        // rules (a document of data models: its request is all of them).
+        let touched: Option<HashSet<Arc<str>>> = {
+            let shallow = self.shallow();
+            let mut touched = HashSet::default();
+            let mut known = true;
+            let mut rules = 0;
+            for rule in shallow.per_rule.iter().filter(|r| visible.contains(&r.policy_path)) {
+                rules += 1;
+                for read in &rule.reads {
+                    let path = read.path.as_ref();
+                    if path.starts_with('$') || read.unresolved {
+                        known = false;
+                    }
+                    touched.insert(Arc::from(path.split('.').next().unwrap_or(path)));
+                }
+                for write in &rule.writes {
+                    let path = write.path.as_ref();
+                    touched.insert(Arc::from(path.split('.').next().unwrap_or(path)));
+                }
+            }
+            (known && rules > 0).then_some(touched)
+        };
 
         let mut result: Vec<InputProperty> = self
             .walk_visible_properties(&req.policy_path)
             .into_iter()
             .filter(|vp| match &vp.scope {
-                PropertyScope::Entity(entity) => root_entities.contains(entity),
+                PropertyScope::Entity(entity) => {
+                    root_entities.contains(entity)
+                        && touched.as_ref().is_none_or(|t| t.contains(entity))
+                }
                 PropertyScope::Global => true,
             })
             .map(|vp| {
                 let mut visited: HashSet<Arc<str>> = HashSet::default();
                 let property = &vp.property;
-                InputProperty {
-                    path: vp.dotted_path(),
-                    resolved_type: DataModelIr::wire_property_type(
-                        property,
-                        entities,
-                        &unit.dictionaries,
-                        &mut visited,
-                    ),
-                    optional: property.optional || property.default.is_some(),
-                    supplied_by: if property.supply.is_some() {
-                        SuppliedBy::Host
-                    } else {
-                        SuppliedBy::Request
-                    },
-                    default: property.default.as_deref().cloned(),
-                }
+                let resolved_type = DataModelIr::wire_property_type(
+                    property,
+                    entities,
+                    &unit.dictionaries,
+                    &mut visited,
+                );
+                InputProperty::of_property(vp.dotted_path(), property, resolved_type, entities)
             })
             .collect();
 
@@ -200,6 +219,8 @@ impl Db {
                     optional: hosted,
                     supplied_by: if hosted { SuppliedBy::Host } else { SuppliedBy::Request },
                     default: None,
+                    reference: None,
+                    record_references: Default::default(),
                 });
             }
         }

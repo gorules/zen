@@ -4,7 +4,6 @@ use nohash_hasher::{BuildNoHashHasher, IsEnabled};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock, RwLock};
 use strum::IntoEnumIterator;
 
 impl IsEnabled for InternalFunction {}
@@ -19,7 +18,6 @@ pub struct FunctionRegistry {
         BuildNoHashHasher<DeprecatedFunction>,
     >,
     closure_aggregates: HashMap<ClosureFunction, Rc<dyn FunctionDefinition>>,
-    host_functions: HashMap<Arc<str>, Rc<dyn FunctionDefinition>>,
 }
 
 impl FunctionRegistry {
@@ -38,42 +36,7 @@ impl FunctionRegistry {
             FunctionKind::Closure(closure) => {
                 Self::INSTANCE.with_borrow(|i| i.closure_aggregates.get(closure).cloned())
             }
-            FunctionKind::Host(name) => {
-                if let Some(found) =
-                    Self::INSTANCE.with_borrow(|i| i.host_functions.get(name).cloned())
-                {
-                    return Some(found);
-                }
-
-                let host = host_registry().read().ok()?.get(name).cloned()?;
-                let definition = (host.definition)();
-                Self::INSTANCE
-                    .with_borrow_mut(|i| i.host_functions.insert(name.clone(), definition.clone()));
-                Some(definition)
-            }
         }
-    }
-
-    /// The registered host functions: name and description, sorted by name.
-    pub fn host_functions() -> Vec<(Arc<str>, String)> {
-        let Ok(registry) = host_registry().read() else {
-            return Vec::new();
-        };
-
-        let mut list: Vec<(Arc<str>, String)> = registry
-            .iter()
-            .map(|(name, host)| (name.clone(), host.description.clone()))
-            .collect();
-        list.sort();
-        list
-    }
-
-    pub(crate) fn host_description(name: &str) -> Option<String> {
-        host_registry()
-            .read()
-            .ok()?
-            .get(name)
-            .map(|host| host.description.clone())
     }
 
     fn new_internal() -> Self {
@@ -86,76 +49,39 @@ impl FunctionRegistry {
             .collect();
 
         let closure_aggregates = ClosureFunction::iter()
-            .filter(|c| c.is_aggregate())
-            .map(|c| (c, aggregate::definition(c)))
+            .filter_map(|c| Some((c, aggregate::definition(c)?)))
             .collect();
 
         Self {
             internal_functions,
             deprecated_functions,
             closure_aggregates,
-            host_functions: HashMap::new(),
         }
     }
 }
 
-/// A function the host application adds to the language: the parser, the
-/// type checker, intellisense and the VM accept it like a built-in.
-///
-/// `definition` builds its [`FunctionDefinition`] (signatures, and the
-/// implementation the VM calls); it runs once per thread that uses it. A
-/// host that only parses and type-checks (and evaluates elsewhere) can give
-/// an implementation that returns an error.
-#[derive(Clone)]
-pub struct HostFunction {
-    pub name: Arc<str>,
-    pub description: String,
-    pub definition: Arc<dyn Fn() -> Rc<dyn FunctionDefinition> + Send + Sync>,
-}
-
-fn host_registry() -> &'static RwLock<HashMap<Arc<str>, HostFunction>> {
-    static REGISTRY: OnceLock<RwLock<HashMap<Arc<str>, HostFunction>>> = OnceLock::new();
-    REGISTRY.get_or_init(Default::default)
-}
-
-/// Registers a host function for the whole process. Built-in names cannot
-/// be taken; registering a name again replaces it on threads that have not
-/// used it yet.
-pub fn register_host_function(function: HostFunction) -> anyhow::Result<()> {
-    let name = function.name.as_ref();
-    if InternalFunction::try_from(name).is_ok()
-        || DeprecatedFunction::try_from(name).is_ok()
-        || ClosureFunction::try_from(name).is_ok()
-    {
-        anyhow::bail!("`{name}` is a built-in function");
-    }
-
-    let mut registry = host_registry()
-        .write()
-        .map_err(|_| anyhow::anyhow!("host function registry is poisoned"))?;
-    registry.insert(function.name.clone(), function);
-    Ok(())
-}
-
-pub(crate) fn host_function_name(name: &str) -> Option<Arc<str>> {
-    let registry = host_registry().read().ok()?;
-    registry.get_key_value(name).map(|(key, _)| key.clone())
-}
-
 /// What the callback forms of the aggregates do with the values they
-/// collected (projected, filtered, nulls skipped). Empty input: `sum` and
-/// `countDistinct` are `0`, `unique` is `[]`, the others are `null`.
+/// collected (projected, filtered, nulls skipped). Empty input: `sum`,
+/// `countDistinct` and `countDistinctApprox` are `0`, `unique` is `[]`,
+/// the others are `null`. `argMax` and `argMin` collect `[value, by]` pairs.
 mod aggregate {
     use super::*;
     use crate::functions::arguments::Arguments;
     use crate::functions::internal::imp;
+    use crate::functions::moments::{self, power_sums};
+    use crate::functions::sketch::Hll;
     use crate::variable::VariableType as VT;
+    use crate::vm::date::DynamicVariableExt;
+    use crate::vm::VmDate;
     use crate::Variable;
+    use anyhow::Context;
+    use rust_decimal::Decimal;
     use std::collections::HashSet;
 
     type Implementation = fn(Arguments) -> anyhow::Result<Variable>;
 
-    pub(super) fn definition(kind: ClosureFunction) -> Rc<dyn FunctionDefinition> {
+    /// `None` for the callbacks that are no aggregate (`map`, `filter`...).
+    pub(super) fn definition(kind: ClosureFunction) -> Option<Rc<dyn FunctionDefinition>> {
         let (return_type, implementation): (VT, Implementation) = match kind {
             ClosureFunction::Sum => (VT::Number, imp::sum),
             ClosureFunction::Avg => (VT::Number, avg),
@@ -165,31 +91,47 @@ mod aggregate {
             ClosureFunction::Mode => (VT::Any, mode),
             ClosureFunction::Stddev => (VT::Number, imp::stddev),
             ClosureFunction::Variance => (VT::Number, imp::variance),
-            ClosureFunction::TopK | ClosureFunction::LastN | ClosureFunction::Percentile => {
+            ClosureFunction::TopK
+            | ClosureFunction::LastN
+            | ClosureFunction::Percentile
+            | ClosureFunction::PercentileApprox => {
                 let (return_type, implementation): (VT, Implementation) = match kind {
                     ClosureFunction::TopK => (VT::Any.array(), imp::top_k),
                     ClosureFunction::LastN => (VT::Any.array(), imp::last_n),
+                    ClosureFunction::PercentileApprox => (VT::Number, imp::percentile_approx),
                     _ => (VT::Number, imp::percentile),
                 };
-                return Rc::new(StaticFunction {
+                return Some(Rc::new(StaticFunction {
                     signature: FunctionSignature {
                         parameters: vec![VT::Any.array(), VT::Number],
                         return_type,
                     },
                     implementation: Rc::new(implementation),
-                });
+                }));
             }
             ClosureFunction::CountDistinct => (VT::Number, count_distinct),
             ClosureFunction::Unique => (VT::Any.array(), unique),
             ClosureFunction::First => (VT::Any, first),
             ClosureFunction::Last => (VT::Any, last),
-            _ => (VT::Any, unsupported),
+            ClosureFunction::ArgMax => (VT::Any, arg_max),
+            ClosureFunction::ArgMin => (VT::Any, arg_min),
+            ClosureFunction::Skew => (VT::Number, skew),
+            ClosureFunction::Kurtosis => (VT::Number, kurtosis),
+            ClosureFunction::CountDistinctApprox => (VT::Number, count_distinct_approx),
+            ClosureFunction::All
+            | ClosureFunction::None
+            | ClosureFunction::Some
+            | ClosureFunction::One
+            | ClosureFunction::Filter
+            | ClosureFunction::Map
+            | ClosureFunction::FlatMap
+            | ClosureFunction::Count => return None,
         };
 
-        Rc::new(StaticFunction {
+        Some(Rc::new(StaticFunction {
             signature: FunctionSignature::single(VT::Any.array(), return_type),
             implementation: Rc::new(implementation),
-        })
+        }))
     }
 
     fn null_if_empty(args: Arguments, f: Implementation) -> anyhow::Result<Variable> {
@@ -218,32 +160,71 @@ mod aggregate {
 
     /// The most common value (numbers or strings); ties go to the largest.
     fn mode(args: Arguments) -> anyhow::Result<Variable> {
-        let array = args.array(0)?;
-        let items = array.borrow();
-        if items.is_empty() {
-            return Ok(Variable::Null);
-        }
-        if items.iter().all(|item| matches!(item, Variable::Number(_))) {
-            drop(items);
-            return imp::mode(args);
-        }
-        let mut counts = std::collections::BTreeMap::new();
-        for item in items.iter() {
-            let Variable::String(s) = item else {
-                anyhow::bail!("Expected an array of numbers or strings");
-            };
-            *counts.entry(s.clone()).or_insert(0usize) += 1;
-        }
-        Ok(counts
-            .into_iter()
-            .max_by_key(|&(_, count)| count)
-            .map_or(Variable::Null, |(s, _)| Variable::String(s)))
+        null_if_empty(args, imp::mode)
     }
 
-    fn key(value: &Variable) -> String {
+    /// What `countDistinct` and `unique` compare: scalars as they are
+    /// (numbers normalized), objects and arrays by a canonical text with
+    /// object keys sorted, so `{a: 1, b: 2}` and `{b: 2, a: 1}` are one.
+    #[derive(PartialEq, Eq, Hash)]
+    enum Key<'a> {
+        Bool(bool),
+        Number(rust_decimal::Decimal),
+        String(&'a str),
+        Canonical(String),
+    }
+
+    fn key(value: &Variable) -> Key<'_> {
         match value {
-            Variable::Number(n) => format!("number:{}", n.normalize()),
-            other => format!("{}:{other}", other.type_name()),
+            Variable::Bool(b) => Key::Bool(*b),
+            Variable::Number(n) => Key::Number(n.normalize()),
+            Variable::String(s) => Key::String(s.as_str()),
+            other => {
+                let mut text = String::new();
+                canonical(other, &mut text);
+                Key::Canonical(text)
+            }
+        }
+    }
+
+    fn canonical(value: &Variable, out: &mut String) {
+        use std::fmt::Write;
+        match value {
+            Variable::Null => out.push_str("null"),
+            Variable::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            Variable::Number(n) => {
+                let _ = write!(out, "{}", n.normalize());
+            }
+            Variable::String(s) => {
+                let _ = write!(out, "{:?}", s.as_str());
+            }
+            Variable::Array(items) => {
+                out.push('[');
+                for (i, item) in items.borrow().iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canonical(item, out);
+                }
+                out.push(']');
+            }
+            Variable::Object(fields) => {
+                let fields = fields.borrow();
+                let mut entries: Vec<_> = fields.iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                out.push('{');
+                for (i, (name, item)) in entries.into_iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    let _ = write!(out, "{:?}:", name.as_str());
+                    canonical(item, out);
+                }
+                out.push('}');
+            }
+            Variable::Dynamic(dynamic) => {
+                let _ = write!(out, "{}:{dynamic}", dynamic.type_name());
+            }
         }
     }
 
@@ -284,7 +265,106 @@ mod aggregate {
             .unwrap_or(Variable::Null))
     }
 
-    fn unsupported(_: Arguments) -> anyhow::Result<Variable> {
-        anyhow::bail!("not an aggregate")
+    fn numbers(args: &Arguments) -> anyhow::Result<Vec<Decimal>> {
+        let array = args.array(0)?;
+        let items = array.borrow();
+        items
+            .iter()
+            .map(|item| item.as_number())
+            .collect::<Option<Vec<_>>>()
+            .context("Expected a number array")
+    }
+
+    /// What `argMax` and `argMin` rank by: numbers, or dates (as `min` and
+    /// `max` compare them).
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum Rank {
+        Number(Decimal),
+        Date(VmDate),
+    }
+
+    fn rank(value: &Variable) -> anyhow::Result<Rank> {
+        match value {
+            Variable::Number(n) => Ok(Rank::Number(*n)),
+            Variable::Dynamic(d) => match d.as_date() {
+                Some(date) => Ok(Rank::Date(date.clone())),
+                None => anyhow::bail!("Expected numbers or dates to rank by"),
+            },
+            _ => anyhow::bail!("Expected numbers or dates to rank by"),
+        }
+    }
+
+    /// The value paired with the greatest (`greatest`) or smallest rank;
+    /// ties go to the last pair. `null` without pairs.
+    fn arg_extreme(args: Arguments, greatest: bool) -> anyhow::Result<Variable> {
+        let array = args.array(0)?;
+        let items = array.borrow();
+        let mut best: Option<(Rank, Variable)> = None;
+        for item in items.iter() {
+            let Variable::Array(pair) = item else {
+                anyhow::bail!("Expected [value, by] pairs");
+            };
+            let pair = pair.borrow();
+            let [value, by] = pair.as_slice() else {
+                anyhow::bail!("Expected [value, by] pairs");
+            };
+            let by = rank(by)?;
+            let replaces = match &best {
+                None => true,
+                Some((current, _)) => {
+                    if std::mem::discriminant(current) != std::mem::discriminant(&by) {
+                        anyhow::bail!("Cannot rank numbers and dates together");
+                    }
+                    if greatest {
+                        by >= *current
+                    } else {
+                        by <= *current
+                    }
+                }
+            };
+            if replaces {
+                best = Some((by, value.clone()));
+            }
+        }
+        Ok(best.map_or(Variable::Null, |(_, value)| value))
+    }
+
+    fn arg_max(args: Arguments) -> anyhow::Result<Variable> {
+        arg_extreme(args, true)
+    }
+
+    fn arg_min(args: Arguments) -> anyhow::Result<Variable> {
+        arg_extreme(args, false)
+    }
+
+    /// Population skewness and excess kurtosis from exact power sums;
+    /// `null` below two values, for equal values or on overflow.
+    fn shape(
+        args: Arguments,
+        f: fn(i64, [Decimal; 4]) -> Option<Decimal>,
+    ) -> anyhow::Result<Variable> {
+        let values = numbers(&args)?;
+        Ok(power_sums(values)
+            .and_then(|(n, s)| f(n, s))
+            .map_or(Variable::Null, Variable::Number))
+    }
+
+    fn skew(args: Arguments) -> anyhow::Result<Variable> {
+        shape(args, moments::skew)
+    }
+
+    fn kurtosis(args: Arguments) -> anyhow::Result<Variable> {
+        shape(args, moments::kurtosis)
+    }
+
+    /// HyperLogLog estimate of the distinct scalars (see [`Hll`]); arrays
+    /// and objects have no stable hash and are skipped.
+    fn count_distinct_approx(args: Arguments) -> anyhow::Result<Variable> {
+        let array = args.array(0)?;
+        let mut hll = Hll::new();
+        for item in array.borrow().iter() {
+            hll.insert(item);
+        }
+        Ok(Variable::Number(hll.estimate()))
     }
 }

@@ -112,10 +112,13 @@ impl Db {
                 } else {
                     // Derived at read time: the instant read for.
                     let mut fields = own();
-                    fields.insert(Rc::from("asOf"), VariableType::Date);
+                    fields.entry(Rc::from("asOf")).or_insert(VariableType::Date);
                     fields
                 };
-                fields.insert(Rc::from("params"), self.feature_params(&unit));
+                // A name the scope has already is the real one: never shadowed.
+                fields
+                    .entry(Rc::from("params"))
+                    .or_insert_with(|| self.feature_params(&unit));
                 Some(CursorScope::value(object(fields), None))
             }
             CursorTarget::ComputeExpr { .. } => Some(CursorScope::value(object(own()), None)),
@@ -132,7 +135,7 @@ impl Db {
             // The call's value: the reply (`response`) beside the instance.
             CursorTarget::ModelResponse { .. } => {
                 let mut fields = own();
-                fields.insert(Rc::from("response"), VariableType::Any);
+                fields.entry(Rc::from("response")).or_insert(VariableType::Any);
                 fields.insert(Rc::from("$root"), enriched.declared_scope());
                 Some(CursorScope::value(object(fields), None))
             }
@@ -147,7 +150,7 @@ impl Db {
                     return None;
                 };
                 let model = data.properties.iter().find(|p| p.id == *id)?.model.as_ref()?;
-                if model.get("inputs").is_some() {
+                if crate::policy::raw::call_inputs(model).is_some() {
                     Some(CursorScope::condition(enriched.declared_scope()))
                 } else {
                     let mut fields = own();
@@ -394,7 +397,7 @@ impl Db {
                     });
                 }
                 let column = table.outputs.iter().find(|c| c.id == *col)?;
-                let dictionaries = self.graph_dictionary_types(&content.imports);
+                let dictionaries = self.graph_dictionary_types(content);
                 let expected =
                     GraphAnalyzer::output_expected(table, col, &dictionaries).or_else(|| {
                         (!column.field.is_empty())
@@ -437,7 +440,7 @@ impl Db {
         key: &str,
         output_path: Option<&str>,
     ) -> Option<VariableType> {
-        let dictionaries = self.graph_dictionary_types(&content.imports);
+        let dictionaries = self.graph_dictionary_types(content);
         let key = match output_path.filter(|p| !p.is_empty()) {
             Some(path) => format!("{path}.{key}"),
             None => key.to_string(),

@@ -123,7 +123,15 @@ impl Db {
         );
         let mut completions = Completions::from_slot(source, pos, &scope.scope, &result.slot);
         if !self.is_graph(&cursor.policy_path) {
-            completions.retain(|c| c.label != "$root");
+            // `$root` is the graph's request; a policy has none, unless the
+            // scope names it (a call's request: the whole request).
+            let scoped_root = matches!(
+                &scope.scope,
+                VariableType::Object(fields) if fields.borrow().contains_key("$root")
+            );
+            if !scoped_root {
+                completions.retain(|c| c.label != "$root");
+            }
             let before = source.get(..result.slot.replace_span.0 as usize).unwrap_or("");
             let parent = match before.strip_suffix('.') {
                 Some(receiver) => Self::dotted_path_before(receiver),

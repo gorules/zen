@@ -324,12 +324,521 @@ input = '{"items": [{"amount": 1}]}'
 return_type = '"Number"'
 
 [test.strict]
-return_type = '"Number"'
+return_type = '{"Nullable":"Number"}'
 
 [[test]]
 name = "countDistinct filter must be a bool"
 expression = "countDistinct(items, #.country, #.amount)"
 input = '{"items": [{"country": "GB", "amount": 1}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# ── Aggregate parameters: read once, in the outer scope ──────────────────────
+
+[[test]]
+name = "topK count reads the outer scope"
+expression = "topK(items as t, t.c, k)"
+input = '{"items": [{"c": "GB"}], "k": 2}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "c"] },
+    ] },
+    { type = "direct", path = ["k"] },
+]
+
+[test.loose]
+return_type = '{"Array":"String"}'
+
+[test.strict]
+return_type = '{"Array":"String"}'
+
+[[test]]
+name = "topK count must be a number"
+expression = "topK(items, #.c, 'two')"
+input = '{"items": [{"c": "GB"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "percentile fraction may be nullable"
+expression = "percentile(items, #.v, q, #.v > 0)"
+input = '{"Object": {"items": {"Array": {"Object": {"v": "Number"}}}, "q": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "lastN count inside an outer closure reads the outer item"
+expression = "map(groups as g, lastN(g.items as t, t.v, g.n))"
+input = '{"groups": [{"n": 2, "items": [{"v": "a"}]}]}'
+
+[test.loose]
+return_type = '{"Array":{"Array":"String"}}'
+
+[test.strict]
+return_type = '{"Array":{"Array":"String"}}'
+
+# ── Aggregate projections: numbers (and dates for min / max) ─────────────────
+
+[[test]]
+name = "sum of a string projection"
+expression = "sum(items, #.name)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "stddev of a nullable number projection"
+expression = "stddev(items, #.v)"
+input = '{"Object": {"items": {"Array": {"Object": {"v": {"Nullable": "Number"}}}}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "min of a string projection"
+expression = "min(items, #.name)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "max of a date projection"
+expression = "max(items, d(#.at))"
+input = '{"items": [{"at": "2024-01-01"}]}'
+
+[test.loose]
+return_type = '"Date"'
+
+[test.strict]
+return_type = '{"Nullable":"Date"}'
+
+# ── Empty or filtered-out items: null, except sum and the counts ─────────────
+
+[[test]]
+name = "sum, count and countDistinct are never null"
+expression = "sum(items, #.v, #.v > 1) + count(items, #.v > 1) + countDistinct(items, #.v)"
+input = '{"items": [{"v": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "avg may be null"
+expression = "avg(items, #.v, #.v > 1)"
+input = '{"items": [{"v": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "first skips nulls but may be null"
+expression = "first(items, #.c)"
+input = '{"Object": {"items": {"Array": {"Object": {"c": {"Nullable": "String"}}}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable":"String"}'
+
+[[test]]
+name = "unique skips nulls"
+expression = "unique(items, #.c)"
+input = '{"Object": {"items": {"Array": {"Object": {"c": {"Nullable": "String"}}}}}}'
+
+[test.loose]
+return_type = '{"Array":"String"}'
+
+[test.strict]
+return_type = '{"Array":"String"}'
+
+[[test]]
+name = "built-in stddev can be null on too little input"
+expression = "stddev(values)"
+input = '{"values": [5]}'
+reads = [
+    { type = "direct", path = ["values"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+# ── argMax / argMin: a value at the greatest (smallest) number or date ──────
+
+[[test]]
+name = "argMax reads both projections and the filter per item"
+expression = "argMax(items as t, t.merchant, t.amount, t.kind == 'in')"
+input = '{"items": [{"merchant": "m", "amount": 1, "kind": "in"}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "merchant"] },
+        { type = "direct", path = ["t", "amount"] },
+        { type = "direct", path = ["t", "kind"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable":"String"}'
+
+[[test]]
+name = "argMin keeps the value type and ranks by a date"
+expression = "argMin(items, #.amount, d(#.at))"
+input = '{"items": [{"amount": 1, "at": "2024-01-01"}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "argMax ranks by a number or date only"
+expression = "argMax(items, #.amount, #.merchant)"
+input = '{"items": [{"merchant": "m", "amount": 1}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "argMax filter must be a bool"
+expression = "argMax(items, #.merchant, #.amount, #.amount)"
+input = '{"items": [{"merchant": "m", "amount": 1}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# ── skew / kurtosis / percentileApprox: numbers; countDistinctApprox: scalars
+
+[[test]]
+name = "skew may be null"
+expression = "skew(items, #.v, #.v > 0)"
+input = '{"items": [{"v": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "kurtosis reads its projection per item"
+expression = "kurtosis(items as t, t.v)"
+input = '{"items": [{"v": 1}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "v"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "skew of a string projection"
+expression = "skew(items, #.name)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "kurtosis of a nullable number projection"
+expression = "kurtosis(items, #.v)"
+input = '{"Object": {"items": {"Array": {"Object": {"v": {"Nullable": "Number"}}}}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "countDistinctApprox is never null"
+expression = "countDistinctApprox(items, #.c, #.v > 1) + countDistinctApprox(items as t, t.v)"
+input = '{"items": [{"c": "GB", "v": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "countDistinctApprox of a record counts its ids"
+expression = "countDistinctApprox(items, #.o)"
+input = '{"items": [{"o": {"id": "M7", "x": 1}}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "countDistinctApprox of a list projection"
+expression = "countDistinctApprox(items, #.o)"
+input = '{"items": [{"o": [1, 2]}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "percentileApprox fraction reads the outer scope"
+expression = "percentileApprox(items as t, t.v, q, t.k == 'in')"
+input = '{"items": [{"v": 1, "k": "in"}], "q": 0.5}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "v"] },
+        { type = "direct", path = ["t", "k"] },
+    ] },
+    { type = "direct", path = ["q"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'
+
+[[test]]
+name = "percentileApprox fraction must be a number"
+expression = "percentileApprox(items, #.v, 'half')"
+input = '{"items": [{"v": 1}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "percentileApprox of a string projection"
+expression = "percentileApprox(items, #.name, 0.5)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# ── Selectors: without a projection, the item itself ────────────────────────
+
+[[test]]
+name = "first of the items is an item"
+expression = "first(items)"
+input = '{"items": [{"id": 1}]}'
+
+[test.loose]
+return_type = '{"Object": {"id": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"id": "Number"}}}'
+
+[[test]]
+name = "first with a condition is the matching item"
+expression = "first(items as t, t.v > 1)"
+input = '{"items": [{"id": 1, "v": 1}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "v"] },
+    ] },
+]
+
+[test.loose]
+return_type = '{"Object": {"id": "Number", "v": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"id": "Number", "v": "Number"}}}'
+
+[[test]]
+name = "last with a # condition is the matching item"
+expression = "last(items, #.v > 1)"
+input = '{"items": [{"v": 1}]}'
+
+[test.loose]
+return_type = '{"Object": {"v": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"v": "Number"}}}'
+
+[[test]]
+name = "first with a bool field is a condition"
+expression = "first(items, #.active)"
+input = '{"items": [{"id": 1, "active": true}]}'
+
+[test.loose]
+return_type = '{"Object": {"active": "Bool", "id": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"active": "Bool", "id": "Number"}}}'
+
+[[test]]
+name = "first with a nullable bool is a condition"
+expression = "first(items, #.active)"
+input = '{"Object": {"items": {"Array": {"Object": {"active": {"Nullable": "Bool"}}}}}}'
+
+[test.loose]
+return_type = '{"Object": {"active": {"Nullable": "Bool"}}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"active": {"Nullable": "Bool"}}}}'
+
+[[test]]
+name = "first with a projection is its value"
+expression = "first(items, #.name)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "first with a bool projection and a condition is the bool"
+expression = "first(items, #.active, #.id > 1)"
+input = '{"items": [{"id": 1, "active": true}]}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '{"Nullable": "Bool"}'
+
+[[test]]
+name = "first of number items with a condition"
+expression = "first(ns, # > 2)"
+input = '{"ns": [1, 5]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "first matching item inside another closure"
+expression = "map(groups as g, first(g.items as i, i.v > g.min))"
+input = '{"groups": [{"min": 1, "items": [{"v": 2}]}]}'
+
+[test.loose]
+return_type = '{"Array": {"Object": {"v": "Number"}}}'
+
+[test.strict]
+return_type = '{"Array": {"Nullable": {"Object": {"v": "Number"}}}}'
+
+[[test]]
+name = "a field of the first matching item"
+expression = "first(items as t, t.v > 1).id"
+input = '{"items": [{"id": 1, "v": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[[test]]
+name = "argMax with one callback is the item"
+expression = "argMax(items as t, t.amount)"
+input = '{"items": [{"id": 1, "amount": 5}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "amount"] },
+    ] },
+]
+
+[test.loose]
+return_type = '{"Object": {"amount": "Number", "id": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"amount": "Number", "id": "Number"}}}'
+
+[[test]]
+name = "argMin with one # callback ranking dates"
+expression = "argMin(items, d(#.at))"
+input = '{"items": [{"at": "2024-01-01"}]}'
+
+[test.loose]
+return_type = '{"Object": {"at": "String"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"at": "String"}}}'
+
+[[test]]
+name = "argMax with one callback must rank by a number or date"
+expression = "argMax(items, #.name)"
+input = '{"items": [{"name": "a"}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "argMax with three arguments is value and by"
+expression = "argMax(items, #.name, #.amount)"
+input = '{"items": [{"name": "a", "amount": 1}]}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "argMax with three arguments ranks by the third"
+expression = "argMax(items, #.amount, #.amount > 1)"
+input = '{"items": [{"amount": 1}]}'
 
 [test.loose]
 diagnostics = [{ source = "type_check", severity = "error" }]

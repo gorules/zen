@@ -189,6 +189,11 @@ impl Completions {
 
         if let VariableType::Object(obj) = resolved_data {
             for (key, val) in Self::sorted_fields(&obj.borrow()) {
+                // A `$root` key types `$root` (completed below), it is no variable.
+                if key.as_ref() == "$root" {
+                    continue;
+                }
+
                 completions.push(Completion {
                     label: key.to_string(),
                     kind: CompletionKind::Variable,
@@ -217,14 +222,9 @@ impl Completions {
         // one completion each, described with its callback form.
         completions.extend(
             InternalFunction::iter()
-                .filter(|f| f.closure_form().is_none())
+                .filter(|f| f.closure_form().is_none() && f.parameterized_closure_form().is_none())
                 .map(FunctionKind::Internal)
                 .chain(ClosureFunction::iter().map(FunctionKind::Closure))
-                .chain(
-                    FunctionRegistry::host_functions()
-                        .into_iter()
-                        .map(|(name, _)| FunctionKind::Host(name)),
-                )
                 .map(|fk| Self::function(fk, None)),
         );
 
@@ -254,8 +254,10 @@ impl Completions {
         let info = function_info(&fk);
         let detail = function_signature(&fk);
         let boost = boost_override.or(match &fk {
+            // Aggregates rank with the built-ins, most of which they extend.
             FunctionKind::Internal(_) => Some(10),
-            FunctionKind::Closure(_) | FunctionKind::Host(_) => None,
+            FunctionKind::Closure(c) if c.is_aggregate() => Some(10),
+            FunctionKind::Closure(_) => None,
             FunctionKind::Deprecated(_) => Some(-20),
         });
 
@@ -348,6 +350,9 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Split => {
                 "Splits a string into an array of substrings using the specified delimiter"
             }
+            InternalFunction::Join => {
+                "Joins the items into a string with the separator (default `,`); null items are skipped"
+            }
             InternalFunction::Abs => "Returns the absolute value of a number",
             InternalFunction::Sum => "Returns the sum of all elements in the input array",
             InternalFunction::Avg => "Calculates the average of all elements in the input array",
@@ -359,11 +364,14 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Median => {
                 "Calculates the median value of all elements in the input array"
             }
-            InternalFunction::Mode => "Finds the mode(s) of the input array",
+            InternalFunction::Mode => "Most common value (number or string) of the input array",
             InternalFunction::Stddev => "Sample standard deviation of the input array",
             InternalFunction::Variance => "Sample variance of the input array",
             InternalFunction::Percentile => {
                 "Value at a percentile (0 to 1) of the input array, interpolated"
+            }
+            InternalFunction::PercentileApprox => {
+                "Approximate value at a percentile (0 to 1) of the input array (1% relative error)"
             }
             InternalFunction::TopK => "The k most frequent values, most frequent first",
             InternalFunction::LastN => "The last n values, the last one first",
@@ -437,19 +445,22 @@ fn function_info(fk: &FunctionKind) -> String {
                 "Sample standard deviation, or of a projection of matching elements"
             }
             ClosureFunction::Variance => "Sample variance, or of a projection of matching elements",
-            ClosureFunction::TopK => "The k most frequent values of a projection of matching elements",
-            ClosureFunction::LastN => "The last n values of a projection of matching elements, the last one first",
+            ClosureFunction::TopK => "The k most frequent values, or of a projection of matching elements",
+            ClosureFunction::LastN => "The last n values, or of a projection of matching elements, the last one first",
             ClosureFunction::Percentile => {
-                "Value at a percentile (0 to 1) of a projection of matching elements"
+                "Value at a percentile (0 to 1) of the numbers, or of a projection of matching elements"
             }
             ClosureFunction::CountDistinct => "Counts distinct non-null values",
             ClosureFunction::Unique => "Distinct non-null values, in first-seen order",
-            ClosureFunction::First => "First non-null value (of a projection of matching elements)",
-            ClosureFunction::Last => "Last non-null value (of a projection of matching elements)",
+            ClosureFunction::First => "first(items) — first non-null item; first(items, cond) — first matching item; first(items, value) — first non-null value; first(items, value, cond) — its value at the first matching item",
+            ClosureFunction::Last => "last(items) — last non-null item; last(items, cond) — last matching item; last(items, value) — last non-null value; last(items, value, cond) — its value at the last matching item",
+            ClosureFunction::ArgMax => "argMax(items, by) — the item with the greatest by (number or date); argMax(items, value, by, cond?) — its value; ties go to the last",
+            ClosureFunction::ArgMin => "argMin(items, by) — the item with the smallest by (number or date); argMin(items, value, by, cond?) — its value; ties go to the last",
+            ClosureFunction::Skew => "Population skewness, or of a projection of matching elements",
+            ClosureFunction::Kurtosis => "Excess kurtosis (population), or of a projection of matching elements",
+            ClosureFunction::CountDistinctApprox => "Approximate count of distinct non-null values (HyperLogLog, ~1.6% error)",
+            ClosureFunction::PercentileApprox => "Approximate value at a percentile (0 to 1) of the numbers, or of a projection of matching elements (1% relative error)",
         },
-        FunctionKind::Host(name) => {
-            return FunctionRegistry::host_description(name).unwrap_or_default();
-        }
     };
     s.to_string()
 }
@@ -468,6 +479,7 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             InternalFunction::Matches | InternalFunction::Extract => vec!["str", "pattern"],
             InternalFunction::FuzzyMatch => vec!["haystack", "needle"],
             InternalFunction::Split => vec!["str", "delimiter"],
+            InternalFunction::Join => vec!["arr", "separator"],
             InternalFunction::Abs | InternalFunction::Floor | InternalFunction::Ceil => {
                 vec!["num"]
             }
@@ -479,7 +491,7 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             | InternalFunction::Mode
             | InternalFunction::Stddev
             | InternalFunction::Variance => vec!["arr"],
-            InternalFunction::Percentile => vec!["arr", "q"],
+            InternalFunction::Percentile | InternalFunction::PercentileApprox => vec!["arr", "q"],
             InternalFunction::TopK => vec!["arr", "k"],
             InternalFunction::LastN => vec!["arr", "n"],
             InternalFunction::Rand => vec!["max"],
@@ -508,13 +520,13 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             DeprecatedFunction::Duration => vec!["duration"],
             DeprecatedFunction::StartOf | DeprecatedFunction::EndOf => vec!["timestamp", "unit"],
         },
-        FunctionKind::Closure(_) | FunctionKind::Host(_) => vec![],
+        FunctionKind::Closure(_) => vec![],
     }
 }
 
 fn function_signature(fk: &FunctionKind) -> String {
     match fk {
-        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
+        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
             let param_names = function_param_names(fk);
             let Some(definition) = FunctionRegistry::get_definition(fk) else {
                 return String::new();
@@ -562,8 +574,8 @@ fn function_signature(fk: &FunctionKind) -> String {
             | ClosureFunction::Stddev
             | ClosureFunction::Variance => "<T>(array: number[] | T[], projection?: Callback<T, number>, filter?: Callback<T, boolean>) -> number".to_string(),
             ClosureFunction::Mode => "<T, U>(array: U[] | T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> U".to_string(),
-            ClosureFunction::TopK | ClosureFunction::LastN => "<T, U>(array: T[], projection: Callback<T, U>, n: number, filter?: Callback<T, boolean>) -> U[]".to_string(),
-            ClosureFunction::Percentile => "<T>(array: T[], projection: Callback<T, number>, q: number, filter?: Callback<T, boolean>) -> number".to_string(),
+            ClosureFunction::TopK | ClosureFunction::LastN => "<T, U>(array: U[] | T[], projection?: Callback<T, U>, n: number, filter?: Callback<T, boolean>) -> U[]".to_string(),
+            ClosureFunction::Percentile => "<T>(array: number[] | T[], projection?: Callback<T, number>, q: number, filter?: Callback<T, boolean>) -> number".to_string(),
             ClosureFunction::Min | ClosureFunction::Max => "<T, U>(array: U[] | T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> U".to_string(),
             ClosureFunction::CountDistinct => {
                 "<T, U>(array: T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> number".to_string()
@@ -572,8 +584,18 @@ fn function_signature(fk: &FunctionKind) -> String {
                 "<T, U>(array: T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> U[]".to_string()
             }
             ClosureFunction::First | ClosureFunction::Last => {
-                "<T, U>(array: T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> U".to_string()
+                "<T, U>(array: T[], conditionOrProjection?: Callback<T, boolean | U>, filter?: Callback<T, boolean>) -> T | U".to_string()
             }
+            ClosureFunction::ArgMax | ClosureFunction::ArgMin => {
+                "<T, U>(array: T[], projection?: Callback<T, U>, by: Callback<T, number | date>, filter?: Callback<T, boolean>) -> T | U".to_string()
+            }
+            ClosureFunction::Skew | ClosureFunction::Kurtosis => {
+                "<T>(array: number[] | T[], projection?: Callback<T, number>, filter?: Callback<T, boolean>) -> number".to_string()
+            }
+            ClosureFunction::CountDistinctApprox => {
+                "<T, U>(array: T[], projection?: Callback<T, U>, filter?: Callback<T, boolean>) -> number".to_string()
+            }
+            ClosureFunction::PercentileApprox => "<T>(array: number[] | T[], projection?: Callback<T, number>, q: number, filter?: Callback<T, boolean>) -> number".to_string(),
         },
     }
 }

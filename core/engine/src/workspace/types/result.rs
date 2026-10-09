@@ -121,6 +121,14 @@ pub struct InputProperty {
     /// Filled in when the caller leaves it out.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<serde_json::Value>,
+    /// A reference: the entity it names. The engine reads the record; a
+    /// host that fills records in from ids can take the id instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<Arc<str>>,
+    /// A relationship: the reference fields of its records, each with the
+    /// entity it names (one level: the records' own fields).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub record_references: std::collections::BTreeMap<Arc<str>, Arc<str>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -140,6 +148,54 @@ impl InputProperty {
             optional,
             supplied_by: SuppliedBy::Request,
             default: None,
+            reference: None,
+            record_references: Default::default(),
+        }
+    }
+
+    /// A data model property at `path`: optional when declared so or when
+    /// it has a default; the host's when something supplies it.
+    pub(crate) fn of_property<S: std::hash::BuildHasher>(
+        path: Arc<str>,
+        property: &crate::policy::ir::Property,
+        resolved_type: VariableType,
+        entities: &std::collections::HashMap<Arc<str>, Arc<crate::policy::ir::DataModelIr>, S>,
+    ) -> Self {
+        use crate::policy::ir::PropertyTypeIr;
+        let reference = match &property.kind {
+            PropertyTypeIr::Reference { target } => Some(target.clone()),
+            _ => None,
+        };
+        let record_references = match &property.kind {
+            PropertyTypeIr::Relationship { target } => entities
+                .get(target)
+                .map(|records| {
+                    records
+                        .properties
+                        .iter()
+                        .filter_map(|field| match &field.kind {
+                            PropertyTypeIr::Reference { target } => {
+                                Some((field.name.clone(), target.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Default::default(),
+        };
+        Self {
+            reference,
+            record_references,
+            path,
+            resolved_type,
+            optional: property.optional || property.default.is_some(),
+            supplied_by: if property.supply.is_some() {
+                SuppliedBy::Host
+            } else {
+                SuppliedBy::Request
+            },
+            default: property.default.as_deref().cloned(),
         }
     }
 }

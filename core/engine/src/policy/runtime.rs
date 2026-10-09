@@ -197,7 +197,23 @@ impl CompiledSet {
     }
 
     pub(crate) fn reads(&self, key: &str) -> Option<std::collections::BTreeSet<String>> {
-        self.reads.get(key).cloned().flatten()
+        let key = self.key_of(key)?;
+        self.reads.get(&key).cloned().flatten()
+    }
+
+    /// The key a document is compiled under: as given, or with/without
+    /// `.json` (loaders find documents either way).
+    pub(crate) fn key_of(&self, key: &str) -> Option<Arc<str>> {
+        let candidates = [
+            Some(key.to_string()),
+            key.strip_suffix(".json").map(str::to_string),
+            (!key.ends_with(".json")).then(|| format!("{key}.json")),
+        ];
+        candidates.into_iter().flatten().find_map(|candidate| {
+            self.entries
+                .get_key_value(candidate.as_str())
+                .map(|(k, _)| k.clone())
+        })
     }
 
     fn error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {

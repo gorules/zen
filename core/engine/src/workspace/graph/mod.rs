@@ -12,7 +12,7 @@ mod ts_type;
 pub use analysis::{GraphAnalysis, GraphNodeAnalysis, GraphSignature};
 pub(crate) use analysis::{GraphAnalyzer, SignatureResolution};
 pub(crate) use queries::EntityUnitEntry;
-pub(crate) use request::with_inline_references;
+pub(crate) use request::{merge_entities, with_inline_references};
 pub use enhance::GraphTraceMap;
 pub use function::{FunctionResolutionRequest, FunctionTypeResolver};
 pub(crate) use schema::SchemaType;

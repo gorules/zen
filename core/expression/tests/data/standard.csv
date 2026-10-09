@@ -690,7 +690,7 @@ mode(items, #.c);{"items": [{"c": "DE"}, {"c": "GB"}]};'GB'
 variance([1, 3, 5]);;4
 variance([5]);;null
 stddev([1, 3, 5]);;2
-stddev(items, #.v, #.k == 'in');{"items": [{"v": 1, "k": "in"}, {"v": 2, "k": "out"}, {"v": 9, "k": "in"}]};5.6568542494923801952067548968
+stddev(items, #.v, #.k == 'in');{"items": [{"v": 1, "k": "in"}, {"v": 2, "k": "out"}, {"v": 3, "k": "in"}, {"v": 5, "k": "in"}]};2
 variance(items, #.v);{"items": [{"v": 1}, {"v": null}]};null
 percentile([1, 2, 3, 4], 0.5);;2.5
 percentile([10, 20, 30, 40, 50], 0.9);;46
@@ -726,3 +726,129 @@ stddev(items as t, t.v, t.k == 'in');{"items": [{"v": 1, "k": "in"}, {"v": 2, "k
 countDistinct(items as t, t.c);{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}]};2
 unique(items as t, t.c);{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}]};["GB", "DE"]
 first(items as t, t.c, t.c != 'GB');{"items": [{"c": "GB"}, {"c": "DE"}]};'DE'
+topK(items as t, t.c, k);{"k": 1, "items": [{"c": "DE"}, {"c": "GB"}, {"c": "GB"}]};["GB"]
+map(groups as g, lastN(g.items as t, t.v, g.n));{"groups": [{"n": 1, "items": [{"v": 1}, {"v": 2}]}, {"n": 2, "items": [{"v": 3}, {"v": 4}]}]};[[2], [4, 3]]
+map(groups, percentile(#.items as t, t.v, #.q));{"groups": [{"q": 0, "items": [{"v": 1}, {"v": 2}]}, {"q": 1, "items": [{"v": 3}, {"v": 4}]}]};[1, 4]
+unique([{a: 1, b: 2}, {b: 2, a: 1}]);;[{"a": 1, "b": 2}]
+countDistinct([{a: 1, b: [1, {c: 2, d: 3}]}, {b: [1.0, {d: 3, c: 2}], a: 1}, {a: 1, b: [1]}]);;2
+countDistinct(['1', 1, true, 'true', [1], '[1]']);;6
+countDistinct(items, #.o);{"items": [{"o": {"x": 1, "y": "a"}}, {"o": {"y": "a", "x": 1}}, {"o": {"x": 2}}]};2
+argMax(items as t, t.m, t.a);{"items": [{"m": "A", "a": 5}, {"m": "B", "a": 9}, {"m": "C", "a": 9}, {"m": "D", "a": 1}]};'C'
+argMin(items as t, t.m, t.a);{"items": [{"m": "A", "a": 1}, {"m": "B", "a": 5}, {"m": "C", "a": 1}]};'C'
+argMax(items, #.m, #.a);{"items": [{"m": "A", "a": 10}, {"m": null, "a": 20}, {"m": "C", "a": null}, {"m": "D", "a": 3}]};'A'
+argMin(items, #.m, #.a);{"items": [{"m": "A", "a": 10}, {"m": null, "a": -20}, {"m": "C"}, {"m": "D", "a": 3}]};'D'
+argMax(items as t, t.m, t.a, t.k == 'in');{"items": [{"m": "A", "a": 5, "k": "in"}, {"m": "B", "a": 9, "k": "out"}, {"m": "C", "a": 7, "k": "in"}]};'C'
+argMax(items, #.m, #.a, #.a > 100);{"items": [{"m": "A", "a": 5}]};null
+argMax([], #, #);;null
+argMax(items, #.m, d(#.at));{"items": [{"m": "A", "at": "2024-03-01"}, {"m": "B", "at": "2024-05-01"}, {"m": "C", "at": "2024-01-01"}]};'B'
+argMin(items as t, t, t.a);{"items": [{"a": 2, "b": 1}, {"a": 1, "b": 2}]};{"a": 1, "b": 2}
+argMax(items as t, t.m, t.a);{"items": [{"m": 0, "a": 1}, {"m": false, "a": 2}]};false
+skew([0, 0, 0, 0, 5]);;1.5
+kurtosis([0, 0, 0, 0, 5]);;0.25
+skew([1, 2, 3]);;0
+kurtosis([1, 2, 3, 4, 10]);;-0.212
+skew(items as t, t.v, t.k == 'in');{"items": [{"v": 0, "k": "in"}, {"v": 9, "k": "out"}, {"v": 0, "k": "in"}, {"v": 0, "k": "in"}, {"v": 0, "k": "in"}, {"v": 5, "k": "in"}]};1.5
+kurtosis(items, #.v);{"items": [{"v": 0}, {"v": null}, {"v": 0}, {"v": 0}, {"v": 0}, {"v": 5}]};0.25
+skew(items, -#.v);{"items": [{"v": 0}, {"v": 0}, {"v": 0}, {"v": 0}, {"v": 5}]};-1.5
+skew([5]);;null
+kurtosis([5]);;null
+skew([2, 2, 2]);;null
+kurtosis([2, 2.0, 2]);;null
+skew([]);;null
+skew(items, #.v, #.v > 100);{"items": [{"v": 1}, {"v": 2}]};null
+countDistinctApprox(items, #.c);{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}, {"c": null}]};2
+countDistinctApprox(items as t, t.c, t.c != 'DE');{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "FR"}]};2
+countDistinctApprox([1, 1.0, 2, null]);;2
+countDistinctApprox(['1', 1, true, 'true']);;4
+countDistinctApprox([[1], {a: 1}, 1]);;1
+countDistinctApprox([]);;0
+countDistinctApprox(items, #.v, #.v > 100);{"items": [{"v": 1}]};0
+abs(countDistinctApprox(map([0..999], # % 250)) - 250) <= 10;;true
+percentileApprox([], #, 0.5);;null
+percentileApprox(items, #.v, 0.5, #.v > 100);{"items": [{"v": 1}]};null
+percentileApprox([0, 0, 0, 5], #, 0.5);;0
+percentileApprox([1, 1, 1], #, 0.5);;0.99
+percentileApprox(items as t, t.v, 0);{"items": [{"v": -1}, {"v": 3}, {"v": null}]};-0.99
+abs(percentileApprox(items, #.v, 0.5) - 50) / 50 <= 0.01;{"items": [{"v": 10}, {"v": 50}, {"v": 90}]};true
+abs(percentileApprox(map([1..100], #), #, 0.9) - 90) / 90 <= 0.01;;true
+abs(percentileApprox(items as t, t.v, 1, t.v < 1000) - 999) / 999 <= 0.01;{"items": [{"v": 999}, {"v": 5000}, {"v": -3}]};true
+map(groups, percentileApprox(#.items as t, t.v, #.q));{"groups": [{"q": 0, "items": [{"v": 1}, {"v": 2}]}, {"q": 0.5, "items": [{"v": 0}]}]};[0.99, 0]
+
+# join: the inverse of split; separator defaults to ','; null items skipped
+join(['a', 'b', 'c'], ', ');;'a, b, c'
+join(['a', 'b', 'c']);;'a,b,c'
+join([]);;''
+join([], ' - ');;''
+join(['a'], '-');;'a'
+join(['a', 'b'], '');;'ab'
+join(['a', null, 'b', null], '-');;'a-b'
+join([null, null]);;''
+join([1, 2.5, -3, true, false], ' ');;'1 2.5 -3 true false'
+join(v, '|');{"v": [1.50, 2, 0.10, 1e3]};'1.5|2|0.1|1000'
+join([string(1.50)]) == string(1.50);;true
+join([d('2024-01-02')]) == string(d('2024-01-02'));;true
+join(split('a,b,c', ','), ';');;'a;b;c'
+split(join(['x', 'y'], '/'), '/');;['x', 'y']
+join(map(items, #.name), ', ');{"items": [{"name": "x"}, {"name": null}, {"name": "y"}]};'x, y'
+join(map(items as t, t.name), sep);{"sep": " & ", "items": [{"name": "x"}, {"name": "y"}]};'x & y'
+map(groups, join(#.tags, '|'));{"groups": [{"tags": ["a", "b"]}, {"tags": []}]};['a|b', '']
+map(groups as g, join(map(g.items as i, i.c), ''));{"groups": [{"items": [{"c": "a"}, {"c": "b"}]}]};['ab']
+join(unique(items, #.c), ', ');{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}]};'GB, DE'
+
+# Selectors without a projection return the item itself.
+first(items);{"items": [null, {"id": 1}, {"id": 2}]};{"id": 1}
+last(items);{"items": [{"id": 1}, {"id": 2}, null]};{"id": 2}
+first([]);;null
+last([null]);;null
+first(items as t, t.v > 1);{"items": [{"id": 1, "v": 1}, {"id": 2, "v": 2}, {"id": 3, "v": 3}]};{"id": 2, "v": 2}
+last(items as t, t.v > 1);{"items": [{"id": 1, "v": 1}, {"id": 2, "v": 2}, {"id": 3, "v": 3}]};{"id": 3, "v": 3}
+first(items, #.v > 1);{"items": [{"id": 1, "v": 1}, {"id": 2, "v": 2}]};{"id": 2, "v": 2}
+last(items, #.v < 2);{"items": [{"id": 1, "v": 1}, {"id": 2, "v": 2}]};{"id": 1, "v": 1}
+first(items as t, t.v > 10);{"items": [{"v": 1}, {"v": 2}]};null
+last(items as t, t.v > 10);{"items": [{"v": 1}, {"v": 2}]};null
+first([], # > 1);;null
+first([1, 5, 3, 7], # > 2);;5
+last([1, 5, 3, 7], # < 5);;3
+first(items, #.active);{"items": [{"id": 1, "active": false}, {"id": 2, "active": true}, {"id": 3, "active": true}]};{"id": 2, "active": true}
+last(items, #.active);{"items": [{"id": 1, "active": true}, {"id": 2, "active": true}, {"id": 3, "active": false}]};{"id": 2, "active": true}
+first(items, #.active);{"items": [{"id": 1, "active": null}, {"id": 2}, {"id": 3, "active": true}]};{"id": 3, "active": true}
+first(items, #.active, true);{"items": [{"id": 1, "active": false}, {"id": 2, "active": true}]};false
+first(items, #.c);{"items": [{"c": null}, {"c": "DE"}]};'DE'
+first(items as t, t.v > 1).id;{"items": [{"id": 1, "v": 1}, {"id": 2, "v": 2}]};2
+first(items as t, t.v > 1).id;{"items": [{"id": 1, "v": 1}]};null
+map(groups as g, first(g.items as i, i.v > g.min));{"groups": [{"min": 1, "items": [{"v": 1}, {"v": 2}]}, {"min": 5, "items": [{"v": 1}]}]};[{"v": 2}, null]
+map(groups, last(#.items, #.v > 0));{"groups": [{"items": [{"v": 1}, {"v": 2}, {"v": 0}]}]};[{"v": 2}]
+first(items, #.v > 1 and #.k == 'in');{"items": [{"v": 2, "k": "out"}, {"v": 3, "k": "in"}]};{"v": 3, "k": "in"}
+first(items as t, t.v);{"items": [{"v": true}, {"v": 5}]};{"v": true}
+argMax(items as t, t.a);{"items": [{"m": "A", "a": 5}, {"m": "B", "a": 9}, {"m": "C", "a": 9}, {"m": "D", "a": 1}]};{"m": "C", "a": 9}
+argMin(items as t, t.a);{"items": [{"m": "A", "a": 1}, {"m": "B", "a": 5}, {"m": "C", "a": 1}]};{"m": "C", "a": 1}
+argMax(items, #.a);{"items": [{"m": "A", "a": 10}, {"m": "B", "a": null}, {"m": "C"}, null]};{"m": "A", "a": 10}
+argMax(items, #.a);{"items": [{"m": "A"}]};null
+argMax([], #);;null
+argMax([3, 9, 1], #);;9
+argMin([3, 9, 1], -#);;9
+argMax(items, d(#.at)).m;{"items": [{"m": "A", "at": "2024-03-01"}, {"m": "B", "at": "2024-05-01"}, {"m": "C", "at": "2024-01-01"}]};'B'
+argMax(filter(items, #.k == 'in'), #.a);{"items": [{"a": 5, "k": "in"}, {"a": 9, "k": "out"}, {"a": 7, "k": "in"}]};{"a": 7, "k": "in"}
+argMax(items as t, t, t.a, t.k == 'in');{"items": [{"a": 5, "k": "in"}, {"a": 9, "k": "out"}, {"a": 7, "k": "in"}]};{"a": 7, "k": "in"}
+map(groups as g, argMax(g.items as i, i.a).id);{"groups": [{"items": [{"id": 1, "a": 1}, {"id": 2, "a": 3}]}, {"items": [{"id": 3, "a": 0}]}]};[2, 3]
+
+# Parameterized built-ins with an alias and no callback stay the built-in.
+lastN(items as t, 2);{"items": [{"v": 1}, {"v": 2}, null, {"v": 3}]};[{"v": 3}, {"v": 2}]
+topK(items as t, 1);{"items": ["GB", "DE", "GB"]};["GB"]
+percentile(items as t, 0.5);{"items": [1, 2, 3, 4]};2.5
+percentileApprox(items as t, 0.5);{"items": [1, 1]};0.99
+
+# Bare-array forms of the aggregates.
+percentileApprox([1, 1, 1], 0.5);;0.99
+percentileApprox([], 0.5);;null
+abs(percentileApprox(map([1..100], #), 0.9) - 90) / 90 <= 0.01;;true
+percentileApprox(map(items, #.v), 0);{"items": [{"v": -1}, {"v": 3}]};-0.99
+mode(['GB', 'DE', 'GB']);;'GB'
+mode(['DE', 'GB']);;'GB'
+mode([1, 2, 2]);;2
+unique([1, null, 1, 2]);;[1, 2]
+countDistinct([1, 2, 2]);;2
+countDistinctApprox([1, 2, 2]);;2
+skew([0, 0, 0, 0, 5]);;1.5
+kurtosis([0, 0, 0, 0, 5]);;0.25
+min([3, 1]) + max([3, 1]) + sum([3, 1]) + avg([3, 1]) + median([3, 1, 2]);;12

@@ -191,7 +191,7 @@ impl Db {
                         let Some(model) = prop.model.as_ref() else {
                             continue;
                         };
-                        if let Some(inputs) = model.get("inputs").and_then(serde_json::Value::as_object) {
+                        if let Some(inputs) = crate::policy::raw::call_inputs(model).and_then(serde_json::Value::as_object) {
                             for (input, expr) in inputs {
                                 if let Some(expr) = expr.as_str().filter(|e| !e.is_empty()) {
                                     push(
@@ -207,7 +207,7 @@ impl Db {
                         if let Some(when) = model.get("when").and_then(serde_json::Value::as_str).filter(|w| !w.is_empty()) {
                             push(CursorTarget::ModelWhen { id: prop.id.clone() }, &Arc::from(when));
                         }
-                        if let Some(request) = model.get("request").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty() && model.get("inputs").is_none()) {
+                        if let Some(request) = model.get("request").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty() && crate::policy::raw::call_inputs(model).is_none()) {
                             push(CursorTarget::ModelRequest { id: prop.id.clone() }, &Arc::from(request));
                         }
                         if let Some(response) = model.get("response").and_then(serde_json::Value::as_str).filter(|a| !a.is_empty()) {

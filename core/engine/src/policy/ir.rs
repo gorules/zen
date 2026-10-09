@@ -505,9 +505,9 @@ impl DataModelIr {
                         PropertyTypeIr::Enum(trimmed)
                     }
                 }
-                PropertyTypeDoc::Number
-                | PropertyTypeDoc::Decimal { .. }
-                | PropertyTypeDoc::Integer => PropertyTypeIr::Number,
+                PropertyTypeDoc::Number | PropertyTypeDoc::Decimal | PropertyTypeDoc::Integer => {
+                    PropertyTypeIr::Number
+                }
                 PropertyTypeDoc::Boolean => PropertyTypeIr::Boolean,
                 PropertyTypeDoc::Date | PropertyTypeDoc::Timestamp => PropertyTypeIr::Date,
                 PropertyTypeDoc::Object | PropertyTypeDoc::Any => PropertyTypeIr::Any,
@@ -519,10 +519,10 @@ impl DataModelIr {
                 },
             };
 
+            // The type as written when it says more than the engine's type:
+            // `object` and `any` are both any here. (`decimal`, `integer` and
+            // `timestamp` are old names for number and date.)
             let exact: Option<Arc<str>> = match &prop.property_type {
-                PropertyTypeDoc::Decimal { .. } => Some(Arc::from("decimal")),
-                PropertyTypeDoc::Integer => Some(Arc::from("integer")),
-                PropertyTypeDoc::Timestamp => Some(Arc::from("timestamp")),
                 PropertyTypeDoc::Object => Some(Arc::from("object")),
                 PropertyTypeDoc::Any => Some(Arc::from("any")),
                 _ => None,
@@ -534,7 +534,10 @@ impl DataModelIr {
             // (not covered), so optional: rules handle null. With one, the
             // host always supplies a value (or rejects the request).
             if let Some(feature) = &prop.feature {
-                let optional = feature.rest.get("default").is_none_or(serde_json::Value::is_null)
+                let optional = feature
+                    .default
+                    .as_ref()
+                    .is_none_or(serde_json::Value::is_null)
                     && prop.required != Some(true);
                 let windows = feature.window.as_ref().map(|w| w.list()).unwrap_or_default();
                 let names: Vec<(Arc<str>, Option<Arc<str>>)> = if windows.is_empty() {
@@ -546,7 +549,7 @@ impl DataModelIr {
                         .filter_map(|window| {
                             if !is_window(window) {
                                 diagnostics.push(Diagnostic::error(
-                                    DiagnosticCode::ParseError,
+                                    DiagnosticCode::InvalidDuration,
                                     DiagnosticLocation::expression(
                                         policy_path.clone(),
                                         id.clone(),
@@ -563,7 +566,7 @@ impl DataModelIr {
                         })
                         .collect()
                 };
-                let default = feature.rest.get("default").cloned();
+                let default = feature.default.clone();
                 for (feature_name, window) in names {
                     if feature_name != prop_name {
                         if let Some(prev_id) = seen.get(&feature_name) {
@@ -611,10 +614,9 @@ impl DataModelIr {
                 name: prop_name,
                 kind,
                 array: prop.array,
-                // Computed by the host, or filled with its `default` when
-                // missing: always there.
+                // Filled with its `default` when missing: always there. (A
+                // compute is null when what it reads may be: see below.)
                 optional: (prop.optional || host_optional)
-                    && prop.compute.is_none()
                     && prop.required != Some(true)
                     && prop.rest.get("default").is_none_or(serde_json::Value::is_null),
                 exact,
@@ -645,6 +647,8 @@ impl DataModelIr {
             });
         }
 
+        Self::computes_propagate_null(doc, &mut properties);
+
         let records = if doc.events.is_some() {
             Records::Events
         } else if doc.reference.is_some() {
@@ -661,20 +665,118 @@ impl DataModelIr {
     }
 }
 
+impl DataModelIr {
+    /// A compute is null when anything it reads may be (null in, null out)
+    /// or when it can give null itself (`x > 0 ? y : null`), unless
+    /// `required` or a `default` says it is always there. What it reads
+    /// through a relationship, a reference or `$root` counts as nullable.
+    fn computes_propagate_null(doc: &DataModelDoc, properties: &mut [Property]) {
+        use zen_expression::intellisense::{IntelliSense, ReadDependency};
+        let decides = |prop: &Property| {
+            matches!(prop.supply.as_deref(), Some(Supply::Compute { .. }))
+                && prop.default.is_none()
+                && doc
+                    .properties
+                    .iter()
+                    .find(|p| p.id == prop.id)
+                    .is_none_or(|p| p.required != Some(true))
+        };
+        let computes: Vec<usize> = (0..properties.len())
+            .filter(|&i| decides(&properties[i]))
+            .collect();
+        if computes.is_empty() {
+            return;
+        }
+        let mut intellisense = IntelliSense::new();
+        // Each compute's own-field reads, or `None` when it may be null whatever they are.
+        let reads: Vec<Option<Vec<Arc<str>>>> = computes
+            .iter()
+            .map(|&i| {
+                let Some(Supply::Compute { expr }) = properties[i].supply.as_deref() else {
+                    return None;
+                };
+                let own = |path: &[Rc<str>]| -> Option<Arc<str>> {
+                    let [name] = path else { return None };
+                    let prop = properties.iter().find(|p| *p.name == **name)?;
+                    (!matches!(prop.kind, PropertyTypeIr::Relationship { .. }))
+                        .then(|| prop.name.clone())
+                };
+                let mut names = Vec::new();
+                for read in intellisense.reads(expr) {
+                    match read {
+                        ReadDependency::Direct { path, .. } => names.push(own(&path)?),
+                        ReadDependency::Iteration { collection, .. } => {
+                            names.push(own(&collection)?)
+                        }
+                        ReadDependency::Unresolved { .. } => return None,
+                    }
+                }
+                let fields: HashMap<Rc<str>, VariableType> = properties
+                    .iter()
+                    .map(|p| {
+                        let kind = match &p.kind {
+                            PropertyTypeIr::String | PropertyTypeIr::Reference { .. } => {
+                                VariableType::String
+                            }
+                            PropertyTypeIr::Enum(values) => {
+                                VariableType::Enum(None, enum_values_to_rc(values))
+                            }
+                            PropertyTypeIr::Number => VariableType::Number,
+                            PropertyTypeIr::Boolean => VariableType::Bool,
+                            PropertyTypeIr::Date => VariableType::Date,
+                            PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Any => {
+                                VariableType::Any
+                            }
+                        };
+                        let kind = if p.array { kind.array() } else { kind };
+                        (Rc::from(p.name.as_ref()), kind)
+                    })
+                    .collect();
+                let data = VariableType::Object(Rc::new(RefCell::new(fields)));
+                let returns = intellisense.analyze(expr, &data).return_type.clone();
+                (!matches!(returns, VariableType::Null | VariableType::Nullable(_)))
+                    .then_some(names)
+            })
+            .collect();
+        // Until nothing changes: a compute may read another.
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (&i, reads) in computes.iter().zip(&reads) {
+                if properties[i].optional {
+                    continue;
+                }
+                let nullable = reads.as_ref().is_none_or(|names| {
+                    names
+                        .iter()
+                        .any(|name| properties.iter().any(|p| p.name == *name && p.optional))
+                });
+                if nullable {
+                    properties[i].optional = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+
 /// A feature window as written: a positive whole number (no leading zero)
 /// of minutes, hours or days (`10m`, `1h`, `7d`), or `all` (all time).
 fn is_window(window: &str) -> bool {
     // `all`: every day there is data for.
-    if window == "all" {
-        return true;
-    }
-    let Some((digits, unit)) = window.split_at_checked(window.len().saturating_sub(1)) else {
-        return false;
-    };
-    matches!(unit, "m" | "h" | "d")
-        && !digits.is_empty()
-        && !digits.starts_with('0')
-        && digits.bytes().all(|b| b.is_ascii_digit())
+    window == "all" || is_duration(window, &["m", "h", "d"])
+}
+
+/// A positive whole number (no leading zero, no spaces) followed by one of
+/// `units`: `30s`, `10m`, `250ms`.
+pub(crate) fn is_duration(text: &str, units: &[&str]) -> bool {
+    units.iter().any(|unit| {
+        text.strip_suffix(unit).is_some_and(|digits| {
+            !digits.is_empty()
+                && !digits.starts_with('0')
+                && digits.bytes().all(|b| b.is_ascii_digit())
+        })
+    })
 }
 
 /// The property a feature window becomes: `<name>_<window>`; a single

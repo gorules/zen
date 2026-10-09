@@ -454,3 +454,27 @@ return_type = '{"Array":{"Object":{"amount":"Number"}}}'
 
 [test.strict]
 return_type = '{"Array":{"Object":{"amount":"Number"}}}'
+
+# `$root` is the root, unless the root type has a `$root` key (a host typing
+# `$root` apart from `$`): then it is that key.
+[[test]]
+name = "root key types $root"
+expression = "$root.booking.tier"
+input = '{"Object": {"amount": "Number", "$root": {"Object": {"booking": {"Object": {"tier": "String"}}}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "without a root key $root is the root"
+expression = "$root.amount"
+input = '{"amount": 1}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'

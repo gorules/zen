@@ -359,6 +359,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Stddev => CompareWithReference(Equal),
                     InternalFunction::Variance => CompareWithReference(Equal),
                     InternalFunction::Percentile => CompareWithReference(Equal),
+                    InternalFunction::PercentileApprox => CompareWithReference(Equal),
                     InternalFunction::TopK => CompareWithReference(In),
                     InternalFunction::LastN => CompareWithReference(In),
                     InternalFunction::Floor => CompareWithReference(Equal),
@@ -378,6 +379,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Matches => AsBoolean,
                     InternalFunction::FuzzyMatch => CompareWithReference(Equal),
                     InternalFunction::Split => CompareWithReference(In),
+                    InternalFunction::Join => CompareWithReference(Equal),
                     InternalFunction::IsNumeric => AsBoolean,
                     InternalFunction::Keys => CompareWithReference(In),
                     InternalFunction::Values => CompareWithReference(In),
@@ -422,9 +424,14 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     | ClosureFunction::Percentile
                     | ClosureFunction::CountDistinct
                     | ClosureFunction::First
-                    | ClosureFunction::Last => CompareWithReference(Equal),
+                    | ClosureFunction::Last
+                    | ClosureFunction::ArgMax
+                    | ClosureFunction::ArgMin
+                    | ClosureFunction::Skew
+                    | ClosureFunction::Kurtosis
+                    | ClosureFunction::CountDistinctApprox
+                    | ClosureFunction::PercentileApprox => CompareWithReference(Equal),
                 },
-                FunctionKind::Host(_) => CompareWithReference(Equal),
             },
             Node::MethodCall { kind, .. } => match kind {
                 MethodKind::DateMethod(dm) => match dm {

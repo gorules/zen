@@ -107,3 +107,15 @@ bool('true'); { "$": true }; true
 bool('false'); { "$": false }; true
 bool(1); { "$": true }; true
 bool(0); { "$": false }; true
+argMax(items, #.m, #.a);{ $: 'B', items: [{ m: 'A', a: 1 }, { m: 'B', a: 2 }] };true
+argMin(items, #.m, #.a);{ $: 'B', items: [{ m: 'A', a: 1 }, { m: 'B', a: 2 }] };false
+skew([0, 0, 0, 0, 5]);{ $: 1.5 };true
+kurtosis([0, 0, 0, 0, 5]);{ $: 0.25 };true
+countDistinctApprox(items, #.c);{ $: 2, items: [{ c: 'GB' }, { c: 'DE' }, { c: 'GB' }] };true
+percentileApprox(items, #.v, 0.5);{ $: 0.99, items: [{ v: 1 }, { v: 1 }] };true
+join(tags, ', ');{ $: 'a, b', tags: ['a', 'b'] };true
+join(tags);{ $: 'a, b', tags: ['a', 'b'] };false
+join(tags);{ $: 'a,b', tags: ['a', null, 'b'] };true
+percentileApprox([1, 1], 0.5);{ $: 0.99 };true
+first(items, #.v > 1).id;{ $: 2, items: [{ id: 1, v: 1 }, { id: 2, v: 2 }] };true
+argMax(items, #.a).m;{ $: 'B', items: [{ m: 'A', a: 1 }, { m: 'B', a: 2 }] };true

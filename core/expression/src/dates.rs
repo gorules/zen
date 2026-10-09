@@ -20,12 +20,6 @@ impl DateValue {
         Some(Variable::String(text.into()))
     }
 
-    /// Whether `unit` is a unit `diff`, `add` and the others take
-    /// (`second`, `day`, `month`…).
-    pub fn is_unit(unit: &str) -> bool {
-        DurationUnit::parse(unit).is_some()
-    }
-
     /// `d(a).diff(d(b), unit)` as ZEN evaluates it, for hosts that compile
     /// it: whole units, truncated toward zero (milliseconds without a unit);
     /// null when either is not a date or the unit is unknown.

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::hash::Hasher;
 use std::sync::Arc;
 
@@ -5,7 +6,7 @@ use ahash::{AHasher, HashMap, HashMapExt, HashSet, HashSetExt};
 use serde_json::{Map, Value};
 
 use crate::loader::DynamicLoader;
-use crate::policy::raw::BlockDoc;
+use crate::policy::raw::{BlockDoc, PolicyDocument};
 
 pub(crate) fn schema_references_dictionary(value: &Value) -> bool {
     match value {
@@ -17,14 +18,17 @@ pub(crate) fn schema_references_dictionary(value: &Value) -> bool {
     }
 }
 
-pub(crate) async fn load_import_dictionaries(
+/// The policies a graph's imports make visible: the imports and what they
+/// import, breadth-first, each import in the order listed (as the editor
+/// walks them).
+pub(crate) async fn load_import_closure(
     loader: &DynamicLoader,
     imports: &[Arc<str>],
-) -> Result<HashMap<Arc<str>, Vec<Arc<str>>>, String> {
-    let mut out: HashMap<Arc<str>, Vec<Arc<str>>> = HashMap::new();
+) -> Result<Vec<(Arc<str>, Arc<PolicyDocument>)>, String> {
+    let mut out: Vec<(Arc<str>, Arc<PolicyDocument>)> = Vec::new();
     let mut visited: HashSet<Arc<str>> = HashSet::new();
-    let mut queue: Vec<Arc<str>> = imports.to_vec();
-    while let Some(key) = queue.pop() {
+    let mut queue: VecDeque<Arc<str>> = imports.iter().cloned().collect();
+    while let Some(key) = queue.pop_front() {
         if !visited.insert(key.clone()) {
             continue;
         }
@@ -37,6 +41,17 @@ pub(crate) async fn load_import_dictionaries(
         };
         let document = policy.0.clone();
         queue.extend(document.imports.iter().cloned());
+        out.push((key, document));
+    }
+    Ok(out)
+}
+
+pub(crate) async fn load_import_dictionaries(
+    loader: &DynamicLoader,
+    imports: &[Arc<str>],
+) -> Result<HashMap<Arc<str>, Vec<Arc<str>>>, String> {
+    let mut out: HashMap<Arc<str>, Vec<Arc<str>>> = HashMap::new();
+    for (_, document) in load_import_closure(loader, imports).await? {
         for block in &document.blocks {
             if let BlockDoc::Dictionary { data, .. } = block {
                 out.entry(data.name.clone()).or_insert_with(|| {

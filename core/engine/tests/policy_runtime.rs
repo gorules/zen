@@ -607,5 +607,7 @@ async fn compiled_documents_say_what_they_read() {
     engine.compile();
     let reads = engine.reads("policy").expect("known after compile");
     assert!(reads.contains("customer.age"), "{reads:?}");
+    // Found with or without `.json`, as evaluate finds it.
+    assert_eq!(engine.reads("policy.json"), Some(reads));
     assert_eq!(engine.reads("missing"), None);
 }

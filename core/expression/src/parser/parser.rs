@@ -775,8 +775,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let aliased = self
                     .current()
                     .is_some_and(|t| t.kind == TokenKind::Literal && t.value == "as");
-                if many || aliased {
+                if many {
                     function = FunctionKind::Closure(closure);
+                } else if aliased {
+                    // `lastN(items as t, 5)`: no callback to name the item
+                    // in, so the alias is dropped and this is the built-in.
+                    self.next();
+                    if self.current().is_some_and(|t| t.kind == TokenKind::Literal) {
+                        self.next();
+                    }
                 }
                 first_argument = Some(argument);
             } else if let Some(closure) = internal.closure_form().filter(|_| !closes_at_once) {
@@ -842,7 +849,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         break;
                     };
 
-                    arguments.push(self.closure(&expression_parser, alias));
+                    // A parameter (`topK`'s count) is read once, outside the items.
+                    if closure.parameter() == Some(index + 1) {
+                        arguments.push(expression_parser(ParserContext::Global));
+                    } else {
+                        arguments.push(self.closure(&expression_parser, alias));
+                    }
                 }
 
                 if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {

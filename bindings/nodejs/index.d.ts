@@ -67,7 +67,8 @@ export type PolicyFieldOrigin =
 export type PolicyFieldSupply =
   | { kind: 'feature'; base: string; expr: string; window?: string; default?: unknown }
   | { kind: 'compute'; expr: string }
-  | { kind: 'model'; datasource?: string };
+  | { kind: 'model'; datasource?: string }
+  | { kind: 'members'; by: 'key' | 'events' };
 export type PolicyDiagnosticCode =
   | 'UNDEFINED_VARIABLE'
   | 'TYPE_MISMATCH'
@@ -88,6 +89,11 @@ export type PolicyDiagnosticCode =
   | 'DUPLICATE_PROPERTY'
   | 'DUPLICATE_ENUM_VALUE'
   | 'INVALID_NAME'
+  | 'INVALID_RELATIONSHIP'
+  | 'INVALID_DURATION'
+  | 'DEPRECATED_TYPE'
+  | 'FEATURE_SHAPE'
+  | 'IGNORED_ATTRIBUTE'
   | 'MAX_DEPTH_EXCEEDED'
   | 'IMPORT_NOT_FOUND'
   | 'CIRCULAR_IMPORT'
@@ -430,6 +436,7 @@ export declare class Workspace {
   setPolicy(path: string, document: any): void
   removePath(path: string): boolean
   isGraph(path: string): boolean
+  endpoint(path: string): 'graph' | 'policy' | null
   uncheckedNodes(path: string): Array<string>
   paths(): Array<string>
   changesSince(cursor: number): PolicyChanges
@@ -450,6 +457,8 @@ export declare class Workspace {
   references(target: any, origin?: string | undefined | null): PolicyReferenceSite[]
   search(query: string, limit?: number | undefined | null): PolicySearchHit[]
   inputSkeleton(req: PolicyScopeRequest): unknown
+  requestSchema(req: PolicyScopeRequest, audience: 'contract' | 'evaluated'): Record<string, unknown>
+  responseSchema(req: PolicyScopeRequest): Record<string, unknown>
   dependencies(target: string, document?: string | undefined | null): PolicyDependencyNode
   evaluate(req: PolicyEvaluateRequest): PolicyEvaluationResult
   enhanceTrace(req: PolicyEvaluateRequest): PolicyEvaluationResult
@@ -623,6 +632,10 @@ export interface PolicyInputProperty {
   suppliedBy: 'request' | 'host'
   /** Filled in when the caller leaves it out. */
   default?: any
+  /** A reference: the entity it names (the engine reads the record; a host that fills records in from ids can take the id). */
+  reference?: string
+  /** A relationship: its records' reference fields, each with the entity it names. */
+  recordReferences?: Record<string, string>
 }
 
 export interface PolicyInspectResult {

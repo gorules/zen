@@ -17,13 +17,13 @@ impl Db {
         let visible_dms = self.visible_data_models(policy_path);
         let (roots, ref_targets) =
             DataModelIr::classify_roots(visible_dms.iter().map(|dm| dm.as_ref()));
-        InputSchema {
+        InputSchema::new(
             entities,
             globals,
             roots,
             ref_targets,
-            dictionaries: self.unit(policy_path).dictionaries.clone(),
-        }
+            self.unit(policy_path).dictionaries.clone(),
+        )
     }
 
     fn visible_globals(&self, policy_path: &str) -> HashMap<Arc<str>, Property> {
@@ -73,9 +73,55 @@ pub(crate) struct InputSchema {
     roots: HashSet<Arc<str>>,
     ref_targets: HashSet<Arc<str>>,
     dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    /// The properties with a `default`, per entity and global (by name):
+    /// found once, not on every evaluation. Kept as JSON (a `Variable` isn't
+    /// `Send`), made a value only when filled in.
+    defaults: Defaults,
+}
+
+#[derive(Default)]
+struct Defaults {
+    entities: HashMap<Arc<str>, Vec<Property>>,
+    globals: Vec<Property>,
+}
+
+impl Defaults {
+    fn is_empty(&self) -> bool {
+        self.entities.is_empty() && self.globals.is_empty()
+    }
 }
 
 impl InputSchema {
+    fn new(
+        entities: Arc<HashMap<Arc<str>, Arc<DataModelIr>>>,
+        globals: HashMap<Arc<str>, Property>,
+        roots: HashSet<Arc<str>>,
+        ref_targets: HashSet<Arc<str>>,
+        dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    ) -> Self {
+        let with_default = |props: &mut dyn Iterator<Item = &Property>| -> Vec<Property> {
+            props.filter(|p| p.default.is_some()).cloned().collect()
+        };
+        let mut global_defaults = with_default(&mut globals.values());
+        global_defaults.sort_by(|a, b| a.name.cmp(&b.name));
+        let defaults = Defaults {
+            entities: entities
+                .iter()
+                .map(|(name, model)| (name.clone(), with_default(&mut model.properties.iter())))
+                .filter(|(_, props)| !props.is_empty())
+                .collect(),
+            globals: global_defaults,
+        };
+        InputSchema {
+            entities,
+            globals,
+            roots,
+            ref_targets,
+            dictionaries,
+            defaults,
+        }
+    }
+
     /// The schema of a graph's request typed by an entity: `target` at the
     /// root, the entities it references as pools beside it.
     pub(crate) fn for_request(
@@ -84,13 +130,13 @@ impl InputSchema {
         pools: impl IntoIterator<Item = Arc<str>>,
         dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
     ) -> Self {
-        InputSchema {
+        InputSchema::new(
             entities,
-            globals: HashMap::new(),
-            roots: std::iter::once(target).collect(),
-            ref_targets: pools.into_iter().collect(),
+            HashMap::new(),
+            std::iter::once(target).collect(),
+            pools.into_iter().collect(),
             dictionaries,
-        }
+        )
     }
 
     pub(crate) fn validate(&self, input: &Variable) -> Vec<InputValidationError> {
@@ -147,12 +193,10 @@ impl InputSchema {
                 self.convert_property(value, self.globals.get(key)?, 0)
             }
         });
-        if input.as_object().is_none() {
+        if input.as_object().is_none() || self.defaults.is_empty() {
             return converted;
         }
-        let mut globals: Vec<&Property> = self.globals.values().collect();
-        globals.sort_by(|a, b| a.name.cmp(&b.name));
-        self.fill_defaults(converted, input, globals.into_iter(), 0)
+        self.fill_defaults(converted, input, &self.defaults.globals, 0)
     }
 
     fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
@@ -164,23 +208,30 @@ impl InputSchema {
             let property = model.properties.iter().find(|p| *p.name == *key)?;
             self.convert_property(child, property, depth + 1)
         });
-        self.fill_defaults(converted, value, model.properties.iter(), depth + 1)
+        match self.defaults.entities.get(entity) {
+            Some(defaults) => self.fill_defaults(converted, value, defaults, depth + 1),
+            None => converted,
+        }
     }
 
     /// Sets each missing or null property that has a `default` (converted
     /// like a supplied value), on a copy.
-    fn fill_defaults<'p>(
+    fn fill_defaults(
         &self,
         converted: Option<Variable>,
         value: &Variable,
-        properties: impl Iterator<Item = &'p Property>,
+        properties: &[Property],
         depth: usize,
     ) -> Option<Variable> {
+        if properties.is_empty() {
+            return converted;
+        }
         let current = converted.as_ref().unwrap_or(value);
         let object = current.as_object()?;
         let missing: Vec<(Arc<str>, Variable)> = {
             let fields = object.borrow();
             properties
+                .iter()
                 .filter_map(|p| {
                     let default = p.default.as_ref()?;
                     let absent = fields

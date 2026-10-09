@@ -28,7 +28,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::variable::{ToVariable, Variable};
 use zen_types::decision::{DecisionNode, InputNodeContent, OutputNodeContent};
-use crate::decision_graph::request_entity::RequestPreparation;
 
 #[derive(Debug)]
 pub struct DecisionGraph {
@@ -113,17 +112,33 @@ impl DecisionGraph {
         Ok(())
     }
 
-    /// A request typed by an entity, prepared as a policy's request is: from
-    /// the graph's compiled preparation, or loaded through its imports.
-    async fn request_input(&self, target: Option<&Arc<str>>, context: &Variable) -> Result<Variable, String> {
-        let Some(target) = target else {
+    /// A request typed by an entity, prepared as a policy's request is: by
+    /// the graph's preparation, loaded through its imports once. Not with a
+    /// schema too.
+    async fn request_input(
+        &self,
+        content: &InputNodeContent,
+        context: &Variable,
+    ) -> Result<Variable, String> {
+        let Some(target) = &content.target else {
             return Ok(context.clone());
         };
-        if let Some(prepared) = &self.config.content.request_preparation.0 {
-            return prepared.prepare(context);
+        if content.schema.is_some() {
+            return Err(
+                "the request is typed twice: by a schema and by an entity (`target`); keep one"
+                    .to_string(),
+            );
         }
-        let prepared =
-            RequestPreparation::load(self.config.extensions.loader(), &self.config.content.imports, target).await?;
+        let prepared = self
+            .config
+            .content
+            .request_preparation
+            .get_or_load(
+                self.config.extensions.loader(),
+                &self.config.content.imports,
+                target,
+            )
+            .await?;
         prepared.prepare(context)
     }
 
@@ -202,7 +217,7 @@ impl DecisionGraph {
 
             let node_execution = match &node.kind {
                 DecisionNodeKind::InputNode { content } if content.target.is_some() => {
-                    match self.request_input(content.target.as_ref(), &context).await {
+                    match self.request_input(content, &context).await {
                         Err(message) => base_ctx.error(message),
                         Ok(prepared) => {
                             base_ctx.input = prepared;

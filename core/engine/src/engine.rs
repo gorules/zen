@@ -194,15 +194,14 @@ impl DecisionEngine {
         let key_str = key.as_ref();
         if let Some(set) = self.compiled.load_full() {
             // Compiled under its path with or without `.json`, as loaders
-            // find documents either way.
-            let entry = set.get(key_str).or_else(|| match key_str.strip_suffix(".json") {
-                Some(bare) => set.get(bare),
-                None => set.get(&format!("{key_str}.json")),
-            });
-            if let Some(entry) = entry {
+            // find documents either way; evaluated under that path.
+            let compiled = set
+                .key_of(key_str)
+                .and_then(|key| Some((set.get(&key)?, key)));
+            if let Some((entry, compiled_key)) = compiled {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace)
+                        .evaluate_entry(&compiled_key, context, options.trace)
                         .map(|r| DecisionGraphResponse {
                             performance: format!("{:.1?}", r.duration),
                             result: r.output,

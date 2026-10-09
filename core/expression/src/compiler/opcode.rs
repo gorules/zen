@@ -76,6 +76,8 @@ pub enum Jump {
     IfTrue,
     IfFalse,
     IfNotNull,
+    /// Jumps when the top of the stack is no `bool` (it stays).
+    IfNotBool,
     IfEnd,
 }
 

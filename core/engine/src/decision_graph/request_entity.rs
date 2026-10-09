@@ -2,18 +2,19 @@
 //! entity, flat (`{ txn_id, amount, customer }`), and is prepared as a
 //! policy's is before the first node runs: dates converted and checked
 //! against the entity. A reference holds the record it names (the host places
-//! it, e.g. the Agent with the record's features); an id alone does not fit.
+//! it, with the record's features); an id alone does not fit.
 
 use std::fmt;
 use std::sync::Arc;
 
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::{HashMap, HashMapExt};
 use zen_expression::variable::{Variable, VariableMap};
 
+use crate::decision_graph::schema_dict;
 use crate::loader::DynamicLoader;
-use crate::policy::ir::{DataModelIr, DictionaryIr, Policy, PropertyTypeIr};
+use crate::policy::ir::{DictionaryIr, Policy, PropertyTypeIr};
 use crate::policy::validator::InputSchema;
-use crate::workspace::graph::with_inline_references;
+use crate::workspace::graph::{merge_entities, with_inline_references};
 
 pub(crate) struct RequestPreparation {
     target: Arc<str>,
@@ -32,45 +33,32 @@ impl fmt::Debug for RequestPreparation {
 
 impl RequestPreparation {
     /// The preparation for `target`, from the entities and dictionaries the
-    /// graph's imports make visible (the imports and what they import; the
-    /// first of a name wins, as in the editor's analysis).
+    /// graph's imports make visible, walked and merged as the editor's
+    /// analysis does: an entity declared in several policies is one entity;
+    /// the first dictionary of a name wins.
     pub(crate) async fn load(
         loader: &DynamicLoader,
         imports: &[Arc<str>],
         target: &Arc<str>,
     ) -> Result<Self, String> {
-        let mut entities: HashMap<Arc<str>, Arc<DataModelIr>> = HashMap::new();
+        let closure = schema_dict::load_import_closure(loader, imports).await?;
+        let parsed: Vec<_> = closure
+            .iter()
+            .map(|(key, document)| Policy::parse(key, document))
+            .collect();
+        let entities = merge_entities(parsed.iter().flat_map(|p| {
+            p.policy
+                .entity_data_models()
+                .map(|(_, dm)| dm)
+                .filter(|dm| !dm.name.is_empty())
+        }));
         let mut dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>> = HashMap::new();
-        let mut visited: HashSet<Arc<str>> = HashSet::new();
-        let mut queue: Vec<Arc<str>> = imports.to_vec();
-        queue.reverse();
-        while let Some(key) = queue.pop() {
-            if !visited.insert(key.clone()) {
-                continue;
-            }
-            let loaded = loader
-                .load(key.as_ref())
-                .await
-                .map_err(|error| format!("failed to load imported policy '{key}': {error:?}"))?;
-            let Some(policy) = loaded.as_policy() else {
-                continue;
-            };
-            let parsed = Policy::parse(&key, &policy.0);
-            for (_, dm) in parsed.policy.entity_data_models() {
-                if !dm.name.is_empty() {
-                    entities
-                        .entry(dm.name.clone())
-                        .or_insert_with(|| Arc::new(dm.clone()));
-                }
-            }
-            for block in &parsed.policy.dictionaries {
+        for p in &parsed {
+            for block in &p.policy.dictionaries {
                 dictionaries
                     .entry(block.ir.name.clone())
                     .or_insert_with(|| block.ir.clone());
             }
-            let mut next: Vec<Arc<str>> = parsed.policy.imports().to_vec();
-            next.reverse();
-            queue.extend(next);
         }
         if !entities.contains_key(target) {
             return Err(format!(
@@ -132,7 +120,7 @@ impl RequestPreparation {
                 continue;
             };
             return Err(format!(
-                "the request is not a valid `{}`: '{field}' is the id \"{first}\", but a reference carries its record: send the `{named}` itself (e.g. {{ \"id\": \"{first}\", … }}); a host such as the Agent fills it in from the id",
+                "the request is not a valid `{}`: '{field}' is the id \"{first}\", but a reference carries its record: send the `{named}` itself (e.g. {{ \"id\": \"{first}\", … }})",
                 self.target
             ));
         }

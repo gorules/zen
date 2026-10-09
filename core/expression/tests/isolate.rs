@@ -808,6 +808,30 @@ fn isolate_unary_tests() {
 }
 
 #[test]
+fn root_is_the_hosts_root_key_when_given() {
+    // A host evaluating within part of a request (an entity's call) gives
+    // `$root` the whole request under a `$root` key; `$` stays the part.
+    let mut isolate = Isolate::new();
+    isolate
+        .set_environment(json!({ "amount": 5, "$root": { "booking": { "tier": "gold" } } }).into());
+    assert_eq!(
+        isolate
+            .run_standard("$root.booking.tier")
+            .unwrap()
+            .to_value(),
+        json!("gold")
+    );
+    assert_eq!(isolate.run_standard("amount").unwrap().to_value(), json!(5));
+
+    // Without the key, `$root` is the environment, as before.
+    isolate.set_environment(json!({ "amount": 5 }).into());
+    assert_eq!(
+        isolate.run_standard("$root.amount").unwrap().to_value(),
+        json!(5)
+    );
+}
+
+#[test]
 fn isolate_does_not_mutate_environment() {
     let environment: Variable = json!({ "a": 1, "nested": { "b": 2 } }).into();
 
@@ -1050,14 +1074,71 @@ fn string_index_at_usize_max_returns_null() {
 #[test]
 fn object_shorthand_names_its_value() {
     let mut isolate = Isolate::new();
-    isolate.set_environment(Variable::from(json!({ "amount": 9500, "customer": { "risk": "high" } })));
+    isolate.set_environment(Variable::from(
+        json!({ "amount": 9500, "customer": { "risk": "high" } }),
+    ));
     assert_eq!(
-        isolate.run_standard("{ amount, risk: customer.risk, customer }").unwrap().to_value(),
+        isolate
+            .run_standard("{ amount, risk: customer.risk, customer }")
+            .unwrap()
+            .to_value(),
         json!({ "amount": 9500, "risk": "high", "customer": { "risk": "high" } })
     );
-    assert_eq!(isolate.run_standard("{ amount }").unwrap().to_value(), json!({ "amount": 9500 }));
-    assert_eq!(isolate.run_standard("{ missing }").unwrap().to_value(), json!({ "missing": null }));
+    assert_eq!(
+        isolate.run_standard("{ amount }").unwrap().to_value(),
+        json!({ "amount": 9500 })
+    );
+    assert_eq!(
+        isolate.run_standard("{ missing }").unwrap().to_value(),
+        json!({ "missing": null })
+    );
     // Quoted keys and keys that are words stay keys that need a value.
     assert!(isolate.run_standard("{ 'amount' }").is_err());
     assert!(isolate.run_standard("{ true }").is_err());
+}
+
+#[test]
+fn join_fails_on_lists_objects_and_a_non_string_separator() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(json!({ "items": [{ "a": 1 }], "nested": [["a"]] }).into());
+    assert!(isolate.run_standard("join(items, ', ')").is_err());
+    assert!(isolate.run_standard("join(nested)").is_err());
+    assert!(isolate.run_standard("join(['a'], 1)").is_err());
+    assert!(isolate.run_standard("join('a,b')").is_err());
+    assert_eq!(
+        isolate
+            .run_standard("join(['a', 'b'], ', ')")
+            .unwrap()
+            .to_value(),
+        json!("a, b")
+    );
+}
+
+#[test]
+fn selectors_with_one_callback() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(
+        json!({ "items": [{ "id": 1, "a": 3, "ok": false }, { "id": 2, "a": "x", "ok": true }] })
+            .into(),
+    );
+    // `argMax(items, by)` ranks by numbers or dates, as the long form.
+    assert!(isolate.run_standard("argMax(items, #.a)").is_err());
+    // A bool callback value is a condition, any other value the projection.
+    assert_eq!(
+        isolate
+            .run_standard("first(items, #.ok).id")
+            .unwrap()
+            .to_value(),
+        json!(2)
+    );
+    assert_eq!(
+        isolate
+            .run_standard("first(items, #.id)")
+            .unwrap()
+            .to_value(),
+        json!(1)
+    );
+    // A condition that is no bool for the matching items is an error in
+    // the three-argument form, as for every filter.
+    assert!(isolate.run_standard("first(items, #.id, #.a)").is_err());
 }

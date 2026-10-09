@@ -34,18 +34,24 @@ impl FilesystemLoader {
     /// The file of a key: as named, else with `.json` (BRMS names documents
     /// and their imports without an extension, `models/cards`, while a
     /// folder on disk usually has `models/cards.json`).
+    /// A folder of the same name (`models/cards/`) is never the file.
     fn key_to_path<K: AsRef<str>>(&self, key: K) -> PathBuf {
         let path = Path::new(&self.root).join(key.as_ref());
-        if path.exists() {
+        // A dotted name (`fraud.rules`) is a name, not an extension.
+        if path.is_file() || key.as_ref().ends_with(".json") {
             return path;
         }
         let with_json = Path::new(&self.root).join(format!("{}.json", key.as_ref()));
-        if with_json.exists() { with_json } else { path }
+        if with_json.is_file() {
+            with_json
+        } else {
+            path
+        }
     }
 
     fn read_content<K: AsRef<str>>(&self, key: K) -> LoaderResponse {
         let path = self.key_to_path(key.as_ref());
-        if !Path::exists(&path) {
+        if !path.is_file() {
             return Err(LoaderError::NotFound(String::from(key.as_ref())));
         }
 
@@ -130,6 +136,34 @@ mod tests {
         assert!(loader.load_sync("table.json").unwrap().is_ok());
         // A key without its extension, as BRMS imports name documents.
         assert!(loader.load("table").await.is_ok());
+    }
+
+    #[test]
+    fn key_resolves_to_the_file_beside_a_folder_of_the_same_name() {
+        let root = std::env::temp_dir().join(format!("zen-fs-loader-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("models/cards")).unwrap();
+        std::fs::write(root.join("models/cards.json"), "{}").unwrap();
+        let loader = FilesystemLoader::new(FilesystemLoaderOptions {
+            root: root.to_string_lossy().to_string(),
+        });
+
+        assert_eq!(
+            loader.key_to_path("models/cards"),
+            root.join("models/cards.json")
+        );
+        // A dotted name is a name: `<key>.json` is still tried.
+        std::fs::write(root.join("models/rules.v2.json"), "{}").unwrap();
+        assert_eq!(
+            loader.key_to_path("models/rules.v2"),
+            root.join("models/rules.v2.json")
+        );
+        // A key naming its `.json` is the file as named.
+        assert_eq!(
+            loader.key_to_path("models/cards.json"),
+            root.join("models/cards.json")
+        );
+        assert!(loader.load_sync("models").unwrap().is_err());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]

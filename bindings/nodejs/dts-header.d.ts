@@ -236,6 +236,16 @@ export type PolicyEngineEdit =
       newNode: unknown;
     };
 
+export type PolicyPathEdit =
+  | { kind: 'replaceImport'; document: string; from: string; to: string }
+  | {
+      kind: 'replaceDecisionKey';
+      document: string;
+      nodeId: string;
+      from: string;
+      to: string;
+    };
+
 /**
  * What kind of usage site a `PolicyReferenceSite` represents.
  *

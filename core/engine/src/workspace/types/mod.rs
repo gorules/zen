@@ -14,7 +14,7 @@ pub(crate) use diagnostic::SpanOps;
 pub use diagnostic::{
     Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, Severity, Span,
 };
-pub use edit::EngineEdit;
+pub use edit::{EngineEdit, PathEdit};
 pub use error::{EvaluationError, InputValidationError};
 pub use request::{EvaluateRequest, ScopeRequest};
 pub use result::{

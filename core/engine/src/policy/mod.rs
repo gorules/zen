@@ -19,7 +19,7 @@ pub use crate::workspace::{
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionFacts, ExpressionKind, FieldOrigin, FunctionResolutionRequest, FunctionTypeResolver,
     GraphAnalysis, GraphNodeAnalysis, GraphSignature, GraphTraceMap, GuardedProperty,
-    InputProperty, InputValidationError, InspectResult, OutputProperty, PrepareRename,
+    InputProperty, InputValidationError, InspectResult, OutputProperty, PathEdit, PrepareRename,
     PropertyKind, ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup,
     ScopeRequest, Severity, SlotResponse, SlotRole, Span, Trace, Workspace, WriteConflict,
     WriteTrace,

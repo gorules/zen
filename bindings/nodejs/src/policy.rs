@@ -341,6 +341,12 @@ pub struct PolicyRenameRequest {
 }
 
 #[napi(object)]
+pub struct PolicyPathMove {
+    pub from: String,
+    pub to: String,
+}
+
+#[napi(object)]
 pub struct PolicyUpdateBlockRequest {
     pub policy_path: String,
     #[napi(ts_type = "unknown")]
@@ -886,6 +892,19 @@ impl Workspace {
             .into_iter()
             .map(|e| serde_json::to_value(e).expect("EngineEdit serializes"))
             .collect())
+    }
+
+    #[napi(ts_return_type = "PolicyPathEdit[]")]
+    pub fn move_paths(&self, moves: Vec<PolicyPathMove>) -> Vec<Value> {
+        let moves: Vec<(Arc<str>, Arc<str>)> = moves
+            .into_iter()
+            .map(|m| (Arc::from(m.from), Arc::from(m.to)))
+            .collect();
+        self.inner
+            .move_paths(&moves)
+            .into_iter()
+            .map(|e| serde_json::to_value(e).expect("PathEdit serializes"))
+            .collect()
     }
 
     #[napi(ts_return_type = "PolicyReferenceSite[]")]

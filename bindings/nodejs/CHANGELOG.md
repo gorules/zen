@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.4](https://github.com/gorules/zen/compare/nodejs-v2.1.3...nodejs-v2.1.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* generate nodejs index.d.ts at build time instead of committing it ([#541](https://github.com/gorules/zen/issues/541)) ([dca7cac](https://github.com/gorules/zen/commit/dca7cac7e7029bc9d10a1c29eca7fe136172b27b))
+
 ## [2.1.3](https://github.com/gorules/zen/compare/nodejs-v2.1.2...nodejs-v2.1.3) (2026-10-09)
 
 

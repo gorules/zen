@@ -1,4 +1,4 @@
-use super::frame::Fault;
+use super::frame::{Fallbacks, Fault};
 use super::context::Context;
 use super::frame::{Frame, Scratch};
 use super::Executor;
@@ -782,7 +782,7 @@ impl Executor {
                     results.push(Variable::Null);
                     let e = child.errors[lane]
                         .take().map(Fault::vm)
-                        .unwrap_or(VMError::NumberConversionError);
+                        .unwrap_or_else(Fallbacks::error);
                     failures.push(((start + lane) as u32, e));
                     continue;
                 }
@@ -1182,7 +1182,7 @@ impl Executor {
                 true => Ok(child.take(c.body.out, 0)),
                 _ => Err(child.errors[0]
                     .take().map(Fault::vm)
-                    .unwrap_or(VMError::NumberConversionError)),
+                    .unwrap_or_else(Fallbacks::error)),
             };
             if let Some(b) = Self::verdict(c.kind, r)? {
                 return Ok(Variable::Bool(b));

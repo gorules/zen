@@ -1,4 +1,4 @@
-use super::frame::Fault;
+use super::frame::{Fallbacks, Fault};
 use super::frame::Frame;
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::output::{Output, Shape};
@@ -179,7 +179,7 @@ impl<M: LaneSet> Frame<M> {
         for lane in Lanes::of(failed) {
             let fault = self.errors[lane]
                 .take()
-                .unwrap_or(Fault::Vm(VMError::NumberConversionError));
+                .unwrap_or_else(Fallbacks::fault);
             out.errors.push(((start + lane) as u32, crate::lane::output::Failure::new(fault)));
         }
     }
@@ -211,7 +211,7 @@ impl<M: LaneSet> Frame<M> {
         for lane in Lanes::of(failed) {
             let fault = self.errors[lane]
                 .take()
-                .unwrap_or(Fault::Vm(VMError::NumberConversionError));
+                .unwrap_or_else(Fallbacks::fault);
             failure(start + lane, self.stages[lane] as usize, fault);
         }
     }
@@ -421,7 +421,7 @@ impl<M: LaneSet> Frame<M> {
             }),
             _ => Err(self.errors[lane]
                 .take().map(Fault::vm)
-                .unwrap_or(VMError::NumberConversionError)),
+                .unwrap_or_else(Fallbacks::error)),
         }
     }
 }

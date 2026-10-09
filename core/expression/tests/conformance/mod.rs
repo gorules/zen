@@ -3,7 +3,7 @@
 use rust_decimal::Decimal;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use zen_expression::{ExpressionKind, Isolate, Variable};
+use zen_expression::{ExpressionKind, Isolate, IsolateError, Variable};
 
 #[derive(Debug, Clone)]
 pub enum Expected {
@@ -43,10 +43,14 @@ impl SpecCase {
     }
 
     pub fn stack(&self) -> Result<Variable, String> {
-        Spec::guard(|| self.run_stack().map(Spec::settle))
+        Spec::guard(|| self.run_stack(|e| e.to_string()).map(Spec::settle))
     }
 
-    fn run_stack(&self) -> Result<Variable, String> {
+    pub fn exact(&self) -> Result<Variable, String> {
+        Spec::guard(|| self.run_stack(Spec::describe).map(Spec::settle))
+    }
+
+    fn run_stack(&self, render: impl Fn(&IsolateError) -> String) -> Result<Variable, String> {
         let mut isolate = Isolate::new();
         if let Some(input) = &self.input {
             isolate.set_environment(input.depth_clone(64));
@@ -54,11 +58,11 @@ impl SpecCase {
         match self.kind {
             ExpressionKind::Standard => isolate
                 .run_standard(&self.expression)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| render(&e)),
             ExpressionKind::Unary => isolate
                 .run_unary(&self.expression)
                 .map(Variable::Bool)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| render(&e)),
         }
     }
 
@@ -89,6 +93,18 @@ pub struct Spec;
 
 impl Spec {
     pub const PANIC: &'static str = "PANIC";
+
+    pub fn no_fallbacks() {
+        assert_eq!(
+            zen_expression::lane::Fallbacks::reached(),
+            0,
+            "lane reached a NumberConversionError fallback without a recorded fault"
+        );
+    }
+
+    pub fn describe(error: &IsolateError) -> String {
+        format!("{error} {error:?}")
+    }
 
     pub fn settle(v: Variable) -> Variable {
         let _ = v.to_value();

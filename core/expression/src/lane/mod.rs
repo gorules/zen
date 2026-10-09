@@ -11,14 +11,16 @@ mod ops;
 mod output;
 mod program;
 pub(crate) mod scaled;
+mod session;
 mod source;
 
 pub use cells::{CellEnv, CellSet, Pieces};
 pub use columns::{Column, Columns, Dictionary, Values};
 pub use compile::{Hints, LaneCompiler};
-pub use exec::{Context, Executor, Fault, Frame};
+pub use exec::{Context, Executor, Fallbacks, Fault, Frame};
 pub use mask::{LaneSet, Mask, Word, LANES};
 pub use output::{Cell, Output, Shape};
+pub use session::{Programs, Session};
 pub use source::SourceInfo;
 pub use program::{Binary, Binding, ClosureOp, Const, FoldOp, Kind, Layout, Op, Program, Reg, Step, Subject, SwitchOp};
 
@@ -83,10 +85,23 @@ impl LaneProgram {
         Self::compile_with(source, kind, None)
     }
 
+    pub fn compile_exact(source: &str, kind: ExpressionKind) -> Result<Self, IsolateError> {
+        Self::single(source, kind, None, false)
+    }
+
     pub fn compile_with(
         source: &str,
         kind: ExpressionKind,
         hints: Option<&Hints>,
+    ) -> Result<Self, IsolateError> {
+        Self::single(source, kind, hints, true)
+    }
+
+    fn single(
+        source: &str,
+        kind: ExpressionKind,
+        hints: Option<&Hints>,
+        guarded: bool,
     ) -> Result<Self, IsolateError> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
@@ -97,7 +112,9 @@ impl LaneProgram {
             ExpressionKind::Unary => parser.unary().parse(),
         };
         parsed.error()?;
-        Self::guard([parsed.root])?;
+        if guarded {
+            Self::guard([parsed.root])?;
+        }
         let program = LaneCompiler::compile_with(parsed.root, hints)?;
         let constant = match kind {
             ExpressionKind::Standard => Const::of(parsed.root),

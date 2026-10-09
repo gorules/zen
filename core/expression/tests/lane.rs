@@ -71,11 +71,11 @@ impl Differential {
             ExpressionKind::Standard => isolate
                 .run_standard(expression)
                 .map(|v| v.to_value())
-                .map_err(|e| e.to_string()),
+                .map_err(|e| conformance::Spec::describe(&e)),
             ExpressionKind::Unary => isolate
                 .run_unary(expression)
                 .map(Value::Bool)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| conformance::Spec::describe(&e)),
         }
     }
 
@@ -84,12 +84,12 @@ impl Differential {
         result: Result<Variable, zen_expression::IsolateError>,
     ) -> Result<Value, String> {
         match (self.kind.clone(), result) {
-            (ExpressionKind::Standard, r) => r.map(|v| v.to_value()).map_err(|e| e.to_string()),
+            (ExpressionKind::Standard, r) => r.map(|v| v.to_value()).map_err(|e| conformance::Spec::describe(&e)),
             (ExpressionKind::Unary, Ok(v)) => v
                 .as_bool()
                 .map(Value::Bool)
-                .ok_or_else(|| zen_expression::IsolateError::ValueCastError.to_string()),
-            (ExpressionKind::Unary, Err(e)) => Err(e.to_string()),
+                .ok_or_else(|| conformance::Spec::describe(&zen_expression::IsolateError::ValueCastError)),
+            (ExpressionKind::Unary, Err(e)) => Err(conformance::Spec::describe(&e)),
         }
     }
 
@@ -116,7 +116,7 @@ impl Differential {
                 self.outcomes[2] += 1;
                 for (input, exp) in inputs.iter().zip(&expected) {
                     self.compared += 1;
-                    if exp.as_ref().err() != Some(&e.to_string()) {
+                    if exp.as_ref().err() != Some(&conformance::Spec::describe(&e)) {
                         self.failures.push(format!(
                             "{expression} | input {input} | compile: lane {e} vs stack {exp:?}"
                         ));
@@ -535,6 +535,7 @@ fn lane_matches_stack_vm_standard_csv() {
     let mut d = Differential::new(ExpressionKind::Standard);
     d.file(include_str!("data/standard.csv"));
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -542,6 +543,7 @@ fn lane_matches_stack_vm_date_csv() {
     let mut d = Differential::new(ExpressionKind::Standard);
     d.file(include_str!("data/date.csv"));
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -549,6 +551,7 @@ fn lane_matches_stack_vm_unary_csv() {
     let mut d = Differential::new(ExpressionKind::Unary);
     d.file(include_str!("data/unary.csv"));
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -589,6 +592,7 @@ fn lane_struct_outputs_stay_typed() {
     assert_eq!(list.mantissas()[..4], [1, 2, 25, 35]);
     assert_eq!(list.scales()[..4], [0, 0, 1, 1]);
     assert!(out.failed()[0] >> 2 & 1 == 1);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -784,6 +788,7 @@ fn lane_matches_stack_vm_special_cases() {
         }
     }
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 struct Rng(u64);
@@ -1057,6 +1062,7 @@ fn lane_fuzz_matches_stack_vm() {
         }
     }
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 struct Typed<'r> {
@@ -1216,6 +1222,7 @@ fn lane_fuzz_typed_matches_stack_vm() {
         }
     }
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -1309,6 +1316,7 @@ fn lane_cell_sets_match_unary_evaluation() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+    conformance::Spec::no_fallbacks();
 }
 
 type ManyResult = Result<Vec<Value>, (usize, String)>;
@@ -1396,7 +1404,7 @@ fn lane_many_matches_expression_node_semantics() {
         runner.evaluate_many(&program, &scopes, Some(&mask), |row, r| {
             got[row] = r.map(|r| {
                 r.map(|v| v.into_iter().map(|x| x.to_value()).collect())
-                    .map_err(|(s, e)| (s, e.to_string()))
+                    .map_err(|(s, e)| (s, conformance::Spec::describe(&e)))
             });
         });
         for (row, input) in inputs.iter().enumerate() {
@@ -1417,7 +1425,7 @@ fn lane_many_matches_expression_node_semantics() {
                         isolate.insert_dollar(key, v);
                     }
                     Err(e) => {
-                        expected = Err((index, e.to_string()));
+                        expected = Err((index, conformance::Spec::describe(&e)));
                         break;
                     }
                 }
@@ -1445,6 +1453,7 @@ fn lane_many_matches_expression_node_semantics() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -1544,6 +1553,7 @@ fn lane_builtins_match_stack_vm() {
     }
     eprintln!("builtin calls {checked}");
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -1704,6 +1714,7 @@ fn lane_date_builtins_match_stack_vm() {
     }
     eprintln!("date calls {checked}");
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -1821,6 +1832,7 @@ fn lane_wide_blocks_match_stack_vm() {
         d.columns(expression, &inputs);
     }
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 struct Columnar<'r> {
@@ -2326,6 +2338,7 @@ fn lane_fuzz_columnar_matches_stack_vm() {
         }
     }
     d.assert();
+    conformance::Spec::no_fallbacks();
 }
 
 struct SpecLane {
@@ -2355,8 +2368,8 @@ impl SpecLane {
             (ExpressionKind::Unary, Ok(v)) => v
                 .as_bool()
                 .map(Variable::Bool)
-                .ok_or_else(|| zen_expression::IsolateError::ValueCastError.to_string()),
-            (_, r) => r.map_err(|e| e.to_string()),
+                .ok_or_else(|| conformance::Spec::describe(&zen_expression::IsolateError::ValueCastError)),
+            (_, r) => r.map_err(|e| conformance::Spec::describe(&e)),
         }
     }
 
@@ -2411,8 +2424,8 @@ impl SpecLane {
             return true;
         };
         let (kind, expression) = (first.kind.clone(), first.expression.as_str());
-        let want: Vec<Result<Variable, String>> = cases.iter().map(|c| c.stack()).collect();
-        let again: Vec<Result<Variable, String>> = cases.iter().map(|c| c.stack()).collect();
+        let want: Vec<Result<Variable, String>> = cases.iter().map(|c| c.exact()).collect();
+        let again: Vec<Result<Variable, String>> = cases.iter().map(|c| c.exact()).collect();
         if want.iter().zip(&again).any(|(a, b)| !Self::same(a, b)) {
             self.unstable += cases.len();
             return false;
@@ -2421,7 +2434,7 @@ impl SpecLane {
             Ok(p) => p,
             Err(e) => {
                 for (case, want) in cases.iter().zip(&want) {
-                    self.compare("compile", case, want, Err(e.to_string()));
+                    self.compare("compile", case, want, Err(conformance::Spec::describe(&e)));
                 }
                 return true;
             }
@@ -2585,6 +2598,7 @@ fn lane_matches_spec() {
             d.assert();
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2607,6 +2621,7 @@ fn lane_regression_cloned_programs_keep_object_keys() {
             current = next;
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2632,6 +2647,7 @@ fn lane_regression_many_entries_do_not_share_assignments() {
         });
         assert_eq!(got.flatten(), Some(expected), "{entries:?}");
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2644,6 +2660,7 @@ fn lane_regression_empty_many_program_does_not_panic() {
     let columns = Columns::new(3);
     let mut out = Output::new();
     runner.evaluate_columns_into(&program, &columns, &mut out);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2659,17 +2676,18 @@ fn lane_regression_dates_cross_between_engines() {
         let input = Variable::from(json!({"x": null}));
         input.dot_insert("x", date);
         for e in expressions {
-            let want = Isolate::with_environment(input.depth_clone(64)).run_standard(e).map(|v| v.to_value()).map_err(|e| e.to_string());
+            let want = Isolate::with_environment(input.depth_clone(64)).run_standard(e).map(|v| v.to_value()).map_err(|e| conformance::Spec::describe(&e));
             let program = LaneProgram::standard(e).expect("compile");
-            let got = runner.evaluate_one(&program, &Scope::new(input.depth_clone(64))).map(|v| v.to_value()).map_err(|e| e.to_string());
+            let got = runner.evaluate_one(&program, &Scope::new(input.depth_clone(64))).map(|v| v.to_value()).map_err(|e| conformance::Spec::describe(&e));
             assert_eq!(got, want, "{e}");
             let again = runner.evaluate_one(&program, &Scope::new(input.depth_clone(64))).expect("lane");
             let back = Variable::from(json!({"y": null}));
             back.dot_insert("y", again);
-            let reread = Isolate::with_environment(back).run_standard("y").map(|v| v.to_value()).map_err(|e| e.to_string());
+            let reread = Isolate::with_environment(back).run_standard("y").map(|v| v.to_value()).map_err(|e| conformance::Spec::describe(&e));
             assert_eq!(reread, want, "old vm re-reading lane output of {e}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 struct Rows;
@@ -2699,6 +2717,7 @@ fn lane_regression_list_of_any_aggregates() {
     let child = Column::new(Values::Any(&child));
     let columns = Columns::new(2).column("l", Column::new(Values::List { offsets: &offsets, child: (&child).into() }));
     Rows::check(&columns, &["sum(l)", "avg(l)", "median(l)", "mode(l)", "max(l)", "len(l)"]);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2711,6 +2730,7 @@ fn lane_regression_row_rebuild_does_not_mutate_input() {
         .column("o.y", Column::new(Values::I64(&ys)));
     Rows::check(&columns, &["o.y", "o.k", "o"]);
     assert_eq!(shared.to_value(), json!({"k": 0}));
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2723,6 +2743,7 @@ fn lane_regression_rand_is_not_memoized() {
     LaneRunner::new().evaluate_columns_into(&LaneProgram::standard("rand(a)").expect("compile"), &columns, &mut out);
     let distinct: std::collections::BTreeSet<String> = (0..1000).filter_map(|r| out.variable(r)).filter_map(|v| v.ok()).map(|v| v.to_value().to_string()).collect();
     assert!(distinct.len() > 100, "{}", distinct.len());
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2744,6 +2765,7 @@ fn lane_regression_cells_near_decimal_max() {
             assert_eq!(got, expected, "{cell} {value}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2751,6 +2773,7 @@ fn lane_regression_oversized_expression_errors_cleanly() {
     let items: Vec<String> = (0..30_000).map(|i| format!("'s{i}'")).collect();
     let source = format!("len([{}])", items.join(", "));
     assert!(LaneProgram::standard(&source).is_err());
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2765,6 +2788,7 @@ fn lane_regression_malformed_offsets() {
         let columns = Columns::new(2).column("l", Column::new(Values::List { offsets: &offsets, child: (&child).into() }));
         Rows::check(&columns, &["len(l)", "count(l, true)", "sum(l)", "map(l, # * 2)"]);
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2775,6 +2799,7 @@ fn lane_regression_duplicate_column_names() {
         .column("a", Column::new(Values::I64(&first)))
         .column("a", Column::new(Values::I64(&second)));
     Rows::check(&columns, &["a", "a + 1"]);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2814,6 +2839,7 @@ fn lane_regression_chained_dollar_matches_isolate() {
             assert_eq!(got, Some(expected.clone()), "{entries:?}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2834,6 +2860,7 @@ fn lane_regression_cells_survive_invalid_neighbours() {
             assert_eq!(got, expected, "{cell:?} {value}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2858,6 +2885,7 @@ fn lane_regression_cells_probe_between_close_bounds() {
             assert_eq!(got, expected, "{cell} {value}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2876,6 +2904,7 @@ fn lane_regression_malformed_offsets_on_fast_paths() {
         let columns = Columns::new(3).column("a", Column::new(Values::List { offsets, child: (&child).into() }));
         Rows::check(&columns, &["len(a)", "sum(a)", "filter(a, # != null)", "filter(a, # > 5)", "count(a, # == null)"]);
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2921,6 +2950,7 @@ fn lane_regression_date_inputs_keep_their_text() {
             assert_eq!(out.variable(r).and_then(|x| x.ok()).map(|v| v.to_value()), want(e, s), "{e} column row {r}");
         }
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2951,6 +2981,7 @@ fn lane_regression_constant_folding_keeps_runtime_semantics() {
         .map(|v| v.to_value().to_string())
         .collect();
     assert!(values.len() > 1);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -2982,6 +3013,7 @@ fn lane_regression_long_strings_and_list_membership() {
         .column("ns", Column::new(Values::List { offsets: &offsets, child: (&num_child).into() }))
         .column("x", Column::new(Values::Strs(&texts)));
     Rows::check(&columns, &["x in ws", "x not in ws", "'a' in ws", "null in ws", "3 in ns", "x in ns", "1.0 in ns"]);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3011,6 +3043,7 @@ fn lane_regression_chained_dotted_keys_resolve() {
         });
         assert_eq!(got, Some(expected), "{entries:?}");
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3032,7 +3065,7 @@ fn lane_builtin_failures_keep_messages() {
     let mut mismatches = Vec::new();
     for expression in expressions {
         let mut isolate = Isolate::with_environment(Variable::from(input.clone()));
-        let stack = isolate.run_standard(expression).map(|v| v.to_value()).map_err(|e| e.to_string());
+        let stack = isolate.run_standard(expression).map(|v| v.to_value()).map_err(|e| conformance::Spec::describe(&e));
         let Ok(program) = LaneProgram::standard(expression) else {
             continue;
         };
@@ -3040,12 +3073,13 @@ fn lane_builtin_failures_keep_messages() {
             .evaluate(&program, std::slice::from_ref(&scope))
             .remove(0)
             .map(|v| v.to_value())
-            .map_err(|e| e.to_string());
+            .map_err(|e| conformance::Spec::describe(&e));
         if lane != stack {
             mismatches.push(format!("{expression}\n  stack {stack:?}\n  lane  {lane:?}"));
         }
     }
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3080,6 +3114,7 @@ fn lane_isolated_cells_keep_evaluating_after_a_fault() {
     assert_eq!(table[1], vec![false, true, false, false]);
     assert_eq!(table[2], vec![true, true, false, true]);
     assert_eq!(table[3], vec![true, true, false, false]);
+    conformance::Spec::no_fallbacks();
 }
 
 enum FieldBuf {
@@ -3390,6 +3425,7 @@ fn lane_struct_lists_match_the_stack_vm() {
         "accounts[0].meta",
         "(accounts[0].balance ?? 0) + (accounts[1].balance ?? 0)",
     ]);
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3412,6 +3448,7 @@ fn lane_struct_lists_with_null_items() {
         "map(filter(accounts, #.kind != 'loan'), #.kind)",
         "some(accounts, # == null)",
     ]);
+    conformance::Spec::no_fallbacks();
 }
 
 struct Fused;
@@ -3582,6 +3619,7 @@ fn lane_fused_programs_match_sequential_evaluation() {
             Fused::output("a.eligible", "a.risk != 'high' and a.discount > 0"),
         ],
     );
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3595,6 +3633,7 @@ fn lane_fused_programs_reject_unresolvable_reads() {
     ] {
         assert!(LaneProgram::compile_fused(&entries).is_err());
     }
+    conformance::Spec::no_fallbacks();
 }
 
 #[test]
@@ -3637,4 +3676,5 @@ fn lane_switches_over_coded_and_plain_strings() {
         assert!(switched, "{expression}");
     }
     Rows::check(&columns, &expressions);
+    conformance::Spec::no_fallbacks();
 }

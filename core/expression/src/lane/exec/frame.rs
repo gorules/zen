@@ -180,6 +180,27 @@ impl Fault {
     }
 }
 
+pub struct Fallbacks;
+
+impl Fallbacks {
+    thread_local! {
+        static REACHED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    pub fn reached() -> usize {
+        Self::REACHED.get()
+    }
+
+    pub(crate) fn error() -> VMError {
+        Self::REACHED.set(Self::REACHED.get() + 1);
+        VMError::NumberConversionError
+    }
+
+    pub(crate) fn fault() -> Fault {
+        Fault::Vm(Self::error())
+    }
+}
+
 impl<M: LaneSet> Frame<M> {
     pub(super) const ARENA: usize = 1 << 20;
 

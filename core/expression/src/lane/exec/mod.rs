@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use zen_types::symbol::Symbol;
 
 pub use context::Context;
-pub use frame::{CallFault, Fault, Frame};
+pub use frame::{CallFault, Fallbacks, Fault, Frame};
 
 pub(super) type Parent<'a, M> = (&'a Frame<M>, &'a [u32], &'a [(Reg, Reg)]);
 

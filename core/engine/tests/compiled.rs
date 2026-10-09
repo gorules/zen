@@ -1,179 +1,53 @@
 mod support;
+#[path = "support/fixture.rs"]
+mod fixture;
 
+use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use support::columns::Built;
-use support::test_data_root;
-use zen_engine::model::{DecisionContent, GraphContent};
+use support::golden::{Canon, Reference};
+use zen_engine::model::GraphContent;
 use zen_engine::{Decision, EvaluationOptions};
 use zen_expression::Variable;
-
-struct Fixture {
-    name: String,
-    content: GraphContent,
-    inputs: Vec<Value>,
-}
-
-impl Fixture {
-    fn load_all() -> Vec<Fixture> {
-        let root = PathBuf::from(test_data_root());
-        let mut paths: Vec<PathBuf> = fs::read_dir(root.join("graphs"))
-            .into_iter()
-            .flatten()
-            .chain(fs::read_dir(&root).into_iter().flatten())
-            .chain(fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/compiled")).into_iter().flatten())
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "json"))
-            .collect();
-        paths.sort();
-        paths.iter().filter_map(|p| Self::load(p)).collect()
-    }
-
-    fn load(path: &Path) -> Option<Fixture> {
-        let text = fs::read_to_string(path).ok()?;
-        let raw: Value = serde_json::from_str(&text).ok()?;
-        let content: DecisionContent = serde_json::from_value(raw.clone()).ok()?;
-        let DecisionContent::Graph(graph) = content else {
-            return None;
-        };
-        let mut inputs: Vec<Value> = raw
-            .get("tests")
-            .and_then(Value::as_array)
-            .map(|tests| tests.iter().filter_map(|t| t.get("input").cloned()).collect())
-            .unwrap_or_default();
-        if inputs.is_empty() {
-            inputs.push(json!({}));
-        }
-        Some(Fixture {
-            name: path.file_name()?.to_string_lossy().to_string(),
-            content: (*graph).clone(),
-            inputs,
-        })
-    }
-
-    fn typed_variants(&self) -> Vec<Value> {
-        let mut out: Vec<Value> = Vec::new();
-        for base in &self.inputs {
-            out.push(base.clone());
-            let Some(object) = base.as_object() else {
-                continue;
-            };
-            for (key, value) in object {
-                let mut with = |replacement: Option<Value>| {
-                    let mut copy = object.clone();
-                    match replacement {
-                        Some(v) => copy.insert(key.clone(), v),
-                        None => copy.remove(key),
-                    };
-                    out.push(Value::Object(copy));
-                };
-                with(None);
-                match value {
-                    Value::Number(n) => {
-                        for delta in ["1", "-1", "0", "1000000", "0.5"] {
-                            let shifted: Option<rust_decimal::Decimal> = n
-                                .to_string()
-                                .parse::<rust_decimal::Decimal>()
-                                .ok()
-                                .zip(delta.parse::<rust_decimal::Decimal>().ok())
-                                .and_then(|(a, b)| a.checked_add(b));
-                            if let Some(v) = shifted.and_then(|d| serde_json::from_str(&d.to_string()).ok()) {
-                                with(Some(v));
-                            }
-                        }
-                    }
-                    Value::String(s) => {
-                        with(Some(json!("")));
-                        with(Some(json!(format!("{s}x"))));
-                    }
-                    Value::Bool(b) => with(Some(json!(!b))),
-                    _ => {}
-                }
-            }
-        }
-        out.truncate(400);
-        out
-    }
-
-    fn variants(&self) -> Vec<Value> {
-        let mut out: Vec<Value> = Vec::new();
-        for base in &self.inputs {
-            out.push(base.clone());
-            let Some(object) = base.as_object() else {
-                continue;
-            };
-            for (key, value) in object {
-                let mut with = |replacement: Option<Value>| {
-                    let mut copy = object.clone();
-                    match replacement {
-                        Some(v) => {
-                            copy.insert(key.clone(), v);
-                        }
-                        None => {
-                            copy.remove(key);
-                        }
-                    }
-                    out.push(Value::Object(copy));
-                };
-                with(None);
-                with(Some(Value::Null));
-                match value {
-                    Value::Number(n) => {
-                        let text = n.to_string();
-                        for delta in ["1", "-1", "0", "1000000", "0.5"] {
-                            let shifted: Option<rust_decimal::Decimal> = text
-                                .parse::<rust_decimal::Decimal>()
-                                .ok()
-                                .zip(delta.parse::<rust_decimal::Decimal>().ok())
-                                .and_then(|(a, b)| a.checked_add(b));
-                            if let Some(v) = shifted.and_then(|d| serde_json::from_str(&d.to_string()).ok()) {
-                                with(Some(v));
-                            }
-                        }
-                        with(Some(json!("text")));
-                    }
-                    Value::String(s) => {
-                        with(Some(json!("")));
-                        with(Some(json!(format!("{s}x"))));
-                        with(Some(json!(42)));
-                    }
-                    Value::Bool(b) => with(Some(json!(!b))),
-                    Value::Array(items) => {
-                        with(Some(json!([])));
-                        let mut doubled = items.clone();
-                        doubled.extend(items.iter().cloned());
-                        with(Some(Value::Array(doubled)));
-                    }
-                    Value::Object(_) => with(Some(json!({}))),
-                    Value::Null => with(Some(json!(1))),
-                }
-            }
-        }
-        out.truncate(400);
-        out
-    }
-}
-
-const NETWORK_BOUND: &[&str] = &["http-function.json"];
-const TIME_BOUND: &[&str] = &["infinite-function.json", "sleep-function.json"];
 
 struct Outcome;
 
 impl Outcome {
+    const CLOCK: &'static str = "2025-08-19T16:55:02.078Z";
+
     fn of(result: Result<zen_engine::DecisionGraphResponse, Box<zen_engine::EvaluationError>>) -> Result<String, String> {
         result
             .map(|r| serde_json::to_string(&r.result).unwrap_or_default())
             .map_err(|e| serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_else(|_| e.to_string()))
     }
+
+    fn recorded(outcome: &support::golden::Outcome) -> Result<String, String> {
+        match outcome {
+            support::golden::Outcome::Ok(value) => Ok(Canon::value(Canon::restore(value).to_value()).to_string()),
+            support::golden::Outcome::Err { value, .. } => Err(value.to_string()),
+        }
+    }
+
+    fn canonical(result: Result<String, String>) -> Result<String, String> {
+        let canon = |text: String| serde_json::from_str::<Value>(&text).map(|v| Canon::value(v).to_string()).unwrap_or(text);
+        result.map(canon).map_err(canon)
+    }
+
+    fn columnar(outcome: &support::golden::Outcome) -> Result<Value, String> {
+        match outcome {
+            support::golden::Outcome::Ok(value) => Ok(Built::normalized(Canon::restore(value).to_value())),
+            support::golden::Outcome::Err { value, .. } => Err(value.to_string()),
+        }
+    }
 }
 
 #[tokio::test]
 async fn compiled_graphs_match_the_walker() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    Reference::prepare(Outcome::CLOCK);
+    let reference = Reference::open("graph-fixtures");
     let mut census: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
@@ -196,12 +70,19 @@ async fn compiled_graphs_match_the_walker() {
         let options = EvaluationOptions::default();
         let batch = compiled.evaluate_batch(&contexts, options).await;
         for (i, input) in variants.iter().enumerate() {
-            let want = Outcome::of(walker.evaluate(Variable::from(input.clone())).await);
+            let context = Variable::from(input.clone());
+            let want = reference
+                .graph(|| Canon::key(&fixture.name, &[], &context), || async { Outcome::of(walker.evaluate(Variable::from(input.clone())).await) }, Outcome::recorded)
+                .await;
             let single = Outcome::of(compiled.evaluate(Variable::from(input.clone())).await);
             let batched = batch.get(i).map(|r| match r {
                 Ok(r) => Ok(serde_json::to_string(&r.result).unwrap_or_default()),
                 Err(e) => Err(serde_json::to_value(&**e).map(|v| v.to_string()).unwrap_or_else(|_| e.to_string())),
             });
+            let (single, batched) = match reference.is_live() {
+                true => (single, batched),
+                false => (Outcome::canonical(single), batched.map(Outcome::canonical)),
+            };
             compared += 1;
             if single != want {
                 failures.push(format!("{} single {input}\n  walker   {want:?}\n  compiled {single:?}", fixture.name));
@@ -215,6 +96,7 @@ async fn compiled_graphs_match_the_walker() {
         println!("{verdict}: {} {:?}", files.len(), files);
     }
     println!("compared {compared} inputs");
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(20).cloned().collect::<Vec<_>>().join("\n"));
 }
 
@@ -291,7 +173,8 @@ async fn compiled_graph_throughput() {
 
 #[tokio::test]
 async fn columnar_graphs_match_the_walker() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    Reference::prepare(Outcome::CLOCK);
+    let reference = Reference::open("graph-fixtures");
     let mut failures: Vec<String> = Vec::new();
     let (mut compared, mut skipped) = (0usize, 0usize);
     for fixture in Fixture::load_all() {
@@ -317,11 +200,18 @@ async fn columnar_graphs_match_the_walker() {
             let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
-                let want = walker.evaluate(input.clone()).await;
-                let want = match want {
-                    Ok(r) => Ok(Built::normalized(r.result.to_value())),
-                    Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
-                };
+                let want = reference
+                    .graph(
+                        || Canon::key(&fixture.name, &[], &input),
+                        || async {
+                            match walker.evaluate(input.clone()).await {
+                                Ok(r) => Ok(Built::normalized(r.result.to_value())),
+                                Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
+                            }
+                        },
+                        Outcome::columnar,
+                    )
+                    .await;
                 let got = match &output.errors[row] {
                     Some(e) => Err(serde_json::to_value(&**e).map(|v| v.to_string()).unwrap_or_default()),
                     None => Ok(Built::normalized(output.row(row).to_value())),
@@ -334,6 +224,7 @@ async fn columnar_graphs_match_the_walker() {
         }
     }
     println!("compared {compared} rows, {skipped} fixtures skipped");
+    failures.extend(reference.missing());
     let mut kinds: Vec<&str> = failures.iter().filter_map(|f| f.split_whitespace().next()).collect();
     kinds.dedup();
     assert!(failures.is_empty(), "{} mismatches in {kinds:?}:\n{}", failures.len(), failures.iter().take(15).cloned().collect::<Vec<_>>().join("\n"));
@@ -342,7 +233,7 @@ async fn columnar_graphs_match_the_walker() {
 #[tokio::test]
 async fn struct_inputs_match_the_walker() {
     use zen_expression::lane::{Column, Columns, Values};
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    Reference::prepare(Outcome::CLOCK);
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
@@ -510,6 +401,89 @@ async fn columnar_graph_throughput() {
         sorted[sorted.len() / 10],
         sorted[sorted.len() * 9 / 10]
     );
+}
+
+struct Latency;
+
+impl Latency {
+    async fn measure<F, Fut>(contexts: &[Variable], reps: usize, mut f: F) -> f64
+    where
+        F: FnMut(Variable) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let mut best = f64::MAX;
+        for _ in 0..reps {
+            let fresh: Vec<Variable> = contexts.iter().map(|c| c.depth_clone(usize::MAX)).collect();
+            let start = std::time::Instant::now();
+            for context in fresh {
+                f(context).await;
+            }
+            best = best.min(start.elapsed().as_nanos() as f64 / contexts.len() as f64);
+        }
+        best
+    }
+
+    fn geomean(values: &[f64]) -> f64 {
+        (values.iter().map(|v| v.ln()).sum::<f64>() / values.len().max(1) as f64).exp()
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn single_row_latency() {
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", Outcome::CLOCK);
+    let reps: usize = std::env::var("BENCH_REPS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+    let filter = std::env::var("BENCH_FILE").ok();
+    let traced = EvaluationOptions { trace: true, max_depth: 10 };
+    let mut columns: [Vec<f64>; 5] = Default::default();
+    println!("{:44} {:>10} {:>10} {:>10} {:>10} {:>10}", "fixture", "compiled", "cold", "traced", "walker", "w-traced");
+    for fixture in Fixture::load_all() {
+        if NETWORK_BOUND.contains(&fixture.name.as_str())
+            || TIME_BOUND.contains(&fixture.name.as_str())
+            || filter.as_ref().is_some_and(|f| !fixture.name.contains(f.as_str()))
+        {
+            continue;
+        }
+        let content = Arc::new(fixture.content.clone());
+        let mut compiled = Decision::from(content.clone());
+        compiled.compile();
+        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+            continue;
+        }
+        let walker = compiled.interpreted();
+        let contexts: Vec<Variable> = fixture.variants().into_iter().take(64).map(Variable::from).collect();
+        let times = [
+            Latency::measure(&contexts, reps, |c| {
+                let compiled = &compiled;
+                async move { drop(compiled.evaluate(c).await) }
+            })
+            .await,
+            Latency::measure(&contexts, reps, |c| {
+                let content = content.clone();
+                async move { drop(Decision::from(content).evaluate(c).await) }
+            })
+            .await,
+            Latency::measure(&contexts, reps, |c| {
+                let compiled = &compiled;
+                async move { drop(compiled.evaluate_with_opts(c, traced).await) }
+            })
+            .await,
+            Latency::measure(&contexts, reps, |c| {
+                let walker = &walker;
+                async move { drop(walker.evaluate(c).await) }
+            })
+            .await,
+            Latency::measure(&contexts, reps, |c| {
+                let walker = &walker;
+                async move { drop(walker.evaluate_with_opts(c, traced).await) }
+            })
+            .await,
+        ];
+        println!("{:44} {:>10.0} {:>10.0} {:>10.0} {:>10.0} {:>10.0}", fixture.name, times[0], times[1], times[2], times[3], times[4]);
+        columns.iter_mut().zip(times).for_each(|(column, t)| column.push(t));
+    }
+    let gm: Vec<f64> = columns.iter().map(|c| Latency::geomean(c)).collect();
+    println!("geomean ns/eval ({} fixtures): compiled {:.0} cold {:.0} traced {:.0} walker {:.0} walker-traced {:.0}", columns[0].len(), gm[0], gm[1], gm[2], gm[3], gm[4]);
 }
 
 struct Noise(u64);
@@ -1085,7 +1059,7 @@ async fn graph_typed_strings() {
 
 #[tokio::test]
 async fn graph_typed_dates() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    Reference::prepare(Outcome::CLOCK);
     let mut noise = Noise::new(31);
     let days = [
         "2024-01-15", "2024-02-29", "2023-12-31 23:59:59", "2024-03-31T01:30:00Z", "2025-03-30 02:30:00", "2024-10-27 02:30:00", "1900-01-01", "9999-12-31",
@@ -1186,7 +1160,7 @@ async fn graph_typed_extremes() {
 
 #[tokio::test]
 async fn graph_fixtures_are_fully_typed() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    Reference::prepare(Outcome::CLOCK);
     let mut failures = Vec::new();
     let fixtures: Vec<Fixture> = Fixture::load_all().into_iter().filter(|f| Chain::FULLY_TYPED.contains(&f.name.as_str())).collect();
     assert_eq!(fixtures.len(), Chain::FULLY_TYPED.len(), "fixtures found");

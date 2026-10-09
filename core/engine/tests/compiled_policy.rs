@@ -3,31 +3,21 @@ mod policy_gen;
 #[allow(dead_code)]
 mod conformance;
 mod support;
+#[allow(dead_code)]
+#[path = "support/policies.rs"]
+mod policies;
 
+use policies::{Anchor, Batch, Generated, PolicyCase};
 use policy_gen::{Gen, Rng};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use support::columns::Built;
+use support::golden::{Canon, Outcome, Reference};
 use zen_engine::policy::{EvaluateRequest, EvaluationError, EvaluationResult, PolicyWorkspace};
 use zen_expression::Variable;
 
-const FIXTURES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/policy/fixtures/");
-const EVALUATION: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/policy/evaluation.toml");
-
-#[derive(Deserialize)]
-struct EvaluationFile {
-    test: Vec<EvaluationCase>,
-}
-
-#[derive(Deserialize)]
-struct EvaluationCase {
-    name: String,
-    policies: Vec<String>,
-    input: toml::Value,
-}
-
 struct Differential {
+    reference: Reference,
     compared: usize,
     succeeded: usize,
     failures: Vec<String>,
@@ -35,10 +25,27 @@ struct Differential {
 }
 
 impl Differential {
+    fn new(reference: Reference) -> Differential {
+        Differential {
+            reference,
+            compared: 0,
+            succeeded: 0,
+            failures: Vec::new(),
+            kinds: Default::default(),
+        }
+    }
+
     fn shape(result: &Result<EvaluationResult, EvaluationError>) -> Result<Value, String> {
         match result {
             Ok(result) => Ok(result.output.clone().into()),
-            Err(error) => Err(format!("{error:?}")),
+            Err(error) => Err(Reference::debug(error)),
+        }
+    }
+
+    fn recorded(outcome: &Outcome) -> Result<Value, String> {
+        match outcome {
+            Outcome::Ok(value) => Ok(Canon::restore(value).into()),
+            Outcome::Err { debug, .. } => Err(debug.clone()),
         }
     }
 
@@ -46,66 +53,51 @@ impl Differential {
         Self::with_goals(path, input, &[])
     }
 
-    fn with_goals(path: &str, input: &Value, goals: &[&str]) -> EvaluateRequest {
+    fn with_goals(path: &str, input: &Value, goals: &[String]) -> EvaluateRequest {
         EvaluateRequest {
             policy_path: Arc::from(path),
             input: Variable::from(input.clone()),
-            goals: goals.iter().map(|g| Arc::from(*g)).collect(),
+            goals: goals.iter().map(|g| Arc::from(g.as_str())).collect(),
             trace: false,
         }
     }
 
-    fn leaves(value: &Value, prefix: &str, out: &mut Vec<String>) {
-        let Value::Object(map) = value else {
-            out.push(prefix.to_string());
-            return;
-        };
-        for (key, child) in map {
-            let path = match prefix.is_empty() {
-                true => key.clone(),
-                false => format!("{prefix}.{key}"),
-            };
-            Self::leaves(child, &path, out);
-        }
+    fn driver(&self, suite: &str, ws: &PolicyWorkspace, path: &str, input: &Value, goals: &[String]) -> Result<Value, String> {
+        self.reference.policy(
+            || Canon::key(suite, goals, &Variable::from(input.clone())),
+            || Self::shape(&ws.evaluate_with_driver(&Self::with_goals(path, input, goals))),
+            Self::recorded,
+        )
     }
 
-    fn computed(ws: &PolicyWorkspace, path: &str, inputs: &[Value]) -> Vec<String> {
-        let mut out = Vec::new();
-        for input in inputs {
-            let Ok(result) = ws.evaluate_with_driver(&Self::request(path, input)) else {
-                continue;
-            };
-            let (mut produced, mut given) = (Vec::new(), Vec::new());
-            Self::leaves(&result.output.into(), "", &mut produced);
-            Self::leaves(input, "", &mut given);
-            out = produced.into_iter().filter(|p| !given.contains(p)).collect();
-            break;
-        }
-        out
+    fn computed(&self, suite: &str, ws: &PolicyWorkspace, path: &str, inputs: &[Value]) -> Vec<String> {
+        inputs
+            .iter()
+            .find_map(|input| self.driver(suite, ws, path, input, &[]).ok().map(|output| PolicyCase::computed(&output, input)))
+            .unwrap_or_default()
     }
 
     fn run(&mut self, label: &str, ws: &PolicyWorkspace, path: &str, inputs: &[Value]) {
-        let computed = Self::computed(ws, path, inputs);
-        let choices: Vec<Vec<&str>> = std::iter::once(Vec::new())
-            .chain(computed.iter().map(|c| vec![c.as_str()]))
-            .chain(computed.windows(2).map(|w| vec![w[0].as_str(), w[1].as_str()]))
-            .collect();
-        let goals = |i: usize| choices[(i * 7) % choices.len()].as_slice();
+        let computed = self.computed(label, ws, path, inputs);
         let requests: Vec<EvaluateRequest> = inputs
             .iter()
             .enumerate()
-            .map(|(i, input)| Self::with_goals(path, input, goals(i)))
+            .map(|(i, input)| Self::with_goals(path, input, &PolicyCase::goals(&computed, i)))
             .collect();
         let batch = ws.evaluate_batch(&requests);
         for (i, (input, batched)) in inputs.iter().zip(&batch).enumerate() {
-            let want = Self::shape(&ws.evaluate_with_driver(&Self::with_goals(path, input, goals(i))));
-            let single = Self::shape(&ws.evaluate(&Self::with_goals(path, input, goals(i))));
+            let goals = PolicyCase::goals(&computed, i);
+            let want = self.driver(label, ws, path, input, &goals);
+            let single = Self::shape(&ws.evaluate(&Self::with_goals(path, input, &goals)));
             let batched = Self::shape(batched);
             self.compared += 1;
             self.succeeded += usize::from(want.is_ok());
             if let Err(error) = &want {
                 let kind: String = error.chars().take_while(|c| c.is_alphanumeric()).collect();
                 *self.kinds.entry(kind).or_default() += 1;
+            }
+            if self.reference.ordered(|| Canon::key(label, &goals, &Variable::from(input.clone()))) {
+                continue;
             }
             if single != want {
                 self.failures.push(format!("{label} single {input}\n  driver   {want:?}\n  compiled {single:?}"));
@@ -116,43 +108,8 @@ impl Differential {
         }
     }
 
-    fn variants(base: &Value) -> Vec<Value> {
-        let mut out = vec![base.clone()];
-        let Some(object) = base.as_object() else {
-            return out;
-        };
-        for (key, value) in object {
-            let mut with = |replacement: Option<Value>| {
-                let mut copy = object.clone();
-                match replacement {
-                    Some(v) => copy.insert(key.clone(), v),
-                    None => copy.remove(key),
-                };
-                out.push(Value::Object(copy));
-            };
-            with(None);
-            with(Some(Value::Null));
-            if let Value::Object(inner) = value {
-                for (field, v) in inner {
-                    let mut nested = inner.clone();
-                    nested.insert(
-                        field.clone(),
-                        match v {
-                            Value::Number(_) => json!("text"),
-                            Value::String(_) => json!(7),
-                            Value::Bool(b) => json!(!b),
-                            Value::Array(_) => json!([]),
-                            _ => Value::Null,
-                        },
-                    );
-                    with(Some(Value::Object(nested)));
-                }
-            }
-        }
-        out
-    }
-
-    fn finish(self) {
+    fn finish(mut self) {
+        self.failures.extend(self.reference.missing());
         println!("compared {} inputs, {} evaluated without error, errors {:?}", self.compared, self.succeeded, self.kinds);
         assert!(
             self.failures.is_empty(),
@@ -165,51 +122,27 @@ impl Differential {
 
 #[test]
 fn compiled_policies_match_the_driver_on_fixtures() {
-    let raw = std::fs::read_to_string(EVALUATION).expect("evaluation.toml");
-    let file: EvaluationFile = toml::from_str(&raw).expect("evaluation cases");
-    let mut differential = Differential {
-        compared: 0,
-        succeeded: 0,
-        failures: Vec::new(),
-        kinds: Default::default(),
-    };
-    for case in &file.test {
-        let mut ws = PolicyWorkspace::new();
-        for path in &case.policies {
-            let text = std::fs::read_to_string(format!("{FIXTURES_DIR}{path}")).expect("fixture");
-            ws.set_policy(path.as_str(), serde_json::from_str(&text).expect("policy document"));
-        }
-        let input: Value = serde_json::to_value(&case.input).expect("input");
-        differential.run(&case.name, &ws, &case.policies[0], &Differential::variants(&input));
+    let mut differential = Differential::new(Reference::open("policy-fixtures"));
+    for case in PolicyCase::load_all() {
+        differential.run(&case.name, &case.workspace, &case.path, &case.inputs);
     }
     differential.finish();
 }
 
 #[test]
 fn compiled_policies_match_the_driver_on_generated_documents() {
-    let seeds: u64 = std::env::var("POLICY_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
-    let mut differential = Differential {
-        compared: 0,
-        succeeded: 0,
-        failures: Vec::new(),
-        kinds: Default::default(),
-    };
-    for seed in 0..seeds {
-        let document = Gen::document(seed);
-        let mut ws = PolicyWorkspace::new();
-        let Ok(parsed) = serde_json::from_value(document) else {
+    let mut differential = Differential::new(Reference::open("generated/policy"));
+    for seed in 0..Generated::seeds() {
+        let Some(ws) = Generated::workspace(seed) else {
             continue;
         };
-        ws.set_policy("generated.json", parsed);
-        let mut rng = Rng(seed.wrapping_mul(7919) | 1);
-        let inputs: Vec<Value> = (0..24)
-            .map(|i| match i % 3 {
-                0 => Gen::input(&mut rng),
-                _ => Gen::valid_input(&mut rng),
-            })
-            .collect();
-        differential.run(&format!("seed {seed}"), &ws, "generated.json", &inputs);
-        Columnar::check(&format!("seed {seed}"), &ws, &inputs, &mut differential.failures);
+        let inputs = Generated::inputs(seed);
+        let label = Generated::label(seed);
+        if differential.reference.stale(|| Canon::key(&label, &[], &Variable::from(inputs[0].clone())), &Generated::fingerprint(seed)) {
+            differential.failures.push(format!("{label}: generated document changed since the goldens were recorded"));
+        }
+        differential.run(&label, &ws, Generated::PATH, &inputs);
+        Columnar::check(&differential.reference, &label, &ws, &inputs, &mut differential.failures);
     }
     differential.finish();
 }
@@ -217,38 +150,39 @@ fn compiled_policies_match_the_driver_on_generated_documents() {
 struct Columnar;
 
 impl Columnar {
-    fn check(label: &str, ws: &PolicyWorkspace, inputs: &[Value], failures: &mut Vec<String>) {
+    fn check(reference: &Reference, label: &str, ws: &PolicyWorkspace, inputs: &[Value], failures: &mut Vec<String>) {
         for built in Built::new(inputs).into_iter().chain(Built::lists(inputs)) {
-            Self::compare(label, ws, &built.columns(), failures);
+            Self::compare(reference, label, ws, &built.columns(), failures);
         }
         if let Some(built) = Built::nested(inputs) {
             let fields = built.fields();
             let structs = built.structs(&fields);
-            Self::compare(label, ws, &built.columns_with(&structs), failures);
+            Self::compare(reference, label, ws, &built.columns_with(&structs), failures);
         }
     }
 
-    fn compare(label: &str, ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) {
-        let Ok(output) = ws.evaluate_columns(&Arc::from("generated.json"), &[], columns) else {
+    fn compare(reference: &Reference, label: &str, ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) {
+        let Ok(output) = ws.evaluate_columns(&Arc::from(Generated::PATH), &[], columns) else {
             return;
         };
         for row in 0..columns.rows {
             let input = columns.row(row);
             let request = EvaluateRequest {
-                policy_path: Arc::from("generated.json"),
+                policy_path: Arc::from(Generated::PATH),
                 input: input.depth_clone(64),
                 goals: Vec::new(),
                 trace: false,
             };
-            let want = ws
-                .evaluate_with_driver(&request)
-                .map(|r| Built::normalized(r.output.to_value()))
-                .map_err(|e| format!("{e:?}"));
+            let want = reference.policy(
+                || Canon::key(label, &[], &input),
+                || ws.evaluate_with_driver(&request).map(|r| Built::normalized(r.output.to_value())).map_err(|e| format!("{e:?}")),
+                |outcome| Differential::recorded(outcome).map(Built::normalized),
+            );
             let got = match &output.errors[row] {
-                Some(error) => Err(format!("{error:?}")),
+                Some(error) => Err(Reference::debug(error)),
                 None => Ok(Built::normalized(output.row(row).to_value())),
             };
-            if got != want {
+            if got != want && !reference.ordered(|| Canon::key(label, &[], &input)) {
                 failures.push(format!("{label} columnar row {row} input {}\n  driver   {want:?}\n  columnar {got:?}", input.to_value()));
             }
         }
@@ -372,33 +306,7 @@ async fn engine_batch_matches_single_evaluations() {
     }
 }
 
-struct Anchor;
-
 impl Anchor {
-    const POLICY: &'static str = r#"{
-  models: {
-    customer: {age: "number", income: "number", tier: "string", rate: "number", accounts: "account[]"},
-    account: {balance: "number", kind: "string", active: "boolean"},
-  },
-  blocks: [
-    {expression: "account.fee", value: "account.balance * customer.rate / 100 * (account.kind == 'loan' ? 2 : 1)"},
-    {match: "account.label", arms: [["account.kind == 'savings'", "'S'"], ["account.kind == 'checking'", "'C'"], ["", "'L'"]]},
-    {expression: "customer.total", value: "sum(map(filter(customer.accounts, #.active), #.balance))"},
-    {expression: "customer.fees", value: "sum(map(customer.accounts, #.fee))"},
-    {match: "customer.risk", arms: [["customer.total > customer.income * 2", "'high'"], ["customer.total > customer.income", "'mid'"], ["", "'low'"]]},
-    {table: "discount", inputs: ["customer.tier", "customer.risk"], outputs: ["customer.discount"], rules: [
-      ["'gold'", "'low'", "0.15"],
-      ["'gold'", "'mid'", "0.1"],
-      ["'silver'", "'low'", "0.1"],
-      ["'silver'", "'mid'", "0.05"],
-      ["", "'low'", "0.02"],
-      ["", "", "0"],
-    ]},
-    {expression: "customer.net", value: "customer.total - customer.fees - customer.discount"},
-    {assertion: "customer.eligible", conditions: ["customer.age >= 18", "customer.risk != 'high'"]},
-  ],
-}"#;
-
     const PROGRAMS: [(&'static str, &'static str); 8] = [
         ("fee", "account.balance * customer.rate / 100 * (account.kind == 'loan' ? 2 : 1)"),
         ("label", "account.kind == 'savings' ? 'S' : (account.kind == 'checking' ? 'C' : 'L')"),
@@ -504,78 +412,30 @@ impl Anchor {
         })
     }
 
-    fn rows(count: usize, seed: u64) -> Vec<Value> {
-        let mut state = seed | 1;
-        let mut pick = |n: u64| {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state % n
-        };
-        (0..count)
-            .map(|_| {
-                let accounts: Vec<Value> = (0..pick(8))
-                    .map(|_| {
-                        let (balance, kind, active) = (pick(5000), ["savings", "checking", "loan"][pick(3) as usize], pick(4) != 0);
-                        json!({"balance": balance, "kind": kind, "active": active})
-                    })
-                    .collect();
-                let (age, income, tier, rate) = (16 + pick(64), 1000 + pick(9000), ["gold", "silver", "bronze"][pick(3) as usize], 1 + pick(5));
-                json!({"customer": {"age": age, "income": income, "tier": tier, "rate": rate, "accounts": accounts}})
-            })
-            .collect()
-    }
-
-    fn workspace() -> PolicyWorkspace {
-        Self::workspace_with(Self::POLICY)
-    }
-
-    fn workspace_with(policy: &str) -> PolicyWorkspace {
-        let literal = conformance::literal::Parser::document(policy).expect("policy literal");
-        let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
-        let mut ws = PolicyWorkspace::new();
-        ws.set_policy("anchor", serde_json::from_value(document).expect("policy json"));
-        ws
-    }
-
-    fn typed() -> bool {
-        std::env::var("ZEN_TYPED").map_or(true, |v| v.trim() != "0")
-    }
-
-    fn check(ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) -> (usize, usize, usize) {
-        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], columns).expect("columnar");
+    fn check(reference: &Reference, suite: &str, ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) -> (usize, usize, usize) {
+        let output = ws.evaluate_columns(&Arc::from(Anchor::PATH), &[], columns).expect("columnar");
         for row in 0..columns.rows {
+            let input = columns.row(row);
             let request = EvaluateRequest {
-                policy_path: Arc::from("anchor"),
-                input: columns.row(row),
+                policy_path: Arc::from(Anchor::PATH),
+                input: input.depth_clone(64),
                 goals: Vec::new(),
                 trace: false,
             };
-            let want = ws
-                .evaluate_with_driver(&request)
-                .map(|r| Built::normalized(r.output.to_value()))
-                .map_err(|e| format!("{e:?}"));
+            let want = reference.policy(
+                || Canon::key(suite, &[], &input),
+                || ws.evaluate_with_driver(&request).map(|r| Built::normalized(r.output.to_value())).map_err(|e| format!("{e:?}")),
+                |outcome| Differential::recorded(outcome).map(Built::normalized),
+            );
             let got = match &output.errors[row] {
-                Some(error) => Err(format!("{error:?}")),
+                Some(error) => Err(Reference::debug(error)),
                 None => Ok(Built::normalized(output.row(row).to_value())),
             };
-            if got != want {
-                failures.push(format!("row {row} input {}\n  driver   {want:?}\n  columnar {got:?}", columns.row(row).to_value()));
+            if got != want && !reference.ordered(|| Canon::key(suite, &[], &input)) {
+                failures.push(format!("row {row} input {}\n  driver   {want:?}\n  columnar {got:?}", input.to_value()));
             }
         }
         (output.typed, output.laned, output.hosted)
-    }
-
-    fn checked(ws: &PolicyWorkspace, values: &[Value], failures: &mut Vec<String>) -> Vec<(usize, usize, usize)> {
-        let mut counts = Vec::new();
-        let built = Built::new(values).expect("flat columns");
-        counts.push(Self::check(ws, &built.columns(), failures));
-        if let Some(built) = Built::nested(values) {
-            let fields = built.fields();
-            let structs = built.structs(&fields);
-            counts.push(Self::check(ws, &built.columns_with(&structs), failures));
-        }
-        counts
     }
 
     fn time(rows: usize, mut f: impl FnMut() -> f64) -> f64 {
@@ -691,6 +551,20 @@ impl Anchor {
     }
 }
 
+impl Batch {
+    fn checked(&self, reference: &Reference, ws: &PolicyWorkspace, failures: &mut Vec<String>) -> Vec<(usize, usize, usize)> {
+        let mut counts = Vec::new();
+        let built = Built::new(&self.values).expect("flat columns");
+        counts.push(Anchor::check(reference, self.suite, ws, &built.columns(), failures));
+        if let Some(built) = Built::nested(&self.values) {
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            counts.push(Anchor::check(reference, self.suite, ws, &built.columns_with(&structs), failures));
+        }
+        counts
+    }
+}
+
 #[test]
 fn policy_columnar_shredded_irregular_lists() {
     let mut values = Anchor::rows(96, 11);
@@ -762,9 +636,11 @@ fn policy_columnar_shredded_irregular_lists() {
 
 #[test]
 fn policy_anchor_is_fully_typed() {
-    let ws = Anchor::workspace();
+    let reference = Reference::open("anchor");
+    let batch = Anchor::base();
     let mut failures = Vec::new();
-    let counts = Anchor::checked(&ws, &Anchor::rows(1024, 7), &mut failures);
+    let counts = batch.checked(&reference, &batch.workspace(), &mut failures);
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
     for (typed, laned, hosted) in counts {
         assert_eq!(hosted, 0, "anchor rows hosted");
@@ -776,14 +652,12 @@ fn policy_anchor_is_fully_typed() {
 
 #[test]
 fn policy_typed_falls_back_per_unit() {
-    let policy = Anchor::POLICY.replace(
-        "    {match: \"customer.risk\"",
-        "    {expression: \"customer.label\", value: \"split(customer.tier, 'l')\"},\n    {match: \"customer.risk\"",
-    );
-    assert_ne!(policy, Anchor::POLICY);
-    let ws = Anchor::workspace_with(&policy);
+    let reference = Reference::open("anchor");
+    let batch = Anchor::fallback();
+    assert_ne!(batch.policy, Anchor::POLICY);
     let mut failures = Vec::new();
-    let counts = Anchor::checked(&ws, &Anchor::rows(256, 5), &mut failures);
+    let counts = batch.checked(&reference, &batch.workspace(), &mut failures);
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
     for (typed, laned, hosted) in counts {
         assert_eq!(hosted, 0, "rows hosted");
@@ -796,15 +670,12 @@ fn policy_typed_falls_back_per_unit() {
 
 #[test]
 fn policy_typed_fuses_lane_runs() {
-    let policy = Anchor::POLICY.replace(
-        "    {match: \"customer.risk\"",
-        "    {expression: \"customer.label\", value: \"split(customer.tier, 'l')\"},\n    {expression: \"customer.tag\", value: \"split(customer.tier, 'o')\"},\n    {match: \"customer.risk\"",
-    );
-    assert_ne!(policy, Anchor::POLICY);
-    let ws = Anchor::workspace_with(&policy);
+    let reference = Reference::open("anchor");
+    assert_ne!(Anchor::fused_policy(), Anchor::POLICY);
+    let ws = Anchor::workspace_with(&Anchor::fused_policy());
     let mut failures = Vec::new();
     for seed in [5, 6, 7] {
-        for (typed, laned, hosted) in Anchor::checked(&ws, &Anchor::rows(256, seed), &mut failures) {
+        for (typed, laned, hosted) in Anchor::fusion(seed).checked(&reference, &ws, &mut failures) {
             assert_eq!(hosted, 0, "rows hosted");
             if Anchor::typed() {
                 assert!(typed > 0 && laned >= 2, "units typed {typed}, laned {laned}");
@@ -812,293 +683,85 @@ fn policy_typed_fuses_lane_runs() {
             }
         }
     }
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 
 #[test]
 fn policy_typed_member_tables_and_math() {
-    let policy = Anchor::POLICY
-        .replace(
-            "    {expression: \"customer.total\"",
-            "    {table: \"band\", inputs: [\"account.balance\", \"customer.tier\"], outputs: [\"account.band\", \"account.boost\"], rules: [\n      [\"> 4000\", \"'gold'\", \"'A'\", \"1.5\"],\n      [\"> 2000\", \"\", \"'B'\", \"2\"],\n      [\"\", \"\", \"'C'\", \"0\"],\n    ]},\n    {expression: \"customer.total\"",
-        )
-        .replace(
-            "    {assertion: \"customer.eligible\"",
-            "    {expression: \"customer.rich\", value: \"some(customer.accounts, #.balance > 4000)\"},\n    {expression: \"customer.active\", value: \"all(customer.accounts, #.active)\"},\n    {expression: \"customer.loans\", value: \"count(customer.accounts, #.kind == 'loan')\"},\n    {expression: \"customer.third\", value: \"round(customer.total / 3, 2) + customer.total % 7\"},\n    {expression: \"customer.gap\", value: \"abs(customer.total - customer.income) + min([customer.total, customer.income, 100])\"},\n    {expression: \"customer.square\", value: \"floor(customer.income / 7) ^ 2\"},\n    {assertion: \"customer.eligible\"",
-        );
+    let reference = Reference::open("anchor");
+    let policy = Anchor::members_policy();
     assert!(policy.contains("account.band") && policy.contains("customer.square"));
     let ws = Anchor::workspace_with(&policy);
     let mut failures = Vec::new();
     for seed in [5, 9] {
-        for (typed, laned, hosted) in Anchor::checked(&ws, &Anchor::rows(300, seed), &mut failures) {
+        for (typed, laned, hosted) in Anchor::members(seed).checked(&reference, &ws, &mut failures) {
             assert_eq!(hosted, 0, "rows hosted");
             if Anchor::typed() {
                 assert_eq!((typed, laned), (15, 0), "units typed {typed}, laned {laned}");
             }
         }
     }
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 
 #[test]
 fn policy_typed_lists_and_closures() {
-    let policy = r#"{
-  models: {
-    customer: {limit: "number", rate: "number", tags: "string[]", scores: "number[]", companies: "company[]", holdings: "holding[]"},
-    company: {revenue: "number", active: "boolean", depts: "dept[]"},
-    holding: {value: "number", lots: "lot[]"},
-    dept: {size: "number", cost: "number"},
-    lot: {qty: "number"},
-  },
-  blocks: [
-    {expression: "company.cost", value: "sum(map(company.depts, #.cost))"},
-    {expression: "company.wide", value: "count(company.depts, #.size > customer.limit)"},
-    {expression: "company.sizes", value: "map(company.depts, #.size * 2)"},
-    {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
-    {expression: "customer.lots", value: "sum(map(customer.holdings, sum(map(#.lots, #.qty))))"},
-    {expression: "customer.big", value: "map(filter(customer.holdings, #.value > customer.limit), #.value)"},
-    {expression: "customer.score", value: "sum(customer.scores)"},
-    {expression: "customer.vip", value: "'vip' in customer.tags"},
-    {expression: "customer.hit", value: "contains(customer.scores, 3)"},
-    {expression: "customer.scaled", value: "map(customer.scores, # * customer.rate)"},
-    {expression: "customer.kept", value: "count(filter(customer.holdings, #.value > 10), len(#.lots) > 1)"},
-    {expression: "customer.top", value: "max(map(customer.holdings, #.value))"},
-  ],
-}"#;
-    let mut state = 23u64;
-    let mut pick = |n: u64| {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state % n
-    };
-    let mut values: Vec<Value> = (0..300)
-        .map(|_| {
-            let companies: Vec<Value> = (0..pick(4))
-                .map(|_| {
-                    let depts: Vec<Value> = (0..pick(4)).map(|_| json!({"size": pick(30), "cost": pick(900) as f64 / 4.0})).collect();
-                    json!({"revenue": pick(10_000), "active": pick(3) != 0, "depts": depts})
-                })
-                .collect();
-            let holdings: Vec<Value> = (0..pick(4))
-                .map(|_| {
-                    let lots: Vec<Value> = (0..pick(4)).map(|_| json!({"qty": pick(100)})).collect();
-                    json!({"value": pick(50), "lots": lots})
-                })
-                .collect();
-            let scores: Vec<Value> = (0..pick(5)).map(|_| json!(pick(8))).collect();
-            let tags: Vec<Value> = (0..pick(3)).map(|_| json!(["a", "vip", "b"][pick(3) as usize])).collect();
-            json!({"customer": {"limit": pick(20), "rate": pick(4) as f64 / 2.0, "tags": tags, "scores": scores, "companies": companies, "holdings": holdings}})
-        })
-        .collect();
-    let odd = [
-        json!({"customer": {"limit": 1, "rate": 1, "tags": [], "scores": [], "companies": [], "holdings": []}}),
-        json!({"customer": {"limit": null, "rate": null, "tags": null, "scores": null, "companies": null, "holdings": null}}),
-        json!({"customer": {"limit": 2, "rate": 0.5, "tags": ["vip"], "scores": [9223372036854775807i64, 9223372036854775807i64], "companies": [{"revenue": 9223372036854775807i64, "active": true, "depts": [{"size": 1, "cost": 9223372036854775807i64}, {"size": 2, "cost": 9223372036854775807i64}]}], "holdings": [{"value": 1, "lots": [{"qty": 9223372036854775807i64}, {"qty": 9223372036854775807i64}]}]}}),
-        json!({"customer": {"limit": 3, "rate": 2, "tags": ["a"], "scores": [1.50, 0.00, 3], "companies": [{"revenue": 1, "active": null, "depts": null}], "holdings": [{"value": null, "lots": null}]}}),
-        json!({"customer": {"limit": 3, "rate": 2, "tags": ["a", 1], "scores": ["x"], "companies": [{"revenue": "lots", "depts": []}], "holdings": [{"value": 4}]}}),
-        json!({"customer": {"limit": 0, "rate": 0.25, "tags": [null], "scores": [null, 3], "companies": [{"revenue": 5, "active": false, "depts": [{"size": null, "cost": 0.000000001}]}], "holdings": [{"value": 30, "lots": [{"qty": 1}, {"qty": 2}]}]}}),
-        json!({"customer": {"limit": 5}}),
-    ];
-    for (at, row) in odd.into_iter().enumerate() {
-        values.insert(at * 37 + 4, row);
-    }
-    let ws = Anchor::workspace_with(policy);
+    let reference = Reference::open("anchor");
+    let batch = Anchor::lists();
     let mut failures = Vec::new();
-    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+    for (typed, laned, hosted) in batch.checked(&reference, &batch.workspace(), &mut failures) {
         eprintln!("lists typed {typed} laned {laned} hosted {hosted}");
         if Anchor::typed() {
             assert!(typed > 0, "units typed {typed}, laned {laned}");
         }
     }
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 
 #[test]
 fn policy_typed_strings() {
-    let policy = r#"{
-  models: {
-    customer: {name: "string", city: "string", tier: "string", amount: "number", qty: "number", flag: "boolean", tags: "string[]", items: "item[]"},
-    item: {name: "string", qty: "number"},
-  },
-  blocks: [
-    {expression: "item.label", value: "upper(item.name) + '-' + customer.tier"},
-    {expression: "item.same", value: "item.name == customer.name"},
-    {expression: "item.s", value: "string(item.qty * customer.amount)"},
-    {expression: "customer.s", value: "string(customer.amount)"},
-    {expression: "customer.tpl", value: "`${customer.name}:${customer.qty}:${customer.flag}`"},
-    {expression: "customer.cat", value: "customer.name + '/' + customer.city"},
-    {expression: "customer.up", value: "upper(customer.name)"},
-    {expression: "customer.tr", value: "trim(customer.city)"},
-    {expression: "customer.has", value: "contains(lower(customer.name), 'an')"},
-    {expression: "customer.tz", value: "customer.tier ?? 'none'"},
-    {expression: "customer.pick", value: "customer.qty > 4 ? customer.name : 'nobody'"},
-    {expression: "customer.same", value: "customer.name == customer.city"},
-    {expression: "customer.gold", value: "customer.tz in ['gold', 'none']"},
-    {expression: "customer.names", value: "map(customer.items, #.name)"},
-    {expression: "customer.cnt", value: "count(customer.items, #.name == customer.tier)"},
-    {expression: "customer.intag", value: "customer.city in customer.tags"},
-    {expression: "customer.rx", value: "matches(customer.name, '^[A-Z]')"},
-    {expression: "customer.big", value: "string(customer.amount * 1000000000000)"},
-    {expression: "customer.again", value: "upper(customer.tz) + '!'"},
-    {table: "lvl", inputs: ["customer.qty"], outputs: ["customer.lvl"], rules: [
-      ["> 7", "customer.name"],
-      ["> 3", "customer.city"],
-      ["", "'small'"],
-    ]},
-    {expression: "customer.lv", value: "customer.lvl + ':' + customer.tz"},
-  ],
-}"#;
-    let mut state = 41u64;
-    let mut pick = |n: u64| {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state % n
-    };
-    let names = ["Anna", "bob", "  Cara  ", "Émile", "straße", "", "İstanbul", "日本", "Bart"];
-    let cities = ["Berlin", "bonn", "Anna", " x ", ""];
-    let tiers = ["gold", "silver", "Gold"];
-    let mut values: Vec<Value> = (0..300)
-        .map(|_| {
-            let items: Vec<Value> = (0..pick(4)).map(|_| json!({"name": names[pick(9) as usize], "qty": pick(9)})).collect();
-            let tags: Vec<Value> = (0..pick(3)).map(|_| json!(cities[pick(5) as usize])).collect();
-            json!({"customer": {"name": names[pick(9) as usize], "city": cities[pick(5) as usize], "tier": tiers[pick(3) as usize], "amount": pick(40_000) as f64 / 8.0 - 2000.0, "qty": pick(10), "flag": pick(2) == 0, "tags": tags, "items": items}})
-        })
-        .collect();
-    let long = "ab".repeat(600);
-    let odd = [
-        json!({"customer": {"name": null, "city": "Berlin", "tier": null, "amount": null, "qty": 3, "flag": null, "tags": null, "items": null}}),
-        json!({"customer": {"name": long, "city": long, "tier": "gold", "amount": 9223372036854775807i64, "qty": 9, "flag": false, "tags": [], "items": []}}),
-        json!({"customer": {"name": "ß", "city": "ǅ", "tier": "", "amount": -0.0, "qty": 0, "flag": true, "tags": ["ǅ"], "items": [{"name": "ß", "qty": 1}]}}),
-        json!({"customer": {"name": "\u{1F600} x", "city": "\u{2003}a\u{2003}", "tier": "silver", "amount": 0.000000001, "qty": 6, "flag": false, "tags": ["\u{2003}a\u{2003}"], "items": [{"qty": 2}]}}),
-        json!({"customer": {"qty": 5}}),
-        json!({"customer": {"name": "Anna", "city": "Anna", "tier": "gold", "amount": 1.50, "qty": 8, "flag": true, "tags": ["Anna"], "items": [{"name": "gold", "qty": 9223372036854775807i64}]}}),
-    ];
-    for (at, row) in odd.into_iter().enumerate() {
-        values.insert(at * 37 + 4, row);
-    }
-    let ws = Anchor::workspace_with(policy);
+    let reference = Reference::open("anchor");
+    let [first, second] = Anchor::strings();
+    let ws = first.workspace();
     let mut failures = Vec::new();
-    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+    for (typed, laned, hosted) in first.checked(&reference, &ws, &mut failures) {
         eprintln!("strings typed {typed} laned {laned} hosted {hosted}");
         if Anchor::typed() {
             assert!(typed > laned, "units typed {typed}, laned {laned}");
         }
     }
-    values.insert(12, json!({"customer": {"name": "q", "city": "q", "tier": "gold", "amount": 1, "qty": 2, "flag": true, "tags": [null], "items": [{"name": null, "qty": 2}]}}));
-    values.insert(9, json!({"customer": {"name": 7, "city": true, "tier": 1.5, "amount": "x", "qty": 1, "flag": true, "tags": [1], "items": [{"name": 3, "qty": "a"}]}}));
-    Anchor::checked(&ws, &values, &mut failures);
+    second.checked(&reference, &ws, &mut failures);
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
 #[test]
 fn policy_typed_dates() {
-    let policy = r#"{
-  models: {
-    customer: {start: "string", other: "string", days: "number", events: "event[]"},
-    event: {on: "string", amt: "number"},
-  },
-  blocks: [
-    {expression: "event.due", value: "d(event.on).add(customer.days, 'day')"},
-    {expression: "event.late", value: "d(event.on) > d(customer.start)"},
-    {expression: "event.s", value: "string(d(event.on).startOf('month'))"},
-    {expression: "customer.f", value: "d(customer.start).format('%d.%m.%Y')"},
-    {expression: "customer.y", value: "d(customer.start).year()"},
-    {expression: "customer.ok", value: "d(customer.start).isValid()"},
-    {expression: "customer.past", value: "d(customer.start) < d()"},
-    {expression: "customer.same", value: "d(customer.start) == customer.other"},
-    {expression: "customer.dts", value: "map(customer.events, d(#.on).endOf('day'))"},
-    {expression: "customer.any", value: "some(customer.events, d(#.on).isBefore(d(customer.other)))"},
-    {expression: "customer.first", value: "min(map(customer.events, d(#.on)))"},
-    {expression: "customer.cnt", value: "count(customer.events, #.on > d(customer.start))"},
-    {table: "era", inputs: ["customer.start"], outputs: ["customer.era"], rules: [
-      ["< d('2000-01-01')", "'old'"],
-      ["", "'new'"],
-    ]},
-  ],
-}"#;
-    let mut state = 43u64;
-    let mut pick = |n: u64| {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state % n
-    };
-    let days = ["2024-01-15", "2024-02-29", "2023-12-31 23:59:59", "2024-03-31T01:30:00Z", "1999-06-30", "2025-03-30 02:30:00", "9999-12-31", "2024/01/15", "2024-07"];
-    let bad = ["nope", "", "2024-02-30"];
-    let mut day = |pick: &mut dyn FnMut(u64) -> u64| match pick(15) {
-        0 => json!(bad[pick(3) as usize]),
-        _ => json!(days[pick(9) as usize]),
-    };
-    let mut values: Vec<Value> = (0..300)
-        .map(|_| {
-            let events: Vec<Value> = (0..1 + pick(4)).map(|_| json!({"on": day(&mut pick), "amt": pick(100)})).collect();
-            json!({"customer": {"start": day(&mut pick), "other": day(&mut pick), "days": pick(400) as i64 - 200, "events": events}})
-        })
-        .collect();
-    let odd = [
-        json!({"customer": {"start": null, "other": null, "days": 0, "events": []}}),
-        json!({"customer": {"start": "0001-01-01", "other": "9999-12-31", "days": 1000000000, "events": [{"on": "9999-12-31", "amt": 1}]}}),
-        json!({"customer": {"start": "2024-02-29", "other": "2024-02-29T00:00:00Z", "days": -366, "events": [{"amt": 1}]}}),
-    ];
-    for (at, row) in odd.into_iter().enumerate() {
-        values.insert(at * 37 + 4, row);
-    }
-    let ws = Anchor::workspace_with(policy);
+    let reference = Reference::open("anchor");
+    let [first, second] = Anchor::dates();
+    let ws = first.workspace();
     let mut failures = Vec::new();
-    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+    for (typed, laned, hosted) in first.checked(&reference, &ws, &mut failures) {
         eprintln!("dates typed {typed} laned {laned} hosted {hosted}");
         if Anchor::typed() {
             assert!(typed > laned, "units typed {typed}, laned {laned}");
         }
     }
-    values.insert(9, json!({"customer": {"start": 7, "other": true, "days": "x", "events": [{"on": 3, "amt": "a"}]}}));
-    values.insert(15, json!({"customer": {"start": "2024-02-29", "other": null, "days": 1, "events": [{"on": null, "amt": 1}]}}));
-    Anchor::checked(&ws, &values, &mut failures);
+    second.checked(&reference, &ws, &mut failures);
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
 #[test]
 fn policy_typed_extremes() {
-    let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
-    let overflow = [
-        customer(json!([{"balance": 9223372036854775807i64, "kind": "loan", "active": true}])),
-        customer(json!([{"balance": 4611686018427387904i64, "kind": "savings", "active": true}, {"balance": 4611686018427387904i64, "kind": "savings", "active": true}])),
-        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 9223372036854775807i64, "accounts": [{"balance": 3, "kind": "loan", "active": true}]}}),
-    ];
-    let odd = [
-        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": -0.0, "accounts": [{"balance": 3, "kind": "loan", "active": true}]}}),
-        customer(json!([])),
-        customer(json!([{"balance": 0, "kind": "loan", "active": true}, {"balance": 0, "kind": "savings", "active": false}])),
-        customer(json!([{"balance": 12.5, "kind": "checking", "active": true}, {"balance": 0.000000001, "kind": "savings", "active": true}])),
-        customer(json!([{"balance": 0.00, "kind": "savings", "active": true}, {"balance": 1.50, "kind": "loan", "active": true}])),
-        customer(json!([{"balance": -250, "kind": "other", "active": true}, {"balance": 7, "kind": "", "active": false}])),
-        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 0.25, "accounts": [{"balance": 100, "kind": "savings", "active": true}]}}),
-        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2}}),
-        json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": null}}),
-        json!({"customer": {"age": null, "income": 4000, "tier": "gold", "rate": 2, "accounts": []}}),
-        json!({"customer": {"age": 30, "income": null, "tier": null, "rate": null, "accounts": []}}),
-        json!({"customer": {"age": 17, "income": 0, "tier": "platinum", "rate": 0, "accounts": [{"balance": 5000, "kind": "loan", "active": true}]}}),
-        json!({"customer": {"age": 18, "income": 0.01, "tier": "silver", "rate": 1.000, "accounts": [{"balance": 1, "kind": "checking", "active": false}]}}),
-        json!({"customer": {"age": 64, "income": 1.10, "tier": "bronze", "rate": 0.00, "accounts": [{"balance": 0.10, "kind": "loan", "active": true}, {"balance": 3.333, "kind": "checking", "active": true}]}}),
-    ];
-    let nulls = [
-        customer(json!([{"balance": -0.0, "kind": "loan", "active": true}])),
-        customer(json!([{"balance": null, "kind": null, "active": null}])),
-        customer(json!([{"balance": 5, "kind": "loan"}, {"kind": "savings", "active": true}])),
-        customer(json!([null])),
-    ];
-    let mut values = Anchor::rows(128, 13);
-    for (at, row) in odd.into_iter().enumerate() {
-        values.insert(at * 7 + 2, row);
-    }
-    for (at, row) in overflow.iter().enumerate() {
-        values.insert(at * 31 + 5, row.clone());
-    }
+    let reference = Reference::open("anchor");
+    let [first, second] = Anchor::extremes();
     let ws = Anchor::workspace();
     let mut failures = Vec::new();
-    let counts = Anchor::checked(&ws, &values, &mut failures);
+    let counts = first.checked(&reference, &ws, &mut failures);
     assert_eq!(counts.len(), 2, "flat and struct-list columns");
     for (typed, laned, hosted) in counts {
         eprintln!("extremes typed {typed} laned {laned} hosted {hosted}");
@@ -1108,12 +771,45 @@ fn policy_typed_extremes() {
             assert_eq!(typed + laned, 8, "anchor units typed {typed} / laned {laned}");
         }
     }
-    for (at, row) in nulls.into_iter().enumerate() {
-        values.insert(at * 11 + 3, row);
-    }
-    Anchor::checked(&ws, &values, &mut failures);
+    second.checked(&reference, &ws, &mut failures);
+    failures.extend(reference.missing());
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
+
+#[test]
+#[ignore]
+fn single_row_latency() {
+    let count: usize = std::env::var("BENCH_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(256);
+    let rows: Vec<Variable> = Anchor::rows(count, 7).into_iter().map(Variable::from).collect();
+    let ws = Anchor::workspace();
+    let traced = |rows: &[Variable]| -> Vec<EvaluateRequest> { Anchor::fresh(rows).into_iter().map(|r| EvaluateRequest { trace: true, ..r }).collect() };
+    let results: [(&str, f64); 5] = [
+        ("evaluate", Anchor::time(count, || {
+            let fresh = Anchor::fresh(&rows);
+            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate(r))))
+        })),
+        ("evaluate traced", Anchor::time(count, || {
+            let fresh = traced(&rows);
+            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate(r))))
+        })),
+        ("enhance_trace", Anchor::time(count, || {
+            let fresh = Anchor::fresh(&rows);
+            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.enhance_trace(r))))
+        })),
+        ("driver", Anchor::time(count, || {
+            let fresh = Anchor::fresh(&rows);
+            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate_with_driver(r))))
+        })),
+        ("driver traced", Anchor::time(count, || {
+            let fresh = traced(&rows);
+            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate_with_driver(r))))
+        })),
+    ];
+    for (name, t) in results {
+        println!("{name:24} {t:>10.0} ns/eval");
+    }
+}
+
 
 #[test]
 #[ignore]

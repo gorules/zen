@@ -1,4 +1,6 @@
 pub mod columns;
+#[allow(dead_code)]
+pub mod golden;
 
 use std::fs::File;
 use std::io::BufReader;

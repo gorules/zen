@@ -3,6 +3,7 @@
 pub mod graph;
 pub mod literal;
 pub mod policy;
+pub mod run;
 
 use literal::{Kind, Lit, Parser};
 use serde_json::Value;
@@ -53,6 +54,10 @@ pub struct Suite {
 }
 
 impl Suite {
+    pub fn id(&self) -> String {
+        format!("{}#{}", self.file, self.name)
+    }
+
     pub fn location(&self, case: &Case) -> String {
         format!("{}:{} [{}]", self.file, case.line, self.name)
     }

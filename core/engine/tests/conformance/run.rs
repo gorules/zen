@@ -145,7 +145,7 @@ impl PolicyRun {
     }
 
     pub fn driver(&self, case: &Case) -> Result<Variable, String> {
-        self.gated(&self.workspace.evaluate_with_driver(&Self::request(case)))
+        self.gated(&crate::support::golden::Live::policy(&self.workspace, &Self::request(case)))
     }
 
     pub fn compiled(&self, case: &Case) -> Result<Variable, String> {

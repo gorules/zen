@@ -18,6 +18,8 @@ use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use support::columns::Built;
+#[cfg(feature = "driver")]
+use support::golden::Live;
 use support::golden::{Canon, Entry, Golden, Outcome};
 use zen_engine::policy::{EvaluateRequest, PolicyWorkspace};
 use zen_engine::{Decision, EvaluationError, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind, ZEN_CONFIG};
@@ -129,6 +131,7 @@ impl Graphs {
         }
     }
 
+    #[cfg(feature = "driver")]
     async fn record(golden: &mut Golden, id: &str, walker: &Decision, input: &Variable, traced: bool) {
         let plain = Outcome::graph(&walker.evaluate(input.depth_clone(64)).await);
         let entry = Entry::new(id, &[], input, plain);
@@ -205,13 +208,14 @@ impl Policies {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn record(golden: &mut Golden, ws: &PolicyWorkspace, id: &str, path: &str, input: &Variable, goals: &[String], traced: bool, fingerprint: Option<String>) {
-        let plain = Outcome::policy(ws.evaluate_with_driver(&Self::request(path, input, goals, false)));
+        let plain = Outcome::policy(Live::policy(ws, &Self::request(path, input, goals, false)));
         let entry = Entry::new(id, goals, input, plain).fingerprint(fingerprint);
         let entry = match traced {
             true => entry
-                .traced(Outcome::policy_traced(ws.evaluate(&Self::request(path, input, goals, true))), None)
-                .enhanced(Outcome::policy_traced(ws.enhance_trace(&Self::request(path, input, goals, false)))),
+                .traced(Outcome::policy_traced(Live::policy(ws, &Self::request(path, input, goals, true))), None)
+                .enhanced(Outcome::policy_traced(Live::enhanced(ws, &Self::request(path, input, goals, false)))),
             false => entry,
         };
         golden.insert(entry);
@@ -355,6 +359,7 @@ enum Corpus {
 }
 
 impl Corpus {
+    #[cfg(feature = "driver")]
     const ALL: [Corpus; 6] = [Corpus::SpecGraph, Corpus::SpecPolicy, Corpus::Generated, Corpus::PolicyFixtures, Corpus::Anchor, Corpus::GraphFixtures];
 
     fn name(&self) -> &'static str {
@@ -368,6 +373,7 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn shard(&self, entry: &Entry) -> Option<String> {
         match self {
             Corpus::SpecGraph | Corpus::SpecPolicy => {
@@ -379,11 +385,13 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn selected() -> Vec<Corpus> {
         let only = std::env::var("GOLDEN_CORPUS").ok();
         Self::ALL.into_iter().filter(|c| only.as_ref().is_none_or(|o| c.name().contains(o.as_str()))).collect()
     }
 
+    #[cfg(feature = "driver")]
     fn record(&self) -> Golden {
         Golden::prepare();
         let mut golden = Golden::new(self.name());
@@ -401,6 +409,7 @@ impl Corpus {
         golden
     }
 
+    #[cfg(feature = "driver")]
     fn spec_graph(golden: &mut Golden, failures: &mut Vec<String>) {
         let (suites, problems) = Spec::suites(Dialect::Graph);
         failures.extend(problems);
@@ -429,6 +438,7 @@ impl Corpus {
         Nodes::set(true);
     }
 
+    #[cfg(feature = "driver")]
     fn spec_policy(golden: &mut Golden, failures: &mut Vec<String>) {
         let (suites, problems) = Spec::suites(Dialect::Policy);
         failures.extend(problems);
@@ -464,10 +474,11 @@ impl Corpus {
             .collect()
     }
 
+    #[cfg(feature = "driver")]
     fn computed(ws: &PolicyWorkspace, path: &str, inputs: &[Value]) -> Vec<String> {
         inputs
             .iter()
-            .find_map(|input| ws.evaluate_with_driver(&Policies::request(path, &Variable::from(input.clone()), &[], false)).ok().map(|r| PolicyCase::computed(&r.output.to_value(), input)))
+            .find_map(|input| Live::policy(ws, &Policies::request(path, &Variable::from(input.clone()), &[], false)).ok().map(|r| PolicyCase::computed(&r.output.to_value(), input)))
             .unwrap_or_default()
     }
 
@@ -479,6 +490,7 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn generated(golden: &mut Golden) {
         for seed in 0..Generated::seeds() {
             let Some(ws) = Generated::workspace(seed) else {
@@ -497,6 +509,7 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn policy_fixtures(golden: &mut Golden) {
         for case in PolicyCase::load_all() {
             let computed = Self::computed(&case.workspace, &case.path, &case.inputs);
@@ -508,6 +521,7 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
     fn anchor(golden: &mut Golden) {
         for batch in Anchor::batches() {
             let ws = batch.workspace();
@@ -543,6 +557,7 @@ impl Corpus {
         compiled
     }
 
+    #[cfg(feature = "driver")]
     async fn graph_fixtures(golden: &mut Golden) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
@@ -560,17 +575,20 @@ impl Corpus {
 
     fn verify(&self) {
         Golden::prepare();
-        let golden = Golden::open(self.name());
+        self.verify_against(&Golden::open(self.name()));
+    }
+
+    fn verify_against(&self, golden: &Golden) {
         let mut check = Check::default();
         match self {
-            Corpus::SpecGraph => Self::verify_spec_graph(&golden, &mut check),
-            Corpus::SpecPolicy => Self::verify_spec_policy(&golden, &mut check),
-            Corpus::Generated => Self::verify_generated(&golden, &mut check),
-            Corpus::PolicyFixtures => Self::verify_policy_fixtures(&golden, &mut check),
-            Corpus::Anchor => Self::verify_anchor(&golden, &mut check),
-            Corpus::GraphFixtures => Guard::block(Self::verify_graph_fixtures(&golden, &mut check)),
+            Corpus::SpecGraph => Self::verify_spec_graph(golden, &mut check),
+            Corpus::SpecPolicy => Self::verify_spec_policy(golden, &mut check),
+            Corpus::Generated => Self::verify_generated(golden, &mut check),
+            Corpus::PolicyFixtures => Self::verify_policy_fixtures(golden, &mut check),
+            Corpus::Anchor => Self::verify_anchor(golden, &mut check),
+            Corpus::GraphFixtures => Guard::block(Self::verify_graph_fixtures(golden, &mut check)),
         }
-        check.finish(&golden, self.name());
+        check.finish(golden, self.name());
     }
 
     fn verify_spec_graph(golden: &Golden, check: &mut Check) {
@@ -745,6 +763,7 @@ impl Corpus {
     }
 }
 
+#[cfg(feature = "driver")]
 #[test]
 #[ignore]
 fn capture() {
@@ -772,6 +791,7 @@ fn capture() {
     }
 }
 
+#[cfg(feature = "driver")]
 #[test]
 fn goldens_are_current() {
     let mut failures = Vec::new();
@@ -782,6 +802,15 @@ fn goldens_are_current() {
     }
     let limit = std::env::var("SPEC_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
     assert!(failures.is_empty(), "{} stale golden entries:\n{}", failures.len(), failures.iter().take(limit).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[cfg(feature = "driver")]
+#[test]
+fn hosts_match_the_live_driver() {
+    for corpus in Corpus::selected().into_iter().filter(|c| !matches!(c, Corpus::SpecGraph | Corpus::GraphFixtures)) {
+        let live = corpus.record();
+        corpus.verify_against(&live);
+    }
 }
 
 #[test]

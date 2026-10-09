@@ -1,27 +1,24 @@
 use std::sync::{Arc, OnceLock};
 
 use ahash::{HashMap, HashSet};
-use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
 use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
-use zen_expression::variable::{Variable, VariableType};
-use zen_expression::Isolate;
+use zen_expression::variable::VariableType;
 use zen_types::decision::{
     DecisionTableHitPolicy, DecisionTableInputField, DecisionTableOutputField,
 };
 
-use base64::Engine as _;
 
 use crate::analysis::table::{HitMode, TableColumn, VerifyTable};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
-    BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
+    Cursor, CursorTarget, Diagnostic, DiagnosticArgs,
     DiagnosticCode, DiagnosticLocation, ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
 
-use super::context::{AnalysisContext, ExecutionContext, ExecutionError, TableCheck};
+use super::context::{AnalysisContext, TableCheck};
 use super::{
     Block, BlockKind, BlockReadPlan, CellReads, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -31,7 +28,7 @@ use crate::nodes::decision_table::index::TableIndex;
 pub(crate) struct TableSelection {
     pub(crate) matched_rows: Vec<u32>,
     pub(crate) used_cells: Vec<(u32, Arc<str>)>,
-    input_bits: Option<Vec<u8>>,
+    pub(crate) input_bits: Option<Vec<u8>>,
 }
 
 impl TableSelection {
@@ -794,176 +791,6 @@ impl DecisionTableIr {
         }
     }
 
-    pub(crate) fn select(&self, cx: &ExecutionContext) -> Result<TableSelection, ExecutionError> {
-        let mut isolate = cx.isolate.borrow_mut();
-        let mut col_refs: Vec<Option<Variable>> = vec![None; self.inputs.len()];
-
-        let active: Vec<&OutputColumn> = self
-            .outputs
-            .iter()
-            .filter(|c| !c.field.is_empty())
-            .collect();
-        let has_collect = active.iter().any(|c| c.collect);
-        let mut pending_scalars = active.iter().filter(|c| !c.collect).count();
-        let mut taken: Vec<bool> = vec![false; active.len()];
-
-        let mut matched_rows: Vec<u32> = Vec::new();
-        let mut used_cells: Vec<(u32, Arc<str>)> = Vec::new();
-        let cols = self.inputs.len();
-        let bytes_per_row = cols.div_ceil(8);
-        let mut input_bits: Option<Vec<u8>> = cx
-            .extras
-            .then(|| vec![0u8; self.rules.len() * bytes_per_row]);
-        let candidates = match input_bits {
-            None => self.candidate_rows(&mut isolate, &mut col_refs, cx)?,
-            Some(_) => None,
-        };
-
-        for (row_idx, rule) in self.rules.iter().enumerate() {
-            let satisfied = !has_collect && pending_scalars == 0 && !matched_rows.is_empty();
-            if satisfied && !cx.extras {
-                break;
-            }
-
-            let row_matches = match input_bits.as_mut() {
-                Some(bits) => {
-                    let per_col = self.evaluate_row_inputs_full(
-                        rule,
-                        &mut isolate,
-                        &mut col_refs,
-                        cx,
-                        satisfied,
-                    )?;
-                    for (col_idx, &passed) in per_col.iter().enumerate() {
-                        if passed {
-                            let byte = row_idx * bytes_per_row + col_idx / 8;
-                            bits[byte] |= 1 << (col_idx % 8);
-                        }
-                    }
-                    per_col.iter().all(|p| *p)
-                }
-                None => match &candidates {
-                    Some(rows) if !rows.contains(row_idx) => false,
-                    Some(_) => self.evaluate_row_inputs_pruned(
-                        row_idx,
-                        rule,
-                        &mut isolate,
-                        &mut col_refs,
-                        cx,
-                    )?,
-                    None => self.evaluate_row_inputs(rule, &mut isolate, &mut col_refs, cx)?,
-                },
-            };
-            if !row_matches || satisfied {
-                continue;
-            }
-
-            matched_rows.push(row_idx as u32);
-            for (col_pos, col) in active.iter().enumerate() {
-                if rule.get(&col.id).filter(|c| !c.is_empty()).is_none() {
-                    continue;
-                }
-                if col.collect {
-                    used_cells.push((row_idx as u32, col.id.clone()));
-                } else if !taken[col_pos] {
-                    taken[col_pos] = true;
-                    used_cells.push((row_idx as u32, col.id.clone()));
-                    pending_scalars -= 1;
-                }
-            }
-        }
-
-        Ok(TableSelection {
-            matched_rows,
-            used_cells,
-            input_bits,
-        })
-    }
-
-    pub(crate) fn commit(
-        &self,
-        cx: &ExecutionContext,
-        selection: &TableSelection,
-    ) -> Result<BlockTrace, ExecutionError> {
-        let mut isolate = cx.isolate.borrow_mut();
-
-        let used: HashSet<(u32, &str)> = selection
-            .used_cells
-            .iter()
-            .map(|(row, col)| (*row, col.as_ref()))
-            .collect();
-        let mut collected: HashMap<Arc<str>, Vec<Variable>> = HashMap::default();
-        let mut scalar_written: HashSet<Arc<str>> = HashSet::default();
-        for col in &self.outputs {
-            if col.collect && !col.field.is_empty() {
-                collected.entry(col.field.clone()).or_default();
-            }
-        }
-
-        let mut evaluations: Vec<HashMap<Arc<str>, Variable>> = Vec::new();
-        for &row_idx in &selection.matched_rows {
-            let Some(rule) = self.rules.get(row_idx as usize) else {
-                continue;
-            };
-            let mut row_outputs: HashMap<Arc<str>, Variable> = HashMap::default();
-
-            for col in &self.outputs {
-                if !used.contains(&(row_idx, col.id.as_ref())) {
-                    continue;
-                }
-                let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
-                    continue;
-                };
-
-                let value = isolate
-                    .run_standard(cell)
-                    .map_err(|e| cx.expression_error(cell, e))?;
-
-                if cx.trace {
-                    row_outputs.insert(col.field.clone(), value.deep_clone());
-                }
-
-                if col.collect {
-                    collected.entry(col.field.clone()).or_default().push(value);
-                } else {
-                    cx.write(&col.field, value);
-                    scalar_written.insert(col.field.clone());
-                }
-            }
-            if cx.trace {
-                evaluations.push(row_outputs);
-            }
-        }
-
-        for col in &self.outputs {
-            if !col.collect && !col.field.is_empty() && !scalar_written.contains(&col.field) {
-                cx.write(&col.field, Variable::Null);
-                scalar_written.insert(col.field.clone());
-            }
-        }
-        for (field, values) in collected {
-            cx.write(&field, Variable::from_array(values));
-        }
-
-        let extras = selection
-            .input_bits
-            .as_ref()
-            .map(|bits| DecisionTableExtras {
-                input_pass: base64::engine::general_purpose::STANDARD.encode(bits),
-            });
-
-        Ok(BlockTrace::DecisionTable {
-            matched_rows: selection.matched_rows.clone(),
-            evaluations,
-            extras,
-        })
-    }
-
-    pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
-        let selection = self.select(cx)?;
-        self.commit(cx, &selection)
-    }
-
     pub(super) fn resolve_cursor(
         &self,
         cursor: &Cursor,
@@ -1039,156 +866,12 @@ impl DecisionTableIr {
             .map(ColumnRef::Output)
     }
 
-    fn table_index(&self) -> Option<&TableIndex> {
+    pub(crate) fn table_index(&self) -> Option<&TableIndex> {
         self.index
             .get_or_init(|| TableIndex::build(&self.inputs, &self.rules))
             .as_ref()
     }
 
-    fn candidate_rows(
-        &self,
-        isolate: &mut Isolate,
-        col_refs: &mut [Option<Variable>],
-        cx: &ExecutionContext,
-    ) -> Result<Option<FixedBitSet>, ExecutionError> {
-        let Some(index) = self.table_index() else {
-            return Ok(None);
-        };
-        let mut acc: Option<FixedBitSet> = None;
-        for (col_idx, column) in index.columns.iter().enumerate() {
-            let Some(column) = column else {
-                continue;
-            };
-            let Some(field) = self.inputs[col_idx]
-                .field
-                .as_ref()
-                .filter(|f| !f.is_empty())
-            else {
-                continue;
-            };
-            let value = match &col_refs[col_idx] {
-                Some(value) => value.shallow_clone(),
-                None => {
-                    let value = isolate
-                        .run_standard(field)
-                        .map_err(|e| cx.expression_error(field, e))?;
-                    col_refs[col_idx] = Some(value.shallow_clone());
-                    value
-                }
-            };
-            if matches!(value, Variable::Dynamic(_)) {
-                return Ok(None);
-            }
-            let mut col_rows = column.fallback.clone();
-            if let Some(hit) = column.rows_for(&value) {
-                col_rows.union_with(hit);
-            }
-            match &mut acc {
-                None => acc = Some(col_rows),
-                Some(set) => set.intersect_with(&col_rows),
-            }
-        }
-        Ok(acc)
-    }
-
-    fn evaluate_row_inputs_pruned(
-        &self,
-        row_idx: usize,
-        rule: &HashMap<Arc<str>, Arc<str>>,
-        isolate: &mut Isolate,
-        col_refs: &mut [Option<Variable>],
-        cx: &ExecutionContext,
-    ) -> Result<bool, ExecutionError> {
-        let index = self.table_index();
-        for (col_idx, col) in self.inputs.iter().enumerate() {
-            if index.is_some_and(|ix| ix.decides(col_idx, row_idx)) {
-                continue;
-            }
-            if !self.evaluate_cell(col_idx, col, rule, isolate, col_refs, cx)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn evaluate_row_inputs(
-        &self,
-        rule: &HashMap<Arc<str>, Arc<str>>,
-        isolate: &mut Isolate,
-        col_refs: &mut [Option<Variable>],
-        cx: &ExecutionContext,
-    ) -> Result<bool, ExecutionError> {
-        for (col_idx, col) in self.inputs.iter().enumerate() {
-            if !self.evaluate_cell(col_idx, col, rule, isolate, col_refs, cx)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn evaluate_row_inputs_full(
-        &self,
-        rule: &HashMap<Arc<str>, Arc<str>>,
-        isolate: &mut Isolate,
-        col_refs: &mut [Option<Variable>],
-        cx: &ExecutionContext,
-        row_unreached: bool,
-    ) -> Result<Vec<bool>, ExecutionError> {
-        let mut row_failed = false;
-        self.inputs
-            .iter()
-            .enumerate()
-            .map(|(col_idx, col)| {
-                let passed = match self.evaluate_cell(col_idx, col, rule, isolate, col_refs, cx) {
-                    Ok(passed) => passed,
-                    Err(_) if row_unreached || row_failed => false,
-                    Err(e) => return Err(e),
-                };
-                row_failed |= !passed;
-                Ok(passed)
-            })
-            .collect()
-    }
-
-    fn evaluate_cell(
-        &self,
-        col_idx: usize,
-        col: &DecisionTableInputField,
-        rule: &HashMap<Arc<str>, Arc<str>>,
-        isolate: &mut Isolate,
-        col_refs: &mut [Option<Variable>],
-        cx: &ExecutionContext,
-    ) -> Result<bool, ExecutionError> {
-        let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
-            return Ok(true);
-        };
-        match col.field.as_ref() {
-            Some(field) if !field.is_empty() => {
-                let value = match &col_refs[col_idx] {
-                    Some(value) => value.shallow_clone(),
-                    None => {
-                        let value = isolate
-                            .run_standard(field)
-                            .map_err(|e| cx.expression_error(field, e))?;
-                        col_refs[col_idx] = Some(value.shallow_clone());
-                        value
-                    }
-                };
-                isolate
-                    .set_reference_value(value)
-                    .map_err(|e| cx.expression_error(field, e))?;
-                isolate
-                    .run_unary(cell)
-                    .map_err(|e| cx.expression_error(cell, e))
-            }
-            _ => {
-                let result = isolate
-                    .run_standard(cell)
-                    .map_err(|e| cx.expression_error(cell, e))?;
-                Ok(result.as_bool().unwrap_or(false))
-            }
-        }
-    }
 }
 
 pub(crate) struct DictionaryCandidate;

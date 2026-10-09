@@ -1,20 +1,12 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
-use crate::compiled::policy::PolicyPlan;
-use std::time::Instant;
-use zen_types::symbol::Symbol;
+use crate::compiled::policy::{Host, PolicyPlan};
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use zen_expression::variable::Variable;
-use zen_types::rccell::RcCell;
 
-use zen_expression::{Isolate, OpcodeCache};
+use zen_expression::lane::Programs;
 
-use crate::policy::blocks::{
-    Block, BlockKind, BlockReadPlan, ExecutionContext, ExecutionError, MatchSelection,
-    PropertyRead, TableSelection,
-};
+use crate::policy::blocks::{Block, BlockReadPlan, ExecutionError, PropertyRead};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, EvalGraph, WriteScope};
 use crate::policy::queries::path::PathClassifier;
@@ -22,9 +14,7 @@ use crate::policy::queries::scope::{EntityForm, EntitySources, ReferenceField};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::validator::InputSchema;
 use crate::workspace::db::Db;
-use crate::workspace::types::{
-    BlockExecution, BlockRef, BlockTrace, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
-};
+use crate::workspace::types::{BlockRef, EvaluateRequest, EvaluationError, EvaluationResult, Trace};
 
 pub(crate) struct EvalArtifact {
     pub(crate) members: HashSet<Arc<str>>,
@@ -34,7 +24,8 @@ pub(crate) struct EvalArtifact {
     pub(crate) reference_fields: Vec<ReferenceField>,
     pub(crate) data_model_paths: DataModelPaths,
     pub(crate) classifier: PathClassifier,
-    pub(crate) opcode_cache: Arc<OpcodeCache>,
+    #[cfg(feature = "driver")]
+    pub(crate) opcode_cache: Arc<zen_expression::OpcodeCache>,
     pub(crate) rule_by_ref: Arc<HashMap<BlockRef, Arc<Block>>>,
     pub(crate) input_schema: InputSchema,
     pub(crate) reads: HashMap<BlockRef, Arc<[PropertyRead]>>,
@@ -42,6 +33,7 @@ pub(crate) struct EvalArtifact {
     pub(crate) compiled: OnceLock<Arc<PolicyPlan>>,
     pub(crate) goal_plans: Mutex<HashMap<Vec<Arc<str>>, Arc<PolicyPlan>>>,
     pub(crate) requirements: OnceLock<Requirements>,
+    pub(crate) programs: OnceLock<Arc<Programs>>,
 }
 
 pub(crate) type Iteration = (Arc<str>, Arc<str>, Option<Arc<str>>);
@@ -243,15 +235,6 @@ impl Db {
         self.eval_artifact(&req.policy_path).evaluate(&req, true)
     }
 
-    pub fn evaluate_with_driver(
-        &self,
-        req: &EvaluateRequest,
-    ) -> Result<EvaluationResult, EvaluationError> {
-        self.check_evaluable(req)?;
-        self.eval_artifact(&req.policy_path)
-            .evaluate_with_driver(req, false)
-    }
-
     pub fn evaluate_columns<'a>(
         &self,
         policy_path: &Arc<str>,
@@ -298,7 +281,7 @@ impl Db {
             .collect()
     }
 
-    fn check_evaluable(&self, req: &EvaluateRequest) -> Result<(), EvaluationError> {
+    pub(crate) fn check_evaluable(&self, req: &EvaluateRequest) -> Result<(), EvaluationError> {
         if self.is_graph(&req.policy_path) {
             return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
         }
@@ -354,12 +337,13 @@ impl EvalArtifact {
         req: &EvaluateRequest,
         extras: bool,
     ) -> Result<EvaluationResult, EvaluationError> {
+        let plan = self.plan(&req.goals);
         if !req.trace && !extras {
-            if let Some(result) = self.plan(&req.goals).evaluate(self, std::slice::from_ref(req)).pop() {
+            if let Some(result) = plan.evaluate(self, std::slice::from_ref(req)).pop() {
                 return result;
             }
         }
-        self.evaluate_with_driver(req, extras)
+        plan.traced(self, req, extras)
     }
 
     const GOAL_PLANS: usize = 32;
@@ -395,7 +379,7 @@ impl EvalArtifact {
         let mut groups: Vec<(&[Arc<str>], Vec<usize>)> = Vec::new();
         for (index, request) in requests.iter().enumerate() {
             match request.trace {
-                true => results[index] = Some(self.evaluate_with_driver(request, false)),
+                true => results[index] = Some(self.plan(&request.goals).traced(self, request, false)),
                 false => match groups.iter_mut().find(|(g, _)| *g == request.goals.as_slice()) {
                     Some((_, members)) => members.push(index),
                     None => groups.push((&request.goals, vec![index])),
@@ -409,34 +393,6 @@ impl EvalArtifact {
             }
         }
         results.into_iter().flatten().collect()
-    }
-
-    pub(crate) fn evaluate_with_driver(
-        &self,
-        req: &EvaluateRequest,
-        extras: bool,
-    ) -> Result<EvaluationResult, EvaluationError> {
-        let start = Instant::now();
-        let (store, order_to_run) = self.prepare(req)?;
-        let roots = self.roots(req);
-        let mut driver = Driver::new(self, &store, &req.policy_path, req.trace, extras);
-        let outcome = roots.iter().try_for_each(|root| driver.demand(root));
-
-        let trace = req.trace.then(|| Trace {
-            engine_version: Arc::from(crate::ENGINE_VERSION),
-            properties: store.snapshot(&order_to_run),
-            executions: driver.executions,
-        });
-
-        if let Err(error) = outcome {
-            return Err(error.with_partial_trace(trace));
-        }
-
-        Ok(EvaluationResult {
-            output: store,
-            duration: start.elapsed(),
-            trace,
-        })
     }
 
     pub(crate) fn prepare(
@@ -460,13 +416,6 @@ impl EvalArtifact {
 
         let order_to_run = self.compute_order_to_run(req, &store)?;
         Ok((store, order_to_run))
-    }
-
-    pub(crate) fn roots(&self, req: &EvaluateRequest) -> Vec<Arc<str>> {
-        match req.goals.is_empty() {
-            true => self.eval_graph.terminal_sinks(&self.members),
-            false => req.goals.clone(),
-        }
     }
 
     fn validate_request(
@@ -649,247 +598,6 @@ impl EvalArtifact {
     }
 }
 
-pub(crate) struct Driver<'a> {
-    artifact: &'a EvalArtifact,
-    store: &'a Variable,
-    env: Variable,
-    entry: &'a Arc<str>,
-    trace: bool,
-    extras: bool,
-    isolate: Rc<RefCell<Isolate>>,
-    ran: HashSet<BlockRef>,
-    in_progress: HashSet<BlockRef>,
-    executions: Vec<BlockExecution>,
-}
-
-pub(crate) enum Pick {
-    Unconditional,
-    Match(MatchSelection),
-    Table(TableSelection),
-}
-
-impl Pick {
-    pub(crate) fn collect_reads(&self, plan: &BlockReadPlan, out: &mut Vec<Arc<str>>) {
-        match self {
-            Pick::Match(selection) => {
-                if let Some(arm_id) = &selection.matched_arm {
-                    if let Some(reads) = plan.match_arm_reads(arm_id) {
-                        out.extend(reads.iter().cloned());
-                    }
-                }
-            }
-            Pick::Table(selection) => {
-                for (row_idx, col_id) in &selection.used_cells {
-                    out.extend(plan.cell_reads(*row_idx, col_id));
-                }
-            }
-            Pick::Unconditional => {}
-        }
-    }
-}
-
-struct PhaseScope {
-    scoped: Variable,
-    entity_key: Rc<str>,
-}
-
-impl PhaseScope {
-    fn new(store: &Variable, entity_key: Rc<str>) -> Self {
-        Self {
-            scoped: store.depth_clone(1),
-            entity_key,
-        }
-    }
-
-    fn bind(
-        &self,
-        instance: &Variable,
-        owner_binding: &Option<(String, Variable)>,
-    ) -> Option<InstanceSlot> {
-        let scoped_fields = self.scoped.as_object()?;
-
-        let needs_owner = match (owner_binding, instance.as_object()) {
-            (Some((name, _)), Some(fields)) => {
-                !fields.borrow().contains_key(&Symbol::from(name.as_str()))
-            }
-            _ => false,
-        };
-
-        let (bound, slot) = if needs_owner {
-            let wrapper = instance.depth_clone(1);
-            let synthetic_owner = match (owner_binding, wrapper.as_object()) {
-                (Some((name, owner_var)), Some(wrapper_fields)) => {
-                    let key = Symbol::from(name.as_str());
-                    let injected = owner_var.shallow_clone();
-                    wrapper_fields
-                        .borrow_mut()
-                        .insert(key.clone(), injected.shallow_clone());
-                    Some((key, injected))
-                }
-                _ => None,
-            };
-            let bound = wrapper.shallow_clone();
-            (
-                bound,
-                InstanceSlot::Wrapped {
-                    wrapper,
-                    synthetic_owner,
-                },
-            )
-        } else {
-            (instance.shallow_clone(), InstanceSlot::Direct)
-        };
-
-        {
-            let mut fields = scoped_fields.borrow_mut();
-            fields.remove(&Variable::dollar_key());
-            fields.insert(Symbol::from(self.entity_key.as_ref()), bound);
-        }
-        Some(slot)
-    }
-}
-
-pub(crate) enum InstanceSlot {
-    Direct,
-    Wrapped {
-        wrapper: Variable,
-        synthetic_owner: Option<(Symbol, Variable)>,
-    },
-}
-
-impl InstanceSlot {
-    pub(crate) fn write_back(&self, instance: &Variable) {
-        let Self::Wrapped {
-            wrapper,
-            synthetic_owner,
-        } = self
-        else {
-            return;
-        };
-        let (Some(written), Some(target)) = (wrapper.as_object(), instance.as_object()) else {
-            return;
-        };
-        let written = written.borrow();
-        let mut target = target.borrow_mut();
-        for (key, value) in written.iter() {
-            if Self::is_injected_owner(synthetic_owner, key.clone(), value) {
-                continue;
-            }
-            target.insert(key.clone(), value.shallow_clone());
-        }
-    }
-
-    fn is_injected_owner(
-        synthetic_owner: &Option<(Symbol, Variable)>,
-        key: Symbol,
-        value: &Variable,
-    ) -> bool {
-        match synthetic_owner {
-            Some((owner_key, injected)) if owner_key.as_str() == key.as_str() => {
-                Self::same_ref(value, injected)
-            }
-            _ => false,
-        }
-    }
-
-    fn same_ref(a: &Variable, b: &Variable) -> bool {
-        match (a, b) {
-            (Variable::Object(x), Variable::Object(y)) => RcCell::ptr_eq(x, y),
-            (Variable::Array(x), Variable::Array(y)) => RcCell::ptr_eq(x, y),
-            (Variable::String(x), Variable::String(y)) => x == y,
-            _ => a == b,
-        }
-    }
-}
-
-pub(crate) enum Picked {
-    Skipped,
-    Singleton(Pick),
-    Iterated(Iterated),
-}
-
-impl Iterated {
-    pub(crate) fn picks(&self) -> &[Pick] {
-        &self.picks
-    }
-
-    pub(crate) fn instances(&self) -> &[Variable] {
-        &self.instances
-    }
-
-    pub(crate) fn picked(mut self, picks: Vec<Pick>) -> Picked {
-        self.picks = picks;
-        Picked::Iterated(self)
-    }
-}
-
-pub(crate) struct Iterated {
-    entity: Rc<str>,
-    iter_path: Arc<str>,
-    instances: Vec<Variable>,
-    single: bool,
-    owner_binding: Option<(String, Variable)>,
-    picks: Vec<Pick>,
-}
-
-impl<'a> Driver<'a> {
-    pub(crate) fn new(
-        artifact: &'a EvalArtifact,
-        store: &'a Variable,
-        entry: &'a Arc<str>,
-        trace: bool,
-        extras: bool,
-    ) -> Self {
-        Self {
-            isolate: Rc::new(RefCell::new(
-                Isolate::new().with_cache(Some(artifact.opcode_cache.clone())),
-            )),
-            artifact,
-            store,
-            env: store.depth_clone(1),
-            entry,
-            trace,
-            extras,
-            ran: HashSet::new(),
-            in_progress: HashSet::new(),
-            executions: Vec::new(),
-        }
-    }
-
-    fn bind_env(&self, isolate: &RefCell<Isolate>) {
-        if let Some(fields) = self.env.as_object() {
-            fields.borrow_mut().remove(&Variable::dollar_key());
-        }
-        isolate
-            .borrow_mut()
-            .set_environment(self.env.shallow_clone());
-    }
-
-    pub(crate) fn demand(&mut self, prop: &str) -> Result<(), EvaluationError> {
-        self.writers_of_longest_prefix(prop)
-            .iter()
-            .try_for_each(|owner| self.run_block(owner))
-    }
-
-    pub(crate) fn writers_of_longest_prefix(&self, prop: &str) -> &'a [BlockRef] {
-        self.artifact.writers_of_longest_prefix(prop)
-    }
-
-    pub(crate) fn env(&self) -> &Variable {
-        &self.env
-    }
-
-    pub(crate) fn clear_dollar(&self) {
-        if let Some(fields) = self.env.as_object() {
-            fields.borrow_mut().remove(&Variable::dollar_key());
-        }
-    }
-
-    pub(crate) fn write(&self, path: &str, value: Variable) {
-        ExecutionContext::write_into(self.store, Some(&self.env), path, value);
-    }
-}
-
 impl EvalArtifact {
     pub(crate) fn iteration(&self, rule: &Block) -> Option<Iteration> {
         match rule.write_scope(&self.classifier) {
@@ -899,6 +607,19 @@ impl EvalArtifact {
                 .map(|src| (entity, src.path.clone(), src.owner.clone())),
             _ => None,
         }
+    }
+
+    pub(crate) fn programs(&self) -> Arc<Programs> {
+        self.programs
+            .get_or_init(|| {
+                Arc::new(Host::programs(
+                    self.rule_by_ref
+                        .iter()
+                        .filter(|(owner, _)| self.members.contains(&owner.policy_path))
+                        .map(|(_, rule)| rule.as_ref()),
+                ))
+            })
+            .clone()
     }
 
     pub(crate) fn writers_of_longest_prefix(&self, prop: &str) -> &[BlockRef] {
@@ -919,377 +640,7 @@ impl EvalArtifact {
     }
 }
 
-impl<'a> Driver<'a> {
-    fn run_block(&mut self, owner: &BlockRef) -> Result<(), EvaluationError> {
-        if self.ran.contains(owner) || !self.in_progress.insert(owner.clone()) {
-            return Ok(());
-        }
-        let result = self.run_block_inner(owner);
-        self.in_progress.remove(owner);
-        if result.is_ok() {
-            self.ran.insert(owner.clone());
-        }
-        result
-    }
-
-    fn run_block_inner(&mut self, owner: &BlockRef) -> Result<(), EvaluationError> {
-        let artifact = self.artifact;
-        let Some(rule) = artifact.rule_by_ref.get(owner) else {
-            return Ok(());
-        };
-        let rule = rule.clone();
-
-        if let Some(plan) = artifact.read_plans.get(owner) {
-            for path in plan.unconditional.iter() {
-                self.demand(path)?;
-            }
-        }
-
-        let picked = self.select(owner, &rule)?;
-        for path in &self.demanded(owner, &picked) {
-            self.demand(path)?;
-        }
-        self.commit(owner, &rule, picked)
-    }
-
-    pub(crate) fn iterated(&self, rule: &Block) -> Option<Iteration> {
-        self.artifact.iteration(rule)
-    }
-
-    pub(crate) fn select(&mut self, owner: &BlockRef, rule: &Block) -> Result<Picked, EvaluationError> {
-        match self.iterated(rule) {
-            Some((entity, path, src_owner)) => {
-                self.select_iterated(owner, rule, entity.as_ref(), &path, src_owner.as_deref())
-            }
-            None => self.select_singleton(owner, rule).map(Picked::Singleton),
-        }
-    }
-
-    pub(crate) fn demanded(&self, owner: &BlockRef, picked: &Picked) -> Vec<Arc<str>> {
-        let mut demanded: Vec<Arc<str>> = Vec::new();
-        let Some(plan) = self.artifact.read_plans.get(owner) else {
-            return demanded;
-        };
-        match picked {
-            Picked::Skipped => {}
-            Picked::Singleton(pick) => pick.collect_reads(plan, &mut demanded),
-            Picked::Iterated(iterated) => {
-                for pick in &iterated.picks {
-                    pick.collect_reads(plan, &mut demanded);
-                }
-                demanded.sort();
-                demanded.dedup();
-            }
-        }
-        demanded
-    }
-
-    pub(crate) fn commit(
-        &mut self,
-        owner: &BlockRef,
-        rule: &Block,
-        picked: Picked,
-    ) -> Result<(), EvaluationError> {
-        match picked {
-            Picked::Skipped => Ok(()),
-            Picked::Singleton(pick) => self.commit_singleton(owner, rule, pick),
-            Picked::Iterated(iterated) => self.commit_iterated(owner, rule, iterated),
-        }
-    }
-
-    fn select_pick(rule: &Block, ctx: &ExecutionContext) -> Result<Pick, ExecutionError> {
-        match &rule.kind {
-            BlockKind::Match(m) => m.select(ctx).map(Pick::Match),
-            BlockKind::DecisionTable(d) => d.select(ctx).map(Pick::Table),
-            BlockKind::Expression(_) | BlockKind::Assertion(_) => Ok(Pick::Unconditional),
-        }
-    }
-
-    fn commit_pick(
-        rule: &Block,
-        ctx: &ExecutionContext,
-        pick: &Pick,
-    ) -> Result<BlockTrace, ExecutionError> {
-        match (&rule.kind, pick) {
-            (BlockKind::Match(m), Pick::Match(selection)) => m.commit(ctx, selection),
-            (BlockKind::DecisionTable(d), Pick::Table(selection)) => d.commit(ctx, selection),
-            _ => rule.execute(ctx),
-        }
-    }
-
-    fn select_singleton(&mut self, owner: &BlockRef, rule: &Block) -> Result<Pick, EvaluationError> {
-        let isolate = Rc::clone(&self.isolate);
-        let env = self.env.shallow_clone();
-        let ctx = ExecutionContext {
-            store: self.store,
-            policy_path: &owner.policy_path,
-            block_id: &rule.id,
-            trace: self.trace,
-            extras: self.extras,
-            write_log: None,
-            env_mirror: Some(&env),
-            isolate: &isolate,
-        };
-        if matches!(rule.kind, BlockKind::Match(_) | BlockKind::DecisionTable(_)) {
-            self.bind_env(&isolate);
-        }
-        Ok(Self::select_pick(rule, &ctx)?)
-    }
-
-    fn commit_singleton(
-        &mut self,
-        owner: &BlockRef,
-        rule: &Block,
-        pick: Pick,
-    ) -> Result<(), EvaluationError> {
-        let write_log = (self.trace && self.extras).then(|| RefCell::new(Vec::new()));
-        let isolate = Rc::clone(&self.isolate);
-        let env = self.env.shallow_clone();
-        let ctx = ExecutionContext {
-            store: self.store,
-            policy_path: &owner.policy_path,
-            block_id: &rule.id,
-            trace: self.trace,
-            extras: self.extras,
-            write_log: write_log.as_ref(),
-            env_mirror: Some(&env),
-            isolate: &isolate,
-        };
-        self.bind_env(&isolate);
-        let bt = Self::commit_pick(rule, &ctx, &pick)?;
-
-        if self.trace {
-            let trace_policy_path =
-                (&owner.policy_path != self.entry).then(|| owner.policy_path.clone());
-            let operand_values =
-                Block::operand_values(self.extras, self.reads_for(owner), self.store);
-            self.executions.push(BlockExecution {
-                block_id: rule.id.clone(),
-                policy_path: trace_policy_path,
-                instance_path: None,
-                trace: bt,
-                operand_values,
-                writes: write_log.map(RefCell::into_inner).unwrap_or_default(),
-                reads: self.execution_reads(owner, &pick),
-            });
-        }
-        Ok(())
-    }
-
-    fn captured(&self, entity: &str, iter_path: &Arc<str>, owner_name: Option<&str>) -> Option<Iterated> {
-        let target = self.store.dot(iter_path.as_ref())?;
-        let single = target.as_object().is_some();
-        let instances: Vec<Variable> = match target.as_array() {
-            Some(arr) => arr.borrow().iter().map(|v| v.shallow_clone()).collect(),
-            None if single => vec![target.shallow_clone()],
-            None => return None,
-        };
-        let owner_binding = owner_name.and_then(|name| {
-            let owner_path = iter_path.rsplit_once('.').map(|(o, _)| o)?;
-            self.store
-                .dot(owner_path)
-                .map(|var| (name.to_string(), var))
-        });
-        Some(Iterated {
-            entity: Rc::from(entity),
-            iter_path: iter_path.clone(),
-            instances,
-            single,
-            owner_binding,
-            picks: Vec::new(),
-        })
-    }
-
-    pub(crate) fn capture(&self, rule: &Block) -> Option<Iterated> {
-        let (entity, path, owner) = self.iterated(rule)?;
-        self.captured(entity.as_ref(), &path, owner.as_deref())
-    }
-
-    pub(crate) fn instance_scopes(&self, iterated: &Iterated) -> Vec<Option<(Variable, InstanceSlot)>> {
-        iterated
-            .instances
-            .iter()
-            .map(|instance| {
-                let phase = PhaseScope::new(self.store, iterated.entity.clone());
-                let slot = phase.bind(instance, &iterated.owner_binding)?;
-                Some((phase.scoped, slot))
-            })
-            .collect()
-    }
-
-    fn select_iterated(
-        &mut self,
-        owner: &BlockRef,
-        rule: &Block,
-        entity: &str,
-        iter_path: &Arc<str>,
-        owner_name: Option<&str>,
-    ) -> Result<Picked, EvaluationError> {
-        let Some(captured) = self.captured(entity, iter_path, owner_name) else {
-            return Ok(Picked::Skipped);
-        };
-        let Iterated {
-            entity: entity_key,
-            instances,
-            single,
-            owner_binding,
-            ..
-        } = captured;
-
-        let picks: Vec<Pick> =
-            if matches!(rule.kind, BlockKind::Match(_) | BlockKind::DecisionTable(_)) {
-                let phase = PhaseScope::new(self.store, entity_key.clone());
-                let isolate = Rc::clone(&self.isolate);
-                isolate
-                    .borrow_mut()
-                    .set_environment(phase.scoped.shallow_clone());
-                let mut picks = Vec::with_capacity(instances.len());
-                for instance in &instances {
-                    let Some(_slot) = phase.bind(instance, &owner_binding) else {
-                        picks.push(Pick::Unconditional);
-                        continue;
-                    };
-                    let ctx = ExecutionContext {
-                        store: &phase.scoped,
-                        policy_path: &owner.policy_path,
-                        block_id: &rule.id,
-                        trace: self.trace,
-                        extras: self.extras,
-                        write_log: None,
-                        env_mirror: None,
-                        isolate: &isolate,
-                    };
-                    picks.push(Self::select_pick(rule, &ctx)?);
-                }
-                picks
-            } else {
-                instances.iter().map(|_| Pick::Unconditional).collect()
-            };
-
-        Ok(Picked::Iterated(Iterated {
-            entity: entity_key,
-            iter_path: iter_path.clone(),
-            instances,
-            single,
-            owner_binding,
-            picks,
-        }))
-    }
-
-    fn commit_iterated(
-        &mut self,
-        owner: &BlockRef,
-        rule: &Block,
-        iterated: Iterated,
-    ) -> Result<(), EvaluationError> {
-        let Iterated {
-            entity: entity_key,
-            iter_path,
-            instances,
-            single,
-            owner_binding,
-            picks,
-        } = iterated;
-        let trace_policy_path =
-            (&owner.policy_path != self.entry).then(|| owner.policy_path.clone());
-        let phase = PhaseScope::new(self.store, entity_key);
-        let isolate = Rc::clone(&self.isolate);
-        isolate
-            .borrow_mut()
-            .set_environment(phase.scoped.shallow_clone());
-        for (idx, instance) in instances.iter().enumerate() {
-            let Some(slot) = phase.bind(instance, &owner_binding) else {
-                continue;
-            };
-            let write_log = (self.trace && self.extras).then(|| RefCell::new(Vec::new()));
-            let ctx = ExecutionContext {
-                store: &phase.scoped,
-                policy_path: &owner.policy_path,
-                block_id: &rule.id,
-                trace: self.trace,
-                extras: self.extras,
-                write_log: write_log.as_ref(),
-                env_mirror: None,
-                isolate: &isolate,
-            };
-            let result = Self::commit_pick(rule, &ctx, &picks[idx]);
-            let operand_values = match (&result, self.trace) {
-                (Ok(_), true) => {
-                    Block::operand_values(self.extras, self.reads_for(owner), &phase.scoped)
-                }
-                _ => HashMap::default(),
-            };
-            slot.write_back(instance);
-            let bt = result?;
-            if self.trace {
-                self.executions.push(BlockExecution {
-                    block_id: rule.id.clone(),
-                    policy_path: trace_policy_path.clone(),
-                    instance_path: Some(match single {
-                        true => iter_path.clone(),
-                        false => format!("{iter_path}.{idx}").into(),
-                    }),
-                    trace: bt,
-                    operand_values,
-                    writes: write_log.map(RefCell::into_inner).unwrap_or_default(),
-                    reads: self.execution_reads(owner, &picks[idx]),
-                });
-            }
-        }
-        Ok(())
-    }
-
-    fn reads_for(&self, owner: &BlockRef) -> &[PropertyRead] {
-        if self.extras {
-            self.artifact
-                .reads
-                .get(owner)
-                .map(|r| r.as_ref())
-                .unwrap_or(&[])
-        } else {
-            &[]
-        }
-    }
-
-    fn execution_reads(&self, owner: &BlockRef, pick: &Pick) -> Vec<Arc<str>> {
-        if !self.extras {
-            return Vec::new();
-        }
-        let Some(plan) = self.artifact.read_plans.get(owner) else {
-            return Vec::new();
-        };
-        let mut reads: Vec<Arc<str>> = plan.unconditional.to_vec();
-        pick.collect_reads(plan, &mut reads);
-        reads.sort();
-        reads.dedup();
-        reads
-    }
-}
-
-impl Block {
-    fn operand_values(
-        extras: bool,
-        reads: &[PropertyRead],
-        store: &Variable,
-    ) -> HashMap<Arc<str>, Variable> {
-        let mut out: HashMap<Arc<str>, Variable> = HashMap::new();
-        if !extras {
-            return out;
-        }
-        for read in reads {
-            if read.via_alias || read.unresolved {
-                continue;
-            }
-            if let Some(value) = store.dot(&read.path) {
-                out.entry(read.path.clone())
-                    .or_insert_with(|| value.deep_clone());
-            }
-        }
-        out
-    }
-}
-
-trait StoreOps {
+pub(crate) trait StoreOps {
     fn hydrate_references(&self, reference_fields: &[ReferenceField], pool_index: &RefPoolIndex);
     fn snapshot(&self, order: &[PropertyPath]) -> HashMap<Arc<str>, Variable>;
 }
@@ -1348,7 +699,7 @@ impl From<ExecutionError> for EvaluationError {
 }
 
 impl EvaluationError {
-    fn with_partial_trace(self, trace: Option<Trace>) -> Self {
+    pub(crate) fn with_partial_trace(self, trace: Option<Trace>) -> Self {
         match (self, trace) {
             (
                 EvaluationError::ExpressionFailed {

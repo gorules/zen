@@ -3,18 +3,18 @@ use std::sync::Arc;
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
 use zen_expression::intellisense::{ArmTest, NumberCover};
-use zen_expression::variable::{Variable, VariableType};
+use zen_expression::variable::VariableType;
 
 use crate::policy::queries::scope::VariableTypeScope;
 
 use crate::workspace::types::{
-    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode,
+    ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode,
     ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
 
-use super::context::{AnalysisContext, ExecutionContext, ExecutionError, InstanceSource};
+use super::context::{AnalysisContext, InstanceSource};
 use super::{
     ArmReads, Block, BlockKind, BlockReadPlan, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -343,77 +343,6 @@ impl MatchIr {
             }
             _ => false,
         }
-    }
-
-    pub(crate) fn select(&self, cx: &ExecutionContext) -> Result<MatchSelection, ExecutionError> {
-        let mut isolate = cx.isolate.borrow_mut();
-
-        let mut arms: Vec<ConditionTrace> = Vec::new();
-        let mut matched_arm: Option<Arc<str>> = None;
-
-        for arm in &self.arms {
-            if matched_arm.is_some() && !cx.extras {
-                break;
-            }
-            let matches = if arm.condition.is_empty() {
-                true
-            } else {
-                match isolate.run_standard(&arm.condition) {
-                    Ok(value) => value.as_bool().unwrap_or(false),
-                    Err(_) if cx.extras && matched_arm.is_some() => false,
-                    Err(e) => return Err(cx.expression_error(&arm.condition, e)),
-                }
-            };
-            arms.push(ConditionTrace {
-                id: arm.id.clone(),
-                result: matches,
-            });
-            if matches && matched_arm.is_none() {
-                matched_arm = Some(arm.id.clone());
-            }
-        }
-
-        Ok(MatchSelection { matched_arm, arms })
-    }
-
-    pub(crate) fn commit(
-        &self,
-        cx: &ExecutionContext,
-        selection: &MatchSelection,
-    ) -> Result<BlockTrace, ExecutionError> {
-        let matched = selection
-            .matched_arm
-            .as_ref()
-            .and_then(|id| self.arms.iter().find(|a| &a.id == id));
-        let value = match matched {
-            Some(arm) if !arm.value.is_empty() => {
-                let mut isolate = cx.isolate.borrow_mut();
-                isolate
-                    .run_standard(&arm.value)
-                    .map_err(|e| cx.expression_error(&arm.value, e))?
-            }
-            _ => Variable::Null,
-        };
-
-        let traced = cx.trace.then(|| value.deep_clone());
-        if !self.key.is_empty() {
-            cx.write(&self.key, value);
-        }
-
-        Ok(BlockTrace::Match {
-            matched_arm: selection.matched_arm.clone(),
-            value: traced.unwrap_or(Variable::Null),
-            arms: if cx.trace {
-                selection.arms.clone()
-            } else {
-                Vec::new()
-            },
-        })
-    }
-
-    pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
-        let selection = self.select(cx)?;
-        self.commit(cx, &selection)
     }
 
     pub(super) fn resolve_cursor(

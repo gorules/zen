@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use support::columns::Built;
-use support::golden::{Canon, Outcome, Reference};
+use support::golden::{Canon, Live, Outcome, Reference};
 use zen_engine::policy::EvaluateRequest;
 use zen_engine::EvaluationOptions;
 use zen_expression::Variable;
@@ -283,7 +283,7 @@ impl Engines {
             };
             let want = self.reference.policy(
                 || Canon::key(&suite.id(), goals, &input),
-                || run.workspace.evaluate_with_driver(&request).map(|r| Built::normalized(r.output.to_value())).map_err(|e| format!("{e:?}")),
+                || Live::policy(&run.workspace, &request).map(|r| Built::normalized(r.output.to_value())).map_err(|e| format!("{e:?}")),
                 |outcome| match outcome {
                     Outcome::Ok(value) => Ok(Built::normalized(Canon::restore(value).to_value())),
                     Outcome::Err { debug, .. } => Err(debug.clone()),
@@ -370,6 +370,9 @@ fn graph_engines_match_walker() {
 
 #[test]
 fn policy_spec_matches_driver() {
+    if Reference::unavailable("spec-policy") {
+        return;
+    }
     Spec::prepare();
     let (suites, mut problems) = Spec::suites(Dialect::Policy);
     let reference = Reference::open("spec-policy");
@@ -408,6 +411,9 @@ fn policy_spec_matches_driver() {
 
 #[test]
 fn policy_engines_match_driver() {
+    if Reference::unavailable("spec-policy") {
+        return;
+    }
     Spec::prepare();
     let (suites, problems) = Spec::suites(Dialect::Policy);
     let mut engines = Engines::new(Reference::open("spec-policy"));

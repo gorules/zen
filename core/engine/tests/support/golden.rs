@@ -8,7 +8,7 @@ use std::future::Future;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use zen_engine::policy::{EvaluationError as PolicyError, EvaluationResult};
+use zen_engine::policy::{EvaluateRequest, EvaluationError as PolicyError, EvaluationResult, PolicyWorkspace};
 use zen_engine::{DecisionGraphResponse, EvaluationError, EvaluationTraceKind};
 use zen_expression::variable::{RcValue, VariableMap};
 use zen_expression::Variable;
@@ -592,13 +592,46 @@ impl Golden {
     }
 }
 
+pub struct Live;
+
+impl Live {
+    #[cfg(feature = "driver")]
+    pub fn policy(ws: &PolicyWorkspace, req: &EvaluateRequest) -> Result<EvaluationResult, PolicyError> {
+        ws.evaluate_with_driver(req)
+    }
+
+    #[cfg(feature = "driver")]
+    pub fn enhanced(ws: &PolicyWorkspace, req: &EvaluateRequest) -> Result<EvaluationResult, PolicyError> {
+        ws.enhance_trace_with_driver(req)
+    }
+
+    #[cfg(not(feature = "driver"))]
+    pub fn policy(_: &PolicyWorkspace, _: &EvaluateRequest) -> Result<EvaluationResult, PolicyError> {
+        panic!("live policy references need the driver feature")
+    }
+
+    #[cfg(not(feature = "driver"))]
+    pub fn enhanced(_: &PolicyWorkspace, _: &EvaluateRequest) -> Result<EvaluationResult, PolicyError> {
+        panic!("live policy references need the driver feature")
+    }
+}
+
 pub enum Reference {
     Live,
     Recorded(Golden),
 }
 
 impl Reference {
-    const DEFAULT: &'static str = "live";
+    const DEFAULT: &'static str = if cfg!(feature = "driver") || !cfg!(feature = "arbitrary_precision") { "live" } else { "recorded" };
+    const POLICY: [&'static str; 4] = ["spec-policy", "generated/policy", "policy-fixtures", "anchor"];
+
+    pub fn unavailable(corpus: &str) -> bool {
+        let unavailable = !cfg!(feature = "driver") && !Self::recorded() && Self::POLICY.contains(&corpus);
+        if unavailable {
+            eprintln!("{corpus}: skipped, policy references need the driver feature (live) or arbitrary_precision (recorded goldens)");
+        }
+        unavailable
+    }
 
     pub fn recorded() -> bool {
         std::env::var("GOLDEN_REFERENCE").unwrap_or_else(|_| Self::DEFAULT.to_string()) == "recorded"

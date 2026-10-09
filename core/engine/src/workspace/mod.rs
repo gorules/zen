@@ -106,12 +106,22 @@ impl Workspace {
         self.db.evaluate_columns(policy_path, goals, columns)
     }
 
+    #[cfg(feature = "driver")]
     #[doc(hidden)]
     pub fn evaluate_with_driver(
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
         self.db.evaluate_with_driver(req)
+    }
+
+    #[cfg(feature = "driver")]
+    #[doc(hidden)]
+    pub fn enhance_trace_with_driver(
+        &self,
+        req: &EvaluateRequest,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        self.db.enhance_trace_with_driver(req)
     }
 
     pub fn enhance_graph_trace(

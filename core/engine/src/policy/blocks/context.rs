@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use zen_expression::intellisense::{ArmTest, ExpressionAnalysis, IntelliSense, ReadDependency};
-use zen_expression::variable::{Variable, VariableType};
-use zen_expression::{Isolate, IsolateError};
+use zen_expression::variable::VariableType;
+use zen_expression::IsolateError;
 
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
@@ -16,7 +16,7 @@ use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::AnalysisPass;
 use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
-    Severity, WriteTrace,
+    Severity,
 };
 
 pub type SharedIntelliSense = Rc<RefCell<IntelliSense>>;
@@ -513,63 +513,6 @@ pub struct AnalysisSummary {
     pub writes: Vec<WriteTarget>,
     pub diagnostics: Vec<Diagnostic>,
     pub table_checks: Vec<TableCheck>,
-}
-
-pub struct ExecutionContext<'a> {
-    pub store: &'a Variable,
-    pub policy_path: &'a Arc<str>,
-    pub block_id: &'a Arc<str>,
-    pub trace: bool,
-    pub extras: bool,
-    pub write_log: Option<&'a RefCell<Vec<WriteTrace>>>,
-    pub env_mirror: Option<&'a Variable>,
-    pub isolate: &'a RefCell<Isolate>,
-}
-
-impl ExecutionContext<'_> {
-    pub fn expression_error(&self, expression: &Arc<str>, source: IsolateError) -> ExecutionError {
-        ExecutionError {
-            block_id: self.block_id.clone(),
-            policy_path: self.policy_path.clone(),
-            expression: expression.clone(),
-            source,
-        }
-    }
-
-    pub fn write(&self, path: &Arc<str>, value: Variable) {
-        if let Some(log) = self.write_log {
-            log.borrow_mut().push(WriteTrace {
-                path: path.clone(),
-                value: value.deep_clone(),
-            });
-        }
-        Self::write_into(self.store, self.env_mirror, path, value);
-    }
-
-    pub(crate) fn write_into(store: &Variable, env_mirror: Option<&Variable>, path: &str, value: Variable) {
-        store.dot_insert(path, value);
-        Self::mirror_top_level(store, env_mirror, path);
-    }
-
-    fn mirror_top_level(store: &Variable, env_mirror: Option<&Variable>, path: &str) {
-        let Some(env) = env_mirror else {
-            return;
-        };
-        let (Some(store_fields), Some(env_fields)) = (store.as_object(), env.as_object())
-        else {
-            return;
-        };
-        let segment = &path[..path.find('.').unwrap_or(path.len())];
-        let store_fields = store_fields.borrow();
-        let Some((key, value)) =
-            store_fields.get_key_value(&zen_types::symbol::Symbol::from(segment))
-        else {
-            return;
-        };
-        env_fields
-            .borrow_mut()
-            .insert(key.clone(), value.shallow_clone());
-    }
 }
 
 pub(crate) struct IntelliSenseSource;

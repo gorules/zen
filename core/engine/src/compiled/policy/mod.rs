@@ -1,13 +1,20 @@
+#![cfg_attr(not(feature = "driver"), deny(clippy::disallowed_types, clippy::disallowed_methods))]
+
 mod columnar;
 mod entity;
+mod exact;
+mod host;
 mod schedule;
 mod table;
+mod traced;
 
 pub use columnar::PolicyColumnarOutput;
+pub(crate) use host::Host;
 
 use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};
-use crate::policy::blocks::{Block, ExecutionContext};
-use crate::policy::evaluator::{Driver, EvalArtifact, InstanceSlot, Iterated, Iteration, Pick, Picked};
+use crate::policy::blocks::Block;
+use crate::policy::evaluator::{EvalArtifact, Iteration};
+use crate::policy::host::{HostState, InstanceSlot, Iterated, Pick, Picked};
 use crate::workspace::types::BlockRef;
 use zen_expression::lane::SourceInfo;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
@@ -15,7 +22,7 @@ use schedule::{Blocks, Demand, End, Event, Replay, Segment};
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
-use zen_expression::lane::{LaneProgram, LaneRunner};
+use zen_expression::lane::{LaneProgram, LaneRunner, Programs};
 use zen_expression::{Scope, Variable};
 
 enum Native {
@@ -157,10 +164,11 @@ pub(crate) struct PolicyPlan {
     iterations: Vec<Option<Iteration>>,
     safe: std::sync::OnceLock<Vec<Iteration>>,
     fusions: columnar::Fusions,
+    programs: Arc<Programs>,
 }
 
 struct Rows<'a> {
-    drivers: Vec<Option<Driver<'a>>>,
+    hosts: Vec<Option<Host<'a>>>,
     picks: Vec<Vec<(usize, Picked)>>,
     failures: Vec<Option<EvaluationError>>,
 }
@@ -168,8 +176,8 @@ struct Rows<'a> {
 impl Rows<'_> {
     fn ensure(&mut self) {
         let rows = self.failures.len();
-        if self.drivers.len() < rows {
-            self.drivers.resize_with(rows, || None);
+        if self.hosts.len() < rows {
+            self.hosts.resize_with(rows, || None);
         }
         if self.picks.len() < rows {
             self.picks.resize_with(rows, Vec::new);
@@ -244,6 +252,7 @@ impl PolicyPlan {
             iterations,
             safe: std::sync::OnceLock::new(),
             fusions: columnar::Fusions::default(),
+            programs: artifact.programs(),
         }
     }
 
@@ -356,20 +365,20 @@ impl PolicyPlan {
             })
             .collect();
         let mut state = Rows {
-            drivers: stores
+            hosts: stores
                 .iter()
                 .zip(requests)
                 .map(|(store, request)| {
                     store
                         .as_ref()
-                        .map(|store| Driver::new(artifact, store, &request.policy_path, false, false))
+                        .map(|store| Host::new(artifact, store, &request.policy_path, false, false, &self.programs))
                 })
                 .collect(),
             picks: (0..count).map(|_| Vec::new()).collect(),
             failures,
         };
 
-        let rows: Vec<usize> = (0..count).filter(|&row| state.drivers[row].is_some()).collect();
+        let rows: Vec<usize> = (0..count).filter(|&row| state.hosts[row].is_some()).collect();
         let mut stack: Vec<(Arc<Segment>, Vec<usize>)> = vec![(self.root.clone(), rows)];
         while let Some((segment, mut rows)) = stack.pop() {
             for event in &segment.events {
@@ -392,8 +401,8 @@ impl PolicyPlan {
             let owner = &self.blocks.refs[*block];
             let mut groups: Vec<(Demand, Vec<usize>)> = Vec::new();
             for &row in &rows {
-                let demand: Demand = match (state.drivers[row].as_ref(), state.picked(row, *block)) {
-                    (Some(driver), Some(picked)) => driver.demanded(owner, picked).into(),
+                let demand: Demand = match (state.hosts[row].as_ref(), state.picked(row, *block)) {
+                    (Some(host), Some(picked)) => host.state.demanded(owner, picked).into(),
                     _ => Arc::from([]),
                 };
                 match groups.iter_mut().find(|(d, _)| *d == demand) {
@@ -444,10 +453,10 @@ impl PolicyPlan {
     fn select_delegated(&self, block: usize, rows: &[usize], state: &mut Rows) {
         let (owner, rule) = (&self.blocks.refs[block], &self.blocks.rules[block]);
         for &row in rows {
-            let Some(driver) = state.drivers[row].as_mut() else {
+            let Some(host) = state.hosts[row].as_mut() else {
                 continue;
             };
-            match driver.select(owner, rule) {
+            match host.select(owner, rule) {
                 Ok(picked) => state.picks[row].push((block, picked)),
                 Err(error) => state.failures[row] = Some(error),
             }
@@ -481,14 +490,14 @@ impl PolicyPlan {
         let (owner, rule) = (&self.blocks.refs[block], &self.blocks.rules[block]);
         for &row in rows {
             let picked = state.take(row, block);
-            let Some(driver) = state.drivers[row].as_mut() else {
+            let Some(host) = state.hosts[row].as_mut() else {
                 continue;
             };
             let result = match picked {
-                Some(picked) => driver.commit(owner, rule, picked),
-                None => driver
+                Some(picked) => host.commit(owner, rule, picked),
+                None => host
                     .select(owner, rule)
-                    .and_then(|picked| driver.commit(owner, rule, picked)),
+                    .and_then(|picked| host.commit(owner, rule, picked)),
             };
             if let Err(error) = result {
                 state.failures[row] = Some(error);
@@ -499,9 +508,9 @@ impl PolicyPlan {
     fn scopes(rows: &[usize], state: &Rows) -> (Vec<usize>, Vec<Scope>) {
         rows.iter()
             .filter_map(|&row| {
-                let driver = state.drivers[row].as_ref()?;
-                driver.clear_dollar();
-                Some((row, Scope::new(driver.env().shallow_clone())))
+                let host = state.hosts[row].as_ref()?;
+                host.state.clear_dollar();
+                Some((row, Scope::new(host.state.env().shallow_clone())))
             })
             .unzip()
     }
@@ -581,7 +590,7 @@ impl PolicyPlan {
         let mut captured = Vec::new();
         for &row in rows {
             let picked = state.take(row, block);
-            let Some(driver) = state.drivers[row].as_ref() else {
+            let Some(host) = state.hosts[row].as_ref() else {
                 continue;
             };
             let iterated = match picked {
@@ -591,13 +600,13 @@ impl PolicyPlan {
                     state.picks[row].push((block, other));
                     continue;
                 }
-                None => match driver.capture(rule) {
+                None => match host.state.capture(rule) {
                     Some(iterated) => iterated,
                     None => continue,
                 },
             };
             let (start, owner) = (lanes.len(), captured.len());
-            for (index, bound) in driver.instance_scopes(&iterated).into_iter().enumerate() {
+            for (index, bound) in host.state.instance_scopes(&iterated).into_iter().enumerate() {
                 if let Some((root, slot)) = bound {
                     lanes.push(Lane { owner, index, root, slot });
                 }
@@ -696,8 +705,8 @@ impl PolicyPlan {
                 match iterated.picks().is_empty() {
                     true => delegated.push(row),
                     false => {
-                        if let Some(driver) = state.drivers[row].as_mut() {
-                            if let Err(error) = driver.commit(owner, rule, Picked::Iterated(iterated)) {
+                        if let Some(host) = state.hosts[row].as_mut() {
+                            if let Err(error) = host.commit(owner, rule, Picked::Iterated(iterated)) {
                                 state.failures[row] = Some(error);
                             }
                         }
@@ -707,7 +716,7 @@ impl PolicyPlan {
             }
             for (lane, write) in lanes[span.clone()].iter().zip(&writes[span]) {
                 if let Some(Some((path, value))) = write {
-                    ExecutionContext::write_into(&lane.root, None, path, value.clone());
+                    HostState::write_into(&lane.root, None, path, value.clone());
                 }
                 lane.slot.write_back(&iterated.instances()[lane.index]);
             }
@@ -743,8 +752,8 @@ impl PolicyPlan {
         }
         for row in nulls {
             state.take(row, block);
-            if let (false, Some(driver)) = (ir.key.is_empty(), state.drivers[row].as_ref()) {
-                driver.write(&ir.key, Variable::Null);
+            if let (false, Some(host)) = (ir.key.is_empty(), state.hosts[row].as_ref()) {
+                host.state.write(&ir.key, Variable::Null);
             }
         }
         for (arm, members) in by_arm.into_iter().enumerate() {
@@ -758,8 +767,8 @@ impl PolicyPlan {
                 match result {
                     Some(value) => {
                         state.take(row, block);
-                        if let (false, Some(driver)) = (ir.key.is_empty(), state.drivers[row].as_ref()) {
-                            driver.write(&ir.key, value);
+                        if let (false, Some(host)) = (ir.key.is_empty(), state.hosts[row].as_ref()) {
+                            host.state.write(&ir.key, value);
                         }
                     }
                     None => delegated.push(row),
@@ -786,8 +795,8 @@ impl PolicyPlan {
                 continue;
             }
             let outcome = ir.fold(&results[i]);
-            if let (false, Some(driver)) = (ir.output.is_empty(), state.drivers[row].as_ref()) {
-                driver.write(&ir.output, Variable::Bool(outcome));
+            if let (false, Some(host)) = (ir.output.is_empty(), state.hosts[row].as_ref()) {
+                host.state.write(&ir.output, Variable::Bool(outcome));
             }
         }
         delegated
@@ -799,8 +808,8 @@ impl PolicyPlan {
         Self::RUNNER.with_borrow_mut(|runner| {
             runner.evaluate_with(program, &scopes, |i, result| {
                 let row = live[i];
-                match (result, state.drivers[row].as_ref()) {
-                    (Ok(value), Some(driver)) => driver.write(key, value),
+                match (result, state.hosts[row].as_ref()) {
+                    (Ok(value), Some(host)) => host.state.write(key, value),
                     _ => delegated.push(row),
                 }
             })

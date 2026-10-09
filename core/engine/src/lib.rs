@@ -121,6 +121,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
+#![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod analysis;
 mod compiled;

@@ -11,7 +11,9 @@ use crate::compiled::columnar::OutputColumn;
 use crate::compiled::shred::{Listing, Normalizer, Shred, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf};
 use crate::policy::blocks::{AssertionIr, MatchIr, MatchSelection, TableSelection};
-use crate::policy::evaluator::{Driver, EvalArtifact, Iteration, Pick};
+use super::Host;
+use crate::policy::evaluator::{EvalArtifact, Iteration};
+use crate::policy::host::Pick;
 use std::cell::{OnceCell, RefCell};
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
 use std::rc::Rc;
@@ -395,10 +397,10 @@ impl<'s, 'a> Pass<'s, 'a> {
         if !self.shared {
             return Scope::new(self.sheet.object(row));
         }
-        match self.driver(row) {
-            Some(driver) => {
-                driver.clear_dollar();
-                Scope::new(driver.env().shallow_clone())
+        match self.host(row) {
+            Some(host) => {
+                host.state.clear_dollar();
+                Scope::new(host.state.env().shallow_clone())
             }
             None => Scope::default(),
         }
@@ -796,12 +798,12 @@ impl<'s, 'a> Pass<'s, 'a> {
         self.write(&ir.key, Leaf::typed(builder.finish()), positions);
     }
 
-    fn driver(&mut self, row: usize) -> Option<&mut Driver<'s>> {
+    fn host(&mut self, row: usize) -> Option<&mut Host<'s>> {
         self.state.ensure();
-        if self.state.drivers[row].is_none() {
+        if self.state.hosts[row].is_none() {
             let prepared = self.stores[row].get().is_some();
             let store = self.stores[row].get_or_init(|| self.sheet.object(row));
-            self.state.drivers[row] = Some(Driver::new(self.artifact, store, self.entry, false, false));
+            self.state.hosts[row] = Some(Host::new(self.artifact, store, self.entry, false, false, &self.plan.programs));
             self.synced[row] = match prepared {
                 true => self.base,
                 false => self.sheet.entries.len(),
@@ -809,13 +811,13 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         let from = self.synced[row];
         self.synced[row] = self.sheet.entries.len();
-        let driver = self.state.drivers[row].as_mut()?;
+        let host = self.state.hosts[row].as_mut()?;
         for entry in &self.sheet.entries[from..] {
             if Sheet::present(entry, row) {
-                driver.write(&entry.path, entry.leaf.get(row));
+                host.state.write(&entry.path, entry.leaf.get(row));
             }
         }
-        Some(driver)
+        Some(host)
     }
 
     fn readback(&self, block: usize) -> Vec<Arc<str>> {
@@ -852,7 +854,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         self.state.ensure();
         self.delegated = true;
         for &row in positions {
-            self.driver(row);
+            self.host(row);
         }
         match commit {
             false => self.plan.select(block, positions, &mut self.state),
@@ -937,8 +939,8 @@ impl<'s, 'a> Pass<'s, 'a> {
             return demand;
         }
         let owner = &self.plan.blocks.refs[block];
-        if let (Some(picked), Some(driver)) = (self.state.picked(row, block), self.state.drivers.get(row).and_then(Option::as_ref)) {
-            return driver.demanded(owner, picked).into();
+        if let (Some(picked), Some(host)) = (self.state.picked(row, block), self.state.hosts.get(row).and_then(Option::as_ref)) {
+            return host.state.demanded(owner, picked).into();
         }
         let Some(plan) = self.artifact.read_plans.get(owner) else {
             return Arc::from([]);
@@ -1899,7 +1901,7 @@ impl PolicyPlan {
                 arms: Vec::new(),
                 stores: &stores,
                 state: Rows {
-                    drivers: Vec::new(),
+                    hosts: Vec::new(),
                     picks: Vec::new(),
                     failures: errors,
                 },
@@ -1917,7 +1919,7 @@ impl PolicyPlan {
                 owners: self.iterations.iter().map(|iteration| iteration.as_ref().map(|(_, path, _)| path.clone())).collect(),
             };
             pass.walk(self.root.clone(), live);
-            let owning = |row: usize| pass.state.drivers.get(row).is_some_and(Option::is_some) || pass.stores[row].get().is_some();
+            let owning = |row: usize| pass.state.hosts.get(row).is_some_and(Option::is_some) || pass.stores[row].get().is_some();
             let owns = (0..rows).any(owning);
             if owns {
                 (0..pass.sheet.entities.len()).for_each(|at| pass.sheet.retire(at));
@@ -1925,8 +1927,8 @@ impl PolicyPlan {
             let owned: Vec<Option<Variable>> = match owns {
                 false => Vec::new(),
                 true => (0..rows)
-                    .map(|row| match pass.state.drivers.get(row).is_some_and(Option::is_some) || pass.stores[row].get().is_some() {
-                        true => pass.driver(row).map(|driver| driver.env().shallow_clone()).and(pass.stores[row].get().cloned()),
+                    .map(|row| match pass.state.hosts.get(row).is_some_and(Option::is_some) || pass.stores[row].get().is_some() {
+                        true => pass.host(row).map(|host| host.state.env().shallow_clone()).and(pass.stores[row].get().cloned()),
                         false => None,
                     })
                     .collect(),

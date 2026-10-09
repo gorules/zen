@@ -5,11 +5,10 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
-use zen_expression::{Isolate, OpcodeCache};
 
 use crate::model::{DecisionContent, PolicyContent};
 use crate::policy::blocks::{
-    Block, BlockKind, BlockReadPlan, IntelliSenseSource, PropertyRead, ReadFlattener,
+    Block, BlockReadPlan, IntelliSenseSource, PropertyRead, ReadFlattener,
     SharedIntelliSense,
 };
 use crate::policy::evaluator::EvalArtifact;
@@ -174,7 +173,8 @@ pub struct Unit {
     pub execution_order: Vec<PropertyPath>,
     pub computed_instances: HashMap<Arc<str>, InstanceTarget>,
     enriched_once: OnceCell<Arc<EnrichedState>>,
-    opcode_cache: OnceCell<Arc<OpcodeCache>>,
+    #[cfg(feature = "driver")]
+    opcode_cache: OnceCell<Arc<zen_expression::OpcodeCache>>,
     pub data_models: Vec<DataModelEntry>,
     pub entities: HashMap<Arc<str>, Arc<DataModelIr>>,
     pub dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
@@ -649,7 +649,8 @@ impl Db {
         )
     }
 
-    pub(crate) fn opcode_cache_of_unit(&self, unit: &Unit) -> Arc<OpcodeCache> {
+    #[cfg(feature = "driver")]
+    pub(crate) fn opcode_cache_of_unit(&self, unit: &Unit) -> Arc<zen_expression::OpcodeCache> {
         unit.opcode_cache
             .get_or_init(|| {
                 let snap = self.snapshot();
@@ -662,7 +663,7 @@ impl Db {
                         for loc in rule.kind.expressions(&rule.id) {
                             sources.push((loc.source, loc.kind));
                         }
-                        if let BlockKind::DecisionTable(dt) = &rule.kind {
+                        if let crate::policy::blocks::BlockKind::DecisionTable(dt) = &rule.kind {
                             for col in &dt.inputs {
                                 if let Some(field) =
                                     col.field.as_ref().filter(|f| !f.as_ref().is_empty())
@@ -674,8 +675,8 @@ impl Db {
                     }
                 }
 
-                let mut cache = OpcodeCache::new();
-                let mut isolate = Isolate::new();
+                let mut cache = zen_expression::OpcodeCache::new();
+                let mut isolate = zen_expression::Isolate::new();
                 for (source, kind) in &sources {
                     let map = match kind {
                         ExpressionKind::Standard => &mut cache.standard,
@@ -708,6 +709,7 @@ impl Db {
         }
 
         let unit = self.unit(policy);
+        #[cfg(feature = "driver")]
         let opcode_cache = self.opcode_cache_of_unit(&unit);
         let input_schema = self.input_schema(policy);
         let eval_graph = EvalGraph::from_graph(&unit.dep_graph);
@@ -784,6 +786,7 @@ impl Db {
             reference_fields: unit.reference_fields.clone(),
             data_model_paths: unit.data_model_paths.clone(),
             classifier: unit.classifier.clone(),
+            #[cfg(feature = "driver")]
             opcode_cache,
             rule_by_ref: snap.rule_by_ref.clone(),
             input_schema,
@@ -792,6 +795,7 @@ impl Db {
             compiled: Default::default(),
             goal_plans: Default::default(),
             requirements: Default::default(),
+            programs: Default::default(),
         });
         snap.eval_artifacts
             .borrow_mut()
@@ -1034,6 +1038,7 @@ impl Snapshot {
             execution_order,
             computed_instances,
             enriched_once: OnceCell::new(),
+            #[cfg(feature = "driver")]
             opcode_cache: OnceCell::new(),
             data_models,
             entities,

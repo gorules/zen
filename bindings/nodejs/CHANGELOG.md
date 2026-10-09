@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.3](https://github.com/gorules/zen/compare/nodejs-v2.1.2...nodejs-v2.1.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* rewrite import and decision node paths when documents move ([#539](https://github.com/gorules/zen/issues/539)) ([f887b7b](https://github.com/gorules/zen/commit/f887b7bad4e7513b00ec3dcafec009e0143383eb))
+
 ## [2.1.2](https://github.com/gorules/zen/compare/nodejs-v2.1.1...nodejs-v2.1.2) (2026-10-02)
 
 

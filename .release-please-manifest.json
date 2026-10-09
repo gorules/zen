@@ -4,7 +4,7 @@
   "core/types": "2.1.3",
   "core/template": "2.1.3",
   "core/macros": "2.1.3",
-  "bindings/nodejs": "2.1.3",
+  "bindings/nodejs": "2.1.4",
   "bindings/python": "2.1.3",
   "bindings/uniffi": "2.1.3",
   "bindings/c": "2.1.3",

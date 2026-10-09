@@ -561,7 +561,7 @@ impl Corpus {
     async fn graph_fixtures(golden: &mut Golden) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
-            let walker = Decision::from(Arc::new(fixture.content.clone()));
+            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
             for input in Self::fixture_inputs(&fixture) {
                 Graphs::record(golden, &fixture.name, &walker, &input, !Self::slow(&fixture)).await;
             }
@@ -609,7 +609,7 @@ impl Corpus {
                     Guard::block(async {
                         for case in &suite.cases {
                             Graphs::verify(check, golden, &id, &run.compiled, &case.input, "compiled").await;
-                            Graphs::verify(check, golden, &id, &run.walker, &case.input, "uncompiled").await;
+                            Graphs::verify(check, golden, &id, &run.uncompiled, &case.input, "uncompiled").await;
                             let key = Canon::key(&id, &[], &case.input);
                             if let Some(entry) = case.engines.is_none().then(|| check.entry(golden, &key)).flatten() {
                                 let engine = Outcome::graph(&run.engine.evaluate(GraphRun::MAIN, case.input.depth_clone(64)).await);

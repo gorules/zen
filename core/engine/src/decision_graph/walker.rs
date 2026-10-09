@@ -8,16 +8,10 @@ use petgraph::{Incoming, Outgoing};
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::config::ZEN_CONFIG;
-use crate::model::{
-    DecisionEdge, DecisionNode, DecisionNodeKind, SwitchNodeContent, SwitchStatement,
-    SwitchStatementHitPolicy,
-};
-use crate::DecisionGraphTrace;
-use zen_expression::variable::{ToVariable, Variable};
-use zen_expression::Isolate;
+use crate::model::{DecisionEdge, DecisionNode, DecisionNodeKind, SwitchNodeContent};
+use zen_expression::variable::Variable;
 
 pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
@@ -35,12 +29,12 @@ pub(crate) enum WalkStep {
 
 pub(crate) struct GraphWalker {
     iter: usize,
-    node_data: HashMap<NodeIndex, NodeData>,
+    pub(super) node_data: HashMap<NodeIndex, NodeData>,
     ordered: FixedBitSet,
     to_visit: Vec<NodeIndex>,
     visited_switch_nodes: Vec<NodeIndex>,
 
-    nodes_in_context: bool,
+    pub(super) nodes_in_context: bool,
 }
 
 const ITER_MAX: usize = 1_000;
@@ -81,58 +75,12 @@ impl GraphWalker {
         self.iter += 1;
     }
 
-    pub fn get_node_data(&self, node_id: NodeIndex) -> Option<Variable> {
-        Some(self.node_data.get(&node_id)?.data.clone())
-    }
-
-    pub fn ending_variables(&self, g: &StableDiDecisionGraph) -> Variable {
-        Self::merge_ending(
-            self.ending_nodes(g)
-                .into_iter()
-                .filter_map(|nid| self.node_data.get(&nid).map(|nd| &nd.data)),
-        )
-    }
-
     pub(crate) fn merge_ending<'a>(values: impl Iterator<Item = &'a Variable>) -> Variable {
         values.fold(Variable::empty_object(), |mut acc, data| acc.merge(data))
     }
 
-    pub fn get_all_node_data(&self) -> Variable {
-        let node_values = self
-            .node_data
-            .iter()
-            .filter_map(|(_, nd)| {
-                let value = nd.nodes_view.clone().unwrap_or_else(|| nd.data.clone());
-                Some((nd.name.clone(), value))
-            })
-            .collect();
-
-        Variable::from_object(node_values)
-    }
-
     pub fn set_node_data(&mut self, node_id: NodeIndex, value: NodeData) {
         self.node_data.insert(node_id, value);
-    }
-
-    pub fn nodes_context(&self) -> Option<Variable> {
-        self.nodes_in_context.then(|| self.get_all_node_data())
-    }
-
-    pub fn incoming_node_data(
-        &self,
-        g: &StableDiDecisionGraph,
-        node_id: NodeIndex,
-    ) -> (Variable, Variable) {
-        let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
-
-        (value.clone(), value)
-    }
-
-    pub fn merge_node_data<I>(&self, iter: I) -> Variable
-    where
-        I: Iterator<Item = NodeIndex>,
-    {
-        Self::merge_values(iter.filter_map(|nid| self.node_data.get(&nid).map(|nd| &nd.data)))
     }
 
     pub(crate) fn merge_values<'a>(mut incoming: impl Iterator<Item = &'a Variable>) -> Variable {
@@ -146,62 +94,6 @@ impl GraphWalker {
         };
 
         incoming.fold(head, |mut prev, data| prev.merge_clone(data))
-    }
-
-    pub fn next<F: FnMut(DecisionGraphTrace)>(
-        &mut self,
-        g: &mut StableDiDecisionGraph,
-        mut on_trace: Option<F>,
-    ) -> Option<NodeIndex> {
-        let start = Instant::now();
-        let step = self.next_with(g, |walker, g, nid, node, content| {
-            let (input, input_trace) = walker.incoming_node_data(g, nid);
-            let mut isolate = Isolate::with_environment(input);
-            if let Some(nodes) = walker.nodes_context() {
-                isolate.set_local(Variable::nodes_key(), nodes);
-            }
-
-            let mut statement_iter = content.statements.iter();
-            let valid_statements: Vec<SwitchStatementTraceRow> = match content.hit_policy {
-                SwitchStatementHitPolicy::First => statement_iter
-                    .find(|&s| switch_statement_evaluate(&mut isolate, &s))
-                    .into_iter()
-                    .cloned()
-                    .map(SwitchStatementTraceRow::from)
-                    .collect(),
-                SwitchStatementHitPolicy::Collect => statement_iter
-                    .filter(|&s| switch_statement_evaluate(&mut isolate, &s))
-                    .cloned()
-                    .map(SwitchStatementTraceRow::from)
-                    .collect(),
-            };
-
-            if let Some(on_trace) = &mut on_trace {
-                let output = input_trace.depth_clone(1);
-
-                on_trace(DecisionGraphTrace {
-                    id: node.id.clone(),
-                    name: node.name.clone(),
-                    input: input_trace,
-                    output,
-                    order: 0,
-                    performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
-                    trace_data: Some(
-                        SwitchStatementTrace {
-                            statements: valid_statements.clone(),
-                        }
-                        .to_variable(),
-                    ),
-                });
-            }
-
-            Some(valid_statements.into_iter().map(|s| s.id).collect())
-        });
-
-        match step {
-            WalkStep::Node(nid) => Some(nid),
-            WalkStep::Done | WalkStep::Pending => None,
-        }
     }
 
     pub(crate) fn next_with<S>(&mut self, g: &mut StableDiDecisionGraph, mut switch: S) -> WalkStep
@@ -256,7 +148,7 @@ impl GraphWalker {
                         .collect();
                     let edges_remove_count = edges_to_remove.len();
                     for edge in edges_to_remove {
-                        remove_edge_recursive(g, edge);
+                        Self::remove_edge_recursive(g, edge);
                     }
 
                     self.visited_switch_nodes.push(nid);
@@ -305,57 +197,30 @@ impl GraphWalker {
             .filter(|dep| !self.ordered.is_visited(dep))
             .collect()
     }
-}
 
-fn switch_statement_evaluate(isolate: &mut Isolate, switch_statement: &SwitchStatement) -> bool {
-    if switch_statement.condition.is_empty() {
-        return true;
-    }
+    fn remove_edge_recursive(g: &mut StableDiDecisionGraph, edge_id: EdgeIndex) {
+        let Some((source_nid, target_nid)) = g.edge_endpoints(edge_id) else {
+            return;
+        };
 
-    isolate
-        .run_standard(switch_statement.condition.deref())
-        .map_or(false, |v| v.as_bool().unwrap_or(false))
-}
+        g.remove_edge(edge_id);
 
-fn remove_edge_recursive(g: &mut StableDiDecisionGraph, edge_id: EdgeIndex) {
-    let Some((source_nid, target_nid)) = g.edge_endpoints(edge_id) else {
-        return;
-    };
+        for (nid, direction) in [(target_nid, Incoming), (source_nid, Outgoing)] {
+            let count = g.edges_directed(nid, direction).count();
+            if count.is_zero() {
+                let edge_ids: Vec<EdgeIndex> = g
+                    .edges_directed(nid, direction.opposite())
+                    .map(|edge| edge.id())
+                    .collect();
 
-    g.remove_edge(edge_id);
+                edge_ids.iter().for_each(|&edge_id| {
+                    Self::remove_edge_recursive(g, edge_id);
+                });
 
-    for (nid, direction) in [(target_nid, Incoming), (source_nid, Outgoing)] {
-        let count = g.edges_directed(nid, direction).count();
-        if count.is_zero() {
-            let edge_ids: Vec<EdgeIndex> = g
-                .edges_directed(nid, direction.opposite())
-                .map(|edge| edge.id())
-                .collect();
-
-            edge_ids.iter().for_each(|&edge_id| {
-                remove_edge_recursive(g, edge_id);
-            });
-
-            if g.edges(nid).count().is_zero() {
-                g.remove_node(nid);
+                if g.edges(nid).count().is_zero() {
+                    g.remove_node(nid);
+                }
             }
         }
-    }
-}
-
-#[derive(ToVariable)]
-struct SwitchStatementTrace {
-    statements: Vec<SwitchStatementTraceRow>,
-}
-
-#[derive(ToVariable, Clone)]
-#[serde(rename_all = "camelCase")]
-struct SwitchStatementTraceRow {
-    pub id: Arc<str>,
-}
-
-impl From<SwitchStatement> for SwitchStatementTraceRow {
-    fn from(value: SwitchStatement) -> Self {
-        Self { id: value.id }
     }
 }

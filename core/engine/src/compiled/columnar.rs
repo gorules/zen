@@ -309,7 +309,7 @@ impl CompiledGraph {
         max_depth: u8,
         columns: &'a Columns<'a>,
     ) -> ColumnarOutput<'a> {
-        if let (true, Some(plan)) = (max_depth > 0, self.plan.as_ref()) {
+        if let (true, Some(plan)) = (max_depth > 0, self.plan()) {
             if let Some(failures) = self.planned_input(content, extensions, columns).await {
                 if let Some(output) = plan.evaluate(self, content, extensions, max_depth, columns, failures).await {
                     return output;

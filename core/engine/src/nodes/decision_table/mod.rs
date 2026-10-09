@@ -4,10 +4,10 @@ use crate::nodes::{NodeContext, NodeResponse};
 use ahash::HashMap;
 use fixedbitset::FixedBitSet;
 use index::TableIndex;
-use serde::Serialize;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+pub use crate::decision_graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
 use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
 use zen_types::decision::{
@@ -146,32 +146,6 @@ impl DecisionTableNodeHandler {
         });
 
         ctx.success(Variable::from_array(outputs))
-    }
-
-    pub(crate) fn cell_passes(
-        rule: &HashMap<Arc<str>, Arc<str>>,
-        input: &zen_types::decision::DecisionTableInputField,
-        isolate: &mut Isolate,
-    ) -> bool {
-        let Some(rule_value) = rule.get(&input.id) else {
-            return true;
-        };
-        if rule_value.is_empty() {
-            return true;
-        }
-        match &input.field {
-            None => isolate
-                .run_standard(rule_value)
-                .ok()
-                .and_then(|result| result.as_bool())
-                .unwrap_or(false),
-            Some(field) => {
-                if isolate.set_reference(field).is_err() {
-                    return false;
-                }
-                isolate.run_unary(rule_value).unwrap_or(false)
-            }
-        }
     }
 
     fn table_index(ctx: &DecisionTableContext) -> Option<&TableIndex> {
@@ -450,24 +424,4 @@ enum RowResult {
         reference_map: HashMap<Rc<str>, Variable>,
         rule: HashMap<Rc<str>, Rc<str>>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, ToVariable)]
-pub struct DecisionTableRowTrace {
-    index: usize,
-    reference_map: HashMap<Rc<str>, Variable>,
-    rule: HashMap<Rc<str>, Rc<str>>,
-}
-
-#[derive(Debug, Clone, Serialize, ToVariable)]
-#[serde(untagged)]
-pub enum DecisionTableNodeTrace {
-    FirstHit(DecisionTableRowTrace),
-    Collect(Vec<DecisionTableRowTrace>),
-}
-
-impl Default for DecisionTableNodeTrace {
-    fn default() -> Self {
-        DecisionTableNodeTrace::Collect(Default::default())
-    }
 }

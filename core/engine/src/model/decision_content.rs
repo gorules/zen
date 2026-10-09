@@ -125,6 +125,9 @@ pub struct GraphContent {
 
     #[serde(skip)]
     pub(crate) compiled_plan: Option<Arc<CompiledPlan>>,
+
+    #[serde(skip)]
+    pub(crate) schema_failures: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -138,12 +141,32 @@ impl GraphContent {
 }
 
 impl GraphContent {
-    pub fn compile(&mut self) {
+    pub(crate) fn prepare(&mut self) {
         self.compile_functions();
         self.build_dt_indexes();
         if self.compiled_plan.is_none() {
             self.compiled_plan = Some(Arc::new(CompiledPlan::compile(self)));
         }
+    }
+
+    pub(crate) fn hosted(&self) -> GraphContent {
+        let mut owned = self.clone();
+        owned.compiled_plan = Some(Arc::new(CompiledPlan::hosted(&owned)));
+        owned
+    }
+
+    pub(crate) async fn loaded(graph: Arc<GraphContent>, loader: &DynamicLoader) -> Arc<GraphContent> {
+        if graph.compiled_plan.is_some() && graph.resolved_schemas.is_some() {
+            return graph;
+        }
+        let mut owned = (*graph).clone();
+        owned.prepare();
+        let _ = owned.resolve_schemas(loader).await;
+        Arc::new(owned)
+    }
+
+    pub fn compile(&mut self) {
+        self.prepare();
         if self.compiled_cache.is_some() {
             return;
         }
@@ -268,6 +291,27 @@ impl GraphContent {
 
         self.resolved_schemas = Some(Arc::new(resolved));
         Ok(())
+    }
+
+    pub(crate) async fn validation_schema(
+        &self,
+        loader: &DynamicLoader,
+        node_id: &str,
+        schema: Option<&serde_json::Value>,
+    ) -> Result<Option<(Arc<serde_json::Value>, u64)>, String> {
+        let Some(schema) = schema else {
+            return Ok(None);
+        };
+        if let Some(resolved) = &self.resolved_schemas {
+            return Ok(resolved.get(node_id).cloned());
+        }
+        if !schema_dict::schema_references_dictionary(schema) {
+            return Ok(None);
+        }
+
+        let dictionaries = schema_dict::load_import_dictionaries(loader, &self.imports).await?;
+        schema_dict::resolve_schema(schema, &dictionaries)
+            .map(|resolved| Some((Arc::new(resolved.0), resolved.1)))
     }
 
     fn compile_functions(&mut self) {

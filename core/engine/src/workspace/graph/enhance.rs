@@ -4,14 +4,14 @@ use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use base64::Engine as _;
 use rust_decimal::prelude::ToPrimitive;
 use zen_expression::variable::Variable;
-use zen_expression::Isolate;
+use zen_expression::lane::Session;
 use zen_types::decision::{
     DecisionNode, DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy,
     TransformExecutionMode,
 };
 
 use crate::model::GraphContent;
-use crate::nodes::decision_table::DecisionTableNodeHandler;
+use crate::compiled::row::RowTable;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::graph::editor::{NodePaths, ReadBase};
 use crate::workspace::graph::function_source;
@@ -54,8 +54,8 @@ impl EnhanceState<'_> {
         let Some(input_field) = &content.transform_attributes.input_field else {
             return Some(base);
         };
-        let mut isolate = Isolate::with_environment(base);
-        let calculated = isolate.run_standard(input_field.as_ref()).ok()?;
+        let mut session = Session::with_environment(base);
+        let calculated = session.run_standard(input_field.as_ref()).ok()?;
         match &calculated {
             Variable::Array(items) => {
                 let items = items
@@ -82,12 +82,12 @@ impl EnhanceState<'_> {
         content: &DecisionTableContent,
         environment: Variable,
     ) -> DecisionTableExtras {
-        let mut isolate = Isolate::with_environment(environment.depth_clone(1));
+        let mut session = Session::with_environment(environment.depth_clone(1));
         let bytes_per_row = content.inputs.len().div_ceil(8);
         let mut bits = vec![0u8; bytes_per_row * content.rules.len()];
         for (row, rule) in content.rules.iter().enumerate() {
             for (col, input) in content.inputs.iter().enumerate() {
-                if DecisionTableNodeHandler::cell_passes(rule, input, &mut isolate) {
+                if RowTable::passes(rule, input, &mut session) {
                     bits[row * bytes_per_row + (col >> 3)] |= 1 << (col & 7);
                 }
             }

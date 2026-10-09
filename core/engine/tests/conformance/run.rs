@@ -45,6 +45,7 @@ impl CustomNodeAdapter for SpecNodes {
 
 pub struct GraphRun {
     pub walker: Decision,
+    pub uncompiled: Decision,
     pub compiled: Decision,
     pub engine: DecisionEngine,
 }
@@ -69,10 +70,11 @@ impl GraphRun {
         shared.add(Self::MAIN, content(&suite.content)?);
         let engine = DecisionEngine::default().with_loader(shared).with_adapter(Arc::new(SpecNodes));
         engine.compile();
-        let walker = Decision::from(graph.clone()).with_loader(plain).with_adapter(Arc::new(SpecNodes));
+        let uncompiled = Decision::from(graph.clone()).with_loader(plain).with_adapter(Arc::new(SpecNodes));
+        let walker = uncompiled.interpreted();
         let mut compiled = Decision::from(graph).with_loader(built).with_adapter(Arc::new(SpecNodes));
         compiled.compile();
-        Ok(GraphRun { walker, compiled, engine })
+        Ok(GraphRun { walker, uncompiled, compiled, engine })
     }
 
     pub const MAIN: &'static str = "spec-main";

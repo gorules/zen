@@ -554,3 +554,40 @@ async fn merged_inputs_do_not_mutate_parent_node_outputs() {
     assert_eq!(output_of("pa"), json!({ "a": 1, "pa": 10 }).into());
     assert_eq!(output_of("pb"), json!({ "a": 1, "pb": 20 }).into());
 }
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn evaluate_batch_leaves_the_callers_contexts_unchanged() {
+    let content = json!({
+        "nodes": [
+            { "id": "in", "name": "input", "type": "inputNode", "content": {} },
+            { "id": "calc", "name": "calc", "type": "expressionNode", "content": {
+                "passThrough": true, "inputField": null, "outputPath": null, "executionMode": "single",
+                "expressions": [
+                    { "id": "e1", "key": "copy", "value": "inp" },
+                    { "id": "e2", "key": "copy.extra", "value": "1" }
+                ]
+            } },
+            { "id": "out", "name": "output", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "a", "sourceId": "in", "targetId": "calc", "type": "edge" },
+            { "id": "b", "sourceId": "calc", "targetId": "out", "type": "edge" }
+        ]
+    });
+    let content: zen_engine::model::DecisionContent = serde_json::from_value(content).unwrap();
+    let zen_engine::model::DecisionContent::Graph(graph) = content else {
+        panic!("graph");
+    };
+    let mut compiled = Decision::from(graph.clone());
+    compiled.compile();
+    let decisions = [Decision::from(graph.clone()), compiled.clone(), compiled.interpreted()];
+    for decision in decisions {
+        let contexts: Vec<Variable> = (0..3).map(|v| json!({ "inp": { "v": v } }).into()).collect();
+        let before: Vec<serde_json::Value> = contexts.iter().map(Variable::to_value).collect();
+        let results = decision.evaluate_batch(&contexts, EvaluationOptions::default()).await;
+        let after: Vec<serde_json::Value> = contexts.iter().map(Variable::to_value).collect();
+        assert_eq!(before, after);
+        assert!(results.iter().all(Result::is_ok));
+    }
+}

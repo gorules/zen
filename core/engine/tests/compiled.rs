@@ -52,7 +52,7 @@ async fn compiled_graphs_match_the_walker() {
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
-        let walker = Decision::from(Arc::new(fixture.content.clone()));
+        let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
         let verdict = compiled.compiled_verdict();

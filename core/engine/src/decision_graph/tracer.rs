@@ -1,7 +1,9 @@
 use crate::nodes::NodeResult;
 use ahash::HashMap;
 use serde::{Deserialize, Serialize};
+use std::rc::Rc;
 use std::sync::Arc;
+use zen_types::decision::SwitchStatement;
 use zen_expression::variable::ToVariable;
 use zen_types::decision::{DecisionNode, DecisionNodeKind};
 use zen_types::variable::Variable;
@@ -93,4 +95,46 @@ pub struct DecisionGraphTrace {
 
 fn null_variable() -> Variable {
     Variable::Null
+}
+
+#[derive(Debug, Clone, ToVariable)]
+pub struct ExpressionNodeTraceItem {
+    pub(crate) result: Variable,
+}
+
+#[derive(Debug, Clone, Serialize, ToVariable)]
+pub struct DecisionTableRowTrace {
+    pub(crate) index: usize,
+    pub(crate) reference_map: HashMap<Rc<str>, Variable>,
+    pub(crate) rule: HashMap<Rc<str>, Rc<str>>,
+}
+
+#[derive(Debug, Clone, Serialize, ToVariable)]
+#[serde(untagged)]
+pub enum DecisionTableNodeTrace {
+    FirstHit(DecisionTableRowTrace),
+    Collect(Vec<DecisionTableRowTrace>),
+}
+
+impl Default for DecisionTableNodeTrace {
+    fn default() -> Self {
+        DecisionTableNodeTrace::Collect(Default::default())
+    }
+}
+
+#[derive(ToVariable)]
+pub(crate) struct SwitchStatementTrace {
+    pub(crate) statements: Vec<SwitchStatementTraceRow>,
+}
+
+#[derive(ToVariable, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SwitchStatementTraceRow {
+    pub id: Arc<str>,
+}
+
+impl From<SwitchStatement> for SwitchStatementTraceRow {
+    fn from(value: SwitchStatement) -> Self {
+        Self { id: value.id }
+    }
 }

@@ -2,7 +2,8 @@ pub(crate) mod cleaner;
 mod error;
 pub(crate) mod graph;
 pub(crate) mod schema_dict;
-mod tracer;
+pub(crate) mod tracer;
+mod walk;
 pub(crate) mod walker;
 
 pub use error::DecisionGraphValidationError;

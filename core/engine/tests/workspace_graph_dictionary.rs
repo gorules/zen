@@ -377,11 +377,8 @@ async fn runtime_validates_dictionary_membership() {
     assert!(ok.is_ok(), "{ok:?}");
 
     let bad = engine.evaluate("g", json!({ "tier": "GOLD" }).into()).await;
-    let message = format!("{:?}", bad.expect_err("must fail validation"));
-    assert!(
-        message.contains("Validation") || message.to_lowercase().contains("enum"),
-        "{message}"
-    );
+    let message = bad.expect_err("must fail validation").to_string();
+    assert!(message.contains("is not one of"), "{message}");
 }
 
 #[tokio::test]
@@ -406,4 +403,46 @@ async fn runtime_errors_on_unknown_schema_dictionary() {
         message.contains("unknown dictionary 'customerTier'"),
         "{message}"
     );
+}
+
+#[cfg(feature = "driver")]
+#[tokio::test]
+async fn unresolved_dictionaries_resolve_per_evaluation_like_the_walker() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::{Decision, EvaluationOptions};
+
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add(
+        "dicts",
+        document(dictionary_policy(&[], "customerTier", &[("VIP", "Very important"), ("STD", "Standard")])),
+    );
+    let tier = json!({ "$dictionary": "customerTier" });
+    let unknown = json!({ "type": "object", "properties": { "tier": { "$dictionary": "missingTier" } } });
+    let graphs = [
+        schema_graph(&["dicts"], tier.clone(), Some(json!({ "type": "object", "properties": { "tier": tier.clone() } }))),
+        schema_graph(&[], tier.clone(), None),
+        schema_graph(&["dicts"], tier.clone(), Some(unknown.clone())),
+        schema_graph(&["absent"], tier.clone(), None),
+        schema_graph(&["dicts"], json!({ "type": "string" }), Some(unknown)),
+    ];
+    let inputs = [json!({ "tier": "VIP" }), json!({ "tier": "GOLD" }), json!({}), json!({ "tier": 1 })];
+    for graph in graphs {
+        let DecisionContent::Graph(content) = document(graph) else {
+            panic!("graph content");
+        };
+        let decision = Decision::from(content).with_loader(loader.clone());
+        let walker = decision.interpreted();
+        let contexts: Vec<zen_expression::Variable> = inputs.iter().map(|i| i.clone().into()).collect();
+        let batch = decision.evaluate_batch(&contexts, EvaluationOptions::default()).await;
+        for (input, batched) in contexts.iter().zip(batch) {
+            let want = walker.evaluate(input.clone()).await;
+            let got = decision.evaluate(input.clone()).await;
+            let describe = |r: &Result<zen_engine::DecisionGraphResponse, Box<zen_engine::EvaluationError>>| match r {
+                Ok(response) => format!("ok {}", response.result.to_value()),
+                Err(error) => format!("err {error} {}", serde_json::to_value(&**error).unwrap()),
+            };
+            assert_eq!(describe(&want), describe(&got), "{input:?}");
+            assert_eq!(describe(&want), describe(&batched), "{input:?}");
+        }
+    }
 }

@@ -1,6 +1,8 @@
 mod bound;
 mod plan;
 pub(crate) mod policy;
+pub(crate) mod row;
+pub(crate) mod call;
 pub use columnar::{ColumnarOutput, OutputColumn, RecordsView};
 mod schedule;
 mod table;
@@ -15,11 +17,10 @@ use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphResponse};
 use crate::decision_graph::schema_dict;
 use crate::decision_graph::walker::{GraphWalker, StableDiDecisionGraph};
+use crate::loader::DynamicLoader;
 use crate::model::{DecisionNodeKind, GraphContent};
+use ahash::HashMap;
 use crate::nodes::custom::CustomNodeHandler;
-use crate::nodes::decision_table::DecisionTableNodeHandler;
-use crate::nodes::expression::ExpressionNodeHandler;
-use crate::nodes::decision::DecisionNodeHandler;
 use crate::nodes::function::v2::FunctionV2NodeHandler;
 use crate::nodes::function::FunctionNodeHandler;
 use crate::nodes::input::dates::DeclaredDates;
@@ -30,14 +31,13 @@ use jsonschema::Validator;
 use crate::nodes::input::InputNodeHandler;
 use crate::nodes::output::OutputNodeHandler;
 use crate::nodes::{NodeContextBase, NodeContextConfig, NodeHandlerExtensions};
-use crate::{EvaluationError, ZEN_CONFIG};
-use petgraph::algo::is_cyclic_directed;
+use crate::{DecisionGraphValidationError, EvaluationError, ZEN_CONFIG};
 use petgraph::prelude::NodeIndex;
 use schedule::{End, Execute, Outcome, Replay, Segment};
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use table::{Table, TableOut};
 use bound::{Bound, Scopes};
@@ -46,10 +46,11 @@ use typed::{Array, ColumnBuilder, Leaf};
 use std::rc::Rc;
 use zen_types::symbol::Symbol;
 use zen_expression::lane::{Binding, Columns};
-use zen_expression::lane::{LaneProgram, LaneRunner, SourceInfo};
-use zen_expression::{Isolate, Scope, Variable};
+use zen_expression::lane::{LaneProgram, LaneRunner, Programs, SourceInfo};
+use zen_expression::{ExpressionKind, Scope, Variable};
+use row::Row;
 use zen_types::decision::{
-    DecisionNode, DecisionNodeContent, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
+    DecisionNode, DecisionNodeContent, DecisionTableContent, ExpressionNodeContent, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
     TransformAttributes, TransformExecutionMode,
 };
 
@@ -108,6 +109,8 @@ struct Step {
     schema: bool,
     sites: Vec<Option<Arc<str>>>,
     dynamic: bool,
+    eager: bool,
+    programs: OnceLock<Arc<Programs>>,
 }
 
 pub struct CompiledGraph {
@@ -115,16 +118,41 @@ pub struct CompiledGraph {
     steps: Vec<Option<Step>>,
     root: Arc<Segment>,
     dictionaries: bool,
-    plan: Option<plan::Plan>,
+    plan: OnceLock<Option<plan::Plan>>,
 }
 
-pub struct CompiledPlan(Result<CompiledGraph, Arc<str>>);
+pub struct CompiledPlan(Result<CompiledGraph, Refusal>);
+
+pub(crate) enum Refusal {
+    Invalid(Arc<str>, Invalid),
+}
+
+#[derive(Clone)]
+pub(crate) enum Invalid {
+    Build(DecisionGraphValidationError),
+    Validation(DecisionGraphValidationError),
+}
+
+impl Invalid {
+    pub(crate) fn evaluation(&self) -> Box<EvaluationError> {
+        match self {
+            Invalid::Build(error) | Invalid::Validation(error) => Box::new(EvaluationError::InvalidGraph(error.clone())),
+        }
+    }
+
+    pub(crate) fn source(&self) -> Box<dyn std::error::Error> {
+        match self {
+            Invalid::Build(error) => Box::new(error.clone()),
+            Invalid::Validation(_) => self.evaluation().to_string().into(),
+        }
+    }
+}
 
 impl Debug for CompiledPlan {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             Ok(_) => write!(f, "CompiledPlan(Ok)"),
-            Err(reason) => write!(f, "CompiledPlan(Err({reason}))"),
+            Err(Refusal::Invalid(reason, _)) => write!(f, "CompiledPlan(Err({reason}))"),
         }
     }
 }
@@ -137,16 +165,25 @@ impl PartialEq for CompiledPlan {
 
 impl CompiledPlan {
     pub fn compile(content: &GraphContent) -> Self {
-        Self(CompiledGraph::compile(content).map_err(Arc::from))
+        Self(CompiledGraph::compile(content, true))
+    }
+
+    pub(crate) fn hosted(content: &GraphContent) -> Self {
+        Self(CompiledGraph::compile(content, false))
     }
 
     pub fn verdict(&self) -> Result<(), &str> {
-        self.0.as_ref().map(|_| ()).map_err(|reason| reason.as_ref())
+        match &self.0 {
+            Ok(_) => Ok(()),
+            Err(Refusal::Invalid(reason, _)) => Err(reason.as_ref()),
+        }
     }
 
-    pub(crate) fn usable(&self, content: &GraphContent) -> Option<&CompiledGraph> {
-        let graph = self.0.as_ref().ok()?;
-        (!graph.dictionaries || content.resolved_schemas.is_some()).then_some(graph)
+    pub(crate) fn graph(&self) -> Result<&CompiledGraph, &Invalid> {
+        match &self.0 {
+            Ok(graph) => Ok(graph),
+            Err(Refusal::Invalid(_, invalid)) => Err(invalid),
+        }
     }
 }
 
@@ -173,6 +210,52 @@ pub(crate) enum Source<'a> {
     Columns(Rc<Data<'a>>),
 }
 
+impl Step {
+    fn shared_programs(&self) -> Option<&Arc<Programs>> {
+        self.eager.then(|| self.programs())
+    }
+
+    fn programs(&self) -> &Arc<Programs> {
+        self.programs.get_or_init(|| {
+            let mut sources: Vec<(&str, ExpressionKind)> = Vec::new();
+            match &self.node.kind {
+                DecisionNodeKind::ExpressionNode { content } => {
+                    sources.extend(
+                        content
+                            .expressions
+                            .iter()
+                            .filter(|e| !e.key.is_empty() && !e.value.is_empty())
+                            .map(|e| (e.value.as_ref(), ExpressionKind::Standard)),
+                    );
+                    sources.extend(content.transform_attributes.input_field.iter().map(|f| (f.as_ref(), ExpressionKind::Standard)));
+                }
+                DecisionNodeKind::DecisionTableNode { content } => {
+                    for rule in content.rules.iter() {
+                        for input in content.inputs.iter() {
+                            if let Some(cell) = rule.get(&input.id).filter(|c| !c.is_empty()) {
+                                let kind = match input.field.is_some() {
+                                    true => ExpressionKind::Unary,
+                                    false => ExpressionKind::Standard,
+                                };
+                                sources.push((cell.as_ref(), kind));
+                            }
+                        }
+                        for output in content.outputs.iter() {
+                            if let Some(cell) = rule.get(&output.id).filter(|c| !c.is_empty()) {
+                                sources.push((cell.as_ref(), ExpressionKind::Standard));
+                            }
+                        }
+                    }
+                    sources.extend(content.inputs.iter().filter_map(|i| i.field.as_deref()).map(|f| (f, ExpressionKind::Standard)));
+                    sources.extend(content.transform_attributes.input_field.iter().map(|f| (f.as_ref(), ExpressionKind::Standard)));
+                }
+                _ => {}
+            }
+            Arc::new(Programs::compile(sources))
+        })
+    }
+}
+
 impl<'a> Source<'a> {
     fn input(&self, rows: &Rc<[usize]>) -> Data<'a> {
         match self {
@@ -187,21 +270,17 @@ impl CompiledGraph {
         static RUNNER: RefCell<LaneRunner> = RefCell::new(LaneRunner::new());
     }
 
-    fn compile(content: &GraphContent) -> Result<Self, String> {
-        let graph = DecisionGraph::build_graph(content).map_err(|e| e.to_string())?;
-        let inputs = graph
-            .node_weights()
-            .filter(|w| matches!(w.kind, DecisionNodeKind::InputNode { .. }))
-            .count();
-        if inputs != 1 || is_cyclic_directed(&graph) {
-            return Err("graph fails validation".into());
-        }
+    fn compile(content: &GraphContent, eager: bool) -> Result<Self, Refusal> {
+        let graph = DecisionGraph::build_graph(content)
+            .map_err(|e| Refusal::Invalid(Arc::from(e.to_string()), Invalid::Build(e)))?;
+        DecisionGraph::validate_graph(&graph)
+            .map_err(|e| Refusal::Invalid(Arc::from("graph fails validation"), Invalid::Validation(e)))?;
 
         let mut dictionaries = false;
         let mut steps: Vec<Option<Step>> = Vec::new();
         for nid in graph.node_indices() {
             let node = graph[nid].clone();
-            let step = Self::step(&node, &mut dictionaries)?;
+            let step = Self::step(&node, &mut dictionaries, eager);
             let index = nid.index();
             if steps.len() <= index {
                 steps.resize_with(index + 1, || None);
@@ -210,21 +289,26 @@ impl CompiledGraph {
         }
 
         let root = Arc::new(Replay::new(&graph).segment(&[]));
-        let mut compiled = Self {
+        Ok(Self {
             graph,
             steps,
             root,
             dictionaries,
-            plan: None,
-        };
-        if std::env::var("ZEN_LEGACY").is_err() {
-            compiled.plan = plan::Plan::analyze(&compiled).ok();
-        }
-        Ok(compiled)
+            plan: OnceLock::new(),
+        })
+    }
+
+    fn plan(&self) -> Option<&plan::Plan> {
+        self.plan
+            .get_or_init(|| match std::env::var("ZEN_LEGACY") {
+                Ok(_) => None,
+                Err(_) => plan::Plan::analyze(self).ok(),
+            })
+            .as_ref()
     }
 
     pub(crate) fn plan_verdict(&self, columns: &Columns) -> Result<(), String> {
-        match &self.plan {
+        match self.plan() {
             Some(plan) => plan.verdict(self, columns),
             None => Err(self
                 .steps
@@ -262,7 +346,89 @@ impl CompiledGraph {
         ))
     }
 
-    fn step(node: &Arc<DecisionNode>, dictionaries: &mut bool) -> Result<Step, String> {
+    fn expression_kind(content: &ExpressionNodeContent, sources: &mut Vec<Arc<str>>) -> Result<Kind, String> {
+        let entries: Box<[(Arc<str>, Arc<str>)]> = content
+            .expressions
+            .iter()
+            .filter(|e| !e.key.is_empty() && !e.value.is_empty())
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect();
+        sources.extend(entries.iter().map(|(_, v)| v.clone()));
+        let opaque = entries.iter().any(|(_, v)| {
+            v.match_indices('$').any(|(at, _)| {
+                let rest = &v[at + 1..];
+                !rest.starts_with("nodes") && !rest.starts_with('.') && !rest.starts_with('{')
+            })
+        });
+        let overlapping = entries.iter().any(|(key, _)| key.split('.').any(str::is_empty))
+            || entries.iter().enumerate().any(|(i, (a, _))| {
+            entries.iter().skip(i + 1).any(|(b, _)| {
+                a == b
+                    || a.strip_prefix(b.as_ref()).is_some_and(|r| r.starts_with('.'))
+                    || b.strip_prefix(a.as_ref()).is_some_and(|r| r.starts_with('.'))
+            })
+        });
+        let walked = overlapping && entries.iter().any(|(_, source)| source.contains('$'));
+        let mut expanded: Vec<(Arc<str>, Arc<str>, Arc<str>)> = Vec::with_capacity(entries.len());
+        for (key, source) in entries.iter() {
+            let read = format!("$.{}", key.split('.').next().unwrap_or_default());
+            let flat = !opaque && !overlapping && !entries.iter().any(|(_, v)| v.contains(read.as_str()));
+            match flat {
+                true => Self::expand(key, source, source, &mut expanded),
+                false => expanded.push((key.clone(), source.clone(), source.clone())),
+            }
+        }
+        let refs: Vec<(&str, &str)> = expanded.iter().map(|(k, _, v)| (k.as_ref(), v.as_ref())).collect();
+        let program = LaneProgram::compile_many(&refs, true).map_err(|e| e.to_string())?;
+        let empty: Box<[bool]> = expanded.iter().map(|(_, _, fragment)| fragment.trim() == "{}").collect();
+        let fragments: Box<[Arc<str>]> = expanded.iter().map(|(_, _, fragment)| fragment.clone()).collect();
+        let entries: Box<[(Arc<str>, Arc<str>)]> =
+            expanded.into_iter().map(|(key, source, _)| (key, source)).collect();
+        let (transform, extra) = Self::transform(&content.transform_attributes)?;
+        sources.extend(extra);
+        Ok(Kind::Node {
+            transform: Box::new(transform),
+            body: Body::Expression {
+                program: Box::new(program),
+                keys: entries.iter().map(|(k, _)| k.clone()).collect(),
+                entries,
+                fragments,
+                empty,
+                overlapping,
+                walked,
+            },
+        })
+    }
+
+    fn table_kind(
+        content: &DecisionTableContent,
+        sources: &mut Vec<Arc<str>>,
+        cells: &mut Vec<Arc<str>>,
+    ) -> Result<Kind, String> {
+        for rule in content.rules.iter() {
+            for input in content.inputs.iter() {
+                if let Some(cell) = rule.get(&input.id) {
+                    match input.field.is_some() {
+                        true => cells.push(cell.clone()),
+                        false => sources.push(cell.clone()),
+                    }
+                }
+            }
+            for output in content.outputs.iter() {
+                sources.extend(rule.get(&output.id).cloned());
+            }
+        }
+        sources.extend(content.inputs.iter().filter_map(|i| i.field.clone()));
+        let table = Table::compile(content)?;
+        let (transform, extra) = Self::transform(&content.transform_attributes)?;
+        sources.extend(extra);
+        Ok(Kind::Node {
+            body: Body::Table(Box::new(table)),
+            transform: Box::new(transform),
+        })
+    }
+
+    fn step(node: &Arc<DecisionNode>, dictionaries: &mut bool, eager: bool) -> Step {
         let mut sources: Vec<Arc<str>> = Vec::new();
         let mut cells: Vec<Arc<str>> = Vec::new();
         let kind = match &node.kind {
@@ -300,81 +466,12 @@ impl CompiledGraph {
                     conditions,
                 }
             }
+            DecisionNodeKind::ExpressionNode { .. } | DecisionNodeKind::DecisionTableNode { .. } if !eager => Kind::Host,
             DecisionNodeKind::ExpressionNode { content } => {
-                let entries: Box<[(Arc<str>, Arc<str>)]> = content
-                    .expressions
-                    .iter()
-                    .filter(|e| !e.key.is_empty() && !e.value.is_empty())
-                    .map(|e| (e.key.clone(), e.value.clone()))
-                    .collect();
-                sources.extend(entries.iter().map(|(_, v)| v.clone()));
-                let opaque = entries.iter().any(|(_, v)| {
-                    v.match_indices('$').any(|(at, _)| {
-                        let rest = &v[at + 1..];
-                        !rest.starts_with("nodes") && !rest.starts_with('.') && !rest.starts_with('{')
-                    })
-                });
-                let overlapping = entries.iter().any(|(key, _)| key.split('.').any(str::is_empty))
-                    || entries.iter().enumerate().any(|(i, (a, _))| {
-                    entries.iter().skip(i + 1).any(|(b, _)| {
-                        a == b
-                            || a.strip_prefix(b.as_ref()).is_some_and(|r| r.starts_with('.'))
-                            || b.strip_prefix(a.as_ref()).is_some_and(|r| r.starts_with('.'))
-                    })
-                });
-                let walked = overlapping && entries.iter().any(|(_, source)| source.contains('$'));
-                let mut expanded: Vec<(Arc<str>, Arc<str>, Arc<str>)> = Vec::with_capacity(entries.len());
-                for (key, source) in entries.iter() {
-                    let read = format!("$.{}", key.split('.').next().unwrap_or_default());
-                    let flat = !opaque && !overlapping && !entries.iter().any(|(_, v)| v.contains(read.as_str()));
-                    match flat {
-                        true => Self::expand(key, source, source, &mut expanded),
-                        false => expanded.push((key.clone(), source.clone(), source.clone())),
-                    }
-                }
-                let refs: Vec<(&str, &str)> = expanded.iter().map(|(k, _, v)| (k.as_ref(), v.as_ref())).collect();
-                let program = LaneProgram::compile_many(&refs, true).map_err(|e| e.to_string())?;
-                let empty: Box<[bool]> = expanded.iter().map(|(_, _, fragment)| fragment.trim() == "{}").collect();
-                let fragments: Box<[Arc<str>]> = expanded.iter().map(|(_, _, fragment)| fragment.clone()).collect();
-                let entries: Box<[(Arc<str>, Arc<str>)]> =
-                    expanded.into_iter().map(|(key, source, _)| (key, source)).collect();
-                let (transform, extra) = Self::transform(&content.transform_attributes)?;
-                sources.extend(extra);
-                Kind::Node {
-                    transform: Box::new(transform),
-                    body: Body::Expression {
-                        program: Box::new(program),
-                        keys: entries.iter().map(|(k, _)| k.clone()).collect(),
-                        entries,
-                        fragments,
-                        empty,
-                        overlapping,
-                        walked,
-                    },
-                }
+                Self::expression_kind(content, &mut sources).unwrap_or(Kind::Host)
             }
             DecisionNodeKind::DecisionTableNode { content } => {
-                for rule in content.rules.iter() {
-                    for input in content.inputs.iter() {
-                        if let Some(cell) = rule.get(&input.id) {
-                            match input.field.is_some() {
-                                true => cells.push(cell.clone()),
-                                false => sources.push(cell.clone()),
-                            }
-                        }
-                    }
-                    for output in content.outputs.iter() {
-                        sources.extend(rule.get(&output.id).cloned());
-                    }
-                }
-                sources.extend(content.inputs.iter().filter_map(|i| i.field.clone()));
-                let table = Table::compile(content)?;
-                let (transform, extra) = Self::transform(&content.transform_attributes)?;
-                sources.extend(extra);
-                Kind::Node {
-                    body: Body::Table(Box::new(table)),
-                    transform: Box::new(transform),
-                }
+                Self::table_kind(content, &mut sources, &mut cells).unwrap_or(Kind::Host)
             }
             DecisionNodeKind::FunctionNode { .. }
             | DecisionNodeKind::DecisionNode { .. }
@@ -446,8 +543,10 @@ impl CompiledGraph {
             DecisionNodeKind::OutputNode { content } => content.schema.is_some(),
             _ => false,
         };
-        Ok(Step {
+        Step {
             node: node.clone(),
+            eager,
+            programs: OnceLock::new(),
             statics: match &kind {
                 Kind::Host => None,
                 Kind::Node { body: Body::Table(_), .. } => None,
@@ -474,7 +573,7 @@ impl CompiledGraph {
             sites,
             dynamic,
             kind,
-        })
+        }
     }
 
     fn child(&self, segment: &Segment, outcome: Outcome) -> Arc<Segment> {
@@ -1102,16 +1201,9 @@ impl CompiledGraph {
         }
         let loader = extensions.loader();
         let graph = loader.load(content.key.as_ref()).await.ok()?.into_graph_arc()?;
-        let graph = match graph.compiled_cache.is_some() && graph.resolved_schemas.is_some() {
-            true => graph,
-            false => {
-                let mut owned = (*graph).clone();
-                owned.compile();
-                let _ = owned.resolve_schemas(loader).await;
-                Arc::new(owned)
-            }
-        };
-        let compiled = graph.compiled_plan.as_deref()?.usable(&graph)?;
+        let prepared = GraphContent::loaded(graph, loader).await;
+        let compiled = prepared.compiled_plan.as_deref()?.graph().ok()?;
+        let graph = compiled.schemas(&prepared, loader).await;
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
             compiled_cache: graph.compiled_cache.clone(),
@@ -1156,7 +1248,8 @@ impl CompiledGraph {
                 return results;
             }
         }
-        if let DecisionNodeKind::FunctionNode { content: FunctionNodeContent::Version2(content) } = &step.node.kind {
+        let single = iteration > 0 && inputs.len() == 1;
+        if let (DecisionNodeKind::FunctionNode { content: FunctionNodeContent::Version2(content) }, false) = (&step.node.kind, single) {
             let config = NodeContextConfig {
                 max_depth,
                 trace: false,
@@ -1384,6 +1477,9 @@ impl CompiledGraph {
         content: &Arc<GraphContent>,
         extensions: &NodeHandlerExtensions,
     ) -> Vec<(usize, String)> {
+        if let Some(message) = Self::failure(content, &step.node) {
+            return (0..data.len()).map(|i| (i, message.to_string())).collect();
+        }
         let mut failures = Vec::new();
         let Some((validator, schema)) = Self::validator(step, content, extensions) else {
             return failures;
@@ -1595,10 +1691,34 @@ impl CompiledGraph {
                 DecisionGraph::handle(base, content.clone(), FunctionNodeHandler).await
             }
             DecisionNodeKind::DecisionNode { content } => {
-                DecisionGraph::handle(base, content.clone(), DecisionNodeHandler::default()).await
+                let call = call::Call {
+                    key: &content.key,
+                    extensions: &base.extensions,
+                    max_depth,
+                    iteration,
+                };
+                let row = Row {
+                    id: &node.id,
+                    input: base.input.clone(),
+                    nodes: base.nodes.clone(),
+                    programs: None,
+                    trace: false,
+                };
+                call.node(row, &content.transform_attributes).await
             }
             DecisionNodeKind::CustomNode { content } => {
                 DecisionGraph::handle(base, content.clone(), CustomNodeHandler).await
+            }
+            DecisionNodeKind::ExpressionNode { .. } | DecisionNodeKind::DecisionTableNode { .. } => {
+                let index = base.extensions.dt_indexes.as_ref().and_then(|indexes| indexes.get(&node.id));
+                let row = Row {
+                    id: &node.id,
+                    input: base.input.clone(),
+                    nodes: base.nodes.clone(),
+                    programs: step.shared_programs(),
+                    trace: false,
+                };
+                row.node(node, index, true).await
             }
             _ => return Ok(base.input),
         };
@@ -1611,6 +1731,9 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
     ) -> Option<(Arc<Validator<VariableJson>>, Arc<serde_json::Value>)> {
         let node = &step.node;
+        if Self::failure(content, node).is_some() {
+            return None;
+        }
         let (schema, salt) = match content.resolved_schemas.as_ref().and_then(|r| r.get(&node.id)) {
             Some((schema, salt)) => (schema.clone(), *salt),
             None => match &node.kind {
@@ -1622,6 +1745,38 @@ impl CompiledGraph {
         let key = ValidatorCache::key(&node.id, &node.name, salt);
         let validator = extensions.validator_cache().get_or_insert(key, &schema).ok()?;
         Some((validator, schema))
+    }
+
+    fn failure<'c>(content: &'c GraphContent, node: &DecisionNode) -> Option<&'c Arc<str>> {
+        content.schema_failures.as_ref()?.get(&node.id)
+    }
+
+    pub(crate) async fn schemas(&self, content: &Arc<GraphContent>, loader: &DynamicLoader) -> Arc<GraphContent> {
+        if !self.dictionaries || content.resolved_schemas.is_some() {
+            return content.clone();
+        }
+        let mut resolved = HashMap::default();
+        let mut failures = HashMap::default();
+        for node in &content.nodes {
+            let schema = match &node.kind {
+                DecisionNodeKind::InputNode { content } => content.schema.as_deref(),
+                DecisionNodeKind::OutputNode { content } => content.schema.as_deref(),
+                _ => continue,
+            };
+            match content.validation_schema(loader, &node.id, schema).await {
+                Ok(Some(schema)) => {
+                    resolved.insert(node.id.clone(), schema);
+                }
+                Ok(None) => {}
+                Err(message) => {
+                    failures.insert(node.id.clone(), Arc::from(message));
+                }
+            }
+        }
+        let mut owned = (**content).clone();
+        owned.resolved_schemas = Some(Arc::new(resolved));
+        owned.schema_failures = Some(Arc::new(failures));
+        Arc::new(owned)
     }
 
     fn columnar_input(step: &Step, content: &GraphContent, extensions: &NodeHandlerExtensions) -> bool {
@@ -1647,6 +1802,9 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
     ) -> Result<Variable, String> {
         let node = &step.node;
+        if let Some(message) = Self::failure(content, node) {
+            return Err(message.to_string());
+        }
         let mut base = NodeContextBase {
             id: node.id.clone(),
             name: node.name.clone(),
@@ -1694,7 +1852,7 @@ impl CompiledGraph {
     ) -> Vec<Result<Variable, String>> {
         let effective: Vec<Result<Variable, String>> = match &transform.input_field {
             None => inputs.iter().cloned().map(Ok).collect(),
-            Some((program, source)) => {
+            Some((program, _)) => {
                 let scopes: Vec<Scope> = inputs
                     .iter()
                     .enumerate()
@@ -1703,10 +1861,7 @@ impl CompiledGraph {
                 runner
                     .evaluate(program, &scopes)
                     .into_iter()
-                    .enumerate()
-                    .map(|(row, r)| {
-                        r.map_err(|_| Self::isolate_error(&inputs[row], nodes.get(row).and_then(Option::as_ref), source))
-                    })
+                    .map(|r| r.map_err(|e| format!("Failed to evaluate expression: {e}")))
                     .collect()
             }
         };
@@ -1791,17 +1946,6 @@ impl CompiledGraph {
             }
         }
         outputs
-    }
-
-    fn isolate_error(input: &Variable, nodes: Option<&Variable>, source: &str) -> String {
-        let mut isolate = Isolate::with_environment(input.clone());
-        if let Some(nodes) = nodes {
-            isolate.set_local(Variable::nodes_key(), nodes.clone());
-        }
-        match isolate.run_standard(source) {
-            Err(e) => format!("Failed to evaluate expression: {e}"),
-            Ok(_) => "Failed to evaluate expression".to_string(),
-        }
     }
 
     fn looped<'a>(
@@ -1913,43 +2057,16 @@ impl CompiledGraph {
     }
 
     fn walked(step: &Step, input: Variable, nodes: Option<Variable>, transforms: bool) -> Result<Variable, String> {
-        let node = &step.node;
-        let base = NodeContextBase {
-            id: node.id.clone(),
-            name: node.name.clone(),
+        let row = Row {
+            id: &step.node.id,
             input,
             nodes,
-            extensions: NodeHandlerExtensions::default(),
-            iteration: 0,
-            trace: None,
-            config: NodeContextConfig {
-                trace: false,
-                ..Default::default()
-            },
+            programs: step.shared_programs(),
+            trace: false,
         };
-        let mut future: std::pin::Pin<Box<dyn std::future::Future<Output = Result<crate::nodes::NodeResponse, NodeError>>>> =
-            match &node.kind {
-                DecisionNodeKind::ExpressionNode { content } => {
-                    let mut content = content.clone();
-                    if !transforms {
-                        content.transform_attributes = Default::default();
-                    }
-                    Box::pin(DecisionGraph::handle(base, content, ExpressionNodeHandler))
-                }
-                DecisionNodeKind::DecisionTableNode { content } => {
-                    let mut content = content.clone();
-                    if !transforms {
-                        content.transform_attributes = Default::default();
-                    }
-                    Box::pin(DecisionGraph::handle(base, content, DecisionTableNodeHandler))
-                }
-                _ => return Ok(Variable::Null),
-            };
-        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
-        match future.as_mut().poll(&mut context) {
-            std::task::Poll::Ready(result) => result.map(|r| r.output).map_err(|e| e.source.to_string()),
-            std::task::Poll::Pending => Err("node did not complete".to_string()),
-        }
+        row.now(&step.node, None, transforms)
+            .map(|response| response.output)
+            .map_err(|error| error.source.to_string())
     }
 
     fn item_keys(step: &Step, body: &Body) -> Option<Vec<Arc<str>>> {

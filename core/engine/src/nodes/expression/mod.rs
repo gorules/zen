@@ -5,7 +5,8 @@ use std::rc::Rc;
 
 use crate::nodes::context::{NodeContext, NodeContextExt};
 use crate::nodes::definition::NodeHandler;
-use zen_expression::variable::{ToVariable, Variable};
+pub use crate::decision_graph::tracer::ExpressionNodeTraceItem;
+use zen_expression::variable::Variable;
 use zen_types::decision::TransformAttributes;
 
 #[derive(Debug, Clone)]
@@ -59,9 +60,4 @@ impl NodeHandler for ExpressionNodeHandler {
 
         ctx.success(result)
     }
-}
-
-#[derive(Debug, Clone, ToVariable)]
-pub struct ExpressionNodeTraceItem {
-    result: Variable,
 }

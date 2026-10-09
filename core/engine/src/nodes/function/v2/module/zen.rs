@@ -1,4 +1,5 @@
-use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig};
+use crate::compiled::call::{Call, Load};
+use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::DynamicLoader;
 use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
@@ -11,6 +12,7 @@ use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, Function, Object};
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Instant;
 
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 
@@ -18,6 +20,71 @@ pub(crate) struct ZenListener {
     pub loader: DynamicLoader,
     pub custom_node: DynamicCustomNode,
     pub http_handler: DynamicHttpHandler,
+}
+
+impl ZenListener {
+    async fn call<'js>(
+        ctx: &Ctx<'js>,
+        key: &str,
+        context: JsValue,
+        extensions: NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+    ) -> rquickjs::Result<DecisionGraphResponse> {
+        let start = Instant::now();
+        let call = Call {
+            key,
+            extensions: &extensions,
+            max_depth,
+            iteration,
+        };
+        let graph = match call.load().await.or_throw(ctx)? {
+            Load::Graph(graph) => graph,
+            Load::Kind(kind) => {
+                return Err(rquickjs::Exception::throw_message(
+                    ctx,
+                    &format!("decision '{key}' is a {kind}, expected graph"),
+                ))
+            }
+        };
+        let result = call
+            .run(&graph, context.0, None)
+            .await
+            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+        Ok(DecisionGraphResponse {
+            performance: format!("{:.1?}", start.elapsed()),
+            result,
+            trace: None,
+        })
+    }
+
+    async fn walk<'js>(
+        ctx: &Ctx<'js>,
+        key: &str,
+        context: JsValue,
+        extensions: NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+    ) -> rquickjs::Result<DecisionGraphResponse> {
+        let decision_content = extensions.loader().load(key).await.or_throw(ctx)?;
+        let kind = decision_content.kind();
+        let Some(graph_content) = decision_content.into_graph_arc() else {
+            return Err(rquickjs::Exception::throw_message(
+                ctx,
+                &format!("decision '{key}' is a {kind}, expected graph"),
+            ));
+        };
+        let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
+            content: graph_content,
+            max_depth,
+            iteration: iteration + 1,
+            trace: true,
+            extensions,
+        })
+        .or_throw(ctx)?;
+
+        sub_tree.evaluate(context.0).await.or_throw(ctx)
+    }
 }
 
 impl RuntimeListener for ZenListener {
@@ -57,30 +124,22 @@ impl RuntimeListener for ZenListener {
                                     .map(|opt| opt.get::<_, bool>("trace").unwrap_or_default())
                                     .unwrap_or_default();
 
-                                let load_result = loader.load(key.as_str()).await;
-                                let decision_content = load_result.or_throw(&ctx)?;
-                                let kind = decision_content.kind();
-                                let Some(graph_content) = decision_content.into_graph_arc() else {
-                                    return Err(rquickjs::Exception::throw_message(
-                                        &ctx,
-                                        &format!("decision '{key}' is a {kind}, expected graph"),
-                                    ));
+                                let extensions = NodeHandlerExtensions {
+                                    loader: loader.clone(),
+                                    custom_node: custom_node.clone(),
+                                    http_handler: http_handler.clone(),
+                                    ..Default::default()
                                 };
-                                let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
-                                    content: graph_content,
-                                    max_depth,
-                                    iteration: iteration + 1,
-                                    trace,
-                                    extensions: NodeHandlerExtensions {
-                                        loader: loader.clone(),
-                                        custom_node: custom_node.clone(),
-                                        http_handler: http_handler.clone(),
-                                        ..Default::default()
-                                    },
-                                })
-                                .or_throw(&ctx)?;
-
-                                let response = sub_tree.evaluate(context.0).await.or_throw(&ctx)?;
+                                let response = match trace {
+                                    true => {
+                                        Self::walk(&ctx, &key, context, extensions, max_depth, iteration)
+                                            .await?
+                                    }
+                                    false => {
+                                        Self::call(&ctx, &key, context, extensions, max_depth, iteration)
+                                            .await?
+                                    }
+                                };
                                 let k = serde_json::to_value(response).or_throw(&ctx)?.into();
 
                                 return rquickjs::Result::Ok(JsValue(k));

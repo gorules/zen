@@ -9,6 +9,7 @@ mod lookup;
 mod num;
 mod output;
 mod program;
+mod text;
 #[cfg(test)]
 mod tests;
 

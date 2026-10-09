@@ -1,7 +1,7 @@
 use crate::lane::Column;
-use crate::typed::batch::{Data, Feed, Feeds, Lists, Scales, Text};
+use crate::typed::batch::{Data, Feed, Feeds, Lists, Scales};
 use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, Range, Scope};
-use crate::typed::ins::{Arg, FixOp, Guard, Ins, Rep, Src, Tab, R};
+use crate::typed::ins::{FixOp, Guard, Ins, Rep, Src, Tab, R};
 use crate::typed::kernel::K;
 use crate::typed::lookup::{Domain, Lookup};
 use crate::typed::num::{Dec, N};
@@ -30,6 +30,8 @@ pub(crate) struct Reg {
     pub(crate) wide: [u64; Reg::WORDS],
     pub(crate) big: Vec<Decimal>,
     pub(crate) masks: Vec<u64>,
+    pub(crate) text: Vec<u8>,
+    pub(crate) span: Vec<(u32, u32)>,
 }
 
 #[derive(Clone, Default)]
@@ -43,19 +45,14 @@ pub(crate) struct Buf {
     pub(crate) wide: Vec<u64>,
     pub(crate) big: Vec<Decimal>,
     pub(crate) any: bool,
+    pub(crate) text: Vec<u8>,
+    pub(crate) span: Vec<(u32, u32)>,
 }
 
-struct Others<'r> {
+pub(crate) struct Others<'r> {
     lo: &'r [Reg],
     hi: &'r [Reg],
     at: usize,
-}
-
-#[derive(Clone, Copy)]
-enum TV<'a, 'x> {
-    Lit(&'a [u8]),
-    Col(&'a Text<'x>, &'a Feed<'x>),
-    Missing,
 }
 
 pub(crate) struct Exec<'e, 'x> {
@@ -144,6 +141,7 @@ impl Buf {
         self.wide.clear();
         self.wide.resize(words, 0);
         self.any = false;
+        self.text.clear();
     }
 
     #[inline]
@@ -218,6 +216,8 @@ impl Reg {
             wide: [0; Self::WORDS],
             big: Vec::new(),
             masks: Vec::new(),
+            text: Vec::new(),
+            span: Vec::new(),
         }
     }
 
@@ -232,7 +232,8 @@ impl Reg {
             }
             Lit::Bool(b) => self.bits.fill(if *b { u64::MAX } else { 0 }),
             Lit::Code(_, c) => self.codes.fill(*c),
-            Lit::Null | Lit::Text(_) => self.valid.fill(0),
+            Lit::Text(t) => self.literal(t),
+            Lit::Null => self.valid.fill(0),
         }
         if rep == Rep::Null {
             self.valid.fill(0);
@@ -325,28 +326,6 @@ impl Reg {
     }
 }
 
-impl<'a, 'x> TV<'a, 'x> {
-    #[inline]
-    fn get(self, at: usize) -> Option<&'a [u8]> {
-        match self {
-            TV::Lit(b) => Some(b),
-            TV::Col(text, feed) => match feed.valid(at) {
-                true => text.get(at),
-                false => None,
-            },
-            TV::Missing => None,
-        }
-    }
-
-    fn valid_word(self, at: usize) -> u64 {
-        match self {
-            TV::Lit(_) => u64::MAX,
-            TV::Col(_, feed) => feed.valid_word(at, 64) & !feed.fault_word(at / 64),
-            TV::Missing => 0,
-        }
-    }
-}
-
 impl<'e, 'x> Exec<'e, 'x> {
     #[cfg(test)]
     thread_local! {
@@ -363,24 +342,11 @@ impl<'e, 'x> Exec<'e, 'x> {
         }
     }
 
-    fn feed(&self, src: Src) -> Option<&'e Feed<'x>> {
+    pub(crate) fn feed(&self, src: Src) -> Option<&'e Feed<'x>> {
         match src {
             Src::Col(c) => self.feeds.columns.get(c as usize),
             Src::Field(l, f) => self.feeds.fields.get(l as usize).and_then(|l| l.get(f as usize)),
             Src::Class(k) => self.feeds.classes.get(k as usize),
-        }
-    }
-
-    fn view<'a>(&'a self, arg: &'a Arg) -> TV<'a, 'x> {
-        match arg {
-            Arg::Lit(s) => TV::Lit(s.as_bytes()),
-            Arg::Src(src) => match self.feed(*src) {
-                Some(feed) => match feed.text() {
-                    Some(text) => TV::Col(text, feed),
-                    None => TV::Missing,
-                },
-                None => TV::Missing,
-            },
         }
     }
 
@@ -457,7 +423,7 @@ impl<'e, 'x> Exec<'e, 'x> {
     }
 
     #[inline]
-    fn def(regs: &mut [Reg], dst: R, f: impl FnOnce(&mut Reg, &Others)) {
+    pub(crate) fn def(regs: &mut [Reg], dst: R, f: impl FnOnce(&mut Reg, &Others)) {
         let at = dst as usize;
         let (lo, rest) = regs.split_at_mut(at);
         if let Some((d, hi)) = rest.split_first_mut() {
@@ -517,7 +483,7 @@ impl<'e, 'x> Exec<'e, 'x> {
     }
 
     #[inline(always)]
-    fn bools(&self, act: Option<&[u64; Reg::WORDS]>, bits: &mut [u64; Reg::WORDS], mut f: impl FnMut(usize) -> bool) {
+    pub(crate) fn bools(&self, act: Option<&[u64; Reg::WORDS]>, bits: &mut [u64; Reg::WORDS], mut f: impl FnMut(usize) -> bool) {
         let words = self.words.min(Reg::WORDS);
         match act {
             None => K::pack_idx(self.n, &mut bits[..words], f),
@@ -534,7 +500,7 @@ impl<'e, 'x> Exec<'e, 'x> {
     }
 
     #[inline(always)]
-    fn each(&self, act: Option<&[u64; Reg::WORDS]>, skip: &[u64; Reg::WORDS], mut f: impl FnMut(usize)) {
+    pub(crate) fn each(&self, act: Option<&[u64; Reg::WORDS]>, skip: &[u64; Reg::WORDS], mut f: impl FnMut(usize)) {
         for w in 0..self.words.min(Reg::WORDS) {
             let mut m = act.map_or(u64::MAX, |a| a[w]) & self.tail(w) & !skip[w];
             while m != 0 {
@@ -618,7 +584,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                             }
                         }
                         Rep::Bool => K::pack1(parent, &mut d.bits[..words], |p| K::get(&b.bits, p as usize)),
-                        Rep::Text | Rep::Null => {}
+                        Rep::Text => self.gather_text(d, b, parent),
+                        Rep::Null => {}
                     }
                     let (r0, r1) = (parent.first().map_or(0, |p| *p as usize), parent.last().map_or(0, |p| *p as usize + 1));
                     if K::range(&b.valid, r0, r1, true) && K::range(&b.fault, r0, r1, false) {
@@ -658,7 +625,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                         }
                         Rep::Code => d.codes[..n].copy_from_slice(&b.codes[start..start + n]),
                         Rep::Bool => d.bits[..words].copy_from_slice(&b.bits[w0..w0 + words]),
-                        Rep::Text | Rep::Null => {}
+                        Rep::Text => self.fill_text(d, b),
+                        Rep::Null => {}
                     }
                 });
             }
@@ -688,7 +656,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                     }
                     Rep::Code => b.codes[start..start + n].copy_from_slice(&r.codes[..n]),
                     Rep::Bool => b.bits[w0..w0 + words].copy_from_slice(&r.bits[..words]),
-                    Rep::Text | Rep::Null => {}
+                    Rep::Text => self.spill_text(r, b),
+                    Rep::Null => {}
                 }
             }
             Ins::Fix { op, dst, a, b, rep } => Self::def(regs, *dst, |d, regs| {
@@ -891,7 +860,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.valid[w] = u64::MAX;
                 }
             }),
-            Ins::CmpGen { op, dst, a, ra, b, rb } if matches!((ra, rb), (Rep::Null, _) | (_, Rep::Null)) && *ra != Rep::Text && *rb != Rep::Text => Self::def(regs, *dst, |d, regs| {
+            Ins::CmpGen { op, dst, a, ra, b, rb } if matches!((ra, rb), (Rep::Null, _) | (_, Rep::Null)) => Self::def(regs, *dst, |d, regs| {
                 let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
                 for w in 0..words {
                     let va = if *ra == Rep::Null { 0 } else { a.valid[w] };
@@ -963,15 +932,14 @@ impl<'e, 'x> Exec<'e, 'x> {
                 }
                 self.eq_meta(d, a, b, *ne);
             }),
-            Ins::EqText { ne, dst, a, b } => {
-                let (x, y) = (self.view(a), self.view(b));
-                Self::def(regs, *dst, |d, _| {
-                    d.valid[..words].fill(u64::MAX);
-                    d.fault[..words].fill(0);
-                    let ne = *ne;
-                    self.bools(act, &mut d.bits, |i| (x.get(start + i) == y.get(start + i)) != ne);
-                })
-            }
+            Ins::EqText { .. }
+            | Ins::Text { .. }
+            | Ins::Matches { .. }
+            | Ins::Map { .. }
+            | Ins::Concat { .. }
+            | Ins::Str { .. }
+            | Ins::Decode { .. }
+            | Ins::Class { .. } => self.text(ins, regs, act),
             Ins::InCode { dst, a, set, null } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 let set = *set;
@@ -1225,6 +1193,9 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.valid[w] = 0;
                     d.fault[w] = s.fault[w];
                 }
+                if *rep == Rep::Text {
+                    d.texts(n);
+                }
                 let mut m = [0u64; Reg::WORDS];
                 for (arm, ra, idx) in arms {
                     let a = &regs[*arm as usize];
@@ -1252,7 +1223,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                                 d.bits[w] = (d.bits[w] & !mw) | (a.bits[w] & mw);
                             }
                         }
-                        Rep::Text | Rep::Null => {}
+                        Rep::Text => self.pick_text(d, m, a),
+                        Rep::Null => {}
                     }
                 }
             }),
@@ -1305,50 +1277,6 @@ impl<'e, 'x> Exec<'e, 'x> {
                     _ => {}
                 }
             }),
-            Ins::Text { func, dst, a, b } => {
-                let x = self.view(a);
-                let y = b.as_ref().map_or(TV::Lit(b""), |b| self.view(b));
-                Self::def(regs, *dst, |d, _| {
-                    for w in 0..words {
-                        d.valid[w] = u64::MAX;
-                        d.fault[w] = !(x.valid_word(start + w * 64) & y.valid_word(start + w * 64)) & self.tail(w);
-                    }
-                    match (func, x) {
-                        (Func::Len, TV::Col(Text::Str { offsets, .. }, _)) => {
-                            for (m, p) in d.mant[..n].iter_mut().zip(offsets[start..=start + n].windows(2)) {
-                                *m = (p[1] - p[0]) as i64;
-                            }
-                        }
-                        (Func::Len, TV::Lit(l)) => d.mant[..n].fill(l.len() as i64),
-                        (Func::Len, TV::Col(text, _)) => {
-                            for (i, m) in d.mant[..n].iter_mut().enumerate() {
-                                *m = text.get(start + i).map_or(0, |t| t.len() as i64);
-                            }
-                        }
-                        (Func::Len, TV::Missing) => d.fault[..words].fill(u64::MAX),
-                        (Func::StartsWith, TV::Col(Text::Str { offsets, data }, _)) if act.is_none() && matches!(y, TV::Lit(_)) => {
-                            let p = match y {
-                                TV::Lit(p) => p,
-                                _ => b"",
-                            };
-                            let offs = &offsets[start..=start + n];
-                            K::pack_idx(n, &mut d.bits[..words], |i| {
-                                let (lo, hi) = (offs[i] as usize, offs[i + 1] as usize);
-                                hi >= lo + p.len() && data.get(lo..lo + p.len()).is_some_and(|h| h == p)
-                            });
-                        }
-                        (Func::StartsWith, _) => self.bools(act, &mut d.bits, |i| match (x.get(start + i), y.get(start + i)) {
-                            (Some(a), Some(b)) => a.starts_with(b),
-                            _ => false,
-                        }),
-                        (Func::EndsWith, _) => self.bools(act, &mut d.bits, |i| match (x.get(start + i), y.get(start + i)) {
-                            (Some(a), Some(b)) => a.ends_with(b),
-                            _ => false,
-                        }),
-                        _ => {}
-                    }
-                })
-            }
             Ins::Out { slot, src, rep, scope } => self.out(*slot, &regs[*src as usize], *rep, *scope, out),
             Ins::Keep { slot, src } => {
                 let r = &regs[*src as usize];
@@ -1438,7 +1366,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 }
             }
             (Data::Codes(codes), _) => d.codes[..n].copy_from_slice(&codes[start..start + n]),
-            (Data::Text(_), _) => {}
+            (Data::Text(text), _) => self.load_text(d, text),
         }
         if let Some((bits, values)) = &feed.wide {
             for w in 0..words {
@@ -1483,7 +1411,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.bits[w] = (t.bits[w] & mw) | (e.bits[w] & !mw);
                 }
             }
-            Rep::Text | Rep::Null => {}
+            Rep::Text => self.blend_text(d, m, t, e),
+            Rep::Null => {}
         }
     }
 
@@ -1731,6 +1660,7 @@ impl<'e, 'x> Exec<'e, 'x> {
             },
             SlotData::Bool(bits) => bits[w0..w0 + words].copy_from_slice(&r.bits[..words]),
             SlotData::Code(codes) => codes[start..start + n].copy_from_slice(&r.codes[..n]),
+            SlotData::Text { span, data } => self.out_text(r, span, data),
         }
         match rep {
             Rep::Null => s.valid[w0..w0 + words].fill(0),

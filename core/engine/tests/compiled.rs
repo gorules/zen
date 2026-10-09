@@ -922,7 +922,7 @@ impl Chain {
 #[tokio::test]
 async fn graph_typed_falls_back_per_unit() {
     let mut failures = Vec::new();
-    let unsupported = Chain::expression("label", &[("label", "string(income) + ' ' + tier")]);
+    let unsupported = Chain::expression("label", &[("label", "split(tier, 'l')")]);
     let (typed, laned) = Chain::checked(Chain::graph(Chain::nodes(Some(unsupported))), &Chain::rows(300, 3), &mut failures).await;
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
     if Chain::typed() {
@@ -1015,6 +1015,72 @@ async fn graph_typed_lists_and_closures() {
     if Chain::typed() {
         assert!(typed > 0, "units typed {typed}, laned {laned}");
     }
+}
+
+#[tokio::test]
+async fn graph_typed_strings() {
+    let mut noise = Noise::new(29);
+    let names = ["Anna", "bob", "  Cara  ", "Émile", "straße", "", "İstanbul", "日本", "Bart"];
+    let cities = ["Berlin", "bonn", "Anna", " x ", ""];
+    let tiers = ["gold", "silver", "Gold"];
+    let mut rows: Vec<Value> = (0..300)
+        .map(|_| {
+            let items: Vec<Value> = (0..noise.below(4)).map(|_| json!({"name": names[noise.below(names.len())], "qty": noise.below(9), "tag": tiers[noise.below(3)]})).collect();
+            let tags: Vec<Value> = (0..noise.below(3)).map(|_| json!(cities[noise.below(cities.len())])).collect();
+            let amount = format!("{}.{}", noise.below(4000) as i64 - 2000, noise.below(100)).parse::<serde_json::Number>().map(Value::Number).unwrap_or(Value::Null);
+            json!({"name": names[noise.below(names.len())], "city": cities[noise.below(cities.len())], "tier": tiers[noise.below(3)], "amount": amount, "qty": noise.below(10), "flag": noise.below(2) == 0, "items": items, "tags": tags})
+        })
+        .collect();
+    let long = "ab".repeat(600);
+    let odd = [
+        json!({"name": null, "city": "Berlin", "tier": null, "amount": null, "qty": 3, "flag": null, "items": null, "tags": null}),
+        json!({"name": long, "city": long, "tier": "gold", "amount": 79228162514264337593543950335u128, "qty": 9223372036854775807i64, "flag": false, "items": [], "tags": []}),
+        json!({"name": "ß", "city": "ǅ", "tier": "", "amount": -0.0, "qty": 0, "flag": true, "items": [{"name": "ß", "qty": 1, "tag": null}], "tags": ["ǅ"]}),
+        json!({"name": "\u{1F600} x", "city": "\u{2003}a\u{2003}", "tier": "silver", "amount": 0.000000001, "qty": 6, "flag": false, "items": [{"qty": 2}], "tags": ["\u{2003}a\u{2003}"]}),
+        json!({"qty": 5}),
+        json!({"name": "Anna", "city": "Anna", "tier": "gold", "amount": 1.50, "qty": 8, "flag": true, "items": [{"name": "gold", "qty": 9223372036854775807i64, "tag": "gold"}], "tags": ["Anna", "x"]}),
+        json!({"name": "", "city": "", "tier": "silver", "amount": 0.00, "qty": 2, "flag": true, "items": [{"name": "", "qty": 0}], "tags": [""]}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        rows.insert(at * 31 + 2, row);
+    }
+    let nodes = vec![
+        Chain::expression(
+            "texts",
+            &[
+                ("s", "string(amount)"),
+                ("tpl", "`${name}-${qty}:${amount} ${flag}`"),
+                ("cat", "name + '/' + city"),
+                ("up", "upper(name)"),
+                ("lo", "lower(city)"),
+                ("tr", "trim(name)"),
+                ("has", "contains(lower(name), 'an')"),
+                ("tierz", "tier ?? 'none'"),
+                ("pick", "qty > 4 ? name : 'nobody'"),
+                ("same", "name == city"),
+                ("pass", "city"),
+                ("rx", "matches(name, '^[A-Z]')"),
+                ("names", "map(items, #.name)"),
+                ("upn", "map(items, upper(#.name) + string(#.qty))"),
+                ("cnt", "count(items, #.name == tier)"),
+                ("intag", "city in tags"),
+                ("big", "string(amount * 1000000000000)"),
+                ("mixeq", "name == qty"),
+            ],
+        ),
+        Chain::table("level", &["qty", "tierz"], &["level", "who"], &[&["> 7", "'gold'", "'top'", "name"], &["> 3", "", "'mid'", "city"], &["", "", "'low'", "'nobody'"]]),
+        Chain::expression("later", &[("again", "upper(tierz) + '!'"), ("g", "tierz in ['gold', 'none']"), ("l", "len(cat)"), ("w", "level + ':' + (who ?? '-')")]),
+    ];
+    let mut failures = Vec::new();
+    let (typed, laned) = Chain::checked(Chain::graph(nodes.clone()), &rows, &mut failures).await;
+    eprintln!("strings typed {typed} laned {laned}");
+    if Chain::typed() {
+        assert!(typed > laned, "units typed {typed}, laned {laned}");
+    }
+    rows.insert(12, json!({"name": "q", "city": "q", "tier": "gold", "amount": 1, "qty": 2, "flag": true, "items": [{"name": null, "qty": 2}], "tags": [null]}));
+    rows.insert(9, json!({"name": 7, "city": true, "tier": 1.5, "amount": "x", "qty": 1, "flag": true, "items": [{"name": 3, "qty": "a"}], "tags": [1]}));
+    Chain::checked(Chain::graph(nodes), &rows, &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
 #[tokio::test]

@@ -9,6 +9,7 @@ pub enum Data {
     Num { mant: Vec<i64>, scale: Vec<u8> },
     Bool(Vec<u64>),
     Code(Vec<i32>),
+    Text { span: Vec<(u32, u32)>, data: Vec<u8> },
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +85,47 @@ impl Slot {
         }
     }
 
+    pub fn text(&self, i: usize) -> Option<&str> {
+        match &self.data {
+            Data::Text { span, data } if self.is_valid(i) => {
+                let (lo, hi) = *span.get(i)?;
+                std::str::from_utf8(data.get(lo as usize..hi as usize)?).ok()
+            }
+            _ => None,
+        }
+    }
+
+    pub fn take_text(&mut self) -> Option<(Vec<i32>, String, Vec<u64>)> {
+        let Data::Text { span, data } = &mut self.data else {
+            return None;
+        };
+        let (span, data) = (std::mem::take(span), std::mem::take(data));
+        let len = self.len.min(span.len());
+        let mut offsets = Vec::with_capacity(len + 1);
+        offsets.push(0i32);
+        let packed = span[..len].iter().try_fold(0u32, |end, (lo, hi)| (end == *lo).then_some(*hi));
+        let bytes = match packed {
+            Some(end) => {
+                let mut data = data;
+                data.truncate(end as usize);
+                offsets.extend(span[..len].iter().map(|(_, hi)| i32::try_from(*hi).unwrap_or(i32::MAX)));
+                data
+            }
+            None => {
+                let mut packed = Vec::with_capacity(data.len());
+                for (at, (lo, hi)) in span[..len].iter().enumerate() {
+                    if K::get(&self.valid, at) {
+                        packed.extend_from_slice(data.get(*lo as usize..*hi as usize).unwrap_or_default());
+                    }
+                    offsets.push(i32::try_from(packed.len()).unwrap_or(i32::MAX));
+                }
+                packed
+            }
+        };
+        let text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+        Some((offsets, text, std::mem::take(&mut self.valid)))
+    }
+
     pub fn take_num(&mut self) -> Option<(Vec<i64>, Vec<u8>, Vec<u64>)> {
         match &mut self.data {
             Data::Num { mant, scale } => Some((std::mem::take(mant), std::mem::take(scale), std::mem::take(&mut self.valid))),
@@ -130,6 +172,11 @@ impl Slot {
             Data::Code(codes) => {
                 codes.clear();
                 codes.resize(len, 0);
+            }
+            Data::Text { span, data } => {
+                span.clear();
+                span.resize(len, (0, 0));
+                data.clear();
             }
         }
     }
@@ -191,7 +238,7 @@ impl Outputs {
                 Kind::Num(_) | Kind::Null => Data::Num { mant: Vec::new(), scale: Vec::new() },
                 Kind::Bool => Data::Bool(Vec::new()),
                 Kind::Code(_) => Data::Code(Vec::new()),
-                Kind::Text => return Err(Unsupported::new(format!("text output {}", o.name))),
+                Kind::Text => Data::Text { span: Vec::new(), data: Vec::new() },
             };
             slots.push(Slot {
                 name: o.name.clone(),
@@ -305,6 +352,7 @@ impl Slot {
                     *bits = packed;
                 }
                 Data::Code(codes) => *codes = kept.iter().map(|&e| codes[e]).collect(),
+                Data::Text { span, .. } => *span = kept.iter().map(|&e| span[e]).collect(),
             }
             let wide = std::mem::take(&mut self.wide);
             self.wide = wide.into_iter().filter_map(|(e, d)| kept.binary_search(&e).ok().map(|to| (to, d))).collect();

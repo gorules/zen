@@ -6,6 +6,7 @@ use crate::typed::hir::{
     Arith, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Ty,
     Unsupported,
 };
+use crate::typed::ins::Pattern;
 use crate::typed::num::Dec;
 use bumpalo::Bump;
 use std::collections::HashMap;
@@ -453,7 +454,7 @@ impl Lowering {
                     let code = self.code(dict, &text);
                     self.konst(Lit::Code(dict, code))
                 }
-                _ => return Err(Unsupported::new(format!("text output {name}"))),
+                _ => id,
             },
             Kind::Code(d) if self.schema.dicts[d as usize].kind == DictKind::Classes => return Err(Unsupported::new(format!("class output {name}"))),
             _ => id,
@@ -502,7 +503,7 @@ impl Lowering {
                     let code = self.code(dict, &text);
                     self.konst(Lit::Code(dict, code))
                 }
-                _ => return Err(Unsupported::new(format!("text list output {name}"))),
+                _ => item,
             },
             Kind::Code(d) if self.schema.dicts[d as usize].kind == DictKind::Classes => return Err(Unsupported::new(format!("class list output {name}"))),
             _ => item,
@@ -665,6 +666,7 @@ impl Lowering {
                 Ok(self.add(Op::If(ids[0], ids[1], ids[2]), ty, scope))
             }
             Ast::FunctionCall { kind, arguments } => self.call(kind, arguments, ctx, r),
+            Ast::TemplateString(parts) => self.template(parts, ctx, r),
             other => Err(Unsupported::new(format!("expression node {}", <&'static str>::from(other)))),
         }
     }
@@ -867,7 +869,10 @@ impl Lowering {
                 };
                 let a = self.expr(left, ctx, r)?;
                 let b = self.expr(right, ctx, r)?;
-                self.arith(op, a, b)
+                match op == Arith::Add && (self.texty(a) || self.texty(b)) {
+                    true => self.concat(vec![a, b]),
+                    false => self.arith(op, a, b),
+                }
             }
             Operator::Comparison(ComparisonOperator::In | ComparisonOperator::NotIn) => {
                 let a = self.expr(left, ctx, r)?;
@@ -935,9 +940,7 @@ impl Lowering {
     }
 
     fn classify(&mut self, id: NodeId) -> Lowered {
-        if !matches!(self.nodes[id as usize].op, Op::Column(_) | Op::Field(..)) {
-            return Err(Unsupported::new("computed text"));
-        }
+        self.require(id, |k| k == Kind::Text, "classify")?;
         let dict = match self.classes.iter().find(|(n, _)| *n == id) {
             Some((_, d)) => *d,
             None => {
@@ -984,20 +987,47 @@ impl Lowering {
                     };
                     (self.coerce(a, d)?, y)
                 }
-                (false, false) => return Err(Unsupported::new("text compared to text")),
+                (false, false) => (a, b),
             },
-            (Kind::Text, Kind::Null) if eq => (self.classify(a)?, b),
-            (Kind::Null, Kind::Text) if eq => (a, self.classify(b)?),
-            (Kind::Code(d), Kind::Text) if eq => (a, self.coerce(b, d)?),
-            (Kind::Text, Kind::Code(d)) if eq => (self.coerce(a, d)?, b),
+            (Kind::Text, Kind::Null) if eq && self.direct(a) => (self.classify(a)?, b),
+            (Kind::Null, Kind::Text) if eq && self.direct(b) => (a, self.classify(b)?),
+            (Kind::Text, Kind::Null) | (Kind::Null, Kind::Text) if eq => (a, b),
+            (Kind::Code(d), Kind::Text) if eq && self.lit(b).is_some() => (a, self.coerce(b, d)?),
+            (Kind::Text, Kind::Code(d)) if eq && self.lit(a).is_some() => (self.coerce(a, d)?, b),
+            (Kind::Code(_), Kind::Text) if eq => (self.decode(a)?, b),
+            (Kind::Text, Kind::Code(_)) if eq => (a, self.decode(b)?),
             (Kind::Code(x), Kind::Code(y)) if eq && x == y => (a, b),
             (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) if eq => (a, b),
             (Kind::Null, _) | (_, Kind::Null) if eq => (a, b),
             (Kind::Num(_), Kind::Num(_)) => (a, b),
+            (x, y) if eq && Self::family(x).zip(Self::family(y)).is_some_and(|(p, q)| p != q) => return self.mismatch(op, a, b),
             _ => return Err(Unsupported::new(format!("compare {op:?} between {ka} and {kb}"))),
         };
         let (scope, ids) = self.scoped(&[a, b])?;
         Ok(self.add(Op::Cmp(op, ids[0], ids[1]), Ty::boolean(), scope))
+    }
+
+    fn family(kind: Kind) -> Option<u8> {
+        match kind {
+            Kind::Num(_) => Some(0),
+            Kind::Bool => Some(1),
+            Kind::Text | Kind::Code(_) => Some(2),
+            Kind::Null => None,
+        }
+    }
+
+    fn mismatch(&mut self, op: Cmp, a: NodeId, b: NodeId) -> Lowered {
+        if !(self.ty(a).nullable && self.ty(b).nullable) {
+            return Ok(self.konst(Lit::Bool(op == Cmp::Ne)));
+        }
+        let null = self.konst(Lit::Null);
+        let x = self.compare(Cmp::Eq, a, null)?;
+        let y = self.compare(Cmp::Eq, b, null)?;
+        let both = self.logic(true, x, y)?;
+        match op {
+            Cmp::Eq => Ok(both),
+            _ => self.not(both),
+        }
     }
 
     fn coerce(&mut self, id: NodeId, dict: DictId) -> Lowered {
@@ -1072,16 +1102,26 @@ impl Lowering {
     }
 
     fn unify(&mut self, ids: Vec<NodeId>) -> Result<(Vec<NodeId>, Ty), Unsupported> {
+        let computed = ids.iter().any(|id| self.kind(*id) == Kind::Text && self.lit(*id).is_none());
+        let ids = match computed {
+            true => ids
+                .into_iter()
+                .map(|id| match self.kind(id) {
+                    Kind::Code(_) => self.decode(id),
+                    _ => Ok(id),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            false => ids,
+        };
         let mut dict: Option<DictId> = None;
         for id in &ids {
             match self.kind(*id) {
                 Kind::Code(d) if dict.is_some_and(|x| x != d) => return Err(Unsupported::new("branches code different dictionaries")),
                 Kind::Code(d) => dict = Some(d),
-                Kind::Text if self.lit(*id).is_none() => return Err(Unsupported::new("computed text branch")),
                 _ => {}
             }
         }
-        let texts = ids.iter().any(|id| self.kind(*id) == Kind::Text);
+        let texts = !computed && ids.iter().any(|id| self.kind(*id) == Kind::Text);
         if texts {
             let d = match dict {
                 Some(d) => d,
@@ -1139,31 +1179,52 @@ impl Lowering {
                 };
                 self.fold(Fold::Count, seq, Some(filter), None)
             }
-            (FunctionKind::Internal(InternalFunction::Contains), [list, x]) => {
-                let seq = self.seq(list, ctx, r)?;
-                let x = self.expr(x, ctx, r)?;
-                self.member(x, seq)
-            }
+            (FunctionKind::Internal(InternalFunction::Contains), [list, x]) => match self.seq(list, ctx, r) {
+                Ok(seq) => {
+                    let x = self.expr(x, ctx, r)?;
+                    self.member(x, seq)
+                }
+                Err(e) => {
+                    let a = self.expr(list, ctx, r).map_err(|_| e)?;
+                    let b = self.expr(x, ctx, r)?;
+                    self.test(Func::Contains, a, b)
+                }
+            },
             (FunctionKind::Internal(InternalFunction::Len), [arg]) => match self.seq(arg, ctx, r).and_then(Self::pure) {
                 Ok(seq) => self.fold(Fold::Count, seq, seq.keep, None),
                 Err(_) => {
                     let a = self.expr(arg, ctx, r)?;
-                    self.require(a, |k| k == Kind::Text, "len")?;
+                    let a = self.textual(a)?;
+                    if let Some(Lit::Text(t)) = self.lit(a) {
+                        let n = Dec::int(t.len() as i64);
+                        return Ok(self.konst(Lit::Num(n)));
+                    }
                     let scope = self.nodes[a as usize].scope;
                     Ok(self.add(Op::Call(Func::Len, vec![a]), Ty::num(Some(0)), scope))
                 }
             },
-            (FunctionKind::Internal(f @ (InternalFunction::StartsWith | InternalFunction::EndsWith)), [a, b]) => {
+            (FunctionKind::Internal(f @ (InternalFunction::StartsWith | InternalFunction::EndsWith | InternalFunction::Matches)), [a, b]) => {
                 let a = self.expr(a, ctx, r)?;
                 let b = self.expr(b, ctx, r)?;
-                self.require(a, |k| k == Kind::Text, "string function")?;
-                self.require(b, |k| k == Kind::Text, "string function")?;
                 let func = match f {
                     InternalFunction::StartsWith => Func::StartsWith,
-                    _ => Func::EndsWith,
+                    InternalFunction::EndsWith => Func::EndsWith,
+                    _ => Func::Matches,
                 };
-                let (scope, ids) = self.scoped(&[a, b])?;
-                Ok(self.add(Op::Call(func, ids), Ty::boolean(), scope))
+                self.test(func, a, b)
+            }
+            (FunctionKind::Internal(InternalFunction::String), [arg]) => {
+                let a = self.expr(arg, ctx, r)?;
+                self.stringify(a)
+            }
+            (FunctionKind::Internal(f @ (InternalFunction::Upper | InternalFunction::Lower | InternalFunction::Trim)), [arg]) => {
+                let a = self.expr(arg, ctx, r)?;
+                let func = match f {
+                    InternalFunction::Upper => Func::Upper,
+                    InternalFunction::Lower => Func::Lower,
+                    _ => Func::Trim,
+                };
+                self.mapped(func, a)
             }
             (FunctionKind::Internal(InternalFunction::Bool), [arg]) => {
                 let a = self.expr(arg, ctx, r)?;
@@ -1261,6 +1322,144 @@ impl Lowering {
             }
             (kind, _) => Err(Unsupported::new(format!("function {kind:?}"))),
         }
+    }
+
+    fn direct(&self, id: NodeId) -> bool {
+        matches!(self.nodes[id as usize].op, Op::Column(_) | Op::Field(..))
+    }
+
+    fn texty(&self, id: NodeId) -> bool {
+        match self.kind(id) {
+            Kind::Text => true,
+            Kind::Code(d) => self.schema.dicts[d as usize].kind == DictKind::Literals,
+            _ => false,
+        }
+    }
+
+    fn decode(&mut self, id: NodeId) -> Lowered {
+        let Kind::Code(d) = self.kind(id) else {
+            return Err(Unsupported::new(format!("decode of {}", self.ty(id))));
+        };
+        let dict = &self.schema.dicts[d as usize];
+        if dict.kind != DictKind::Literals {
+            return Err(Unsupported::new("dictionary mixing"));
+        }
+        if let Some(Lit::Code(_, c)) = self.lit(id) {
+            let text = dict.text(*c).ok_or_else(|| Unsupported::new("decode of an unknown code"))?.to_string();
+            return Ok(self.konst(Lit::Text(text)));
+        }
+        let node = &self.nodes[id as usize];
+        let (nullable, scope) = (node.ty.nullable, node.scope);
+        Ok(self.add(Op::Decode(id), Ty::new(Kind::Text, nullable), scope))
+    }
+
+    fn textual(&mut self, id: NodeId) -> Lowered {
+        match self.kind(id) {
+            Kind::Text => Ok(id),
+            Kind::Code(_) => self.decode(id),
+            _ => Err(Unsupported::new(format!("string function on {}", self.ty(id)))),
+        }
+    }
+
+    fn stringify(&mut self, a: NodeId) -> Lowered {
+        let text = match self.lit(a) {
+            Some(Lit::Text(_)) => return Ok(a),
+            Some(Lit::Null) => Some("null".to_string()),
+            Some(Lit::Bool(b)) => Some(b.to_string()),
+            Some(Lit::Num(d)) => Some(d.decimal().to_string()),
+            Some(Lit::Code(..)) => return self.decode(a),
+            None => None,
+        };
+        if let Some(text) = text {
+            return Ok(self.konst(Lit::Text(text)));
+        }
+        let a = match self.ty(a) {
+            Ty { kind: Kind::Text, nullable: false } => return Ok(a),
+            Ty { kind: Kind::Code(_), .. } => self.decode(a)?,
+            Ty { kind: Kind::Text | Kind::Num(_) | Kind::Bool | Kind::Null, .. } => a,
+        };
+        let scope = self.nodes[a as usize].scope;
+        Ok(self.add(Op::Str(a), Ty::new(Kind::Text, false), scope))
+    }
+
+    fn concat(&mut self, ids: Vec<NodeId>) -> Lowered {
+        let mut parts: Vec<NodeId> = Vec::with_capacity(ids.len());
+        for id in ids {
+            let id = self.textual(id)?;
+            let nested = match &self.nodes[id as usize].op {
+                Op::Concat(inner) => inner.clone(),
+                _ => vec![id],
+            };
+            for part in nested {
+                let joined = match (parts.last().and_then(|p| self.lit(*p)), self.lit(part)) {
+                    (Some(Lit::Text(x)), Some(Lit::Text(y))) => Some(format!("{x}{y}")),
+                    _ => None,
+                };
+                match joined {
+                    Some(text) => {
+                        parts.pop();
+                        parts.push(self.konst(Lit::Text(text)));
+                    }
+                    None => parts.push(part),
+                }
+            }
+        }
+        if let [only] = parts.as_slice() {
+            if self.lit(*only).is_some() || !self.ty(*only).nullable {
+                return Ok(*only);
+            }
+        }
+        let (scope, ids) = self.scoped(&parts)?;
+        Ok(self.add(Op::Concat(ids), Ty::new(Kind::Text, false), scope))
+    }
+
+    fn template(&mut self, parts: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        if parts.is_empty() {
+            return Err(Unsupported::new("empty template"));
+        }
+        let mut ids = Vec::with_capacity(parts.len());
+        for part in parts {
+            let id = self.expr(part, ctx, r)?;
+            ids.push(self.stringify(id)?);
+        }
+        self.concat(ids)
+    }
+
+    fn mapped(&mut self, func: Func, a: NodeId) -> Lowered {
+        let a = self.textual(a)?;
+        if let Some(Lit::Text(t)) = self.lit(a) {
+            let text = match func {
+                Func::Upper => t.to_uppercase(),
+                Func::Lower => t.to_lowercase(),
+                _ => t.trim().to_string(),
+            };
+            return Ok(self.konst(Lit::Text(text)));
+        }
+        let scope = self.nodes[a as usize].scope;
+        Ok(self.add(Op::Call(func, vec![a]), Ty::new(Kind::Text, false), scope))
+    }
+
+    fn test(&mut self, func: Func, a: NodeId, b: NodeId) -> Lowered {
+        let (a, b) = (self.textual(a)?, self.textual(b)?);
+        if func == Func::Matches {
+            let Some(Lit::Text(pattern)) = self.lit(b) else {
+                return Err(Unsupported::new("matches: pattern must be a string literal"));
+            };
+            Pattern::new(pattern).map_err(|_| Unsupported::new("matches: invalid pattern"))?;
+        }
+        if let (Some(Lit::Text(x)), Some(Lit::Text(y))) = (self.lit(a), self.lit(b)) {
+            let hit = match func {
+                Func::StartsWith => Some(x.starts_with(y.as_str())),
+                Func::EndsWith => Some(x.ends_with(y.as_str())),
+                Func::Contains => Some(x.contains(y.as_str())),
+                _ => None,
+            };
+            if let Some(hit) = hit {
+                return Ok(self.konst(Lit::Bool(hit)));
+            }
+        }
+        let (scope, ids) = self.scoped(&[a, b])?;
+        Ok(self.add(Op::Call(func, ids), Ty::boolean(), scope))
     }
 
     fn math(&mut self, func: Func, args: Vec<NodeId>, ty: Ty) -> Lowered {

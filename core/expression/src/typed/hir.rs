@@ -82,6 +82,11 @@ pub enum Func {
     Trunc(u8),
     Min,
     Max,
+    Upper,
+    Lower,
+    Trim,
+    Contains,
+    Matches,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -113,6 +118,9 @@ pub enum Op {
     Pick(NodeId, Vec<NodeId>),
     Call(Func, Vec<NodeId>),
     Classify(NodeId, DictId),
+    Str(NodeId),
+    Decode(NodeId),
+    Concat(Vec<NodeId>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -281,13 +289,13 @@ impl Op {
     pub fn inputs(&self) -> Vec<NodeId> {
         match self {
             Op::Column(_) | Op::Field(..) | Op::Const(_) => Vec::new(),
-            Op::Parent(a) | Op::Neg(a) | Op::Not(a) | Op::InSet(a, _) | Op::InRange(a, _) | Op::Classify(a, _) => vec![*a],
+            Op::Parent(a) | Op::Neg(a) | Op::Not(a) | Op::InSet(a, _) | Op::InRange(a, _) | Op::Classify(a, _) | Op::Str(a) | Op::Decode(a) => vec![*a],
             Op::Arith(_, a, b) | Op::Cmp(_, a, b) | Op::And(a, b) | Op::Or(a, b) | Op::Coalesce(a, b) => vec![*a, *b],
             Op::If(c, t, e) => vec![*c, *t, *e],
             Op::Fold { filter, value, .. } => filter.iter().chain(value.iter()).copied().collect(),
             Op::FirstMatch { conds, .. } => conds.clone(),
             Op::Pick(sel, arms) => std::iter::once(*sel).chain(arms.iter().copied()).collect(),
-            Op::Call(_, args) => args.clone(),
+            Op::Call(_, args) | Op::Concat(args) => args.clone(),
         }
     }
 
@@ -298,6 +306,9 @@ impl Op {
             Op::Neg(a) => Op::Neg(f(*a)),
             Op::Not(a) => Op::Not(f(*a)),
             Op::Classify(a, d) => Op::Classify(f(*a), *d),
+            Op::Str(a) => Op::Str(f(*a)),
+            Op::Decode(a) => Op::Decode(f(*a)),
+            Op::Concat(args) => Op::Concat(args.iter().map(|a| f(*a)).collect()),
             Op::Arith(op, a, b) => Op::Arith(*op, f(*a), f(*b)),
             Op::Cmp(op, a, b) => Op::Cmp(*op, f(*a), f(*b)),
             Op::And(a, b) => Op::And(f(*a), f(*b)),
@@ -322,7 +333,11 @@ impl Fold {
 
 impl Func {
     pub fn text(self) -> bool {
-        matches!(self, Func::StartsWith | Func::EndsWith | Func::Len)
+        matches!(self, Func::StartsWith | Func::EndsWith | Func::Len | Func::Upper | Func::Lower | Func::Trim | Func::Contains | Func::Matches)
+    }
+
+    pub fn mapping(self) -> bool {
+        matches!(self, Func::Upper | Func::Lower | Func::Trim)
     }
 }
 
@@ -396,6 +411,9 @@ impl Hir {
             Op::Neg(a) => format!("neg %{a}"),
             Op::Not(a) => format!("not %{a}"),
             Op::Classify(a, d) => format!("classify %{a} dict {d}"),
+            Op::Str(a) => format!("string %{a}"),
+            Op::Decode(a) => format!("decode %{a}"),
+            Op::Concat(args) => format!("concat [{}]", ids(args)),
             Op::Arith(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
             Op::Cmp(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
             Op::And(a, b) => format!("and %{a}, %{b}"),

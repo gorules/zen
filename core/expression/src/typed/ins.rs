@@ -1,7 +1,14 @@
+use crate::typed::batch::Matcher;
 use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, NodeId, Range, Scope, Unsupported};
 use crate::typed::lookup::Lookup;
 use crate::typed::num::Dec;
 use std::fmt;
+use std::sync::Arc;
+
+#[cfg(not(feature = "regex-lite"))]
+pub(crate) use regex::Regex as Pattern;
+#[cfg(feature = "regex-lite")]
+pub(crate) use regex_lite::Regex as Pattern;
 
 pub(crate) type R = u16;
 
@@ -26,6 +33,7 @@ pub(crate) enum Src {
 pub(crate) enum Arg {
     Src(Src),
     Lit(String),
+    Reg(R),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -77,6 +85,12 @@ pub(crate) enum Ins {
     Skip { guard: Guard, len: u32 },
     Fold { fold: Fold, buf: u16, list: u16, filter: Option<R>, value: Option<(R, Rep)> },
     Text { func: Func, dst: R, a: Arg, b: Option<Arg> },
+    Map { func: Func, dst: R, a: Arg },
+    Str { dst: R, a: Arg, rep: Rep },
+    Decode { dst: R, a: R, values: Arc<[Box<str>]> },
+    Concat { dst: R, parts: Vec<Arg> },
+    Class { dst: R, a: Arg, matcher: Box<Matcher<'static>> },
+    Matches { dst: R, a: Arg, pattern: Box<Pattern> },
     Math { func: Func, dst: R, args: Vec<(R, Rep)>, rep: Rep },
     Out { slot: u16, src: R, rep: Rep, scope: Scope },
     Keep { slot: u16, src: R },
@@ -131,6 +145,14 @@ impl Rep {
     }
 }
 
+impl Arg {
+    fn visit(&mut self, f: &mut impl FnMut(&mut R, bool)) {
+        if let Arg::Reg(r) = self {
+            f(r, false);
+        }
+    }
+}
+
 impl Tab {
     pub(crate) const MAX: usize = 255;
 
@@ -174,7 +196,29 @@ impl fmt::Debug for Tab {
 impl Ins {
     pub(crate) fn regs(&mut self, f: &mut impl FnMut(&mut R, bool)) {
         match self {
-            Ins::Load { dst, .. } | Ins::Gather { dst, .. } | Ins::Fill { dst, .. } | Ins::EqText { dst, .. } | Ins::Text { dst, .. } => f(dst, true),
+            Ins::Load { dst, .. } | Ins::Gather { dst, .. } | Ins::Fill { dst, .. } => f(dst, true),
+            Ins::EqText { dst, a, b, .. } => {
+                a.visit(f);
+                b.visit(f);
+                f(dst, true);
+            }
+            Ins::Text { dst, a, b, .. } => {
+                a.visit(f);
+                if let Some(b) = b {
+                    b.visit(f);
+                }
+                f(dst, true);
+            }
+            Ins::Map { dst, a, .. } | Ins::Str { dst, a, .. } | Ins::Class { dst, a, .. } | Ins::Matches { dst, a, .. } => {
+                a.visit(f);
+                f(dst, true);
+            }
+            Ins::Concat { dst, parts } => {
+                for p in parts.iter_mut() {
+                    p.visit(f);
+                }
+                f(dst, true);
+            }
             Ins::Spill { src, .. } | Ins::Out { src, .. } | Ins::Keep { src, .. } => f(src, false),
             Ins::Fix { dst, a, b, .. }
             | Ins::Num { dst, a, b, .. }
@@ -199,6 +243,7 @@ impl Ins {
             | Ins::InGen { dst, a, .. }
             | Ins::InRangeFix { dst, a, .. }
             | Ins::InRangeGen { dst, a, .. }
+            | Ins::Decode { dst, a, .. }
             | Ins::Not { dst, a } => {
                 f(a, false);
                 f(dst, true);

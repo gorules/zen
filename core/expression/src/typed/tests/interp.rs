@@ -1,18 +1,20 @@
 use crate::typed::batch::{Data, Feed, Feeds};
+use crate::typed::ins::Pattern;
 use crate::typed::kernel::K;
 use crate::typed::num::Exact;
 use crate::typed::tests::oracle::Val;
 use crate::typed::{Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Range, Scope};
 use rust_decimal::Decimal;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum V<'a> {
     Null,
     Num(Decimal),
     Bool(bool),
     Code(i32),
-    Text(&'a [u8]),
+    Text(Cow<'a, [u8]>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -157,17 +159,17 @@ impl<'a, 'x> Interp<'a, 'x> {
             (V::Bool(b), _) => Val::Bool(b),
             (V::Code(c), Kind::Code(d)) => self.hir.dict(d).text(c).map_or(Val::Other(format!("code {c}")), |t| Val::Str(t.to_string())),
             (V::Code(c), _) => Val::Other(format!("code {c}")),
-            (V::Text(t), _) => Val::Str(String::from_utf8_lossy(t).to_string()),
+            (V::Text(t), _) => Val::Str(String::from_utf8_lossy(&t).to_string()),
         }
     }
 
     fn eval(&mut self, id: NodeId) -> R<'a> {
         let at = id as usize;
-        if let Some(r) = self.cache[at] {
-            return r;
+        if let Some(r) = &self.cache[at] {
+            return r.clone();
         }
         let r = self.compute(id);
-        self.cache[at] = Some(r);
+        self.cache[at] = Some(r.clone());
         r
     }
 
@@ -187,7 +189,7 @@ impl<'a, 'x> Interp<'a, 'x> {
             Data::Num { .. } => feed.num(i).map_or(V::Null, |d| V::Num(d.decimal())),
             Data::Bool { bits, offset } => V::Bool(K::get(bits, offset + i)),
             Data::Codes(codes) => V::Code(codes[i]),
-            Data::Text(text) => text.get(i).map_or(V::Null, V::Text),
+            Data::Text(text) => text.get(i).map_or(V::Null, |t| V::Text(Cow::Borrowed(t))),
         })
     }
 
@@ -197,11 +199,11 @@ impl<'a, 'x> Interp<'a, 'x> {
             Lit::Num(d) => V::Num(d.decimal()),
             Lit::Bool(b) => V::Bool(*b),
             Lit::Code(_, c) => V::Code(*c),
-            Lit::Text(t) => V::Text(t.as_bytes()),
+            Lit::Text(t) => V::Text(Cow::Borrowed(t.as_bytes())),
         }
     }
 
-    fn equal(a: V, b: V) -> bool {
+    fn equal(a: &V, b: &V) -> bool {
         a == b
     }
 
@@ -223,7 +225,7 @@ impl<'a, 'x> Interp<'a, 'x> {
             Op::Classify(a, d) => match self.eval(*a)? {
                 V::Text(t) => {
                     let dict = hir.dict(*d);
-                    Ok(V::Code(dict.values.iter().position(|v| v.as_bytes() == t).map_or(dict.values.len() as i32, |i| i as i32)))
+                    Ok(V::Code(dict.values.iter().position(|v| v.as_bytes() == &*t).map_or(dict.values.len() as i32, |i| i as i32)))
                 }
                 _ => Ok(V::Null),
             },
@@ -249,8 +251,8 @@ impl<'a, 'x> Interp<'a, 'x> {
             Op::Cmp(op, a, b) => {
                 let (x, y) = (self.eval(*a)?, self.eval(*b)?);
                 match op {
-                    Cmp::Eq => Ok(V::Bool(Self::equal(x, y))),
-                    Cmp::Ne => Ok(V::Bool(!Self::equal(x, y))),
+                    Cmp::Eq => Ok(V::Bool(Self::equal(&x, &y))),
+                    Cmp::Ne => Ok(V::Bool(!Self::equal(&x, &y))),
                     _ => {
                         let (V::Num(x), V::Num(y)) = (x, y) else {
                             return Err(Fault);
@@ -286,7 +288,7 @@ impl<'a, 'x> Interp<'a, 'x> {
             },
             Op::InSet(a, set) => {
                 let x = self.eval(*a)?;
-                Ok(V::Bool(set.iter().any(|lit| Self::equal(x, Self::lit(lit)))))
+                Ok(V::Bool(set.iter().any(|lit| Self::equal(&x, &Self::lit(lit)))))
             }
             Op::InRange(a, r) => match self.eval(*a)? {
                 V::Num(x) => Ok(V::Bool(Self::within(x, r))),
@@ -376,15 +378,43 @@ impl<'a, 'x> Interp<'a, 'x> {
                 for a in args {
                     vals.push(self.eval(*a)?);
                 }
+                let text = |t: &[u8]| std::str::from_utf8(t).map(str::to_string).map_err(|_| Fault);
                 match (func, vals.as_slice()) {
-                    (Func::StartsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.starts_with(b))),
-                    (Func::EndsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.ends_with(b))),
+                    (Func::StartsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.starts_with(&b[..]))),
+                    (Func::EndsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.ends_with(&b[..]))),
+                    (Func::Contains, [V::Text(a), V::Text(b)]) => Ok(V::Bool(text(a)?.contains(text(b)?.as_str()))),
+                    (Func::Matches, [V::Text(a), V::Text(b)]) => Ok(V::Bool(Pattern::new(&text(b)?).map_err(|_| Fault)?.is_match(&text(a)?))),
+                    (Func::Upper, [V::Text(a)]) => Ok(V::Text(Cow::Owned(text(a)?.to_uppercase().into_bytes()))),
+                    (Func::Lower, [V::Text(a)]) => Ok(V::Text(Cow::Owned(text(a)?.to_lowercase().into_bytes()))),
+                    (Func::Trim, [V::Text(a)]) => Ok(V::Text(Cow::Owned(text(a)?.trim().as_bytes().to_vec()))),
                     (Func::Len, [V::Text(a)]) => Ok(V::Num(Decimal::from(a.len()))),
                     (Func::Min, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().min().map(V::Num).ok_or(Fault),
                     (Func::Max, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().max().map(V::Num).ok_or(Fault),
                     (func, [V::Num(d)]) => Ok(V::Num(Exact::func(*func, *d))),
                     _ => Err(Fault),
                 }
+            }
+            Op::Str(a) => Ok(V::Text(Cow::Owned(match self.eval(*a)? {
+                V::Null => b"null".to_vec(),
+                V::Num(d) => d.to_string().into_bytes(),
+                V::Bool(b) => b.to_string().into_bytes(),
+                V::Text(t) => t.into_owned(),
+                V::Code(_) => return Err(Fault),
+            }))),
+            Op::Decode(a) => match (self.eval(*a)?, hir.nodes[*a as usize].ty.kind) {
+                (V::Null, _) => Ok(V::Null),
+                (V::Code(c), Kind::Code(d)) => hir.dict(d).text(c).map(|t| V::Text(Cow::Owned(t.as_bytes().to_vec()))).ok_or(Fault),
+                _ => Err(Fault),
+            },
+            Op::Concat(parts) => {
+                let mut out = Vec::new();
+                for p in parts {
+                    match self.eval(*p)? {
+                        V::Text(t) => out.extend_from_slice(&t),
+                        _ => return Err(Fault),
+                    }
+                }
+                Ok(V::Text(Cow::Owned(out)))
             }
         }
     }

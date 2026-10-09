@@ -70,10 +70,11 @@ pub(crate) struct Feeds<'x> {
     pub(crate) parents: Vec<Option<u16>>,
 }
 
-struct Matcher<'d> {
+#[derive(Clone, Debug)]
+pub(crate) struct Matcher<'d> {
     keys: Vec<(usize, u64)>,
     lengths: u64,
-    values: &'d [Box<str>],
+    values: Cow<'d, [Box<str>]>,
     other: i32,
 }
 
@@ -400,10 +401,15 @@ impl<'x> Feed<'x> {
 }
 
 impl<'d> Matcher<'d> {
-    fn new(dict: &'d Dict) -> Self {
+    pub(crate) fn new(dict: &'d Dict) -> Self {
         let keys = dict.values.iter().map(|v| (v.len(), Self::key(v.as_bytes()))).collect();
         let lengths = dict.values.iter().fold(0u64, |mask, v| mask | 1u64 << v.len().min(63));
-        Self { keys, lengths, values: &dict.values, other: dict.values.len() as i32 }
+        Self { keys, lengths, values: Cow::Borrowed(&dict.values), other: dict.values.len() as i32 }
+    }
+
+    pub(crate) fn owned(dict: &Dict) -> Matcher<'static> {
+        let Matcher { keys, lengths, values, other } = Matcher::new(dict);
+        Matcher { keys, lengths, values: Cow::Owned(values.into_owned()), other }
     }
 
     #[inline]
@@ -433,7 +439,7 @@ impl<'d> Matcher<'d> {
     }
 
     #[inline]
-    fn code(&self, bytes: Option<&[u8]>) -> i32 {
+    pub(crate) fn code(&self, bytes: Option<&[u8]>) -> i32 {
         let Some(bytes) = bytes else {
             return self.other;
         };

@@ -1,9 +1,11 @@
+use crate::typed::batch::Matcher;
 use crate::typed::hir::{Arith, Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Scope, Unsupported};
-use crate::typed::ins::{Arg, Arm, BufDef, FixOp, Guard, Ins, Rep, Src, Tab, R};
+use crate::typed::ins::{Arg, Arm, BufDef, FixOp, Guard, Ins, Pattern, Rep, Src, Tab, R};
 use crate::typed::kernel::K;
 use crate::typed::lookup::Lookup;
 use crate::typed::num::Dec;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Passes {
@@ -183,6 +185,9 @@ impl<'h> Build<'h> {
             Op::Parent(a) | Op::Neg(a) => r(a),
             Op::Const(lit) => Rep::of_lit(lit),
             Op::Classify(..) => Rep::Code,
+            Op::Str(_) | Op::Decode(_) | Op::Concat(_) => Rep::Text,
+            Op::Call(Func::Upper | Func::Lower | Func::Trim, _) => Rep::Text,
+            Op::Call(Func::Contains | Func::Matches, _) => Rep::Bool,
             Op::Not(_) | Op::Cmp(..) | Op::And(..) | Op::Or(..) | Op::InSet(..) | Op::InRange(..) => Rep::Bool,
             Op::Arith(op, a, b) => match (op, r(a), r(b)) {
                 (Arith::Add | Arith::Sub, Rep::Fix(x), Rep::Fix(y)) if x == y => Rep::Fix(x),
@@ -332,10 +337,13 @@ impl<'h> Build<'h> {
             }
         }
         for (i, node) in hir.nodes.iter().enumerate() {
-            if matches!(node.op, Op::Const(_)) || self.rep[i] == Rep::Text {
+            if matches!(node.op, Op::Const(_)) {
                 continue;
             }
             for &u in &self.users[i] {
+                if self.direct(i as NodeId) && !self.wants(u, i as NodeId) {
+                    continue;
+                }
                 let cs = match hir.nodes[u as usize].op {
                     Op::Fold { .. } => self.acc[u as usize],
                     _ => self.stage[u as usize],
@@ -377,9 +385,6 @@ impl<'h> Build<'h> {
     }
 
     fn konst(&mut self, lit: Lit, rep: Rep) -> Result<R, Unsupported> {
-        if rep == Rep::Text {
-            return Err(Unsupported::new("typed: text constant as value"));
-        }
         if let Some(r) = self.const_of.get(&(lit.clone(), rep)) {
             return Ok(*r);
         }
@@ -474,13 +479,36 @@ impl<'h> Build<'h> {
         Ok(d)
     }
 
-    fn arg(&self, i: NodeId) -> Result<Arg, Unsupported> {
+    fn direct(&self, i: NodeId) -> bool {
+        self.rep[i as usize] == Rep::Text && matches!(self.hir.nodes[i as usize].op, Op::Column(_) | Op::Field(..))
+    }
+
+    fn wants(&self, u: NodeId, i: NodeId) -> bool {
+        let user = &self.hir.nodes[u as usize];
+        let argful = match &user.op {
+            Op::Classify(..) | Op::Concat(_) | Op::Str(_) => true,
+            Op::Call(f, _) => f.text(),
+            Op::Cmp(_, a, b) => self.rep[*a as usize] == Rep::Text && self.rep[*b as usize] == Rep::Text,
+            _ => false,
+        };
+        !(argful && user.scope == self.hir.nodes[i as usize].scope)
+    }
+
+    fn arg(&mut self, i: NodeId) -> Result<Arg, Unsupported> {
         let scope = self.keys[self.cur].1;
+        let direct = self.direct(i);
         match &self.hir.nodes[i as usize].op {
-            Op::Column(c) if self.rep[i as usize] == Rep::Text && scope == Scope::Row => Ok(Arg::Src(Src::Col(*c))),
-            Op::Field(l, f) if self.rep[i as usize] == Rep::Text && scope == Scope::Elem(*l) => Ok(Arg::Src(Src::Field(*l, *f))),
+            Op::Column(c) if direct && scope == Scope::Row => Ok(Arg::Src(Src::Col(*c))),
+            Op::Field(l, f) if direct && scope == Scope::Elem(*l) => Ok(Arg::Src(Src::Field(*l, *f))),
             Op::Const(Lit::Text(s)) => Ok(Arg::Lit(s.clone())),
-            _ => Err(Unsupported::new("typed: text argument")),
+            _ => Ok(Arg::Reg(self.val(i)?)),
+        }
+    }
+
+    fn pattern(&self, i: NodeId) -> Result<Box<Pattern>, Unsupported> {
+        match &self.hir.nodes[i as usize].op {
+            Op::Const(Lit::Text(s)) => Pattern::new(s).map(Box::new).map_err(|_| Unsupported::new("typed: invalid pattern")),
+            _ => Err(Unsupported::new("typed: pattern is not a literal")),
         }
     }
 
@@ -507,7 +535,7 @@ impl<'h> Build<'h> {
                 && self.outs[m].is_empty()
                 && self.keeps[m].is_empty()
                 && !self.cross[m]
-                && self.rep[m] != Rep::Text
+                && !self.direct(m as NodeId)
                 && !self.vreg.contains_key(&(self.cur, m as NodeId))
                 && !self.users[m].is_empty()
         };
@@ -548,7 +576,7 @@ impl<'h> Build<'h> {
                     continue;
                 }
                 for inp in self.hir.nodes[m as usize].op.inputs() {
-                    if !set.contains(&inp) && !self.is_const(inp) && self.rep[inp as usize] != Rep::Text {
+                    if !set.contains(&inp) && !self.is_const(inp) && (!self.direct(inp) || self.wants(m, inp)) {
                         self.val(inp)?;
                     }
                 }
@@ -746,7 +774,14 @@ impl<'h> Build<'h> {
                 let (va, vb) = (self.val(a)?, self.val(b)?);
                 Ins::EqBool { ne, dst: self.fresh()?, a: va, b: vb }
             }
-            (Rep::Text, Rep::Text) if eq => Ins::EqText { ne, dst: self.fresh()?, a: self.arg(a)?, b: self.arg(b)? },
+            (Rep::Text, Rep::Text) if eq => {
+                let (x, y) = (self.arg(a)?, self.arg(b)?);
+                Ins::EqText { ne, dst: self.fresh()?, a: x, b: y }
+            }
+            (Rep::Text, Rep::Null) | (Rep::Null, Rep::Text) if eq => {
+                let (va, vb) = (self.val(a)?, self.val(b)?);
+                Ins::CmpGen { op, dst: self.fresh()?, a: va, ra, b: vb, rb }
+            }
             (Rep::Text, _) | (_, Rep::Text) => return Err(Unsupported::new("typed: text compare")),
             _ => {
                 let (va, vb) = (self.val(a)?, self.val(b)?);
@@ -824,7 +859,6 @@ impl<'h> Build<'h> {
         let rof = |b: &Build, x: &NodeId| b.rep[*x as usize];
         let v = match &node.op {
             Op::Const(_) => self.konst_node(i)?,
-            Op::Column(_) | Op::Field(..) if rep == Rep::Text => return Err(Unsupported::new("typed: text value")),
             Op::Column(c) => {
                 let d = self.fresh()?;
                 self.emit(Ins::Load { dst: d, src: Src::Col(*c), rep });
@@ -835,10 +869,43 @@ impl<'h> Build<'h> {
                 self.emit(Ins::Load { dst: d, src: Src::Field(*l, *f), rep });
                 d
             }
-            Op::Classify(..) => {
-                let k = self.classes.get(&i).copied().ok_or_else(|| Unsupported::new("typed: classify"))?;
+            Op::Classify(a, dict) => match self.classes.get(&i).copied() {
+                Some(k) => {
+                    let d = self.fresh()?;
+                    self.emit(Ins::Load { dst: d, src: Src::Class(k), rep });
+                    d
+                }
+                None => {
+                    let x = self.arg(*a)?;
+                    let matcher = Box::new(Matcher::owned(hir.dict(*dict)));
+                    let d = self.fresh()?;
+                    self.emit(Ins::Class { dst: d, a: x, matcher });
+                    d
+                }
+            },
+            Op::Str(a) => {
+                let x = self.arg(*a)?;
                 let d = self.fresh()?;
-                self.emit(Ins::Load { dst: d, src: Src::Class(k), rep });
+                self.emit(Ins::Str { dst: d, a: x, rep: self.rep[*a as usize] });
+                d
+            }
+            Op::Decode(a) => {
+                let Kind::Code(dict) = hir.nodes[*a as usize].ty.kind else {
+                    return Err(Unsupported::new("typed: decode"));
+                };
+                let values: Arc<[Box<str>]> = hir.dict(dict).values.clone().into();
+                let va = self.val(*a)?;
+                let d = self.fresh()?;
+                self.emit(Ins::Decode { dst: d, a: va, values });
+                d
+            }
+            Op::Concat(parts) => {
+                let mut args = Vec::with_capacity(parts.len());
+                for p in parts {
+                    args.push(self.arg(*p)?);
+                }
+                let d = self.fresh()?;
+                self.emit(Ins::Concat { dst: d, parts: args });
                 d
             }
             Op::Parent(a) if self.is_const(*a) => self.konst_node(*a)?,
@@ -971,9 +1038,19 @@ impl<'h> Build<'h> {
             }
             Op::Call(func, args) => {
                 let a = self.arg(*args.first().ok_or_else(|| Unsupported::new("typed: call"))?)?;
-                let b = args.get(1).map(|x| self.arg(*x)).transpose()?;
-                let d = self.fresh()?;
-                self.emit(Ins::Text { func: *func, dst: d, a, b });
+                let ins = match func {
+                    Func::Matches => {
+                        let pattern = self.pattern(*args.get(1).ok_or_else(|| Unsupported::new("typed: call"))?)?;
+                        Ins::Matches { dst: self.fresh()?, a, pattern }
+                    }
+                    f if f.mapping() => Ins::Map { func: *f, dst: self.fresh()?, a },
+                    f => {
+                        let b = args.get(1).map(|x| self.arg(*x)).transpose()?;
+                        Ins::Text { func: *f, dst: self.fresh()?, a, b }
+                    }
+                };
+                let d = ins.dst().ok_or_else(|| Unsupported::new("typed: call"))?;
+                self.emit(ins);
                 d
             }
         };

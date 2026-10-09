@@ -1,6 +1,6 @@
 use crate::lane::Fusion;
 use crate::typed::tests::data::{ColSpec, Enc, ListSpec, Mock, Spec};
-use crate::typed::{Class, DictKind, Hir, Hit, Kind, Lowering, Op, Program, Resolve, Resolved, TableRule, TableSpec};
+use crate::typed::{Class, DictKind, Hir, Hit, Kind, Lit, Lowering, Op, Program, Resolve, Resolved, TableRule, TableSpec};
 use std::sync::Arc;
 
 struct Anchor;
@@ -303,14 +303,15 @@ fn strict_rules_lower_to_firstmatch() {
 #[test]
 fn unsupported_shapes() {
     let cases = [
-        ("computed text", "c.t == c.u"),
-        ("text output", "c.t"),
-        ("text branch", "c.b ? c.t : 'x'"),
-        ("dictionary mixing", "(c.n > 1 ? 'a' : 'b') == c.t"),
         ("text ordering", "c.t > 'a'"),
+        ("text plus number", "c.t + 1"),
+        ("text plus null", "c.t + null"),
+        ("pattern from a column", "matches(c.t, c.u)"),
+        ("invalid pattern", "matches(c.t, '(')"),
+        ("string of a list", "string(c.xs)"),
+        ("empty template", "``"),
         ("unsupported path", "c.weird + 1"),
         ("null arithmetic", "c.absent + 1"),
-        ("function", "string(c.n)"),
         ("variable exponent", "c.n ^ c.n"),
         ("fractional exponent", "c.n ^ 0.5"),
         ("round to variable places", "round(c.n, c.n)"),
@@ -330,6 +331,46 @@ fn unsupported_shapes() {
     assert!(Probe::unit(&mut lowering, &mut probe, "c.p", "c.o.x").is_err(), "read inside a written value");
     assert!(Probe::unit(&mut lowering, &mut probe, "c.o.x", "1").is_ok());
     assert!(Probe::unit(&mut lowering, &mut probe, "c.q", "c.o").is_err(), "read of a partially written value");
+}
+
+#[test]
+fn text_shapes() {
+    let supported = [
+        "c.t == c.u",
+        "c.t",
+        "c.b ? c.t : 'x'",
+        "(c.n > 1 ? 'a' : 'b') == c.t",
+        "string(c.n)",
+        "`${c.t}:${c.n}`",
+        "c.t + '-' + upper(c.u)",
+        "contains(lower(c.t), 'x')",
+        "trim(c.t) in ['a', 'b']",
+        "matches(c.t, '^a+$')",
+        "c.t ?? 'none'",
+        "map(c.items, #.n)",
+        "count(c.items, #.n == c.t)",
+        "c.t in c.ts",
+        "map(c.ts, upper(#))",
+        "len(c.t + c.u)",
+    ];
+    for source in supported {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_ok(), "{source}");
+        let hir = lowering.finish();
+        Program::new(hir.clone()).unwrap_or_else(|e| panic!("{source}: {e}\n{hir}"));
+    }
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.a", "'a' + 'b' + string(1.50) + `x${true}`").expect("constant");
+    Probe::unit(&mut lowering, &mut probe, "c.b", "upper('ß') + trim('  q ')").expect("constant map");
+    let hir = lowering.finish();
+    let dict = &hir.schema.dicts[0];
+    let texts: Vec<&str> = hir.outputs.iter().map(|o| match hir.node(o.node).op {
+        Op::Const(Lit::Code(_, c)) => dict.text(c).unwrap_or("?"),
+        _ => "?",
+    }).collect();
+    assert_eq!(texts, ["ab1.50xtrue", "SSq"], "{hir}");
 }
 
 #[test]
@@ -357,7 +398,6 @@ fn list_shapes() {
         ("filter over a computed map", "filter(map(c.xs, # * 2), # > 1)"),
         ("quantifier over a computed map", "some(map(c.xs, # * 2), # > 1)"),
         ("membership in a computed map", "1 in map(c.xs, # * 2)"),
-        ("text list output", "map(c.items, #.n)"),
         ("objects as values", "filter(c.items, #.q > 1)"),
         ("sum of objects", "sum(c.items)"),
         ("list as a scalar", "c.xs + 1"),

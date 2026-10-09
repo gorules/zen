@@ -92,6 +92,10 @@ impl Exports {
                     }
                 }
             }
+            Data::Text { .. } => match slot.take_text() {
+                Some((offsets, data, valid)) => Array::parts(Store::Text { offsets, data }, Self::validity(valid, len), len),
+                None => return Leaf::nulls(len),
+            },
         };
         Leaf::typed(array)
     }
@@ -107,6 +111,7 @@ impl Exports {
                 Data::Num { .. } => slot.decimal(at).map_or(Variable::Null, Variable::Number),
                 Data::Bool(_) => slot.boolean(at).map_or(Variable::Null, Variable::Bool),
                 Data::Code(_) => slot.code(at).and_then(text).map_or(Variable::Null, |t| Variable::String(t.into())),
+                Data::Text { .. } => slot.text(at).map_or(Variable::Null, |t| Variable::String(t.into())),
             }
         };
         Leaf::Any(

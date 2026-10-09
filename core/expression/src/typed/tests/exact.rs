@@ -19,6 +19,7 @@ struct Report {
     faults: usize,
     interp: usize,
     mismatches: usize,
+    spurious: usize,
     samples: Vec<String>,
 }
 
@@ -38,6 +39,7 @@ impl Lab {
                 slot.code(i).map_or(Val::Null, |c| hir.dict(d).text(c).map_or(Val::Other(format!("code {c}")), |t| Val::Str(t.to_string())))
             }
             (Data::Code(_), _) => Val::Other("code without dict".to_string()),
+            (Data::Text { .. }, _) => slot.text(i).map_or(Val::Null, |t| Val::Str(t.to_string())),
         }
     }
 
@@ -83,6 +85,7 @@ impl Lab {
                 let row = start + i;
                 let want = &self.expected[row];
                 report.faults += t.is_none() as usize;
+                report.spurious += (t.is_none() && want.is_ok()) as usize;
                 report.interp += r.is_none() as usize;
                 let mut check = |got: &Option<Vec<Val>>, who: &str| {
                     let ok = match (got, want) {
@@ -118,6 +121,7 @@ impl Lab {
             let r = self.verify(program, size);
             assert_eq!(r.mismatches, 0, "{} @{size}: {:#?}", self.workload.name, r.samples);
             assert_eq!(r.faults, r.interp, "{} @{size}: typed faults {} vs interp {}: {:#?}", self.workload.name, r.faults, r.interp, r.samples);
+            assert_eq!(r.spurious, 0, "{} @{size}: typed faults on rows the VM evaluates", self.workload.name);
             if clean {
                 assert_eq!(r.faults, 0, "{} @{size}", self.workload.name);
             }

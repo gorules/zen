@@ -319,6 +319,7 @@ fn programs_share_across_threads() {
                                 Data::Num { .. } => s.decimal(r).map_or(Val::Null, Val::Num),
                                 Data::Bool(_) => s.boolean(r).map_or(Val::Null, Val::Bool),
                                 Data::Code(_) => s.code(r).zip(s.dict()).map_or(Val::Null, |(c, d)| Val::Str(hir.dict(d).text(c).unwrap_or("?").to_string())),
+                                Data::Text { .. } => s.text(r).map_or(Val::Null, |t| Val::Str(t.to_string())),
                             })
                             .collect();
                         assert_eq!(format!("{got:?}"), expected[c * size + r], "size {size} row {}", c * size + r);

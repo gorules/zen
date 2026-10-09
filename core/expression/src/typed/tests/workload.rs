@@ -77,9 +77,74 @@ impl Block {
 }
 
 impl Workload {
-    pub(crate) const NAMES: [&'static str; 10] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10"];
+    pub(crate) const NAMES: [&'static str; 13] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13"];
 
-    pub(crate) const FAULTY: [&'static str; 4] = ["W6", "W8", "W9", "W10"];
+    pub(crate) const FAULTY: [&'static str; 7] = ["W6", "W8", "W9", "W10", "W11", "W12", "W13"];
+
+    const W11_KEYS: [(&'static str, &'static str); 41] = [
+        ("s_amt", "string(u.amt)"),
+        ("s_qty", "string(u.qty)"),
+        ("s_flag", "string(u.flag)"),
+        ("s_tier", "string(u.tier)"),
+        ("s_big", "string(u.big * 1000000000000)"),
+        ("s_div", "string(u.amt / 3)"),
+        ("tpl", "`${u.name}-${u.qty}:${u.amt} ${u.flag}`"),
+        ("cat", "u.name + '/' + u.city"),
+        ("up", "upper(u.name)"),
+        ("lo", "lower(u.city)"),
+        ("tr", "trim(u.name)"),
+        ("has", "contains(lower(u.name), 'an')"),
+        ("sw", "startsWith(upper(u.city), 'B') or endsWith($.tr, 'e')"),
+        ("ln", "len(trim(u.name)) + len($.cat)"),
+        ("tierz", "u.tier ?? 'none'"),
+        ("pick", "u.qty > 4 ? u.name : 'nobody'"),
+        ("same", "u.name == u.city"),
+        ("eqlit", "upper(u.name) == 'ANNA'"),
+        ("gold", "$.tierz in ['gold', 'none']"),
+        ("pass", "u.city"),
+        ("rx", "matches(u.name, '^[A-Z][a-z]+$')"),
+        ("lbl", "u.qty > 3 ? 'big' : 'small'"),
+        ("lbl2", "$.lbl + '!'"),
+        ("mix", "u.qty > 5 ? $.lbl : u.tier"),
+        ("lenz", "len(u.tier ?? '')"),
+        ("cmpcode", "$.lbl == u.tier"),
+        ("nul", "$.mix == null"),
+        ("names", "map(items, #.name)"),
+        ("upn", "map(items, upper(#.name) + ':' + string(#.qty))"),
+        ("cnt", "count(items, #.name == u.tier)"),
+        ("intag", "u.city in tags"),
+        ("anyb", "some(items, contains(lower(#.tag), 'b'))"),
+        ("ups", "map(tags, upper(#))"),
+        ("fq", "map(filter(items, startsWith(#.name, 'A')), #.qty)"),
+        ("tt", "map(items, #.tag ?? 'x')"),
+        ("tc", "count(tags, # == $.pass)"),
+        ("mixeq", "u.name == u.amt"),
+        ("mixne", "u.tier != u.flag"),
+        ("mixlit", "u.amt == 'x' or $.lbl == 3"),
+        ("snull", "string(u.tier) == 'null'"),
+        ("negz", "string(-u.qty) + string(-u.amt)"),
+    ];
+
+    const W12_KEYS: [(&'static str, &'static str); 6] = [
+        ("item.label", "upper(item.name) + '-' + c.code"),
+        ("item.same", "item.name == c.code"),
+        ("item.s", "string(item.qty * c.rate)"),
+        ("item.t", "`${item.name}:${item.qty}`"),
+        ("item.k", "item.qty > 2 ? item.name : c.code"),
+        ("item.n", "len(item.label)"),
+    ];
+
+    const W13_KEYS: [(&'static str, &'static str); 7] = [
+        ("c.full", "c.code + '!'"),
+        ("c.again", "lower(c.full) == 'ab!'"),
+        ("c.names", "map(c.items, #.name)"),
+        ("c.joined", "c.full + string(len(c.items))"),
+        ("c.any", "some(c.items, #.name == c.code)"),
+        ("c.lab", "map(c.items, trim(#.name) + string(c.rate))"),
+        ("c.pick", "c.rate > 1 ? c.full : c.code"),
+    ];
+
+    const NAMES_W11: [&'static str; 12] = ["Anna", "bob", "  Cara  ", "Émile", "straße", "ǅemal", "", "İstanbul", "日本", "x\u{a0}", "\tTabe\n", "Bart"];
 
     const W8_KEYS: [(&'static str, &'static str); 24] = [
         ("total", "sum(xs)"),
@@ -237,6 +302,9 @@ impl Workload {
             "W8" => Self::w8(),
             "W9" => Self::w9(),
             "W10" => Self::w10(),
+            "W11" => Self::w11(),
+            "W12" => Self::w12(),
+            "W13" => Self::w13(),
             _ => Self::w4(),
         }
     }
@@ -264,6 +332,8 @@ impl Workload {
             "W6" | "W7" => Self::w6_rows(count),
             "W8" => Self::w8_rows(count),
             "W9" | "W10" => Self::w9_rows(count),
+            "W11" => Self::w11_rows(count),
+            "W12" | "W13" => Self::w12_rows(count),
             _ => Self::w4_rows(count),
         }
     }
@@ -277,6 +347,8 @@ impl Workload {
             "W6" | "W7" => Self::w6_extremes(),
             "W8" => Self::w8_extremes(),
             "W9" | "W10" => Self::w9_extremes(),
+            "W11" => Self::w11_extremes(),
+            "W12" | "W13" => Self::w12_extremes(),
             _ => Self::w4_extremes(),
         }
     }
@@ -520,6 +592,144 @@ impl Workload {
 
     fn w10() -> Workload {
         Workload { name: "W10", spec: Self::w9_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W10_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w11() -> Workload {
+        Workload {
+            name: "W11",
+            spec: Spec {
+                columns: vec![
+                    Self::col("u.name", Class::Text, Enc::Text),
+                    Self::col("u.city", Class::Text, Enc::Utf8),
+                    Self::col("u.tier", Class::Text, Enc::Dict),
+                    Self::col("u.amt", Class::Num, Enc::Scaled),
+                    Self::col("u.qty", Class::Num, Enc::I64),
+                    Self::col("u.big", Class::Num, Enc::Dec),
+                    Self::col("u.flag", Class::Bool, Enc::Bool),
+                ],
+                lists: vec![
+                    Self::list(
+                        None,
+                        "items",
+                        "item",
+                        vec![Self::col("name", Class::Text, Enc::Dict), Self::col("qty", Class::Num, Enc::I64), Self::col("tag", Class::Text, Enc::Text)],
+                    ),
+                    Self::list(None, "tags", "t", vec![Self::col("", Class::Text, Enc::Utf8)]),
+                ],
+            },
+            dialect: Dialect::Graph,
+            member: None,
+            blocks: Self::W11_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect(),
+        }
+    }
+
+    fn w12_spec() -> Spec {
+        Spec {
+            columns: vec![Self::col("c.code", Class::Text, Enc::Text), Self::col("c.rate", Class::Num, Enc::Scaled)],
+            lists: vec![Self::list(None, "c.items", "item", vec![Self::col("name", Class::Text, Enc::Dict), Self::col("qty", Class::Num, Enc::I64)])],
+        }
+    }
+
+    fn w12() -> Workload {
+        Workload { name: "W12", spec: Self::w12_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W12_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w13() -> Workload {
+        Workload { name: "W13", spec: Self::w12_spec(), dialect: Dialect::Policy, member: None, blocks: Self::W13_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn text(rng: &mut Rng, pool: &[&str], nulls: u64) -> Value {
+        match rng.pick(nulls) {
+            0 => Value::Null,
+            _ => Self::s(pool[rng.pick(pool.len() as u64) as usize]),
+        }
+    }
+
+    fn w11_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(31);
+        let tiers = ["gold", "silver", "big", "small", "Gold"];
+        let cities = ["Berlin", "bonn", "Anna", "  Bart", "Émile", "x\u{a0}", ""];
+        let tags = ["b", "Berlin", "Anna", "Ünï", ""];
+        (0..count)
+            .map(|_| {
+                let items: Vec<Vec<Value>> = match rng.pick(25) {
+                    0 => vec![Vec::new()],
+                    _ => (0..rng.pick(5))
+                        .map(|_| vec![Self::text(&mut rng, &Self::NAMES_W11, 40), Self::n(rng.pick(9) as i64), Self::text(&mut rng, &tags, 40)])
+                        .collect(),
+                };
+                let tg: Vec<Vec<Value>> = match rng.pick(30) {
+                    0 => vec![Vec::new()],
+                    _ => (0..rng.pick(4)).map(|_| vec![Self::text(&mut rng, &cities, 40)]).collect(),
+                };
+                let flag = match rng.pick(30) {
+                    0 => Value::Null,
+                    k => Value::Bool(k % 2 == 0),
+                };
+                let amt = match rng.pick(30) {
+                    0 => Value::Null,
+                    _ => Self::d(rng.pick(200_001) as i64 - 100_000, rng.pick(4) as u8),
+                };
+                let columns = vec![
+                    Self::text(&mut rng, &Self::NAMES_W11, 60),
+                    Self::text(&mut rng, &cities, 60),
+                    Self::text(&mut rng, &tiers, 5),
+                    amt,
+                    Self::n(rng.pick(10) as i64),
+                    Self::d(rng.pick(2_000_001) as i64 - 1_000_000, rng.pick(3) as u8),
+                    flag,
+                ];
+                Row { columns, lists: vec![items, tg] }
+            })
+            .collect()
+    }
+
+    fn w11_extremes() -> Vec<Row> {
+        let row = |name: Value, city: Value, tier: Value, amt: Value, qty: Value, big: Value| Row {
+            columns: vec![name, city, tier, amt, qty, big, Value::Bool(true)],
+            lists: vec![vec![vec![Self::s("Ab"), Self::n(1), Value::Null]], vec![vec![Self::s("bonn")]]],
+        };
+        let long = "ab".repeat(700);
+        vec![
+            row(Self::s(""), Self::s(""), Self::s(""), Self::d(0, 3), Self::n(0), Self::d(0, 2)),
+            row(Self::s(&long), Self::s(&long), Value::Null, Self::n(i64::MAX), Self::n(i64::MAX), Self::n(i64::MAX)),
+            row(Self::s("ß"), Self::s("ǅ"), Self::s("gold"), Self::d(1, 28), Self::n(-1), Self::n(i64::MIN)),
+            row(Self::s("\u{1F600} x"), Self::s("İ"), Self::s("big"), Self::d(-1, 28), Self::n(7), Self::d(-5, 1)),
+            row(Self::s(" \u{2003}a\u{2003} "), Self::s("\u{b}v\u{c}"), Self::s("small"), Self::n(i64::MIN), Self::n(4), Self::d(150, 2)),
+            row(Self::s("Anna"), Self::s("Anna"), Self::s("small"), Self::d(-1500, 3), Self::n(6), Self::d(1, 0)),
+        ]
+    }
+
+    fn w12_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(37);
+        let codes = ["AB", "ab", "Zoë", "", "q"];
+        let names = ["ab", "AB", "q", "Zoë", "", " ab ", "ß"];
+        (0..count)
+            .map(|r| {
+                let items: Vec<Vec<Value>> = match rng.pick(30) {
+                    0 => vec![Vec::new()],
+                    _ => (0..if r % 113 == 5 { 1100 } else { rng.pick(5) as usize })
+                        .map(|_| vec![Self::text(&mut rng, &names, 50), Self::n(rng.pick(6) as i64)])
+                        .collect(),
+                };
+                let rate = match rng.pick(40) {
+                    0 => Value::Null,
+                    _ => Self::d(rng.pick(400) as i64, rng.pick(3) as u8),
+                };
+                Row { columns: vec![Self::text(&mut rng, &codes, 40), rate], lists: vec![items] }
+            })
+            .collect()
+    }
+
+    fn w12_extremes() -> Vec<Row> {
+        let row = |code: Value, rate: Value, items: Vec<[Value; 2]>| Row { columns: vec![code, rate], lists: vec![items.into_iter().map(|i| i.to_vec()).collect()] };
+        vec![
+            row(Self::s(""), Self::n(0), Vec::new()),
+            row(Self::s("ab"), Self::d(1, 28), vec![[Self::s("ab"), Self::n(i64::MAX)], [Self::s(""), Self::n(0)]]),
+            row(Value::Null, Self::n(2), vec![[Self::s("x"), Self::n(3)]]),
+            row(Self::s("ǅ"), Self::n(i64::MAX), vec![[Self::s("ǅ"), Self::n(2)], [Value::Null, Self::n(1)]]),
+            row(Self::s("\u{1F600}"), Self::d(-5, 1), vec![[Self::s("\u{1F600}"), Value::Null]]),
+        ]
     }
 
     fn w8_rows(count: usize) -> Vec<Row> {

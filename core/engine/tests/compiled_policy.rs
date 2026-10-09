@@ -778,7 +778,7 @@ fn policy_anchor_is_fully_typed() {
 fn policy_typed_falls_back_per_unit() {
     let policy = Anchor::POLICY.replace(
         "    {match: \"customer.risk\"",
-        "    {expression: \"customer.label\", value: \"string(customer.age)\"},\n    {match: \"customer.risk\"",
+        "    {expression: \"customer.label\", value: \"split(customer.tier, 'l')\"},\n    {match: \"customer.risk\"",
     );
     assert_ne!(policy, Anchor::POLICY);
     let ws = Anchor::workspace_with(&policy);
@@ -798,7 +798,7 @@ fn policy_typed_falls_back_per_unit() {
 fn policy_typed_fuses_lane_runs() {
     let policy = Anchor::POLICY.replace(
         "    {match: \"customer.risk\"",
-        "    {expression: \"customer.label\", value: \"string(customer.age)\"},\n    {expression: \"customer.tag\", value: \"string(customer.income)\"},\n    {match: \"customer.risk\"",
+        "    {expression: \"customer.label\", value: \"split(customer.tier, 'l')\"},\n    {expression: \"customer.tag\", value: \"split(customer.tier, 'o')\"},\n    {match: \"customer.risk\"",
     );
     assert_ne!(policy, Anchor::POLICY);
     let ws = Anchor::workspace_with(&policy);
@@ -912,6 +912,84 @@ fn policy_typed_lists_and_closures() {
         }
     }
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
+fn policy_typed_strings() {
+    let policy = r#"{
+  models: {
+    customer: {name: "string", city: "string", tier: "string", amount: "number", qty: "number", flag: "boolean", tags: "string[]", items: "item[]"},
+    item: {name: "string", qty: "number"},
+  },
+  blocks: [
+    {expression: "item.label", value: "upper(item.name) + '-' + customer.tier"},
+    {expression: "item.same", value: "item.name == customer.name"},
+    {expression: "item.s", value: "string(item.qty * customer.amount)"},
+    {expression: "customer.s", value: "string(customer.amount)"},
+    {expression: "customer.tpl", value: "`${customer.name}:${customer.qty}:${customer.flag}`"},
+    {expression: "customer.cat", value: "customer.name + '/' + customer.city"},
+    {expression: "customer.up", value: "upper(customer.name)"},
+    {expression: "customer.tr", value: "trim(customer.city)"},
+    {expression: "customer.has", value: "contains(lower(customer.name), 'an')"},
+    {expression: "customer.tz", value: "customer.tier ?? 'none'"},
+    {expression: "customer.pick", value: "customer.qty > 4 ? customer.name : 'nobody'"},
+    {expression: "customer.same", value: "customer.name == customer.city"},
+    {expression: "customer.gold", value: "customer.tz in ['gold', 'none']"},
+    {expression: "customer.names", value: "map(customer.items, #.name)"},
+    {expression: "customer.cnt", value: "count(customer.items, #.name == customer.tier)"},
+    {expression: "customer.intag", value: "customer.city in customer.tags"},
+    {expression: "customer.rx", value: "matches(customer.name, '^[A-Z]')"},
+    {expression: "customer.big", value: "string(customer.amount * 1000000000000)"},
+    {expression: "customer.again", value: "upper(customer.tz) + '!'"},
+    {table: "lvl", inputs: ["customer.qty"], outputs: ["customer.lvl"], rules: [
+      ["> 7", "customer.name"],
+      ["> 3", "customer.city"],
+      ["", "'small'"],
+    ]},
+    {expression: "customer.lv", value: "customer.lvl + ':' + customer.tz"},
+  ],
+}"#;
+    let mut state = 41u64;
+    let mut pick = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    let names = ["Anna", "bob", "  Cara  ", "Émile", "straße", "", "İstanbul", "日本", "Bart"];
+    let cities = ["Berlin", "bonn", "Anna", " x ", ""];
+    let tiers = ["gold", "silver", "Gold"];
+    let mut values: Vec<Value> = (0..300)
+        .map(|_| {
+            let items: Vec<Value> = (0..pick(4)).map(|_| json!({"name": names[pick(9) as usize], "qty": pick(9)})).collect();
+            let tags: Vec<Value> = (0..pick(3)).map(|_| json!(cities[pick(5) as usize])).collect();
+            json!({"customer": {"name": names[pick(9) as usize], "city": cities[pick(5) as usize], "tier": tiers[pick(3) as usize], "amount": pick(40_000) as f64 / 8.0 - 2000.0, "qty": pick(10), "flag": pick(2) == 0, "tags": tags, "items": items}})
+        })
+        .collect();
+    let long = "ab".repeat(600);
+    let odd = [
+        json!({"customer": {"name": null, "city": "Berlin", "tier": null, "amount": null, "qty": 3, "flag": null, "tags": null, "items": null}}),
+        json!({"customer": {"name": long, "city": long, "tier": "gold", "amount": 9223372036854775807i64, "qty": 9, "flag": false, "tags": [], "items": []}}),
+        json!({"customer": {"name": "ß", "city": "ǅ", "tier": "", "amount": -0.0, "qty": 0, "flag": true, "tags": ["ǅ"], "items": [{"name": "ß", "qty": 1}]}}),
+        json!({"customer": {"name": "\u{1F600} x", "city": "\u{2003}a\u{2003}", "tier": "silver", "amount": 0.000000001, "qty": 6, "flag": false, "tags": ["\u{2003}a\u{2003}"], "items": [{"qty": 2}]}}),
+        json!({"customer": {"qty": 5}}),
+        json!({"customer": {"name": "Anna", "city": "Anna", "tier": "gold", "amount": 1.50, "qty": 8, "flag": true, "tags": ["Anna"], "items": [{"name": "gold", "qty": 9223372036854775807i64}]}}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        values.insert(at * 37 + 4, row);
+    }
+    let ws = Anchor::workspace_with(policy);
+    let mut failures = Vec::new();
+    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+        eprintln!("strings typed {typed} laned {laned} hosted {hosted}");
+        if Anchor::typed() {
+            assert!(typed > laned, "units typed {typed}, laned {laned}");
+        }
+    }
+    values.insert(12, json!({"customer": {"name": "q", "city": "q", "tier": "gold", "amount": 1, "qty": 2, "flag": true, "tags": [null], "items": [{"name": null, "qty": 2}]}}));
+    values.insert(9, json!({"customer": {"name": 7, "city": true, "tier": 1.5, "amount": "x", "qty": 1, "flag": true, "tags": [1], "items": [{"name": 3, "qty": "a"}]}}));
+    Anchor::checked(&ws, &values, &mut failures);
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
 #[test]

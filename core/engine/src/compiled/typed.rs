@@ -1300,7 +1300,11 @@ impl<'a> Leaf<'a> {
                 Some(dense) => dense.valued(rows),
                 None => Bits::gather(&picked.source.valued(picked.source.len()), &picked.positions),
             },
-            Leaf::Stitched(_) | Leaf::Records(_) => Bits::of(rows, |row| !self.null(row)),
+            Leaf::Stitched(stitched) => {
+                let parts: Vec<Vec<u64>> = stitched.sources.iter().map(|leaf| leaf.valued(leaf.len())).collect();
+                Bits::of(rows, |row| stitched.located.get(row).is_some_and(|&(piece, at)| parts.get(piece).is_some_and(|bits| Bits::get(bits, at))))
+            }
+            Leaf::Records(_) => Bits::of(rows, |row| !self.null(row)),
             Leaf::Typed(typed) if matches!(typed.values, Store::Coded { ref dict, .. } if !matches!(**dict, Dict::Any(_))) => {
                 let Store::Coded { codes, .. } = &typed.values else {
                     return Bits::of(rows, |row| !self.null(row));

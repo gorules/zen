@@ -84,7 +84,7 @@ impl Program {
             let origin = match hir.nodes.get(a as usize).map(|n| &n.op) {
                 Some(Op::Column(c)) => Origin::Col(*c),
                 Some(Op::Field(l, f)) => Origin::Field(*l, *f),
-                _ => return Err(Unsupported::new("typed: classify of a computed value")),
+                _ => continue,
             };
             let k = match classes.iter().position(|c| *c == (origin, d)) {
                 Some(k) => k,

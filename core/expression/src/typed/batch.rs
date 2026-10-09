@@ -1,3 +1,4 @@
+use crate::lane::date::Date;
 use crate::lane::{Column, Values};
 use crate::typed::hir::{ColumnDef, Dict, Hir, Kind, Unsupported};
 use crate::typed::kernel::K;
@@ -68,6 +69,7 @@ pub(crate) struct Feeds<'x> {
     pub(crate) classes: Vec<Feed<'x>>,
     pub(crate) lists: Vec<Lists>,
     pub(crate) parents: Vec<Option<u16>>,
+    pub(crate) now: Date,
 }
 
 #[derive(Clone, Debug)]
@@ -520,7 +522,7 @@ impl<'x> Feeds<'x> {
             lists.push(Lists { offsets, parent, root, null, faulted });
         }
         let parents = schema.lists.iter().map(|l| l.parent).collect();
-        let mut feeds = Self { rows, columns, fields, classes: Vec::with_capacity(classes.len()), lists, parents };
+        let mut feeds = Self { rows, columns, fields, classes: Vec::with_capacity(classes.len()), lists, parents, now: Date(None) };
         for (origin, dict) in classes {
             let class = {
                 let (source, len) = match *origin {

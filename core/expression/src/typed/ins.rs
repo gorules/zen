@@ -1,5 +1,5 @@
 use crate::typed::batch::Matcher;
-use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, NodeId, Range, Scope, Unsupported};
+use crate::typed::hir::{Arith, Clock, Cmp, Fold, Func, Host, Lit, NodeId, Range, Scope, Unsupported};
 use crate::typed::lookup::Lookup;
 use crate::typed::num::Dec;
 use std::fmt;
@@ -19,6 +19,7 @@ pub(crate) enum Rep {
     Bool,
     Code,
     Text,
+    Date,
     Null,
 }
 
@@ -92,6 +93,9 @@ pub(crate) enum Ins {
     Class { dst: R, a: Arg, matcher: Box<Matcher<'static>> },
     Matches { dst: R, a: Arg, pattern: Box<Pattern> },
     Math { func: Func, dst: R, args: Vec<(R, Rep)>, rep: Rep },
+    Now { dst: R },
+    Host { host: Host, dst: R, args: Vec<(Arg, Rep)>, rep: Rep, fixed: bool },
+    Clock { clock: Clock, dst: R, args: Vec<(Arg, Rep)> },
     Out { slot: u16, src: R, rep: Rep, scope: Scope },
     Keep { slot: u16, src: R },
 }
@@ -128,6 +132,7 @@ impl Rep {
             Lit::Bool(_) => Rep::Bool,
             Lit::Code(..) => Rep::Code,
             Lit::Text(_) => Rep::Text,
+            Lit::Date(_) => Rep::Date,
         }
     }
 
@@ -196,7 +201,13 @@ impl fmt::Debug for Tab {
 impl Ins {
     pub(crate) fn regs(&mut self, f: &mut impl FnMut(&mut R, bool)) {
         match self {
-            Ins::Load { dst, .. } | Ins::Gather { dst, .. } | Ins::Fill { dst, .. } => f(dst, true),
+            Ins::Load { dst, .. } | Ins::Gather { dst, .. } | Ins::Fill { dst, .. } | Ins::Now { dst } => f(dst, true),
+            Ins::Host { dst, args, .. } | Ins::Clock { dst, args, .. } => {
+                for (a, _) in args.iter_mut() {
+                    a.visit(f);
+                }
+                f(dst, true);
+            }
             Ins::EqText { dst, a, b, .. } => {
                 a.visit(f);
                 b.visit(f);

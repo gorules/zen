@@ -2,6 +2,10 @@ use crate::typed::batch::Feeds;
 use crate::typed::hir::{DictId, Hir, Kind, Scope, Unsupported};
 use crate::typed::kernel::K;
 use crate::typed::num::Dec;
+use crate::lane::date::Date;
+use crate::variable::Variable;
+use chrono::DateTime;
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 
 #[derive(Clone, Debug)]
@@ -10,6 +14,7 @@ pub enum Data {
     Bool(Vec<u64>),
     Code(Vec<i32>),
     Text { span: Vec<(u32, u32)>, data: Vec<u8> },
+    Date(Vec<Option<DateTime<Tz>>>),
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +97,20 @@ impl Slot {
                 std::str::from_utf8(data.get(lo as usize..hi as usize)?).ok()
             }
             _ => None,
+        }
+    }
+
+    pub fn date(&self, i: usize) -> Option<Option<DateTime<Tz>>> {
+        match &self.data {
+            Data::Date(dates) if self.is_valid(i) => dates.get(i).copied(),
+            _ => None,
+        }
+    }
+
+    pub fn variable(&self, i: usize) -> Variable {
+        match self.date(i) {
+            Some(date) => Date(date).variable(),
+            None => Variable::Null,
         }
     }
 
@@ -178,6 +197,10 @@ impl Slot {
                 span.resize(len, (0, 0));
                 data.clear();
             }
+            Data::Date(dates) => {
+                dates.clear();
+                dates.resize(len, None);
+            }
         }
     }
 }
@@ -239,6 +262,7 @@ impl Outputs {
                 Kind::Bool => Data::Bool(Vec::new()),
                 Kind::Code(_) => Data::Code(Vec::new()),
                 Kind::Text => Data::Text { span: Vec::new(), data: Vec::new() },
+                Kind::Date => Data::Date(Vec::new()),
             };
             slots.push(Slot {
                 name: o.name.clone(),
@@ -353,6 +377,7 @@ impl Slot {
                 }
                 Data::Code(codes) => *codes = kept.iter().map(|&e| codes[e]).collect(),
                 Data::Text { span, .. } => *span = kept.iter().map(|&e| span[e]).collect(),
+                Data::Date(dates) => *dates = kept.iter().map(|&e| dates[e]).collect(),
             }
             let wide = std::mem::take(&mut self.wide);
             self.wide = wide.into_iter().filter_map(|(e, d)| kept.binary_search(&e).ok().map(|to| (to, d))).collect();

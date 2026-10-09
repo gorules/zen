@@ -993,6 +993,73 @@ fn policy_typed_strings() {
 }
 
 #[test]
+fn policy_typed_dates() {
+    let policy = r#"{
+  models: {
+    customer: {start: "string", other: "string", days: "number", events: "event[]"},
+    event: {on: "string", amt: "number"},
+  },
+  blocks: [
+    {expression: "event.due", value: "d(event.on).add(customer.days, 'day')"},
+    {expression: "event.late", value: "d(event.on) > d(customer.start)"},
+    {expression: "event.s", value: "string(d(event.on).startOf('month'))"},
+    {expression: "customer.f", value: "d(customer.start).format('%d.%m.%Y')"},
+    {expression: "customer.y", value: "d(customer.start).year()"},
+    {expression: "customer.ok", value: "d(customer.start).isValid()"},
+    {expression: "customer.past", value: "d(customer.start) < d()"},
+    {expression: "customer.same", value: "d(customer.start) == customer.other"},
+    {expression: "customer.dts", value: "map(customer.events, d(#.on).endOf('day'))"},
+    {expression: "customer.any", value: "some(customer.events, d(#.on).isBefore(d(customer.other)))"},
+    {expression: "customer.first", value: "min(map(customer.events, d(#.on)))"},
+    {expression: "customer.cnt", value: "count(customer.events, #.on > d(customer.start))"},
+    {table: "era", inputs: ["customer.start"], outputs: ["customer.era"], rules: [
+      ["< d('2000-01-01')", "'old'"],
+      ["", "'new'"],
+    ]},
+  ],
+}"#;
+    let mut state = 43u64;
+    let mut pick = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    let days = ["2024-01-15", "2024-02-29", "2023-12-31 23:59:59", "2024-03-31T01:30:00Z", "1999-06-30", "2025-03-30 02:30:00", "9999-12-31", "2024/01/15", "2024-07"];
+    let bad = ["nope", "", "2024-02-30"];
+    let mut day = |pick: &mut dyn FnMut(u64) -> u64| match pick(15) {
+        0 => json!(bad[pick(3) as usize]),
+        _ => json!(days[pick(9) as usize]),
+    };
+    let mut values: Vec<Value> = (0..300)
+        .map(|_| {
+            let events: Vec<Value> = (0..1 + pick(4)).map(|_| json!({"on": day(&mut pick), "amt": pick(100)})).collect();
+            json!({"customer": {"start": day(&mut pick), "other": day(&mut pick), "days": pick(400) as i64 - 200, "events": events}})
+        })
+        .collect();
+    let odd = [
+        json!({"customer": {"start": null, "other": null, "days": 0, "events": []}}),
+        json!({"customer": {"start": "0001-01-01", "other": "9999-12-31", "days": 1000000000, "events": [{"on": "9999-12-31", "amt": 1}]}}),
+        json!({"customer": {"start": "2024-02-29", "other": "2024-02-29T00:00:00Z", "days": -366, "events": [{"amt": 1}]}}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        values.insert(at * 37 + 4, row);
+    }
+    let ws = Anchor::workspace_with(policy);
+    let mut failures = Vec::new();
+    for (typed, laned, hosted) in Anchor::checked(&ws, &values, &mut failures) {
+        eprintln!("dates typed {typed} laned {laned} hosted {hosted}");
+        if Anchor::typed() {
+            assert!(typed > laned, "units typed {typed}, laned {laned}");
+        }
+    }
+    values.insert(9, json!({"customer": {"start": 7, "other": true, "days": "x", "events": [{"on": 3, "amt": "a"}]}}));
+    values.insert(15, json!({"customer": {"start": "2024-02-29", "other": null, "days": 1, "events": [{"on": null, "amt": 1}]}}));
+    Anchor::checked(&ws, &values, &mut failures);
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[test]
 fn policy_typed_extremes() {
     let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
     let overflow = [

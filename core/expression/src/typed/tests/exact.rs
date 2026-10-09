@@ -25,6 +25,7 @@ struct Report {
 
 impl Lab {
     fn new(workload: Workload, rows: Vec<Row>) -> Self {
+        Workload::mock();
         let hir = workload.hir().expect("lowering");
         let oracle = Oracle::new(&workload, &hir);
         let expected = rows.iter().map(|r| oracle.run(r.variable(&workload.spec))).collect();
@@ -40,6 +41,10 @@ impl Lab {
             }
             (Data::Code(_), _) => Val::Other("code without dict".to_string()),
             (Data::Text { .. }, _) => slot.text(i).map_or(Val::Null, |t| Val::Str(t.to_string())),
+            (Data::Date(_), _) => match slot.date(i) {
+                Some(_) => Val::Other(format!("{}", slot.variable(i).to_value())),
+                None => Val::Null,
+            },
         }
     }
 
@@ -79,7 +84,8 @@ impl Lab {
             let batch = frame.batch();
             program.run(&batch, &mut out, None).expect("run");
             let typed = Self::rows_of(&out, &self.hir, &frame);
-            let feeds = Feeds::new(&self.hir, &[], &batch).expect("feeds");
+            let mut feeds = Feeds::new(&self.hir, &[], &batch).expect("feeds");
+            feeds.now = crate::lane::date::Date::now();
             let interp = Interp::run(&self.hir, &feeds);
             for (i, (t, r)) in typed.iter().zip(&interp).enumerate() {
                 let row = start + i;

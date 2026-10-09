@@ -269,6 +269,10 @@ impl<'e, 'x> Exec<'e, 'x> {
                         };
                         d.push(i, text);
                     }),
+                    (Rep::Date, TV::Reg(r)) => self.each(act, &skip, |i| match K::get(&r.valid, i) {
+                        true => d.push(i, r.date(i).to_string().as_bytes()),
+                        false => d.push(i, b"null"),
+                    }),
                     (Rep::Null, _) => self.each(act, &skip, |i| d.push(i, b"null")),
                     _ => d.fault[..words].fill(u64::MAX),
                 }

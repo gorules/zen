@@ -320,6 +320,7 @@ fn programs_share_across_threads() {
                                 Data::Bool(_) => s.boolean(r).map_or(Val::Null, Val::Bool),
                                 Data::Code(_) => s.code(r).zip(s.dict()).map_or(Val::Null, |(c, d)| Val::Str(hir.dict(d).text(c).unwrap_or("?").to_string())),
                                 Data::Text { .. } => s.text(r).map_or(Val::Null, |t| Val::Str(t.to_string())),
+                                Data::Date(_) => s.date(r).map_or(Val::Null, |_| Val::Other(format!("{}", s.variable(r).to_value()))),
                             })
                             .collect();
                         assert_eq!(format!("{got:?}"), expected[c * size + r], "size {size} row {}", c * size + r);

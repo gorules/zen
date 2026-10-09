@@ -1,5 +1,5 @@
 use crate::typed::batch::Matcher;
-use crate::typed::hir::{Arith, Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Scope, Unsupported};
+use crate::typed::hir::{Arith, Clock, Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Scope, Unsupported};
 use crate::typed::ins::{Arg, Arm, BufDef, FixOp, Guard, Ins, Pattern, Rep, Src, Tab, R};
 use crate::typed::kernel::K;
 use crate::typed::lookup::Lookup;
@@ -71,6 +71,7 @@ impl Rep {
             Kind::Bool => Rep::Bool,
             Kind::Code(_) => Rep::Code,
             Kind::Text => Rep::Text,
+            Kind::Date => Rep::Date,
             Kind::Null => Rep::Null,
         }
     }
@@ -185,7 +186,10 @@ impl<'h> Build<'h> {
             Op::Parent(a) | Op::Neg(a) => r(a),
             Op::Const(lit) => Rep::of_lit(lit),
             Op::Classify(..) => Rep::Code,
-            Op::Str(_) | Op::Decode(_) | Op::Concat(_) => Rep::Text,
+            Op::Str(_) | Op::Decode(_) | Op::Concat(_) | Op::Clock(Clock::Text, _) => Rep::Text,
+            Op::Clock(Clock::Matches, _) => Rep::Bool,
+            Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict, _) => Rep::Date,
+            Op::Host(..) => Rep::of_kind(node.ty.kind, None),
             Op::Call(Func::Upper | Func::Lower | Func::Trim, _) => Rep::Text,
             Op::Call(Func::Contains | Func::Matches, _) => Rep::Bool,
             Op::Not(_) | Op::Cmp(..) | Op::And(..) | Op::Or(..) | Op::InSet(..) | Op::InRange(..) => Rep::Bool,
@@ -204,6 +208,7 @@ impl<'h> Build<'h> {
             Op::Fold { fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg, value: None, .. } => return Err(Unsupported::new("typed: fold without value")),
             Op::Fold { fold: Fold::Min | Fold::Max, value: Some(v), .. } => match r(v) {
                 Rep::Fix(s) => Rep::Fix(s),
+                Rep::Date => Rep::Date,
                 _ => Rep::Dyn,
             },
             Op::Fold { fold: Fold::Avg, .. } => Rep::Dyn,
@@ -218,7 +223,7 @@ impl<'h> Build<'h> {
             },
             Op::Call(Func::Trunc(p), _) => Rep::Fix(*p),
             Op::Call(Func::Min | Func::Max, args) => match args.split_first() {
-                Some((first, rest)) if matches!(r(first), Rep::Fix(_)) && rest.iter().all(|a| r(a) == r(first)) => r(first),
+                Some((first, rest)) if matches!(r(first), Rep::Fix(_) | Rep::Date) && rest.iter().all(|a| r(a) == r(first)) => r(first),
                 _ => Rep::Dyn,
             },
         })
@@ -486,7 +491,7 @@ impl<'h> Build<'h> {
     fn wants(&self, u: NodeId, i: NodeId) -> bool {
         let user = &self.hir.nodes[u as usize];
         let argful = match &user.op {
-            Op::Classify(..) | Op::Concat(_) | Op::Str(_) => true,
+            Op::Classify(..) | Op::Concat(_) | Op::Str(_) | Op::Host(..) | Op::Clock(..) => true,
             Op::Call(f, _) => f.text(),
             Op::Cmp(_, a, b) => self.rep[*a as usize] == Rep::Text && self.rep[*b as usize] == Rep::Text,
             _ => false,
@@ -505,6 +510,14 @@ impl<'h> Build<'h> {
         }
     }
 
+    fn args(&mut self, args: &[NodeId]) -> Result<Vec<(Arg, Rep)>, Unsupported> {
+        let mut out = Vec::with_capacity(args.len());
+        for a in args {
+            out.push((self.arg(*a)?, self.rep[*a as usize]));
+        }
+        Ok(out)
+    }
+
     fn pattern(&self, i: NodeId) -> Result<Box<Pattern>, Unsupported> {
         match &self.hir.nodes[i as usize].op {
             Op::Const(Lit::Text(s)) => Pattern::new(s).map(Box::new).map_err(|_| Unsupported::new("typed: invalid pattern")),
@@ -520,7 +533,7 @@ impl<'h> Build<'h> {
                 Some(_) => 4,
                 None => 30,
             },
-            Op::Arith(Arith::Rem | Arith::Pow, ..) => 30,
+            Op::Arith(Arith::Rem | Arith::Pow, ..) | Op::Host(..) | Op::Clock(..) => 30,
             Op::Arith(Arith::Mul, ..) if rep != Rep::Dyn => 2,
             Op::Arith(..) | Op::Neg(_) if rep == Rep::Dyn => 6,
             Op::Call(..) => 4,
@@ -624,7 +637,7 @@ impl<'h> Build<'h> {
         if !self.passes.factor || arms.len() >= Tab::MAX {
             return nodes.into_iter().map(|(n, idx)| (Arm::Node(n), idx)).collect();
         }
-        let lit = |n: NodeId| matches!(&self.hir.nodes[n as usize].op, Op::Const(l) if !matches!(l, Lit::Text(_)));
+        let lit = |n: NodeId| matches!(&self.hir.nodes[n as usize].op, Op::Const(l) if !matches!(l, Lit::Text(_) | Lit::Date(_)));
         let mut plan = Vec::new();
         if nodes.iter().filter(|(n, _)| lit(*n)).count() >= 2 {
             let mut idx: Vec<u16> = nodes.iter().filter(|(n, _)| lit(*n)).flat_map(|(_, i)| i.clone()).collect();
@@ -1027,6 +1040,24 @@ impl<'h> Build<'h> {
                 }
             },
             Op::Pick(sel, arms) => self.pick(i, *sel, arms, rep)?,
+            Op::Clock(Clock::Now, _) => {
+                let d = self.fresh()?;
+                self.emit(Ins::Now { dst: d });
+                d
+            }
+            Op::Clock(clock, args) => {
+                let args = self.args(args)?;
+                let d = self.fresh()?;
+                self.emit(Ins::Clock { clock: *clock, dst: d, args });
+                d
+            }
+            Op::Host(host, args) => {
+                let fixed = args.iter().skip(1).all(|a| self.is_const(*a));
+                let args = self.args(args)?;
+                let d = self.fresh()?;
+                self.emit(Ins::Host { host: *host, dst: d, args, rep, fixed });
+                d
+            }
             Op::Call(func, args) if !func.text() => {
                 let mut vs = Vec::with_capacity(args.len());
                 for a in args {

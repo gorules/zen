@@ -1,14 +1,19 @@
-use crate::functions::{ClosureFunction, FunctionKind, InternalFunction};
+use crate::functions::defs::FunctionDefinition;
+use crate::functions::{ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, FunctionRegistry, InternalFunction, MethodKind, MethodRegistry};
+use crate::lane::builtins::{Arg as Given, Builtins, Out};
+use crate::lane::date::Date;
 use crate::lane::Fusion;
 use crate::lexer::{ArithmeticOperator, Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator};
 use crate::parser::{Node as Ast, Parser};
 use crate::typed::hir::{
-    Arith, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Ty,
-    Unsupported,
+    Arith, Clock, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Host, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope,
+    Stamp, Ty, Unsupported,
 };
 use crate::typed::ins::Pattern;
 use crate::typed::num::Dec;
+use crate::variable::Variable;
 use bumpalo::Bump;
+use chrono_tz::Tz;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -546,6 +551,7 @@ impl Lowering {
             Lit::Bool(_) => Ty::boolean(),
             Lit::Code(d, _) => Ty::new(Kind::Code(*d), false),
             Lit::Text(_) => Ty::new(Kind::Text, false),
+            Lit::Date(_) => Ty::new(Kind::Date, false),
         };
         self.add(Op::Const(lit), ty, Scope::Row)
     }
@@ -667,6 +673,7 @@ impl Lowering {
             }
             Ast::FunctionCall { kind, arguments } => self.call(kind, arguments, ctx, r),
             Ast::TemplateString(parts) => self.template(parts, ctx, r),
+            Ast::MethodCall { kind: MethodKind::DateMethod(method), this, arguments } => self.method(*method, this, arguments, ctx, r),
             other => Err(Unsupported::new(format!("expression node {}", <&'static str>::from(other)))),
         }
     }
@@ -698,7 +705,7 @@ impl Lowering {
             Ast::Identifier("$") => Ok(Base::Dollar),
             Ast::Identifier(name) => Ok(Base::Ident(name)),
             Ast::Pointer => Ok(Base::Pointer),
-            Ast::Member { node, property: Ast::String(segment) } => {
+            Ast::Member { node, property: Ast::String(segment) } if !segment.contains('.') => {
                 let base = Self::segments(node, out)?;
                 out.push(segment);
                 Ok(base)
@@ -869,8 +876,12 @@ impl Lowering {
                 };
                 let a = self.expr(left, ctx, r)?;
                 let b = self.expr(right, ctx, r)?;
-                match op == Arith::Add && (self.texty(a) || self.texty(b)) {
-                    true => self.concat(vec![a, b]),
+                let dated = |this: &Self, x: NodeId| this.kind(x) == Kind::Date;
+                match op == Arith::Add && (self.texty(a) || self.texty(b) || dated(self, a) || dated(self, b)) {
+                    true => {
+                        let (a, b) = (self.rendered(a)?, self.rendered(b)?);
+                        self.concat(vec![a, b])
+                    }
                     false => self.arith(op, a, b),
                 }
             }
@@ -967,6 +978,9 @@ impl Lowering {
                 false => self.not(x),
             };
         }
+        if ka == Kind::Date || kb == Kind::Date {
+            return self.dated(op, a, b);
+        }
         let (a, b) = match (ka, kb) {
             (Kind::Text, Kind::Text) if eq => match (self.lit(a).is_some(), self.lit(b).is_some()) {
                 (true, true) => {
@@ -1012,6 +1026,7 @@ impl Lowering {
             Kind::Num(_) => Some(0),
             Kind::Bool => Some(1),
             Kind::Text | Kind::Code(_) => Some(2),
+            Kind::Date => Some(3),
             Kind::Null => None,
         }
     }
@@ -1055,6 +1070,28 @@ impl Lowering {
     }
 
     fn inset(&mut self, a: NodeId, items: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        if self.kind(a) == Kind::Date {
+            return self.dates_in(a, items, ctx, r);
+        }
+        if matches!(self.kind(a), Kind::Text | Kind::Code(_)) {
+            let mut dates = Vec::new();
+            let mut rest = Vec::with_capacity(items.len());
+            for item in items {
+                let id = self.expr(item, ctx, r)?;
+                match self.lit(id) {
+                    Some(Lit::Date(_)) => dates.push(id),
+                    _ => rest.push(*item),
+                }
+            }
+            if !dates.is_empty() {
+                let mut hit = self.inset(a, &rest, ctx, r)?;
+                for date in dates {
+                    let found = self.belongs(date, a)?;
+                    hit = self.logic(false, hit, found)?;
+                }
+                return Ok(hit);
+            }
+        }
         let a = match self.kind(a) {
             Kind::Text => self.classify(a)?,
             _ => a,
@@ -1081,6 +1118,9 @@ impl Lowering {
     }
 
     fn inrange(&mut self, a: NodeId, (lo, hi): (&Ast, &Ast), (left, right): (Bracket, Bracket), ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        if self.kind(a) == Kind::Date {
+            return self.date_range(a, (lo, hi), (left, right), ctx, r);
+        }
         self.require(a, |k| matches!(k, Kind::Num(_)), "interval operand")?;
         let lo = self.expr(lo, ctx, r)?;
         let hi = self.expr(hi, ctx, r)?;
@@ -1279,9 +1319,13 @@ impl Lowering {
                 }
                 let mut args = Vec::with_capacity(items.len());
                 for item in items.iter() {
-                    let a = self.expr(item, ctx, r)?;
-                    self.require(a, |k| matches!(k, Kind::Num(_)), "aggregate item")?;
-                    args.push(a);
+                    args.push(self.expr(item, ctx, r)?);
+                }
+                let dates = matches!(f, InternalFunction::Min | InternalFunction::Max) && args.iter().all(|a| self.kind(*a) == Kind::Date);
+                if !dates {
+                    for a in &args {
+                        self.require(*a, |k| matches!(k, Kind::Num(_)), "aggregate item")?;
+                    }
                 }
                 match f {
                     InternalFunction::Min | InternalFunction::Max => {
@@ -1320,6 +1364,8 @@ impl Lowering {
                 };
                 self.fold(fold, seq, seq.keep, Some(test))
             }
+            (FunctionKind::Internal(InternalFunction::Date), args) => self.construct(args, ctx, r),
+            (FunctionKind::Deprecated(f), args) => self.legacy(*f, args, ctx, r),
             (kind, _) => Err(Unsupported::new(format!("function {kind:?}"))),
         }
     }
@@ -1368,6 +1414,7 @@ impl Lowering {
             Some(Lit::Bool(b)) => Some(b.to_string()),
             Some(Lit::Num(d)) => Some(d.decimal().to_string()),
             Some(Lit::Code(..)) => return self.decode(a),
+            Some(Lit::Date(d)) => Some(d.to_string()),
             None => None,
         };
         if let Some(text) = text {
@@ -1376,7 +1423,7 @@ impl Lowering {
         let a = match self.ty(a) {
             Ty { kind: Kind::Text, nullable: false } => return Ok(a),
             Ty { kind: Kind::Code(_), .. } => self.decode(a)?,
-            Ty { kind: Kind::Text | Kind::Num(_) | Kind::Bool | Kind::Null, .. } => a,
+            Ty { kind: Kind::Text | Kind::Num(_) | Kind::Bool | Kind::Null | Kind::Date, .. } => a,
         };
         let scope = self.nodes[a as usize].scope;
         Ok(self.add(Op::Str(a), Ty::new(Kind::Text, false), scope))
@@ -1647,7 +1694,7 @@ impl Lowering {
     fn member(&mut self, x: NodeId, seq: Seq) -> Lowered {
         let seq = Self::pure(seq)?;
         let item = self.item(seq)?;
-        let test = self.compare(Cmp::Eq, x, item)?;
+        let test = self.belongs(x, item)?;
         let test = self.lifted(test, seq.list)?;
         self.fold(Fold::Any, seq, seq.keep, Some(test))
     }
@@ -1657,9 +1704,10 @@ impl Lowering {
         let filter = filter.map(|f| self.lifted(f, list)).transpose()?;
         let value = match value {
             Some(id) => {
-                match fold.quantifier() {
-                    true => self.require(id, |k| k == Kind::Bool, "predicate")?,
-                    false => self.require(id, |k| matches!(k, Kind::Num(_)), "fold value")?,
+                match (fold.quantifier(), fold) {
+                    (true, _) => self.require(id, |k| k == Kind::Bool, "predicate")?,
+                    (false, Fold::Min | Fold::Max) => self.require(id, |k| matches!(k, Kind::Num(_) | Kind::Date), "fold value")?,
+                    (false, _) => self.require(id, |k| matches!(k, Kind::Num(_)), "fold value")?,
                 }
                 Some(self.lifted(id, list)?)
             }
@@ -1674,5 +1722,288 @@ impl Lowering {
         };
         let scope = self.schema.owner(Scope::Elem(list)).ok_or_else(|| Unsupported::new("fold owner"))?;
         Ok(self.add(Op::Fold { fold, list, filter, value, empty: seq.empty }, ty, scope))
+    }
+}
+
+impl Lowering {
+    fn returns(method: DateMethod) -> Ty {
+        match method {
+            DateMethod::Add | DateMethod::Sub | DateMethod::Set | DateMethod::StartOf | DateMethod::EndOf | DateMethod::Tz => Ty::new(Kind::Date, false),
+            DateMethod::Format => Ty::new(Kind::Text, false),
+            DateMethod::OffsetName => Ty::new(Kind::Text, true),
+            DateMethod::IsSame | DateMethod::IsBefore | DateMethod::IsAfter | DateMethod::IsSameOrBefore | DateMethod::IsSameOrAfter | DateMethod::IsValid => Ty::boolean(),
+            DateMethod::IsYesterday | DateMethod::IsToday | DateMethod::IsTomorrow | DateMethod::IsLeapYear => Ty::new(Kind::Bool, true),
+            DateMethod::Diff
+            | DateMethod::Second
+            | DateMethod::Minute
+            | DateMethod::Hour
+            | DateMethod::Day
+            | DateMethod::DayOfYear
+            | DateMethod::Week
+            | DateMethod::Weekday
+            | DateMethod::Month
+            | DateMethod::Quarter
+            | DateMethod::Year
+            | DateMethod::Timestamp => Ty::new(Kind::Num(Some(0)), true),
+        }
+    }
+
+    fn arity(def: &dyn FunctionDefinition, skip: usize, given: usize) -> Result<(), Unsupported> {
+        let least = def.required_parameters().saturating_sub(skip);
+        match (least..=least + def.optional_parameters()).contains(&given) {
+            true => Ok(()),
+            false => Err(Unsupported::new("call arity")),
+        }
+    }
+
+    fn formats(pattern: &str) -> bool {
+        use chrono::TimeZone;
+        let Ok(items) = chrono::format::StrftimeItems::new(pattern).parse_to_owned() else {
+            return false;
+        };
+        let sample = Tz::UTC.timestamp_opt(0, 0).earliest();
+        sample.is_some_and(|date| {
+            let mut out = String::new();
+            std::fmt::Write::write_fmt(&mut out, format_args!("{}", date.format_with_items(items.iter()))).is_ok()
+        })
+    }
+
+    fn loose(&mut self, id: NodeId) -> Lowered {
+        match self.kind(id) {
+            Kind::Code(_) => self.decode(id),
+            _ => Ok(id),
+        }
+    }
+
+    fn arguments(&mut self, arguments: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Result<Vec<NodeId>, Unsupported> {
+        let mut args = Vec::with_capacity(arguments.len());
+        for a in arguments {
+            let id = self.expr(a, ctx, r)?;
+            args.push(self.loose(id)?);
+        }
+        Ok(args)
+    }
+
+    fn method(&mut self, method: DateMethod, this: &Ast, arguments: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let def = MethodRegistry::get_definition(&MethodKind::DateMethod(method)).ok_or_else(|| Unsupported::new(format!("method {method}")))?;
+        Self::arity(def.as_ref(), 1, arguments.len())?;
+        let this = self.expr(this, ctx, r)?;
+        self.require(this, |k| k == Kind::Date, "method receiver")?;
+        let mut args = vec![this];
+        args.extend(self.arguments(arguments, ctx, r)?);
+        if method == DateMethod::Format {
+            match args.get(1).map(|a| self.lit(*a)) {
+                None => {}
+                Some(Some(Lit::Text(pattern))) if Self::formats(pattern) => {}
+                _ => return Err(Unsupported::new("format pattern")),
+            }
+        }
+        let pure = !matches!(method, DateMethod::IsToday | DateMethod::IsYesterday | DateMethod::IsTomorrow);
+        self.host(Host::Method(method), args, Self::returns(method), pure)
+    }
+
+    fn construct(&mut self, arguments: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let def = FunctionRegistry::get_definition(&FunctionKind::Internal(InternalFunction::Date)).ok_or_else(|| Unsupported::new("function d"))?;
+        Self::arity(def.as_ref(), 0, arguments.len())?;
+        if arguments.is_empty() {
+            return Ok(self.add(Op::Clock(Clock::Now, Vec::new()), Ty::new(Kind::Date, false), ctx.scope));
+        }
+        let args = self.arguments(arguments, ctx, r)?;
+        if let [only] = args.as_slice() {
+            if self.kind(*only) == Kind::Date {
+                return Ok(*only);
+            }
+        }
+        let pure = match args.first().and_then(|a| self.lit(*a)) {
+            Some(Lit::Text(text)) => Date::parses(text) || text.parse::<Tz>().is_err(),
+            _ => true,
+        };
+        self.host(Host::Construct, args, Ty::new(Kind::Date, false), pure)
+    }
+
+    fn legacy(&mut self, function: DeprecatedFunction, arguments: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let def = FunctionRegistry::get_definition(&FunctionKind::Deprecated(function)).ok_or_else(|| Unsupported::new(format!("function {function}")))?;
+        Self::arity(def.as_ref(), 0, arguments.len())?;
+        let args = self.arguments(arguments, ctx, r)?;
+        let ty = match function {
+            DeprecatedFunction::MonthString | DeprecatedFunction::DateString | DeprecatedFunction::WeekdayString => Ty::new(Kind::Text, true),
+            _ => Ty::new(Kind::Num(None), true),
+        };
+        let pure = !args.iter().any(|a| matches!(self.lit(*a), Some(Lit::Text(text)) if text == "now"));
+        self.host(Host::Legacy(function), args, ty, pure)
+    }
+
+    fn host(&mut self, host: Host, args: Vec<NodeId>, ty: Ty, pure: bool) -> Lowered {
+        if let Some(lit) = pure.then(|| self.folded(host, &args)).flatten() {
+            return Ok(self.konst(lit));
+        }
+        let (scope, ids) = self.scoped(&args)?;
+        Ok(self.add(Op::Host(host, ids), ty, scope))
+    }
+
+    fn folded(&self, host: Host, args: &[NodeId]) -> Option<Lit> {
+        let lits = args.iter().map(|a| self.lit(*a)).collect::<Option<Vec<&Lit>>>()?;
+        let given = lits
+            .iter()
+            .map(|lit| match lit {
+                Lit::Null => Some(Given::Null),
+                Lit::Num(d) => Some(Given::Num(d.decimal())),
+                Lit::Bool(b) => Some(Given::Bool(*b)),
+                Lit::Text(t) => Some(Given::Str(t.as_str())),
+                Lit::Date(d) => Some(Given::Date(d.date())),
+                Lit::Code(..) => None,
+            })
+            .collect::<Option<Vec<Given>>>()?;
+        match Builtins::raw(host.builtin()?, &given).ok()? {
+            Out::Num(n) => Dec::from_decimal(&n).map(Lit::Num),
+            Out::Bool(b) => Some(Lit::Bool(b)),
+            Out::Str(s) => Some(Lit::Text(s.to_string())),
+            Out::Date(d) => Some(Lit::Date(Stamp::of(d))),
+            Out::Var(Variable::Null) => Some(Lit::Null),
+            Out::Var(_) => None,
+        }
+    }
+
+    fn rendered(&mut self, id: NodeId) -> Lowered {
+        if self.kind(id) != Kind::Date {
+            return Ok(id);
+        }
+        if let Some(Lit::Date(d)) = self.lit(id) {
+            if d.is_valid() {
+                let text = d.to_string();
+                return Ok(self.konst(Lit::Text(text)));
+            }
+        }
+        let node = &self.nodes[id as usize];
+        let (nullable, scope) = (node.ty.nullable, node.scope);
+        Ok(self.add(Op::Clock(Clock::Text, vec![id]), Ty::new(Kind::Text, nullable), scope))
+    }
+
+    fn strict(&mut self, id: NodeId) -> NodeId {
+        if let Some(Lit::Date(d)) = self.lit(id) {
+            if d.is_valid() {
+                return id;
+            }
+        }
+        let scope = self.nodes[id as usize].scope;
+        self.add(Op::Clock(Clock::Strict, vec![id]), Ty::new(Kind::Date, false), scope)
+    }
+
+    fn coerced(&mut self, id: NodeId) -> NodeId {
+        if let Some(Lit::Text(text)) = self.lit(id) {
+            let date = Date::from_text(text);
+            if date.is_valid() {
+                return self.konst(Lit::Date(Stamp::of(date)));
+            }
+        }
+        let scope = self.nodes[id as usize].scope;
+        self.add(Op::Clock(Clock::Coerce, vec![id]), Ty::new(Kind::Date, false), scope)
+    }
+
+    fn dated(&mut self, op: Cmp, a: NodeId, b: NodeId) -> Lowered {
+        let (a, b) = (self.loose(a)?, self.loose(b)?);
+        let eq = matches!(op, Cmp::Eq | Cmp::Ne);
+        match (self.kind(a), self.kind(b)) {
+            (Kind::Date, Kind::Date) | (Kind::Date, Kind::Null) | (Kind::Null, Kind::Date) => {
+                let (scope, ids) = self.scoped(&[a, b])?;
+                Ok(self.add(Op::Cmp(op, ids[0], ids[1]), Ty::boolean(), scope))
+            }
+            (Kind::Date, Kind::Text) | (Kind::Text, Kind::Date) => {
+                let flip = self.kind(a) == Kind::Text;
+                let (date, text) = if flip { (b, a) } else { (a, b) };
+                if !eq {
+                    let (x, y) = (self.strict(date), self.coerced(text));
+                    let (x, y) = if flip { (y, x) } else { (x, y) };
+                    let (scope, ids) = self.scoped(&[x, y])?;
+                    return Ok(self.add(Op::Cmp(op, ids[0], ids[1]), Ty::boolean(), scope));
+                }
+                let hit = match self.lit(text) {
+                    Some(Lit::Text(t)) => {
+                        let parsed = Date::from_text(t);
+                        match parsed.is_valid() {
+                            true => {
+                                let other = self.konst(Lit::Date(Stamp::of(parsed)));
+                                self.dated(Cmp::Eq, date, other)?
+                            }
+                            false => self.konst(Lit::Bool(false)),
+                        }
+                    }
+                    _ => {
+                        let (scope, ids) = self.scoped(&[date, text])?;
+                        self.add(Op::Clock(Clock::Matches, ids), Ty::boolean(), scope)
+                    }
+                };
+                match op {
+                    Cmp::Eq => Ok(hit),
+                    _ => self.not(hit),
+                }
+            }
+            (x, y) if eq && Self::family(x).zip(Self::family(y)).is_some_and(|(p, q)| p != q) => self.mismatch(op, a, b),
+            (x, y) => Err(Unsupported::new(format!("compare {op:?} between {x} and {y}"))),
+        }
+    }
+
+    fn belongs(&mut self, x: NodeId, item: NodeId) -> Lowered {
+        let (x, item) = (self.loose(x)?, self.loose(item)?);
+        let (date, other) = match (self.kind(x), self.kind(item)) {
+            (Kind::Date, Kind::Date | Kind::Text) => (x, item),
+            (Kind::Text, Kind::Date) => (item, x),
+            _ => return self.compare(Cmp::Eq, x, item),
+        };
+        let (scope, ids) = self.scoped(&[date, other])?;
+        let hit = self.add(Op::Clock(Clock::Matches, ids), Ty::boolean(), scope);
+        if !(self.ty(x).nullable && self.ty(item).nullable) {
+            return Ok(hit);
+        }
+        let null = self.konst(Lit::Null);
+        let (p, q) = (self.compare(Cmp::Eq, x, null)?, self.compare(Cmp::Eq, item, null)?);
+        let both = self.logic(true, p, q)?;
+        self.logic(false, both, hit)
+    }
+
+    fn dates_in(&mut self, a: NodeId, items: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let mut set: Vec<Lit> = Vec::new();
+        for item in items {
+            let id = self.expr(item, ctx, r)?;
+            let lit = match self.lit(id).cloned().ok_or_else(|| Unsupported::new("in: non-literal set item"))? {
+                Lit::Null => Some(Lit::Null),
+                Lit::Date(d) => d.is_valid().then_some(Lit::Date(d)),
+                Lit::Text(t) => {
+                    let date = Date::from_text(&t);
+                    date.is_valid().then(|| Lit::Date(Stamp::of(date)))
+                }
+                _ => None,
+            };
+            if let Some(lit) = lit {
+                if !set.contains(&lit) {
+                    set.push(lit);
+                }
+            }
+        }
+        let scope = self.nodes[a as usize].scope;
+        Ok(self.add(Op::InSet(a, set), Ty::boolean(), scope))
+    }
+
+    fn date_range(&mut self, a: NodeId, (lo, hi): (&Ast, &Ast), (left, right): (Bracket, Bracket), ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let lo = self.expr(lo, ctx, r)?;
+        let hi = self.expr(hi, ctx, r)?;
+        for bound in [lo, hi] {
+            if self.ty(bound) != Ty::new(Kind::Date, false) {
+                return Err(Unsupported::new("interval bounds must be dates"));
+            }
+        }
+        let low = match left {
+            Bracket::LeftSquareBracket => Cmp::Le,
+            Bracket::LeftParenthesis => Cmp::Lt,
+            other => return Err(Unsupported::new(format!("interval bracket {other}"))),
+        };
+        let high = match right {
+            Bracket::RightSquareBracket => Cmp::Le,
+            Bracket::RightParenthesis => Cmp::Lt,
+            other => return Err(Unsupported::new(format!("interval bracket {other}"))),
+        };
+        let first = self.dated(low, lo, a)?;
+        let second = self.dated(high, a, hi)?;
+        self.logic(true, first, second)
     }
 }

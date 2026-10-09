@@ -1,3 +1,4 @@
+use crate::lane::date::Date;
 use crate::lane::Column;
 use crate::typed::batch::{Data, Feed, Feeds, Lists, Scales};
 use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, Range, Scope};
@@ -16,6 +17,7 @@ enum V {
     Big(Decimal),
     Bool(bool),
     Code(i32),
+    Date(Date),
     Other,
 }
 
@@ -32,6 +34,7 @@ pub(crate) struct Reg {
     pub(crate) masks: Vec<u64>,
     pub(crate) text: Vec<u8>,
     pub(crate) span: Vec<(u32, u32)>,
+    pub(crate) dates: Vec<Date>,
 }
 
 #[derive(Clone, Default)]
@@ -47,6 +50,7 @@ pub(crate) struct Buf {
     pub(crate) any: bool,
     pub(crate) text: Vec<u8>,
     pub(crate) span: Vec<(u32, u32)>,
+    pub(crate) dates: Vec<Date>,
 }
 
 pub(crate) struct Others<'r> {
@@ -73,6 +77,7 @@ impl V {
             Lit::Bool(b) => V::Bool(*b),
             Lit::Code(_, c) => V::Code(*c),
             Lit::Text(_) => V::Other,
+            Lit::Date(d) => V::Date(d.date()),
         }
     }
 
@@ -218,6 +223,7 @@ impl Reg {
             masks: Vec::new(),
             text: Vec::new(),
             span: Vec::new(),
+            dates: Vec::new(),
         }
     }
 
@@ -233,6 +239,7 @@ impl Reg {
             Lit::Bool(b) => self.bits.fill(if *b { u64::MAX } else { 0 }),
             Lit::Code(_, c) => self.codes.fill(*c),
             Lit::Text(t) => self.literal(t),
+            Lit::Date(d) => self.dates = vec![d.date(); Self::LANES],
             Lit::Null => self.valid.fill(0),
         }
         if rep == Rep::Null {
@@ -263,6 +270,7 @@ impl Reg {
             Rep::Dyn => V::Num(Dec::new(self.mant[i], self.scale[i])),
             Rep::Bool => V::Bool(K::get(&self.bits, i)),
             Rep::Code => V::Code(self.codes[i]),
+            Rep::Date => V::Date(self.date(i)),
             Rep::Text | Rep::Null => V::Null,
         }
     }
@@ -585,6 +593,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         }
                         Rep::Bool => K::pack1(parent, &mut d.bits[..words], |p| K::get(&b.bits, p as usize)),
                         Rep::Text => self.gather_text(d, b, parent),
+                        Rep::Date => self.gather_dates(d, b, parent),
                         Rep::Null => {}
                     }
                     let (r0, r1) = (parent.first().map_or(0, |p| *p as usize), parent.last().map_or(0, |p| *p as usize + 1));
@@ -626,6 +635,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         Rep::Code => d.codes[..n].copy_from_slice(&b.codes[start..start + n]),
                         Rep::Bool => d.bits[..words].copy_from_slice(&b.bits[w0..w0 + words]),
                         Rep::Text => self.fill_text(d, b),
+                        Rep::Date => self.fill_dates(d, b),
                         Rep::Null => {}
                     }
                 });
@@ -657,6 +667,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     Rep::Code => b.codes[start..start + n].copy_from_slice(&r.codes[..n]),
                     Rep::Bool => b.bits[w0..w0 + words].copy_from_slice(&r.bits[..words]),
                     Rep::Text => self.spill_text(r, b),
+                    Rep::Date => self.spill_dates(r, b),
                     Rep::Null => {}
                 }
             }
@@ -788,7 +799,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         }
                     }
                     Rep::Bool => K::pack1(sm, &mut d.bits[..words], |x| Tab::bit(&tab.flag, x as usize)),
-                    Rep::Text | Rep::Null => {}
+                    Rep::Text | Rep::Date | Rep::Null => {}
                 }
                 K::pack1(sm, &mut d.valid[..words], |x| Tab::bit(&tab.ok, x as usize));
                 d.fault[..words].copy_from_slice(&s.fault[..words]);
@@ -912,6 +923,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     let r = match (op, x, y) {
                         (Cmp::Eq, x, y) => Some(x.same(y)),
                         (Cmp::Ne, x, y) => Some(!x.same(y)),
+                        (_, V::Date(x), V::Date(y)) => Some(K::ord(*op, x.cmp(&y))),
                         (_, x, y) => x.number().zip(y.number()).map(|(x, y)| K::ord(*op, x.compare(y))),
                     };
                     match r {
@@ -940,6 +952,7 @@ impl<'e, 'x> Exec<'e, 'x> {
             | Ins::Str { .. }
             | Ins::Decode { .. }
             | Ins::Class { .. } => self.text(ins, regs, act),
+            Ins::Now { .. } | Ins::Host { .. } | Ins::Clock { .. } => self.date(ins, regs, act),
             Ins::InCode { dst, a, set, null } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 let set = *set;
@@ -1193,8 +1206,10 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.valid[w] = 0;
                     d.fault[w] = s.fault[w];
                 }
-                if *rep == Rep::Text {
-                    d.texts(n);
+                match rep {
+                    Rep::Text => d.texts(n),
+                    Rep::Date => d.stamps(),
+                    _ => {}
                 }
                 let mut m = [0u64; Reg::WORDS];
                 for (arm, ra, idx) in arms {
@@ -1224,6 +1239,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                             }
                         }
                         Rep::Text => self.pick_text(d, m, a),
+                        Rep::Date => self.pick_dates(d, m, a),
                         Rep::Null => {}
                     }
                 }
@@ -1241,6 +1257,25 @@ impl<'e, 'x> Exec<'e, 'x> {
                 }
                 let skip = d.fault;
                 match (func, args.as_slice()) {
+                    (Func::Min | Func::Max, _) if rep == Rep::Date => {
+                        d.stamps();
+                        self.each(act, &skip, |i| {
+                            let mut best: Option<Date> = None;
+                            for (a, _) in args {
+                                let x = regs[*a as usize].date(i);
+                                let take = best.is_none_or(|b| match func {
+                                    Func::Min => x < b,
+                                    _ => x >= b,
+                                });
+                                if take {
+                                    best = Some(x);
+                                }
+                            }
+                            if let Some(b) = best {
+                                d.dates[i] = b;
+                            }
+                        });
+                    }
                     (Func::Min | Func::Max, _) => self.each(act, &skip, |i| {
                         let mut best: Option<N> = None;
                         for (a, ra) in args {
@@ -1412,6 +1447,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 }
             }
             Rep::Text => self.blend_text(d, m, t, e),
+            Rep::Date => self.blend_dates(d, m, t, e),
             Rep::Null => {}
         }
     }
@@ -1557,6 +1593,22 @@ impl<'e, 'x> Exec<'e, 'x> {
                     }
                 }
                 Fold::One => b.mant[r] += i64::from(K::get(&v.bits, i)),
+                Fold::Min | Fold::Max if vr == Rep::Date => {
+                    b.stamps();
+                    let x = v.date(i);
+                    let best = b.dates.get(r).copied().unwrap_or(Date(None));
+                    let take = b.codes[r] == 0
+                        || match fold {
+                            Fold::Min => x < best,
+                            _ => x >= best,
+                        };
+                    if take {
+                        if let Some(slot) = b.dates.get_mut(r) {
+                            *slot = x;
+                        }
+                    }
+                    b.codes[r] = 1;
+                }
                 Fold::Min | Fold::Max => {
                     let x = v.num(vr, i);
                     let take = b.codes[r] == 0 || {
@@ -1661,6 +1713,11 @@ impl<'e, 'x> Exec<'e, 'x> {
             SlotData::Bool(bits) => bits[w0..w0 + words].copy_from_slice(&r.bits[..words]),
             SlotData::Code(codes) => codes[start..start + n].copy_from_slice(&r.codes[..n]),
             SlotData::Text { span, data } => self.out_text(r, span, data),
+            SlotData::Date(dates) => {
+                for (o, i) in dates[start..start + n].iter_mut().zip(0..n) {
+                    *o = r.date(i).0;
+                }
+            }
         }
         match rep {
             Rep::Null => s.valid[w0..w0 + words].fill(0),

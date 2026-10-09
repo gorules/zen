@@ -308,7 +308,7 @@ impl Lookup {
             Lit::Num(d) => Val::Num(N::Dec(*d)),
             Lit::Bool(b) => Val::Bool(*b),
             Lit::Code(_, c) => Val::Code(*c),
-            Lit::Text(_) => Val::Fault,
+            Lit::Text(_) | Lit::Date(_) => Val::Fault,
         }
     }
 

@@ -422,3 +422,65 @@ fn absent_paths_read_null() {
     assert_eq!(hir.schema.columns.len(), 1, "{hir}");
     assert_eq!(probe.asked.iter().filter(|p| *p == "c.missing").count(), 1);
 }
+
+#[test]
+fn date_shapes() {
+    let supported = [
+        "d(c.t)",
+        "d()",
+        "d(c.n, 'Europe/Berlin')",
+        "d(c.t).add(c.n, 'day').format('%Y-%m-%d')",
+        "d(c.t).diff(c.u, 'month')",
+        "d(c.t) < d()",
+        "c.t >= d('2024-01-01')",
+        "d(c.t) == c.u",
+        "d(c.t) in [d('2024-01-01'), '2024-02-01', null]",
+        "d(c.t) in [d('2024-01-01')..d('2024-12-31'))",
+        "`${d(c.t)}`",
+        "'at ' + d(c.t)",
+        "count(c.ts, # < d())",
+        "max(map(c.ts, d(#)))",
+        "min([d(c.t), d(c.u)])",
+        "c.b ? d(c.t) : null",
+        "year(c.t) + date(c.n)",
+        "dateString(d(c.t))",
+    ];
+    for source in supported {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_ok(), "{source}");
+        let hir = lowering.finish();
+        Program::new(hir.clone()).unwrap_or_else(|e| panic!("{source}: {e}\n{hir}"));
+    }
+    let unsupported = [
+        ("method on text", "c.t.year()"),
+        ("format from a column", "d(c.t).format(c.u)"),
+        ("invalid format", "d(c.t).format('%Q')"),
+        ("method arity", "d(c.t).add()"),
+        ("constructor arity", "d(c.t, 'UTC', 1)"),
+        ("ordering with a number", "d(c.t) < c.n"),
+        ("date plus number", "d(c.t) + 1"),
+        ("text interval", "c.t in [d('2024-01-01')..d('2024-12-31')]"),
+        ("mixed branches", "c.b ? d(c.t) : c.t"),
+        ("non-literal set item", "d(c.t) in [d(c.u)]"),
+    ];
+    for (what, source) in unsupported {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(Probe::unit(&mut lowering, &mut probe, "c.o", source).is_err(), "{what}: {source}");
+    }
+    let mut lowering = Lowering::new(None);
+    let mut probe = Probe::new();
+    Probe::unit(&mut lowering, &mut probe, "c.a", "d('2024-01-31T10:00:00Z').add(1, 'month').format('%Y-%m-%d')").expect("constant method");
+    Probe::unit(&mut lowering, &mut probe, "c.b", "date('2024-01-01')").expect("constant legacy");
+    Probe::unit(&mut lowering, &mut probe, "c.c", "d('nope').isValid()").expect("invalid constant");
+    Probe::unit(&mut lowering, &mut probe, "c.d", "date('now')").expect("legacy now");
+    let hir = lowering.finish();
+    let consts: Vec<String> = hir.outputs.iter().map(|o| match &hir.node(o.node).op {
+        Op::Const(Lit::Code(d, c)) => hir.dict(*d).text(*c).unwrap_or("?").to_string(),
+        Op::Const(lit) => lit.to_string(),
+        op => format!("{op:?}"),
+    }).collect();
+    assert_eq!(consts[..3], ["2024-02-29", "1704067200", "false"], "{hir}");
+    assert!(matches!(hir.node(hir.outputs[3].node).op, Op::Host(..)), "{hir}");
+}

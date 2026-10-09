@@ -1,7 +1,8 @@
 use crate::typed::batch::{Batch, Feeds, Origin};
 use crate::typed::build::{Build, Built, Passes, Stage};
 use crate::typed::exec::{Buf, Exec, Reg, Stack};
-use crate::typed::hir::{DictId, Hir, Lit, NodeId, Op, Unsupported};
+use crate::lane::date::Date;
+use crate::typed::hir::{Clock, DictId, Hir, Lit, NodeId, Op, Unsupported};
 use crate::typed::ins::{BufDef, Rep, R};
 use crate::typed::kernel::K;
 use crate::typed::output::Outputs;
@@ -27,6 +28,7 @@ pub struct Program {
     class_of: HashMap<NodeId, u16>,
     generic: Arc<Plan>,
     plans: RwLock<Vec<(Sig, Arc<Plan>)>>,
+    clock: bool,
 }
 
 pub(crate) struct Machine {
@@ -97,7 +99,8 @@ impl Program {
         }
         let width = hir.schema.columns.len() + hir.schema.lists.iter().map(|l| l.fields.len()).sum::<usize>();
         let generic = Arc::new(Plan::new(Build::plan(&hir, &vec![None; width], &class_of, passes)?));
-        Ok(Self { hir, passes, classes, class_of, generic, plans: RwLock::new(Vec::new()) })
+        let clock = hir.nodes.iter().any(|node| matches!(node.op, Op::Clock(Clock::Now, _)));
+        Ok(Self { hir, passes, classes, class_of, generic, plans: RwLock::new(Vec::new()), clock })
     }
 
     pub fn hir(&self) -> &Hir {
@@ -109,7 +112,10 @@ impl Program {
     }
 
     pub fn run(&self, batch: &Batch, out: &mut Outputs, select: Option<&[u64]>) -> Result<(), Unsupported> {
-        let feeds = Feeds::new(&self.hir, &self.classes, batch)?;
+        let mut feeds = Feeds::new(&self.hir, &self.classes, batch)?;
+        if self.clock {
+            feeds.now = Date::now();
+        }
         if out.slots().len() != self.hir.outputs.len() {
             *out = Outputs::new(&self.hir)?;
         }

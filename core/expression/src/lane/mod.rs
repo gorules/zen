@@ -1,8 +1,8 @@
-mod builtins;
+pub(crate) mod builtins;
 mod cells;
 mod columns;
 mod compile;
-mod date;
+pub(crate) mod date;
 mod exec;
 mod interval;
 mod kernel;

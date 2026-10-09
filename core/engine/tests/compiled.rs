@@ -1084,6 +1084,78 @@ async fn graph_typed_strings() {
 }
 
 #[tokio::test]
+async fn graph_typed_dates() {
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    let mut noise = Noise::new(31);
+    let days = [
+        "2024-01-15", "2024-02-29", "2023-12-31 23:59:59", "2024-03-31T01:30:00Z", "2025-03-30 02:30:00", "2024-10-27 02:30:00", "1900-01-01", "9999-12-31",
+        "2024-06-15T12:00:00+05:30", "2024-06-15T12:00:00.123456789Z", "20240115", "2024/01/15", "2024", "2024-07", "2025-01-31", "2025-08-19",
+    ];
+    let bad = ["nope", "", "2024-02-30", "2024-13-01"];
+    let mut day = |noise: &mut Noise| match noise.below(12) {
+        0 => json!(bad[noise.below(bad.len())]),
+        1 => Value::Null,
+        _ => json!(days[noise.below(days.len())]),
+    };
+    let mut rows: Vec<Value> = (0..300)
+        .map(|_| {
+            let items: Vec<Value> = (0..noise.below(4)).map(|_| json!({"on": day(&mut noise), "gb": noise.below(9)})).collect();
+            json!({"at": day(&mut noise), "other": day(&mut noise), "ms": noise.below(2_000_000_000) as i64 * 1000 - 1_000_000_000_000, "n": noise.below(7), "items": items})
+        })
+        .collect();
+    let odd = [
+        json!({"at": "0001-01-01", "other": "9999-12-31 23:59:59", "ms": 9223372036854775807i64, "n": 0, "items": []}),
+        json!({"at": null, "other": null, "ms": null, "n": 3, "items": [{"on": null, "gb": 1}]}),
+        json!({"at": "2024-02-29", "other": "2024-02-29T00:00:00Z", "ms": -0.0, "n": 6, "items": [{"on": "2024-02-29", "gb": 2}]}),
+        json!({"at": "Europe/Berlin", "other": "UTC", "ms": 1.5, "n": 1, "items": null}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        rows.insert(at * 41 + 3, row);
+    }
+    let nodes = vec![
+        Chain::expression(
+            "dates",
+            &[
+                ("p", "d(at)"),
+                ("ps", "string(d(at))"),
+                ("m", "d(ms)"),
+                ("y", "d(at).year()"),
+                ("add", "d(at).add(1, 'month')"),
+                ("addn", "d(at).add(n, 'day')"),
+                ("som", "d(at).startOf('month')"),
+                ("fmt", "d(at).format('%Y-%m-%d %H:%M')"),
+                ("diff", "d(at).diff(other, 'day')"),
+                ("bef", "d(at).isBefore(d('2024-03-01'))"),
+                ("same", "d(at).isSame(d(other), 'month')"),
+                ("lt", "d(at) < d(other)"),
+                ("eqs", "d(at) == other"),
+                ("inl", "d(at) in [d('2024-01-15'), '2024-02-29']"),
+                ("rng", "d(at) in [d('2024-01-01')..d('2024-12-31')]"),
+                ("tpl", "`at ${d(at)}`"),
+                ("now", "d().diff(d(at), 'year')"),
+                ("cnt", "count(items, d(#.on).isAfter(d(at)))"),
+                ("dts", "map(items, d(#.on).add(1, 'd'))"),
+                ("mm", "max([d(at), d(other)])"),
+                ("leg", "date('2024-01-01') + year('2024-06-30')"),
+            ],
+        ),
+        Chain::table("band", &["at"], &["band", "since"], &[&["< d('2000-01-01')", "'old'", "d('1999-12-31')"], &["d($).isValid() == false", "'bad'", "null"], &["", "'mid'", "d(at)"]]),
+        Chain::expression("later", &[("again", "p.add(1, 'd')"), ("s", "string(add)"), ("old", "since == null or since < d()")]),
+    ];
+    let mut failures = Vec::new();
+    let (typed, laned) = Chain::checked(Chain::graph(nodes.clone()), &rows, &mut failures).await;
+    eprintln!("dates typed {typed} laned {laned}");
+    if Chain::typed() {
+        assert!(typed > laned, "units typed {typed}, laned {laned}");
+    }
+    let faulty = vec![Chain::expression("faulty", &[("lts", "d(at) < other"), ("cat", "'D:' + d(at)"), ("mx", "max(map(items, d(#.on)))"), ("legd", "dateString(at)")])];
+    Chain::checked(Chain::graph(faulty), &rows, &mut failures).await;
+    rows.insert(12, json!({"at": 5, "other": true, "ms": "x", "n": 1, "items": [{"on": 3}]}));
+    Chain::checked(Chain::graph(nodes), &rows, &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[tokio::test]
 async fn graph_typed_extremes() {
     let mut rows = Chain::rows(200, 9);
     let odd = [

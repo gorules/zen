@@ -1,4 +1,8 @@
+use crate::functions::{DateMethod, DeprecatedFunction};
+use crate::lane::date::Date;
 use crate::typed::num::Dec;
+use chrono::{DateTime, SecondsFormat};
+use chrono_tz::Tz;
 use std::fmt;
 
 pub type NodeId = u32;
@@ -13,6 +17,7 @@ pub enum Kind {
     Bool,
     Code(DictId),
     Text,
+    Date,
     Null,
 }
 
@@ -35,6 +40,26 @@ pub enum Lit {
     Bool(bool),
     Code(DictId, i32),
     Text(String),
+    Date(Stamp),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Stamp(Option<(i64, u32, Tz)>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Host {
+    Construct,
+    Method(DateMethod),
+    Legacy(DeprecatedFunction),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Clock {
+    Now,
+    Coerce,
+    Strict,
+    Matches,
+    Text,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -121,6 +146,8 @@ pub enum Op {
     Str(NodeId),
     Decode(NodeId),
     Concat(Vec<NodeId>),
+    Host(Host, Vec<NodeId>),
+    Clock(Clock, Vec<NodeId>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -295,7 +322,7 @@ impl Op {
             Op::Fold { filter, value, .. } => filter.iter().chain(value.iter()).copied().collect(),
             Op::FirstMatch { conds, .. } => conds.clone(),
             Op::Pick(sel, arms) => std::iter::once(*sel).chain(arms.iter().copied()).collect(),
-            Op::Call(_, args) | Op::Concat(args) => args.clone(),
+            Op::Call(_, args) | Op::Concat(args) | Op::Host(_, args) | Op::Clock(_, args) => args.clone(),
         }
     }
 
@@ -321,6 +348,8 @@ impl Op {
             Op::FirstMatch { conds, strict } => Op::FirstMatch { conds: conds.iter().map(|c| f(*c)).collect(), strict: *strict },
             Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
             Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
+            Op::Host(host, args) => Op::Host(*host, args.iter().map(|a| f(*a)).collect()),
+            Op::Clock(clock, args) => Op::Clock(*clock, args.iter().map(|a| f(*a)).collect()),
         }
     }
 }
@@ -338,6 +367,29 @@ impl Func {
 
     pub fn mapping(self) -> bool {
         matches!(self, Func::Upper | Func::Lower | Func::Trim)
+    }
+}
+
+impl Stamp {
+    pub(crate) fn of(date: Date) -> Self {
+        Self(date.0.map(|at| (at.timestamp(), at.timestamp_subsec_nanos(), at.timezone())))
+    }
+
+    pub(crate) fn date(self) -> Date {
+        Date(self.0.and_then(|(secs, nanos, zone)| DateTime::from_timestamp(secs, nanos).map(|at| at.with_timezone(&zone))))
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl fmt::Display for Stamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.date().0 {
+            Some(at) => write!(f, "{}", at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            None => write!(f, "Invalid date"),
+        }
     }
 }
 
@@ -363,6 +415,7 @@ impl fmt::Display for Kind {
             Kind::Bool => write!(f, "bool"),
             Kind::Code(d) => write!(f, "code#{d}"),
             Kind::Text => write!(f, "text"),
+            Kind::Date => write!(f, "date"),
             Kind::Null => write!(f, "null"),
         }
     }
@@ -394,6 +447,7 @@ impl fmt::Display for Lit {
             Lit::Bool(b) => write!(f, "{b}"),
             Lit::Code(d, c) => write!(f, "code#{d}:{c}"),
             Lit::Text(t) => write!(f, "{t:?}"),
+            Lit::Date(d) => write!(f, "date {d}"),
         }
     }
 }
@@ -432,6 +486,8 @@ impl Hir {
             Op::FirstMatch { conds, strict } => format!("firstmatch{} [{}]", if *strict { " strict" } else { "" }, ids(conds)),
             Op::Pick(sel, arms) => format!("pick %{sel} [{}]", ids(arms)),
             Op::Call(func, args) => format!("call {func:?}({})", ids(args)).to_lowercase(),
+            Op::Host(host, args) => format!("host {host:?}({})", ids(args)).to_lowercase(),
+            Op::Clock(clock, args) => format!("clock {clock:?}({})", ids(args)).to_lowercase(),
         }
     }
 }

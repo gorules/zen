@@ -1,9 +1,12 @@
+use crate::lane::builtins::{Arg as Given, Builtins, Out};
+use crate::lane::date::Date;
 use crate::typed::batch::{Data, Feed, Feeds};
 use crate::typed::ins::Pattern;
 use crate::typed::kernel::K;
 use crate::typed::num::Exact;
 use crate::typed::tests::oracle::Val;
-use crate::typed::{Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Range, Scope};
+use crate::typed::{Clock, Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Range, Scope};
+use crate::variable::Variable;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -15,6 +18,7 @@ enum V<'a> {
     Bool(bool),
     Code(i32),
     Text(Cow<'a, [u8]>),
+    Date(Date),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -160,6 +164,7 @@ impl<'a, 'x> Interp<'a, 'x> {
             (V::Code(c), Kind::Code(d)) => self.hir.dict(d).text(c).map_or(Val::Other(format!("code {c}")), |t| Val::Str(t.to_string())),
             (V::Code(c), _) => Val::Other(format!("code {c}")),
             (V::Text(t), _) => Val::Str(String::from_utf8_lossy(&t).to_string()),
+            (V::Date(d), _) => Val::Other(format!("{}", d.variable().to_value())),
         }
     }
 
@@ -200,6 +205,7 @@ impl<'a, 'x> Interp<'a, 'x> {
             Lit::Bool(b) => V::Bool(*b),
             Lit::Code(_, c) => V::Code(*c),
             Lit::Text(t) => V::Text(Cow::Borrowed(t.as_bytes())),
+            Lit::Date(d) => V::Date(d.date()),
         }
     }
 
@@ -254,10 +260,11 @@ impl<'a, 'x> Interp<'a, 'x> {
                     Cmp::Eq => Ok(V::Bool(Self::equal(&x, &y))),
                     Cmp::Ne => Ok(V::Bool(!Self::equal(&x, &y))),
                     _ => {
-                        let (V::Num(x), V::Num(y)) = (x, y) else {
-                            return Err(Fault);
+                        let o = match (x, y) {
+                            (V::Num(x), V::Num(y)) => x.cmp(&y),
+                            (V::Date(x), V::Date(y)) => x.cmp(&y),
+                            _ => return Err(Fault),
                         };
-                        let o = x.cmp(&y);
                         Ok(V::Bool(match op {
                             Cmp::Lt => o == Ordering::Less,
                             Cmp::Le => o != Ordering::Greater,
@@ -314,6 +321,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                     kept.push(e);
                 }
                 let mut values = Vec::new();
+                let mut dates = Vec::new();
                 let mut decided: Option<bool> = None;
                 let mut ones = 0;
                 if result.is_ok() && *fold != Fold::Count {
@@ -332,6 +340,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                                 _ => {}
                             },
                             (Fold::Sum | Fold::Min | Fold::Max | Fold::Avg, Ok(V::Num(d))) => values.push(d),
+                            (Fold::Min | Fold::Max, Ok(V::Date(d))) => dates.push(d),
                             _ => {
                                 result = Err(Fault);
                                 break;
@@ -345,6 +354,13 @@ impl<'a, 'x> Interp<'a, 'x> {
                 self.enter(*list, saved);
                 result?;
                 let sum = || values.iter().try_fold(Decimal::ZERO, |acc, v| acc.checked_add(*v)).ok_or(Fault);
+                if matches!(fold, Fold::Min | Fold::Max) && hir.nodes[id as usize].ty.kind == Kind::Date {
+                    let best = match fold {
+                        Fold::Min => dates.into_iter().min(),
+                        _ => dates.into_iter().max(),
+                    };
+                    return best.map(V::Date).ok_or(Fault);
+                }
                 Ok(match fold {
                     Fold::Count => V::Num(Decimal::from(kept.len())),
                     Fold::Sum => V::Num(sum()?),
@@ -388,6 +404,14 @@ impl<'a, 'x> Interp<'a, 'x> {
                     (Func::Lower, [V::Text(a)]) => Ok(V::Text(Cow::Owned(text(a)?.to_lowercase().into_bytes()))),
                     (Func::Trim, [V::Text(a)]) => Ok(V::Text(Cow::Owned(text(a)?.trim().as_bytes().to_vec()))),
                     (Func::Len, [V::Text(a)]) => Ok(V::Num(Decimal::from(a.len()))),
+                    (Func::Min | Func::Max, items) if node.ty.kind == Kind::Date => {
+                        let dates = items.iter().map(|v| if let V::Date(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?;
+                        let best = match func {
+                            Func::Min => dates.into_iter().min(),
+                            _ => dates.into_iter().max(),
+                        };
+                        best.map(V::Date).ok_or(Fault)
+                    }
                     (Func::Min, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().min().map(V::Num).ok_or(Fault),
                     (Func::Max, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().max().map(V::Num).ok_or(Fault),
                     (func, [V::Num(d)]) => Ok(V::Num(Exact::func(*func, *d))),
@@ -399,8 +423,55 @@ impl<'a, 'x> Interp<'a, 'x> {
                 V::Num(d) => d.to_string().into_bytes(),
                 V::Bool(b) => b.to_string().into_bytes(),
                 V::Text(t) => t.into_owned(),
+                V::Date(d) => d.to_string().into_bytes(),
                 V::Code(_) => return Err(Fault),
             }))),
+            Op::Host(host, args) => {
+                let mut vals = Vec::with_capacity(args.len());
+                for a in args {
+                    vals.push(self.eval(*a)?);
+                }
+                let mut given = Vec::with_capacity(vals.len());
+                for v in &vals {
+                    given.push(match v {
+                        V::Null => Given::Null,
+                        V::Num(d) => Given::Num(*d),
+                        V::Bool(b) => Given::Bool(*b),
+                        V::Text(t) => Given::Str(std::str::from_utf8(t).map_err(|_| Fault)?),
+                        V::Date(d) => Given::Date(*d),
+                        V::Code(_) => return Err(Fault),
+                    });
+                }
+                match Builtins::raw(host.builtin().ok_or(Fault)?, &given).map_err(|_| Fault)? {
+                    Out::Num(n) => Ok(V::Num(n)),
+                    Out::Bool(b) => Ok(V::Bool(b)),
+                    Out::Str(s) => Ok(V::Text(Cow::Owned(s.as_bytes().to_vec()))),
+                    Out::Date(d) => Ok(V::Date(d)),
+                    Out::Var(Variable::Null) => Ok(V::Null),
+                    Out::Var(_) => Err(Fault),
+                }
+            }
+            Op::Clock(Clock::Now, _) => Ok(V::Date(self.feeds.now)),
+            Op::Clock(clock, args) => {
+                let mut vals = Vec::with_capacity(args.len());
+                for a in args {
+                    vals.push(self.eval(*a)?);
+                }
+                let parsed = |t: &[u8]| std::str::from_utf8(t).map(Date::from_text).map_err(|_| Fault);
+                match (clock, vals.as_slice()) {
+                    (Clock::Coerce, [V::Text(t)]) => match parsed(t)? {
+                        d if d.is_valid() => Ok(V::Date(d)),
+                        _ => Err(Fault),
+                    },
+                    (Clock::Strict, [V::Date(d)]) if d.is_valid() => Ok(V::Date(*d)),
+                    (Clock::Text, [V::Null]) => Ok(V::Null),
+                    (Clock::Text, [V::Date(d)]) => d.rendered().map(|t| V::Text(Cow::Owned(t.into_bytes()))).ok_or(Fault),
+                    (Clock::Matches, [V::Date(d), V::Text(t)]) => Ok(V::Bool(d.is_valid() && parsed(t)? == *d)),
+                    (Clock::Matches, [V::Date(d), V::Date(e)]) => Ok(V::Bool(d.is_valid() && d == e)),
+                    (Clock::Matches, [_, _]) => Ok(V::Bool(false)),
+                    _ => Err(Fault),
+                }
+            }
             Op::Decode(a) => match (self.eval(*a)?, hir.nodes[*a as usize].ty.kind) {
                 (V::Null, _) => Ok(V::Null),
                 (V::Code(c), Kind::Code(d)) => hir.dict(d).text(c).map(|t| V::Text(Cow::Owned(t.as_bytes().to_vec()))).ok_or(Fault),

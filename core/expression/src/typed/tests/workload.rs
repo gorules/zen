@@ -77,9 +77,137 @@ impl Block {
 }
 
 impl Workload {
-    pub(crate) const NAMES: [&'static str; 13] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13"];
+    pub(crate) const NAMES: [&'static str; 19] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13", "W14", "W15", "W16", "W17", "W18", "W19"];
 
-    pub(crate) const FAULTY: [&'static str; 7] = ["W6", "W8", "W9", "W10", "W11", "W12", "W13"];
+    pub(crate) const FAULTY: [&'static str; 11] = ["W6", "W8", "W9", "W10", "W11", "W12", "W13", "W15", "W17", "W18", "W19"];
+
+    const W14_KEYS: [(&'static str, &'static str); 48] = [
+        ("p", "d(e.at)"),
+        ("ps", "string(d(e.at))"),
+        ("ms", "d(e.ms)"),
+        ("tzd", "d(e.at, 'America/New_York')"),
+        ("y", "d(e.at).year()"),
+        ("wd", "d(e.at).weekday()"),
+        ("add", "d(e.at).add(1, 'month')"),
+        ("addn", "d(e.at).add(e.n, 'day')"),
+        ("sub", "d(e.at).sub('1y 2d')"),
+        ("som", "d(e.at).startOf('month')"),
+        ("eow", "d(e.at).endOf('week')"),
+        ("fmt", "d(e.at).format('%Y-%m-%d %H:%M')"),
+        ("fmt0", "d(e.at).format()"),
+        ("diffd", "d(e.at).diff(d('2024-01-01'), 'day')"),
+        ("diffm", "d(e.at).diff(e.other, 'month')"),
+        ("diffms", "d(e.at).diff(d(e.other))"),
+        ("bef", "d(e.at).isBefore(d('2024-03-01'))"),
+        ("aft", "d(e.at).isAfter(e.other, 'day')"),
+        ("same", "d(e.at).isSame(d(e.other), 'month')"),
+        ("sob", "d(e.at).isSameOrBefore(d('2024-02-29'), 'year')"),
+        ("valid", "d(e.at).isValid()"),
+        ("leap", "d(e.at).isLeapYear()"),
+        ("lt", "d(e.at) < d('2024-06-01')"),
+        ("ge", "d(e.at) >= d(e.other)"),
+        ("eq", "d(e.at) == d(e.other)"),
+        ("eqs", "d(e.at) == e.other"),
+        ("nes", "d(e.at) != e.other"),
+        ("eqlit", "d(e.at) == '2024-01-15'"),
+        ("inl", "d(e.at) in [d('2024-01-15'), '2024-02-29', null]"),
+        ("rng", "d(e.at) in [d('2024-01-01')..d('2024-12-31'))"),
+        ("tpl", "`at ${d(e.at)} / ${$.y}`"),
+        ("pick", "e.n > 3 ? d(e.at) : d('2020-02-02')"),
+        ("coal", "($.pick ?? d()).isValid()"),
+        ("now", "d().diff(d(e.at), 'year')"),
+        ("tday", "d(e.at).isToday()"),
+        ("ts", "d(e.at).timestamp()"),
+        ("setd", "d(e.at).set('day', 31)"),
+        ("tz2", "d(e.at).tz('Asia/Kolkata').format('%H:%M %z')"),
+        ("fl", "count(items, d(#.on).isAfter(d(e.at)))"),
+        ("dts", "map(items, d(#.on).add(1, 'd'))"),
+        ("str", "string($.add)"),
+        ("mm", "max([d(e.at), d(e.other)])"),
+        ("offset", "d(e.at).offsetName()"),
+        ("dst", "d(e.at, 'Europe/Berlin').add(1, 'day').format('%Y-%m-%d %H:%M %Z')"),
+        ("dsts", "d(e.at, 'America/New_York').startOf('day').hour()"),
+        ("nul", "(e.n > 4 ? d(e.at) : null) == null"),
+        ("same2", "$.p == $.ms or $.p < $.ms"),
+        ("lit", "d('2024-03-10 02:30:00', 'America/New_York').add(e.n, 'h')"),
+    ];
+
+    const W15_KEYS: [(&'static str, &'static str); 4] = [
+        ("mo", "d(e.at).month() + d(e.at).day() * 100"),
+        ("lts", "d(e.at) < e.other"),
+        ("lit", "e.other > d('2000-06-30')"),
+        ("cat", "'D:' + d(e.at).add(2, 'h')"),
+    ];
+
+    const W18_KEYS: [(&'static str, &'static str); 11] = [
+        ("leg", "date(l.v)"),
+        ("legn", "date(l.n)"),
+        ("legy", "year(l.v) + monthOfYear(l.v) + dayOfMonth(l.v)"),
+        ("legw", "dayOfWeek(l.v) * 10 + weekOfYear(l.v)"),
+        ("legd", "dayOfYear(l.v)"),
+        ("legs", "dateString(l.v)"),
+        ("legm", "monthString(l.v) + weekdayString(l.v)"),
+        ("tm", "time(l.t)"),
+        ("so", "startOf(l.v, 'day') - endOf(l.v, 'month')"),
+        ("dur", "duration(l.d)"),
+        ("yd", "year(d(l.v))"),
+    ];
+
+    const W19_KEYS: [(&'static str, &'static str); 3] = [
+        ("mx", "max(map(items, d(#.on)))"),
+        ("mn", "min(map(items, d(#.on)))"),
+        ("flt", "map(filter(items, #.on < d('2024-06-01')), #.on)"),
+    ];
+
+    const W16_KEYS: [(&'static str, &'static str); 5] = [
+        ("item.due", "d(item.on).add(c.days, 'day')"),
+        ("item.late", "d(item.on) > d(c.start)"),
+        ("item.s", "string(d(item.on).startOf('month'))"),
+        ("item.w", "d(item.on).isSame(d(c.start), 'week')"),
+        ("item.f", "d(item.on).format('%Y-%m')"),
+    ];
+
+    const W17_KEYS: [(&'static str, &'static str); 6] = [
+        ("c.first", "min(map(c.items, d(#.on)))"),
+        ("c.n", "count(c.items, #.on > d(c.start))"),
+        ("c.any", "some(c.items, d(#.on).isBefore(d()))"),
+        ("c.f", "d(c.start).format('%d.%m.%Y')"),
+        ("c.last", "max(map(filter(c.items, d(#.on).isValid()), d(#.on)))"),
+        ("c.dts", "map(c.items, d(#.on).endOf('day'))"),
+    ];
+
+    const DATES: [&'static str; 30] = [
+        "2024-01-15",
+        "2024-02-29",
+        "2023-02-28",
+        "2024-01-31",
+        "2023-12-31 23:59:59",
+        "2024-03-31T01:30:00Z",
+        "2025-03-30 02:30:00",
+        "2024-10-27 02:30:00",
+        "2024-03-10 02:30:00",
+        "2024-11-03 01:30:00",
+        "1900-01-01",
+        "1970-01-01T00:00:00Z",
+        "9999-12-31",
+        "0001-01-01",
+        "2024-06-15T12:00:00+05:30",
+        "2024-06-15T12:00:00.123456789Z",
+        "20240115",
+        "2024/01/15",
+        "2024",
+        "2024-07",
+        "2000-06-30",
+        "2024-12-31T23:59:59.999Z",
+        "2025-01-01 00:00",
+        "2024-12-30",
+        "2026-02-28 13:45:10",
+        "2024-13-01",
+        "nope",
+        "",
+        "2024-02-30",
+        "Europe/Berlin",
+    ];
 
     const W11_KEYS: [(&'static str, &'static str); 41] = [
         ("s_amt", "string(u.amt)"),
@@ -305,6 +433,12 @@ impl Workload {
             "W11" => Self::w11(),
             "W12" => Self::w12(),
             "W13" => Self::w13(),
+            "W14" => Self::w14(),
+            "W15" => Self::w15(),
+            "W16" => Self::w16(),
+            "W17" => Self::w17(),
+            "W18" => Self::w18(),
+            "W19" => Self::w19(),
             _ => Self::w4(),
         }
     }
@@ -334,6 +468,9 @@ impl Workload {
             "W9" | "W10" => Self::w9_rows(count),
             "W11" => Self::w11_rows(count),
             "W12" | "W13" => Self::w12_rows(count),
+            "W14" | "W15" | "W19" => Self::w14_rows(count),
+            "W18" => Self::w18_rows(count),
+            "W16" | "W17" => Self::w16_rows(count),
             _ => Self::w4_rows(count),
         }
     }
@@ -349,6 +486,9 @@ impl Workload {
             "W9" | "W10" => Self::w9_extremes(),
             "W11" => Self::w11_extremes(),
             "W12" | "W13" => Self::w12_extremes(),
+            "W14" | "W15" | "W19" => Self::w14_extremes(),
+            "W18" => Self::w18_extremes(),
+            "W16" | "W17" => Self::w16_extremes(),
             _ => Self::w4_extremes(),
         }
     }
@@ -636,6 +776,184 @@ impl Workload {
 
     fn w13() -> Workload {
         Workload { name: "W13", spec: Self::w12_spec(), dialect: Dialect::Policy, member: None, blocks: Self::W13_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    pub(crate) fn mock() {
+        static MOCK: std::sync::Once = std::sync::Once::new();
+        MOCK.call_once(|| std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z"));
+    }
+
+    fn w14_spec() -> Spec {
+        Spec {
+            columns: vec![
+                Self::col("e.at", Class::Text, Enc::Text),
+                Self::col("e.other", Class::Text, Enc::Utf8),
+                Self::col("e.ms", Class::Num, Enc::Scaled),
+                Self::col("e.n", Class::Num, Enc::I64),
+            ],
+            lists: vec![Self::list(None, "items", "item", vec![Self::col("on", Class::Text, Enc::Dict)])],
+        }
+    }
+
+    fn w14() -> Workload {
+        Self::mock();
+        let rules = [
+            ("< d('2000-01-01')", "'old'", "d('1999-12-31')"),
+            ("d($) in [d('2024-01-01')..d('2024-12-31')]", "'y24'", "d(e.at)"),
+            ("d($).isValid() == false", "'bad'", "null"),
+            ("> d('2025-01-01')", "'new'", "d(e.at).add(1, 'y')"),
+            ("", "'mid'", "d('2000-01-01')"),
+        ];
+        let mut blocks: Vec<Block> = Self::W14_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect();
+        blocks.push(Block::Table {
+            inputs: vec!["e.at".to_string()],
+            outputs: vec!["band".to_string(), "since".to_string()],
+            rules: rules
+                .iter()
+                .map(|(cell, band, since)| Rule { cells: vec![cell.to_string()], values: vec![band.to_string(), since.to_string()] })
+                .collect(),
+        });
+        Workload { name: "W14", spec: Self::w14_spec(), dialect: Dialect::Graph, member: None, blocks }
+    }
+
+    fn w15() -> Workload {
+        Self::mock();
+        Workload { name: "W15", spec: Self::w14_spec(), dialect: Dialect::Graph, member: None, blocks: Self::W15_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w19() -> Workload {
+        Self::mock();
+        Workload { name: "W19", spec: Self::w14_spec(), dialect: Dialect::Graph, member: None, blocks: Self::W19_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w18() -> Workload {
+        Self::mock();
+        Workload {
+            name: "W18",
+            spec: Spec {
+                columns: vec![
+                    Self::col("l.v", Class::Text, Enc::Text),
+                    Self::col("l.n", Class::Num, Enc::I64),
+                    Self::col("l.t", Class::Text, Enc::Dict),
+                    Self::col("l.d", Class::Text, Enc::Utf8),
+                ],
+                lists: Vec::new(),
+            },
+            dialect: Dialect::Graph,
+            member: None,
+            blocks: Self::W18_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect(),
+        }
+    }
+
+    fn w18_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(47);
+        let days = ["2024-01-15", "2024-01-15 10:30:00", "2024-02-29T23:59:59Z", "2023-12-31", "1999-01-01 00:00:00", "now", "2024-06-15T12:00:00+05:30", "x"];
+        let times = ["10:30", "23:59:59", "00:00", "now", "07", "25:00"];
+        let spans = ["1h", "1h 30m", "90min", "2d", "3 weeks", "x"];
+        (0..count)
+            .map(|_| {
+                let mut pick = |pool: &[&str], bad: u64| match rng.pick(bad) {
+                    0 => Self::s(pool[pool.len() - 1]),
+                    _ => Self::s(pool[rng.pick(pool.len() as u64 - 1) as usize]),
+                };
+                let (v, t, d) = (pick(&days, 25), pick(&times, 25), pick(&spans, 25));
+                Row { columns: vec![v, Self::n(rng.pick(2_000_000_000) as i64), t, d], lists: Vec::new() }
+            })
+            .collect()
+    }
+
+    fn w18_extremes() -> Vec<Row> {
+        let row = |v: Value, n: i64, t: Value, d: Value| Row { columns: vec![v, Self::n(n), t, d], lists: Vec::new() };
+        vec![
+            row(Value::Null, 0, Value::Null, Value::Null),
+            row(Self::s("9999-12-31 23:59:59"), i64::MAX, Self::s("24:00"), Self::s("")),
+            row(Self::s("0001-01-01"), -62_135_596_800, Self::s("12:00:00.5"), Self::s("1y")),
+            row(Self::s("2024-02-29"), 951_782_400, Self::s("now"), Self::s("10s")),
+        ]
+    }
+
+    fn w16_spec() -> Spec {
+        Spec {
+            columns: vec![Self::col("c.start", Class::Text, Enc::Text), Self::col("c.days", Class::Num, Enc::I64)],
+            lists: vec![Self::list(None, "c.items", "item", vec![Self::col("on", Class::Text, Enc::Dict), Self::col("amt", Class::Num, Enc::Scaled)])],
+        }
+    }
+
+    fn w16() -> Workload {
+        Self::mock();
+        Workload { name: "W16", spec: Self::w16_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W16_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w17() -> Workload {
+        Self::mock();
+        Workload { name: "W17", spec: Self::w16_spec(), dialect: Dialect::Policy, member: None, blocks: Self::W17_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn date(rng: &mut Rng, invalid: u64) -> Value {
+        match rng.pick(40) {
+            0 => Value::Null,
+            _ => match rng.pick(invalid) {
+                0 => Self::s(Self::DATES[25 + rng.pick(5) as usize]),
+                _ => Self::s(Self::DATES[rng.pick(25) as usize]),
+            },
+        }
+    }
+
+    fn w14_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(41);
+        let stamps = [0i64, 1_700_000_000_000, -86_400_000, 951_782_400_000, 253_402_300_799_000, -62_135_596_800_000, 1_711_846_800_000];
+        (0..count)
+            .map(|_| {
+                let items: Vec<Vec<Value>> = (0..rng.pick(5)).map(|_| vec![Self::date(&mut rng, 12)]).collect();
+                let ms = match rng.pick(12) {
+                    0 => Value::Null,
+                    1 => Self::d(15, 1),
+                    _ => Self::n(stamps[rng.pick(stamps.len() as u64) as usize] + rng.pick(86_400_000) as i64),
+                };
+                let columns = vec![Self::date(&mut rng, 10), Self::date(&mut rng, 10), ms, Self::n(rng.pick(7) as i64)];
+                Row { columns, lists: vec![items] }
+            })
+            .collect()
+    }
+
+    fn w14_extremes() -> Vec<Row> {
+        let row = |at: &str, other: &str, ms: Value| Row {
+            columns: vec![Self::s(at), Self::s(other), ms, Self::n(3)],
+            lists: vec![vec![vec![Self::s(at)], vec![Self::s(other)]]],
+        };
+        vec![
+            row("9999-12-31 23:59:59", "0001-01-01", Self::n(8_210_298_412_799_999)),
+            row("-0001-01-01", "+10000-01-01", Self::n(-8_334_632_851_200_000)),
+            row("2024-02-29T23:59:59.999999999Z", "2024-03-01", Self::n(i64::MAX)),
+            row("2024-03-31 02:30:00", "2024-03-31 03:30:00", Self::n(i64::MIN)),
+            row("2024-01-31", "2024-02-29", Self::d(-15, 1)),
+            row("America/New_York", "UTC", Self::d(1, 28)),
+            Row { columns: vec![Value::Null, Value::Null, Value::Null, Self::n(0)], lists: vec![Vec::new()] },
+        ]
+    }
+
+    fn w16_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(43);
+        (0..count)
+            .map(|_| {
+                let items: Vec<Vec<Value>> = (0..rng.pick(5)).map(|_| vec![Self::date(&mut rng, 15), Self::d(rng.pick(1000) as i64, 2)]).collect();
+                Row { columns: vec![Self::date(&mut rng, 15), Self::n(rng.pick(400) as i64 - 200)], lists: vec![items] }
+            })
+            .collect()
+    }
+
+    fn w16_extremes() -> Vec<Row> {
+        let row = |start: &str, days: i64, on: &[&str]| Row {
+            columns: vec![Self::s(start), Self::n(days)],
+            lists: vec![on.iter().map(|o| vec![Self::s(o), Self::n(1)]).collect()],
+        };
+        vec![
+            row("9999-12-31", 1, &["9999-12-31", "0001-01-01"]),
+            row("nope", 0, &["nope", ""]),
+            row("2024-02-29", -366, &["2024-02-29", "2023-02-28"]),
+            row("2025-03-30 02:30:00", 1_000_000_000, &["2025-03-30 02:30:00"]),
+            row("", 0, &[]),
+        ]
     }
 
     fn text(rng: &mut Rng, pool: &[&str], nulls: u64) -> Value {

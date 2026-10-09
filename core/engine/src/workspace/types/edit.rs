@@ -31,3 +31,23 @@ pub enum EngineEdit {
         new_node: Value,
     },
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum PathEdit {
+    ReplaceImport {
+        document: Arc<str>,
+        from: Arc<str>,
+        to: Arc<str>,
+    },
+    ReplaceDecisionKey {
+        document: Arc<str>,
+        node_id: Arc<str>,
+        from: Arc<str>,
+        to: Arc<str>,
+    },
+}

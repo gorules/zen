@@ -3,6 +3,7 @@ pub(crate) mod db;
 pub mod document_dependencies;
 pub(crate) mod editor;
 pub(crate) mod graph;
+pub(crate) mod paths;
 pub(crate) mod reads;
 pub(crate) mod search;
 pub(crate) mod slot;
@@ -27,9 +28,9 @@ pub use types::{
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
-    RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
-    SlotRole, Span, Trace, WriteConflict, WriteTrace,
+    InspectResult, OutputProperty, PathEdit, PrepareRename, PropertyKind, ReferenceKind,
+    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
+    SearchHitKind, Severity, SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
@@ -219,6 +220,10 @@ impl Workspace {
 
     pub fn rename(&self, target: &RenameTarget, new_name: &str) -> Vec<EngineEdit> {
         self.db.rename(target, new_name)
+    }
+
+    pub fn move_paths(&self, moves: &[(Arc<str>, Arc<str>)]) -> Vec<PathEdit> {
+        self.db.move_paths(moves)
     }
 
     pub fn references(&self, target: &RenameTarget) -> Vec<ReferenceSite> {

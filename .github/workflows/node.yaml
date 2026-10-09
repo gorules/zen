@@ -154,6 +154,14 @@ jobs:
         run: ls -la
         shell: bash
 
+      - name: Upload typings
+        if: ${{ matrix.settings.target == 'aarch64-apple-darwin' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: typings
+          path: bindings/nodejs/index.d.ts
+          if-no-files-found: error
+
       - name: Upload artifact ${{ matrix.settings.target }}
         if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}
         uses: actions/upload-artifact@v4
@@ -242,6 +250,12 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
+      - name: Download typings
+        uses: actions/download-artifact@v4
+        with:
+          name: typings
+          path: bindings/nodejs
+
       - name: Create dirs
         run: yarn createNpmDirs
         shell: bash
@@ -299,7 +313,14 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: bindings-*
           path: artifacts
+
+      - name: Download typings
+        uses: actions/download-artifact@v4
+        with:
+          name: typings
+          path: bindings/nodejs
 
       - name: List all artifacts
         run: ls -la ../../artifacts

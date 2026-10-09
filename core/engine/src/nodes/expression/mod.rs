@@ -1,63 +1,12 @@
+pub use crate::decision_graph::tracer::ExpressionNodeTraceItem;
+#[cfg(feature = "driver")]
+pub use handler::ExpressionNodeHandler;
 use crate::model::ExpressionNodeContent;
-use crate::nodes::result::NodeResult;
 use ahash::HashMap;
 use std::rc::Rc;
 
-use crate::nodes::context::{NodeContext, NodeContextExt};
-use crate::nodes::definition::NodeHandler;
-pub use crate::decision_graph::tracer::ExpressionNodeTraceItem;
-use zen_expression::variable::Variable;
-use zen_types::decision::TransformAttributes;
-
-#[derive(Debug, Clone)]
-pub struct ExpressionNodeHandler;
+#[cfg(feature = "driver")]
+mod handler;
 
 pub type ExpressionNodeData = ExpressionNodeContent;
 pub type ExpressionNodeTrace = HashMap<Rc<str>, ExpressionNodeTraceItem>;
-
-impl NodeHandler for ExpressionNodeHandler {
-    type NodeData = ExpressionNodeData;
-    type TraceData = ExpressionNodeTrace;
-
-    fn transform_attributes(
-        &self,
-        ctx: &NodeContext<Self::NodeData, Self::TraceData>,
-    ) -> Option<TransformAttributes> {
-        Some(ctx.node.transform_attributes.clone())
-    }
-
-    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
-        let result = Variable::empty_object();
-        let mut isolate = ctx.isolate();
-
-        for expression in ctx.node.expressions.iter() {
-            if expression.key.is_empty() || expression.value.is_empty() {
-                continue;
-            }
-
-            let value = isolate
-                .run_standard(&expression.value)
-                .with_node_context(&ctx, |_| {
-                    format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
-                })?;
-            let value = match expression.value.contains('$') {
-                true => value.deep_clone(),
-                false => value,
-            };
-            ctx.trace(|trace| {
-                trace.insert(
-                    Rc::from(&*expression.key),
-                    ExpressionNodeTraceItem {
-                        result: value.clone(),
-                    },
-                );
-            });
-
-            isolate.insert_dollar(&expression.key, value.clone());
-
-            result.dot_insert(&expression.key, value);
-        }
-
-        ctx.success(result)
-    }
-}

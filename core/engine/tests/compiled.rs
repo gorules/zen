@@ -3,12 +3,15 @@ mod support;
 mod fixture;
 
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
-use serde_json::{json, Value};
+#[cfg(feature = "driver")]
+use serde_json::json;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
 use support::columns::Built;
-use support::golden::{Canon, Reference};
+use support::golden::{Canon, Live, Reference};
+#[cfg(feature = "driver")]
 use zen_engine::model::GraphContent;
 use zen_engine::{Decision, EvaluationOptions};
 use zen_expression::Variable;
@@ -46,13 +49,16 @@ impl Outcome {
 
 #[tokio::test]
 async fn compiled_graphs_match_the_walker() {
+    if Reference::unavailable("graph-fixtures") {
+        return;
+    }
     Reference::prepare(Outcome::CLOCK);
     let reference = Reference::open("graph-fixtures");
     let mut census: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
-        let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+        let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())));
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
         let verdict = compiled.compiled_verdict();
@@ -72,7 +78,14 @@ async fn compiled_graphs_match_the_walker() {
         for (i, input) in variants.iter().enumerate() {
             let context = Variable::from(input.clone());
             let want = reference
-                .graph(|| Canon::key(&fixture.name, &[], &context), || async { Outcome::of(walker.evaluate(Variable::from(input.clone())).await) }, Outcome::recorded)
+                .graph(
+                    || Canon::key(&fixture.name, &[], &context),
+                    || async {
+                        Live::require_walker();
+                        Outcome::of(walker.evaluate(Variable::from(input.clone())).await)
+                    },
+                    Outcome::recorded,
+                )
                 .await;
             let single = Outcome::of(compiled.evaluate(Variable::from(input.clone())).await);
             let batched = batch.get(i).map(|r| match r {
@@ -100,6 +113,7 @@ async fn compiled_graphs_match_the_walker() {
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(20).cloned().collect::<Vec<_>>().join("\n"));
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn compiled_graph_throughput() {
@@ -173,6 +187,9 @@ async fn compiled_graph_throughput() {
 
 #[tokio::test]
 async fn columnar_graphs_match_the_walker() {
+    if Reference::unavailable("graph-fixtures") {
+        return;
+    }
     Reference::prepare(Outcome::CLOCK);
     let reference = Reference::open("graph-fixtures");
     let mut failures: Vec<String> = Vec::new();
@@ -186,7 +203,7 @@ async fn columnar_graphs_match_the_walker() {
         if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
             continue;
         }
-        let walker = compiled.interpreted();
+        let walker = Live::walker(&compiled);
         let variants = fixture.variants();
         let Some(built) = Built::new(&variants) else {
             skipped += 1;
@@ -204,6 +221,7 @@ async fn columnar_graphs_match_the_walker() {
                     .graph(
                         || Canon::key(&fixture.name, &[], &input),
                         || async {
+                            Live::require_walker();
                             match walker.evaluate(input.clone()).await {
                                 Ok(r) => Ok(Built::normalized(r.result.to_value())),
                                 Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
@@ -230,6 +248,7 @@ async fn columnar_graphs_match_the_walker() {
     assert!(failures.is_empty(), "{} mismatches in {kinds:?}:\n{}", failures.len(), failures.iter().take(15).cloned().collect::<Vec<_>>().join("\n"));
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn struct_inputs_match_the_walker() {
     use zen_expression::lane::{Column, Columns, Values};
@@ -333,6 +352,7 @@ async fn columnar_function_rows_time_out_independently() {
     assert!(elapsed < std::time::Duration::from_secs(30), "{elapsed:?}");
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn columnar_graph_throughput() {
@@ -403,8 +423,10 @@ async fn columnar_graph_throughput() {
     );
 }
 
+#[cfg(feature = "driver")]
 struct Latency;
 
+#[cfg(feature = "driver")]
 impl Latency {
     async fn measure<F, Fut>(contexts: &[Variable], reps: usize, mut f: F) -> f64
     where
@@ -428,6 +450,7 @@ impl Latency {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn single_row_latency() {
@@ -486,8 +509,10 @@ async fn single_row_latency() {
     println!("geomean ns/eval ({} fixtures): compiled {:.0} cold {:.0} traced {:.0} walker {:.0} walker-traced {:.0}", columns[0].len(), gm[0], gm[1], gm[2], gm[3], gm[4]);
 }
 
+#[cfg(feature = "driver")]
 struct Noise(u64);
 
+#[cfg(feature = "driver")]
 impl Noise {
     fn new(seed: u64) -> Self {
         Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
@@ -509,11 +534,13 @@ impl Noise {
     }
 }
 
+#[cfg(feature = "driver")]
 struct Wide {
     numbers: Vec<rust_decimal::Decimal>,
     strings: Vec<String>,
 }
 
+#[cfg(feature = "driver")]
 impl Wide {
     fn of(fixture: &Fixture) -> Wide {
         let text = serde_json::to_string(&fixture.content).unwrap_or_default();
@@ -666,6 +693,7 @@ impl Wide {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn wide_inputs_match_the_walker() {
@@ -785,8 +813,10 @@ async fn plan_census() {
     }
 }
 
+#[cfg(feature = "driver")]
 struct Chain;
 
+#[cfg(feature = "driver")]
 impl Chain {
     const FULLY_TYPED: &[&str] = &[
         "affiliate-commission-calculator.json",
@@ -893,6 +923,7 @@ impl Chain {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_falls_back_per_unit() {
     let mut failures = Vec::new();
@@ -905,6 +936,7 @@ async fn graph_typed_falls_back_per_unit() {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_reads_dynamic_slots() {
     let mut rows = Chain::rows(240, 5);
@@ -934,6 +966,7 @@ async fn graph_typed_reads_dynamic_slots() {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_lists_and_closures() {
     let mut noise = Noise::new(17);
@@ -991,6 +1024,7 @@ async fn graph_typed_lists_and_closures() {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_strings() {
     let mut noise = Noise::new(29);
@@ -1057,6 +1091,7 @@ async fn graph_typed_strings() {
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_dates() {
     Reference::prepare(Outcome::CLOCK);
@@ -1129,6 +1164,7 @@ async fn graph_typed_dates() {
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_extremes() {
     let mut rows = Chain::rows(200, 9);
@@ -1158,6 +1194,7 @@ async fn graph_typed_extremes() {
     }
 }
 
+#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_fixtures_are_fully_typed() {
     Reference::prepare(Outcome::CLOCK);

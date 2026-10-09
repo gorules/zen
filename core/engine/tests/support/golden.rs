@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use zen_engine::policy::{EvaluateRequest, EvaluationError as PolicyError, EvaluationResult, PolicyWorkspace};
-use zen_engine::{DecisionGraphResponse, EvaluationError, EvaluationTraceKind};
+use zen_engine::{Decision, DecisionGraphResponse, EvaluationError, EvaluationTraceKind};
 use zen_expression::variable::{RcValue, VariableMap};
 use zen_expression::Variable;
 
@@ -418,6 +418,109 @@ impl Canon {
     }
 }
 
+impl Canon {
+    pub fn mode(result: Result<Value, Value>, reference: bool) -> Outcome {
+        let (ok, raw) = match result {
+            Ok(value) => (true, value),
+            Err(value) => (false, value),
+        };
+        let value = match raw {
+            Value::Object(mut map) => {
+                if let Some(trace) = map.remove("trace") {
+                    let trace = match trace {
+                        Value::String(text) => serde_json::from_str(&text).unwrap_or_else(|_| Self::opaque(&text)),
+                        other => other,
+                    };
+                    match reference {
+                        true => {
+                            map.insert("$shared".to_string(), Self::shared(&trace));
+                            let dereferenced = Variable::deserialize_ref(RcValue::from(&trace)).map(|v| serde_json::to_value(&v).unwrap_or(Value::Null)).unwrap_or(Value::String("undecodable".to_string()));
+                            map.insert("trace".to_string(), dereferenced);
+                        }
+                        false => {
+                            map.insert("trace".to_string(), trace);
+                        }
+                    }
+                }
+                Self::redacted(Value::Object(map))
+            }
+            other => Self::redacted(other),
+        };
+        match ok {
+            true => Outcome::Ok(value),
+            false => Outcome::Err { debug: String::new(), value },
+        }
+    }
+
+    fn opaque(text: &str) -> Value {
+        let marker = "\"performance\":\"";
+        let mut rest = text;
+        let mut kept = String::with_capacity(text.len());
+        while let Some(at) = rest.find(marker) {
+            kept.push_str(&rest[..at]);
+            let tail = &rest[at + marker.len()..];
+            rest = tail.find('"').map_or("", |end| &tail[end + 1..]);
+        }
+        kept.push_str(rest);
+        let mut chars: Vec<char> = kept.chars().collect();
+        chars.sort_unstable();
+        serde_json::json!({ "$unparsed": Self::hash(&chars.into_iter().collect::<String>()) })
+    }
+
+    pub fn shared(value: &Value) -> Value {
+        let refs = value.get("$refs").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut sites = vec![0usize; refs.len()];
+        Self::count(value, &mut sites);
+        let mut shared: Vec<(String, usize)> = refs
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.is_object() || v.is_array())
+            .map(|(at, v)| (serde_json::to_string(&Self::redacted(Self::deref(v, &refs))).unwrap_or_default(), sites[at]))
+            .collect();
+        shared.sort();
+        serde_json::json!(shared)
+    }
+
+    fn ref_id(text: &str) -> Option<usize> {
+        text.strip_prefix('@').and_then(|id| id.parse::<usize>().ok())
+    }
+
+    fn count(value: &Value, sites: &mut [usize]) {
+        match value {
+            Value::String(text) => {
+                if let Some(site) = Self::ref_id(text).and_then(|id| sites.get_mut(id)) {
+                    *site += 1;
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|v| Self::count(v, sites)),
+            Value::Object(map) => map.values().for_each(|v| Self::count(v, sites)),
+            _ => {}
+        }
+    }
+
+    fn deref(value: &Value, refs: &[Value]) -> Value {
+        match value {
+            Value::String(text) => match Self::ref_id(text).and_then(|id| refs.get(id)) {
+                Some(target) => Self::deref(target, refs),
+                None => value.clone(),
+            },
+            Value::Array(items) => Value::Array(items.iter().map(|v| Self::deref(v, refs)).collect()),
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .map(|(k, v)| {
+                        let key = match Self::ref_id(k).and_then(|id| refs.get(id)) {
+                            Some(Value::String(text)) => text.clone(),
+                            _ => k.clone(),
+                        };
+                        (key, Self::deref(v, refs))
+                    })
+                    .collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+}
+
 pub struct Written {
     pub path: PathBuf,
     pub entries: usize,
@@ -595,6 +698,22 @@ impl Golden {
 pub struct Live;
 
 impl Live {
+    pub const GRAPH: &'static str = "live graph references need the driver feature";
+
+    #[cfg(feature = "driver")]
+    pub fn walker(decision: &Decision) -> Decision {
+        decision.interpreted()
+    }
+
+    #[cfg(not(feature = "driver"))]
+    pub fn walker(decision: &Decision) -> Decision {
+        decision.clone()
+    }
+
+    pub fn require_walker() {
+        assert!(cfg!(feature = "driver"), "{}", Self::GRAPH);
+    }
+
     #[cfg(feature = "driver")]
     pub fn policy(ws: &PolicyWorkspace, req: &EvaluateRequest) -> Result<EvaluationResult, PolicyError> {
         ws.evaluate_with_driver(req)
@@ -623,12 +742,10 @@ pub enum Reference {
 
 impl Reference {
     const DEFAULT: &'static str = if cfg!(feature = "driver") || !cfg!(feature = "arbitrary_precision") { "live" } else { "recorded" };
-    const POLICY: [&'static str; 4] = ["spec-policy", "generated/policy", "policy-fixtures", "anchor"];
-
     pub fn unavailable(corpus: &str) -> bool {
-        let unavailable = !cfg!(feature = "driver") && !Self::recorded() && Self::POLICY.contains(&corpus);
+        let unavailable = !cfg!(feature = "driver") && !Self::recorded();
         if unavailable {
-            eprintln!("{corpus}: skipped, policy references need the driver feature (live) or arbitrary_precision (recorded goldens)");
+            eprintln!("{corpus}: skipped, references need the driver feature (live) or arbitrary_precision (recorded goldens)");
         }
         unavailable
     }

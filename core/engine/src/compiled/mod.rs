@@ -3,6 +3,7 @@ mod plan;
 pub(crate) mod policy;
 pub(crate) mod row;
 pub(crate) mod call;
+pub(crate) mod traced;
 pub use columnar::{ColumnarOutput, OutputColumn, RecordsView};
 mod schedule;
 mod table;
@@ -24,7 +25,7 @@ use crate::nodes::custom::CustomNodeHandler;
 use crate::nodes::function::v2::FunctionV2NodeHandler;
 use crate::nodes::function::FunctionNodeHandler;
 use crate::nodes::input::dates::DeclaredDates;
-use crate::nodes::NodeError;
+use crate::nodes::{NodeError, NodeResult};
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::variable_json::{Guards, VariableJson, VariableNode};
 use jsonschema::Validator;
@@ -248,6 +249,15 @@ impl Step {
                     }
                     sources.extend(content.inputs.iter().filter_map(|i| i.field.as_deref()).map(|f| (f, ExpressionKind::Standard)));
                     sources.extend(content.transform_attributes.input_field.iter().map(|f| (f.as_ref(), ExpressionKind::Standard)));
+                }
+                DecisionNodeKind::SwitchNode { content } => {
+                    sources.extend(
+                        content
+                            .statements
+                            .iter()
+                            .filter(|s| !s.condition.is_empty())
+                            .map(|s| (s.condition.as_ref(), ExpressionKind::Standard)),
+                    );
                 }
                 _ => {}
             }
@@ -871,6 +881,28 @@ impl CompiledGraph {
             .collect()
     }
 
+    pub(crate) async fn evaluate_one(
+        &self,
+        content: &Arc<GraphContent>,
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        input: Variable,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let start = Instant::now();
+        let inputs = [input];
+        let state = self
+            .run(content, extensions, max_depth, &Source::Rows(&inputs), 1, false, Nesting::default())
+            .await;
+        if let Some(error) = state.errors.into_iter().next().flatten() {
+            return Err(error);
+        }
+        Ok(DecisionGraphResponse {
+            performance: format!("{:.1?}", start.elapsed()),
+            result: state.results.into_iter().next().flatten().unwrap_or_else(Variable::empty_object),
+            trace: None,
+        })
+    }
+
     fn ending(value: &Variable) -> Variable {
         if let Variable::Object(map) = value {
             if Rc::strong_count(map) == 1 && map.borrow().shape().is_some() {
@@ -1206,6 +1238,7 @@ impl CompiledGraph {
         let graph = compiled.schemas(&prepared, loader).await;
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
+            #[cfg(feature = "driver")]
             compiled_cache: graph.compiled_cache.clone(),
             dt_indexes: graph.dt_indexes.clone(),
             validator_cache: Arc::new(std::cell::OnceCell::from(graph.validator_cache.clone())),
@@ -1802,10 +1835,7 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
     ) -> Result<Variable, String> {
         let node = &step.node;
-        if let Some(message) = Self::failure(content, node) {
-            return Err(message.to_string());
-        }
-        let mut base = NodeContextBase {
+        let base = NodeContextBase {
             id: node.id.clone(),
             name: node.name.clone(),
             input,
@@ -1815,6 +1845,17 @@ impl CompiledGraph {
             trace: None,
             config: NodeContextConfig::default(),
         };
+        self.edge(step, base, content)
+            .await
+            .map(|r| r.output)
+            .map_err(|e| e.source.to_string())
+    }
+
+    async fn edge(&self, step: &Step, mut base: NodeContextBase, content: &Arc<GraphContent>) -> NodeResult {
+        let node = &step.node;
+        if let Some(message) = Self::failure(content, node) {
+            return base.error(message.to_string());
+        }
         let resolved = content
             .resolved_schemas
             .as_ref()
@@ -1822,7 +1863,7 @@ impl CompiledGraph {
         if let Some((_, salt)) = &resolved {
             base.config.validation_salt = *salt;
         }
-        let response = match &node.kind {
+        match &node.kind {
             DecisionNodeKind::InputNode { content } => {
                 let content = match resolved {
                     Some((schema, _)) => InputNodeContent { schema: Some(schema) },
@@ -1837,9 +1878,8 @@ impl CompiledGraph {
                 };
                 DecisionGraph::handle(base, content, OutputNodeHandler).await
             }
-            _ => return Ok(base.input),
-        };
-        response.map(|r| r.output).map_err(|e| e.source.to_string())
+            _ => base.success(base.input.clone()),
+        }
     }
 
     fn transformed(

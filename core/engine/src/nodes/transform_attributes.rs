@@ -28,7 +28,6 @@ impl TransformAttributesExecution for TransformAttributes {
             }
         };
 
-        // let mut trace_data: Option<Variable> = None;
         let mut output = match self.execution_mode {
             TransformExecutionMode::Single => {
                 let response = evaluate(input, false).await?;

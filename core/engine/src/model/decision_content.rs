@@ -8,7 +8,6 @@ use crate::policy::PolicyDocument;
 use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
-use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 
 #[derive(Clone, Debug, Serialize)]
@@ -109,7 +108,8 @@ pub struct GraphContent {
     pub imports: Vec<Arc<str>>,
 
     #[serde(skip)]
-    pub compiled_cache: Option<Arc<OpcodeCache>>,
+    #[cfg_attr(not(feature = "driver"), allow(clippy::disallowed_types))]
+    pub compiled_cache: Option<Arc<zen_expression::OpcodeCache>>,
 
     #[serde(skip)]
     pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
@@ -141,18 +141,24 @@ impl GraphContent {
 }
 
 impl GraphContent {
-    pub(crate) fn prepare(&mut self) {
+    pub(crate) fn prepare(&mut self) -> Arc<CompiledPlan> {
         self.compile_functions();
         self.build_dt_indexes();
-        if self.compiled_plan.is_none() {
-            self.compiled_plan = Some(Arc::new(CompiledPlan::compile(self)));
+        match &self.compiled_plan {
+            Some(plan) => plan.clone(),
+            None => {
+                let plan = Arc::new(CompiledPlan::compile(self));
+                self.compiled_plan = Some(plan.clone());
+                plan
+            }
         }
     }
 
-    pub(crate) fn hosted(&self) -> GraphContent {
+    pub(crate) fn hosted(&self) -> (GraphContent, Arc<CompiledPlan>) {
         let mut owned = self.clone();
-        owned.compiled_plan = Some(Arc::new(CompiledPlan::hosted(&owned)));
-        owned
+        let plan = Arc::new(CompiledPlan::hosted(&owned));
+        owned.compiled_plan = Some(plan.clone());
+        (owned, plan)
     }
 
     pub(crate) async fn loaded(graph: Arc<GraphContent>, loader: &DynamicLoader) -> Arc<GraphContent> {
@@ -167,75 +173,16 @@ impl GraphContent {
 
     pub fn compile(&mut self) {
         self.prepare();
-        if self.compiled_cache.is_some() {
-            return;
+        #[cfg(feature = "driver")]
+        self.build_opcode_cache();
+    }
+
+    pub(crate) fn is_compiled(&self) -> bool {
+        #[cfg(feature = "driver")]
+        if self.compiled_cache.is_none() {
+            return false;
         }
-
-        let mut sources: Vec<(Arc<str>, ExpressionKind)> = Vec::new();
-        for node in &self.nodes {
-            match &node.kind {
-                DecisionNodeKind::ExpressionNode { content } => {
-                    for expr in content.expressions.iter() {
-                        if !expr.key.is_empty() && !expr.value.is_empty() {
-                            sources.push((expr.value.clone(), ExpressionKind::Standard));
-                        }
-                    }
-                }
-                DecisionNodeKind::DecisionTableNode { content } => {
-                    for rule in content.rules.iter() {
-                        for input in content.inputs.iter() {
-                            let Some(rule_value) = rule.get(&input.id) else {
-                                continue;
-                            };
-
-                            let kind = if input.field.is_some() {
-                                ExpressionKind::Unary
-                            } else {
-                                ExpressionKind::Standard
-                            };
-
-                            sources.push((rule_value.clone(), kind));
-                        }
-
-                        for output in content.outputs.iter() {
-                            let Some(rule_value) = rule.get(&output.id) else {
-                                continue;
-                            };
-
-                            sources.push((rule_value.clone(), ExpressionKind::Standard));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        let mut cache: OpcodeCache = OpcodeCache::new();
-        let mut isolate = Isolate::new();
-
-        for (source, kind) in &sources {
-            let map = match kind {
-                ExpressionKind::Standard => &mut cache.standard,
-                ExpressionKind::Unary => &mut cache.unary,
-            };
-            if map.contains_key(source) {
-                continue;
-            }
-
-            let result = match kind {
-                ExpressionKind::Standard => isolate
-                    .compile_standard(source)
-                    .map(|e| e.bytecode().to_vec()),
-                ExpressionKind::Unary => {
-                    isolate.compile_unary(source).map(|e| e.bytecode().to_vec())
-                }
-            };
-            if let Ok(bytecode) = result {
-                map.insert(source.clone(), Arc::from(bytecode));
-            }
-        }
-
-        self.compiled_cache.replace(Arc::new(cache));
+        self.compiled_plan.is_some()
     }
 
     fn build_dt_indexes(&mut self) {

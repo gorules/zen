@@ -10,7 +10,6 @@ use crate::nodes::validator_cache::ValidatorCache;
 use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
-use zen_expression::OpcodeCache;
 
 /// This is created on every graph evaluation
 #[derive(Debug, Clone)]
@@ -20,7 +19,8 @@ pub struct NodeHandlerExtensions {
     pub(crate) loader: DynamicLoader,
     pub(crate) custom_node: DynamicCustomNode,
     pub(crate) http_handler: DynamicHttpHandler,
-    pub(crate) compiled_cache: Option<Arc<OpcodeCache>>,
+    #[cfg(feature = "driver")]
+    pub(crate) compiled_cache: Option<Arc<zen_expression::OpcodeCache>>,
     pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
 }
@@ -33,6 +33,7 @@ impl Default for NodeHandlerExtensions {
 
             loader: Arc::new(NoopLoader::default()),
             custom_node: Arc::new(NoopCustomNode::default()),
+            #[cfg(feature = "driver")]
             compiled_cache: None,
             stripped_functions: None,
             dt_indexes: None,

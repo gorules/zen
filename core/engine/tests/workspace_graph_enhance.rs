@@ -77,14 +77,49 @@ async fn graph_trace(documents: &[(&str, Value)], entry: &str, input: Value) -> 
         .expect("graph trace")
 }
 
+#[cfg(feature = "driver")]
+async fn walker_trace(documents: &[(&str, Value)], entry: &str, input: Value) -> GraphTraceMap {
+    let loader = Arc::new(MemoryLoader::default());
+    for (key, value) in documents {
+        loader.add(*key, document(value.clone()));
+    }
+    let content = documents
+        .iter()
+        .find(|(key, _)| *key == entry)
+        .and_then(|(_, value)| document(value.clone()).as_graph().cloned())
+        .expect("entry graph");
+    let walker = zen_engine::Decision::from(content).with_loader(loader).interpreted();
+    walker
+        .evaluate_with_opts(input.into(), EvaluationOptions { trace: true, max_depth: 10 })
+        .await
+        .expect("walker evaluation succeeds")
+        .trace
+        .and_then(|trace| trace.into_graph())
+        .expect("walker graph trace")
+}
+
 async fn enhance(documents: &[(&str, Value)], entry: &str, input: Value) -> Trace {
     let trace = graph_trace(documents, entry, input.clone()).await;
     let mut ws = Workspace::new();
     for (key, value) in documents {
         ws.set_document(*key, document(value.clone()));
     }
-    ws.enhance_graph_trace(&Arc::from(entry), &trace)
-        .expect("enhance succeeds")
+    let enhanced = ws
+        .enhance_graph_trace(&Arc::from(entry), &trace)
+        .expect("enhance succeeds");
+    #[cfg(feature = "driver")]
+    {
+        let walker = walker_trace(documents, entry, input).await;
+        let reference = ws
+            .enhance_graph_trace(&Arc::from(entry), &walker)
+            .expect("walker enhance succeeds");
+        assert_eq!(
+            serde_json::to_value(&reference).expect("walker trace json"),
+            serde_json::to_value(&enhanced).expect("trace json"),
+            "enhanced trace differs from the walker's"
+        );
+    }
+    enhanced
 }
 
 fn execution<'a>(trace: &'a Trace, block_id: &str) -> &'a BlockExecution {

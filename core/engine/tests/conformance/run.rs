@@ -1,5 +1,5 @@
 use crate::conformance::{Case, Suite};
-use crate::support::golden::{Canon, Outcome, Reference};
+use crate::support::golden::{Canon, Live, Outcome, Reference};
 use serde_json::Value;
 use std::sync::Arc;
 use zen_engine::loader::MemoryLoader;
@@ -71,7 +71,7 @@ impl GraphRun {
         let engine = DecisionEngine::default().with_loader(shared).with_adapter(Arc::new(SpecNodes));
         engine.compile();
         let uncompiled = Decision::from(graph.clone()).with_loader(plain).with_adapter(Arc::new(SpecNodes));
-        let walker = uncompiled.interpreted();
+        let walker = Live::walker(&uncompiled);
         let mut compiled = Decision::from(graph).with_loader(built).with_adapter(Arc::new(SpecNodes));
         compiled.compile();
         Ok(GraphRun { walker, uncompiled, compiled, engine })
@@ -98,6 +98,7 @@ impl GraphRun {
     }
 
     pub async fn walker(&self, case: &Case) -> Result<Variable, String> {
+        Live::require_walker();
         Self::outcome(self.walker.evaluate(case.input.depth_clone(64)).await)
     }
 }

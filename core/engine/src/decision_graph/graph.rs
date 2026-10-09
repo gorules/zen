@@ -2,7 +2,7 @@ use crate::decision_graph::walker::StableDiDecisionGraph;
 use crate::engine::EvaluationTraceKind;
 use crate::model::{DecisionNodeKind, GraphContent};
 use crate::nodes::{
-    NodeContext, NodeContextBase, NodeDataType, NodeHandler, NodeHandlerExtensions, NodeResult,
+    NodeContext, NodeContextBase, NodeDataType, NodeHandler, NodeResult,
     TraceDataType,
 };
 use crate::{DecisionGraphTrace, DecisionGraphValidationError};
@@ -10,38 +10,22 @@ use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::ops::Deref;
 use std::sync::Arc;
 use zen_expression::variable::{ToVariable, Variable};
 
 #[derive(Debug)]
 pub struct DecisionGraph {
+    #[cfg(feature = "driver")]
     pub(super) initial_graph: StableDiDecisionGraph,
+    #[cfg(feature = "driver")]
     pub(super) graph: StableDiDecisionGraph,
-    pub(super) config: DecisionGraphConfig,
+    #[cfg(feature = "driver")]
+    pub(super) config: crate::decision_graph::walk::DecisionGraphConfig,
+    #[cfg(feature = "driver")]
     pub(super) parent_nodes: Option<Variable>,
 }
 
-#[derive(Debug)]
-pub struct DecisionGraphConfig {
-    pub content: Arc<GraphContent>,
-    pub trace: bool,
-    pub iteration: u8,
-    pub max_depth: u8,
-    pub extensions: NodeHandlerExtensions,
-}
-
 impl DecisionGraph {
-    pub fn try_new(config: DecisionGraphConfig) -> Result<Self, DecisionGraphValidationError> {
-        let graph = Self::build_graph(config.content.deref())?;
-        Ok(Self {
-            initial_graph: graph.clone(),
-            graph,
-            config,
-            parent_nodes: None,
-        })
-    }
-
     pub(crate) fn build_graph(
         content: &GraphContent,
     ) -> Result<StableDiDecisionGraph, DecisionGraphValidationError> {
@@ -68,10 +52,6 @@ impl DecisionGraph {
         }
 
         Ok(graph)
-    }
-
-    pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
-        Self::validate_graph(&self.graph)
     }
 
     pub(crate) fn validate_graph(

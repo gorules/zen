@@ -1,5 +1,5 @@
 use crate::compiled::call::{Call, Load};
-use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::DynamicLoader;
 use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
@@ -66,24 +66,25 @@ impl ZenListener {
         max_depth: u8,
         iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
-        let decision_content = extensions.loader().load(key).await.or_throw(ctx)?;
-        let kind = decision_content.kind();
-        let Some(graph_content) = decision_content.into_graph_arc() else {
-            return Err(rquickjs::Exception::throw_message(
-                ctx,
-                &format!("decision '{key}' is a {kind}, expected graph"),
-            ));
-        };
-        let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
-            content: graph_content,
+        let call = Call {
+            key,
+            extensions: &extensions,
             max_depth,
-            iteration: iteration + 1,
-            trace: true,
-            extensions,
-        })
-        .or_throw(ctx)?;
-
-        sub_tree.evaluate(context.0).await.or_throw(ctx)
+            iteration,
+        };
+        let graph = match call.load().await.or_throw(ctx)? {
+            Load::Graph(graph) => graph,
+            Load::Kind(kind) => {
+                return Err(rquickjs::Exception::throw_message(
+                    ctx,
+                    &format!("decision '{key}' is a {kind}, expected graph"),
+                ))
+            }
+        };
+        call.traced(&graph, context.0, None)
+            .await
+            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?
+            .or_throw(ctx)
     }
 }
 

@@ -581,7 +581,10 @@ async fn evaluate_batch_leaves_the_callers_contexts_unchanged() {
     };
     let mut compiled = Decision::from(graph.clone());
     compiled.compile();
-    let decisions = [Decision::from(graph.clone()), compiled.clone(), compiled.interpreted()];
+    #[allow(unused_mut)]
+    let mut decisions = vec![Decision::from(graph.clone()), compiled.clone()];
+    #[cfg(feature = "driver")]
+    decisions.push(compiled.interpreted());
     for decision in decisions {
         let contexts: Vec<Variable> = (0..3).map(|v| json!({ "inp": { "v": v } }).into()).collect();
         let before: Vec<serde_json::Value> = contexts.iter().map(Variable::to_value).collect();

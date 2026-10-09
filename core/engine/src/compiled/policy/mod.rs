@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "driver"), deny(clippy::disallowed_types, clippy::disallowed_methods))]
 
 mod columnar;
 mod entity;

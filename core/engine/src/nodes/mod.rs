@@ -7,8 +7,11 @@ pub mod expression;
 mod extensions;
 pub mod function;
 pub mod input;
+#[cfg(feature = "driver")]
+mod isolate;
 pub mod output;
 mod result;
+#[cfg(feature = "driver")]
 pub(crate) mod transform_attributes;
 pub(crate) mod validator_cache;
 pub mod variable_json;

@@ -1,4 +1,8 @@
-use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
+use crate::compiled::traced::Traced;
+use crate::compiled::{CompiledGraph, CompiledPlan, Invalid};
+use crate::decision_graph::graph::{DecisionGraph, DecisionGraphResponse};
+#[cfg(feature = "driver")]
+use crate::decision_graph::walk::DecisionGraphConfig;
 use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::model::GraphContent;
@@ -11,12 +15,15 @@ use std::cell::OnceCell;
 use std::sync::{Arc, OnceLock};
 use zen_expression::variable::Variable;
 
+type Planned = (Arc<GraphContent>, Arc<CompiledPlan>);
+
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
 pub struct Decision {
     content: Arc<GraphContent>,
-    prepared: OnceLock<Arc<GraphContent>>,
-    hosted: OnceLock<Arc<GraphContent>>,
+    prepared: OnceLock<Planned>,
+    hosted: OnceLock<Planned>,
+    #[cfg(feature = "driver")]
     interpreted: bool,
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
@@ -29,6 +36,7 @@ impl From<GraphContent> for Decision {
             content: value.into(),
             prepared: OnceLock::new(),
             hosted: OnceLock::new(),
+            #[cfg(feature = "driver")]
             interpreted: false,
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
@@ -43,6 +51,7 @@ impl From<Arc<GraphContent>> for Decision {
             content: value,
             prepared: OnceLock::new(),
             hosted: OnceLock::new(),
+            #[cfg(feature = "driver")]
             interpreted: false,
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
@@ -81,22 +90,19 @@ impl Decision {
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
-        if let Some(compiled) = self.compiled(&options, true) {
-            let mut responses = match compiled {
-                Ok((compiled, content)) => {
-                    let content = compiled.schemas(content, &self.loader).await;
-                    compiled
-                        .evaluate(&content, &self.extensions(&content), options.max_depth, std::slice::from_ref(&context))
-                        .await
-                }
-                Err(invalid) => vec![Err(invalid.evaluation())],
-            };
-            if let Some(response) = responses.pop() {
-                return response;
-            }
+        #[cfg(feature = "driver")]
+        if self.interpreted {
+            return self.evaluate_walker(context, options).await;
+        }
+        if options.trace {
+            return self.traced(context, options).await;
         }
 
-        self.evaluate_walker(context, options).await
+        let (compiled, content) = Self::compiled(self.single()).map_err(Invalid::evaluation)?;
+        let content = compiled.schemas(content, &self.loader).await;
+        compiled
+            .evaluate_one(&content, &self.extensions(&content), options.max_depth, context)
+            .await
     }
 
     /// Evaluates a decision for many contexts at once
@@ -106,22 +112,22 @@ impl Decision {
         options: EvaluationOptions,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let owned: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
-        let contexts = owned.as_slice();
-        match self.compiled(&options, false) {
-            Some(Ok((compiled, content))) => {
+        if self.walked() || options.trace {
+            let mut responses = Vec::with_capacity(owned.len());
+            for context in owned {
+                responses.push(self.evaluate_with_opts(context, options).await);
+            }
+            return responses;
+        }
+
+        match Self::compiled(self.prepared()) {
+            Ok((compiled, content)) => {
                 let content = compiled.schemas(content, &self.loader).await;
                 compiled
-                    .evaluate(&content, &self.extensions(&content), options.max_depth, contexts)
+                    .evaluate(&content, &self.extensions(&content), options.max_depth, &owned)
                     .await
             }
-            Some(Err(invalid)) => contexts.iter().map(|_| Err(invalid.evaluation())).collect(),
-            None => {
-                let mut responses = Vec::with_capacity(contexts.len());
-                for context in contexts {
-                    responses.push(self.evaluate_walker(context.clone(), options).await);
-                }
-                responses
-            }
+            Err(invalid) => owned.iter().map(|_| Err(invalid.evaluation())).collect(),
         }
     }
 
@@ -130,8 +136,8 @@ impl Decision {
         columns: &'a zen_expression::lane::Columns<'a>,
         options: EvaluationOptions,
     ) -> crate::compiled::ColumnarOutput<'a> {
-        match self.compiled(&options, false) {
-            Some(Ok((compiled, content))) => {
+        match (self.walked(), Self::compiled(self.prepared())) {
+            (false, Ok((compiled, content))) => {
                 let content = compiled.schemas(content, &self.loader).await;
                 compiled
                     .evaluate_columns(&content, &self.extensions(&content), options.max_depth, columns)
@@ -139,50 +145,73 @@ impl Decision {
             }
             _ => {
                 let contexts: Vec<Variable> = (0..columns.rows).map(|row| columns.row(row)).collect();
+                let options = EvaluationOptions {
+                    trace: false,
+                    ..options
+                };
                 let results = self.evaluate_batch(&contexts, options).await;
                 crate::compiled::ColumnarOutput::from_results(results)
             }
         }
     }
 
-    fn prepared(&self) -> &Arc<GraphContent> {
-        match self.content.compiled_plan.is_some() {
-            true => &self.content,
-            false => self.prepared.get_or_init(|| {
-                let mut owned = (*self.content).clone();
-                owned.prepare();
-                Arc::new(owned)
-            }),
-        }
-    }
-
-    fn single(&self) -> &Arc<GraphContent> {
-        if self.content.compiled_plan.is_some() {
-            return &self.content;
-        }
-        if let Some(prepared) = self.prepared.get() {
-            return prepared;
-        }
-        match self.hosted.get() {
-            Some(_) => self.prepared(),
-            None => self.hosted.get_or_init(|| Arc::new(self.content.hosted())),
-        }
-    }
-
-    fn compiled(
+    async fn traced(
         &self,
-        options: &EvaluationOptions,
-        single: bool,
-    ) -> Option<Result<(&crate::compiled::CompiledGraph, &Arc<GraphContent>), &crate::compiled::Invalid>> {
-        if options.trace || self.interpreted {
-            return None;
-        }
-        let content = match single {
-            true => self.single(),
-            false => self.prepared(),
+        context: Variable,
+        options: EvaluationOptions,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let (compiled, content) = Self::compiled(self.tracing()).map_err(Invalid::evaluation)?;
+        let content = compiled.schemas(content, &self.loader).await;
+        let extensions = self.extensions(&content);
+        let traced = Traced {
+            graph: compiled,
+            content: &content,
+            extensions: &extensions,
+            max_depth: options.max_depth,
+            iteration: 0,
+            parent: None,
         };
-        let plan = content.compiled_plan.as_deref()?;
-        Some(plan.graph().map(|compiled| (compiled, content)))
+        traced.evaluate(context).await
+    }
+
+    fn prepared(&self) -> (&Arc<GraphContent>, &CompiledPlan) {
+        if let Some(plan) = self.content.compiled_plan.as_deref() {
+            return (&self.content, plan);
+        }
+        let (content, plan) = self.prepared.get_or_init(|| {
+            let mut owned = (*self.content).clone();
+            let plan = owned.prepare();
+            (Arc::new(owned), plan)
+        });
+        (content, plan)
+    }
+
+    fn hosted(&self) -> (&Arc<GraphContent>, &CompiledPlan) {
+        let (content, plan) = self.hosted.get_or_init(|| {
+            let (content, plan) = self.content.hosted();
+            (Arc::new(content), plan)
+        });
+        (content, plan)
+    }
+
+    fn single(&self) -> (&Arc<GraphContent>, &CompiledPlan) {
+        match (self.prepared.get(), self.hosted.get()) {
+            (None, None) if self.content.compiled_plan.is_none() => self.hosted(),
+            _ => self.prepared(),
+        }
+    }
+
+    fn tracing(&self) -> (&Arc<GraphContent>, &CompiledPlan) {
+        match self.prepared.get() {
+            None if self.content.compiled_plan.is_none() => self.hosted(),
+            _ => self.prepared(),
+        }
+    }
+
+    fn compiled<'c>(
+        (content, plan): (&'c Arc<GraphContent>, &'c CompiledPlan),
+    ) -> Result<(&'c CompiledGraph, &'c Arc<GraphContent>), &'c Invalid> {
+        plan.graph().map(|compiled| (compiled, content))
     }
 
     fn extensions(&self, content: &GraphContent) -> NodeHandlerExtensions {
@@ -191,6 +220,7 @@ impl Decision {
             loader: self.loader.clone(),
             custom_node: self.adapter.clone(),
             http_handler: self.http_handler.clone(),
+            #[cfg(feature = "driver")]
             compiled_cache: content.compiled_cache.clone(),
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
@@ -198,6 +228,7 @@ impl Decision {
         }
     }
 
+    #[cfg(feature = "driver")]
     async fn evaluate_walker(
         &self,
         context: Variable,
@@ -242,17 +273,18 @@ impl Decision {
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
-        let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
-            content: self.content.clone(),
-            max_depth: 1,
-            trace: false,
-            iteration: 0,
-            extensions: Default::default(),
-        })?;
-
-        decision_graph.validate()
+        DecisionGraph::validate_graph(&DecisionGraph::build_graph(&self.content)?)
     }
 
+    fn walked(&self) -> bool {
+        #[cfg(feature = "driver")]
+        if self.interpreted {
+            return true;
+        }
+        false
+    }
+
+    #[cfg(feature = "driver")]
     #[doc(hidden)]
     pub fn interpreted(&self) -> Self {
         Self {
@@ -263,7 +295,7 @@ impl Decision {
 
     #[doc(hidden)]
     pub fn plan_verdict(&self, columns: &zen_expression::lane::Columns) -> Option<Result<(), String>> {
-        let compiled = self.prepared().compiled_plan.as_deref()?.graph().ok()?;
+        let (compiled, _) = Self::compiled(self.prepared()).ok()?;
         Some(compiled.plan_verdict(columns))
     }
 

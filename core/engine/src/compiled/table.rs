@@ -38,9 +38,60 @@ enum Deferred {
     },
 }
 
+#[derive(Clone)]
 pub(crate) enum OutSource {
     Literal(Literal),
     Path(Arc<str>),
+}
+
+type OutputCell = (Option<Literal>, Option<OutSource>);
+
+#[derive(Default)]
+struct OutputCells<'c> {
+    cells: ahash::HashMap<&'c str, OutputCell>,
+    many: ahash::HashMap<Vec<(String, &'c str)>, Option<LaneProgram>>,
+}
+
+impl<'c> OutputCells<'c> {
+    fn cell(&mut self, cell: &'c str) -> &OutputCell {
+        self.cells.entry(cell).or_insert_with(|| Self::summary(cell))
+    }
+
+    fn summary(cell: &str) -> OutputCell {
+        let Ok(program) = LaneProgram::standard(cell) else {
+            return (None, None);
+        };
+        let literal = program.literal();
+        let constant = literal
+            .clone()
+            .or_else(|| {
+                let p = program.program();
+                match p.site_keys.is_empty() && p.timeless() && !p.opaque() {
+                    true => LaneRunner::new().evaluate_one(&program, &zen_expression::Scope::default()).ok(),
+                    false => None,
+                }
+            })
+            .as_ref()
+            .and_then(Literal::of);
+        let source = match literal.as_ref().and_then(Literal::of) {
+            Some(literal) => Some(OutSource::Literal(literal)),
+            None => program
+                .path()
+                .filter(|path| !path.starts_with('$'))
+                .map(|path| OutSource::Path(Arc::from(path))),
+        };
+        (constant, source)
+    }
+
+    fn many(&mut self, entries: &[(String, &'c str)]) -> Option<LaneProgram> {
+        self.many
+            .entry(entries.to_vec())
+            .or_insert_with(|| {
+                let refs: Vec<(&str, &str)> = entries.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+                LaneProgram::compile_many(&refs, false).ok()
+            })
+            .clone()
+    }
 }
 
 pub(crate) struct RuleOutputs {
@@ -452,6 +503,7 @@ impl Table {
             }
         }
         let mut outputs = Vec::with_capacity(rules);
+        let mut memo = OutputCells::default();
         for rule in content.rules.iter() {
             let mut paths = Vec::new();
             let mut full: Vec<(String, &str)> = Vec::new();
@@ -474,45 +526,22 @@ impl Table {
                 }
                 paths.push((Arc::from(path), is_collect, column));
             }
-            let many = |entries: &[(String, &str)]| {
-                let refs: Vec<(&str, &str)> = entries.iter().map(|(k, v)| (k.as_str(), *v)).collect();
-                LaneProgram::compile_many(&refs, false).ok()
-            };
             let literals = full
                 .iter()
-                .map(|(_, cell)| {
-                    let program = LaneProgram::standard(cell).ok()?;
-                    let value = program.literal().or_else(|| {
-                        let p = program.program();
-                        match p.site_keys.is_empty() && p.timeless() && !p.opaque() {
-                            true => LaneRunner::new().evaluate_one(&program, &zen_expression::Scope::default()).ok(),
-                            false => None,
-                        }
-                    })?;
-                    Literal::of(&value)
-                })
+                .map(|(_, cell)| memo.cell(cell).0.clone())
                 .collect::<Option<Vec<_>>>();
             let sources = match literals {
                 Some(_) => None,
                 None => full
                     .iter()
-                    .map(|(_, cell)| {
-                        let program = LaneProgram::standard(cell).ok()?;
-                        match program.literal().as_ref().and_then(Literal::of) {
-                            Some(literal) => Some(OutSource::Literal(literal)),
-                            None => program
-                                .path()
-                                .filter(|path| !path.starts_with('$'))
-                                .map(|path| OutSource::Path(Arc::from(path))),
-                        }
-                    })
+                    .map(|(_, cell)| memo.cell(cell).1.clone())
                     .collect::<Option<Vec<_>>>(),
             };
             outputs.push(RuleOutputs {
                 literals,
                 sources,
-                full: many(&full),
-                collect: many(&collect),
+                full: memo.many(&full),
+                collect: memo.many(&collect),
                 slots: paths
                     .iter()
                     .map(|(p, _, _): &(Arc<str>, bool, usize)| {

@@ -312,6 +312,9 @@ impl Engines {
 
 #[test]
 fn graph_spec_matches_walker() {
+    if Reference::unavailable("spec-graph") {
+        return;
+    }
     Spec::prepare();
     let (suites, mut problems) = Spec::suites(Dialect::Graph);
     let reference = Reference::open("spec-graph");
@@ -344,6 +347,9 @@ fn graph_spec_matches_walker() {
 
 #[test]
 fn graph_engines_match_walker() {
+    if Reference::unavailable("spec-graph") {
+        return;
+    }
     Spec::prepare();
     let (suites, problems) = Spec::suites(Dialect::Graph);
     let mut engines = Engines::new(Reference::open("spec-graph"));

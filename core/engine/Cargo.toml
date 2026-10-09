@@ -75,3 +75,15 @@ arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitra
 [[test]]
 name = "golden"
 required-features = ["arbitrary_precision"]
+
+[[test]]
+name = "ceiling_lists"
+required-features = ["driver"]
+
+[[test]]
+name = "ceiling_switch"
+required-features = ["driver"]
+
+[[test]]
+name = "ceiling_table"
+required-features = ["driver"]

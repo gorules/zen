@@ -6,9 +6,11 @@ use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use std::ops::Deref;
+#[cfg(feature = "driver")]
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+#[cfg(feature = "driver")]
 use crate::config::ZEN_CONFIG;
 use crate::model::{DecisionEdge, DecisionNode, DecisionNodeKind, SwitchNodeContent};
 use zen_expression::variable::Variable;
@@ -16,9 +18,26 @@ use zen_expression::variable::Variable;
 pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
 pub(crate) struct NodeData {
+    #[cfg(feature = "driver")]
     pub name: zen_types::symbol::Symbol,
+    #[cfg(feature = "driver")]
     pub data: Variable,
+    #[cfg(feature = "driver")]
     pub nodes_view: Option<Variable>,
+}
+
+impl NodeData {
+    #[cfg_attr(not(feature = "driver"), allow(unused_variables))]
+    pub(crate) fn placeholder(name: &str) -> Self {
+        Self {
+            #[cfg(feature = "driver")]
+            name: zen_types::symbol::Symbol::from(name),
+            #[cfg(feature = "driver")]
+            data: Variable::Null,
+            #[cfg(feature = "driver")]
+            nodes_view: None,
+        }
+    }
 }
 
 pub(crate) enum WalkStep {
@@ -34,6 +53,7 @@ pub(crate) struct GraphWalker {
     to_visit: Vec<NodeIndex>,
     visited_switch_nodes: Vec<NodeIndex>,
 
+    #[cfg(feature = "driver")]
     pub(super) nodes_in_context: bool,
 }
 
@@ -63,6 +83,7 @@ impl GraphWalker {
             visited_switch_nodes: Default::default(),
             iter: 0,
 
+            #[cfg(feature = "driver")]
             nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
         }
     }

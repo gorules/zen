@@ -1,5 +1,8 @@
 use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphResponse, EvaluationTrace};
+use crate::model::GraphContent;
+use crate::nodes::NodeHandlerExtensions;
+use crate::DecisionGraphValidationError;
 use crate::decision_graph::tracer::{NodeTracer, SwitchStatementTrace, SwitchStatementTraceRow};
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph, WalkStep};
 use crate::model::{DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy};
@@ -141,7 +144,30 @@ impl GraphWalker {
     }
 }
 
+#[derive(Debug)]
+pub struct DecisionGraphConfig {
+    pub content: Arc<GraphContent>,
+    pub trace: bool,
+    pub iteration: u8,
+    pub max_depth: u8,
+    pub extensions: NodeHandlerExtensions,
+}
+
 impl DecisionGraph {
+    pub fn try_new(config: DecisionGraphConfig) -> Result<Self, DecisionGraphValidationError> {
+        let graph = Self::build_graph(config.content.deref())?;
+        Ok(Self {
+            initial_graph: graph.clone(),
+            graph,
+            config,
+            parent_nodes: None,
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
+        Self::validate_graph(&self.graph)
+    }
+
     pub(crate) fn set_parent_nodes(&mut self, nodes: Option<Variable>) {
         self.parent_nodes = nodes;
     }
@@ -314,7 +340,6 @@ impl DecisionGraph {
                 },
             );
 
-            // Terminate once Output node is reached
             if matches!(node.kind, DecisionNodeKind::OutputNode { .. }) {
                 break;
             }

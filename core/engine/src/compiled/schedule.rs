@@ -4,7 +4,6 @@ use petgraph::prelude::NodeIndex;
 use petgraph::Incoming;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use zen_expression::variable::Variable;
 
 pub(crate) type Outcome = Arc<[Arc<str>]>;
 
@@ -100,11 +99,7 @@ impl<'a> Replay<'a> {
             executed.push(nid);
             walker.set_node_data(
                 nid,
-                NodeData {
-                    name: zen_types::symbol::Symbol::from(node.name.as_ref()),
-                    data: Variable::Null,
-                    nodes_view: None,
-                },
+                NodeData::placeholder(node.name.as_ref()),
             );
             if matches!(node.kind, DecisionNodeKind::OutputNode { .. }) {
                 break;

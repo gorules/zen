@@ -25,7 +25,7 @@ fn compiled(content: Arc<DecisionContent>) -> Arc<DecisionContent> {
     let DecisionContent::Graph(graph) = content.as_ref() else {
         return content;
     };
-    if graph.compiled_cache.is_some() {
+    if graph.is_compiled() {
         return content;
     }
 
@@ -38,7 +38,7 @@ async fn prepared(loader: &DynamicLoader, content: Arc<DecisionContent>) -> Arc<
     let DecisionContent::Graph(graph) = content.as_ref() else {
         return content;
     };
-    if graph.compiled_cache.is_some() && graph.resolved_schemas.is_some() {
+    if graph.is_compiled() && graph.resolved_schemas.is_some() {
         return content;
     }
 

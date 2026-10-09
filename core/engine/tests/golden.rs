@@ -196,6 +196,28 @@ impl Graphs {
     }
 }
 
+#[cfg(feature = "driver")]
+struct Modes;
+
+#[cfg(feature = "driver")]
+impl Modes {
+    const ALL: [EvaluationTraceKind; 4] = [EvaluationTraceKind::Default, EvaluationTraceKind::String, EvaluationTraceKind::Reference, EvaluationTraceKind::ReferenceString];
+
+    async fn compare(check: &mut Check, live: &Golden, id: &str, walker: &Decision, decision: &Decision, input: &Variable, label: &str) {
+        let key = Canon::key(id, &[], input);
+        if check.entry(live, &key).and_then(|entry| entry.traced.as_ref()).is_none() {
+            return;
+        }
+        for mode in Self::ALL {
+            let options = EvaluationSerializedOptions { trace: mode, max_depth: 10 };
+            let reference = matches!(mode, EvaluationTraceKind::Reference | EvaluationTraceKind::ReferenceString);
+            let want = Canon::mode(walker.evaluate_serialized(input.depth_clone(64), options).await, reference);
+            let got = Canon::mode(decision.evaluate_serialized(input.depth_clone(64), options).await, reference);
+            check.same(&key, &format!("{label} {mode:?}"), &want, &got);
+        }
+    }
+}
+
 struct Policies;
 
 impl Policies {
@@ -573,6 +595,58 @@ impl Corpus {
         }
     }
 
+    #[cfg(feature = "driver")]
+    fn modes(&self, live: &Golden) {
+        let mut check = Check::default();
+        match self {
+            Corpus::SpecGraph => Self::modes_spec_graph(live, &mut check),
+            Corpus::GraphFixtures => Guard::block(Self::modes_graph_fixtures(live, &mut check)),
+            _ => {}
+        }
+        check.finish(live, &format!("{} trace modes", self.name()));
+    }
+
+    #[cfg(feature = "driver")]
+    fn modes_spec_graph(live: &Golden, check: &mut Check) {
+        let (suites, _) = Spec::suites(Dialect::Graph);
+        let _guard = Nodes::lock();
+        for suite in &suites {
+            for nodes in Nodes::modes(suite) {
+                Nodes::set(nodes);
+                let Ok(run) = GraphRun::new(suite) else {
+                    continue;
+                };
+                let id = Nodes::id(suite, nodes);
+                check.diverges(suite, &id, suite.cases.iter().map(|c| c.input.clone()));
+                let mut failures = Vec::new();
+                Guard::run(format!("{id} trace modes"), &mut failures, || {
+                    Guard::block(async {
+                        for case in &suite.cases {
+                            Modes::compare(check, live, &id, &run.walker, &run.compiled, &case.input, "compiled").await;
+                            Modes::compare(check, live, &id, &run.walker, &run.uncompiled, &case.input, "uncompiled").await;
+                        }
+                    })
+                });
+                check.failures.extend(failures);
+            }
+        }
+        Nodes::set(true);
+    }
+
+    #[cfg(feature = "driver")]
+    async fn modes_graph_fixtures(live: &Golden, check: &mut Check) {
+        let _guard = Nodes::lock();
+        for fixture in Self::fixtures().into_iter().filter(|f| !Self::slow(f)) {
+            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+            let compiled = Self::compiled(&fixture);
+            let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
+            for input in Self::fixture_inputs(&fixture) {
+                Modes::compare(check, live, &fixture.name, &walker, &compiled, &input, "compiled").await;
+                Modes::compare(check, live, &fixture.name, &walker, &uncompiled, &input, "uncompiled").await;
+            }
+        }
+    }
+
     fn verify(&self) {
         Golden::prepare();
         self.verify_against(&Golden::open(self.name()));
@@ -810,6 +884,16 @@ fn hosts_match_the_live_driver() {
     for corpus in Corpus::selected().into_iter().filter(|c| !matches!(c, Corpus::SpecGraph | Corpus::GraphFixtures)) {
         let live = corpus.record();
         corpus.verify_against(&live);
+    }
+}
+
+#[cfg(feature = "driver")]
+#[test]
+fn traced_graphs_match_the_live_walker() {
+    for corpus in Corpus::selected().into_iter().filter(|c| matches!(c, Corpus::SpecGraph | Corpus::GraphFixtures)) {
+        let live = corpus.record();
+        corpus.verify_against(&live);
+        corpus.modes(&live);
     }
 }
 

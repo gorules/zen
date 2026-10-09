@@ -15,7 +15,6 @@ use std::fmt::{Display, Formatter};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
-use zen_expression::Isolate;
 use zen_types::symbol::Symbol;
 use zen_types::variable::{ToVariable, Variable};
 
@@ -66,10 +65,6 @@ where
             node: data,
             config: base.config,
         }
-    }
-
-    pub fn isolate(&self) -> Isolate {
-        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
     }
 
     pub fn trace<Function>(&self, mutator: Function)
@@ -364,25 +359,7 @@ pub struct NodeContextBase {
     pub trace: Option<RefCell<Variable>>,
 }
 
-pub(crate) fn make_isolate(
-    input: &Variable,
-    nodes: Option<&Variable>,
-    extensions: &NodeHandlerExtensions,
-) -> Isolate {
-    let mut isolate =
-        Isolate::with_environment(input.clone()).with_cache(extensions.compiled_cache.clone());
-    if let Some(nodes) = nodes {
-        isolate.set_local(Variable::nodes_key(), nodes.clone());
-    }
-
-    isolate
-}
-
 impl NodeContextBase {
-    pub fn isolate(&self) -> Isolate {
-        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
-    }
-
     pub fn error<Error>(&self, error: Error) -> NodeResult
     where
         Error: Into<Box<dyn std::error::Error>>,

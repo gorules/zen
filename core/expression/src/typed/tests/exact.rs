@@ -32,7 +32,7 @@ impl Lab {
 
     fn val(slot: &Slot, hir: &Hir, i: usize) -> Val {
         match (&slot.data, slot.kind) {
-            (Data::Num { .. }, _) => slot.num(i).map_or(Val::Null, |d| Val::Num(d.decimal())),
+            (Data::Num { .. }, _) => slot.decimal(i).map_or(Val::Null, Val::Num),
             (Data::Bool(_), _) => slot.boolean(i).map_or(Val::Null, Val::Bool),
             (Data::Code(_), Kind::Code(d)) => {
                 slot.code(i).map_or(Val::Null, |c| hir.dict(d).text(c).map_or(Val::Other(format!("code {c}")), |t| Val::Str(t.to_string())))
@@ -156,7 +156,7 @@ fn workloads_match_vm_and_interp() {
         let rows = workload.rows(1024);
         let lab = Lab::new(workload, rows);
         let program = Program::new(lab.hir.clone()).expect("program");
-        lab.check(&program, &SIZES, true);
+        lab.check(&program, &SIZES, name != "W6");
     }
 }
 
@@ -173,13 +173,14 @@ fn extremes_match_vm_and_interp() {
 
 #[test]
 fn passes_off_match_vm() {
-    let offs: [fn(&mut Passes); 6] = [
+    let offs: [fn(&mut Passes); 7] = [
         |p| p.fold = false,
         |p| p.factor = false,
         |p| p.skip = false,
         |p| p.reuse = false,
         |p| p.elide = false,
-        |p| *p = Passes { fold: false, factor: false, skip: false, reuse: false, elide: false, skip_min: 2 },
+        |p| *p = Passes { fold: false, factor: false, skip: false, reuse: false, elide: false, skip_min: 2, lookup_min: 128 },
+        |p| p.lookup_min = 1,
     ];
     for name in Workload::NAMES {
         let workload = Workload::get(name);

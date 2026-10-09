@@ -1,6 +1,7 @@
 use crate::typed::hir::{DictId, Hir, Kind, Scope, Unsupported};
 use crate::typed::kernel::K;
 use crate::typed::num::Dec;
+use rust_decimal::Decimal;
 
 #[derive(Clone, Debug)]
 pub enum Data {
@@ -18,6 +19,7 @@ pub struct Slot {
     pub data: Data,
     pub valid: Vec<u64>,
     pub fault: Faults,
+    pub wide: Vec<(usize, Decimal)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -49,8 +51,19 @@ impl Slot {
 
     pub fn num(&self, i: usize) -> Option<Dec> {
         match &self.data {
-            Data::Num { mant, scale } if self.is_valid(i) => Some(Dec::new(*mant.get(i)?, *scale.get(i)?)),
+            Data::Num { mant, scale } if self.is_valid(i) && self.wide.binary_search_by_key(&i, |(at, _)| *at).is_err() => Some(Dec::new(*mant.get(i)?, *scale.get(i)?)),
             _ => None,
+        }
+    }
+
+    pub fn decimal(&self, i: usize) -> Option<Decimal> {
+        match self.wide.binary_search_by_key(&i, |(at, _)| *at) {
+            Ok(at) if self.is_valid(i) => self.wide.get(at).map(|(_, d)| *d),
+            Ok(_) => None,
+            Err(_) => match &self.data {
+                Data::Num { mant, scale } if self.is_valid(i) => Some(Dec::new(*mant.get(i)?, *scale.get(i)?).decimal()),
+                _ => None,
+            },
         }
     }
 
@@ -91,6 +104,7 @@ impl Slot {
 
     fn reset(&mut self, len: usize) {
         self.len = len;
+        self.wide.clear();
         let words = K::words(len);
         self.valid.clear();
         self.valid.resize(words, u64::MAX);
@@ -171,7 +185,7 @@ impl Outputs {
                 Kind::Code(_) => Data::Code(Vec::new()),
                 Kind::Text => return Err(Unsupported::new(format!("text output {}", o.name))),
             };
-            slots.push(Slot { name: o.name.clone(), scope: o.scope, kind: o.ty.kind, len: 0, data, valid: Vec::new(), fault: Faults::default() });
+            slots.push(Slot { name: o.name.clone(), scope: o.scope, kind: o.ty.kind, len: 0, data, valid: Vec::new(), fault: Faults::default(), wide: Vec::new() });
         }
         Ok(Self { rows: 0, slots, faults: Faults::default() })
     }

@@ -154,6 +154,9 @@ impl Fused {
         let mut entries: Vec<Fusion> = Vec::new();
         let mut sinks = Vec::with_capacity(blocks.len());
         for &block in blocks {
+            if member && plan.tables[block].is_some() {
+                return None;
+            }
             let (unit, sunk) = Self::entries(plan, block, member)?;
             entries.extend(unit);
             sinks.extend(sunk);
@@ -500,9 +503,17 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         let (entity, programs, writes) = match (&plan.tables[block], &plan.blocks.rules[block].kind) {
             (Some(table), BlockKind::DecisionTable(ir)) => {
-                let ready = len == 2 && self.owners[block].is_none() && self.quiet(block) && plan.fusions.table(block, ir);
+                let entity = match self.owners[block] {
+                    Some(_) if Exports::enabled() => {
+                        let at = self.entity_of(block)?;
+                        self.supported(at, block, rows).then_some(Some(at))?
+                    }
+                    Some(_) => return None,
+                    None => None,
+                };
+                let ready = len == 2 && self.quiet(block) && plan.fusions.table(block, ir);
                 let writes: Vec<(Arc<str>, bool)> = table.outputs.iter().map(|o| (o.field.clone(), true)).collect();
-                ready.then_some((None, table.programs(), writes))?
+                ready.then_some((entity, table.programs(), writes))?
             }
             (Some(_), _) => return None,
             (None, _) => {

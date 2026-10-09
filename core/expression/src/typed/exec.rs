@@ -1,16 +1,19 @@
 use crate::lane::Column;
 use crate::typed::batch::{Data, Feed, Feeds, Lists, Scales, Text};
-use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, Scope};
+use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, Range, Scope};
 use crate::typed::ins::{Arg, FixOp, Guard, Ins, Rep, Src, Tab, R};
 use crate::typed::kernel::K;
-use crate::typed::num::Dec;
+use crate::typed::lookup::{Domain, Lookup};
+use crate::typed::num::{Dec, N};
 use crate::typed::output::{Data as SlotData, Outputs};
+use rust_decimal::Decimal;
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum V {
     Null,
     Num(Dec),
+    Big(Decimal),
     Bool(bool),
     Code(i32),
     Other,
@@ -24,6 +27,8 @@ pub(crate) struct Reg {
     pub(crate) bits: [u64; Reg::WORDS],
     pub(crate) valid: [u64; Reg::WORDS],
     pub(crate) fault: [u64; Reg::WORDS],
+    pub(crate) wide: [u64; Reg::WORDS],
+    pub(crate) big: Vec<Decimal>,
     pub(crate) masks: Vec<u64>,
 }
 
@@ -35,6 +40,9 @@ pub(crate) struct Buf {
     pub(crate) bits: Vec<u64>,
     pub(crate) valid: Vec<u64>,
     pub(crate) fault: Vec<u64>,
+    pub(crate) wide: Vec<u64>,
+    pub(crate) big: Vec<Decimal>,
+    pub(crate) any: bool,
 }
 
 struct Others<'r> {
@@ -71,12 +79,32 @@ impl V {
         }
     }
 
+    fn number(self) -> Option<N> {
+        match self {
+            V::Num(d) => Some(N::Dec(d)),
+            V::Big(d) => Some(N::Big(d)),
+            _ => None,
+        }
+    }
+
     fn same(self, other: V) -> bool {
+        if let (Some(x), Some(y)) = (self.number(), other.number()) {
+            return x.compare(y) == Ordering::Equal;
+        }
         match (self, other) {
-            (V::Num(x), V::Num(y)) => x.eq_value(y),
             (V::Other, _) | (_, V::Other) => false,
             (x, y) => x == y,
         }
+    }
+}
+
+impl Range {
+    #[inline]
+    fn holds(&self, x: N) -> bool {
+        let (lo, hi) = (x.compare(N::Dec(self.lo)), x.compare(N::Dec(self.hi)));
+        let above = lo == Ordering::Greater || (self.lo_closed && lo == Ordering::Equal);
+        let below = hi == Ordering::Less || (self.hi_closed && hi == Ordering::Equal);
+        above && below
     }
 }
 
@@ -113,6 +141,65 @@ impl Buf {
         self.bits.resize(words, 0);
         self.valid.resize(words, 0);
         self.fault.resize(words, 0);
+        self.wide.clear();
+        self.wide.resize(words, 0);
+        self.any = false;
+    }
+
+    #[inline]
+    pub(crate) fn num(&self, rep: Rep, r: usize) -> N {
+        match self.any && K::get(&self.wide, r) {
+            true => N::Big(self.big.get(r).copied().unwrap_or_default()),
+            false => N::Dec(Dec::new(self.mant[r], match rep {
+                Rep::Fix(s) => s,
+                _ => self.scale[r],
+            })),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn keep(&mut self, rep: Rep, r: usize, n: N) {
+        match n {
+            N::Dec(d) if rep == Rep::Dyn || rep == Rep::Fix(d.scale) => {
+                self.mant[r] = d.mant;
+                self.scale[r] = d.scale;
+                if self.any {
+                    K::set(&mut self.wide, r, false);
+                }
+            }
+            n => {
+                if self.big.len() < self.mant.len() {
+                    self.big.resize(self.mant.len(), Decimal::ZERO);
+                }
+                self.big[r] = n.decimal();
+                self.mant[r] = 0;
+                self.scale[r] = 0;
+                self.any = true;
+                K::set(&mut self.wide, r, true);
+            }
+        }
+    }
+
+    pub(crate) fn finish(&mut self, fold: Fold, rep: Rep) {
+        let len = self.mant.len();
+        for r in 0..len {
+            if K::get(&self.fault, r) {
+                continue;
+            }
+            let seen = self.codes[r];
+            match fold {
+                Fold::Any if seen == 0 => K::set(&mut self.bits, r, false),
+                Fold::All | Fold::None if seen == 0 => K::set(&mut self.bits, r, true),
+                Fold::One => K::set(&mut self.bits, r, self.mant[r] == 1),
+                Fold::Min | Fold::Max if seen == 0 => K::set(&mut self.fault, r, true),
+                Fold::Avg if seen == 0 => K::set(&mut self.fault, r, true),
+                Fold::Avg => match self.num(rep, r).arith(Arith::Div, N::Dec(Dec::int(i64::from(seen)))) {
+                    Ok(Some(q)) => self.keep(rep, r, q),
+                    _ => K::set(&mut self.fault, r, true),
+                },
+                _ => {}
+            }
+        }
     }
 }
 
@@ -128,6 +215,8 @@ impl Reg {
             bits: [0; Self::WORDS],
             valid: [0; Self::WORDS],
             fault: [0; Self::WORDS],
+            wide: [0; Self::WORDS],
+            big: Vec::new(),
             masks: Vec::new(),
         }
     }
@@ -135,6 +224,7 @@ impl Reg {
     pub(crate) fn fill(&mut self, rep: Rep, lit: &Lit) {
         self.valid.fill(u64::MAX);
         self.fault.fill(0);
+        self.wide.fill(0);
         match lit {
             Lit::Num(d) => {
                 self.mant.fill(d.mant);
@@ -164,6 +254,9 @@ impl Reg {
         if !self.ok(i) {
             return V::Null;
         }
+        if self.wide(i) {
+            return V::Big(self.big.get(i).copied().unwrap_or_default());
+        }
         match rep {
             Rep::Fix(s) => V::Num(Dec::new(self.mant[i], s)),
             Rep::Dyn => V::Num(Dec::new(self.mant[i], self.scale[i])),
@@ -177,6 +270,58 @@ impl Reg {
     fn put(&mut self, i: usize, d: Dec) {
         self.mant[i] = d.mant;
         self.scale[i] = d.scale;
+    }
+
+    #[inline]
+    fn wide(&self, i: usize) -> bool {
+        K::get(&self.wide, i)
+    }
+
+    #[inline]
+    pub(crate) fn num(&self, rep: Rep, i: usize) -> N {
+        match self.wide(i) {
+            true => N::Big(self.big.get(i).copied().unwrap_or_default()),
+            false => N::Dec(Dec::new(self.mant[i], rep.scale_at(self, i))),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn keep(&mut self, rep: Rep, i: usize, n: N) {
+        match n {
+            N::Dec(d) if rep == Rep::Dyn || rep == Rep::Fix(d.scale) => {
+                self.put(i, d);
+                K::set(&mut self.wide, i, false);
+            }
+            n => {
+                if self.big.len() < Self::LANES {
+                    self.big.resize(Self::LANES, Decimal::ZERO);
+                }
+                self.big[i] = n.decimal();
+                self.put(i, Dec::ZERO);
+                K::set(&mut self.wide, i, true);
+            }
+        }
+    }
+
+    #[inline]
+    fn widened(&self, words: usize) -> bool {
+        self.wide[..words].iter().any(|w| *w != 0)
+    }
+
+    #[inline]
+    fn adopt(&mut self, from: &Reg, mask: &[u64]) {
+        for (w, &m) in mask.iter().enumerate() {
+            let mut bits = m & from.wide[w];
+            self.wide[w] |= bits;
+            while bits != 0 {
+                let i = w * 64 + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                if self.big.len() < Self::LANES {
+                    self.big.resize(Self::LANES, Decimal::ZERO);
+                }
+                self.big[i] = from.big.get(i).copied().unwrap_or_default();
+            }
+        }
     }
 }
 
@@ -240,12 +385,11 @@ impl<'e, 'x> Exec<'e, 'x> {
     }
 
     #[inline(always)]
-    fn num(&self, op: Arith, d: &mut Reg, act: Option<&[u64; Reg::WORDS]>, x: impl Fn(usize) -> Dec, y: impl Fn(usize) -> Dec) {
+    fn num(&self, op: Arith, d: &mut Reg, act: Option<&[u64; Reg::WORDS]>, ovf: &mut [u64; Reg::WORDS], x: impl Fn(usize) -> Dec, y: impl Fn(usize) -> Dec) {
         let words = self.words.min(Reg::WORDS);
-        if act.is_none() && op != Arith::Div {
-            let mut bad = [0u64; Reg::WORDS];
+        if act.is_none() && matches!(op, Arith::Add | Arith::Sub | Arith::Mul) {
             let (mant, scale) = (&mut d.mant, &mut d.scale);
-            K::pack_idx(self.n, &mut bad[..words], |i| {
+            K::pack_idx(self.n, &mut ovf[..words], |i| {
                 let (p, q) = (x(i), y(i));
                 let (r, s, o) = match op {
                     Arith::Mul => K::mul(p.mant, q.mant, p.scale, q.scale),
@@ -255,25 +399,58 @@ impl<'e, 'x> Exec<'e, 'x> {
                 scale[i] = s;
                 o
             });
-            for (f, b) in d.fault[..words].iter_mut().zip(&bad) {
-                *f |= b;
-            }
             return;
         }
         let skip = d.fault;
-        self.each(act, &skip, |i| {
-            let r = match op {
-                Arith::Add => x(i).checked_add(y(i)).map(Some),
-                Arith::Sub => x(i).checked_sub(y(i)).map(Some),
-                Arith::Mul => x(i).checked_mul(y(i)).map(Some),
-                Arith::Div => x(i).checked_div(y(i)),
-            };
-            match r {
-                Ok(Some(q)) => d.put(i, q),
-                Ok(None) => K::set(&mut d.valid, i, false),
-                Err(_) => K::set(&mut d.fault, i, true),
-            }
+        self.each(act, &skip, |i| match x(i).arith(op, y(i)) {
+            Ok(Some(q)) => d.put(i, q),
+            Ok(None) => K::set(&mut d.valid, i, false),
+            Err(_) => K::set(ovf, i, true),
         });
+    }
+
+    fn redo(&self, d: &mut Reg, act: Option<&[u64; Reg::WORDS]>, ovf: &[u64; Reg::WORDS], rep: Rep, mut f: impl FnMut(usize) -> Result<Option<N>, ()>) {
+        let words = self.words.min(Reg::WORDS);
+        let mut m = [0u64; Reg::WORDS];
+        for w in 0..words {
+            m[w] = ovf[w] & !d.fault[w] & d.valid[w];
+        }
+        if m[..words].iter().all(|w| *w == 0) {
+            return;
+        }
+        self.over(act, &m, |i| match f(i) {
+            Ok(Some(v)) => d.keep(rep, i, v),
+            Ok(None) => K::set(&mut d.valid, i, false),
+            Err(()) => K::set(&mut d.fault, i, true),
+        });
+    }
+
+    #[inline(always)]
+    fn over(&self, act: Option<&[u64; Reg::WORDS]>, mask: &[u64; Reg::WORDS], mut f: impl FnMut(usize)) {
+        for w in 0..self.words.min(Reg::WORDS) {
+            let mut m = act.map_or(u64::MAX, |a| a[w]) & self.tail(w) & mask[w];
+            while m != 0 {
+                let i = w * 64 + m.trailing_zeros() as usize;
+                m &= m - 1;
+                f(i);
+            }
+        }
+    }
+
+    fn patch(&self, d: &mut Reg, a: &Reg, b: Option<&Reg>, mut f: impl FnMut(usize) -> bool) {
+        for w in 0..self.words.min(Reg::WORDS) {
+            let (bw, bv) = b.map_or((0, u64::MAX), |b| (b.wide[w], b.valid[w]));
+            let mut m = (a.wide[w] | bw) & a.valid[w] & bv & self.tail(w);
+            while m != 0 {
+                let j = m.trailing_zeros() as usize;
+                m &= m - 1;
+                let bit = 1u64 << j;
+                match f(w * 64 + j) {
+                    true => d.bits[w] |= bit,
+                    false => d.bits[w] &= !bit,
+                }
+            }
+        }
     }
 
     #[inline]
@@ -281,6 +458,7 @@ impl<'e, 'x> Exec<'e, 'x> {
         let at = dst as usize;
         let (lo, rest) = regs.split_at_mut(at);
         if let Some((d, hi)) = rest.split_first_mut() {
+            d.wide = [0; Reg::WORDS];
             f(d, &Others { lo, hi, at });
         }
     }
@@ -447,6 +625,13 @@ impl<'e, 'x> Exec<'e, 'x> {
                         K::pack1(parent, &mut d.valid[..words], |p| K::get(&b.valid, p as usize));
                         K::pack1(parent, &mut d.fault[..words], |p| K::get(&b.fault, p as usize));
                     }
+                    if b.any && !K::range(&b.wide, r0, r1, false) {
+                        for (i, &p) in parent.iter().enumerate() {
+                            if K::get(&b.wide, p as usize) {
+                                d.keep(Rep::Dyn, i, N::Big(b.big.get(p as usize).copied().unwrap_or_default()));
+                            }
+                        }
+                    }
                 });
             }
             Ins::Fill { dst, buf, rep } => {
@@ -455,6 +640,13 @@ impl<'e, 'x> Exec<'e, 'x> {
                 Self::def(regs, *dst, |d, _| {
                     d.valid[..words].copy_from_slice(&b.valid[w0..w0 + words]);
                     d.fault[..words].copy_from_slice(&b.fault[w0..w0 + words]);
+                    if b.any && !K::range(&b.wide, start, start + n, false) {
+                        for i in 0..n {
+                            if K::get(&b.wide, start + i) {
+                                d.keep(Rep::Dyn, i, N::Big(b.big.get(start + i).copied().unwrap_or_default()));
+                            }
+                        }
+                    }
                     match rep {
                         Rep::Fix(_) => d.mant[..n].copy_from_slice(&b.mant[start..start + n]),
                         Rep::Dyn => {
@@ -473,6 +665,18 @@ impl<'e, 'x> Exec<'e, 'x> {
                 let w0 = start / 64;
                 b.valid[w0..w0 + words].copy_from_slice(&r.valid[..words]);
                 b.fault[w0..w0 + words].copy_from_slice(&r.fault[..words]);
+                b.wide[w0..w0 + words].copy_from_slice(&r.wide[..words]);
+                if r.widened(words) {
+                    if b.big.len() < b.mant.len() {
+                        b.big.resize(b.mant.len(), Decimal::ZERO);
+                    }
+                    b.any = true;
+                    for i in 0..n {
+                        if r.wide(i) {
+                            b.big[start + i] = r.big.get(i).copied().unwrap_or_default();
+                        }
+                    }
+                }
                 match rep {
                     Rep::Fix(_) => b.mant[start..start + n].copy_from_slice(&r.mant[..n]),
                     Rep::Dyn => {
@@ -484,49 +688,72 @@ impl<'e, 'x> Exec<'e, 'x> {
                     Rep::Text | Rep::Null => {}
                 }
             }
-            Ins::Fix { op, dst, a, b } => Self::def(regs, *dst, |d, regs| {
+            Ins::Fix { op, dst, a, b, rep } => Self::def(regs, *dst, |d, regs| {
                 let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
                 self.strict2(d, a, b);
-                let (x, y, o, f) = (&a.mant[..n], &b.mant[..n], &mut d.mant[..n], &mut d.fault[..words]);
+                let mut ovf = [0u64; Reg::WORDS];
+                let (x, y, o, f) = (&a.mant[..n], &b.mant[..n], &mut d.mant[..n], &mut ovf[..words]);
                 match op {
                     FixOp::Add => K::ovf2(x, y, o, f, i64::overflowing_add),
                     FixOp::Sub => K::ovf2(x, y, o, f, i64::overflowing_sub),
                     FixOp::Mul => K::ovf2(x, y, o, f, i64::overflowing_mul),
                 }
+                for w in 0..words {
+                    ovf[w] |= a.wide[w] | b.wide[w];
+                }
+                let op = match op {
+                    FixOp::Add => Arith::Add,
+                    FixOp::Sub => Arith::Sub,
+                    FixOp::Mul => Arith::Mul,
+                };
+                let rep = *rep;
+                self.redo(d, act, &ovf, rep, |i| a.num(rep, i).arith(op, b.num(rep, i)).map_err(|_| ()));
             }),
             Ins::Neg { dst, a, rep } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 self.strict1(d, a);
-                K::ovf1(&a.mant[..n], &mut d.mant[..n], &mut d.fault[..words], |x| (x.wrapping_neg(), (x == 0) | (x == i64::MIN)));
+                let mut ovf = [0u64; Reg::WORDS];
+                K::ovf1(&a.mant[..n], &mut d.mant[..n], &mut ovf[..words], |x| (x.wrapping_neg(), (x == 0) | (x == i64::MIN)));
                 if *rep == Rep::Dyn {
                     d.scale[..n].copy_from_slice(&a.scale[..n]);
                 }
+                for w in 0..words {
+                    ovf[w] |= a.wide[w];
+                }
+                let rep = *rep;
+                self.redo(d, act, &ovf, rep, |i| Ok(Some(a.num(rep, i).neg())));
             }),
             Ins::Num { op, dst, a, ra, b, rb } => Self::def(regs, *dst, |d, regs| {
                 let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
                 self.strict2(d, a, b);
                 let (am, bm) = (&a.mant[..n], &b.mant[..n]);
-                if act.is_none() && *op != Arith::Div {
+                let mut ovf = [0u64; Reg::WORDS];
+                let (op, ra, rb) = (*op, *ra, *rb);
+                if act.is_none() && matches!(op, Arith::Add | Arith::Sub | Arith::Mul) {
                     let (mut pa, mut pb) = ([0u8; Reg::LANES], [0u8; Reg::LANES]);
-                    let (asc, bsc) = (Self::scales(*ra, a, &mut pa, n), Self::scales(*rb, b, &mut pb, n));
-                    let (sub, mul) = (*op == Arith::Sub, *op == Arith::Mul);
-                    let (dm, ds, df) = (&mut d.mant[..n], &mut d.scale[..n], &mut d.fault[..words]);
+                    let (asc, bsc) = (Self::scales(ra, a, &mut pa, n), Self::scales(rb, b, &mut pb, n));
+                    let (sub, mul) = (op == Arith::Sub, op == Arith::Mul);
+                    let (dm, ds, df) = (&mut d.mant[..n], &mut d.scale[..n], &mut ovf[..words]);
                     match mul {
                         true => K::dyn2(am, bm, asc, bsc, dm, ds, df, K::mul),
                         false => K::dyn2(am, bm, asc, bsc, dm, ds, df, |x, y, p, q| K::add(sub, x, y, p, q)),
                     }
-                    return;
+                } else {
+                    self.num(op, d, act, &mut ovf, |i| Dec::new(am[i], ra.scale_at(a, i)), |i| Dec::new(bm[i], rb.scale_at(b, i)));
                 }
-                let (ra, rb) = (*ra, *rb);
-                self.num(*op, d, act, |i| Dec::new(am[i], ra.scale_at(a, i)), |i| Dec::new(bm[i], rb.scale_at(b, i)));
+                for w in 0..words {
+                    ovf[w] |= a.wide[w] | b.wide[w];
+                }
+                self.redo(d, act, &ovf, Rep::Dyn, |i| a.num(ra, i).arith(op, b.num(rb, i)).map_err(|_| ()));
             }),
             Ins::DivPow { dst, a, ra, k, by } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 self.strict1(d, a);
                 let (k, by, ra) = (*k, *by, *ra);
-                let slow_lane = |i: usize, d: &mut Reg| match Dec::new(a.mant[i], ra.scale_at(a, i)).div_power(k, by) {
+                let mut ovf = [0u64; Reg::WORDS];
+                let mut slow_lane = |i: usize, d: &mut Reg| match Dec::new(a.mant[i], ra.scale_at(a, i)).div_power(k, by) {
                     Ok(q) => d.put(i, q),
-                    Err(_) => K::set(&mut d.fault, i, true),
+                    Err(_) => K::set(&mut ovf, i, true),
                 };
                 let mut slow = [0u64; Reg::WORDS];
                 let shift = match ra {
@@ -562,6 +789,11 @@ impl<'e, 'x> Exec<'e, 'x> {
                     *word = !(*word & !d.fault[w]);
                 }
                 self.each(None, &slow, |i| slow_lane(i, d));
+                for w in 0..words {
+                    ovf[w] |= a.wide[w];
+                }
+                let divisor = N::Dec(Dec::new(Dec::POW10[k as usize], by));
+                self.redo(d, act, &ovf, Rep::Dyn, |i| a.num(ra, i).arith(Arith::Div, divisor).map_err(|_| ()));
             }),
             Ins::PickTab { dst, sel, tab, rep } => Self::def(regs, *dst, |d, regs| {
                 let s = &regs[*sel as usize];
@@ -589,7 +821,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 K::pack1(sm, &mut d.valid[..words], |x| Tab::bit(&tab.ok, x as usize));
                 d.fault[..words].copy_from_slice(&s.fault[..words]);
             }),
-            Ins::CmpFix { op, dst, a, b } => Self::def(regs, *dst, |d, regs| {
+            Ins::CmpFix { op, dst, a, b, rep } => Self::def(regs, *dst, |d, regs| {
                 let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
                 let (x, y, o) = (&a.mant[..n], &b.mant[..n], &mut d.bits[..words]);
                 match op {
@@ -599,8 +831,10 @@ impl<'e, 'x> Exec<'e, 'x> {
                     Cmp::Gt => K::pack2(x, y, o, |x, y| x > y),
                     Cmp::Ge => K::pack2(x, y, o, |x, y| x >= y),
                 }
+                let (op, rep) = (*op, *rep);
+                self.patch(d, a, Some(b), |i| K::ord(op, a.num(rep, i).compare(b.num(rep, i))));
                 match op {
-                    Cmp::Eq | Cmp::Ne => self.eq_meta(d, a, b, *op == Cmp::Ne),
+                    Cmp::Eq | Cmp::Ne => self.eq_meta(d, a, b, op == Cmp::Ne),
                     _ => self.strict2(d, a, b),
                 }
             }),
@@ -620,6 +854,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     K::ord(op, x.compare(y))
                 };
                 self.bools(act, &mut d.bits, f);
+                self.patch(d, a, Some(b), |i| K::ord(op, a.num(ra, i).compare(b.num(rb, i))));
                 match op {
                     Cmp::Eq | Cmp::Ne => self.eq_meta(d, a, b, op == Cmp::Ne),
                     _ => self.strict2(d, a, b),
@@ -639,6 +874,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                     Rep::Fix(s) => K::pack1(am, o, |m| slow(m, s)),
                     _ => K::pack2(am, asc, o, slow),
                 }
+                let ra = *ra;
+                self.patch(d, a, None, |i| K::ord(op, a.num(ra, i).compare(N::Dec(k))));
                 for w in 0..words {
                     match op {
                         Cmp::Eq | Cmp::Ne => {
@@ -677,7 +914,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     let mut hit = 0u64;
                     for j in 0..(n - w * 64).min(64) {
                         let i = w * 64 + j;
-                        let order = Dec::new(a.mant[i], ra.scale_at(a, i)).compare(Dec::new(b.mant[i], rb.scale_at(b, i)));
+                        let order = a.num(*ra, i).compare(b.num(*rb, i));
                         hit |= u64::from(K::ord(*op, order)) << j;
                     }
                     let both = a.valid[w] & b.valid[w];
@@ -703,8 +940,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     let r = match (op, x, y) {
                         (Cmp::Eq, x, y) => Some(x.same(y)),
                         (Cmp::Ne, x, y) => Some(!x.same(y)),
-                        (_, V::Num(x), V::Num(y)) => Some(K::ord(*op, x.compare(y))),
-                        _ => None,
+                        (_, x, y) => x.number().zip(y.number()).map(|(x, y)| K::ord(*op, x.compare(y))),
                     };
                     match r {
                         Some(v) => K::set(&mut d.bits, i, v),
@@ -756,13 +992,14 @@ impl<'e, 'x> Exec<'e, 'x> {
                     K::set(&mut d.bits, i, set.iter().any(|l| x.same(V::lit(l))));
                 }
             }),
-            Ins::InRangeFix { dst, a, lo, span, empty } => Self::def(regs, *dst, |d, regs| {
+            Ins::InRangeFix { dst, a, lo, span, empty, range } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 let (lo, span) = (*lo, *span);
                 match empty {
                     true => d.bits[..words].fill(0),
                     false => K::pack1(&a.mant[..n], &mut d.bits[..words], |x| (x.wrapping_sub(lo) as u64) <= span),
                 }
+                self.patch(d, a, None, |i| range.holds(a.num(Rep::Dyn, i)));
                 self.strict1(d, a);
             }),
             Ins::InRangeGen { dst, a, ra, range } => Self::def(regs, *dst, |d, regs| {
@@ -772,11 +1009,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     let mut hit = 0u64;
                     for j in 0..(n - w * 64).min(64) {
                         let i = w * 64 + j;
-                        let x = Dec::new(a.mant[i], ra.scale_at(a, i));
-                        let (lo, hi) = (x.compare(range.lo), x.compare(range.hi));
-                        let above = lo == Ordering::Greater || (range.lo_closed && lo == Ordering::Equal);
-                        let below = hi == Ordering::Less || (range.hi_closed && hi == Ordering::Equal);
-                        hit |= u64::from(above && below) << j;
+                        hit |= u64::from(range.holds(a.num(*ra, i))) << j;
                     }
                     d.bits[w] = hit & a.valid[w];
                 }
@@ -818,6 +1051,14 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.fault[w] = c.fault[w] | !c.valid[w] | (ct[w] & t.fault[w]) | (cf & e.fault[w]);
                 }
                 self.values(d, &ct[..words], (t, *rt), (e, *re), *rep);
+                if rep.num() && (t.widened(words) || e.widened(words)) {
+                    let mut cf = [0u64; Reg::WORDS];
+                    for w in 0..words {
+                        cf[w] = !c.bits[w] & c.valid[w];
+                    }
+                    d.adopt(t, &ct[..words]);
+                    d.adopt(e, &cf[..words]);
+                }
             }),
             Ins::SelK { dst, c, t, e, rep } => Self::def(regs, *dst, |d, regs| {
                 let c = &regs[*c as usize];
@@ -849,6 +1090,97 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.fault[w] = a.fault[w] | (!a.valid[w] & b.fault[w]);
                 }
                 self.values(d, &m[..words], (a, *ra), (b, *rb), *rep);
+                if rep.num() && (a.widened(words) || b.widened(words)) {
+                    let mut e = [0u64; Reg::WORDS];
+                    for w in 0..words {
+                        e[w] = !a.valid[w];
+                    }
+                    d.adopt(a, &m[..words]);
+                    d.adopt(b, &e[..words]);
+                }
+            }),
+            Ins::Lookup { dst, keys, tab } => Self::def(regs, *dst, |d, regs| {
+                let (rules, rw) = (tab.rules, tab.words);
+                if d.masks.len() < (rules + 1) * Reg::WORDS {
+                    d.masks.resize((rules + 1) * Reg::WORDS, 0);
+                }
+                for ci in 0..=rules {
+                    d.masks[ci * Reg::WORDS..ci * Reg::WORDS + words].fill(0);
+                }
+                d.valid[..words].fill(u64::MAX);
+                d.fault[..words].fill(0);
+                for (r, _) in keys.iter().flatten() {
+                    let x = &regs[*r as usize];
+                    for w in 0..words {
+                        d.fault[w] |= x.fault[w];
+                    }
+                }
+                let mut full = [0u64; Lookup::WORDS];
+                for (w, f) in full.iter_mut().enumerate().take(rw) {
+                    *f = match rules - w * 64 {
+                        left if left >= 64 => u64::MAX,
+                        left => (1u64 << left) - 1,
+                    };
+                }
+                if rw == 1 {
+                    let (mut acc, mut bad, mut at) = ([full[0]; Reg::LANES], [0u64; Reg::LANES], [0usize; Reg::LANES]);
+                    for (key, reg) in tab.keys.iter().zip(keys) {
+                        Self::indexes(key, reg.map(|(r, rep)| (&regs[r as usize], rep)), &mut at[..n]);
+                        if key.bad.iter().any(|b| *b != 0) {
+                            for ((a, b), &v) in acc[..n].iter_mut().zip(bad[..n].iter_mut()).zip(&at[..n]) {
+                                *b |= *a & key.bad[v];
+                            }
+                        }
+                        let hit = &key.hit[..];
+                        for (a, &v) in acc[..n].iter_mut().zip(&at[..n]) {
+                            *a &= hit.get(v).copied().unwrap_or(0);
+                        }
+                    }
+                    for i in 0..n {
+                        let m = acc[i] | bad[i];
+                        let sel = match m {
+                            0 => rules,
+                            m => m.trailing_zeros() as usize,
+                        };
+                        if (bad[i] & m & m.wrapping_neg()) != 0 {
+                            K::set(&mut d.fault, i, true);
+                        }
+                        d.mant[i] = sel as i64;
+                        d.masks[sel * Reg::WORDS + i / 64] |= 1u64 << (i % 64);
+                    }
+                    return;
+                }
+                let mut at = [0usize; Reg::LANES];
+                let mut acc = vec![[0u64; Lookup::WORDS]; n];
+                let mut bad = vec![[0u64; Lookup::WORDS]; n];
+                acc.iter_mut().for_each(|a| *a = full);
+                for (key, reg) in tab.keys.iter().zip(keys) {
+                    Self::indexes(key, reg.map(|(r, rep)| (&regs[r as usize], rep)), &mut at[..n]);
+                    for i in 0..n {
+                        let v = at[i];
+                        let (h, b) = (&key.hit[v * rw..(v + 1) * rw], &key.bad[v * rw..(v + 1) * rw]);
+                        for w in 0..rw {
+                            bad[i][w] |= acc[i][w] & b[w];
+                            acc[i][w] &= h[w];
+                        }
+                    }
+                }
+                for i in 0..n {
+                    let first = (0..rw).find_map(|w| {
+                        let m = acc[i][w] | bad[i][w];
+                        (m != 0).then(|| (w * 64 + m.trailing_zeros() as usize, (bad[i][w] >> m.trailing_zeros()) & 1 == 1))
+                    });
+                    let sel = match first {
+                        Some((rule, true)) => {
+                            K::set(&mut d.fault, i, true);
+                            rule
+                        }
+                        Some((rule, false)) => rule,
+                        None => rules,
+                    };
+                    d.mant[i] = sel as i64;
+                    d.masks[sel * Reg::WORDS + i / 64] |= 1u64 << (i % 64);
+                }
             }),
             Ins::First { dst, conds, sel, strict } => Self::def(regs, *dst, |d, regs| {
                 let k = conds.len();
@@ -868,7 +1200,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         m[w] = hit;
                         let fail = match strict {
                             true => (!c.valid[w] | c.fault[w]) & rem[w],
-                            false => c.fault[w] & rem[w],
+                            false => 0,
                         };
                         bad[w] |= fail;
                         rem[w] &= !(hit | fail);
@@ -899,6 +1231,9 @@ impl<'e, 'x> Exec<'e, 'x> {
                         d.fault[w] |= *mw & a.fault[w];
                     }
                     let m = &m[..words];
+                    if rep.num() && a.widened(words) {
+                        d.adopt(a, m);
+                    }
                     match rep {
                         Rep::Fix(_) => K::copy_masked(m, &a.mant[..n], &mut d.mant[..n]),
                         Rep::Dyn => {
@@ -919,6 +1254,54 @@ impl<'e, 'x> Exec<'e, 'x> {
                 }
             }),
             Ins::Fold { fold, buf, list, filter, value } => self.fold(*fold, &mut bufs[*buf as usize], *list, (*filter, *value), regs, scratch),
+            Ins::Math { func, dst, args, rep } => Self::def(regs, *dst, |d, regs| {
+                let (func, rep) = (*func, *rep);
+                d.valid[..words].fill(u64::MAX);
+                d.fault[..words].fill(0);
+                for (a, _) in args {
+                    let a = &regs[*a as usize];
+                    for w in 0..words {
+                        d.fault[w] |= a.fault[w] | !a.valid[w];
+                    }
+                }
+                let skip = d.fault;
+                match (func, args.as_slice()) {
+                    (Func::Min | Func::Max, _) => self.each(act, &skip, |i| {
+                        let mut best: Option<N> = None;
+                        for (a, ra) in args {
+                            let x = regs[*a as usize].num(*ra, i);
+                            best = Some(match best {
+                                None => x,
+                                Some(b) => {
+                                    let order = x.compare(b);
+                                    let take = match func {
+                                        Func::Min => order == Ordering::Less,
+                                        _ => order != Ordering::Less,
+                                    };
+                                    if take { x } else { b }
+                                }
+                            });
+                        }
+                        if let Some(b) = best {
+                            d.keep(rep, i, b);
+                        }
+                    }),
+                    (_, [(a, ra)]) => {
+                        let (a, ra) = (&regs[*a as usize], *ra);
+                        self.each(act, &skip, |i| {
+                            let fast = match a.wide(i) {
+                                false => Dec::new(a.mant[i], ra.scale_at(a, i)).func(func).filter(|r| rep == Rep::Dyn || rep == Rep::Fix(r.scale)),
+                                true => None,
+                            };
+                            match fast {
+                                Some(r) => d.put(i, r),
+                                None => d.keep(rep, i, a.num(ra, i).func(func)),
+                            }
+                        });
+                    }
+                    _ => {}
+                }
+            }),
             Ins::Text { func, dst, a, b } => {
                 let x = self.view(a);
                 let y = b.as_ref().map_or(TV::Lit(b""), |b| self.view(b));
@@ -959,10 +1342,50 @@ impl<'e, 'x> Exec<'e, 'x> {
                             (Some(a), Some(b)) => a.ends_with(b),
                             _ => false,
                         }),
+                        _ => {}
                     }
                 })
             }
             Ins::Out { slot, src, rep, scope } => self.out(*slot, &regs[*src as usize], *rep, *scope, out),
+        }
+    }
+
+    fn indexes(key: &crate::typed::lookup::Key, reg: Option<(&Reg, Rep)>, at: &mut [usize]) {
+        let Some((x, rep)) = reg else {
+            at.fill(0);
+            return;
+        };
+        let null = key.null();
+        match &key.domain {
+            Domain::Codes(_) => at.iter_mut().zip(&x.codes).for_each(|(a, c)| *a = key.code(*c)),
+            Domain::Bools => at.iter_mut().enumerate().for_each(|(i, a)| *a = usize::from(K::get(&x.bits, i))),
+            Domain::Unit => at.fill(0),
+            Domain::Points(_) => match &key.fixed {
+                Some((_, mants)) if mants.len() <= 32 => {
+                    let n = at.len();
+                    at.fill(0);
+                    for p in mants {
+                        for (a, m) in at.iter_mut().zip(&x.mant[..n]) {
+                            *a += usize::from(*p < *m) * 2 + usize::from(*p == *m);
+                        }
+                    }
+                }
+                _ => at.iter_mut().enumerate().for_each(|(i, a)| *a = key.mant(x.mant[i]).unwrap_or_else(|| key.num(x.num(rep, i)))),
+            },
+        }
+        for (w, chunk) in at.chunks_mut(64).enumerate() {
+            let odd = !x.valid[w] | x.wide[w];
+            if odd == 0 {
+                continue;
+            }
+            for (j, a) in chunk.iter_mut().enumerate() {
+                if (odd >> j) & 1 == 1 {
+                    *a = match x.ok(w * 64 + j) {
+                        false => null,
+                        true => key.num(x.num(rep, w * 64 + j)),
+                    };
+                }
+            }
         }
     }
 
@@ -1002,6 +1425,19 @@ impl<'e, 'x> Exec<'e, 'x> {
             }
             (Data::Codes(codes), _) => d.codes[..n].copy_from_slice(&codes[start..start + n]),
             (Data::Text(_), _) => {}
+        }
+        if let Some((bits, values)) = &feed.wide {
+            for w in 0..words {
+                let take = (n - w * 64).min(64);
+                let mut m = Column::word(bits, start + w * 64, take) & d.valid[w] & !d.fault[w];
+                while m != 0 {
+                    let i = w * 64 + m.trailing_zeros() as usize;
+                    m &= m - 1;
+                    if let Ok(at) = values.binary_search_by_key(&(start + i), |(row, _)| *row) {
+                        d.keep(Rep::Dyn, i, N::Big(values[at].1));
+                    }
+                }
+            }
         }
     }
 
@@ -1048,125 +1484,160 @@ impl<'e, 'x> Exec<'e, 'x> {
         let (r0, r1) = (l.parent[s0] as usize, l.parent[s1 - 1] as usize);
         let filter = filter.map(|f| &regs[f as usize]);
         let value = value.map(|(v, rep)| (&regs[v as usize], rep));
-        let fast = matches!((fold, value), (Fold::Count, _) | (Fold::Sum, Some((_, Rep::Fix(_)))));
-        if let (Fold::Sum, Some((v, Rep::Dyn))) = (fold, value) {
-            return self.sum_dyn(b, l, filter, v);
-        }
-        if fast {
-            let mark = match (fold, value) {
-                (Fold::Sum, Some((_, Rep::Fix(s)))) if s > 0 => Some(s),
-                _ => None,
-            };
-            let sum = fold == Fold::Sum;
-            let words = self.words.min(Reg::WORDS);
-            let (keep, bad) = self.kept(filter, value.filter(|_| sum).map(|(v, _)| v));
-            let n = self.n;
-            if scratch.len() < 2 * Reg::LANES + 1 {
-                return;
-            }
-            let (vals, pre) = scratch.split_at_mut(Reg::LANES);
-            match (sum, value) {
-                (true, Some((v, _))) => K::mask(&keep[..words], &v.mant[..n], &mut vals[..n]),
-                _ => {
-                    for (&w, co) in keep[..words].iter().zip(vals[..n].chunks_mut(64)) {
-                        for (j, o) in co.iter_mut().enumerate() {
-                            *o = ((w >> j) & 1) as i64;
-                        }
-                    }
-                }
-            }
-            let big = vals[..n].iter().fold(0u64, |m, v| m.max(v.unsigned_abs()));
-            let safe = big.checked_mul(n as u64).is_some_and(|t| t < i64::MAX as u64);
-            for (w, &bw) in bad.iter().enumerate().take(words) {
-                let mut m = bw;
-                while m != 0 {
-                    let i = w * 64 + m.trailing_zeros() as usize;
-                    m &= m - 1;
-                    K::set(&mut b.fault, l.parent[s0 + i] as usize, true);
-                }
-            }
-            if safe {
-                pre[0] = 0;
-                let mut acc = 0i64;
-                for (p, v) in pre[1..=n].iter_mut().zip(&vals[..n]) {
-                    acc = acc.wrapping_add(*v);
-                    *p = acc;
-                }
-            }
+        let words = self.words.min(Reg::WORDS);
+        let wide = b.any || value.is_some_and(|(v, _)| v.widened(words));
+        if wide || !matches!(fold, Fold::Sum | Fold::Count) {
             for r in r0..=r1 {
                 let lo = (l.offsets[r] as usize).max(s0) - s0;
                 let hi = (l.offsets[r + 1] as usize).min(s1) - s0;
-                if lo >= hi {
-                    continue;
-                }
-                let part = match safe {
-                    true => Some(pre[hi] - pre[lo]),
-                    false => {
-                        let (mut acc, mut ovf) = (0i64, false);
-                        for v in &vals[lo..hi] {
-                            let (x, o) = acc.overflowing_add(*v);
-                            acc = x;
-                            ovf |= o;
-                        }
-                        (!ovf).then_some(acc)
-                    }
-                };
-                match part.and_then(|p| b.mant[r].checked_add(p)) {
-                    Some(x) => b.mant[r] = x,
-                    None => K::set(&mut b.fault, r, true),
-                }
-                if let Some(s) = mark {
-                    if filter.is_none() || !K::range(&keep, lo, hi, false) {
-                        b.scale[r] = s;
-                    }
-                }
+                self.tally(fold, b, r, lo..hi, filter, value);
             }
             return;
         }
+        let mark = match (fold, value) {
+            (Fold::Sum, Some((v, Rep::Dyn))) => return self.sum_dyn(b, l, filter, value, v),
+            (Fold::Sum, Some((_, Rep::Fix(s)))) if s > 0 => Some(s),
+            (Fold::Sum, Some((_, Rep::Fix(_)))) | (Fold::Count, _) => None,
+            _ => return,
+        };
+        let sum = fold == Fold::Sum;
+        let (keep, bad) = self.kept(filter, value.filter(|_| sum).map(|(v, _)| v));
+        let n = self.n;
+        if scratch.len() < 2 * Reg::LANES + 1 {
+            return;
+        }
+        let (vals, pre) = scratch.split_at_mut(Reg::LANES);
+        match (sum, value) {
+            (true, Some((v, _))) => K::mask(&keep[..words], &v.mant[..n], &mut vals[..n]),
+            _ => {
+                for (&w, co) in keep[..words].iter().zip(vals[..n].chunks_mut(64)) {
+                    for (j, o) in co.iter_mut().enumerate() {
+                        *o = ((w >> j) & 1) as i64;
+                    }
+                }
+            }
+        }
+        let big = vals[..n].iter().fold(0u64, |m, v| m.max(v.unsigned_abs()));
+        let safe = big.checked_mul(n as u64).is_some_and(|t| t < i64::MAX as u64);
+        for (w, &bw) in bad.iter().enumerate().take(words) {
+            let mut m = bw;
+            while m != 0 {
+                let i = w * 64 + m.trailing_zeros() as usize;
+                m &= m - 1;
+                K::set(&mut b.fault, l.parent[s0 + i] as usize, true);
+            }
+        }
+        if safe {
+            pre[0] = 0;
+            let mut acc = 0i64;
+            for (p, v) in pre[1..=n].iter_mut().zip(&vals[..n]) {
+                acc = acc.wrapping_add(*v);
+                *p = acc;
+            }
+        }
         for r in r0..=r1 {
-            if K::get(&b.fault, r) {
+            let lo = (l.offsets[r] as usize).max(s0) - s0;
+            let hi = (l.offsets[r + 1] as usize).min(s1) - s0;
+            if lo >= hi {
                 continue;
             }
-            let lo = (l.offsets[r] as usize).max(s0);
-            let hi = (l.offsets[r + 1] as usize).min(s1);
-            let mut bad = false;
-            for e in lo..hi {
-                let i = e - s0;
-                if let Some(f) = filter {
-                    if !f.ok(i) || f.bad(i) {
-                        bad = true;
-                        break;
+            let part = match safe {
+                true => Some(pre[hi] - pre[lo]),
+                false => {
+                    let (mut acc, mut ovf) = (0i64, false);
+                    for v in &vals[lo..hi] {
+                        let (x, o) = acc.overflowing_add(*v);
+                        acc = x;
+                        ovf |= o;
                     }
-                    if !K::get(&f.bits, i) {
-                        continue;
-                    }
+                    (!ovf).then_some(acc)
                 }
-                match (fold, value) {
-                    (Fold::Count, _) => b.mant[r] += 1,
-                    (Fold::Sum, Some((v, rep))) => {
-                        if !v.ok(i) || v.bad(i) {
-                            bad = true;
-                            break;
-                        }
-                        match Dec::new(b.mant[r], b.scale[r]).checked_add(Dec::new(v.mant[i], rep.scale_at(v, i))) {
-                            Ok(s) => {
-                                b.mant[r] = s.mant;
-                                b.scale[r] = s.scale;
-                            }
-                            Err(_) => {
-                                bad = true;
-                                break;
-                            }
-                        }
-                    }
-                    (Fold::Sum, None) => {
-                        bad = true;
-                        break;
-                    }
+            };
+            match part.and_then(|p| b.mant[r].checked_add(p)) {
+                Some(x) => b.mant[r] = x,
+                None => {
+                    self.tally(fold, b, r, lo..hi, filter, value);
+                    continue;
                 }
             }
-            if bad {
+            if let Some(s) = mark {
+                if filter.is_none() || !K::range(&keep, lo, hi, false) {
+                    b.scale[r] = s;
+                }
+            }
+        }
+    }
+
+    fn tally(&self, fold: Fold, b: &mut Buf, r: usize, range: std::ops::Range<usize>, filter: Option<&Reg>, value: Option<(&Reg, Rep)>) {
+        let rep = match (fold, value) {
+            (Fold::Sum, Some((_, Rep::Fix(0)))) => Rep::Fix(0),
+            (Fold::Min | Fold::Max, Some((_, rep))) => rep,
+            _ => Rep::Dyn,
+        };
+        for i in range {
+            if K::get(&b.fault, r) {
+                return;
+            }
+            if let Some(f) = filter {
+                if !f.ok(i) || f.bad(i) {
+                    K::set(&mut b.fault, r, true);
+                    return;
+                }
+                if !K::get(&f.bits, i) {
+                    continue;
+                }
+            }
+            if fold == Fold::Count {
+                b.mant[r] += 1;
+                continue;
+            }
+            let Some((v, vr)) = value else {
                 K::set(&mut b.fault, r, true);
+                return;
+            };
+            if matches!(fold, Fold::Any | Fold::All | Fold::None) && b.codes[r] != 0 {
+                match filter {
+                    Some(_) => continue,
+                    None => return,
+                }
+            }
+            if !v.ok(i) || v.bad(i) {
+                K::set(&mut b.fault, r, true);
+                return;
+            }
+            match fold {
+                Fold::Any | Fold::All | Fold::None => {
+                    let bit = K::get(&v.bits, i);
+                    if bit != (fold == Fold::All) {
+                        b.codes[r] = 1;
+                        K::set(&mut b.bits, r, fold == Fold::Any);
+                    }
+                }
+                Fold::One => b.mant[r] += i64::from(K::get(&v.bits, i)),
+                Fold::Min | Fold::Max => {
+                    let x = v.num(vr, i);
+                    let take = b.codes[r] == 0 || {
+                        let order = x.compare(b.num(rep, r));
+                        match fold {
+                            Fold::Min => order == Ordering::Less,
+                            _ => order != Ordering::Less,
+                        }
+                    };
+                    if take {
+                        b.keep(rep, r, x);
+                    }
+                    b.codes[r] = 1;
+                }
+                _ => match b.num(rep, r).arith(Arith::Add, v.num(vr, i)) {
+                    Ok(Some(x)) => {
+                        b.keep(rep, r, x);
+                        b.codes[r] = b.codes[r].saturating_add(1);
+                    }
+                    _ => {
+                        K::set(&mut b.fault, r, true);
+                        return;
+                    }
+                },
             }
         }
     }
@@ -1190,7 +1661,7 @@ impl<'e, 'x> Exec<'e, 'x> {
         (keep, bad)
     }
 
-    fn sum_dyn(&self, b: &mut Buf, l: &Lists, filter: Option<&Reg>, v: &Reg) {
+    fn sum_dyn(&self, b: &mut Buf, l: &Lists, filter: Option<&Reg>, value: Option<(&Reg, Rep)>, v: &Reg) {
         let (n, s0) = (self.n, self.start);
         let s1 = s0 + n;
         let (r0, r1) = (l.parent[s0] as usize, l.parent[s1 - 1] as usize);
@@ -1215,10 +1686,12 @@ impl<'e, 'x> Exec<'e, 'x> {
                 s = if k { t } else { s };
                 o |= k & f;
             }
-            b.mant[r] = m;
-            b.scale[r] = s;
-            if o {
-                K::set(&mut b.fault, r, true);
+            match o {
+                true => self.tally(Fold::Sum, b, r, lo..hi, filter, value),
+                false => {
+                    b.mant[r] = m;
+                    b.scale[r] = s;
+                }
             }
         }
     }
@@ -1248,6 +1721,16 @@ impl<'e, 'x> Exec<'e, 'x> {
         match rep {
             Rep::Null => s.valid[w0..w0 + words].fill(0),
             _ => s.valid[w0..w0 + words].copy_from_slice(&r.valid[..words]),
+        }
+        if rep.num() && r.widened(words) {
+            for w in 0..words {
+                let mut m = r.wide[w] & r.valid[w] & !r.fault[w] & self.tail(w);
+                while m != 0 {
+                    let i = w * 64 + m.trailing_zeros() as usize;
+                    m &= m - 1;
+                    s.wide.push((start + i, r.big.get(i).copied().unwrap_or_default()));
+                }
+            }
         }
         let parent = match scope {
             Scope::Row => None,

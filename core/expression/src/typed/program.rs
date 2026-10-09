@@ -119,6 +119,7 @@ impl Program {
             let plan = self.plan(&machine.sig);
             machine.exec(&plan, &feeds, out, select);
         });
+        feeds.prefaults(out, select);
         Ok(())
     }
 
@@ -204,9 +205,11 @@ impl Machine {
         for (buf, def) in bufs.iter_mut().zip(&plan.defs) {
             let len = feeds.len(def.scope);
             buf.sized(len);
-            if let Some(list) = def.fold {
+            if let Some((list, _, _)) = def.fold {
                 buf.mant.fill(0);
                 buf.scale.fill(0);
+                buf.codes.fill(0);
+                buf.bits.fill(0);
                 buf.fault.fill(0);
                 buf.valid.fill(u64::MAX);
                 if let Some(null) = feeds.lists.get(list as usize).and_then(|l| l.null.as_ref()) {
@@ -216,7 +219,7 @@ impl Machine {
                 }
             }
         }
-        for stage in &plan.stages {
+        for (at, stage) in plan.stages.iter().enumerate() {
             let len = feeds.len(stage.scope);
             let mut start = 0;
             while start < len {
@@ -224,6 +227,11 @@ impl Machine {
                 let exec = Exec { feeds, select, start, n, words: K::words(n) };
                 exec.run(&stage.code, regs, bufs, scratch, stack, out);
                 start += Reg::LANES;
+            }
+            for (buf, def) in bufs.iter_mut().zip(&plan.defs) {
+                if let (Some((_, fold, rep)), true) = (def.fold, def.stage == at) {
+                    buf.finish(fold, rep);
+                }
             }
         }
     }

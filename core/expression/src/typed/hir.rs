@@ -43,6 +43,8 @@ pub enum Arith {
     Sub,
     Mul,
     Div,
+    Rem,
+    Pow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -59,6 +61,13 @@ pub enum Cmp {
 pub enum Fold {
     Sum,
     Count,
+    Any,
+    All,
+    None,
+    One,
+    Min,
+    Max,
+    Avg,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +75,13 @@ pub enum Func {
     StartsWith,
     EndsWith,
     Len,
+    Abs,
+    Floor,
+    Ceil,
+    Round(u8),
+    Trunc(u8),
+    Min,
+    Max,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -242,6 +258,18 @@ impl Op {
             Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
             Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
         }
+    }
+}
+
+impl Fold {
+    pub fn quantifier(self) -> bool {
+        matches!(self, Fold::Any | Fold::All | Fold::None | Fold::One)
+    }
+}
+
+impl Func {
+    pub fn text(self) -> bool {
+        matches!(self, Func::StartsWith | Func::EndsWith | Func::Len)
     }
 }
 

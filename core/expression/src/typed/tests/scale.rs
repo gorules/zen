@@ -1,3 +1,4 @@
+use crate::typed::build::Passes;
 use crate::typed::tests::data::{ColSpec, Enc, Frame, ListSpec, Mock, Row, Spec, Value};
 use crate::typed::tests::oracle::{Oracle, Val};
 use crate::typed::tests::workload::{Block, Dialect, Workload};
@@ -37,7 +38,7 @@ impl Case {
                     out.slots()
                         .iter()
                         .map(|s| match (&s.data, s.scope) {
-                            (Data::Num { .. }, Scope::Row) => s.num(r).map_or("null".to_string(), |d| d.to_string()),
+                            (Data::Num { .. }, Scope::Row) => s.decimal(r).map_or("null".to_string(), |d| d.to_string()),
                             (Data::Bool(_), Scope::Row) => s.boolean(r).map_or("null".to_string(), |b| b.to_string()),
                             _ => "?".to_string(),
                         })
@@ -181,21 +182,19 @@ fn dyn_sums_match_vm() {
     assert_eq!(out[0].as_deref(), Some(&["7", "7"].map(String::from)[..]));
     assert_eq!(out[1].as_deref(), Some(&["0.000", "0.000"].map(String::from)[..]));
     assert_eq!(out[2].as_deref(), Some(&["0.0", "0.000"].map(String::from)[..]));
-    assert_eq!(out[3], None);
+    assert_eq!(out[3].as_deref(), Some(&["9223372036854775807.01", "9223372036854775807.01"].map(String::from)[..]));
 }
 
 #[test]
-fn negating_zero_faults() {
-    let case = Case::new(Case::nums(&["a"], Enc::Scaled), &[("x.neg", "-a"), ("x.lit", "-(a * 0)")]);
-    let out = case.check(&[Case::row(&[Case::d(5, 1)]), Case::row(&[Case::d(0, 2)])]);
-    assert!(out[0].is_none());
-    assert!(out[1].is_none());
-    let out = case.check(&[Case::row(&[Case::d(5, 1)])]);
-    assert!(out[0].is_none());
+fn negating_zero_is_exact() {
+    let case = Case::new(Case::nums(&["a"], Enc::Scaled), &[("x.neg", "-a"), ("x.lit", "-(a * 0)"), ("x.sum", "-a + 1")]);
+    let out = case.check(&[Case::row(&[Case::d(5, 1)]), Case::row(&[Case::d(0, 2)]), Case::row(&[Case::d(i64::MIN, 0)])]);
+    assert!(out.iter().all(Option::is_some), "{out:?}");
+    assert_eq!(out[2].as_ref().map(|v| v[0].as_str()), Some("9223372036854775808"));
     let case = Case::new(Case::nums(&["a"], Enc::Scaled), &[("x.neg", "-a")]);
     let out = case.check(&[Case::row(&[Case::d(5, 1)]), Case::row(&[Case::d(0, 2)]), Case::row(&[Value::Null])]);
     assert_eq!(out[0].as_deref(), Some(&["-0.5".to_string()][..]));
-    assert!(out[1].is_none());
+    assert!(out[1].is_some());
     assert!(out[2].is_none());
 }
 
@@ -228,7 +227,7 @@ fn member_outputs_with_offset_lists() {
             let Val::List(fees) = &want[0] else {
                 panic!("fee list");
             };
-            let got: Vec<String> = frame.range(0, r).map(|e| out.slots()[0].num(e).map_or("null".to_string(), |d| d.to_string())).collect();
+            let got: Vec<String> = frame.range(0, r).map(|e| out.slots()[0].decimal(e).map_or("null".to_string(), |d| d.to_string())).collect();
             assert_eq!(got, fees.iter().map(Val::to_string).collect::<Vec<_>>(), "shift {shift} row {r}");
         }
     }
@@ -264,7 +263,7 @@ fn rules_fault_strictly() {
         let mut lowering = Lowering::new(None);
         lowering.table(&table, &mut Mock { spec: &spec, member: None }).expect("lowering");
         let hir = lowering.finish();
-        let program = Program::new(hir.clone()).expect("program");
+        let looked = Passes { lookup_min: 1, ..Passes::ALL };
         let rows = [
             Case::row(&[Case::d(20, 0), Value::Str("gold".into())]),
             Case::row(&[Case::d(5, 0), Value::Str("silver".into())]),
@@ -272,15 +271,17 @@ fn rules_fault_strictly() {
             Case::row(&[Case::d(20, 0), Value::Null]),
             Case::row(&[Case::d(20, 0), Value::Str("bronze".into())]),
         ];
-        let frame = Frame::new(&hir, &spec, &rows, 0);
-        let mut out = program.outputs();
-        program.run(&frame.batch(), &mut out, None).expect("run");
-        let got: Vec<String> = (0..rows.len())
-            .map(|r| if out.faults().get(r) { "fault".to_string() } else { out.slots()[0].num(r).map_or("null".to_string(), |d| d.to_string()) })
-            .collect();
-        match hit {
-            Hit::Strict => assert_eq!(got, ["1", "2", "fault", "3", "3"]),
-            Hit::Lenient => assert_eq!(got, ["1", "2", "2", "3", "3"]),
+        for program in [Program::new(hir.clone()).expect("program"), Program::with(hir.clone(), looked).expect("program")] {
+            let frame = Frame::new(&hir, &spec, &rows, 0);
+            let mut out = program.outputs();
+            program.run(&frame.batch(), &mut out, None).expect("run");
+            let got: Vec<String> = (0..rows.len())
+                .map(|r| if out.faults().get(r) { "fault".to_string() } else { out.slots()[0].decimal(r).map_or("null".to_string(), |d| d.to_string()) })
+                .collect();
+            match hit {
+                Hit::Strict => assert_eq!(got, ["1", "2", "fault", "3", "3"]),
+                Hit::Lenient => assert_eq!(got, ["1", "2", "2", "3", "3"]),
+            }
         }
     }
 }
@@ -313,7 +314,7 @@ fn programs_share_across_threads() {
                             .slots()
                             .iter()
                             .map(|s| match &s.data {
-                                Data::Num { .. } => s.num(r).map_or(Val::Null, |d| Val::Num(d.decimal())),
+                                Data::Num { .. } => s.decimal(r).map_or(Val::Null, Val::Num),
                                 Data::Bool(_) => s.boolean(r).map_or(Val::Null, Val::Bool),
                                 Data::Code(_) => s.code(r).zip(s.dict()).map_or(Val::Null, |(c, d)| Val::Str(hir.dict(d).text(c).unwrap_or("?").to_string())),
                             })
@@ -333,4 +334,20 @@ fn signature_cap_falls_back_to_generic() {
         let rows: Vec<Row> = (0..40).map(|i| Case::row(&[Case::d(i * 7 - 100, scale), Case::d(i % 5, 2)])).collect();
         case.check(&rows);
     }
+}
+
+#[test]
+fn wide_lanes_stay_exact() {
+    let blocks = [("x.third", "a / 3"), ("x.round", "round(a / 3, 2)"), ("x.big", "a * 1000000000"), ("x.back", "a * 1000000000 / 1000000000"), ("x.cmp", "a / 3 > b")];
+    let case = Case::new(Case::nums(&["a", "b"], Enc::Scaled), &blocks);
+    let rows: Vec<Row> = [(10, 0), (i64::MAX, 0), (-7, 2), (0, 3), (1, 28), (i64::MIN, 0)].iter().map(|(m, s)| Case::row(&[Case::d(*m, *s), Case::d(3, 0)])).collect();
+    let out = case.check(&rows);
+    assert!(out.iter().all(Option::is_some), "{out:?}");
+    assert_eq!(out[0].as_ref().map(|v| v[0].as_str()), Some("3.3333333333333333333333333333"));
+    assert_eq!(out[0].as_ref().map(|v| v[1].as_str()), Some("3.33"));
+    let frame = Frame::new(&case.hir, &case.workload.spec, &rows, 0);
+    let mut out = case.program.outputs();
+    case.program.run(&frame.batch(), &mut out, None).expect("run");
+    assert!(!out.slots()[0].wide.is_empty());
+    assert!(!out.slots()[2].wide.is_empty());
 }

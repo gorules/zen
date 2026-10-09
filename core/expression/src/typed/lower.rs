@@ -304,7 +304,10 @@ impl Lowering {
             });
         }
         let total = conds.iter().any(|c| self.nodes[*c as usize].op == Op::Const(Lit::Bool(true)));
-        let (scope, conds) = self.scoped(&conds)?;
+        let (scope, conds) = match self.member {
+            Some(_) => (ctx.scope, conds.iter().map(|c| self.parent(*c, ctx.scope)).collect::<Result<Vec<_>, _>>()?),
+            None => self.scoped(&conds)?,
+        };
         let sel = self.add(Op::FirstMatch { conds, strict: spec.hit == Hit::Strict }, Ty::num(Some(0)), scope);
         let mut picks = Vec::with_capacity(spec.outputs.len());
         for at in 0..spec.outputs.len() {
@@ -732,7 +735,8 @@ impl Lowering {
                     ArithmeticOperator::Subtract => Arith::Sub,
                     ArithmeticOperator::Multiply => Arith::Mul,
                     ArithmeticOperator::Divide => Arith::Div,
-                    other => return Err(Unsupported::new(format!("arithmetic {other}"))),
+                    ArithmeticOperator::Modulus => Arith::Rem,
+                    ArithmeticOperator::Power => Arith::Pow,
                 };
                 let a = self.expr(left, ctx, r)?;
                 let b = self.expr(right, ctx, r)?;
@@ -792,7 +796,9 @@ impl Lowering {
         let ty = match op {
             Arith::Add | Arith::Sub => Ty::num(sa.filter(|x| sb == Some(*x))),
             Arith::Mul => Ty::num((sa == Some(0) && sb == Some(0)).then_some(0)),
-            Arith::Div => Ty::new(Kind::Num(None), divisor.is_none_or(|d| d.is_zero())),
+            Arith::Div | Arith::Rem => Ty::new(Kind::Num(None), divisor.is_none_or(|d| d.is_zero())),
+            Arith::Pow if divisor.is_some_and(|d| d.scale == 0) => Ty::num(None),
+            Arith::Pow => return Err(Unsupported::new("exponent must be an integer literal")),
         };
         let (scope, ids) = self.scoped(&[a, b])?;
         Ok(self.add(Op::Arith(op, ids[0], ids[1]), ty, scope))
@@ -981,7 +987,7 @@ impl Lowering {
 
     fn call(&mut self, kind: &FunctionKind, args: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         match (kind, args) {
-            (FunctionKind::Internal(InternalFunction::Sum), [arg]) => {
+            (FunctionKind::Internal(InternalFunction::Sum), [arg]) if !matches!(arg, Ast::Array(_)) => {
                 let Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map), arguments: [source, body] } = arg else {
                     return Err(Unsupported::new("sum over something other than map(...)"));
                 };
@@ -1015,8 +1021,120 @@ impl Lowering {
                 let (scope, ids) = self.scoped(&[a, b])?;
                 Ok(self.add(Op::Call(func, ids), Ty::boolean(), scope))
             }
+            (FunctionKind::Internal(InternalFunction::Bool), [arg]) => {
+                let a = self.expr(arg, ctx, r)?;
+                match self.ty(a) {
+                    Ty { kind: Kind::Bool, nullable: false } => Ok(a),
+                    Ty { kind: Kind::Bool, nullable: true } => {
+                        let no = self.konst(Lit::Bool(false));
+                        let (scope, ids) = self.scoped(&[a, no])?;
+                        Ok(self.add(Op::Coalesce(ids[0], ids[1]), Ty::boolean(), scope))
+                    }
+                    Ty { kind: Kind::Null, .. } => Ok(self.konst(Lit::Bool(false))),
+                    ty => Err(Unsupported::new(format!("bool of {ty}"))),
+                }
+            }
+            (FunctionKind::Internal(f @ (InternalFunction::Abs | InternalFunction::Floor | InternalFunction::Ceil)), [arg]) => {
+                let a = self.expr(arg, ctx, r)?;
+                let Kind::Num(scale) = self.kind(a) else {
+                    return Err(Unsupported::new(format!("{f:?} of {}", self.ty(a))));
+                };
+                let (func, ty) = match f {
+                    InternalFunction::Abs => (Func::Abs, Ty::num(scale)),
+                    InternalFunction::Floor => (Func::Floor, Ty::num(Some(0))),
+                    _ => (Func::Ceil, Ty::num(Some(0))),
+                };
+                self.math(func, vec![a], ty)
+            }
+            (FunctionKind::Internal(f @ (InternalFunction::Round | InternalFunction::Trunc)), [arg, rest @ ..]) => {
+                let a = self.expr(arg, ctx, r)?;
+                let Kind::Num(scale) = self.kind(a) else {
+                    return Err(Unsupported::new(format!("{f:?} of {}", self.ty(a))));
+                };
+                let places = match rest {
+                    [] => 0,
+                    [places] => {
+                        let p = self.expr(places, ctx, r)?;
+                        match self.lit(p) {
+                            Some(Lit::Num(d)) if d.scale == 0 && (0..=i64::from(Dec::MAX_SCALE)).contains(&d.mant) => d.mant as u8,
+                            _ => return Err(Unsupported::new("decimal places must be a small integer literal")),
+                        }
+                    }
+                    _ => return Err(Unsupported::new(format!("{f:?} arity"))),
+                };
+                let (func, ty) = match f {
+                    InternalFunction::Round => (Func::Round(places), Ty::num(scale.map(|s| s.min(places)))),
+                    _ => (Func::Trunc(places), Ty::num(Some(places))),
+                };
+                self.math(func, vec![a], ty)
+            }
+            (FunctionKind::Internal(f @ (InternalFunction::Min | InternalFunction::Max | InternalFunction::Avg | InternalFunction::Sum)), [Ast::Array(items)]) => {
+                if items.is_empty() {
+                    return Err(Unsupported::new("aggregate of an empty list"));
+                }
+                let mut args = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    let a = self.expr(item, ctx, r)?;
+                    self.require(a, |k| matches!(k, Kind::Num(_)), "aggregate item")?;
+                    args.push(a);
+                }
+                match f {
+                    InternalFunction::Min | InternalFunction::Max => {
+                        let first = self.kind(args[0]);
+                        let kind = match args.iter().all(|a| self.kind(*a) == first) {
+                            true => first,
+                            false => Kind::Num(None),
+                        };
+                        let func = if *f == InternalFunction::Min { Func::Min } else { Func::Max };
+                        self.math(func, args, Ty::new(kind, false))
+                    }
+                    _ => {
+                        let zero = self.konst(Lit::Num(Dec::ZERO));
+                        let mut acc = zero;
+                        for a in &args {
+                            acc = self.arith(Arith::Add, acc, *a)?;
+                        }
+                        match f {
+                            InternalFunction::Sum => Ok(acc),
+                            _ => {
+                                let count = self.konst(Lit::Num(Dec::int(args.len() as i64)));
+                                self.arith(Arith::Div, acc, count)
+                            }
+                        }
+                    }
+                }
+            }
+            (FunctionKind::Internal(f @ (InternalFunction::Min | InternalFunction::Max | InternalFunction::Avg)), [arg]) => {
+                let Ast::FunctionCall { kind: FunctionKind::Closure(ClosureFunction::Map), arguments: [source, body] } = arg else {
+                    return Err(Unsupported::new(format!("{f:?} over something other than map(...)")));
+                };
+                let (list, filter) = self.source(source, ctx, r)?;
+                let body = Self::closure(body)?;
+                let fold = match f {
+                    InternalFunction::Min => Fold::Min,
+                    InternalFunction::Max => Fold::Max,
+                    _ => Fold::Avg,
+                };
+                self.fold(fold, list, filter, Some(body), r)
+            }
+            (FunctionKind::Closure(c @ (ClosureFunction::Some | ClosureFunction::All | ClosureFunction::None | ClosureFunction::One)), [source, body]) => {
+                let (list, filter) = self.source(source, ctx, r)?;
+                let body = Self::closure(body)?;
+                let fold = match c {
+                    ClosureFunction::Some => Fold::Any,
+                    ClosureFunction::All => Fold::All,
+                    ClosureFunction::None => Fold::None,
+                    _ => Fold::One,
+                };
+                self.fold(fold, list, filter, Some(body), r)
+            }
             (kind, _) => Err(Unsupported::new(format!("function {kind:?}"))),
         }
+    }
+
+    fn math(&mut self, func: Func, args: Vec<NodeId>, ty: Ty) -> Lowered {
+        let (scope, ids) = self.scoped(&args)?;
+        Ok(self.add(Op::Call(func, ids), ty, scope))
     }
 
     fn closure<'a>(ast: &'a Ast<'a>) -> Result<&'a Ast<'a>, Unsupported> {
@@ -1079,13 +1197,19 @@ impl Lowering {
         let value = match value {
             Some(ast) => {
                 let id = self.expr(ast, inner, r)?;
-                self.require(id, |k| matches!(k, Kind::Num(_)), "sum value")?;
+                match fold.quantifier() {
+                    true => self.require(id, |k| k == Kind::Bool, "predicate")?,
+                    false => self.require(id, |k| matches!(k, Kind::Num(_)), "fold value")?,
+                }
                 Some(self.parent(id, scope)?)
             }
             None => None,
         };
         let ty = match (fold, value) {
             (Fold::Sum, Some(v)) => Ty::num((self.kind(v) == Kind::Num(Some(0))).then_some(0)),
+            (Fold::Min | Fold::Max, Some(v)) => Ty::new(self.kind(v), false),
+            (Fold::Avg, _) => Ty::num(None),
+            (Fold::Any | Fold::All | Fold::None | Fold::One, _) => Ty::boolean(),
             _ => Ty::num(Some(0)),
         };
         Ok(self.add(Op::Fold { fold, list, filter, value }, ty, Scope::Row))

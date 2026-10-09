@@ -1,4 +1,5 @@
 use crate::typed::hir::{Arith, Cmp, Fold, Func, Lit, NodeId, Range, Scope, Unsupported};
+use crate::typed::lookup::Lookup;
 use crate::typed::num::Dec;
 use std::fmt;
 
@@ -48,11 +49,11 @@ pub(crate) enum Ins {
     Gather { dst: R, buf: u16, list: u16, rep: Rep },
     Fill { dst: R, buf: u16, rep: Rep },
     Spill { src: R, buf: u16, rep: Rep },
-    Fix { op: FixOp, dst: R, a: R, b: R },
+    Fix { op: FixOp, dst: R, a: R, b: R, rep: Rep },
     Neg { dst: R, a: R, rep: Rep },
     Num { op: Arith, dst: R, a: R, ra: Rep, b: R, rb: Rep },
     DivPow { dst: R, a: R, ra: Rep, k: u32, by: u8 },
-    CmpFix { op: Cmp, dst: R, a: R, b: R },
+    CmpFix { op: Cmp, dst: R, a: R, b: R, rep: Rep },
     CmpGen { op: Cmp, dst: R, a: R, ra: Rep, b: R, rb: Rep },
     CmpNum { op: Cmp, dst: R, a: R, ra: Rep, b: R, rb: Rep },
     CmpNumK { op: Cmp, dst: R, a: R, ra: Rep, k: Dec, tab: Vec<i64>, fits: u32 },
@@ -63,7 +64,7 @@ pub(crate) enum Ins {
     EqText { ne: bool, dst: R, a: Arg, b: Arg },
     InCode { dst: R, a: R, set: u64, null: bool },
     InGen { dst: R, a: R, ra: Rep, set: Vec<Lit> },
-    InRangeFix { dst: R, a: R, lo: i64, span: u64, empty: bool },
+    InRangeFix { dst: R, a: R, lo: i64, span: u64, empty: bool, range: Range },
     InRangeGen { dst: R, a: R, ra: Rep, range: Range },
     Not { dst: R, a: R },
     And { dst: R, a: R, b: R },
@@ -71,10 +72,12 @@ pub(crate) enum Ins {
     Blend { dst: R, c: R, t: R, rt: Rep, e: R, re: Rep, rep: Rep },
     Coalesce { dst: R, a: R, ra: Rep, b: R, rb: Rep, rep: Rep },
     First { dst: R, conds: Vec<R>, sel: bool, strict: bool },
+    Lookup { dst: R, keys: Vec<Option<(R, Rep)>>, tab: Box<Lookup> },
     Pick { dst: R, sel: R, arms: Vec<(R, Rep, Vec<u16>)>, rep: Rep },
     Skip { guard: Guard, len: u32 },
     Fold { fold: Fold, buf: u16, list: u16, filter: Option<R>, value: Option<(R, Rep)> },
     Text { func: Func, dst: R, a: Arg, b: Option<Arg> },
+    Math { func: Func, dst: R, args: Vec<(R, Rep)>, rep: Rep },
     Out { slot: u16, src: R, rep: Rep, scope: Scope },
 }
 
@@ -98,7 +101,8 @@ pub(crate) enum Arm {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BufDef {
     pub(crate) scope: Scope,
-    pub(crate) fold: Option<u16>,
+    pub(crate) fold: Option<(u16, Fold, Rep)>,
+    pub(crate) stage: usize,
 }
 
 impl Rep {
@@ -198,10 +202,22 @@ impl Ins {
                 f(a, false);
                 f(dst, true);
             }
+            Ins::Math { dst, args, .. } => {
+                for (a, _) in args.iter_mut() {
+                    f(a, false);
+                }
+                f(dst, true);
+            }
             Ins::Blend { dst, c, t, e, .. } => {
                 f(c, false);
                 f(t, false);
                 f(e, false);
+                f(dst, true);
+            }
+            Ins::Lookup { dst, keys, .. } => {
+                for (r, _) in keys.iter_mut().flatten() {
+                    f(r, false);
+                }
                 f(dst, true);
             }
             Ins::First { dst, conds, .. } => {

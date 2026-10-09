@@ -481,6 +481,7 @@ struct Run<'r, 'a> {
     runner: LaneRunner,
     host: Host<'r>,
     store: Store<'a>,
+    settled: bool,
 }
 
 impl<'a> Run<'_, 'a> {
@@ -617,6 +618,10 @@ impl<'a> Run<'_, 'a> {
                     self.store.slots[*out as usize] = Some(Leaf::Any(values.into()));
                 }
             }
+        }
+        if self.store.failed != seen {
+            live = self.alive(live, &mut seen);
+            positions = live.as_ref();
         }
         match &seg.end {
             SegEnd::Finish(refs) if matches!(refs.as_slice(), [(path, _)] if path.is_empty()) => {
@@ -864,10 +869,14 @@ impl<'a> Run<'_, 'a> {
         }
         let path = op.cost.path();
         let start = Instant::now();
+        let failed = self.store.failed;
         let typed = match path.0 {
             Path::Typed => self.lowered(seg, op, positions).map(|lowered| self.merged(seg, op, units, positions, lowered)).is_some(),
             Path::Lane => false,
         };
+        if typed {
+            op.cost.failing(self.store.failed.saturating_sub(failed), local);
+        }
         if !typed {
             self.laned(seg, units, positions);
         }
@@ -923,7 +932,9 @@ impl<'a> Run<'_, 'a> {
                 take.iter_mut().for_each(|word| *word = 0);
                 if !rerun.is_empty() {
                     let rerun: Rc<[usize]> = rerun.into();
+                    self.settled = false;
                     self.unit(seg, unit, Some(&rerun));
+                    self.settled = true;
                     rerun.iter().filter(|&&row| self.store.errors[row].is_none()).for_each(|&row| Bits::set(&mut take, row, true));
                 }
                 faulted = !Bits::none(&take);
@@ -1712,11 +1723,11 @@ impl<'a> Run<'_, 'a> {
             };
             columns = columns.column(key.as_ref(), view);
         }
-        let program = op
-            .specialized
-            .get_or_init(|| program.specialize_columns(&columns).ok())
-            .as_ref()
-            .unwrap_or(program);
+        let program = match (op.specialized.get(), self.settled) {
+            (Some(special), _) => special.as_ref().unwrap_or(program),
+            (None, true) => op.specialized.get_or_init(|| program.specialize_columns(&columns).ok()).as_ref().unwrap_or(program),
+            (None, false) => program,
+        };
         let scopes = Bound::blank(rows);
         let mut outs = Outs::take();
         let mut failures: Vec<(usize, usize)> = Vec::new();
@@ -2298,6 +2309,7 @@ impl Plan {
                 max_depth,
             },
             store,
+            settled: true,
         };
         let done = run.walk(root.clone()).await;
         let Run { runner, store, .. } = run;

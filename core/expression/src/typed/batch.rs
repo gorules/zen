@@ -2,6 +2,8 @@ use crate::lane::{Column, Values};
 use crate::typed::hir::{ColumnDef, Dict, Hir, Kind, Unsupported};
 use crate::typed::kernel::K;
 use crate::typed::num::Dec;
+use crate::typed::output::Outputs;
+use rust_decimal::Decimal;
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, Default)]
@@ -44,6 +46,7 @@ pub(crate) struct Feed<'x> {
     pub(crate) validity: Option<(&'x [u64], usize)>,
     pub(crate) holes: Option<Vec<u64>>,
     pub(crate) faults: Option<Vec<u64>>,
+    pub(crate) wide: Option<(Vec<u64>, Vec<(usize, Decimal)>)>,
     pub(crate) fixed: Option<u8>,
 }
 
@@ -178,7 +181,7 @@ impl<'x> Feed<'x> {
     }
 
     fn new(data: Data<'x>, validity: Option<(&'x [u64], usize)>) -> Self {
-        Self { data, validity, holes: None, faults: None, fixed: None }
+        Self { data, validity, holes: None, faults: None, wide: None, fixed: None }
     }
 
     fn fault(&mut self, at: usize, len: usize) {
@@ -213,19 +216,21 @@ impl<'x> Feed<'x> {
             (Kind::Num(_), Values::Dec(values)) => {
                 let mut mant = Vec::with_capacity(len);
                 let mut scale = Vec::with_capacity(len);
-                let mut bad = Vec::new();
+                let mut wide: Vec<(usize, Decimal)> = Vec::new();
                 for (i, d) in values[base..base + len].iter().enumerate() {
                     let parts = Dec::from_decimal(d);
                     if parts.is_none() && column.valid(base + i) {
-                        bad.push(i);
+                        wide.push((i, *d));
                     }
                     let p = parts.unwrap_or(Dec::ZERO);
                     mant.push(p.mant);
                     scale.push(p.scale);
                 }
                 let mut feed = Self::new(Data::Num { mant: Cow::Owned(mant), scale: Scales::Each(Cow::Owned(scale)) }, validity);
-                for i in bad {
-                    feed.fault(i, len);
+                if !wide.is_empty() {
+                    let mut bits = vec![0u64; K::words(len)];
+                    wide.iter().for_each(|(i, _)| K::set(&mut bits, *i, true));
+                    feed.wide = Some((bits, wide));
                 }
                 feed.scan(len)
             }
@@ -321,14 +326,15 @@ impl<'x> Feed<'x> {
         };
         let mut fixed: Option<u8> = None;
         let mut mixed = false;
-        let plain = self.validity.is_none() && self.holes.is_none() && self.faults.is_none();
+        let plain = self.validity.is_none() && self.holes.is_none() && self.faults.is_none() && self.wide.is_none();
         if plain && !each.is_empty() {
             let s = each[0];
             fixed = Some(s);
             mixed = each.iter().fold(0u8, |acc, x| acc | (x ^ s)) != 0;
         }
         for (w, chunk) in each.chunks(64).enumerate().filter(|_| !plain) {
-            let mut valid = self.valid_word(w * 64, chunk.len()) & !self.fault_word(w);
+            let wide = self.wide.as_ref().map_or(0, |(bits, _)| bits.get(w).copied().unwrap_or(0));
+            let mut valid = self.valid_word(w * 64, chunk.len()) & !self.fault_word(w) & !wide;
             if valid == 0 {
                 continue;
             }
@@ -377,7 +383,7 @@ impl<'x> Feed<'x> {
             },
             _ => vec![matcher.other; len],
         };
-        Feed { data: Data::Codes(codes), validity: self.validity, holes: self.holes.clone(), faults: self.faults.clone(), fixed: None }
+        Feed { data: Data::Codes(codes), validity: self.validity, holes: self.holes.clone(), faults: self.faults.clone(), wide: None, fixed: None }
     }
 }
 
@@ -491,6 +497,33 @@ impl<'x> Feeds<'x> {
             feeds.classes.push(class);
         }
         Ok(feeds)
+    }
+
+    pub(crate) fn prefaults(&self, out: &mut Outputs, select: Option<&[u64]>) {
+        let mut rows: Vec<usize> = Vec::new();
+        for feed in &self.columns {
+            if let Some(faults) = &feed.faults {
+                rows.extend((0..self.rows).filter(|&r| K::get(faults, r)));
+            }
+        }
+        for (list, feeds) in self.lists.iter().zip(&self.fields) {
+            for feed in feeds {
+                if let Some(faults) = &feed.faults {
+                    rows.extend((0..list.len()).filter(|&e| K::get(faults, e)).map(|e| list.parent[e] as usize));
+                }
+            }
+        }
+        rows.retain(|&r| select.is_none_or(|sel| K::get(sel, r)));
+        if rows.is_empty() {
+            return;
+        }
+        let (slots, faults) = out.parts();
+        for &row in &rows {
+            faults.set(row);
+            for slot in slots.iter_mut() {
+                slot.fault.set(row);
+            }
+        }
     }
 
     pub(crate) fn sig(&self, hir: &Hir, into: &mut Vec<Option<u8>>) {

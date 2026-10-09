@@ -1,13 +1,15 @@
 use crate::typed::batch::{Data, Feed, Feeds};
 use crate::typed::kernel::K;
+use crate::typed::num::Exact;
 use crate::typed::tests::oracle::Val;
-use crate::typed::{Arith, Cmp, Dec, Fold, Func, Hir, Kind, Lit, NodeId, Op, Scope};
+use crate::typed::{Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Range, Scope};
+use rust_decimal::Decimal;
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum V<'a> {
     Null,
-    Num(Dec),
+    Num(Decimal),
     Bool(bool),
     Code(i32),
     Text(&'a [u8]),
@@ -67,7 +69,7 @@ impl<'a, 'x> Interp<'a, 'x> {
     fn val(&self, v: V, kind: Kind) -> Val {
         match (v, kind) {
             (V::Null, _) => Val::Null,
-            (V::Num(d), _) => Val::Num(d.decimal()),
+            (V::Num(d), _) => Val::Num(d),
             (V::Bool(b), _) => Val::Bool(b),
             (V::Code(c), Kind::Code(d)) => self.hir.dict(d).text(c).map_or(Val::Other(format!("code {c}")), |t| Val::Str(t.to_string())),
             (V::Code(c), _) => Val::Other(format!("code {c}")),
@@ -100,8 +102,13 @@ impl<'a, 'x> Interp<'a, 'x> {
         if !feed.valid(i) {
             return Ok(V::Null);
         }
+        if let Some((bits, values)) = &feed.wide {
+            if K::get(bits, i) {
+                return Ok(values.binary_search_by_key(&i, |(at, _)| *at).map_or(V::Null, |at| V::Num(values[at].1)));
+            }
+        }
         Ok(match &feed.data {
-            Data::Num { .. } => feed.num(i).map_or(V::Null, V::Num),
+            Data::Num { .. } => feed.num(i).map_or(V::Null, |d| V::Num(d.decimal())),
             Data::Bool { bits, offset } => V::Bool(K::get(bits, offset + i)),
             Data::Codes(codes) => V::Code(codes[i]),
             Data::Text(text) => text.get(i).map_or(V::Null, V::Text),
@@ -111,7 +118,7 @@ impl<'a, 'x> Interp<'a, 'x> {
     fn lit(lit: &'a Lit) -> V<'a> {
         match lit {
             Lit::Null => V::Null,
-            Lit::Num(d) => V::Num(*d),
+            Lit::Num(d) => V::Num(d.decimal()),
             Lit::Bool(b) => V::Bool(*b),
             Lit::Code(_, c) => V::Code(*c),
             Lit::Text(t) => V::Text(t.as_bytes()),
@@ -119,10 +126,14 @@ impl<'a, 'x> Interp<'a, 'x> {
     }
 
     fn equal(a: V, b: V) -> bool {
-        match (a, b) {
-            (V::Num(x), V::Num(y)) => x.eq_value(y),
-            (x, y) => x == y,
-        }
+        a == b
+    }
+
+    fn within(x: Decimal, r: &Range) -> bool {
+        let (lo, hi) = (x.cmp(&r.lo.decimal()), x.cmp(&r.hi.decimal()));
+        let above = lo == Ordering::Greater || (r.lo_closed && lo == Ordering::Equal);
+        let below = hi == Ordering::Less || (r.hi_closed && hi == Ordering::Equal);
+        above && below
     }
 
     fn compute(&mut self, id: NodeId) -> R<'a> {
@@ -141,7 +152,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 _ => Ok(V::Null),
             },
             Op::Neg(a) => match self.eval(*a)? {
-                V::Num(d) => d.checked_neg().map(V::Num).map_err(|_| Fault),
+                V::Num(d) => Ok(V::Num(-d)),
                 _ => Err(Fault),
             },
             Op::Not(a) => match self.eval(*a)? {
@@ -153,13 +164,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 let (V::Num(x), V::Num(y)) = (x, y) else {
                     return Err(Fault);
                 };
-                let r = match op {
-                    Arith::Add => x.checked_add(y).map(Some),
-                    Arith::Sub => x.checked_sub(y).map(Some),
-                    Arith::Mul => x.checked_mul(y).map(Some),
-                    Arith::Div => x.checked_div(y),
-                };
-                match r {
+                match Exact::arith(*op, x, y) {
                     Ok(Some(q)) => Ok(V::Num(q)),
                     Ok(None) => Ok(V::Null),
                     Err(_) => Err(Fault),
@@ -174,7 +179,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                         let (V::Num(x), V::Num(y)) = (x, y) else {
                             return Err(Fault);
                         };
-                        let o = x.compare(y);
+                        let o = x.cmp(&y);
                         Ok(V::Bool(match op {
                             Cmp::Lt => o == Ordering::Less,
                             Cmp::Le => o != Ordering::Greater,
@@ -208,13 +213,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 Ok(V::Bool(set.iter().any(|lit| Self::equal(x, Self::lit(lit)))))
             }
             Op::InRange(a, r) => match self.eval(*a)? {
-                V::Num(x) => {
-                    let lo = x.compare(r.lo);
-                    let hi = x.compare(r.hi);
-                    let above = lo == Ordering::Greater || (r.lo_closed && lo == Ordering::Equal);
-                    let below = hi == Ordering::Less || (r.hi_closed && hi == Ordering::Equal);
-                    Ok(V::Bool(above && below))
-                }
+                V::Num(x) => Ok(V::Bool(Self::within(x, r))),
                 _ => Err(Fault),
             },
             Op::Fold { fold, list, filter, value } => {
@@ -225,8 +224,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 let range = l.offsets[self.row] as usize..l.offsets[self.row + 1] as usize;
                 let saved = (self.elem, std::mem::take(&mut self.elems));
                 self.elems = vec![None; hir.nodes.len()];
-                let mut acc = Dec::ZERO;
-                let mut count = 0i64;
+                let mut kept = Vec::new();
                 let mut result = Ok(());
                 for e in range {
                     self.elem = e;
@@ -241,43 +239,65 @@ impl<'a, 'x> Interp<'a, 'x> {
                             }
                         }
                     }
-                    count += 1;
-                    if let (Fold::Sum, Some(v)) = (fold, value) {
-                        match self.eval(*v) {
-                            Ok(V::Num(d)) => match acc.checked_add(d) {
-                                Ok(next) => acc = next,
-                                Err(_) => {
-                                    result = Err(Fault);
-                                    break;
-                                }
+                    kept.push(e);
+                }
+                let mut values = Vec::new();
+                let mut decided: Option<bool> = None;
+                let mut ones = 0;
+                if result.is_ok() && *fold != Fold::Count {
+                    for e in kept.iter().copied() {
+                        self.elem = e;
+                        self.elems.fill(None);
+                        let Some(v) = value else {
+                            result = Err(Fault);
+                            break;
+                        };
+                        match (fold, self.eval(*v)) {
+                            (Fold::Any | Fold::All | Fold::None | Fold::One, Ok(V::Bool(b))) => match fold {
+                                Fold::Any if b => decided = Some(true),
+                                Fold::All if !b => decided = Some(false),
+                                Fold::None if b => decided = Some(false),
+                                Fold::One => ones += i64::from(b),
+                                _ => {}
                             },
+                            (Fold::Sum | Fold::Min | Fold::Max | Fold::Avg, Ok(V::Num(d))) => values.push(d),
                             _ => {
                                 result = Err(Fault);
                                 break;
                             }
+                        }
+                        if decided.is_some() {
+                            break;
                         }
                     }
                 }
                 self.elem = saved.0;
                 self.elems = saved.1;
                 result?;
-                Ok(V::Num(match fold {
-                    Fold::Sum => acc,
-                    Fold::Count => Dec::int(count),
-                }))
+                let sum = || values.iter().try_fold(Decimal::ZERO, |acc, v| acc.checked_add(*v)).ok_or(Fault);
+                Ok(match fold {
+                    Fold::Count => V::Num(Decimal::from(kept.len())),
+                    Fold::Sum => V::Num(sum()?),
+                    Fold::Any => V::Bool(decided.unwrap_or(false)),
+                    Fold::All | Fold::None => V::Bool(decided.unwrap_or(true)),
+                    Fold::One => V::Bool(ones == 1),
+                    Fold::Min => V::Num(values.iter().copied().min().ok_or(Fault)?),
+                    Fold::Max => V::Num(values.iter().copied().max().ok_or(Fault)?),
+                    Fold::Avg => V::Num(sum()?.checked_div(Decimal::from(values.len())).ok_or(Fault)?),
+                })
             }
             Op::FirstMatch { conds, strict } => {
                 for (i, c) in conds.iter().enumerate() {
                     match (self.eval(*c), strict) {
-                        (Ok(V::Bool(true)), _) => return Ok(V::Num(Dec::int(i as i64))),
-                        (Ok(V::Bool(false)), _) | (Ok(_), false) => {}
-                        (Ok(_), true) | (Err(_), _) => return Err(Fault),
+                        (Ok(V::Bool(true)), _) => return Ok(V::Num(Decimal::from(i))),
+                        (Ok(V::Bool(false)), _) | (Ok(_), false) | (Err(_), false) => {}
+                        (Ok(_), true) | (Err(_), true) => return Err(Fault),
                     }
                 }
-                Ok(V::Num(Dec::int(conds.len() as i64)))
+                Ok(V::Num(Decimal::from(conds.len())))
             }
             Op::Pick(sel, arms) => match self.eval(*sel)? {
-                V::Num(d) => match usize::try_from(d.mant).ok().and_then(|i| arms.get(i)) {
+                V::Num(d) => match usize::try_from(d.mantissa()).ok().and_then(|i| arms.get(i)) {
                     Some(arm) => self.eval(*arm),
                     None => Ok(V::Null),
                 },
@@ -291,7 +311,10 @@ impl<'a, 'x> Interp<'a, 'x> {
                 match (func, vals.as_slice()) {
                     (Func::StartsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.starts_with(b))),
                     (Func::EndsWith, [V::Text(a), V::Text(b)]) => Ok(V::Bool(a.ends_with(b))),
-                    (Func::Len, [V::Text(a)]) => Ok(V::Num(Dec::int(a.len() as i64))),
+                    (Func::Len, [V::Text(a)]) => Ok(V::Num(Decimal::from(a.len()))),
+                    (Func::Min, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().min().map(V::Num).ok_or(Fault),
+                    (Func::Max, items) => items.iter().map(|v| if let V::Num(d) = v { Ok(*d) } else { Err(Fault) }).collect::<Result<Vec<_>, _>>()?.into_iter().max().map(V::Num).ok_or(Fault),
+                    (func, [V::Num(d)]) => Ok(V::Num(Exact::func(*func, *d))),
                     _ => Err(Fault),
                 }
             }

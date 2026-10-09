@@ -299,7 +299,11 @@ fn unsupported_shapes() {
         ("unsupported path", "c.weird + 1"),
         ("null arithmetic", "c.absent + 1"),
         ("function", "string(c.n)"),
-        ("modulo", "c.n % 2"),
+        ("variable exponent", "c.n ^ c.n"),
+        ("fractional exponent", "c.n ^ 0.5"),
+        ("round to variable places", "round(c.n, c.n)"),
+        ("bool of a number", "bool(c.n)"),
+        ("min of nothing", "min([])"),
         ("closure over a column", "sum(map(c.n, #))"),
     ];
     for (what, source) in cases {

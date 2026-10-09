@@ -2,6 +2,7 @@ use crate::compiled::typed::{Array, Bits, Dict, Leaf, Store};
 use std::rc::Rc;
 use std::sync::OnceLock;
 use zen_expression::typed::{Data, Hir, Outputs, Slot};
+use zen_expression::Variable;
 
 pub(crate) struct Exports {
     dicts: Vec<(Vec<i32>, String)>,
@@ -48,6 +49,9 @@ impl Exports {
         let len = slot.len;
         let dict = slot.dict();
         let array = match &slot.data {
+            Data::Num { .. } if !slot.wide.is_empty() => {
+                return Leaf::Any((0..len).map(|at| slot.decimal(at).map_or(Variable::Null, Variable::Number)).collect());
+            }
             Data::Num { .. } => match slot.take_num() {
                 Some((mut mant, mut scale, valid)) => {
                     let valid = Self::validity(valid, len);

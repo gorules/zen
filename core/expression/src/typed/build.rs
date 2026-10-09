@@ -1,6 +1,7 @@
-use crate::typed::hir::{Arith, Cmp, Fold, Hir, Kind, Lit, NodeId, Op, Scope, Unsupported};
+use crate::typed::hir::{Arith, Cmp, Fold, Func, Hir, Kind, Lit, NodeId, Op, Scope, Unsupported};
 use crate::typed::ins::{Arg, Arm, BufDef, FixOp, Guard, Ins, Rep, Src, Tab, R};
 use crate::typed::kernel::K;
+use crate::typed::lookup::Lookup;
 use crate::typed::num::Dec;
 use std::collections::HashMap;
 
@@ -12,6 +13,7 @@ pub(crate) struct Passes {
     pub(crate) reuse: bool,
     pub(crate) elide: bool,
     pub(crate) skip_min: u32,
+    pub(crate) lookup_min: usize,
 }
 
 pub(crate) struct Stage {
@@ -54,7 +56,7 @@ pub(crate) struct Build<'h> {
 }
 
 impl Passes {
-    pub(crate) const ALL: Passes = Passes { fold: true, factor: true, skip: true, reuse: true, elide: true, skip_min: 2 };
+    pub(crate) const ALL: Passes = Passes { fold: true, factor: true, skip: true, reuse: true, elide: true, skip_min: 2, lookup_min: 128 };
 }
 
 impl Rep {
@@ -185,9 +187,26 @@ impl<'h> Build<'h> {
                 Rep::Fix(0) => Rep::Fix(0),
                 _ => Rep::Dyn,
             },
-            Op::Fold { fold: Fold::Sum, value: None, .. } => return Err(Unsupported::new("typed: sum without value")),
-            Op::Fold { .. } | Op::FirstMatch { .. } | Op::Call(crate::typed::hir::Func::Len, _) => Rep::Fix(0),
-            Op::Call(..) => Rep::Bool,
+            Op::Fold { fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg, value: None, .. } => return Err(Unsupported::new("typed: fold without value")),
+            Op::Fold { fold: Fold::Min | Fold::Max, value: Some(v), .. } => match r(v) {
+                Rep::Fix(s) => Rep::Fix(s),
+                _ => Rep::Dyn,
+            },
+            Op::Fold { fold: Fold::Avg, .. } => Rep::Dyn,
+            Op::Fold { fold, .. } if fold.quantifier() => Rep::Bool,
+            Op::Fold { .. } | Op::FirstMatch { .. } | Op::Call(Func::Len, _) => Rep::Fix(0),
+            Op::Call(Func::StartsWith | Func::EndsWith, _) => Rep::Bool,
+            Op::Call(Func::Abs, args) => args.first().map_or(Rep::Dyn, r),
+            Op::Call(Func::Floor | Func::Ceil, _) => Rep::Fix(0),
+            Op::Call(Func::Round(p), args) => match args.first().map(r) {
+                Some(Rep::Fix(s)) => Rep::Fix(s.min(*p)),
+                _ => Rep::Dyn,
+            },
+            Op::Call(Func::Trunc(p), _) => Rep::Fix(*p),
+            Op::Call(Func::Min | Func::Max, args) => match args.split_first() {
+                Some((first, rest)) if matches!(r(first), Rep::Fix(_)) && rest.iter().all(|a| r(a) == r(first)) => r(first),
+                _ => Rep::Dyn,
+            },
         })
     }
 
@@ -303,11 +322,12 @@ impl<'h> Build<'h> {
                 }
             }
             match node.op {
-                Op::Fold { list, .. } => {
-                    self.buf_of[i] = Some(self.new_buf(BufDef { scope: Scope::Row, fold: Some(list) })?);
+                Op::Fold { list, fold, .. } => {
+                    let def = BufDef { scope: Scope::Row, fold: Some((list, fold, self.rep[i])), stage: self.acc[i] };
+                    self.buf_of[i] = Some(self.new_buf(def)?);
                 }
                 _ if self.cross[i] => {
-                    self.buf_of[i] = Some(self.new_buf(BufDef { scope: node.scope, fold: None })?);
+                    self.buf_of[i] = Some(self.new_buf(BufDef { scope: node.scope, fold: None, stage: self.stage[i] })?);
                 }
                 _ => {}
             }
@@ -392,8 +412,8 @@ impl<'h> Build<'h> {
                 };
                 let filter = filter.map(|x| self.val(x)).transpose()?;
                 let value = match (fold, value) {
-                    (Fold::Sum, Some(v)) => Some((self.val(v)?, self.rep[v as usize])),
-                    _ => None,
+                    (Fold::Count, _) | (_, None) => None,
+                    (_, Some(v)) => Some((self.val(v)?, self.rep[v as usize])),
                 };
                 let buf = self.buf(f as NodeId)?;
                 self.emit(Ins::Fold { fold, buf, list, filter, value });
@@ -442,6 +462,7 @@ impl<'h> Build<'h> {
                 Some(_) => 4,
                 None => 30,
             },
+            Op::Arith(Arith::Rem | Arith::Pow, ..) => 30,
             Op::Arith(Arith::Mul, ..) if rep != Rep::Dyn => 2,
             Op::Arith(..) | Op::Neg(_) if rep == Rep::Dyn => 6,
             Op::Call(..) => 4,
@@ -612,9 +633,9 @@ impl<'h> Build<'h> {
         let va = self.val(a)?;
         let d = self.fresh()?;
         let ins = match (op, rep, power) {
-            (Arith::Add, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Add, dst: d, a: va, b: self.val(b)? },
-            (Arith::Sub, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Sub, dst: d, a: va, b: self.val(b)? },
-            (Arith::Mul, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Mul, dst: d, a: va, b: self.val(b)? },
+            (Arith::Add, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Add, dst: d, a: va, b: self.val(b)?, rep },
+            (Arith::Sub, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Sub, dst: d, a: va, b: self.val(b)?, rep },
+            (Arith::Mul, Rep::Fix(_), _) => Ins::Fix { op: FixOp::Mul, dst: d, a: va, b: self.val(b)?, rep },
             (Arith::Div, _, Some((k, by))) => Ins::DivPow { dst: d, a: va, ra, k, by },
             _ => Ins::Num { op, dst: d, a: va, ra, b: self.val(b)?, rb },
         };
@@ -668,19 +689,19 @@ impl<'h> Build<'h> {
         let ins = match (ra, rb) {
             (Rep::Fix(x), Rep::Fix(y)) if x == y => {
                 let (va, vb) = (self.val(a)?, self.val(b)?);
-                Ins::CmpFix { op, dst: self.fresh()?, a: va, b: vb }
+                Ins::CmpFix { op, dst: self.fresh()?, a: va, b: vb, rep: ra }
             }
             (Rep::Fix(x), Rep::Fix(y)) if self.passes.fold && x < y && up(self.konst_num(a), y).is_some() => {
                 let u = up(self.konst_num(a), y).ok_or_else(|| Unsupported::new("typed: upscale"))?;
                 let k = self.konst(Lit::Num(u), Rep::Fix(y))?;
                 let vb = self.val(b)?;
-                Ins::CmpFix { op, dst: self.fresh()?, a: k, b: vb }
+                Ins::CmpFix { op, dst: self.fresh()?, a: k, b: vb, rep: rb }
             }
             (Rep::Fix(x), Rep::Fix(y)) if self.passes.fold && y < x && up(self.konst_num(b), x).is_some() => {
                 let u = up(self.konst_num(b), x).ok_or_else(|| Unsupported::new("typed: upscale"))?;
                 let k = self.konst(Lit::Num(u), Rep::Fix(x))?;
                 let va = self.val(a)?;
-                Ins::CmpFix { op, dst: self.fresh()?, a: va, b: k }
+                Ins::CmpFix { op, dst: self.fresh()?, a: va, b: k, rep: ra }
             }
             (x, y) if x.num() && y.num() => self.cmp_num(op, a, b)?,
             (Rep::Code, Rep::Code) if eq => {
@@ -736,7 +757,7 @@ impl<'h> Build<'h> {
                     let d = self.fresh()?;
                     let mr = match (self.rep[*x as usize], tr) {
                         (Rep::Fix(0), Rep::Fix(0)) => {
-                            self.emit(Ins::Fix { op: FixOp::Mul, dst: d, a: vx, b: t });
+                            self.emit(Ins::Fix { op: FixOp::Mul, dst: d, a: vx, b: t, rep: Rep::Fix(0) });
                             Rep::Fix(0)
                         }
                         (rx, _) => {
@@ -885,23 +906,35 @@ impl<'h> Build<'h> {
                             Some((l, h)) if h >= l => (l, h.wrapping_sub(l) as u64, false),
                             _ => (0, 0, true),
                         };
-                        self.emit(Ins::InRangeFix { dst: d, a: va, lo, span, empty })
+                        self.emit(Ins::InRangeFix { dst: d, a: va, lo, span, empty, range: *r })
                     }
                     None => self.emit(Ins::InRangeGen { dst: d, a: va, ra, range: *r }),
                 }
                 d
             }
-            Op::FirstMatch { conds, strict } => {
-                let mut vs = Vec::with_capacity(conds.len());
-                for c in conds {
-                    vs.push(self.val(*c)?);
+            Op::FirstMatch { conds, strict } => match self.lookup(conds, *strict) {
+                Some(tab) => self.looked(tab)?,
+                None => {
+                    let mut vs = Vec::with_capacity(conds.len());
+                    for c in conds {
+                        vs.push(self.val(*c)?);
+                    }
+                    let sel = self.needs_sel(i);
+                    let d = self.fresh()?;
+                    self.emit(Ins::First { dst: d, conds: vs, sel, strict: *strict });
+                    d
                 }
-                let sel = self.needs_sel(i);
+            },
+            Op::Pick(sel, arms) => self.pick(i, *sel, arms, rep)?,
+            Op::Call(func, args) if !func.text() => {
+                let mut vs = Vec::with_capacity(args.len());
+                for a in args {
+                    vs.push((self.val(*a)?, self.rep[*a as usize]));
+                }
                 let d = self.fresh()?;
-                self.emit(Ins::First { dst: d, conds: vs, sel, strict: *strict });
+                self.emit(Ins::Math { func: *func, dst: d, args: vs, rep });
                 d
             }
-            Op::Pick(sel, arms) => self.pick(i, *sel, arms, rep)?,
             Op::Call(func, args) => {
                 let a = self.arg(*args.first().ok_or_else(|| Unsupported::new("typed: call"))?)?;
                 let b = args.get(1).map(|x| self.arg(*x)).transpose()?;
@@ -919,6 +952,35 @@ impl<'h> Build<'h> {
             self.emit(Ins::Out { slot: Self::slot(k)?, src: v, rep, scope: hir.outputs[k].scope });
         }
         Ok(())
+    }
+
+    fn lookup(&self, conds: &[NodeId], strict: bool) -> Option<Lookup> {
+        if !self.passes.fold {
+            return None;
+        }
+        let tab = Lookup::plan(self.hir, conds, strict, self.passes.lookup_min)?;
+        tab.keys.iter().filter_map(|k| k.node).all(|n| self.stage[n as usize] == self.cur || self.is_const(n)).then_some(tab)
+    }
+
+    fn looked(&mut self, mut tab: Lookup) -> Result<R, Unsupported> {
+        let mut keys = Vec::with_capacity(tab.keys.len());
+        let mut reps = Vec::with_capacity(tab.keys.len());
+        for key in &tab.keys {
+            match key.node {
+                Some(n) => {
+                    keys.push(Some((self.val(n)?, self.rep[n as usize])));
+                    reps.push(self.rep[n as usize]);
+                }
+                None => {
+                    keys.push(None);
+                    reps.push(Rep::Null);
+                }
+            }
+        }
+        tab.fix(&reps);
+        let d = self.fresh()?;
+        self.emit(Ins::Lookup { dst: d, keys, tab: Box::new(tab) });
+        Ok(d)
     }
 
     fn finish(self) -> Result<Built, Unsupported> {

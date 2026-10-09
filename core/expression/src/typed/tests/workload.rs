@@ -77,7 +77,7 @@ impl Block {
 }
 
 impl Workload {
-    pub(crate) const NAMES: [&'static str; 4] = ["W1", "W2", "W3", "W4"];
+    pub(crate) const NAMES: [&'static str; 7] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7"];
 
     const KINDS: [&'static str; 3] = ["savings", "checking", "loan"];
     const TIERS: [&'static str; 3] = ["gold", "silver", "bronze"];
@@ -117,6 +117,47 @@ impl Workload {
         (["[300..400)", "", "", ""], ["'X'", "0"]),
     ];
 
+    const W5_KEYS: [(&'static str, &'static str); 18] = [
+        ("r2", "round(m.x * 1.075, 2)"),
+        ("r0", "round(m.x / 3)"),
+        ("fl", "floor(m.x) + ceil(m.y)"),
+        ("tr", "trunc(m.y / 7, 3)"),
+        ("ab", "abs(m.x - m.y)"),
+        ("md", "m.n % 7"),
+        ("mx", "m.x % 0.3"),
+        ("pw", "m.x ^ 2"),
+        ("pw3", "m.n ^ 3 + m.y ^ -1"),
+        ("lo", "min([m.x, m.y, 10])"),
+        ("hi", "max([m.x, $.r2, m.n])"),
+        ("av", "avg([m.x, m.y])"),
+        ("sm", "sum([m.x, m.y, m.n])"),
+        ("b", "bool(m.flag) and m.x > 0"),
+        ("q3", "m.x / 3 > 1"),
+        ("neg", "-m.x"),
+        ("c", "$.q3 ? round($.av, 1) : $.lo"),
+        ("k", "m.n > 2 ? m.x / 7 : (m.n < -2 ? m.x * m.y : $.pw)"),
+    ];
+
+    const W6_KEYS: [(&'static str, &'static str); 10] = [
+        ("c.any", "some(c.items, #.qty > 3)"),
+        ("c.all", "all(c.items, #.ok)"),
+        ("c.none", "none(c.items, #.price > c.limit)"),
+        ("c.one", "one(c.items, #.ok)"),
+        ("c.cnt", "count(c.items, #.qty > 2)"),
+        ("c.min", "min(map(c.items, #.price))"),
+        ("c.max", "max(map(filter(c.items, #.ok), #.qty * #.price))"),
+        ("c.avg", "avg(map(c.items, #.price))"),
+        ("c.sfilt", "some(filter(c.items, #.ok), #.price / #.qty > 2)"),
+        ("c.total", "sum(map(c.items, #.price * #.qty / 3))"),
+    ];
+
+    const W7_KEYS: [(&'static str, &'static str); 4] = [
+        ("item.r", "round(item.price * c.limit / 100, 2)"),
+        ("item.m", "item.qty % 2 == 0 ? abs(item.price) : -item.price"),
+        ("item.w", "item.price / 3"),
+        ("item.f", "floor(item.w * 10) ^ 2"),
+    ];
+
     const W4_KEYS: [(&'static str, &'static str); 11] = [
         ("subtotal", "order.qty * order.price"),
         ("rate", "order.discount ?? 0"),
@@ -136,6 +177,9 @@ impl Workload {
             "W1" => Self::w1(),
             "W2" => Self::w2(),
             "W3" => Self::w3(),
+            "W5" => Self::w5(),
+            "W6" => Self::w6(),
+            "W7" => Self::w7(),
             _ => Self::w4(),
         }
     }
@@ -159,6 +203,8 @@ impl Workload {
             "W1" => Self::anchor(count).iter().map(Self::w1_row).collect(),
             "W2" => Self::anchor(count).iter().map(Self::w2_row).collect(),
             "W3" => Self::w3_rows(count),
+            "W5" => Self::w5_rows(count),
+            "W6" | "W7" => Self::w6_rows(count),
             _ => Self::w4_rows(count),
         }
     }
@@ -168,6 +214,8 @@ impl Workload {
             "W1" => Self::w1_extremes(),
             "W2" => Self::w2_extremes(),
             "W3" => Self::w3_extremes(),
+            "W5" => Self::w5_extremes(),
+            "W6" | "W7" => Self::w6_extremes(),
             _ => Self::w4_extremes(),
         }
     }
@@ -315,6 +363,122 @@ impl Workload {
             member: None,
             blocks: Self::W4_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect(),
         }
+    }
+
+    fn w5() -> Workload {
+        Workload {
+            name: "W5",
+            spec: Spec {
+                columns: vec![
+                    Self::col("m.x", Class::Num, Enc::Scaled),
+                    Self::col("m.y", Class::Num, Enc::Dec),
+                    Self::col("m.n", Class::Num, Enc::I64),
+                    Self::col("m.flag", Class::Bool, Enc::Bool),
+                ],
+                lists: Vec::new(),
+            },
+            dialect: Dialect::Graph,
+            member: None,
+            blocks: Self::W5_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect(),
+        }
+    }
+
+    fn w6_spec() -> Spec {
+        Spec {
+            columns: vec![Self::col("c.limit", Class::Num, Enc::Scaled)],
+            lists: vec![ListSpec {
+                path: "c.items",
+                alias: "item",
+                fields: vec![Self::col("qty", Class::Num, Enc::I64), Self::col("price", Class::Num, Enc::Dec), Self::col("ok", Class::Bool, Enc::Bool)],
+            }],
+        }
+    }
+
+    fn w6() -> Workload {
+        Workload { name: "W6", spec: Self::w6_spec(), dialect: Dialect::Policy, member: None, blocks: Self::W6_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w7() -> Workload {
+        Workload { name: "W7", spec: Self::w6_spec(), dialect: Dialect::Policy, member: Some(0), blocks: Self::W7_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w5_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(17);
+        (0..count)
+            .map(|_| {
+                let x = Self::d(rng.pick(2_000_001) as i64 - 1_000_000, rng.pick(5) as u8);
+                let y = match rng.pick(25) {
+                    0 => Self::d(0, rng.pick(3) as u8),
+                    _ => Self::d(rng.pick(20_001) as i64 - 10_000, rng.pick(4) as u8),
+                };
+                let n = Self::n(rng.pick(41) as i64 - 20);
+                let flag = match rng.pick(5) {
+                    0 => Value::Null,
+                    k => Value::Bool(k % 2 == 0),
+                };
+                Row { columns: vec![x, y, n, flag], lists: Vec::new() }
+            })
+            .collect()
+    }
+
+    fn w6_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(19);
+        (0..count)
+            .map(|r| {
+                let len = match r % 211 {
+                    5 => 1500,
+                    _ => rng.pick(7) as usize,
+                };
+                let items = (0..len)
+                    .map(|_| {
+                        let qty = Self::n(rng.pick(8) as i64);
+                        let price = Self::d(rng.pick(100_000) as i64, rng.pick(3) as u8);
+                        let ok = match rng.pick(40) {
+                            0 => Value::Null,
+                            k => Value::Bool(k % 3 != 0),
+                        };
+                        vec![qty, price, ok]
+                    })
+                    .collect();
+                Row { columns: vec![Self::d(rng.pick(50_000) as i64, 1)], lists: vec![items] }
+            })
+            .collect()
+    }
+
+    fn w5_extremes() -> Vec<Row> {
+        let row = |x: Value, y: Value, n: Value, flag: Value| Row { columns: vec![x, y, n, flag], lists: Vec::new() };
+        let t = || Value::Bool(true);
+        vec![
+            row(Self::n(i64::MAX), Self::n(1), Self::n(3), t()),
+            row(Self::n(i64::MIN), Self::d(-5, 1), Self::n(-3), t()),
+            row(Self::d(0, 2), Self::d(0, 3), Self::n(0), Value::Bool(false)),
+            row(Value::Null, Self::n(2), Self::n(1), t()),
+            row(Self::n(5), Value::Null, Self::n(1), Value::Null),
+            row(Self::n(5), Self::n(2), Value::Null, t()),
+            row(Self::d(1, 28), Self::d(-1, 28), Self::n(i64::MAX), t()),
+            row(Self::d(-25, 1), Self::d(-15, 1), Self::n(-1), t()),
+            row(Self::d(-4, 1), Self::d(5, 1), Self::n(7), t()),
+            row(Self::d(i64::MAX, 9), Self::d(i64::MIN, 4), Self::n(9), t()),
+            row(Self::n(10), Self::n(3), Self::n(2_000_000), t()),
+        ]
+    }
+
+    fn w6_extremes() -> Vec<Row> {
+        let row = |limit: Value, items: Vec<[Value; 3]>| Row { columns: vec![limit], lists: vec![items.into_iter().map(|i| i.to_vec()).collect()] };
+        let t = || Value::Bool(true);
+        let f = || Value::Bool(false);
+        vec![
+            row(Self::n(10), Vec::new()),
+            row(Value::Null, vec![[Self::n(1), Self::n(5), t()]]),
+            row(Self::n(10), vec![[Self::n(5), Self::n(i64::MAX), t()], [Self::n(4), Self::n(i64::MAX), t()]]),
+            row(Self::n(10), vec![[Self::n(0), Self::n(7), t()], [Self::n(2), Self::n(9), f()]]),
+            row(Self::n(10), vec![[Self::n(1), Value::Null, t()], [Self::n(5), Self::n(1), t()]]),
+            row(Self::n(10), vec![[Self::n(5), Self::n(1), t()], [Self::n(1), Value::Null, Value::Null]]),
+            row(Self::n(10), vec![[Value::Null, Self::n(1), f()], [Self::n(9), Self::n(3), t()]]),
+            row(Self::d(1, 28), vec![[Self::n(3), Self::d(-1, 28), t()], [Self::n(3), Self::d(-0, 2), t()]]),
+            row(Self::n(10), vec![[Self::n(1), Self::d(15, 1), t()], [Self::n(1), Self::n(15), t()], [Self::n(1), Self::d(150, 2), f()]]),
+            row(Self::n(-1), vec![[Self::n(7), Self::n(i64::MIN), t()]]),
+        ]
     }
 
     fn anchor(count: usize) -> Vec<AnchorCustomer> {

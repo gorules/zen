@@ -816,6 +816,31 @@ fn policy_typed_fuses_lane_runs() {
 }
 
 #[test]
+fn policy_typed_member_tables_and_math() {
+    let policy = Anchor::POLICY
+        .replace(
+            "    {expression: \"customer.total\"",
+            "    {table: \"band\", inputs: [\"account.balance\", \"customer.tier\"], outputs: [\"account.band\", \"account.boost\"], rules: [\n      [\"> 4000\", \"'gold'\", \"'A'\", \"1.5\"],\n      [\"> 2000\", \"\", \"'B'\", \"2\"],\n      [\"\", \"\", \"'C'\", \"0\"],\n    ]},\n    {expression: \"customer.total\"",
+        )
+        .replace(
+            "    {assertion: \"customer.eligible\"",
+            "    {expression: \"customer.rich\", value: \"some(customer.accounts, #.balance > 4000)\"},\n    {expression: \"customer.active\", value: \"all(customer.accounts, #.active)\"},\n    {expression: \"customer.loans\", value: \"count(customer.accounts, #.kind == 'loan')\"},\n    {expression: \"customer.third\", value: \"round(customer.total / 3, 2) + customer.total % 7\"},\n    {expression: \"customer.gap\", value: \"abs(customer.total - customer.income) + min([customer.total, customer.income, 100])\"},\n    {expression: \"customer.square\", value: \"floor(customer.income / 7) ^ 2\"},\n    {assertion: \"customer.eligible\"",
+        );
+    assert!(policy.contains("account.band") && policy.contains("customer.square"));
+    let ws = Anchor::workspace_with(&policy);
+    let mut failures = Vec::new();
+    for seed in [5, 9] {
+        for (typed, laned, hosted) in Anchor::checked(&ws, &Anchor::rows(300, seed), &mut failures) {
+            assert_eq!(hosted, 0, "rows hosted");
+            if Anchor::typed() {
+                assert_eq!((typed, laned), (15, 0), "units typed {typed}, laned {laned}");
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
 fn policy_typed_extremes() {
     let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
     let overflow = [

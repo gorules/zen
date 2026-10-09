@@ -5,6 +5,7 @@ mod hir;
 mod ins;
 mod kernel;
 mod lower;
+mod lookup;
 mod num;
 mod output;
 mod program;

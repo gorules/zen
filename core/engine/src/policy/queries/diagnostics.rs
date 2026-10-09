@@ -194,6 +194,7 @@ impl Db {
                 }
             }
             out.extend(Self::derivation_cycles(path, id, &depends));
+            out.extend(self.stored_relationship_diagnostics(path, id, data, &unit));
             // How long a call's reply may be reused: a duration like 5m.
             for prop in &data.properties {
                 let Some(staleness) = prop.model.as_ref().and_then(|m| m.get("maxStaleness")) else {
@@ -215,6 +216,124 @@ impl Db {
             }
         }
         out
+    }
+
+    /// A stored relationship (`on`: members by key; `through`: counterparties
+    /// in events), checked against the entities it names.
+    fn stored_relationship_diagnostics(
+        &self,
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        data: &crate::policy::raw::DataModelDoc,
+        unit: &Unit,
+    ) -> Vec<Diagnostic> {
+        use crate::policy::ir::{PropertyTypeIr, Records};
+        use crate::policy::raw::PropertyTypeDoc;
+        let mut out = Vec::new();
+        let key_parts: Vec<String> = match &data.key {
+            Some(serde_json::Value::String(key)) => vec![key.clone()],
+            Some(serde_json::Value::Array(parts)) => {
+                parts.iter().filter_map(|p| p.as_str().map(str::to_string)).collect()
+            }
+            _ => vec!["id".to_string()],
+        };
+        for prop in &data.properties {
+            let PropertyTypeDoc::Relationship { target } = &prop.property_type else {
+                continue;
+            };
+            let (on, through) = (prop.rest.get("on"), prop.rest.get("through"));
+            if on.is_none() && through.is_none() {
+                continue;
+            }
+            let mut problem = |message: String| {
+                out.push(Diagnostic::error(
+                    DiagnosticCode::ParseError,
+                    DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None),
+                    format!("`{}`: {message}", prop.name),
+                ));
+            };
+            if on.is_some() && through.is_some() {
+                problem("a stored relationship is found by key (`on`) or through events (`through`), not both".into());
+                continue;
+            }
+            let Some(target_ir) = unit.entities.get(target) else {
+                problem(format!("`{target}` isn't an entity"));
+                continue;
+            };
+            if let Some(on) = on {
+                let Some(pairs) = on.as_object() else {
+                    problem("`on` maps the target's properties to this entity's key parts".into());
+                    continue;
+                };
+                let mut used: Vec<&str> = Vec::new();
+                for (member, part) in pairs {
+                    let member_prop = target_ir.properties.iter().find(|p| p.name.as_ref() == member);
+                    if member_prop.is_none_or(|p| p.supply.is_some() || p.is_stored()) {
+                        problem(format!("`{member}` isn't a data property of `{target}`"));
+                    }
+                    match part.as_str() {
+                        Some(part) if key_parts.iter().any(|k| k == part) => {
+                            if used.contains(&part) {
+                                problem(format!("key part `{part}` is matched twice"));
+                            }
+                            used.push(part);
+                        }
+                        Some(part) => problem(format!("`{part}` isn't a key part of `{}` ({})", data.name, key_parts.join(", "))),
+                        None => problem(format!("`{member}` maps to a key part's name")),
+                    }
+                }
+                for part in &key_parts {
+                    if !used.contains(&part.as_str()) {
+                        problem(format!("key part `{part}` has no member property matched to it"));
+                    }
+                }
+            }
+            if let Some(through) = through {
+                let text = |key: &str| through.get(key).and_then(serde_json::Value::as_str);
+                let events = text("events").unwrap_or_default();
+                let events_ir = unit.entities.get(events);
+                if events_ir.is_none_or(|e| e.records != Records::Events) {
+                    problem(format!("`{events}` isn't an events entity"));
+                }
+                let reference_to = |field: &str| {
+                    events_ir.and_then(|e| e.properties.iter().find(|p| p.name.as_ref() == field)).and_then(|p| {
+                        match &p.kind {
+                            PropertyTypeIr::Reference { target } => Some(target.clone()),
+                            _ => None,
+                        }
+                    })
+                };
+                if let Some(events_ir) = events_ir.filter(|e| e.records == Records::Events) {
+                    for (role, expected) in [("self", data.name.as_ref()), ("member", target.as_ref())] {
+                        let field = text(role).unwrap_or_default();
+                        if reference_to(field).as_deref() != Some(expected) {
+                            problem(format!(
+                                "`{role}` is `{field}`: it names a reference of `{}` to `{expected}`",
+                                events_ir.name
+                            ));
+                        }
+                    }
+                }
+                if !text("window").is_some_and(Self::is_duration) {
+                    problem(format!(
+                        "`window` is a duration like 10m, 1h or 30d, not `{}`",
+                        text("window").unwrap_or_default()
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// A positive whole number of minutes, hours or days: `10m`, `1h`, `30d`.
+    fn is_duration(text: &str) -> bool {
+        let Some((digits, unit)) = text.split_at_checked(text.len().saturating_sub(1)) else {
+            return false;
+        };
+        matches!(unit, "m" | "h" | "d")
+            && !digits.is_empty()
+            && !digits.starts_with('0')
+            && digits.bytes().all(|b| b.is_ascii_digit())
     }
 
     /// A positive whole number of seconds, minutes, hours or days: `30s`, `5m`, `5h`, `1d`.

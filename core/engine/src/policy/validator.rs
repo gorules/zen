@@ -263,10 +263,11 @@ impl InputValidator<'_> {
             if matches!(val, Variable::Null) {
                 continue;
             }
+            // A stored relationship's members are the host's, never checked as input.
             let Some(prop) = dm_props
                 .properties
                 .iter()
-                .find(|p| *p.name == *key.as_str())
+                .find(|p| *p.name == *key.as_str() && !p.is_stored())
             else {
                 continue;
             };

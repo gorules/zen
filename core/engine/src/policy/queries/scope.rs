@@ -424,6 +424,8 @@ impl Snapshot {
             }
             for prop in &dm.properties {
                 match &prop.kind {
+                    // A stored relationship isn't where its target lives: its members are found.
+                    PropertyTypeIr::Relationship { .. } if prop.is_stored() => {}
                     PropertyTypeIr::Relationship { target } => {
                         let (path, owner) = if dm.scope.is_global() {
                             (Arc::from(prop.name.as_ref()), None)

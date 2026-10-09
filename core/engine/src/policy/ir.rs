@@ -203,6 +203,18 @@ pub enum Supply {
         #[serde(skip_serializing_if = "Option::is_none")]
         datasource: Option<Arc<str>>,
     },
+    /// A stored relationship's members, found by the host: the instances of
+    /// the target sharing this entity's key (`on`), or its counterparties in
+    /// an events entity (`through`). Never in the request; features on this
+    /// entity aggregate them.
+    Members { by: MembersBy },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MembersBy {
+    Key,
+    Events,
 }
 
 impl Supply {
@@ -218,11 +230,18 @@ impl Supply {
                 Some(datasource) => format!("model {datasource}"),
                 None => "model".to_string(),
             },
+            Supply::Members { by: MembersBy::Key } => "members by key".to_string(),
+            Supply::Members { by: MembersBy::Events } => "counterparties in events".to_string(),
         }
     }
 }
 
 impl Property {
+    /// A stored relationship: members the host finds (`on` / `through`).
+    pub fn is_stored(&self) -> bool {
+        matches!(self.supply.as_deref(), Some(Supply::Members { .. }))
+    }
+
     /// The type as written, with `[]` and `?`: `integer?`.
     pub fn type_label(&self) -> String {
         let base = match &self.exact {
@@ -274,6 +293,8 @@ impl DataModelIr {
             }
             for prop in &dm.properties {
                 match &prop.kind {
+                    // A stored relationship's target stays a root: its members are found, not nested.
+                    PropertyTypeIr::Relationship { .. } if prop.is_stored() => {}
                     PropertyTypeIr::Relationship { target } => {
                         if dm.scope.is_global() {
                             global_relationship_targets.insert(target.clone());
@@ -339,7 +360,8 @@ impl DataModelIr {
         }
         let mut fields: HashMap<Rc<str>, VariableType> = HashMap::new();
         if let Some(dm) = entities.get(name) {
-            for prop in &dm.properties {
+            // A stored relationship is never on the wire: the host finds its members.
+            for prop in dm.properties.iter().filter(|p| !p.is_stored()) {
                 fields.insert(
                     Rc::from(prop.name.as_ref()),
                     Self::wire_property_type(prop, entities, dictionaries, visited),
@@ -610,7 +632,15 @@ impl DataModelIr {
                             .filter(|d| !d.is_empty())
                             .map(Arc::from),
                     })),
-                    (None, None) => None,
+                    (None, None) => match (&prop.property_type, prop.rest.get("on"), prop.rest.get("through")) {
+                        (PropertyTypeDoc::Relationship { .. }, Some(_), _) => {
+                            Some(Arc::new(Supply::Members { by: MembersBy::Key }))
+                        }
+                        (PropertyTypeDoc::Relationship { .. }, None, Some(_)) => {
+                            Some(Arc::new(Supply::Members { by: MembersBy::Events }))
+                        }
+                        _ => None,
+                    },
                 },
             });
         }

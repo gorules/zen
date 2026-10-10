@@ -1,5 +1,5 @@
 use crate::compiled::policy::entity::Entity;
-use crate::compiled::columnar::OutputColumn;
+use crate::compiled::graph::columnar::OutputColumn;
 use crate::compiled::shred::{Normalizer, Shredder};
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
 use std::rc::Rc;

@@ -1,6 +1,6 @@
 use crate::compiled::policy::schedule::{Demand, Event};
 use crate::compiled::policy::{Fixed, Native, PolicyPlan};
-use crate::compiled::bound::Outs;
+use crate::compiled::graph::bound::Outs;
 use crate::compiled::leaf::{Array, ColumnBuilder, Dict, Leaf};
 use crate::policy::blocks::MatchSelection;
 use crate::policy::host::Pick;
@@ -212,7 +212,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         for (name, view) in &views {
             columns = columns.column(name.as_ref(), view.column());
         }
-        let scopes = crate::compiled::bound::Bound::blank(count);
+        let scopes = crate::compiled::graph::bound::Bound::blank(count);
         let mut outs = Outs::take();
         let special = self.plan.special(program, &columns);
         let program = special.as_deref().unwrap_or(program);

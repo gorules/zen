@@ -1,5 +1,5 @@
 use crate::compiled::policy::PolicyPlan;
-use crate::compiled::bound::Outs;
+use crate::compiled::graph::bound::Outs;
 use crate::compiled::leaf::{Array, Leaf};
 use std::sync::Arc;
 use zen_expression::lane::{Binding, Column, Columns, Dictionary, LaneProgram, Values};
@@ -81,8 +81,8 @@ impl<'s, 'a> Pass<'s, 'a> {
             })
             .collect();
         let scopes = match rows {
-            true => crate::compiled::bound::Scopes::Owned(self.scopes(positions)),
-            false => crate::compiled::bound::Bound::blank(self.sheet.rows),
+            true => crate::compiled::graph::bound::Scopes::Owned(self.scopes(positions)),
+            false => crate::compiled::graph::bound::Bound::blank(self.sheet.rows),
         };
         let views: Vec<(Arc<str>, Leaf<'a>)> = used
             .iter()

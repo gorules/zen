@@ -1,4 +1,4 @@
-use crate::compiled::columnar::OutputColumn;
+use crate::compiled::graph::columnar::OutputColumn;
 use crate::compiled::shred::Shredder;
 use crate::workspace::types::{EvaluationError, EvaluationResult};
 use std::sync::Arc;

@@ -207,7 +207,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let code = |arm: Option<usize>| arm.map_or(0, |arm| arm as u32 + 1);
         if let Some(at) = self.entity_of(block) {
             if let (Some((_, arms)), Some(Native::Match { .. })) = (self.members.iter().find(|(b, _)| *b == block), Self::native(self.plan, block)) {
-                let (a, b) = self.sheet.entities[at].range(row).unwrap_or((0, 0));
+                let (a, b) = self.sheet.entities[at].frame.range(row).unwrap_or((0, 0));
                 let mut key: Vec<u32> = (a..b).map(|child| code(arms.get(child).copied().flatten())).collect();
                 key.sort_unstable();
                 key.dedup();
@@ -222,7 +222,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 let mut units: Vec<Vec<u32>> = match self.entity_of(block) {
                     None => vec![unit(row)],
                     Some(at) => {
-                        let (a, b) = self.sheet.entities[at].range(row).unwrap_or((0, 0));
+                        let (a, b) = self.sheet.entities[at].frame.range(row).unwrap_or((0, 0));
                         (a..b).map(unit).collect()
                     }
                 };

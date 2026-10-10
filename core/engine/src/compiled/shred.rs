@@ -1,3 +1,4 @@
+use crate::compiled::core::list::Frame;
 use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Records, Store};
 use crate::nodes::input::dates::DeclaredDates;
 use std::rc::Rc;
@@ -40,17 +41,13 @@ pub(crate) struct Shredder {
 }
 
 pub(crate) struct Listing<'a> {
-    pub offsets: Rc<[i32]>,
-    pub validity: Option<Rc<[u64]>>,
+    pub frame: Frame,
     pub hosted: Option<Rc<[u64]>>,
-    pub children: usize,
     pub fields: Vec<(Arc<str>, Leaf<'a>)>,
 }
 
 pub(crate) struct Shred {
-    pub offsets: Rc<[i32]>,
-    pub validity: Option<Rc<[u64]>>,
-    pub children: usize,
+    pub frame: Frame,
     pub fields: Vec<(Arc<str>, Array)>,
     pub hosted: Rc<[usize]>,
 }
@@ -719,9 +716,11 @@ impl ListBuilder {
             false => Some(Rc::from(self.validity)),
         };
         Shred {
-            offsets: self.offsets.into(),
-            validity,
-            children: self.children,
+            frame: Frame {
+                offsets: self.offsets.into(),
+                validity,
+                children: self.children,
+            },
             fields: self.fields.into_iter().map(|field| field.array(true)).collect(),
             hosted: self.hosted.into(),
         }
@@ -786,17 +785,17 @@ impl<'a> Listing<'a> {
                                 return None;
                             }
                             let fields = fields.iter().map(|(name, field)| (Arc::from(*name), Normalizer::lean(*field, len))).collect();
-                            Some(Listing { offsets, validity, hosted: None, children: len, fields })
+                            Some(Listing { frame: Frame { offsets, validity, children: len }, hosted: None, fields })
                         }
                         Values::Any(_) | Values::List { .. } | Values::Dict { .. } => None,
                         _ => {
                             let len = item.len();
-                            Some(Listing { offsets, validity, hosted: None, children: len, fields: vec![(Arc::from(""), Normalizer::lean(*item, len))] })
+                            Some(Listing { frame: Frame { offsets, validity, children: len }, hosted: None, fields: vec![(Arc::from(""), Normalizer::lean(*item, len))] })
                         }
                     },
                     scalar => {
                         let len = scalar.len();
-                        Some(Listing { offsets, validity, hosted: None, children: len, fields: vec![(Arc::from(""), Normalizer::lean(scalar.column(), len))] })
+                        Some(Listing { frame: Frame { offsets, validity, children: len }, hosted: None, fields: vec![(Arc::from(""), Normalizer::lean(scalar.column(), len))] })
                     }
                 }
             }
@@ -831,10 +830,12 @@ impl<'a> Listing<'a> {
         }
         let validity = records.validity();
         Some(Listing {
-            offsets: records.offsets().get(..=owners)?.into(),
-            validity: (!Bits::full(validity, 0, owners)).then(|| Rc::from(Bits::window(validity, 0, owners))),
+            frame: Frame {
+                offsets: records.offsets().get(..=owners)?.into(),
+                validity: (!Bits::full(validity, 0, owners)).then(|| Rc::from(Bits::window(validity, 0, owners))),
+                children: count,
+            },
             hosted: None,
-            children: count,
             fields,
         })
     }
@@ -859,17 +860,19 @@ impl<'a> Listing<'a> {
         };
         let len = child.len();
         Some(Listing {
-            offsets: offsets.get(..=owners)?.into(),
-            validity,
+            frame: Frame {
+                offsets: offsets.get(..=owners)?.into(),
+                validity,
+                children: len,
+            },
             hosted: None,
-            children: len,
             fields: vec![(Arc::from(""), Leaf::typed(Array::parts(store, None, len)))],
         })
     }
 
     pub fn nested(&self, name: &str) -> Option<Listing<'a>> {
         let (_, leaf) = self.fields.iter().rev().find(|(key, _)| key.as_ref() == name)?;
-        Listing::leaf(leaf, self.children)
+        Listing::leaf(leaf, self.frame.children)
     }
 
     pub fn columns<'s>(&'s self, names: &[ColumnDef]) -> Option<Vec<Column<'s>>> {
@@ -977,10 +980,8 @@ impl<'a> Listing<'a> {
         });
         let shred = builder.finish();
         Some(Listing {
-            offsets: shred.offsets,
-            validity: shred.validity,
+            frame: shred.frame,
             hosted,
-            children: shred.children,
             fields: shred.fields.into_iter().map(|(name, array)| (name, Leaf::typed(array))).collect(),
         })
     }

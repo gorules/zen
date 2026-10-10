@@ -76,7 +76,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         let outputs = table.outputs.len();
         let total = match units.member {
-            Some(at) => self.sheet.entities[at].children,
+            Some(at) => self.sheet.entities[at].frame.children,
             None => self.sheet.rows,
         };
         let at = match self.chosen.iter().position(|(b, _)| *b == block) {
@@ -227,7 +227,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         match self.entity_of(block) {
             None => Pick::Table(TableSelection::used(Self::table_cells(table, chosen, row))).collect_reads(plan, &mut demanded),
             Some(at) => {
-                let (a, b) = self.sheet.entities[at].range(row).unwrap_or((0, 0));
+                let (a, b) = self.sheet.entities[at].frame.range(row).unwrap_or((0, 0));
                 for child in a..b {
                     Pick::Table(TableSelection::used(Self::table_cells(table, chosen, child))).collect_reads(plan, &mut demanded);
                 }

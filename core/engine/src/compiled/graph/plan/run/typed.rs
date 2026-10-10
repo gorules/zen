@@ -309,10 +309,10 @@ impl<'a> Run<'_, 'a> {
                     let (validity, faults) = match (chain.is_empty(), Store::implied(seg, *read)) {
                         (true, false) => {
                             let mask = self.store.mask(seg, read.present);
-                            let mut validity = listing.validity.as_deref().map_or_else(|| Bits::ones(rows), <[u64]>::to_vec);
+                            let mut validity = listing.frame.validity.as_deref().map_or_else(|| Bits::ones(rows), <[u64]>::to_vec);
                             let mut faults = listing.hosted.as_deref().map_or_else(|| vec![0u64; rows.div_ceil(64)], <[u64]>::to_vec);
                             for row in (0..rows).filter(|&row| !Bits::get(&mask, row)) {
-                                match listing.offsets[row] == listing.offsets[row + 1] {
+                                match listing.frame.offsets[row] == listing.frame.offsets[row + 1] {
                                     true => Bits::set(&mut validity, row, false),
                                     false => Bits::set(&mut faults, row, true),
                                 }
@@ -326,8 +326,7 @@ impl<'a> Run<'_, 'a> {
                 let mut batch = Batch::new(rows);
                 leaves.iter().for_each(|leaf| batch.push_column(leaf.column()));
                 for ((listing, validity, faults), def) in listed.iter().zip(&op.program.hir().schema.lists) {
-                    let validity = validity.as_deref().or(listing.validity.as_deref()).map(|bits| (bits, 0));
-                    let list = zen_expression::typed::List::new(&listing.offsets, validity, listing.columns(&def.fields)?);
+                    let list = listing.frame.list(validity.as_deref(), listing.columns(&def.fields)?);
                     batch.push_list(match faults.as_deref().or(listing.hosted.as_deref()) {
                         Some(bits) => list.faults(bits, 0),
                         None => list,

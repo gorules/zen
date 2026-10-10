@@ -3,6 +3,7 @@ use crate::compiled::graph::data::{Data, Layer, Mask};
 use zen_expression::Variable;
 use zen_types::symbol::Symbol;
 use crate::compiled::graph::plan::SegPlan;
+use crate::compiled::core::list::Kin;
 use crate::compiled::shred::Shred;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Field, Items, Leaf, Records};
 use crate::compiled::graph::data::Shape as DataShape;
@@ -101,11 +102,11 @@ impl<'a> Run<'_, 'a> {
         let shred = Shred::of(&column, rows)?;
         let mut odd = vec![0u64; rows.div_ceil(64)];
         shred.hosted.iter().filter(|&&row| leaf.get(row).as_array().is_some()).for_each(|&row| Bits::set(&mut odd, row, true));
-        let valid = match shred.validity {
+        let valid = match shred.frame.validity {
             Some(bits) => bits.to_vec(),
             None => Bits::ones(rows),
         };
-        let count = shred.children;
+        let count = shred.frame.children;
         let fields = shred
             .fields
             .into_iter()
@@ -117,7 +118,7 @@ impl<'a> Run<'_, 'a> {
                 (Symbol::from(name.as_ref()), Leaf::typed(array), present)
             })
             .collect();
-        Some((Rc::new(Records::new(rows, shred.offsets.to_vec(), valid, fields, None)), odd.into()))
+        Some((Rc::new(Records::new(rows, shred.frame.offsets.to_vec(), valid, fields, None)), odd.into()))
     }
 
     fn native_loop(&mut self, step: &crate::compiled::graph::Step, body: &Body, pass_through: bool, source: &Items<'a>, out: SlotId, at: &[usize]) -> bool {
@@ -133,19 +134,12 @@ impl<'a> Run<'_, 'a> {
             return false;
         }
         let rows = self.store.rows;
-        let mut picked: Vec<usize> = Vec::new();
         let mut spans: Vec<(usize, usize, usize)> = Vec::with_capacity(at.len());
         let mut missing: Vec<usize> = Vec::new();
-        for &row in at {
-            match source.range(row) {
-                Some((a, b)) => {
-                    let start = picked.len();
-                    picked.extend(a..b);
-                    spans.push((row, start, picked.len()));
-                }
-                None => missing.push(row),
-            }
-        }
+        let (picked, owner) = Kin::gather(at, 0, |row| source.range(row), |row, span| match span {
+            Some((start, end)) => spans.push((row, start, end)),
+            None => missing.push(row),
+        });
         let count = picked.len();
         let identity = count == source.count() && picked.iter().enumerate().all(|(i, p)| i == *p);
         let picks: Rc<[usize]> = picked.into();
@@ -187,10 +181,6 @@ impl<'a> Run<'_, 'a> {
             (DataShape::Patched { nulls: Some(nulls), .. }, false) => Some(nulls.clone()),
             _ => None,
         };
-        let mut owner = vec![0usize; count];
-        for &(row, start, end) in &spans {
-            owner[start..end].iter_mut().for_each(|o| *o = row);
-        }
         let mut failed = vec![false; rows];
         let mut failures = failures;
         failures.sort_by_key(|(item, _)| *item);

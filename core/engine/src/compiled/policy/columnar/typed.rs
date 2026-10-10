@@ -2,13 +2,14 @@ use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::core::variants::Variants;
+use crate::compiled::core::list::Frame;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::typed::{Batch, List, Lowering, Outputs, Program, Resolve, Resolved};
+use zen_expression::typed::{Batch, Lowering, Outputs, Program, Resolve, Resolved};
 
 pub(crate) struct TypedGroup {
     program: Option<Program>,
@@ -43,7 +44,7 @@ enum Source {
 }
 
 enum Part<'a> {
-    Entity(Rc<[i32]>, Option<Rc<[u64]>>, Vec<Leaf<'a>>),
+    Entity(Frame, Vec<Leaf<'a>>),
     Listed(Rc<Listing<'a>>),
 }
 
@@ -223,7 +224,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             return (0, Vec::new());
         };
         let span = match entity {
-            Some(at) => match self.span(at) {
+            Some(at) => match self.sheet.entities[at].frame.span(self.sheet.rows) {
                 Some(span) => Some((at, span)),
                 None => return (0, Vec::new()),
             },
@@ -280,15 +281,6 @@ impl<'s, 'a> Pass<'s, 'a> {
         (group.units, faulted)
     }
 
-    fn span(&self, at: usize) -> Option<(usize, usize)> {
-        let entity = &self.sheet.entities[at];
-        let offsets = entity.offsets.get(..=self.sheet.rows)?;
-        let base = usize::try_from(*offsets.first()?).ok()?;
-        let end = usize::try_from(*offsets.last()?).ok()?;
-        let sorted = offsets.windows(2).all(|pair| pair[0] <= pair[1]);
-        (sorted && base <= end && end <= entity.children).then_some((base, end))
-    }
-
     fn execute(&self, group: &TypedGroup, program: &Program, sources: &[Source], entity: Option<usize>, select: Option<&[u64]>) -> Option<Outputs> {
         let leaf = |at: usize| -> Option<Leaf<'a>> {
             match sources.get(at)? {
@@ -304,12 +296,12 @@ impl<'s, 'a> Pass<'s, 'a> {
                 None => {
                     let owner = &self.sheet.entities[entity?];
                     let fields = group.fields.iter().map(|&at| leaf(at)).collect::<Option<_>>()?;
-                    Part::Entity(owner.offsets.clone(), owner.validity.clone(), fields)
+                    Part::Entity(owner.frame.clone(), fields)
                 }
                 Some(at) => match sources.get(*at)? {
                     Source::List(owner, fields) => {
                         let owner = &self.sheet.entities[*owner];
-                        Part::Entity(owner.offsets.clone(), owner.validity.clone(), fields.iter().map(|&f| owner.view(f)).collect())
+                        Part::Entity(owner.frame.clone(), fields.iter().map(|&f| owner.view(f)).collect())
                     }
                     Source::Listed(index) => Part::Listed(self.listed.borrow().get(*index)?.2.clone()?),
                     _ => return None,
@@ -320,9 +312,9 @@ impl<'s, 'a> Pass<'s, 'a> {
         columns.iter().for_each(|leaf| batch.push_column(leaf.column()));
         for (part, def) in parts.iter().zip(&program.hir().schema.lists) {
             batch.push_list(match part {
-                Part::Entity(offsets, validity, fields) => List::new(offsets, validity.as_deref().map(|bits| (bits, 0)), fields.iter().map(Leaf::column).collect()),
+                Part::Entity(frame, fields) => frame.list(None, fields.iter().map(Leaf::column).collect()),
                 Part::Listed(listing) => {
-                    let list = List::new(&listing.offsets, listing.validity.as_deref().map(|bits| (bits, 0)), listing.columns(&def.fields)?);
+                    let list = listing.frame.list(None, listing.columns(&def.fields)?);
                     match listing.hosted.as_deref() {
                         Some(bits) => list.faults(bits, 0),
                         None => list,
@@ -376,7 +368,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 }
                 let f = owner.field(first)?;
                 let key = format!("@{at}:{f}");
-                let (_, current) = self.listing(key.clone(), false, || Listing::leaf(&owner.view(f), owner.children))?;
+                let (_, current) = self.listing(key.clone(), false, || Listing::leaf(&owner.view(f), owner.frame.children))?;
                 (key, false, current)
             }
             None => {

@@ -4,12 +4,12 @@ use crate::compiled::graph::bound::Outs;
 use crate::compiled::leaf::{Array, ColumnBuilder, Dict, Leaf};
 use crate::policy::blocks::MatchSelection;
 use crate::policy::host::Pick;
-use std::cell::OnceCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Binding, Column, Columns, Dictionary, LaneProgram, Values};
 use zen_expression::Variable;
-use super::{Bind, Family, Pass, Sheet, Units};
+use crate::compiled::core::list::Kin;
+use super::{Bind, Pass, Sheet, Units};
 
 pub(super) enum Member {
     Field(usize),
@@ -27,44 +27,25 @@ impl<'s, 'a> Pass<'s, 'a> {
 
     pub(super) fn kids(&mut self, at: usize, positions: &[usize]) -> (Rc<[usize]>, Rc<[usize]>) {
         let full = positions.len() == self.sheet.rows;
-        if let Some((_, kids, parents, ..)) = self.kin.iter().find(|(a, ..)| full && *a == at) {
-            return (kids.clone(), parents.clone());
+        if let Some(kin) = self.kin.iter().find(|kin| full && kin.at == at) {
+            return (kin.kids.clone(), kin.parents.clone());
         }
-        if let Some((kids, parents)) = full.then(|| self.spans(at)).flatten() {
-            self.kin.push((at, kids.clone(), parents.clone(), true, OnceCell::new()));
+        if let Some((kids, parents)) = full.then(|| Kin::spans(&self.sheet.entities[at].frame, self.sheet.rows)).flatten() {
+            self.kin.push(Kin::new(at, kids.clone(), parents.clone(), true));
             return (kids, parents);
         }
         let (kids, parents) = self.gather(at, positions);
         if full {
-            let identity = kids.len() == self.sheet.entities[at].children && kids.iter().enumerate().all(|(i, &k)| i == k);
-            self.kin.push((at, kids.clone(), parents.clone(), identity, OnceCell::new()));
+            let identity = self.sheet.entities[at].frame.identity(&kids);
+            self.kin.push(Kin::new(at, kids.clone(), parents.clone(), identity));
         }
         (kids, parents)
     }
 
-    fn spans(&self, at: usize) -> Option<Family> {
-        let entity = &self.sheet.entities[at];
-        if entity.validity.is_some() {
-            return None;
-        }
-        let offsets = entity.offsets.get(..=self.sheet.rows)?;
-        let ordered = offsets.first() == Some(&0)
-            && offsets.last().and_then(|&end| usize::try_from(end).ok()) == Some(entity.children)
-            && offsets.windows(2).all(|pair| pair[0] <= pair[1]);
-        if !ordered {
-            return None;
-        }
-        let mut parents = Vec::with_capacity(entity.children);
-        for (row, pair) in offsets.windows(2).enumerate() {
-            parents.extend(std::iter::repeat_n(row, (pair[1] - pair[0]) as usize));
-        }
-        Some(((0..entity.children).collect(), parents.into()))
-    }
-
     fn identity(&self, at: usize, kids: &Rc<[usize]>) -> bool {
-        match self.kin.iter().find(|(a, k, ..)| *a == at && Rc::ptr_eq(k, kids)) {
-            Some((_, _, _, identity, _)) => *identity,
-            None => kids.len() == self.sheet.entities[at].children && kids.iter().enumerate().all(|(i, &k)| i == k),
+        match self.kin.iter().find(|kin| kin.at == at && Rc::ptr_eq(&kin.kids, kids)) {
+            Some(kin) => kin.identity,
+            None => self.sheet.entities[at].frame.identity(kids),
         }
     }
 
@@ -73,10 +54,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let (Values::Scaled { mant, scale }, None) = (column.values, column.validity) else {
             return None;
         };
-        let (.., codes) = self.kin.iter().find(|(_, _, owners, ..)| Rc::ptr_eq(owners, parents))?;
-        let codes = codes
-            .get_or_init(|| parents.iter().map(|&row| i32::try_from(row).ok()).collect())
-            .clone()?;
+        let codes = self.kin.iter().find(|kin| Rc::ptr_eq(&kin.parents, parents))?.codes()?;
         let dict = Dict::Scaled {
             mant: mant.to_vec(),
             scale: scale.to_vec(),
@@ -85,15 +63,8 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     pub(super) fn gather(&self, at: usize, positions: &[usize]) -> (Rc<[usize]>, Rc<[usize]>) {
-        let entity = &self.sheet.entities[at];
-        let mut kids = Vec::with_capacity(entity.children);
-        let mut parents = Vec::with_capacity(entity.children);
-        for &row in positions {
-            if let Some((a, b)) = entity.range(row) {
-                kids.extend(a..b);
-                parents.extend(std::iter::repeat_n(row, b.saturating_sub(a)));
-            }
-        }
+        let frame = &self.sheet.entities[at].frame;
+        let (kids, parents) = Kin::gather(positions, frame.children, |row| frame.range(row), |_, _| {});
         (kids.into(), parents.into())
     }
 
@@ -276,7 +247,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 self.member_write(at, &ir.output, leaf, &kids);
             }
             (Event::Select(_), Some(Native::Match { pick: Some(pick), .. })) => {
-                let total = self.sheet.entities[at].children;
+                let total = self.sheet.entities[at].frame.children;
                 let (leaf, failed) = self.member_run(at, pick, &kids, &parents);
                 self.member_fail(&parents, &failed);
                 let picked = Self::arms_of(&leaf, kids.len());
@@ -295,7 +266,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 }
             }
             (Event::Select(_), Some(Native::Match { conditions, .. })) => {
-                let total = self.sheet.entities[at].children;
+                let total = self.sheet.entities[at].frame.children;
                 let mut chosen: Vec<Option<usize>> = vec![None; total];
                 let mut open: Vec<usize> = (0..kids.len()).collect();
                 for (arm, condition) in conditions.iter().enumerate() {
@@ -394,7 +365,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             return None;
         };
         let plan = self.artifact.read_plans.get(&self.plan.blocks.refs[block])?;
-        let (a, b) = self.sheet.entities[at].range(row).unwrap_or((0, 0));
+        let (a, b) = self.sheet.entities[at].frame.range(row).unwrap_or((0, 0));
         let mut demanded: Vec<Arc<str>> = Vec::new();
         for child in a..b {
             let pick = Pick::Match(MatchSelection {

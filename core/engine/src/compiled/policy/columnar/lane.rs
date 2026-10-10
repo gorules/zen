@@ -110,7 +110,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             .iter()
             .map(|(at, _)| {
                 let entity = &self.sheet.entities[*at];
-                (entity.children, entity.offsets.as_ref(), entity.validity.as_deref().map(|bits| (bits, 0)))
+                (entity.frame.children, entity.frame.offsets.as_ref(), entity.frame.validity.as_deref().map(|bits| (bits, 0)))
             })
             .collect();
         let fields: Vec<Vec<(&str, Column)>> = parts.iter().map(|(_, leaves)| leaves.iter().map(|(n, l)| (n.as_ref(), l.column())).collect()).collect();

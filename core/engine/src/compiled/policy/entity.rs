@@ -1,3 +1,4 @@
+use crate::compiled::core::list::Frame;
 use crate::compiled::shred::{Normalizer, Shred};
 use crate::policy::evaluator::EvalArtifact;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
@@ -20,9 +21,7 @@ pub(super) struct Entity<'a> {
     pub path: Arc<str>,
     pub owner: Option<Arc<str>>,
     pub entry: usize,
-    pub offsets: Rc<[i32]>,
-    pub validity: Option<Rc<[u64]>>,
-    pub children: usize,
+    pub frame: Frame,
     pub fields: Vec<Field<'a>>,
     pub active: bool,
     pub hosted: Option<Rc<[usize]>>,
@@ -42,7 +41,7 @@ impl<'a> Entity<'a> {
         let items: Vec<Column> = parts
             .iter()
             .zip(&shredded)
-            .map(|(fields, entity)| Column::new(Values::Struct { fields, len: entity.children }))
+            .map(|(fields, entity)| Column::new(Values::Struct { fields, len: entity.frame.children }))
             .collect();
         let lists: Vec<(usize, Column)> = items
             .iter()
@@ -52,10 +51,10 @@ impl<'a> Entity<'a> {
                     entity.entry,
                     Column {
                         values: Values::List {
-                            offsets: &entity.offsets,
+                            offsets: &entity.frame.offsets,
                             child: Dictionary::Column(item),
                         },
-                        validity: entity.validity.as_deref().map(|bits| (bits, 0)),
+                        validity: entity.frame.validity.as_deref().map(|bits| (bits, 0)),
                     },
                 )
             })
@@ -98,9 +97,11 @@ impl<'a> Entity<'a> {
             path,
             owner,
             entry,
-            offsets: Rc::from(offsets),
-            validity: validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows))),
-            children: len,
+            frame: Frame {
+                offsets: Rc::from(offsets),
+                validity: validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows))),
+                children: len,
+            },
             fields,
             active: true,
             hosted: None,
@@ -124,23 +125,12 @@ impl<'a> Entity<'a> {
             path,
             owner,
             entry,
-            offsets: shred.offsets,
-            validity: shred.validity,
-            children: shred.children,
+            frame: shred.frame,
             fields,
             active: true,
             hosted: Some(shred.hosted),
             cache: None,
         }
-    }
-
-    pub fn range(&self, row: usize) -> Option<(usize, usize)> {
-        if self.validity.as_ref().is_some_and(|bits| !Bits::get(bits, row)) {
-            return None;
-        }
-        let a = usize::try_from(*self.offsets.get(row)?).unwrap_or(0);
-        let b = usize::try_from(*self.offsets.get(row + 1)?).unwrap_or(0).max(a);
-        Some((a.min(self.children), b.min(self.children)))
     }
 
     pub fn field(&self, name: &str) -> Option<usize> {
@@ -212,7 +202,7 @@ impl<'a> Entity<'a> {
 
     pub fn materialize(&mut self) {
         if self.cache.is_none() {
-            self.cache = Some((0..self.children).map(|child| self.object(child)).collect());
+            self.cache = Some((0..self.frame.children).map(|child| self.object(child)).collect());
         }
     }
 
@@ -221,8 +211,8 @@ impl<'a> Entity<'a> {
     }
 
     pub fn records(&self, rows: usize) -> Leaf<'a> {
-        let offsets: Vec<i32> = self.offsets.get(..=rows).map_or_else(Vec::new, <[i32]>::to_vec);
-        let valid = match &self.validity {
+        let offsets: Vec<i32> = self.frame.offsets.get(..=rows).map_or_else(Vec::new, <[i32]>::to_vec);
+        let valid = match &self.frame.validity {
             Some(bits) => Bits::window(bits, 0, rows),
             None => Bits::ones(rows),
         };
@@ -232,8 +222,8 @@ impl<'a> Entity<'a> {
             .map(|field| {
                 let present: Rc<[u64]> = match (&field.present, field.input) {
                     (Some(bits), _) => bits.clone(),
-                    (None, false) => Bits::ones(self.children).into(),
-                    (None, true) => Self::held(field, self.children).into(),
+                    (None, false) => Bits::ones(self.frame.children).into(),
+                    (None, true) => Self::held(field, self.frame.children).into(),
                 };
                 (Symbol::from(field.name.as_ref()), field.leaf.clone(), present)
             })
@@ -242,7 +232,7 @@ impl<'a> Entity<'a> {
     }
 
     pub fn compose(&self, row: usize) -> Option<Variable> {
-        let (a, b) = self.range(row)?;
+        let (a, b) = self.frame.range(row)?;
         Some(Variable::from_array(match &self.cache {
             Some(cache) => cache[a..b].iter().map(Variable::shallow_clone).collect(),
             None => (a..b).map(|child| self.object(child)).collect(),
@@ -264,7 +254,7 @@ impl<'a> Entity<'a> {
                 }
             }
         }
-        let total = self.children;
+        let total = self.frame.children;
         let full = kids.len() == total;
         let (leaf, present) = match full {
             true => (leaf, None),

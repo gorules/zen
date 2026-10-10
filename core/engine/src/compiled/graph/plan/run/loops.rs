@@ -224,11 +224,11 @@ impl<'a> Run<'_, 'a> {
         let mut next = spans.iter().peekable();
         let mut total = 0i32;
         offsets.push(0);
-        for row in 0..rows {
+        for (row, &fault) in failed.iter().enumerate() {
             if let Some(&&(span_row, start, end)) = next.peek() {
                 if span_row == row {
                     total += (end - start) as i32;
-                    if !failed[row] {
+                    if !fault {
                         Bits::set(&mut valid, row, true);
                     }
                     next.next();

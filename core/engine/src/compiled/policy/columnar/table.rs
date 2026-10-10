@@ -33,9 +33,9 @@ impl<'s, 'a> Pass<'s, 'a> {
             };
             let column = leaf.column();
             if input.ordered {
-                for local in 0..count {
+                for (local, hosted) in host.iter_mut().enumerate() {
                     if !column.valid(local) || column.number(local).is_none() {
-                        host[local] = true;
+                        *hosted = true;
                     }
                 }
             }

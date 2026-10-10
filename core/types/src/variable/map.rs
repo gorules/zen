@@ -505,6 +505,86 @@ impl PartialEq for VariableMap {
 }
 
 impl VariableMap {
+    pub(crate) fn merge_cow(
+        &self,
+        patch: &VariableMap,
+        mut merge: impl FnMut(&mut Variable, &Variable) -> bool,
+    ) -> Option<Option<VariableMap>> {
+        let (
+            Repr::Shaped { shape, values },
+            Repr::Shaped {
+                shape: other,
+                values: incoming,
+            },
+        ) = (&self.0, &patch.0)
+        else {
+            return None;
+        };
+        if incoming.iter().any(|value| matches!(value, Variable::Null)) {
+            return None;
+        }
+        let plan = shape.merge_plan(other, SPILL_AT)?;
+        let copy = || {
+            let mut copied = Values::with_capacity(values.len() + plan.slots.len());
+            copied.extend(values.iter().map(Variable::shallow_clone));
+            copied
+        };
+        let mut out: Option<Values> = None;
+        for (&slot, value) in plan.slots.iter().zip(incoming.iter()) {
+            let slot = slot as usize;
+            match values.get(slot) {
+                Some(existing) => {
+                    let mut current = existing.shallow_clone();
+                    if merge(&mut current, value)
+                        && let Some(target) = out.get_or_insert_with(copy).get_mut(slot)
+                    {
+                        *target = current;
+                    }
+                }
+                None => out.get_or_insert_with(copy).push(value.shallow_clone()),
+            }
+        }
+        Some(out.map(|values| {
+            Self(Repr::Shaped {
+                shape: plan.shape.clone().unwrap_or_else(|| shape.clone()),
+                values,
+            })
+        }))
+    }
+
+    pub(crate) fn merge_in_place(
+        &mut self,
+        patch: &VariableMap,
+        mut merge: impl FnMut(&mut Variable, &Variable),
+    ) -> bool {
+        let (
+            Repr::Shaped { shape, values },
+            Repr::Shaped {
+                shape: other,
+                values: incoming,
+            },
+        ) = (&mut self.0, &patch.0)
+        else {
+            return false;
+        };
+        if incoming.iter().any(|value| matches!(value, Variable::Null)) {
+            return false;
+        }
+        let Some(plan) = shape.merge_plan(other, SPILL_AT) else {
+            return false;
+        };
+        for (&slot, value) in plan.slots.iter().zip(incoming.iter()) {
+            match values.get_mut(slot as usize) {
+                Some(existing) => merge(existing, value),
+                None => values.push(value.shallow_clone()),
+            }
+        }
+        if let Some(next) = &plan.shape {
+            *shape = next.clone();
+        }
+        true
+    }
+
     pub fn insert_str(&mut self, key: &str, value: Variable) -> Option<Variable> {
         let value = self.follow(key, value)?;
         self.insert(Symbol::from(key), value)

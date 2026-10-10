@@ -263,10 +263,12 @@ impl Variable {
         let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
             Variable::Object(obj) => {
                 let mut obj_ref = obj.borrow_mut();
-                Some(match obj_ref.entry(Symbol::from(part)) {
-                    Entry::Occupied(occ) => occ.get().shallow_clone(),
-                    Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
-                })
+                if let Some(existing) = obj_ref.get_str(part) {
+                    return Some(existing.shallow_clone());
+                }
+                let fresh = Self::empty_object();
+                obj_ref.insert_str(part, fresh.shallow_clone());
+                Some(fresh)
             }
             _ => None,
         })?;
@@ -275,7 +277,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.insert(Symbol::from(last_part), variable)
+        object.insert_str(last_part, variable)
     }
 
     pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
@@ -381,6 +383,28 @@ fn merge_variables(
         }
 
         let patch = patch_ref.borrow();
+        match strategy {
+            MergeStrategy::InPlace => {
+                if doc_ref.borrow_mut().merge_in_place(&patch, |entry, value| {
+                    merge_variables(entry, value, false, strategy);
+                }) {
+                    return true;
+                }
+            }
+            MergeStrategy::CloneOnWrite => {
+                let merged = doc_ref.borrow().merge_cow(&patch, |entry, value| {
+                    merge_variables(entry, value, false, strategy)
+                });
+                match merged {
+                    Some(Some(map)) => {
+                        *doc = Variable::from_object(map);
+                        return true;
+                    }
+                    Some(None) => return false,
+                    None => {}
+                }
+            }
+        }
         match strategy {
             MergeStrategy::InPlace => {
                 let mut map = doc_ref.borrow_mut();
@@ -513,6 +537,42 @@ mod tests {
     use crate::variable::Variable;
     use rust_decimal_macros::dec;
     use serde_json::json;
+
+    #[test]
+    fn merges_keep_order_and_sharing() {
+        let base: Variable = json!({ "b": 1, "a": { "x": 1, "y": [1] }, "c": "s" }).into();
+        for _ in 0..3 {
+            let mut doc = base.clone();
+            let patch: Variable = json!({ "a": { "y": [1], "z": 2 }, "d": true, "b": 1 }).into();
+            let merged = doc.merge_clone(&patch);
+            assert_eq!(
+                merged.to_string(),
+                r#"{"a":{"x":1,"y":[1],"z":2},"b":1,"c":"s","d":true}"#
+            );
+            assert_eq!(
+                base.to_string(),
+                r#"{"a":{"x":1,"y":[1]},"b":1,"c":"s"}"#
+            );
+            let mut same = base.clone();
+            let unchanged = same.merge_clone(&json!({ "b": 1, "c": "s" }).into());
+            assert!(std::rc::Rc::ptr_eq(
+                &unchanged.as_object().unwrap(),
+                &base.as_object().unwrap()
+            ));
+            let mut empty = Variable::empty_object();
+            let ending = empty.merge(&merged);
+            assert_eq!(ending.to_string(), merged.to_string());
+            assert!(std::rc::Rc::ptr_eq(
+                &ending.dot("a").unwrap().as_object().unwrap(),
+                &merged.dot("a").unwrap().as_object().unwrap()
+            ));
+            let removed = doc.merge_clone(&json!({ "b": null, "e": 1 }).into());
+            assert_eq!(
+                removed.to_string(),
+                r#"{"a":{"x":1,"y":[1]},"c":"s","e":1}"#
+            );
+        }
+    }
 
     #[test]
     fn insert_detached() {

@@ -12,6 +12,15 @@ const MANY_AT: usize = 8;
 
 const MAX_TRANSITIONS: usize = 4096;
 
+const MERGE_CACHE: usize = 8;
+
+type Cached = (u64, Option<Rc<MergePlan>>);
+
+pub(crate) struct MergePlan {
+    pub(crate) slots: Box<[u32]>,
+    pub(crate) shape: Option<Rc<Shape>>,
+}
+
 #[derive(Default)]
 enum Transitions {
     #[default]
@@ -27,21 +36,6 @@ impl Transitions {
             Transitions::Few(few) => few.len(),
             Transitions::Many(len, _) => *len,
         }
-    }
-
-    fn candidates(&self, print: u64) -> impl Iterator<Item = &Rc<Shape>> {
-        let few = match self {
-            Transitions::Few(few) => Some(few.iter().filter(move |(known, _)| *known == print)),
-            _ => None,
-        };
-        let many = match self {
-            Transitions::Many(_, map) => map.get(&print).map(|list| list.iter()),
-            _ => None,
-        };
-        few.into_iter()
-            .flatten()
-            .map(|(_, child)| child)
-            .chain(many.into_iter().flatten())
     }
 
     fn push(&mut self, print: u64, child: Rc<Shape>) {
@@ -77,6 +71,7 @@ pub struct Shape {
     keys: Box<[Symbol]>,
     prints: Box<[u64]>,
     transitions: RefCell<Transitions>,
+    merges: RefCell<SmallVec<[Cached; 2]>>,
 }
 
 impl Shape {
@@ -86,6 +81,7 @@ impl Shape {
             prints: keys.iter().map(|key| Self::print(key.as_str())).collect(),
             keys,
             transitions: RefCell::new(Transitions::default()),
+            merges: RefCell::new(SmallVec::new()),
         }
     }
 
@@ -153,15 +149,21 @@ impl Shape {
         let print = Self::print(key);
         let transitions = self.transitions.borrow();
         let position = self.keys.len();
-        transitions
-            .candidates(print)
-            .find(|child| {
-                Self::exact(key)
-                    || child
-                        .key_at(position)
-                        .is_some_and(|known| known.as_str() == key)
-            })
-            .cloned()
+        let exact = Self::exact(key);
+        let matches = |child: &Rc<Shape>| {
+            exact
+                || child
+                    .key_at(position)
+                    .is_some_and(|known| known.as_str() == key)
+        };
+        match &*transitions {
+            Transitions::Empty => None,
+            Transitions::Few(few) => few
+                .iter()
+                .find(|(known, child)| *known == print && matches(child))
+                .map(|(_, child)| child.clone()),
+            Transitions::Many(_, map) => map.get(&print)?.iter().find(|child| matches(child)).cloned(),
+        }
     }
 
     pub fn with(self: &Rc<Self>, key: &Symbol) -> Option<Rc<Shape>> {
@@ -178,6 +180,42 @@ impl Shape {
         let child = Rc::new(Shape::new(keys.into_boxed_slice()));
         transitions.push(Self::print(key.as_str()), child.clone());
         Some(child)
+    }
+
+    pub(crate) fn merge_plan(self: &Rc<Self>, patch: &Shape, spill_at: usize) -> Option<Rc<MergePlan>> {
+        let id = patch.id;
+        if let Some((_, plan)) = self.merges.borrow().iter().find(|(known, _)| *known == id) {
+            return plan.clone();
+        }
+        let plan = self.plan_merge(patch, spill_at).map(Rc::new);
+        let mut merges = self.merges.borrow_mut();
+        match merges.len() < MERGE_CACHE {
+            true => merges.push((id, plan.clone())),
+            false => merges[(id as usize) % MERGE_CACHE] = (id, plan.clone()),
+        }
+        plan
+    }
+
+    fn plan_merge(self: &Rc<Self>, patch: &Shape, spill_at: usize) -> Option<MergePlan> {
+        let base = self.len();
+        let mut current = self.clone();
+        let mut slots = Vec::with_capacity(patch.len());
+        for key in patch.keys.iter() {
+            match current.index_of(key.as_str()) {
+                Some(index) if index < base => slots.push(index as u32),
+                Some(_) => return None,
+                None if current.len() >= spill_at => return None,
+                None => {
+                    let child = current.with(key)?;
+                    slots.push(current.len() as u32);
+                    current = child;
+                }
+            }
+        }
+        Some(MergePlan {
+            slots: slots.into_boxed_slice(),
+            shape: (!Rc::ptr_eq(&current, self)).then_some(current),
+        })
     }
 
     pub fn without(&self, index: usize) -> Option<Rc<Shape>> {

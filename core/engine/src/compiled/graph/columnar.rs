@@ -1,7 +1,7 @@
 use crate::compiled::graph::data::{Data, Layer, Mask, Shape};
 use crate::compiled::shred::Normalizer;
 use crate::compiled::leaf::{ColumnBuilder, Input, Leaf};
-use crate::compiled::graph::{CompiledGraph, Source};
+use crate::compiled::graph::{CompiledGraph, Host, Source};
 use crate::decision_graph::cleaner::{VariableCleaner, ZEN_RESERVED_PROPERTIES};
 use crate::decision_graph::walker::GraphWalker;
 use crate::model::GraphContent;
@@ -318,7 +318,7 @@ impl CompiledGraph {
         }
         let count = columns.rows;
         let source = Source::Columns(Rc::new(Self::input_data(columns)));
-        let state = self.run(content, extensions, max_depth, &source, count, true, crate::compiled::graph::Nesting::default()).await;
+        let state = self.run(Host { content, extensions, max_depth }, &source, count, true, crate::compiled::graph::Nesting::default()).await;
         let groups: Vec<Group<'a>> = state
             .endings
             .iter()

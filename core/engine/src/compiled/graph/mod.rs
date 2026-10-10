@@ -26,6 +26,7 @@ use zen_expression::lane::Columns;
 use zen_expression::lane::LaneRunner;
 use zen_expression::Variable;
 pub(crate) use state::{Nesting, Source, State};
+use state::Host;
 use state::NodeColumn;
 use step::{Body, Condition, Hit, Kind, Step, Transform};
 
@@ -143,7 +144,7 @@ impl CompiledGraph {
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let start = Instant::now();
         let state = self
-            .run(content, extensions, max_depth, &Source::Rows(inputs), inputs.len(), false, Nesting::default())
+            .run(Host { content, extensions, max_depth }, &Source::Rows(inputs), inputs.len(), false, Nesting::default())
             .await;
         let performance = format!("{:.1?}", start.elapsed());
         state
@@ -171,7 +172,7 @@ impl CompiledGraph {
         let start = Instant::now();
         let inputs = [input];
         let state = self
-            .run(content, extensions, max_depth, &Source::Rows(&inputs), 1, false, Nesting::default())
+            .run(Host { content, extensions, max_depth }, &Source::Rows(&inputs), 1, false, Nesting::default())
             .await;
         if let Some(error) = state.errors.into_iter().next().flatten() {
             return Err(error);

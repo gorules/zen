@@ -24,6 +24,12 @@ use crate::compiled::graph::{CompiledGraph, Condition, Hit, Kind, Step, data, pl
 
 pub(super) type NodeColumn<'a> = (Arc<str>, Leaf<'a>);
 
+pub(in crate::compiled::graph) struct Host<'r> {
+    pub(in crate::compiled::graph) content: &'r Arc<GraphContent>,
+    pub(in crate::compiled::graph) extensions: &'r NodeHandlerExtensions,
+    pub(in crate::compiled::graph) max_depth: u8,
+}
+
 pub(crate) struct State<'a> {
     nodes: Vec<Vec<Rc<Data<'a>>>>,
     pub(crate) errors: Vec<Option<Box<EvaluationError>>>,
@@ -185,16 +191,8 @@ impl CompiledGraph {
         }
     }
 
-    pub(crate) async fn run<'a>(
-        &self,
-        content: &Arc<GraphContent>,
-        extensions: &NodeHandlerExtensions,
-        max_depth: u8,
-        source: &Source<'a>,
-        count: usize,
-        columnar: bool,
-        nesting: Nesting<'a>,
-    ) -> State<'a> {
+    pub(in crate::compiled::graph) async fn run<'a>(&self, host: Host<'_>, source: &Source<'a>, count: usize, columnar: bool, nesting: Nesting<'a>) -> State<'a> {
+        let Host { content, extensions, max_depth } = host;
         let mut state = State {
             nodes: vec![Vec::new(); self.steps.len()],
             errors: (0..count).map(|_| None).collect(),

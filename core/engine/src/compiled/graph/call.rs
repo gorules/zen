@@ -1,6 +1,6 @@
 use crate::compiled::exact::graph::Row;
 use super::traced::Traced;
-use super::{CompiledGraph, Nesting, Source};
+use super::{CompiledGraph, Host, Nesting, Source};
 use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::LoaderError;
 use crate::model::GraphContent;
@@ -76,7 +76,7 @@ impl Call<'_> {
             parents: Some(&parents),
             iteration: self.iteration + 1,
         };
-        let state = Box::pin(compiled.run(&content, &extensions, self.max_depth, &Source::Rows(&inputs), 1, false, nesting)).await;
+        let state = Box::pin(compiled.run(Host { content: &content, extensions: &extensions, max_depth: self.max_depth }, &Source::Rows(&inputs), 1, false, nesting)).await;
         let error = state.errors.into_iter().next().flatten();
         let result = state.results.into_iter().next().flatten();
         match error {

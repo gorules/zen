@@ -3,10 +3,9 @@ use zen_expression::Variable;
 use crate::compiled::graph::plan::census::Census;
 use crate::compiled::graph::plan::{Layout, Op, Program, SegEnd, SegPlan};
 use crate::decision_graph::walker::GraphWalker;
-use crate::nodes::NodeHandlerExtensions;
+use crate::compiled::graph::Host;
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::graph::CompiledGraph;
-use crate::model::GraphContent;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::LaneRunner;
@@ -21,12 +20,6 @@ mod rows;
 mod store;
 mod table;
 mod typed;
-
-struct Host<'r> {
-    content: &'r Arc<GraphContent>,
-    extensions: &'r NodeHandlerExtensions,
-    max_depth: u8,
-}
 
 struct Run<'r, 'a> {
     graph: &'r CompiledGraph,

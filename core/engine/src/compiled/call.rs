@@ -38,12 +38,20 @@ impl Call<'_> {
         }
     }
 
-    fn compiled(graph: &GraphContent) -> Result<&CompiledGraph, Box<dyn Error>> {
-        let plan = graph.compiled_plan.as_deref().ok_or("sub-decision is not compiled")?;
+    pub(super) fn compiled(graph: &GraphContent) -> Result<&CompiledGraph, Box<dyn Error>> {
+        let plan = graph.compiled_plan.as_deref().ok_or_else(Self::uncompiled)?;
         plan.graph().map_err(|invalid| invalid.source())
     }
 
-    fn sub_extensions(&self, content: &GraphContent) -> NodeHandlerExtensions {
+    pub(super) fn uncompiled() -> Box<dyn Error> {
+        "sub-decision is not compiled".into()
+    }
+
+    pub(super) fn kind(key: &str, kind: &str) -> Box<dyn Error> {
+        format!("sub-decision '{key}' is a {kind}, expected graph").into()
+    }
+
+    pub(super) fn sub_extensions(&self, content: &GraphContent) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             #[cfg(feature = "driver")]
             compiled_cache: content.compiled_cache.clone(),
@@ -115,12 +123,7 @@ impl Call<'_> {
                 Some(graph) => graph,
                 None => match self.load().await {
                     Err(error) => return Err(fault(error.into(), blank)),
-                    Ok(Load::Kind(kind)) => {
-                        return Err(fault(
-                            format!("sub-decision '{}' is a {kind}, expected graph", self.key).into(),
-                            blank,
-                        ))
-                    }
+                    Ok(Load::Kind(kind)) => return Err(fault(Self::kind(self.key, kind), blank)),
                     Ok(Load::Graph(graph)) => {
                         *loaded.borrow_mut() = Some(graph.clone());
                         graph

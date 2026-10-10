@@ -1,3 +1,4 @@
+mod batched;
 mod bound;
 mod plan;
 pub(crate) mod policy;
@@ -51,7 +52,7 @@ use zen_expression::lane::{LaneProgram, LaneRunner, Programs, SourceInfo};
 use zen_expression::{ExpressionKind, Scope, Variable};
 use row::Row;
 use zen_types::decision::{
-    DecisionNode, DecisionNodeContent, DecisionTableContent, ExpressionNodeContent, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
+    DecisionNode, DecisionTableContent, ExpressionNodeContent, FunctionNodeContent, InputNodeContent, OutputNodeContent, SwitchStatementHitPolicy,
     TransformAttributes, TransformExecutionMode,
 };
 
@@ -1212,59 +1213,6 @@ impl CompiledGraph {
             Self::fail(state, rows[i], &step.node, message);
         }
         state.nodes[event.node.index()].push(Rc::new(output));
-    }
-
-    async fn nested(
-        step: &Step,
-        content: &DecisionNodeContent,
-        inputs: &[Variable],
-        nodes: &[Option<Variable>],
-        extensions: &NodeHandlerExtensions,
-        max_depth: u8,
-        iteration: u8,
-    ) -> Option<Vec<Result<Variable, NodeError>>> {
-        let transform = &content.transform_attributes;
-        let plain = transform.input_field.is_none()
-            && transform.output_path.is_none()
-            && !transform.pass_through
-            && matches!(transform.execution_mode, TransformExecutionMode::Single);
-        if inputs.len() < 2 || iteration.saturating_add(1) >= max_depth || !plain {
-            return None;
-        }
-        let loader = extensions.loader();
-        let graph = loader.load(content.key.as_ref()).await.ok()?.into_graph_arc()?;
-        let prepared = GraphContent::loaded(graph, loader).await;
-        let compiled = prepared.compiled_plan.as_deref()?.graph().ok()?;
-        let graph = compiled.schemas(&prepared, loader).await;
-        let extensions = NodeHandlerExtensions {
-            function_runtime: Default::default(),
-            #[cfg(feature = "driver")]
-            compiled_cache: graph.compiled_cache.clone(),
-            dt_indexes: graph.dt_indexes.clone(),
-            validator_cache: Arc::new(std::cell::OnceCell::from(graph.validator_cache.clone())),
-            ..extensions.clone()
-        };
-        let parents: Vec<Option<Variable>> = (0..inputs.len()).map(|row| nodes.get(row).cloned().flatten()).collect();
-        let nesting = Nesting {
-            parents: Some(&parents),
-            iteration: iteration + 1,
-        };
-        let state = Box::pin(compiled.run(&graph, &extensions, max_depth, &Source::Rows(inputs), inputs.len(), false, nesting)).await;
-        Some(
-            state
-                .errors
-                .into_iter()
-                .zip(state.results)
-                .map(|(error, result)| match error {
-                    Some(error) => Err(NodeError {
-                        node_id: step.node.id.clone(),
-                        trace: None,
-                        source: error.to_string().into(),
-                    }),
-                    None => Ok(result.unwrap_or_else(Variable::empty_object)),
-                })
-                .collect(),
-        )
     }
 
     async fn hosted(

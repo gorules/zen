@@ -360,6 +360,7 @@ async fn columnar_graph_throughput() {
     let rows: usize = std::env::var("BENCH_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(1024);
     let filter = std::env::var("BENCH_FILE").ok();
     let read = std::env::var("BENCH_READ").is_ok_and(|v| v == "1");
+    let loader = std::env::var("BENCH_LOADER").is_ok_and(|v| v == "1");
     let mut ratios: Vec<(f64, String)> = Vec::new();
     for fixture in Fixture::load_all() {
         if NETWORK_BOUND.contains(&fixture.name.as_str())
@@ -369,6 +370,9 @@ async fn columnar_graph_throughput() {
             continue;
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        if loader {
+            compiled = compiled.with_loader(Arc::new(support::create_fs_loader()));
+        }
         compiled.compile();
         if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
             continue;

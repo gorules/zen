@@ -15,7 +15,7 @@ use crate::compiled::shred::{Listing, Normalizer, Seen, Shred, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer, Templated};
 use crate::compiled::data::Shape as DataShape;
 use crate::compiled::{Body, ColumnarOutput, CompiledGraph, Condition, Kind, OutputColumn};
-use crate::model::GraphContent;
+use crate::model::{DecisionNodeKind, GraphContent};
 use crate::EvaluationError;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
@@ -345,6 +345,13 @@ impl<'a> Store<'a> {
                 }
             };
             *slot = Some(error);
+        }
+    }
+
+    fn share(&mut self, row: usize, error: &Rc<EvaluationError>) {
+        if let Some(slot @ None) = self.errors.get_mut(row) {
+            self.failed += 1;
+            *slot = Some(error.clone());
         }
     }
 
@@ -1606,6 +1613,20 @@ impl<'a> Run<'_, 'a> {
         Some(Data::record(&local, Layer::new(paths.into(), columns, Some(present)), None))
     }
 
+    fn settle(&mut self, results: Vec<Result<Variable, NodeError>>, at: &[usize]) -> Vec<Variable> {
+        results
+            .into_iter()
+            .zip(at)
+            .map(|(result, &row)| match result {
+                Ok(value) => value,
+                Err(error) => {
+                    self.store.fault(row, error);
+                    Variable::Null
+                }
+            })
+            .collect()
+    }
+
     fn inputs(&mut self, seg: &SegPlan, input: Option<&Node>, nodes: &Option<Vec<(Arc<str>, Ref)>>, positions: Option<&Rc<[usize]>>) -> (Vec<usize>, Vec<Variable>, Vec<Option<Variable>>) {
         let at: Vec<usize> = match positions {
             Some(positions) => positions.to_vec(),
@@ -1654,21 +1675,37 @@ impl<'a> Run<'_, 'a> {
             }
             return;
         }
+        if let (Kind::Host, DecisionNodeKind::DecisionNode { content }) = (&step.kind, &step.node.kind) {
+            let count = positions.map_or(self.store.rows, |p| p.len());
+            if CompiledGraph::batchable(&content.transform_attributes, count) {
+                let values = match CompiledGraph::resolve(content, self.host.extensions).await {
+                    Err(failure) => {
+                        let error = failure.shared(step, &content.key);
+                        match positions {
+                            Some(positions) => positions.iter().for_each(|&row| self.store.share(row, &error)),
+                            None => (0..count).for_each(|row| self.store.share(row, &error)),
+                        }
+                        vec![Variable::Null; count]
+                    }
+                    Ok(graph) => {
+                        let (at, inputs, nodes) = self.inputs(seg, Some(&op.view), &op.nodes, positions);
+                        let results = CompiledGraph::batch(step, content, &graph, &inputs, &nodes, self.host.extensions, self.host.max_depth, 0).await;
+                        self.settle(results, &at)
+                    }
+                };
+                let leaf = self.store.place(Leaf::Any(values.into()), positions);
+                self.store.slots[op.out as usize] = Some(leaf);
+                return;
+            }
+        }
         let (at, inputs, nodes) = self.inputs(seg, data.is_none().then_some(&op.view), &op.nodes, positions);
         let values: Vec<Variable> = match &step.kind {
             Kind::Host => {
-                let results = CompiledGraph::hosted(step, &inputs, &nodes, self.host.extensions, self.host.max_depth, 0, self.store.rows > 1).await;
-                results
-                    .into_iter()
-                    .zip(&at)
-                    .map(|(result, &row)| match result {
-                        Ok(value) => value,
-                        Err(error) => {
-                            self.store.fault(row, error);
-                            Variable::Null
-                        }
-                    })
-                    .collect()
+                let results = match &step.node.kind {
+                    DecisionNodeKind::CustomNode { content } => CompiledGraph::custom(step, content, inputs, nodes, self.host.extensions).await,
+                    _ => CompiledGraph::hosted(step, &inputs, &nodes, self.host.extensions, self.host.max_depth, 0, self.store.rows > 1).await,
+                };
+                self.settle(results, &at)
             }
             Kind::Input | Kind::Output => {
                 let (values, failures) = graph.bounded(step, &inputs, &nodes, self.host.content, self.host.extensions).await;

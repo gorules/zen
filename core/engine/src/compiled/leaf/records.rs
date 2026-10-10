@@ -321,10 +321,7 @@ impl<'a> Items<'a> {
                 let Values::Struct { fields, len } = child.values else {
                     return None;
                 };
-                let rows = match child.validity {
-                    Some((bits, offset)) => Some(Bits::window(bits, offset, len)),
-                    None => None,
-                };
+                let rows = child.validity.map(|(bits, offset)| Bits::window(bits, offset, len));
                 Some(
                     fields
                         .iter()

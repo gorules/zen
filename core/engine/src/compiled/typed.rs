@@ -860,6 +860,29 @@ impl<'a> Records<'a> {
         }
     }
 
+    fn pick(&self, positions: &[usize]) -> Records<'a> {
+        let rows = positions.len();
+        let mut offsets = Vec::with_capacity(rows + 1);
+        let mut valid = vec![0u64; rows.div_ceil(64)];
+        let mut items: Vec<usize> = Vec::new();
+        offsets.push(0i32);
+        for (at, &row) in positions.iter().enumerate() {
+            if let Some((start, end)) = self.range(row) {
+                Bits::set(&mut valid, at, true);
+                items.extend(start..end);
+            }
+            offsets.push(i32::try_from(items.len()).unwrap_or(i32::MAX));
+        }
+        let items: Rc<[usize]> = items.into();
+        let fields = self
+            .fields
+            .iter()
+            .map(|(name, leaf, present)| (name.clone(), leaf.pick(&items), Rc::from(Bits::gather(present, &items))))
+            .collect();
+        let nulled = self.nulled.as_ref().map(|bits| Rc::from(Bits::gather(bits, &items)));
+        Records::new(rows, offsets, valid, fields, nulled)
+    }
+
     fn dense(&self) -> &Rc<[Variable]> {
         self.dense.get_or_init(|| (0..self.rows).map(|row| self.get(row)).collect())
     }
@@ -1201,6 +1224,13 @@ impl<'a> Leaf<'a> {
                 let column = other.column();
                 Leaf::typed(Array::from_values((0..other.len()).map(|row| column.variable(row)).collect()).expand(ids))
             }
+        }
+    }
+
+    pub fn regroup(&self, positions: &Rc<[usize]>) -> Leaf<'a> {
+        match self.records() {
+            Some(records) => Leaf::Records(Rc::new(records.pick(positions))),
+            None => self.pick(positions),
         }
     }
 

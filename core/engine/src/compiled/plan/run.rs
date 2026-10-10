@@ -11,7 +11,7 @@ use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::walker::GraphWalker;
 use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::compiled::bound::{Bound, Outs};
-use crate::compiled::shred::{Listing, Normalizer, Seen, Shredder};
+use crate::compiled::shred::{Listing, Normalizer, Seen, Shred, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer};
 use crate::compiled::data::Shape as DataShape;
 use crate::compiled::{Body, ColumnarOutput, CompiledGraph, Condition, Kind, OutputColumn};
@@ -24,6 +24,8 @@ use std::sync::Arc;
 use zen_expression::lane::{Binding as Bind, Column, Columns, Dictionary, LaneProgram, LaneRunner, Values};
 
 struct Failure(Rc<str>);
+
+type Shredded<'a> = Option<(Rc<Records<'a>>, Rc<[u64]>)>;
 
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -517,6 +519,7 @@ struct Run<'r, 'a> {
     store: Store<'a>,
     settled: bool,
     failures: Vec<(usize, usize)>,
+    shreds: Vec<(Leaf<'a>, Shredded<'a>)>,
 }
 
 impl<'a> Run<'_, 'a> {
@@ -1239,13 +1242,30 @@ impl<'a> Run<'_, 'a> {
         };
         let leaf = self.store.value(seg, list);
         let rows = self.store.rows;
-        let at: Vec<usize> = match positions {
+        let mut at: Vec<usize> = match positions {
             Some(positions) => positions.to_vec(),
             None => (0..rows).collect(),
         };
-        if let Some(items) = leaf.items() {
-            if self.native_loop(step, body, transform.pass_through, &items, out, &at) {
-                return;
+        let mut native: Option<(Leaf<'a>, Vec<usize>)> = None;
+        match leaf.items() {
+            Some(items) => {
+                if self.native_loop(step, body, transform.pass_through, &items, out, &at) {
+                    return;
+                }
+            }
+            None => {
+                if let Some((records, odd)) = self.shredded(&leaf, rows) {
+                    let (rest, lifted): (Vec<usize>, Vec<usize>) = at.iter().partition(|&&row| Bits::get(&odd, row));
+                    if self.native_loop(step, body, transform.pass_through, &Items::Records(records), out, &lifted) {
+                        if rest.is_empty() {
+                            return;
+                        }
+                        if let Some(leaf) = self.store.slots[out as usize].take() {
+                            native = Some((leaf, lifted));
+                            at = rest;
+                        }
+                    }
+                }
             }
         }
         let mut items: Vec<Variable> = Vec::new();
@@ -1282,7 +1302,43 @@ impl<'a> Run<'_, 'a> {
                 None => values[row] = Variable::from_array(collected),
             }
         }
+        if let Some((leaf, lifted)) = native {
+            lifted.into_iter().for_each(|row| values[row] = leaf.get(row));
+        }
         self.store.slots[out as usize] = Some(Leaf::Any(values.into()));
+    }
+
+    fn shredded(&mut self, leaf: &Leaf<'a>, rows: usize) -> Shredded<'a> {
+        if let Some((_, cached)) = self.shreds.iter().find(|(seen, _)| seen.same(leaf)) {
+            return cached.clone();
+        }
+        let shredded = Self::shred(leaf, rows);
+        self.shreds.push((leaf.clone(), shredded.clone()));
+        shredded
+    }
+
+    fn shred(leaf: &Leaf<'a>, rows: usize) -> Shredded<'a> {
+        let column = leaf.column();
+        let shred = Shred::of(&column, rows)?;
+        let mut odd = vec![0u64; rows.div_ceil(64)];
+        shred.hosted.iter().filter(|&&row| leaf.get(row).as_array().is_some()).for_each(|&row| Bits::set(&mut odd, row, true));
+        let valid = match shred.validity {
+            Some(bits) => bits.to_vec(),
+            None => Bits::ones(rows),
+        };
+        let count = shred.children;
+        let fields = shred
+            .fields
+            .into_iter()
+            .map(|(name, array)| {
+                let present: Rc<[u64]> = match array.validity_bits() {
+                    Some(bits) => Bits::window(bits, 0, count).into(),
+                    None => Bits::ones(count).into(),
+                };
+                (Symbol::from(name.as_ref()), Leaf::typed(array), present)
+            })
+            .collect();
+        Some((Rc::new(Records::new(rows, shred.offsets.to_vec(), valid, fields, None)), odd.into()))
     }
 
     fn native_loop(&mut self, step: &crate::compiled::Step, body: &Body, pass_through: bool, source: &Items<'a>, out: SlotId, at: &[usize]) -> bool {
@@ -1907,7 +1963,7 @@ impl<'a> Run<'_, 'a> {
                 r.map(|r| {
                     let leaf = self.store.value(seg, r);
                     match positions {
-                        Some(positions) => leaf.pick(positions),
+                        Some(positions) => leaf.regroup(positions),
                         None => leaf,
                     }
                 })
@@ -1926,7 +1982,7 @@ impl<'a> Run<'_, 'a> {
         let evaluated = match &keyed {
             Some((reps, _)) => {
                 let reps: Rc<[usize]> = reps.as_slice().into();
-                leaves = leaves.into_iter().map(|leaf| leaf.map(|leaf| leaf.pick(&reps))).collect();
+                leaves = leaves.into_iter().map(|leaf| leaf.map(|leaf| leaf.regroup(&reps))).collect();
                 reps.len()
             }
             None => local,
@@ -2403,6 +2459,7 @@ impl Plan {
             store,
             settled: true,
             failures: Vec::new(),
+            shreds: Vec::new(),
         };
         let done = run.walk(root.clone()).await;
         let Run { runner, store, .. } = run;

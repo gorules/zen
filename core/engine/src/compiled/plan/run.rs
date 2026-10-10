@@ -68,7 +68,8 @@ pub(crate) struct Store<'a> {
     masked: Vec<(SlotId, M, Leaf<'a>)>,
     shared: Vec<(usize, Rc<[u64]>)>,
     ones: Rc<[u64]>,
-    errors: Vec<Option<Box<EvaluationError>>>,
+    errors: Vec<Option<Rc<EvaluationError>>>,
+    recent: Vec<(Arc<str>, Rc<str>, Rc<EvaluationError>)>,
     failed: usize,
     groups: Vec<Group<'a>>,
     hints: Vec<(SlotId, Rc<[i32]>, usize)>,
@@ -88,6 +89,7 @@ impl Drop for Store<'_> {
 impl<'a> Store<'a> {
     const NONE: u32 = u32::MAX;
     const ONES: usize = 0;
+    const RECENT: usize = 8;
 
     thread_local! {
         static POOL: std::cell::RefCell<(Vec<u64>, Vec<u32>)> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
@@ -124,6 +126,7 @@ impl<'a> Store<'a> {
             shared: Vec::new(),
             ones,
             errors: (0..rows).map(|_| None).collect(),
+            recent: Vec::new(),
             failed: 0,
             groups: Vec::new(),
             hints: Vec::new(),
@@ -323,18 +326,30 @@ impl<'a> Store<'a> {
     fn fail(&mut self, row: usize, node: &crate::model::DecisionNode, message: Rc<str>) {
         if let Some(slot @ None) = self.errors.get_mut(row) {
             self.failed += 1;
-            *slot = Some(Box::new(EvaluationError::NodeError {
-                node_id: node.id.clone(),
-                source: Box::new(Failure(message)),
-                trace: None,
-            }));
+            let known = self.recent.iter().find(|(id, text, _)| Arc::ptr_eq(id, &node.id) && (Rc::ptr_eq(text, &message) || *text == message));
+            let error = match known {
+                Some((.., error)) => error.clone(),
+                None => {
+                    let error = Rc::new(EvaluationError::NodeError {
+                        node_id: node.id.clone(),
+                        source: Box::new(Failure(message.clone())),
+                        trace: None,
+                    });
+                    if self.recent.len() >= Self::RECENT {
+                        self.recent.remove(0);
+                    }
+                    self.recent.push((node.id.clone(), message, error.clone()));
+                    error
+                }
+            };
+            *slot = Some(error);
         }
     }
 
     fn fault(&mut self, row: usize, error: NodeError) {
         if let Some(slot @ None) = self.errors.get_mut(row) {
             self.failed += 1;
-            *slot = Some(Box::new(EvaluationError::NodeError {
+            *slot = Some(Rc::new(EvaluationError::NodeError {
                 node_id: error.node_id,
                 source: error.source,
                 trace: None,
@@ -501,6 +516,7 @@ struct Run<'r, 'a> {
     host: Host<'r>,
     store: Store<'a>,
     settled: bool,
+    failures: Vec<(usize, usize)>,
 }
 
 impl<'a> Run<'_, 'a> {
@@ -510,13 +526,21 @@ impl<'a> Run<'_, 'a> {
         }
         *seen = self.store.failed;
         let rows = self.store.rows;
-        let current: Vec<usize> = match &positions {
-            Some(p) => p.to_vec(),
-            None => (0..rows).collect(),
+        let errors = &self.store.errors;
+        let total = positions.as_ref().map_or(rows, |p| p.len());
+        let live = match &positions {
+            Some(p) => p.iter().filter(|&&row| errors[row].is_none()).count(),
+            None => errors.iter().filter(|error| error.is_none()).count(),
         };
-        let live: Vec<usize> = current.iter().copied().filter(|&row| self.store.errors[row].is_none()).collect();
-        match (live.len() + live.len() / 7 < current.len(), live.len() == rows) {
-            (true, _) => Some(live.into()),
+        match (live + live / 7 < total, live == rows) {
+            (true, _) => {
+                let mut kept = Vec::with_capacity(live);
+                match &positions {
+                    Some(p) => kept.extend(p.iter().copied().filter(|&row| errors[row].is_none())),
+                    None => kept.extend((0..rows).filter(|&row| errors[row].is_none())),
+                }
+                Some(kept.into())
+            }
             (false, true) => None,
             (false, false) => positions,
         }
@@ -697,19 +721,22 @@ impl<'a> Run<'_, 'a> {
                 let uniform = truths.iter().all(|t| t.as_ref().is_none_or(|t| Rc::ptr_eq(t, &self.store.ones)));
                 let mut groups: Vec<(Vec<u64>, Vec<usize>)> = Vec::new();
                 let members = |bits: &[u64]| -> Vec<usize> {
-                    bits.iter()
-                        .enumerate()
-                        .flat_map(|(w, &word)| {
-                            let mut word = word;
-                            std::iter::from_fn(move || {
-                                (word != 0).then(|| {
-                                    let bit = word.trailing_zeros() as usize;
-                                    word &= word - 1;
-                                    w * 64 + bit
+                    let mut found = Vec::with_capacity(bits.iter().map(|word| word.count_ones() as usize).sum());
+                    found.extend(
+                        bits.iter()
+                            .enumerate()
+                            .flat_map(|(w, &word)| {
+                                let mut word = word;
+                                std::iter::from_fn(move || {
+                                    (word != 0).then(|| {
+                                        let bit = word.trailing_zeros() as usize;
+                                        word &= word - 1;
+                                        w * 64 + bit
+                                    })
                                 })
-                            })
-                        })
-                        .collect()
+                            }),
+                    );
+                    found
                 };
                 if uniform || *first {
                     let mut remaining = reach_bits.clone();
@@ -1790,7 +1817,8 @@ impl<'a> Run<'_, 'a> {
         };
         let scopes = Bound::blank(rows);
         let mut outs = Outs::take();
-        let mut failures: Vec<(usize, usize)> = Vec::new();
+        let mut failures = std::mem::take(&mut self.failures);
+        failures.clear();
         let local = positions.map_or(rows, |p| p.len());
         let single = [positions.and_then(|p| p.first().copied()).unwrap_or(0)];
         let uniform = op.uniform && local > 1;
@@ -1836,11 +1864,15 @@ impl<'a> Run<'_, 'a> {
             let leaf = self.store.place(leaf, positions);
             self.store.slots[*slot as usize] = Some(leaf);
         }
-        let (Some(entries), true, Some(step)) = (entries, report, self.graph.step_at(op.node)) else {
-            return;
-        };
+        if let (Some(entries), true, Some(step)) = (entries, report, self.graph.step_at(op.node)) {
+            self.report(entries, step, positions, &failures);
+        }
+        self.failures = failures;
+    }
+
+    fn report(&mut self, entries: &[(Arc<str>, Arc<str>)], step: &crate::compiled::Step, positions: Option<&Rc<[usize]>>, failures: &[(usize, usize)]) {
         let mut messages: Vec<Option<Rc<str>>> = vec![None; entries.len().max(1)];
-        for (at, stage) in failures {
+        for &(at, stage) in failures {
             let row = positions.map_or(at, |p| p.get(at).copied().unwrap_or(at));
             if self.store.errors.get(row).is_none_or(Option::is_some) {
                 continue;
@@ -2336,7 +2368,7 @@ impl Plan {
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &'a Columns<'a>,
-        failures: Vec<(usize, Box<EvaluationError>)>,
+        failures: Vec<(usize, Rc<EvaluationError>)>,
     ) -> Option<ColumnarOutput<'a>> {
         if let Some(resolved) = &content.resolved_schemas {
             let touched = graph
@@ -2370,6 +2402,7 @@ impl Plan {
             },
             store,
             settled: true,
+            failures: Vec::new(),
         };
         let done = run.walk(root.clone()).await;
         let Run { runner, store, .. } = run;

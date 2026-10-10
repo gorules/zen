@@ -1737,6 +1737,7 @@ impl Table {
                     lanes.iter().for_each(|&row| kept[row] = false);
                 }
                 if lanes.is_empty() {
+                    buckets[rule] = lanes;
                     continue;
                 }
                 let outputs = &self.outputs[rule];
@@ -1787,6 +1788,8 @@ impl Table {
                         }
                     }
                 }
+                lanes.clear();
+                buckets[rule] = lanes;
             }
         }
         First {

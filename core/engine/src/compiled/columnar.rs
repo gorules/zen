@@ -46,7 +46,7 @@ impl OutputColumn<'_> {
 pub struct ColumnarOutput<'a> {
     pub rows: usize,
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
-    pub errors: Vec<Option<Box<EvaluationError>>>,
+    pub errors: Vec<Option<Rc<EvaluationError>>>,
     pub typed: usize,
     pub laned: usize,
 }
@@ -75,7 +75,7 @@ impl ColumnarOutput<'_> {
                     }
                     errors.push(None);
                 }
-                Err(error) => errors.push(Some(error)),
+                Err(error) => errors.push(Some(Rc::from(error))),
             }
         }
         ColumnarOutput {
@@ -143,7 +143,7 @@ impl CompiledGraph {
         content: &Arc<GraphContent>,
         extensions: &NodeHandlerExtensions,
         columns: &Columns<'_>,
-    ) -> Option<Vec<(usize, Box<EvaluationError>)>> {
+    ) -> Option<Vec<(usize, Rc<EvaluationError>)>> {
         let step = self.steps.iter().flatten().find(|step| matches!(step.kind, crate::compiled::Kind::Input))?;
         if !Self::columnar_input(step, content, extensions) {
             return None;
@@ -159,7 +159,7 @@ impl CompiledGraph {
                 .map(|(row, message)| {
                     (
                         row,
-                        Box::new(EvaluationError::NodeError {
+                        Rc::new(EvaluationError::NodeError {
                             node_id: step.node.id.clone(),
                             source: message.into(),
                             trace: None,
@@ -409,7 +409,7 @@ impl CompiledGraph {
         ColumnarOutput {
             rows: count,
             columns,
-            errors: state.errors,
+            errors: state.errors.into_iter().map(|error| error.map(Rc::from)).collect(),
             typed: 0,
             laned: 0,
         }

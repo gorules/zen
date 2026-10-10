@@ -348,7 +348,11 @@ impl Output {
                 self.scale.resize(rows, 0);
             }
             Kind::Dyn => self.values.resize(rows, Variable::Null),
-            Kind::Str => self.offsets.push(0),
+            Kind::Str => {
+                self.offsets.reserve(rows + 1);
+                self.data.reserve(rows * 4);
+                self.offsets.push(0)
+            }
             Kind::Date => self.dates.resize(rows, None),
             Kind::Bool => {}
             Kind::List => {

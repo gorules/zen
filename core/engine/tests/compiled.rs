@@ -805,12 +805,23 @@ async fn plan_census() {
             true => fixture.inputs.clone(),
             false => fixture.typed_variants(),
         };
+        let variants: Vec<Value> = match std::env::var("CENSUS_ROWS").ok().and_then(|v| v.parse::<usize>().ok()) {
+            Some(rows) if !variants.is_empty() => (0..rows).map(|i| variants[i % variants.len()].clone()).collect(),
+            _ => variants,
+        };
         let Some(built) = Built::new(&variants) else {
             reasons.entry("no columns".into()).or_default().push(fixture.name.clone());
             continue;
         };
         let columns = built.columns();
         let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let _ = Decision::census();
+        let start = std::time::Instant::now();
+        let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        println!("CENSUS\t{}\ttotal\t1\t{}\t{}", fixture.name, built.rows, start.elapsed().as_nanos());
+        for (key, calls, rows, ns) in Decision::census() {
+            println!("CENSUS\t{}\t{key}\t{calls}\t{rows}\t{ns}", fixture.name);
+        }
         let key = match compiled.plan_verdict(&columns) {
             None => "not compiled".to_string(),
             Some(Ok(())) => "planned".to_string(),

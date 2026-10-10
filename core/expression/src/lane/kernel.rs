@@ -136,6 +136,7 @@ enum Root<'a> {
 struct Load {
     origin: Origin,
     rest: Box<[Step]>,
+    bound: usize,
 }
 
 impl Load {
@@ -149,7 +150,7 @@ impl Load {
             match env.bound.get(*id) {
                 Some(Binding::Column(index)) => {
                     let (_, column) = env.columns?.columns.get(*index)?;
-                    return f(&column.variable(env.row));
+                    return Self::walk(&column.variable(env.row), self.rest.get(self.bound..).unwrap_or_default(), f);
                 }
                 Some(Binding::Absent) => return f(&Variable::Null),
                 _ => {}
@@ -438,6 +439,7 @@ impl Kernel {
             unresolved: false,
             aliases: Vec::new(),
             owned: false,
+            indexing: false,
         }
     }
 
@@ -470,7 +472,7 @@ impl Kernel {
         let resolvable = chain
             && !assigns
             && !nested
-            && roots.iter().all(|(_, n)| LaneCompiler::dollar_static(n, false));
+            && roots.iter().all(|(_, n)| LaneCompiler::dollar_static(n));
         if resolvable {
             if let Some(kernel) = Self::entries(roots, hints, program, true, false) {
                 return Some(kernel);
@@ -490,6 +492,7 @@ impl Kernel {
         let mut builder = Self::builder(hints);
         builder.dollar = resolvable.then(Vec::new);
         builder.owned = assigns;
+        builder.indexing = resolvable || dynamic;
         let mut entries = Vec::with_capacity(roots.len());
         for (index, (key, root)) in roots.iter().enumerate() {
             entries.push(builder.node(root)?.val());
@@ -617,6 +620,7 @@ struct KernelBuilder<'h, 'a> {
     unresolved: bool,
     aliases: Vec<Option<&'a str>>,
     owned: bool,
+    indexing: bool,
 }
 
 impl<'h, 'a> KernelBuilder<'h, 'a> {
@@ -670,6 +674,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                                     _ => Step::Index(usize::MAX),
                                 })
                                 .collect(),
+                            bound: 0,
                         }))
                         .val(),
                     ),
@@ -682,6 +687,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                                 _ => None,
                             })
                             .collect(),
+                        bound: 0,
                     })),
                 })
             }
@@ -1037,6 +1043,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         Some(Code::Load(Arc::new(Load {
             origin: Origin::Out(index),
             rest,
+            bound: 0,
         })))
     }
 
@@ -1085,12 +1092,26 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 }
             })
             .collect();
-        let bind_key = (keyed && !dotted).then(|| Box::<str>::from(name.as_str()));
+        let leading = rest.iter().take_while(|p| matches!(p, Node::String(_))).count();
+        let (bind_key, bound) = match (keyed, dotted) {
+            (true, false) => (Some(Box::<str>::from(name.as_str())), steps.len()),
+            (false, false) if self.indexing => {
+                let prefix: Vec<&str> = std::iter::once(key)
+                    .chain(rest.iter().take(leading).filter_map(|p| match p {
+                        Node::String(s) => Some(*s),
+                        _ => None,
+                    }))
+                    .collect();
+                (Some(Box::<str>::from(prefix.join(".").as_str())), leading)
+            }
+            _ => (None, steps.len()),
+        };
         let id = self.keys.len();
         self.keys.push(bind_key);
         let code = Code::Load(Arc::new(Load {
             origin: Origin::Env(Box::from(key), Slot::new(), id),
             rest: steps,
+            bound,
         }));
         let hint = match keyed {
             true => self.hints.and_then(|h| h.get(&name).copied()),

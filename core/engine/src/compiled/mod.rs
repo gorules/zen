@@ -309,6 +309,10 @@ impl CompiledGraph {
         })
     }
 
+    pub(crate) fn census() -> Vec<(String, u64, u64, u128)> {
+        plan::census::Census::take()
+    }
+
     fn plan(&self) -> Option<&plan::Plan> {
         self.plan
             .get_or_init(|| match std::env::var("ZEN_LEGACY") {
@@ -990,6 +994,7 @@ impl CompiledGraph {
             }
         };
         if Self::whole(step, data, rebase) {
+            plan::census::Census::mark("whole");
             let whole = match rebase {
                 None => data.materialized(),
                 Some(base) => data.subtree(base),
@@ -1290,6 +1295,7 @@ impl CompiledGraph {
             || matches!(&data.shape, data::Shape::Plain(values) if values.iter().any(Self::foreign))
             || Self::foreign_base(&data, based);
         if foreign {
+            plan::census::Census::mark("walked");
             let mut failures = Vec::new();
             let values: Col = data
                 .materialized()
@@ -1346,16 +1352,19 @@ impl CompiledGraph {
             let overlapping = matches!(body, Body::Expression { overlapping: true, .. });
             match (rebase, &transform.output_path, wide) {
                 (Some(rebase), None, true) if !overlapping => {
+                    plan::census::Census::mark("layered");
                     Self::bound(step, data, nodes, extra, rebase, |bound| {
                         Self::layered(runner, body, transform.pass_through, data, bound, None)
                     })
                 }
                 (Some(rebase), Some(path), true) if keyed && expression && !overlapping => {
+                    plan::census::Census::mark("layered-path");
                     Self::bound(step, data, nodes, extra, rebase, |bound| {
                         Self::layered(runner, body, transform.pass_through, data, bound, Some(path))
                     })
                 }
                 (Some(None), Some(path), true) if keyed => {
+                    plan::census::Census::mark("placed");
                     Self::bound(step, data, nodes, extra, None, |bound| {
                         Self::placed(runner, body, path, transform.pass_through, data, bound)
                     })
@@ -1365,9 +1374,11 @@ impl CompiledGraph {
                         && !step.nodes
                         && transform.input_field.as_ref().is_some_and(|(program, _)| program.path().is_some()) =>
                 {
+                    plan::census::Census::mark("looped");
                     Self::looped(runner, step, body, transform, path, data)
                 }
                 _ => {
+                    plan::census::Census::mark("transformed");
                     let materialized = data.materialized();
                     let results = Self::transformed(runner, step, body, transform, &materialized, nodes);
                     let mut failures = Vec::new();

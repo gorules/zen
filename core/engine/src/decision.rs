@@ -299,6 +299,11 @@ impl Decision {
         Some(compiled.plan_verdict(columns))
     }
 
+    #[doc(hidden)]
+    pub fn census() -> Vec<(String, u64, u64, u128)> {
+        crate::compiled::CompiledGraph::census()
+    }
+
     pub fn compiled_verdict(&self) -> Option<Result<(), &str>> {
         self.content.compiled_verdict()
     }

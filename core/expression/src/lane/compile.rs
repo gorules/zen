@@ -101,6 +101,7 @@ pub struct LaneCompiler<'a> {
     folding: bool,
     pure: ahash::HashMap<usize, bool>,
     unresolved: bool,
+    indexing: bool,
 }
 
 impl<'a> LaneCompiler<'a> {
@@ -140,6 +141,7 @@ impl<'a> LaneCompiler<'a> {
             folding,
             pure: Default::default(),
             unresolved: false,
+            indexing: false,
         };
         let (out, layout) = match Self::shaped(root) {
             true => {
@@ -232,7 +234,7 @@ impl<'a> LaneCompiler<'a> {
         let resolvable = chain
             && !assigns
             && !nested
-            && roots.iter().all(|(_, n)| Self::dollar_static(n, false));
+            && roots.iter().all(|(_, n)| Self::dollar_static(n));
         match Self::compile_entries(roots, chain, hints, assigns, resolvable) {
             Ok(program) => Ok(program),
             Err(CompilerError::UnexpectedErrorNode) if resolvable => {
@@ -270,6 +272,7 @@ impl<'a> LaneCompiler<'a> {
             folding: false,
             pure: Default::default(),
             unresolved: false,
+            indexing: chain,
         };
         let mut outputs = Vec::with_capacity(roots.len());
         for (index, (key, root)) in roots.iter().enumerate() {
@@ -352,6 +355,7 @@ impl<'a> LaneCompiler<'a> {
             folding: false,
             pure: Default::default(),
             unresolved: false,
+            indexing: false,
         };
         let mut outputs = Vec::with_capacity(roots.len());
         for (key, root, output) in roots.iter() {
@@ -455,7 +459,7 @@ impl<'a> LaneCompiler<'a> {
         Some(Ok(reg))
     }
 
-    pub(crate) fn dollar_static(node: &Node, closure: bool) -> bool {
+    pub(crate) fn dollar_static(node: &Node) -> bool {
         let mut base = node;
         let mut chain = false;
         let mut dotted = false;
@@ -469,47 +473,47 @@ impl<'a> LaneCompiler<'a> {
             chain = true;
         }
         if chain && matches!(base, Node::Identifier("$")) {
-            return !closure && !dotted;
+            return !dotted;
         }
         let ok = std::cell::Cell::new(true);
         match node {
             Node::Identifier("$") | Node::Root => false,
-            Node::Closure { body, .. } => Self::dollar_static(body, true),
+            Node::Closure { body, .. } => Self::dollar_static(body),
             Node::Member { node, property } => {
-                Self::dollar_static(node, closure) && Self::dollar_static(property, closure)
+                Self::dollar_static(node) && Self::dollar_static(property)
             }
-            Node::Parenthesized(n) | Node::Unary { node: n, .. } => Self::dollar_static(n, closure),
+            Node::Parenthesized(n) | Node::Unary { node: n, .. } => Self::dollar_static(n),
             Node::Binary { left, right, .. } | Node::Interval { left, right, .. } => {
-                Self::dollar_static(left, closure) && Self::dollar_static(right, closure)
+                Self::dollar_static(left) && Self::dollar_static(right)
             }
             Node::Conditional {
                 condition,
                 on_true,
                 on_false,
             } => {
-                Self::dollar_static(condition, closure)
-                    && Self::dollar_static(on_true, closure)
-                    && Self::dollar_static(on_false, closure)
+                Self::dollar_static(condition)
+                    && Self::dollar_static(on_true)
+                    && Self::dollar_static(on_false)
             }
             Node::Array(items) | Node::TemplateString(items) => {
-                items.iter().all(|n| Self::dollar_static(n, closure))
+                items.iter().all(|n| Self::dollar_static(n))
             }
             Node::Object(pairs) => pairs
                 .iter()
-                .all(|(k, v)| Self::dollar_static(k, closure) && Self::dollar_static(v, closure)),
+                .all(|(k, v)| Self::dollar_static(k) && Self::dollar_static(v)),
             Node::FunctionCall { arguments, .. } => {
-                arguments.iter().all(|n| Self::dollar_static(n, closure))
+                arguments.iter().all(|n| Self::dollar_static(n))
             }
             Node::MethodCall {
                 this, arguments, ..
             } => {
-                Self::dollar_static(this, closure)
-                    && arguments.iter().all(|n| Self::dollar_static(n, closure))
+                Self::dollar_static(this)
+                    && arguments.iter().all(|n| Self::dollar_static(n))
             }
             Node::Slice { node, to, from } => {
-                Self::dollar_static(node, closure)
-                    && to.is_none_or(|n| Self::dollar_static(n, closure))
-                    && from.is_none_or(|n| Self::dollar_static(n, closure))
+                Self::dollar_static(node)
+                    && to.is_none_or(|n| Self::dollar_static(n))
+                    && from.is_none_or(|n| Self::dollar_static(n))
             }
             Node::Assignments { .. } | Node::Error { .. } => false,
             _ => ok.get(),
@@ -547,7 +551,7 @@ impl<'a> LaneCompiler<'a> {
                 .find(|(k, _)| *k == key)
                 .map(|(_, r)| (*r, i))
         });
-        let Some((mut reg, used)) = found else {
+        let Some((reg, used)) = found else {
             let interior = (1..=segments.len()).any(|i| {
                 let prefix = format!("{}.", segments[..i].join("."));
                 dollar.iter().any(|(k, _)| k.starts_with(&prefix))
@@ -557,6 +561,7 @@ impl<'a> LaneCompiler<'a> {
             }
             return Some(Ok(self.constant(Const::Null)));
         };
+        let mut reg = self.imported(reg);
         for key in &segments[used..] {
             let site = self.site(None);
             let dst = self.alloc();
@@ -612,6 +617,30 @@ impl<'a> LaneCompiler<'a> {
     fn site(&mut self, key: Option<String>) -> u16 {
         self.site_keys.push(key);
         (self.site_keys.len() - 1) as u16
+    }
+
+    fn indexed(path: &[FetchFastTarget]) -> Option<usize> {
+        let at = path.iter().position(|p| matches!(p, FetchFastTarget::Number(_)))?;
+        let keyed = Self::path_key(&path[..at]).is_some();
+        let rest = path[at..].iter().all(|p| matches!(p, FetchFastTarget::Number(_) | FetchFastTarget::String(_)));
+        (keyed && rest).then_some(at)
+    }
+
+    fn loaded(&mut self, path: &[FetchFastTarget]) -> Reg {
+        let share = Self::path_key(path).map(|k| format!("path:{k}"));
+        if let Some(reg) = self.cached_load(&share) {
+            return reg;
+        }
+        let kind = self.hint(path);
+        let dst = self.alloc_kind(kind);
+        let site = self.site(Self::path_key(path));
+        self.emit(Op::Path {
+            dst,
+            path: path.into(),
+            site,
+        });
+        self.remember_load(share, dst);
+        dst
     }
 
     fn path_key(path: &[FetchFastTarget]) -> Option<String> {
@@ -716,6 +745,7 @@ impl<'a> LaneCompiler<'a> {
 
     fn node_key(&self, node: &Node) -> Option<String> {
         match node {
+            Node::Identifier("$") if self.dollar.as_ref().is_some_and(|d| !d.is_empty()) => None,
             Node::Identifier(v) => match self.lookup_alias(v) {
                 Some(depth) => self.pointer_key(depth),
                 None => Some(v.to_string()),
@@ -1039,6 +1069,22 @@ impl<'a> LaneCompiler<'a> {
             .find_map(|(index, &alias)| {
                 alias.and_then(|a| (a == name).then_some((self.aliases.len() - 1 - index) as u32))
             })
+    }
+
+    fn imported(&mut self, mut reg: Reg) -> Reg {
+        for j in 1..self.stack.len() {
+            let kind = self.stack[j - 1].kind(reg);
+            let builder = &mut self.stack[j];
+            reg = match builder.imports.iter().find(|(p, _)| *p == reg) {
+                Some((_, c)) => *c,
+                None => {
+                    let c = builder.pin(kind);
+                    builder.imports.push((reg, c));
+                    c
+                }
+            };
+        }
+        reg
     }
 
     fn pointer(&mut self, depth: u32) -> Reg {
@@ -1429,6 +1475,7 @@ impl<'a> LaneCompiler<'a> {
             folding: false,
             pure: Default::default(),
             unresolved: false,
+            indexing: false,
         }
     }
 
@@ -1560,7 +1607,7 @@ impl<'a> LaneCompiler<'a> {
                 return resolved;
             }
         }
-        if self.dollar.is_some() && self.stack.len() == 1 {
+        if self.dollar.is_some() {
             if let Some(resolved) = self.resolve_dollar(node) {
                 return resolved;
             }
@@ -1676,6 +1723,25 @@ impl<'a> LaneCompiler<'a> {
             }
             Node::Parenthesized(v) => self.node(v)?,
             Node::Member { node: n, property } => match self.member_fast(node) {
+                Some(path) if self.indexing && Self::path_key(&path).is_none() && Self::indexed(&path).is_some() => {
+                    let at = Self::indexed(&path).unwrap_or(path.len());
+                    let (head, tail) = path.split_at(at);
+                    let mut reg = self.loaded(head);
+                    for target in tail {
+                        let key = match target {
+                            FetchFastTarget::Number(index) => Const::Number(Decimal::from(*index)),
+                            FetchFastTarget::String(key) => Const::String(key.clone()),
+                            _ => Const::Null,
+                        };
+                        let b = self.constant(key);
+                        self.release(reg);
+                        self.release(b);
+                        let dst = self.alloc();
+                        self.emit(Op::Fetch { dst, a: reg, b });
+                        reg = dst;
+                    }
+                    reg
+                }
                 Some(path) => {
                     let share = Self::path_key(&path).map(|k| format!("path:{k}"));
                     if let Some(reg) = self.cached_load(&share) {

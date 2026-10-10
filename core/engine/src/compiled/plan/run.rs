@@ -5,6 +5,7 @@ use zen_expression::Variable;
 use zen_types::symbol::Symbol;
 use zen_types::variable::VariableMap;
 use super::typed::{Deferred, Grouping, Path, Piece, Target, TypedOp};
+use super::census::Census;
 use super::{Cond, LaneOp, Layout, Op, Plan, Program, RowsCond, RowsOp, SegEnd, SegPlan, Source, TableMode, TableOp};
 use zen_expression::typed::{Batch, Data as Slotted, Outputs, Slot};
 use crate::decision_graph::cleaner::VariableCleaner;
@@ -593,7 +594,13 @@ impl<'a> Run<'_, 'a> {
                 }
                 Op::Typed { op, units } => self.typed(seg, op, units, positions),
                 Op::Deferred { op, units } => self.deferred(seg, op, units, positions),
-                Op::Rows(op) => self.rows(seg, op, positions).await,
+                Op::Rows(op) => {
+                    Census::begin();
+                    self.rows(seg, op, positions).await;
+                    if Census::on() {
+                        self.counted(op, positions);
+                    }
+                }
                 Op::Loop { node, list, out } => self.looped(seg, *node, *list, *out, positions),
                 Op::Join { inputs, out, strict, ending } => {
                     let leaves: Vec<Leaf<'a>> = inputs.iter().map(|r| self.store.leaf(r.slot)).collect();
@@ -1679,6 +1686,7 @@ impl<'a> Run<'_, 'a> {
         };
         if let (Kind::Output, Some(data)) = (&step.kind, &data) {
             let nodes = self.inputs(seg, None, &op.nodes, positions).2;
+            Census::mark("validate");
             let failures = graph.validate_input(step, data, &nodes, self.host.content, self.host.extensions).await;
             for (i, message) in failures {
                 let row = positions.map_or(i, |p| p[i]);
@@ -1689,6 +1697,7 @@ impl<'a> Run<'_, 'a> {
         if let (Kind::Host, DecisionNodeKind::DecisionNode { content }) = (&step.kind, &step.node.kind) {
             let count = positions.map_or(self.store.rows, |p| p.len());
             if CompiledGraph::batchable(&content.transform_attributes, count) {
+                Census::mark("batched");
                 let values = match CompiledGraph::resolve(content, self.host.extensions).await {
                     Err(failure) => {
                         let error = failure.shared(step, &content.key);
@@ -1712,6 +1721,7 @@ impl<'a> Run<'_, 'a> {
         let (at, inputs, nodes) = self.inputs(seg, data.is_none().then_some(&op.view), &op.nodes, positions);
         let values: Vec<Variable> = match &step.kind {
             Kind::Host => {
+                Census::mark("hosted");
                 let results = match &step.node.kind {
                     DecisionNodeKind::CustomNode { content } => CompiledGraph::custom(step, content, inputs, nodes, self.host.extensions).await,
                     _ => CompiledGraph::hosted(step, &inputs, &nodes, self.host.extensions, self.host.max_depth, 0, self.store.rows > 1).await,
@@ -1719,6 +1729,7 @@ impl<'a> Run<'_, 'a> {
                 self.settle(results, &at)
             }
             Kind::Input | Kind::Output => {
+                Census::mark("bounded");
                 let (values, failures) = graph.bounded(step, &inputs, &nodes, self.host.content, self.host.extensions).await;
                 for (i, message) in failures {
                     self.store.fail(at[i], &step.node, Rc::from(message));
@@ -1756,7 +1767,24 @@ impl<'a> Run<'_, 'a> {
         self.store.slots[op.out as usize] = Some(leaf);
     }
 
+    fn counted(&self, op: &RowsOp, positions: Option<&Rc<[usize]>>) {
+        let kind = self.graph.step_at(op.node).map_or("?", Census::kind);
+        let rows = positions.map_or(self.store.rows, |p| p.len());
+        Census::record(format!("{kind} | {} | {}", op.reason, Census::path()), rows, Census::elapsed());
+    }
+
     fn rows_condition(&mut self, seg: &SegPlan, op: &RowsCond, positions: Option<&Rc<[usize]>>) -> Vec<u64> {
+        if !Census::on() {
+            return self.conditioned(seg, op, positions);
+        }
+        let start = Instant::now();
+        let bits = self.conditioned(seg, op, positions);
+        let rows = positions.map_or(self.store.rows, |p| p.len());
+        Census::record(format!("switch | {} | rows", op.reason), rows, start.elapsed().as_nanos());
+        bits
+    }
+
+    fn conditioned(&mut self, seg: &SegPlan, op: &RowsCond, positions: Option<&Rc<[usize]>>) -> Vec<u64> {
         let mut bits = vec![0u64; self.store.rows.div_ceil(64)];
         let Some(Kind::Switch { conditions, .. }) = self.graph.step_at(op.node).map(|step| &step.kind) else {
             return bits;
@@ -1790,6 +1818,7 @@ impl<'a> Run<'_, 'a> {
         let step = graph.step_at(op.node)?;
         match (&step.kind, op.program) {
             (Kind::Node { body: Body::Expression { program, entries, .. }, .. }, Program::Expression) => Some((program, Some(entries))),
+            (Kind::Node { transform, .. }, Program::Field) => transform.input_field.as_ref().map(|(program, _)| (program, None)),
             (Kind::Switch { conditions, .. }, Program::Condition(index)) => match conditions.get(index) {
                 Some((_, Condition::Program(program))) => Some((program, None)),
                 _ => None,
@@ -1986,10 +2015,32 @@ impl<'a> Run<'_, 'a> {
             let leaf = self.store.place(leaf, positions);
             self.store.slots[*slot as usize] = Some(leaf);
         }
-        if let (Some(entries), true, Some(step)) = (entries, report, self.graph.step_at(op.node)) {
-            self.report(entries, step, positions, &failures);
+        let graph = self.graph;
+        match (report, op.program, graph.step_at(op.node), entries) {
+            (true, Program::Field, Some(step), _) => {
+                if let Some((source, _)) = Self::program(graph, op) {
+                    self.fielded(step, source, &columns, positions, &failures);
+                }
+            }
+            (true, _, Some(step), Some(entries)) => self.report(entries, step, positions, &failures),
+            _ => {}
         }
         self.failures = failures;
+    }
+
+    fn fielded(&mut self, step: &crate::compiled::Step, source: &LaneProgram, columns: &Columns, positions: Option<&Rc<[usize]>>, failures: &[(usize, usize)]) {
+        for &(at, _) in failures {
+            let row = positions.map_or(at, |p| p.get(at).copied().unwrap_or(at));
+            if self.store.errors.get(row).is_none_or(Option::is_some) {
+                continue;
+            }
+            let scope = zen_expression::Scope::new(columns.row(row));
+            let message = match self.runner.evaluate(source, std::slice::from_ref(&scope)).into_iter().next() {
+                Some(Err(e)) => format!("Failed to evaluate expression: {e}"),
+                _ => "Failed to evaluate expression".to_string(),
+            };
+            self.store.fail(row, &step.node, Rc::from(message));
+        }
     }
 
     fn report(&mut self, entries: &[(Arc<str>, Arc<str>)], step: &crate::compiled::Step, positions: Option<&Rc<[usize]>>, failures: &[(usize, usize)]) {

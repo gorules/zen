@@ -175,6 +175,7 @@ impl Engines {
             }
             self.compared += 1;
         }
+        let _ = zen_engine::Decision::census();
         let rows: Vec<Value> = suite.cases.iter().map(|c| c.input.to_value()).collect();
         let cycled_rows: Vec<Value> = (0..rows.len() * 3).map(|i| rows[i % rows.len()].clone()).collect();
         for built in Built::new(&rows).into_iter().chain(Built::lists(&rows)).chain(Built::new(&cycled_rows)).chain(Built::nested(&rows)).chain(Built::nested(&cycled_rows)) {
@@ -216,6 +217,11 @@ impl Engines {
                         input.to_value()
                     ));
                 }
+            }
+        }
+        if std::env::var("ZEN_CENSUS").is_ok() {
+            for (key, calls, rows, ns) in zen_engine::Decision::census() {
+                println!("CENSUS\tspec:{}\t{key}\t{calls}\t{rows}\t{ns}", suite.id());
             }
         }
     }

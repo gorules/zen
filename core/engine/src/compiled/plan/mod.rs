@@ -1,3 +1,4 @@
+pub(crate) mod census;
 mod run;
 mod typed;
 mod view;
@@ -36,6 +37,7 @@ pub(crate) struct SlotInfo {
 pub(crate) enum Program {
     Expression,
     Condition(usize),
+    Field,
 }
 
 pub(crate) struct LaneOp {
@@ -94,6 +96,7 @@ pub(crate) struct RowsOp {
     pub nodes: Option<Vec<(Arc<str>, Ref)>>,
     pub out: SlotId,
     pub keys: Vec<(Arc<str>, SlotId, M)>,
+    pub reason: Arc<str>,
 }
 
 pub(crate) struct RowsCond {
@@ -101,6 +104,7 @@ pub(crate) struct RowsCond {
     pub node: NodeIndex,
     pub input: Ref,
     pub nodes: Option<Vec<(Arc<str>, Ref)>>,
+    pub reason: Arc<str>,
 }
 
 pub(crate) enum Cond {
@@ -268,7 +272,7 @@ impl<'g> Builder<'g> {
     fn lane(&mut self, node: NodeIndex, kind: Program, program: &LaneProgram, input: &Node, base: Option<&str>, outs: Vec<SlotId>) -> Result<LaneOp, String> {
         let p = program.program();
         if p.writes_env || p.chain || p.opaque() || p.rows {
-            return Err("program needs rows".into());
+            return Err(format!("program needs rows (env {} chain {} opaque {} rows {})", p.writes_env, p.chain, p.opaque(), p.rows));
         }
         let mut reads: Vec<(Arc<str>, Ref)> = Vec::new();
         let mut bound = Vec::with_capacity(p.site_keys.len());
@@ -633,7 +637,7 @@ impl<'g> Builder<'g> {
         Some(views.into_iter().map(|(name, view)| (name, self.whole(&view))).collect())
     }
 
-    fn rows(&mut self, node: NodeIndex, step: &Step, input: &Node, visible: &[NodeIndex]) -> Node {
+    fn rows(&mut self, node: NodeIndex, step: &Step, input: &Node, visible: &[NodeIndex], reason: Arc<str>) -> Node {
         let nodes = self.nodes(step, visible);
         let out = self.slot(Shape::Dyn);
         let keyed = self.attempt(|b| b.keyed(step));
@@ -651,6 +655,7 @@ impl<'g> Builder<'g> {
             nodes,
             out,
             keys,
+            reason,
         })));
         let merged = match &step.kind {
             Kind::Node { transform, .. } if transform.pass_through && view.leaf.is_none() => self.attempt(|b| Node::merge(input, &view, &mut b.masks, &mut b.catalog)).ok(),
@@ -747,8 +752,15 @@ impl<'g> Builder<'g> {
         let (Some(path), Some((program, _)), false) = (&transform.output_path, &transform.input_field, step.nodes) else {
             return Err("loop".into());
         };
-        let source = program.path().ok_or("loop source")?;
-        let list = self.read(input, source, None)?.ok_or("loop source absent")?;
+        let list = match program.path() {
+            Some(source) => self.read(input, source, None)?.ok_or("loop source absent")?,
+            None => {
+                let slot = self.slot(Shape::Dyn);
+                let op = self.lane(node, Program::Field, program, input, None, vec![slot])?;
+                self.catalog.ops.push(Op::Lane(Box::new(op)));
+                Ref { slot, present: M::All }
+            }
+        };
         let out = self.slot(Shape::List);
         self.catalog.ops.push(Op::Loop { node, list, out });
         let leaf = Node {
@@ -834,9 +846,9 @@ impl<'g> Builder<'g> {
             let output = match planned {
                 Ok(output) => output,
                 Err(reason) => {
-                    self.hosted.push(reason);
                     self.relax(&data);
-                    let hosted = self.rows(event.node, step, &data, &event.visible);
+                    let hosted = self.rows(event.node, step, &data, &event.visible, Arc::from(reason.as_str()));
+                    self.hosted.push(reason);
                     match (&step.kind, data.leaf.is_none()) {
                         (Kind::Output, true) => data.clone(),
                         _ => hosted,
@@ -883,6 +895,7 @@ impl<'g> Builder<'g> {
                                 b.lane(*node, Program::Condition(index), program, &input, None, vec![out])
                             });
                             let Ok(op) = lane.inspect_err(|reason| self.hosted.push(format!("condition: {reason}"))) else {
+                                let reason = self.hosted.last().map_or_else(|| Arc::from("condition"), |r| Arc::from(r.as_str()));
                                 let whole = self.whole(&input);
                                 let nodes = self.nodes(step, visible);
                                 built.push(Cond::Rows(Box::new(RowsCond {
@@ -890,6 +903,7 @@ impl<'g> Builder<'g> {
                                     node: *node,
                                     input: whole,
                                     nodes,
+                                    reason,
                                 })));
                                 continue;
                             };
@@ -993,7 +1007,7 @@ impl Plan {
             return Err(match (nodes, step.root, step.dynamic) {
                 (true, _, _) => "nodes".into(),
                 (_, true, _) => "root".into(),
-                (_, _, true) => "dynamic".into(),
+                (_, _, true) => Self::dynamic(step),
                 _ => "schema".into(),
             });
         }
@@ -1002,6 +1016,31 @@ impl Plan {
             Kind::Node { .. } => Ok(()),
             Kind::Host => Err("host".into()),
         }
+    }
+
+    fn dynamic(step: &Step) -> String {
+        let mut programs: Vec<&LaneProgram> = Vec::new();
+        match &step.kind {
+            Kind::Node { body, transform } => {
+                match body {
+                    Body::Expression { program, .. } => programs.push(program),
+                    Body::Table(table) => programs.extend(table.programs()),
+                }
+                programs.extend(transform.input_field.iter().map(|(p, _)| p));
+            }
+            Kind::Switch { conditions, .. } => programs.extend(conditions.iter().filter_map(|(_, c)| match c {
+                Condition::Program(p) => Some(p.as_ref()),
+                _ => None,
+            })),
+            _ => {}
+        }
+        let flags: Vec<String> = programs
+            .iter()
+            .map(|p| p.program())
+            .filter(|p| p.writes_env || p.chain || p.opaque())
+            .map(|p| format!("env {} chain {} opaque {}", p.writes_env, p.chain, p.opaque()))
+            .collect();
+        format!("dynamic ({})", flags.join("; "))
     }
 
     pub fn verdict(&self, graph: &CompiledGraph, columns: &Columns) -> Result<(), String> {

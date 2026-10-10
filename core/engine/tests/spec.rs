@@ -441,3 +441,131 @@ fn policy_engines_match_driver() {
     assert!(std::env::var("ZEN_TYPED").is_ok_and(|v| v.trim() == "0") || engines.typed > 0, "no policy unit ran typed");
     Differential::assert(problems, engines.failures);
 }
+
+struct Snapshot {
+    lines: Vec<String>,
+}
+
+impl Snapshot {
+    const CALLS: usize = 4;
+
+    fn paths<'p>(paths: impl Iterator<Item = &'p Arc<str>>) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for path in paths {
+            path.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn kinds(errors: impl Iterator<Item = String>) -> String {
+        let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+        for error in errors {
+            let kind: String = error.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            *kinds.entry(kind).or_default() += 1;
+        }
+        kinds.iter().map(|(kind, count)| format!("{kind}={count}")).collect::<Vec<_>>().join(",")
+    }
+
+    fn graph_rows(rows: &[Value]) -> Vec<(&'static str, Built)> {
+        let cycled: Vec<Value> = (0..rows.len() * 3).map(|i| rows[i % rows.len()].clone()).collect();
+        let mut builds = Vec::new();
+        builds.extend(Built::new(rows).map(|b| ("flat", b)));
+        builds.extend(Built::lists(rows).map(|b| ("lists", b)));
+        builds.extend(Built::new(&cycled).map(|b| ("cycled", b)));
+        builds.extend(Built::nested(rows).map(|b| ("nested", b)));
+        builds.extend(Built::nested(&cycled).map(|b| ("nested-cycled", b)));
+        builds
+    }
+
+    async fn graph(&mut self, suite: &Suite) {
+        let rows: Vec<Value> = suite.cases.iter().map(|c| c.input.to_value()).collect();
+        for (label, built) in Self::graph_rows(&rows) {
+            let Ok(run) = GraphRun::new(suite) else {
+                return;
+            };
+            let fields = built.fields();
+            let structs = built.structs(&fields);
+            let columns = built.columns_with(&structs);
+            for call in 1..=Self::CALLS {
+                let output = run.compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+                let errors = output.errors.iter().flatten().map(|e| format!("{e:?}"));
+                self.lines.push(format!(
+                    "graph\t{}\t{label}\tcall{call}\trows={}\ttyped={}\tlaned={}\terrors=[{}]\tpaths={:016x}",
+                    suite.id(),
+                    output.rows,
+                    output.typed,
+                    output.laned,
+                    Self::kinds(errors),
+                    Self::paths(output.columns.iter().map(|(path, _)| path))
+                ));
+            }
+        }
+    }
+
+    fn policy(&mut self, suite: &Suite) {
+        let Ok(probe) = PolicyRun::new(suite) else {
+            return;
+        };
+        if !probe.blocking.is_empty() && probe.gate {
+            return;
+        }
+        let mut goal_sets: Vec<&Vec<String>> = suite.cases.iter().map(|c| &c.goals).collect();
+        goal_sets.dedup();
+        for goals in goal_sets {
+            let rows: Vec<Value> = suite.cases.iter().filter(|c| &c.goals == goals).map(|c| c.input.to_value()).collect();
+            let targets: Vec<Arc<str>> = goals.iter().map(|g| Arc::from(g.as_str())).collect();
+            for (label, built) in Self::graph_rows(&rows) {
+                let Ok(run) = PolicyRun::new(suite) else {
+                    return;
+                };
+                let fields = built.fields();
+                let structs = built.structs(&fields);
+                let columns = match label.starts_with("nested") {
+                    true => built.columns_with(&structs),
+                    false => built.columns(),
+                };
+                for call in 1..=Self::CALLS {
+                    let line = match run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), &targets, &columns) {
+                        Ok(output) => format!(
+                            "rows={}\ttyped={}\tlaned={}\thosted={}\terrors=[{}]\tpaths={:016x}\torder={:016x}",
+                            output.rows,
+                            output.typed,
+                            output.laned,
+                            output.hosted,
+                            Self::kinds(output.errors.iter().flatten().map(|e| format!("{e:?}"))),
+                            Self::paths(output.columns.iter().map(|(path, _)| path).collect::<std::collections::BTreeSet<_>>().into_iter()),
+                            Self::paths(output.columns.iter().map(|(path, _)| path))
+                        ),
+                        Err(error) => format!("refused {}", Self::kinds(std::iter::once(format!("{error:?}")))),
+                    };
+                    self.lines.push(format!("policy\t{}\t{goals:?}\t{label}\tcall{call}\t{line}", suite.id()));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn consolidation_snapshot() {
+    Spec::prepare();
+    let mut snapshot = Snapshot { lines: Vec::new() };
+    let (suites, _) = Spec::suites(Dialect::Graph);
+    for suite in &suites {
+        let label = format!("{}:{} [{}]", suite.file, suite.line, suite.name);
+        let mut failures = Vec::new();
+        Guard::run(label, &mut failures, || Guard::block(snapshot.graph(suite)));
+        snapshot.lines.extend(failures.iter().map(|f| format!("graph\tpanic\t{}", f.lines().next().unwrap_or_default())));
+    }
+    let (suites, _) = Spec::suites(Dialect::Policy);
+    for suite in &suites {
+        let label = format!("{}:{} [{}]", suite.file, suite.line, suite.name);
+        let mut failures = Vec::new();
+        Guard::run(label, &mut failures, || snapshot.policy(suite));
+        snapshot.lines.extend(failures.iter().map(|f| format!("policy\tpanic\t{}", f.lines().next().unwrap_or_default())));
+    }
+    for line in &snapshot.lines {
+        println!("SNAPSHOT\t{line}");
+    }
+}

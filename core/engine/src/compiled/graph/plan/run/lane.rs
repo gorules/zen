@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Columns, LaneProgram, Values};
 use super::Run;
-use super::store::Entries;
+use super::store::{Entries, Hint};
 
 impl<'a> Run<'_, 'a> {
     fn program<'g>(graph: &'g CompiledGraph, op: &'g LaneOp) -> Option<(&'g LaneProgram, Entries<'g>)> {
@@ -25,7 +25,7 @@ impl<'a> Run<'_, 'a> {
         }
     }
 
-    pub(super) fn distinct(leaves: &[Leaf<'a>], hints: &[Option<(Rc<[i32]>, usize)>], positions: Option<&Rc<[usize]>>, rows: usize) -> Option<(Vec<usize>, Vec<u32>)> {
+    pub(super) fn distinct(leaves: &[Leaf<'a>], hints: &[Hint], positions: Option<&Rc<[usize]>>, rows: usize) -> Option<(Vec<usize>, Vec<u32>)> {
         let local = positions.map_or(rows, |p| p.len());
         if leaves.is_empty() || local < 16 {
             return None;

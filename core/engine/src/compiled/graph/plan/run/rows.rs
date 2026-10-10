@@ -15,10 +15,10 @@ use std::rc::Rc;
 use std::time::Instant;
 use std::sync::Arc;
 use super::Run;
-use super::store::Store;
+use super::store::{Flat, Layered, Store};
 
 impl<'a> Run<'_, 'a> {
-    pub(super) fn flattened(&mut self, r: Ref, positions: Option<&Rc<[usize]>>) -> Vec<(Arc<str>, Leaf<'a>, Option<Rc<[u64]>>)> {
+    pub(super) fn flattened(&mut self, r: Ref, positions: Option<&Rc<[usize]>>) -> Vec<Flat<'a>> {
         let leaf = self.store.leaf(r.slot);
         let rows = self.store.rows;
         let mut shredder = Shredder::new(rows);
@@ -45,7 +45,7 @@ impl<'a> Run<'_, 'a> {
         Leaf::Any(Store::objects(&shape, self.store.rows).into())
     }
 
-    fn layer(&mut self, seg: &SegPlan, node: &Node, prefix: &str, out: &mut Vec<(Arc<str>, Leaf<'a>, Rc<[u64]>)>) -> Option<Vec<u64>> {
+    fn layer(&mut self, seg: &SegPlan, node: &Node, prefix: &str, out: &mut Vec<Layered<'a>>) -> Option<Vec<u64>> {
         match (node.leaf, node.fields.is_empty()) {
             (Some(_), false) => None,
             (Some(r), true) => {

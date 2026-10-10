@@ -10,6 +10,8 @@ use crate::policy::queries::path::PathRoot;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
+type Seen = (Arc<str>, Arc<str>, PropertyTypeIr, bool, bool);
+
 impl Db {
     pub fn compute_policy_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
         let mut out: Vec<Diagnostic> = Vec::new();
@@ -596,10 +598,7 @@ impl Db {
 
     fn data_model_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
-        let mut seen: HashMap<
-            (Option<Arc<str>>, Arc<str>),
-            (Arc<str>, Arc<str>, PropertyTypeIr, bool, bool),
-        > = HashMap::default();
+        let mut seen: HashMap<(Option<Arc<str>>, Arc<str>), Seen> = HashMap::default();
         let unit = self.unit(target);
         let all_dms = &unit.data_models;
         let known_entities: HashSet<Arc<str>> = all_dms

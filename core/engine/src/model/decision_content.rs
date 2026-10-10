@@ -8,6 +8,8 @@ use crate::policy::PolicyDocument;
 use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
+
+type ResolvedSchemas = HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>;
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 
 #[derive(Clone, Debug, Serialize)]
@@ -115,7 +117,7 @@ pub struct GraphContent {
     pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
 
     #[serde(skip)]
-    pub resolved_schemas: Option<Arc<HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>>>,
+    pub resolved_schemas: Option<Arc<ResolvedSchemas>>,
 
     #[serde(skip)]
     pub(crate) validator_cache: ValidatorCache,

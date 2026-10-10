@@ -2,6 +2,7 @@ use crate::compiled::policy::entity::Entity;
 use crate::compiled::graph::columnar::OutputColumn;
 use crate::compiled::shred::{Normalizer, Shredder};
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
+use super::Present;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};
@@ -252,7 +253,7 @@ impl<'a> Sheet<'a> {
         });
     }
 
-    pub(super) fn columns(leaves: Vec<(Arc<str>, Leaf<'a>, Option<Rc<[u64]>>)>) -> Vec<(Arc<str>, OutputColumn<'a>)> {
+    pub(super) fn columns(leaves: Vec<Present<'a>>) -> Vec<(Arc<str>, OutputColumn<'a>)> {
         leaves
             .into_iter()
             .map(|(path, leaf, present)| {

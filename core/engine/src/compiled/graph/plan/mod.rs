@@ -13,6 +13,8 @@ use view::{M, Masks, Node, Ref, Resolved, Shape, SlotId, Slots};
 use zen_expression::lane::{Binding as Site, Columns, Dictionary, Kind as LaneKind, LaneProgram, Values};
 
 type Bound = Arc<Result<Arc<SegPlan>, String>>;
+type Kept = ((Arc<str>, Arc<str>), Arc<str>);
+type Keyed = (Node, Vec<(Arc<str>, SlotId, M)>);
 
 pub(crate) struct Plan {
     roots: RwLock<Vec<(Arc<Layout>, Bound)>>,
@@ -435,7 +437,7 @@ impl<'g> Builder<'g> {
         }
         let reduced = match aliases.iter().any(Option::is_some) {
             true => {
-                let kept: Vec<((Arc<str>, Arc<str>), Arc<str>)> = entries
+                let kept: Vec<Kept> = entries
                     .iter()
                     .zip(fragments.iter())
                     .zip(&aliases)
@@ -673,7 +675,7 @@ impl<'g> Builder<'g> {
         })
     }
 
-    fn keyed(&mut self, step: &Step) -> Result<(Node, Vec<(Arc<str>, SlotId, M)>), String> {
+    fn keyed(&mut self, step: &Step) -> Result<Keyed, String> {
         let (keys, empty, transform) = match &step.kind {
             Kind::Node {
                 body: Body::Expression { keys, empty, .. },

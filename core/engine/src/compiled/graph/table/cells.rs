@@ -9,6 +9,7 @@ use zen_expression::Variable;
 use super::{First, Found, Keyed, Kind, OutSource, Part, RuleOutputs, Table};
 
 pub(super) type OutputCell = (Option<Literal>, Option<OutSource>);
+type BuiltCache = ahash::HashMap<(u64, usize, u8), Option<Rc<Built>>>;
 
 #[derive(Default)]
 pub(super) struct OutputCells<'c> {
@@ -193,7 +194,7 @@ impl Table {
     }
 
     thread_local! {
-        static BUILT: std::cell::RefCell<ahash::HashMap<(u64, usize, u8), Option<Rc<Built>>>> = std::cell::RefCell::new(ahash::HashMap::default());
+        static BUILT: std::cell::RefCell<BuiltCache> = std::cell::RefCell::new(ahash::HashMap::default());
     }
 
     pub(super) fn builder(&self, rule: usize, collect: Option<bool>) -> Option<Rc<Built>> {

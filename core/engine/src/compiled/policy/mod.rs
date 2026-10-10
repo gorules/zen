@@ -137,6 +137,7 @@ impl Native {
 }
 
 type Write = Option<(Arc<str>, Variable)>;
+type Captured = Vec<(usize, Iterated, std::ops::Range<usize>)>;
 
 struct Lane {
     owner: usize,
@@ -582,7 +583,7 @@ impl PolicyPlan {
         delegated
     }
 
-    fn lanes(&self, block: usize, rows: &[usize], state: &mut Rows) -> (Vec<Lane>, Vec<(usize, Iterated, std::ops::Range<usize>)>) {
+    fn lanes(&self, block: usize, rows: &[usize], state: &mut Rows) -> (Vec<Lane>, Captured) {
         let rule = &self.blocks.rules[block];
         let mut lanes = Vec::new();
         let mut captured = Vec::new();

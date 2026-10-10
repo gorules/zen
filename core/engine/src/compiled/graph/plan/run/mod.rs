@@ -10,7 +10,7 @@ use crate::model::GraphContent;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::LaneRunner;
-use store::{Shredded, Store};
+use store::{Branch, Pending, Shredded, Store};
 
 mod assemble;
 mod fanout;
@@ -67,7 +67,7 @@ impl<'a> Run<'_, 'a> {
     }
 
     async fn walk(&mut self, root: Arc<SegPlan>) -> Result<(), String> {
-        let mut stack: Vec<(Arc<SegPlan>, Option<Rc<[usize]>>, Option<(usize, usize)>)> = vec![(root, None, None)];
+        let mut stack: Vec<Pending> = vec![(root, None, None)];
         let mut children = Vec::new();
         while let Some((seg, positions, parent)) = stack.pop() {
             if let Some(parent) = parent {
@@ -80,7 +80,7 @@ impl<'a> Run<'_, 'a> {
         Ok(())
     }
 
-    async fn segment(&mut self, seg: &SegPlan, positions: Option<Rc<[usize]>>, children: &mut Vec<(Arc<SegPlan>, Option<Rc<[usize]>>)>) -> Result<(), String> {
+    async fn segment(&mut self, seg: &SegPlan, positions: Option<Rc<[usize]>>, children: &mut Vec<Branch>) -> Result<(), String> {
         self.store.enter(seg);
         let mut seen = 0usize;
         let mut live = self.alive(positions, &mut seen);

@@ -58,12 +58,18 @@ pub(crate) struct DepFrame {
     views: Vec<(Arc<str>, ReadView)>,
 }
 
+type ParsedEntry = (Arc<PolicyDocument>, Arc<ParsedPolicy>);
+type ShallowEntry = (Arc<ParsedPolicy>, Arc<Vec<RuleShallowAnalysis>>);
+type UnitEntry = (Vec<Arc<ParsedPolicy>>, Arc<Unit>);
+type GraphEntry = (GraphDeps, Arc<GraphAnalysis>);
+type Components = (Vec<Vec<Arc<str>>>, HashMap<Arc<str>, usize>);
+
 #[derive(Default)]
 pub(crate) struct PolicyDerivedCache {
-    parsed: RefCell<HashMap<Arc<str>, (Arc<PolicyDocument>, Arc<ParsedPolicy>)>>,
-    shallow: RefCell<HashMap<Arc<str>, (Arc<ParsedPolicy>, Arc<Vec<RuleShallowAnalysis>>)>>,
-    units: RefCell<HashMap<Vec<Arc<str>>, (Vec<Arc<ParsedPolicy>>, Arc<Unit>)>>,
-    graphs: RefCell<HashMap<Arc<str>, (GraphDeps, Arc<GraphAnalysis>)>>,
+    parsed: RefCell<HashMap<Arc<str>, ParsedEntry>>,
+    shallow: RefCell<HashMap<Arc<str>, ShallowEntry>>,
+    units: RefCell<HashMap<Vec<Arc<str>>, UnitEntry>>,
+    graphs: RefCell<HashMap<Arc<str>, GraphEntry>>,
 }
 
 impl PolicyDerivedCache {
@@ -916,7 +922,7 @@ impl Snapshot {
     fn compute_components(
         import_graph: &ImportGraph,
         all_parsed: &HashMap<Arc<str>, Arc<ParsedPolicy>>,
-    ) -> (Vec<Vec<Arc<str>>>, HashMap<Arc<str>, usize>) {
+    ) -> Components {
         let mut seen: HashSet<Arc<str>> = HashSet::default();
         let mut components: Vec<Vec<Arc<str>>> = Vec::new();
         let mut sorted: Vec<&Arc<str>> = all_parsed.keys().collect();

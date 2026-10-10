@@ -7,6 +7,7 @@ use zen_expression::Variable;
 use super::{Bits, Dict, Leaf, Store};
 
 pub(crate) type Field<'a> = (Symbol, Leaf<'a>, Rc<[u64]>);
+type Lanes = (Vec<Vec<u64>>, Option<Vec<u64>>);
 
 #[derive(Debug)]
 pub(crate) struct Records<'a> {
@@ -16,7 +17,7 @@ pub(crate) struct Records<'a> {
     pub(super) fields: Vec<Field<'a>>,
     pub(super) nulled: Option<Rc<[u64]>>,
     dense: OnceCell<Rc<[Variable]>>,
-    lanes: OnceCell<(Vec<Vec<u64>>, Option<Vec<u64>>)>,
+    lanes: OnceCell<Lanes>,
     maker: OnceCell<Option<Maker>>,
 }
 

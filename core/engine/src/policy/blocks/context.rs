@@ -21,6 +21,8 @@ use crate::workspace::types::{
 
 pub type SharedIntelliSense = Rc<RefCell<IntelliSense>>;
 
+type Problem = (Option<Arc<str>>, Option<(u32, u32)>, String);
+
 #[derive(Debug, Clone)]
 pub struct ExpressionLocation {
     pub block_id: Arc<str>,
@@ -418,7 +420,7 @@ impl AnalysisContext {
     }
 
     fn validate_reads(&mut self) {
-        let mut problems: Vec<(Option<Arc<str>>, Option<(u32, u32)>, String)> = Vec::new();
+        let mut problems: Vec<Problem> = Vec::new();
         for read in &self.reads {
             if matches!(read.path.as_ref(), "$" | "$root") || read.via_alias || read.unresolved {
                 continue;

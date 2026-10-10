@@ -27,6 +27,11 @@ use zen_expression::lane::LaneRunner;
 use zen_expression::{Scope, Variable};
 
 type Listed<'a> = (Rc<str>, bool, Option<Rc<Listing<'a>>>);
+type Kin = (usize, Rc<[usize]>, Rc<[usize]>, bool, OnceCell<Option<Rc<[i32]>>>);
+type Family = (Rc<[usize]>, Rc<[usize]>);
+type Fields<'a> = (usize, Vec<(Arc<str>, Leaf<'a>)>);
+type Extent<'p> = (usize, &'p [i32], Option<(&'p [u64], usize)>);
+type Present<'a> = (Arc<str>, Leaf<'a>, Option<Rc<[u64]>>);
 
 struct Pass<'s, 'a> {
     plan: &'s PolicyPlan,
@@ -45,7 +50,7 @@ struct Pass<'s, 'a> {
     members: Vec<(usize, Vec<Option<usize>>)>,
     hosting: Vec<(usize, Vec<bool>)>,
     owners: Vec<Option<Arc<str>>>,
-    kin: Vec<(usize, Rc<[usize]>, Rc<[usize]>, bool, OnceCell<Option<Rc<[i32]>>>)>,
+    kin: Vec<Kin>,
     delegated: bool,
     fell: usize,
     counts: (usize, usize),

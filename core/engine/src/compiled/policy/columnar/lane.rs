@@ -4,7 +4,7 @@ use crate::compiled::leaf::{Array, Leaf};
 use std::sync::Arc;
 use zen_expression::lane::{Binding, Column, Columns, Dictionary, LaneProgram, Values};
 use zen_expression::{Scope, Variable};
-use super::{Bind, Pass, Sheet, Slot};
+use super::{Bind, Extent, Fields, Pass, Sheet, Slot};
 
 impl<'s, 'a> Pass<'s, 'a> {
     pub(super) fn run(&mut self, program: &LaneProgram, positions: &[usize]) -> (Leaf<'a>, Vec<bool>) {
@@ -96,7 +96,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 Slot::Composed(_) => None,
             })
             .collect();
-        let parts: Vec<(usize, Vec<(Arc<str>, Leaf<'a>)>)> = used
+        let parts: Vec<Fields<'a>> = used
             .iter()
             .filter_map(|slot| match slot {
                 Slot::Composed(at) if !cached => {
@@ -106,7 +106,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 _ => None,
             })
             .collect();
-        let shapes: Vec<(usize, &[i32], Option<(&[u64], usize)>)> = parts
+        let shapes: Vec<Extent<'_>> = parts
             .iter()
             .map(|(at, _)| {
                 let entity = &self.sheet.entities[*at];

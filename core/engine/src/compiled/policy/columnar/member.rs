@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Binding, Column, Columns, Dictionary, LaneProgram, Values};
 use zen_expression::Variable;
-use super::{Bind, Pass, Sheet, Units};
+use super::{Bind, Family, Pass, Sheet, Units};
 
 pub(super) enum Member {
     Field(usize),
@@ -42,7 +42,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         (kids, parents)
     }
 
-    fn spans(&self, at: usize) -> Option<(Rc<[usize]>, Rc<[usize]>)> {
+    fn spans(&self, at: usize) -> Option<Family> {
         let entity = &self.sheet.entities[at];
         if entity.validity.is_some() {
             return None;

@@ -4,7 +4,7 @@ use zen_expression::lane::{Programs, Session};
 use zen_expression::variable::Variable;
 use zen_expression::ExpressionKind;
 
-use super::exact::Exact;
+use crate::compiled::exact::policy::Exact;
 use crate::policy::blocks::{Block, BlockKind, ExecutionError};
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::host::{Evaluate, HostState, Pick, Picked, Site};

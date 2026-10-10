@@ -1,4 +1,4 @@
-use super::row::Row;
+use super::exact::graph::Row;
 use super::traced::Traced;
 use super::{CompiledGraph, Nesting, Source};
 use crate::decision_graph::graph::DecisionGraphResponse;

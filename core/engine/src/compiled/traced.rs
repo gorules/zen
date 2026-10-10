@@ -1,5 +1,5 @@
 use super::call::Call;
-use super::row::Row;
+use super::exact::graph::Row;
 use super::schedule::{End, Outcome};
 use super::{CompiledGraph, Step};
 use crate::decision_graph::cleaner::VariableCleaner;

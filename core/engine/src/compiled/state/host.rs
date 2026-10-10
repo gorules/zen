@@ -19,7 +19,7 @@ use crate::compiled::data::{Col, Data, Layer, Mask};
 use crate::compiled::leaf::{Array, Leaf};
 use zen_expression::lane::LaneRunner;
 use zen_expression::Variable;
-use crate::compiled::row::Row;
+use crate::compiled::exact::graph::Row;
 use zen_types::decision::{
     DecisionNode, InputNodeContent, OutputNodeContent,
 };

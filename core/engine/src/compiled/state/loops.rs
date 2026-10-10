@@ -5,7 +5,7 @@ use crate::compiled::leaf::{ColumnBuilder, Leaf};
 use std::rc::Rc;
 use zen_expression::lane::{LaneProgram, LaneRunner};
 use zen_expression::{Scope, Variable};
-use crate::compiled::row::Row;
+use crate::compiled::exact::graph::Row;
 use crate::compiled::{Body, CompiledGraph, Kind, Step, Transform, leaf};
 
 impl CompiledGraph {

@@ -1,7 +1,6 @@
 
 mod columnar;
 mod entity;
-mod exact;
 mod host;
 mod schedule;
 mod table;

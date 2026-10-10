@@ -11,7 +11,7 @@ use zen_types::decision::{
 };
 
 use crate::model::GraphContent;
-use crate::compiled::row::RowTable;
+use crate::compiled::exact::graph::RowTable;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::graph::editor::{NodePaths, ReadBase};
 use crate::workspace::graph::function_source;

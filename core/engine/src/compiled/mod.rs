@@ -2,7 +2,7 @@ mod batched;
 mod bound;
 mod plan;
 pub(crate) mod policy;
-pub(crate) mod row;
+pub(crate) mod exact;
 pub(crate) mod call;
 pub(crate) mod traced;
 mod state;

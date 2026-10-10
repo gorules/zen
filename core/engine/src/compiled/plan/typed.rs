@@ -4,7 +4,7 @@ use crate::compiled::lowered::Exports;
 use crate::compiled::shred::Seen;
 use crate::compiled::table::Table;
 use crate::compiled::{Body, CompiledGraph, Kind};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use zen_expression::lane::{Binding as Site, Fusion};
@@ -67,7 +67,6 @@ pub(crate) struct Cost {
     calls: AtomicU32,
     typed: AtomicU64,
     lane: AtomicU64,
-    heavy: AtomicBool,
 }
 
 struct Probe<'p> {
@@ -136,18 +135,11 @@ impl Cost {
             calls: AtomicU32::new(0),
             typed: AtomicU64::new(u64::MAX),
             lane: AtomicU64::new(u64::MAX),
-            heavy: AtomicBool::new(false),
         }
     }
 
     pub fn path(&self) -> (Path, bool) {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
-        if self.heavy.load(Ordering::Relaxed) {
-            return match call % Self::PERIOD {
-                0 => (Path::Typed, true),
-                _ => (Path::Lane, false),
-            };
-        }
         if call < Self::WARM {
             return (Path::Typed, false);
         }
@@ -163,10 +155,6 @@ impl Cost {
             1 => (faster, true),
             _ => (faster, false),
         }
-    }
-
-    pub fn failing(&self, failed: usize, rows: usize) {
-        self.heavy.store(failed * 4 > rows, Ordering::Relaxed);
     }
 
     pub fn record(&self, (path, fresh): (Path, bool), elapsed: Duration, rows: usize) {

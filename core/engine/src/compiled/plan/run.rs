@@ -921,14 +921,10 @@ impl<'a> Run<'_, 'a> {
         }
         let path = op.cost.path();
         let start = Instant::now();
-        let failed = self.store.failed;
         let typed = match path.0 {
             Path::Typed => self.lowered(seg, op, positions).map(|lowered| self.merged(seg, op, units, positions, lowered)).is_some(),
             Path::Lane => false,
         };
-        if typed {
-            op.cost.failing(self.store.failed.saturating_sub(failed), local);
-        }
         if !typed {
             self.laned(seg, units, positions);
         }

@@ -51,6 +51,7 @@ impl Call<'_> {
         format!("sub-decision '{key}' is a {kind}, expected graph").into()
     }
 
+    #[allow(clippy::arc_with_non_send_sync)]
     pub(super) fn sub_extensions(&self, content: &GraphContent) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             #[cfg(feature = "driver")]

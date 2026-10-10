@@ -1,7 +1,7 @@
 use crate::compiled::bound::{Bound, Outs};
 use crate::compiled::data::Col;
 use crate::compiled::data::Mask;
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf, Literal, Store};
+use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf, Literal, Records, Store, Templated};
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -1998,6 +1998,17 @@ impl Table {
         Some((dict, valid, written))
     }
 
+    fn templated<'a>(&self, first: &First, slot: usize, slots: usize, positions: &[Option<u32>]) -> Option<Leaf<'a>> {
+        if !first.batches.is_empty() {
+            return None;
+        }
+        let templates: Rc<[Literal]> = (0..self.outputs.len())
+            .map(|rule| self.literal_at(rule, slot, slots, positions).flatten().cloned().unwrap_or(Literal::Null))
+            .collect();
+        let codes: Rc<[i32]> = first.codes.iter().map(|&code| first.rule(code).map_or(-1, |rule| rule as i32)).collect();
+        Some(Templated::leaf(codes, templates))
+    }
+
     fn materialized<'a>(&self, first: &First, slot: usize, slots: usize, positions: &[Option<u32>]) -> Leaf<'a> {
         let templates: Vec<Option<Variable>> = (0..self.outputs.len())
             .map(|rule| match self.literal_at(rule, slot, slots, positions).flatten() {
@@ -2060,7 +2071,10 @@ impl Table {
                     .map(|(dict, valid, written)| (Rc::new(dict), Cow::Owned(valid), Cow::Owned(written))),
             };
             let Some((dict, valid, written)) = found else {
-                let leaf = self.materialized(&first, slot, slots, positions);
+                let leaf = match self.templated(&first, slot, slots, positions) {
+                    Some(leaf) => leaf,
+                    None => self.materialized(&first, slot, slots, positions),
+                };
                 let written: Rc<[u64]> = Bits::of(rows, |row| {
                     first.rule(first.codes[row]).is_some_and(|rule| positions[rule * slots + slot].is_some())
                 })
@@ -2148,6 +2162,150 @@ impl Table {
             .map(|&code| Variable::from_array(templates[code as usize].iter().map(Variable::deep_clone).collect()))
             .collect();
         Some((values, codes, sets.len()))
+    }
+
+    fn record_names(&self) -> Option<Vec<Arc<str>>> {
+        let mut names: Vec<Arc<str>> = Vec::new();
+        for outputs in &self.outputs {
+            let mut last: Option<usize> = None;
+            for (path, _, _) in &outputs.paths {
+                if path.is_empty() || path.contains('.') || path.starts_with('$') {
+                    return None;
+                }
+                let at = match names.iter().position(|name| name == path) {
+                    Some(at) => at,
+                    None => {
+                        names.push(path.clone());
+                        names.len() - 1
+                    }
+                };
+                if last.is_some_and(|last| at <= last) {
+                    return None;
+                }
+                last = Some(at);
+            }
+        }
+        Some(names)
+    }
+
+    fn record_dict(cells: &[Vec<Option<&Literal>>], field: usize) -> Option<Dict> {
+        let column: Vec<Option<&Literal>> = cells.iter().map(|rule| rule.get(field).copied().flatten().filter(|l| !matches!(l, Literal::Null))).collect();
+        let kinds: Vec<Kind> = column.iter().flatten().map(|literal| Kind::of_literal(literal)).collect::<Option<Vec<_>>>()?;
+        let kind = *kinds.first()?;
+        if kinds.iter().any(|k| *k != kind) {
+            return None;
+        }
+        Some(match kind {
+            Kind::Text => {
+                let mut offsets = Vec::with_capacity(column.len() + 1);
+                let mut data = String::new();
+                offsets.push(0i32);
+                for literal in &column {
+                    if let Some(Literal::Str(text)) = literal {
+                        data.push_str(text);
+                    }
+                    offsets.push(i32::try_from(data.len()).ok()?);
+                }
+                Dict::Text { offsets, data }
+            }
+            Kind::Num => {
+                let parts: Vec<(i64, u8)> = column.iter().map(|literal| literal.and_then(Literal::scaled).unwrap_or((0, 0))).collect();
+                Dict::Scaled {
+                    mant: parts.iter().map(|p| p.0).collect(),
+                    scale: parts.iter().map(|p| p.1).collect(),
+                }
+            }
+            Kind::Bool => {
+                let mut bits = vec![0u64; column.len().div_ceil(64).max(1)];
+                column.iter().enumerate().filter(|(_, l)| matches!(l, Some(Literal::Bool(true)))).for_each(|(at, _)| Bits::set(&mut bits, at, true));
+                Dict::Bool(bits)
+            }
+            Kind::Any => return None,
+        })
+    }
+
+    pub fn collect_records<'a>(&self, runner: &mut LaneRunner, bound: &Bound) -> Option<(Records<'a>, Vec<i32>, usize)> {
+        let literal = self.outputs.iter().all(|o| o.paths.is_empty() || o.literals.is_some());
+        if self.hit != Hit::Collect || !literal || !self.stable {
+            return None;
+        }
+        let names = self.record_names()?;
+        let rows = bound.rows();
+        let words = self.words;
+        let (candidates, _) = self.candidates(runner, bound, false);
+        let mut seen: ahash::HashMap<&[u64], i32> = ahash::HashMap::default();
+        let mut sets: Vec<Vec<usize>> = Vec::new();
+        let codes: Vec<i32> = (0..rows)
+            .map(|row| {
+                let key = &candidates[row * words..(row + 1) * words];
+                *seen.entry(key).or_insert_with(|| {
+                    sets.push(Self::ones(key).collect());
+                    (sets.len() - 1) as i32
+                })
+            })
+            .collect();
+        let cells: Vec<Vec<Option<&Literal>>> = (0..self.outputs.len())
+            .map(|rule| {
+                let outputs = &self.outputs[rule];
+                names
+                    .iter()
+                    .map(|name| {
+                        let index = outputs.paths.iter().position(|(path, _, _)| path == name)?;
+                        outputs.literals.as_ref()?.get(index)
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut offsets = Vec::with_capacity(rows + 1);
+        offsets.push(0i32);
+        let mut total = 0usize;
+        for &code in &codes {
+            total += sets[code as usize].len();
+            offsets.push(i32::try_from(total).ok()?);
+        }
+        let dicts: Vec<Option<Rc<Dict>>> = (0..names.len()).map(|field| Self::record_dict(&cells, field).map(Rc::new)).collect();
+        let mut builders: Vec<Option<ColumnBuilder>> = dicts.iter().map(|dict| dict.is_none().then(|| ColumnBuilder::with_capacity(total))).collect();
+        let mut keys: Vec<Vec<i32>> = dicts.iter().map(|dict| match dict {
+            Some(_) => Vec::with_capacity(total),
+            None => Vec::new(),
+        }).collect();
+        let mut present: Vec<Vec<u64>> = names.iter().map(|_| vec![0u64; total.div_ceil(64)]).collect();
+        let mut item = 0usize;
+        for &code in &codes {
+            for &rule in &sets[code as usize] {
+                for (((builder, keys), bits), cell) in builders.iter_mut().zip(keys.iter_mut()).zip(present.iter_mut()).zip(&cells[rule]) {
+                    if cell.is_some() {
+                        Bits::set(bits, item, true);
+                    }
+                    match builder {
+                        Some(builder) => match cell {
+                            Some(literal) => builder.push_literal(literal),
+                            None => builder.push_null(),
+                        },
+                        None => keys.push(match cell {
+                            Some(Literal::Null) | None => -1,
+                            Some(_) => rule as i32,
+                        }),
+                    }
+                }
+                item += 1;
+            }
+        }
+        let fields = names
+            .iter()
+            .zip(builders.into_iter().zip(keys).zip(dicts))
+            .zip(present)
+            .map(|((name, ((builder, keys), dict)), bits)| {
+                let leaf = match (builder, dict) {
+                    (Some(builder), _) => Leaf::typed(builder.finish()),
+                    (None, Some(dict)) => Leaf::typed(Array::coded(keys.into(), dict)),
+                    (None, None) => Leaf::nulls(total),
+                };
+                (zen_types::symbol::Symbol::from(name.as_ref()), leaf, Rc::from(bits))
+            })
+            .collect();
+        let size = sets.len();
+        Some((Records::new(rows, offsets, Bits::ones(rows), fields, None), codes, size))
     }
 
     pub fn evaluate(&self, runner: &mut LaneRunner, bound: &Bound) -> Vec<TableOut> {

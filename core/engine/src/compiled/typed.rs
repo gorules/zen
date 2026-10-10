@@ -717,6 +717,46 @@ pub(crate) enum Leaf<'a> {
     Picked(Rc<Picked<'a>>),
     Stitched(Rc<Stitched<'a>>),
     Records(Rc<Records<'a>>),
+    Templated(Rc<Templated>),
+}
+
+#[derive(Debug)]
+pub(crate) struct Templated {
+    codes: Rc<[i32]>,
+    templates: Rc<[Literal]>,
+    valid: Vec<u64>,
+    dense: OnceCell<Rc<[Variable]>>,
+}
+
+impl Templated {
+    pub fn leaf<'a>(codes: Rc<[i32]>, templates: Rc<[Literal]>) -> Leaf<'a> {
+        let valid = Bits::of(codes.len(), |row| {
+            usize::try_from(codes[row]).ok().and_then(|code| templates.get(code)).is_some_and(|literal| !matches!(literal, Literal::Null))
+        });
+        Leaf::Templated(Rc::new(Templated {
+            codes,
+            templates,
+            valid,
+            dense: OnceCell::new(),
+        }))
+    }
+
+    fn template(&self, row: usize) -> Option<&Literal> {
+        let code = usize::try_from(*self.codes.get(row)?).ok()?;
+        self.templates.get(code).filter(|literal| !matches!(literal, Literal::Null))
+    }
+
+    fn get(&self, row: usize) -> Variable {
+        self.template(row).map_or(Variable::Null, Literal::variable)
+    }
+
+    fn mapped<'a>(&self, rows: impl Iterator<Item = usize>) -> Leaf<'a> {
+        Templated::leaf(rows.map(|row| self.codes.get(row).copied().unwrap_or(-1)).collect(), self.templates.clone())
+    }
+
+    fn dense(&self) -> &Rc<[Variable]> {
+        self.dense.get_or_init(|| (0..self.codes.len()).map(|row| self.get(row)).collect())
+    }
 }
 
 pub(crate) type Field<'a> = (Symbol, Leaf<'a>, Rc<[u64]>);
@@ -730,10 +770,68 @@ pub(crate) struct Records<'a> {
     nulled: Option<Rc<[u64]>>,
     dense: OnceCell<Rc<[Variable]>>,
     lanes: OnceCell<(Vec<Vec<u64>>, Option<Vec<u64>>)>,
+    maker: OnceCell<Option<Maker>>,
 }
+
+#[derive(Debug)]
+pub(crate) struct Maker {
+    shapes: std::cell::RefCell<Vec<(u64, Option<Rc<zen_types::variable::Shape>>)>>,
+    cached: Vec<Option<Decoded>>,
+}
+
+type Decoded = (Rc<[i32]>, Vec<Variable>);
 
 impl<'a> Records<'a> {
     pub const LANE_VIEW: bool = true;
+
+    pub fn spread(&self, positions: &[usize], rows: usize) -> Option<Records<'a>> {
+        if positions.len() != self.rows || positions.windows(2).any(|w| w[0] >= w[1]) || positions.last().is_some_and(|&last| last >= rows) {
+            return None;
+        }
+        let mut offsets = Vec::with_capacity(rows + 1);
+        let mut valid = vec![0u64; rows.div_ceil(64)];
+        offsets.push(0i32);
+        for (at, &row) in positions.iter().enumerate() {
+            let start = *self.offsets.get(at)?;
+            offsets.resize(row + 1, start);
+            offsets.push(*self.offsets.get(at + 1)?);
+            Bits::set(&mut valid, row, Bits::get(&self.valid, at));
+        }
+        let end = self.offsets.last().copied().unwrap_or(0);
+        offsets.resize(rows + 1, end);
+        Some(Records::new(rows, offsets, valid, self.fields.clone(), self.nulled.clone()))
+    }
+
+    pub fn pick(&self, positions: &[usize]) -> Records<'a> {
+        let rows = positions.len();
+        let mut offsets = Vec::with_capacity(rows + 1);
+        let mut valid = vec![0u64; rows.div_ceil(64)];
+        let mut items: Vec<usize> = Vec::new();
+        offsets.push(0i32);
+        for (at, &row) in positions.iter().enumerate() {
+            if let Some((start, end)) = self.range(row) {
+                Bits::set(&mut valid, at, true);
+                items.extend(start..end);
+            }
+            offsets.push(i32::try_from(items.len()).unwrap_or(i32::MAX));
+        }
+        let items: Rc<[usize]> = items.into();
+        let fields = self
+            .fields
+            .iter()
+            .map(|(key, leaf, present)| (key.clone(), leaf.pick(&items), Rc::from(Bits::gather(present, &items))))
+            .collect();
+        let nulled = self.nulled.as_ref().map(|nulled| Rc::from(Bits::gather(nulled, &items)));
+        Records::new(rows, offsets, valid, fields, nulled)
+    }
+
+    pub fn plain(&self) -> bool {
+        self.nulled.is_none()
+    }
+
+    pub fn alive(&self, rows: usize) -> bool {
+        (0..rows.min(self.rows)).any(|row| self.valid(row))
+    }
 
     pub fn new(rows: usize, offsets: Vec<i32>, valid: Vec<u64>, fields: Vec<Field<'a>>, nulled: Option<Rc<[u64]>>) -> Records<'a> {
         Records {
@@ -744,6 +842,72 @@ impl<'a> Records<'a> {
             nulled,
             dense: OnceCell::new(),
             lanes: OnceCell::new(),
+            maker: OnceCell::new(),
+        }
+    }
+
+    fn maker(&self) -> Option<&Maker> {
+        self.maker
+            .get_or_init(|| {
+                if self.nulled.is_some() || self.fields.len() > 64 || self.fields.iter().any(|(key, _, _)| key.as_str().contains('.')) {
+                    return None;
+                }
+                let cached = self
+                    .fields
+                    .iter()
+                    .map(|(_, leaf, _)| match leaf {
+                        Leaf::Typed(array) => match (&array.values, &array.valid) {
+                            (Store::Coded { codes, dict }, None) if !matches!(**dict, Dict::Any(_)) => {
+                                let values = dict.dictionary();
+                                Some((codes.clone(), (0..values.len()).map(|code| values.variable(code)).collect()))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                Some(Maker {
+                    shapes: std::cell::RefCell::new(Vec::new()),
+                    cached,
+                })
+            })
+            .as_ref()
+    }
+
+    fn made(&self, maker: &Maker, item: usize) -> Variable {
+        let value = |(at, (_, leaf, _)): (usize, &Field<'a>)| match maker.cached.get(at).and_then(Option::as_ref) {
+            Some((codes, values)) => codes
+                .get(item)
+                .and_then(|&code| usize::try_from(code).ok())
+                .and_then(|code| values.get(code))
+                .cloned()
+                .unwrap_or(Variable::Null),
+            None => leaf.get(item),
+        };
+        let pattern = self.fields.iter().enumerate().fold(0u64, |bits, (at, (_, _, present))| bits | u64::from(Bits::get(present, item)) << at);
+        let found = maker.shapes.borrow().iter().find(|(p, _)| *p == pattern).map(|(_, shape)| shape.clone());
+        let shape = match found {
+            Some(shape) => shape,
+            None => {
+                let mut map = VariableMap::with_capacity(self.fields.len());
+                self.fields.iter().enumerate().filter(|(at, _)| pattern >> at & 1 == 1).for_each(|(_, (key, _, _))| {
+                    map.insert(key.clone(), Variable::Null);
+                });
+                let shape = map.shape().filter(|_| map.len() == pattern.count_ones() as usize).cloned();
+                maker.shapes.borrow_mut().push((pattern, shape.clone()));
+                shape
+            }
+        };
+        let present = self.fields.iter().enumerate().filter(|(at, _)| pattern >> at & 1 == 1);
+        match shape {
+            Some(shape) => Variable::from_object(VariableMap::from_shape(shape, present.map(value))),
+            None => {
+                let mut map = VariableMap::with_capacity(self.fields.len());
+                for (at, field) in present {
+                    map.insert(field.0.clone(), value((at, field)));
+                }
+                Variable::from_object(map)
+            }
         }
     }
 
@@ -847,6 +1011,9 @@ impl<'a> Records<'a> {
     }
 
     pub fn get(&self, row: usize) -> Variable {
+        if let (Some(maker), Some((start, end))) = (self.maker(), self.range(row)) {
+            return Variable::from_array((start..end).map(|item| self.made(maker, item)).collect());
+        }
         match self.range(row) {
             Some((start, end)) => Variable::from_array(
                 (start..end)
@@ -858,29 +1025,6 @@ impl<'a> Records<'a> {
             ),
             None => Variable::Null,
         }
-    }
-
-    fn pick(&self, positions: &[usize]) -> Records<'a> {
-        let rows = positions.len();
-        let mut offsets = Vec::with_capacity(rows + 1);
-        let mut valid = vec![0u64; rows.div_ceil(64)];
-        let mut items: Vec<usize> = Vec::new();
-        offsets.push(0i32);
-        for (at, &row) in positions.iter().enumerate() {
-            if let Some((start, end)) = self.range(row) {
-                Bits::set(&mut valid, at, true);
-                items.extend(start..end);
-            }
-            offsets.push(i32::try_from(items.len()).unwrap_or(i32::MAX));
-        }
-        let items: Rc<[usize]> = items.into();
-        let fields = self
-            .fields
-            .iter()
-            .map(|(name, leaf, present)| (name.clone(), leaf.pick(&items), Rc::from(Bits::gather(present, &items))))
-            .collect();
-        let nulled = self.nulled.as_ref().map(|bits| Rc::from(Bits::gather(bits, &items)));
-        Records::new(rows, offsets, valid, fields, nulled)
     }
 
     fn dense(&self) -> &Rc<[Variable]> {
@@ -976,6 +1120,17 @@ impl<'a> Leaf<'a> {
     pub fn records(&self) -> Option<Rc<Records<'a>>> {
         match self {
             Leaf::Records(records) => Some(records.clone()),
+            Leaf::Picked(picked) => {
+                let records = picked.source.records()?;
+                match picked.dense.get_or_init(|| Leaf::Records(Rc::new(records.pick(&picked.positions)))) {
+                    Leaf::Records(records) => Some(records.clone()),
+                    _ => None,
+                }
+            }
+            Leaf::Scattered(scattered) if scattered.inner.records().is_some() => match scattered.dense.get_or_init(|| Self::spread(scattered)) {
+                Leaf::Records(records) => Some(records.clone()),
+                _ => None,
+            },
             Leaf::Masked(masked) if matches!(masked.inner, Leaf::Records(_)) => match self.items() {
                 Some(Items::Records(records)) => Some(records),
                 _ => None,
@@ -1049,12 +1204,25 @@ impl<'a> Leaf<'a> {
             (Leaf::Picked(a), Leaf::Picked(b)) => Rc::ptr_eq(a, b),
             (Leaf::Stitched(a), Leaf::Stitched(b)) => Rc::ptr_eq(a, b),
             (Leaf::Records(a), Leaf::Records(b)) => Rc::ptr_eq(a, b),
+            (Leaf::Templated(a), Leaf::Templated(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
 
     fn spread(scattered: &Scattered<'a>) -> Leaf<'a> {
         let (rows, positions) = (scattered.rows, &scattered.positions);
+        if let Some(spread) = scattered.inner.records().and_then(|records| records.spread(positions, rows)) {
+            return Leaf::Records(Rc::new(spread));
+        }
+        if let Leaf::Templated(templated) = &scattered.inner {
+            let mut codes = vec![-1i32; rows];
+            for (at, &row) in positions.iter().enumerate() {
+                if let (Some(slot), Some(code)) = (codes.get_mut(row), templated.codes.get(at)) {
+                    *slot = *code;
+                }
+            }
+            return Templated::leaf(codes.into(), templated.templates.clone());
+        }
         if let Leaf::Typed(typed) = &scattered.inner {
             if let Store::Coded { codes, dict } = &typed.values {
                 let mut full = vec![-1i32; rows];
@@ -1168,6 +1336,7 @@ impl<'a> Leaf<'a> {
             Leaf::Any(values) => values.get(row).cloned().unwrap_or(Variable::Null),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).map_or(Variable::Null, |(leaf, at)| leaf.get(at)),
             Leaf::Records(records) => records.get(row),
+            Leaf::Templated(templated) => templated.get(row),
             _ => self.column().variable(row),
         }
     }
@@ -1178,6 +1347,7 @@ impl<'a> Leaf<'a> {
             Leaf::Picked(picked) => picked.source.objects(),
             Leaf::Stitched(stitched) => stitched.sources.iter().any(Leaf::objects),
             Leaf::Records(records) => records.fields.iter().any(|(key, leaf, _)| key.as_str().starts_with('$') || leaf.objects()),
+            Leaf::Templated(templated) => templated.templates.iter().any(|literal| matches!(literal, Literal::Object(_))),
             Leaf::Masked(masked) if matches!(masked.inner, Leaf::Records(_)) => masked.inner.objects(),
             Leaf::Scattered(scattered) if matches!(scattered.inner, Leaf::Records(_)) => scattered.inner.objects(),
             _ => match self.column().values {
@@ -1197,7 +1367,8 @@ impl<'a> Leaf<'a> {
             Leaf::Typed(typed) => Leaf::typed(typed.pick(positions)),
             Leaf::Input(input) => Leaf::typed(Array::gather(&input.column, positions)),
             Leaf::Masked(_) | Leaf::Scattered(_) => Leaf::typed(Array::gather(&self.column(), positions)),
-            Leaf::Records(_) => Leaf::Any(positions.iter().map(|&i| self.get(i)).collect()),
+            Leaf::Records(records) => Leaf::Records(Rc::new(records.pick(positions))),
+            Leaf::Templated(templated) => templated.mapped(positions.iter().copied()),
             Leaf::Picked(picked) => {
                 let composed: Vec<usize> = positions.iter().map(|&i| picked.positions[i]).collect();
                 picked.source.dense(&composed)
@@ -1220,6 +1391,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Typed(typed) => Leaf::typed(typed.expand(ids)),
             Leaf::Any(values) => Leaf::typed(Array::from_values(values.to_vec()).expand(ids)),
+            Leaf::Templated(templated) => templated.mapped(ids.iter().map(|&id| id as usize)),
             other => {
                 let column = other.column();
                 Leaf::typed(Array::from_values((0..other.len()).map(|row| column.variable(row)).collect()).expand(ids))
@@ -1268,6 +1440,7 @@ impl<'a> Leaf<'a> {
                 .get_or_init(|| self.dense(&(0..stitched.located.len()).collect::<Vec<_>>()))
                 .column(),
             Leaf::Records(records) => Column::new(Values::Any(records.dense())),
+            Leaf::Templated(templated) => Column::with_validity(Values::Any(templated.dense()), &templated.valid, 0),
         }
     }
 
@@ -1276,6 +1449,7 @@ impl<'a> Leaf<'a> {
             Leaf::Any(values) => values.get(row).is_none_or(|v| matches!(v, Variable::Null)),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_none_or(|(leaf, at)| leaf.null(at)),
             Leaf::Records(records) => !records.valid(row),
+            Leaf::Templated(templated) => templated.template(row).is_none(),
             _ => ColumnBuilder::null_at(&self.column(), row),
         }
     }
@@ -1287,6 +1461,7 @@ impl<'a> Leaf<'a> {
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
             Leaf::Any(_) | Leaf::Records(_) => true,
+            Leaf::Templated(templated) => templated.template(row).is_some(),
             Leaf::Picked(_) => self.source(row).is_some_and(|(leaf, at)| leaf.valid_at(at)),
             Leaf::Stitched(_) => self.column().valid(row),
         }
@@ -1303,6 +1478,7 @@ impl<'a> Leaf<'a> {
                 None => Bits::ones(rows),
             },
             Leaf::Any(_) | Leaf::Records(_) => Bits::ones(rows),
+            Leaf::Templated(templated) => Bits::window(&templated.valid, 0, rows),
             Leaf::Masked(masked) => Bits::window(&masked.bits, 0, rows),
             Leaf::Scattered(_) => match self.column().validity {
                 Some((bits, offset)) => Bits::window(bits, offset, rows),
@@ -1334,7 +1510,7 @@ impl<'a> Leaf<'a> {
                 let parts: Vec<Vec<u64>> = stitched.sources.iter().map(|leaf| leaf.valued(leaf.len())).collect();
                 Bits::of(rows, |row| stitched.located.get(row).is_some_and(|&(piece, at)| parts.get(piece).is_some_and(|bits| Bits::get(bits, at))))
             }
-            Leaf::Records(_) => Bits::of(rows, |row| !self.null(row)),
+            Leaf::Records(_) | Leaf::Templated(_) => Bits::of(rows, |row| !self.null(row)),
             Leaf::Typed(typed) if matches!(typed.values, Store::Coded { ref dict, .. } if !matches!(**dict, Dict::Any(_))) => {
                 let Store::Coded { codes, .. } = &typed.values else {
                     return Bits::of(rows, |row| !self.null(row));
@@ -1417,6 +1593,7 @@ impl<'a> Leaf<'a> {
             Leaf::Any(values) => matches!(values.get(row), Some(Variable::Bool(true))),
             Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_some_and(|(leaf, at)| leaf.truthy(at)),
             Leaf::Records(_) => false,
+            Leaf::Templated(templated) => matches!(templated.template(row), Some(Literal::Bool(true))),
             _ => {
                 let column = self.column();
                 match column.values {
@@ -1464,6 +1641,7 @@ impl<'a> Leaf<'a> {
             Leaf::Picked(picked) => picked.positions.len(),
             Leaf::Stitched(stitched) => stitched.located.len(),
             Leaf::Records(records) => records.rows,
+            Leaf::Templated(templated) => templated.codes.len(),
         }
     }
 }

@@ -12,7 +12,7 @@ use crate::decision_graph::walker::GraphWalker;
 use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::compiled::bound::{Bound, Outs};
 use crate::compiled::shred::{Listing, Normalizer, Seen, Shred, Shredder};
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer};
+use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer, Templated};
 use crate::compiled::data::Shape as DataShape;
 use crate::compiled::{Body, ColumnarOutput, CompiledGraph, Condition, Kind, OutputColumn};
 use crate::model::GraphContent;
@@ -1759,10 +1759,26 @@ impl<'a> Run<'_, 'a> {
         if leaves.is_empty() || local < 16 {
             return None;
         }
-        if leaves.iter().any(|leaf| leaf.records().is_some()) {
+        let listed: Vec<bool> = leaves.iter().map(|leaf| leaf.records().is_some()).collect();
+        if listed.iter().enumerate().any(|(at, &listed)| listed && hints.get(at).is_none_or(Option::is_none)) {
             return None;
         }
-        let columns: Vec<Column> = leaves.iter().map(Leaf::column).collect();
+        let held: Vec<Option<Vec<u64>>> = leaves
+            .iter()
+            .zip(&listed)
+            .map(|(leaf, &listed)| listed.then(|| leaf.validity(rows)))
+            .collect();
+        let columns: Vec<Column> = leaves
+            .iter()
+            .zip(&held)
+            .map(|(leaf, held)| match held {
+                Some(bits) => Column {
+                    values: Values::Any(&[]),
+                    validity: Some((bits.as_slice(), 0)),
+                },
+                None => leaf.column(),
+            })
+            .collect();
         let mut strides = Vec::with_capacity(columns.len());
         let mut size = 1u64;
         for (at, column) in columns.iter().enumerate() {
@@ -1913,7 +1929,10 @@ impl<'a> Run<'_, 'a> {
         for (slot, out) in op.outs.iter().zip(outs.iter_mut()) {
             let array = Array::from_output(out);
             let leaf = match (uniform, &keyed) {
-                (true, _) => array.broadcast(local).map_or_else(|| Leaf::nulls(local), Leaf::typed),
+                (true, _) => match Self::templated(&array, local) {
+                    Some(leaf) => leaf,
+                    None => array.broadcast(local).map_or_else(|| Leaf::nulls(local), Leaf::typed),
+                },
                 (false, Some((_, ids))) => Leaf::typed(array.expand(ids)),
                 (false, None) => Leaf::typed(array),
             };
@@ -2031,6 +2050,28 @@ impl<'a> Run<'_, 'a> {
                 (collected.columns, collected.present, collected.unmatched)
             }
             TableMode::Rows => {
+                if let Some((records, codes, size)) = table.collect_records(&mut self.runner, &bound) {
+                    let codes: Rc<[i32]> = match positions {
+                        None => codes.into(),
+                        Some(positions) => {
+                            let mut full = vec![-1i32; self.store.rows];
+                            positions.iter().zip(&codes).for_each(|(&row, &code)| full[row] = code);
+                            full.into()
+                        }
+                    };
+                    let leaf = match positions {
+                        None => Leaf::Records(Rc::new(records)),
+                        Some(positions) => match records.spread(positions, self.store.rows) {
+                            Some(spread) => Leaf::Records(Rc::new(spread)),
+                            None => self.store.place(Leaf::Records(Rc::new(records)), Some(positions)),
+                        },
+                    };
+                    if let Some(slot) = op.outs.first() {
+                        self.store.slots[*slot as usize] = Some(leaf);
+                        self.store.hints.push((*slot, codes, size));
+                    }
+                    return;
+                }
                 let (values, hint) = match table.collect_keyed(&mut self.runner, &bound) {
                     Some((values, codes, size)) => {
                         let codes: Rc<[i32]> = match positions {
@@ -2088,6 +2129,21 @@ impl<'a> Run<'_, 'a> {
         Bits::trim(&mut matched, local);
         let matched = cached(&self.store, matched.into());
         self.store.produce(op.matched, matched);
+    }
+
+    fn templated(array: &Array, rows: usize) -> Option<Leaf<'a>> {
+        if !array.valid(0) {
+            return None;
+        }
+        let Buffer::Any(values) = array.store() else {
+            return None;
+        };
+        let literal = match values.first()? {
+            Variable::Array(items) if items.borrow().iter().all(|item| matches!(item, Variable::Null | Variable::Bool(_) | Variable::Number(_) | Variable::String(_))) => return None,
+            value @ (Variable::Array(_) | Variable::Object(_)) => Literal::of(value)?,
+            _ => return None,
+        };
+        Some(Templated::leaf(vec![0i32; rows].into(), Rc::from(vec![literal])))
     }
 
     fn coded_gather<'v>(rows: usize, views: &'v [Option<View<'v>>], located: &dyn Fn(usize) -> Option<(usize, &'v Column<'v>, usize)>) -> Option<Array> {

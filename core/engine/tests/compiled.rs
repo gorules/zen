@@ -359,6 +359,7 @@ async fn columnar_graph_throughput() {
     std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
     let rows: usize = std::env::var("BENCH_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(1024);
     let filter = std::env::var("BENCH_FILE").ok();
+    let read = std::env::var("BENCH_READ").is_ok_and(|v| v == "1");
     let mut ratios: Vec<(f64, String)> = Vec::new();
     for fixture in Fixture::load_all() {
         if NETWORK_BOUND.contains(&fixture.name.as_str())
@@ -406,7 +407,13 @@ async fn columnar_graph_throughput() {
             }
             best[0] = best[0].min(start.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             let start = std::time::Instant::now();
-            let _ = compiled.evaluate_columns(&columns, options).await;
+            let output = compiled.evaluate_columns(&columns, options).await;
+            if read {
+                output.columns.iter().for_each(|(_, column)| {
+                    std::hint::black_box(column.column());
+                });
+            }
+            drop(output);
             best[1] = best[1].min(start.elapsed().as_nanos() as f64 / rows as f64);
         }
         println!("{:44} {:>10.0} {:>10.1} {:>7.1}x", fixture.name, best[0], best[1], best[0] / best[1]);

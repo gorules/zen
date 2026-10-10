@@ -1,4 +1,4 @@
-use crate::compiled::typed::{Array, Bits, Dict, Leaf, Store};
+use crate::compiled::typed::{Array, Bits, Dict, Leaf, Records, Store};
 use crate::nodes::input::dates::DeclaredDates;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -214,6 +214,12 @@ impl Normalizer {
     }
 
     pub(crate) fn seen(leaf: &Leaf, rows: usize) -> Seen {
+        if let Some(records) = leaf.records() {
+            return match records.alive(rows) {
+                true => Seen::List,
+                false => Seen::Null,
+            };
+        }
         let column = leaf.column();
         let dict;
         let values = match column.values {
@@ -257,6 +263,9 @@ impl Normalizer {
     }
 
     pub(crate) fn typed<'a>(leaf: &Leaf<'a>, rows: usize, code: bool) -> Option<(Leaf<'a>, Option<Vec<u64>>)> {
+        if leaf.records().is_some() {
+            return None;
+        }
         let column = leaf.column();
         if let Values::Any(values) = column.values {
             return Self::shredded(values.get(..rows)?, &column, Self::seen(leaf, rows), rows);
@@ -799,8 +808,35 @@ impl<'a> Listing<'a> {
     pub fn leaf(leaf: &Leaf<'a>, owners: usize) -> Option<Listing<'a>> {
         match leaf {
             Leaf::Input(input) => Listing::of(input.column, owners),
-            other => Self::copied(&other.column(), owners),
+            other => match other.records().and_then(|records| Self::recorded(&records, owners)) {
+                Some(listing) => Some(listing),
+                None => Self::copied(&other.column(), owners),
+            },
         }
+    }
+
+    fn recorded(records: &Records<'a>, owners: usize) -> Option<Listing<'a>> {
+        if !records.plain() {
+            return None;
+        }
+        let count = records.count();
+        let mut fields = Vec::with_capacity(records.fields().len());
+        for (key, leaf, present) in records.fields() {
+            Normalizer::class(&leaf.column().values)?;
+            let leaf = match Bits::full(present, 0, count) {
+                true => leaf.clone(),
+                false => Leaf::masked(leaf.clone(), present),
+            };
+            fields.push((Arc::from(key.as_str()), leaf));
+        }
+        let validity = records.validity();
+        Some(Listing {
+            offsets: records.offsets().get(..=owners)?.into(),
+            validity: (!Bits::full(validity, 0, owners)).then(|| Rc::from(Bits::window(validity, 0, owners))),
+            hosted: None,
+            children: count,
+            fields,
+        })
     }
 
     fn copied(column: &Column<'_>, owners: usize) -> Option<Listing<'a>> {

@@ -1,7 +1,7 @@
 use super::{Pass, Sheet};
 use crate::compiled::policy::schedule::{End, Event, Segment};
 use crate::compiled::policy::{Native, PolicyPlan};
-use crate::compiled::typed::{Array, Bits, Leaf, Store};
+use crate::compiled::leaf::{Array, Bits, Leaf, Store};
 use crate::policy::blocks::{AssertionIr, BlockKind, ConditionOperator, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
 use std::rc::Rc;

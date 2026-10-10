@@ -13,7 +13,7 @@ mod data;
 mod lowered;
 mod schema;
 mod shred;
-mod typed;
+mod leaf;
 
 use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphResponse};
@@ -44,7 +44,7 @@ use std::time::Instant;
 use table::{Table, TableOut};
 use bound::{Bound, Scopes};
 use data::{Col, Data, Layer, Mask};
-use typed::{Array, ColumnBuilder, Leaf};
+use leaf::{Array, ColumnBuilder, Leaf};
 use std::rc::Rc;
 use zen_types::symbol::Symbol;
 use zen_expression::lane::{Binding, Columns};
@@ -1635,7 +1635,7 @@ impl CompiledGraph {
                             Some(
                                 present
                                     .into_iter()
-                                    .map(|p| Mask::Bits(typed::Bits::of(count, |row| p[row]).into()))
+                                    .map(|p| Mask::Bits(leaf::Bits::of(count, |row| p[row]).into()))
                                     .collect(),
                             ),
                         );
@@ -2132,7 +2132,7 @@ impl CompiledGraph {
                 builder.push_variable(value.unwrap_or(Variable::Null));
             }
             leaves.push(Leaf::typed(builder.finish()));
-            present.push(Mask::Bits(typed::Bits::of(mask.len(), |row| mask[row]).into()));
+            present.push(Mask::Bits(leaf::Bits::of(mask.len(), |row| mask[row]).into()));
         }
         let rows: Rc<[usize]> = (0..inputs.len()).collect();
         Some(Data::record(&rows, Layer::new(keys.into(), leaves, Some(present)), None))

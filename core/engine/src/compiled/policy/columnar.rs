@@ -9,7 +9,7 @@ use super::{Fixed, Native, PolicyPlan, Rows};
 use crate::compiled::bound::Outs;
 use crate::compiled::columnar::OutputColumn;
 use crate::compiled::shred::{Listing, Normalizer, Shred, Shredder};
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf};
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dict, Leaf};
 use crate::policy::blocks::{AssertionIr, MatchIr, MatchSelection, TableSelection};
 use super::Host;
 use crate::policy::evaluator::{EvalArtifact, Iteration};
@@ -617,7 +617,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             truths.push(leaf.truths(positions.len()));
         }
         let bits = Self::folded(ir, &truths, positions.len());
-        let leaf = Leaf::typed(Array::parts(crate::compiled::typed::Store::Bool(bits), None, positions.len()));
+        let leaf = Leaf::typed(Array::parts(crate::compiled::leaf::Store::Bool(bits), None, positions.len()));
         self.write(&ir.output, leaf, positions);
     }
 
@@ -644,8 +644,8 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
     }
 
-    fn dict(values: &[Variable]) -> crate::compiled::typed::Dict {
-        use crate::compiled::typed::Dict;
+    fn dict(values: &[Variable]) -> crate::compiled::leaf::Dict {
+        use crate::compiled::leaf::Dict;
         if values.iter().all(|v| matches!(v, Variable::String(_))) {
             let mut offsets = vec![0i32];
             let mut data = String::new();
@@ -1302,7 +1302,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                     truths.push(leaf.truths(kids.len()));
                 }
                 let bits = Self::folded(ir, &truths, kids.len());
-                let leaf = Leaf::typed(Array::parts(crate::compiled::typed::Store::Bool(bits), None, kids.len()));
+                let leaf = Leaf::typed(Array::parts(crate::compiled::leaf::Store::Bool(bits), None, kids.len()));
                 self.member_write(at, &ir.output, leaf, &kids);
             }
             (Event::Select(_), Some(Native::Match { pick: Some(pick), .. })) => {

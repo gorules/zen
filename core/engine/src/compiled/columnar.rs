@@ -1,6 +1,6 @@
 use crate::compiled::data::{Data, Layer, Mask, Shape};
 use crate::compiled::shred::Normalizer;
-use crate::compiled::typed::{ColumnBuilder, Input, Leaf};
+use crate::compiled::leaf::{ColumnBuilder, Input, Leaf};
 use crate::compiled::{CompiledGraph, Source};
 use crate::decision_graph::cleaner::{VariableCleaner, ZEN_RESERVED_PROPERTIES};
 use crate::decision_graph::walker::GraphWalker;
@@ -9,7 +9,7 @@ use crate::nodes::NodeHandlerExtensions;
 use crate::EvaluationError;
 use std::rc::Rc;
 use std::sync::Arc;
-use crate::compiled::typed::Bits;
+use crate::compiled::leaf::Bits;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};
 use zen_expression::Variable;
 

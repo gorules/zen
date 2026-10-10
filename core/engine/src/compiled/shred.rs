@@ -1,4 +1,4 @@
-use crate::compiled::typed::{Array, Bits, Dict, Leaf, Records, Store};
+use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Records, Store};
 use crate::nodes::input::dates::DeclaredDates;
 use std::rc::Rc;
 use std::sync::Arc;

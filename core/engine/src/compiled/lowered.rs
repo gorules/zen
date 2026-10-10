@@ -1,4 +1,4 @@
-use crate::compiled::typed::{Array, Bits, Dict, Leaf, Store};
+use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Store};
 use std::rc::Rc;
 use std::sync::OnceLock;
 use zen_expression::typed::{Data, Hir, Outputs, Slot};

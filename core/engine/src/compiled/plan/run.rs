@@ -13,7 +13,7 @@ use crate::decision_graph::walker::GraphWalker;
 use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::compiled::bound::{Bound, Outs};
 use crate::compiled::shred::{Listing, Normalizer, Seen, Shred, Shredder};
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer, Templated};
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dict, Field, Items, Leaf, Literal, Records, Store as Buffer, Templated};
 use crate::compiled::data::Shape as DataShape;
 use crate::compiled::{Body, ColumnarOutput, CompiledGraph, Condition, Kind, OutputColumn};
 use crate::model::{DecisionNodeKind, GraphContent};

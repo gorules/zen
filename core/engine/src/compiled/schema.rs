@@ -1,5 +1,5 @@
 use crate::compiled::data::{Data, Shape};
-use crate::compiled::typed::{Bits, Leaf};
+use crate::compiled::leaf::{Bits, Leaf};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::Value;

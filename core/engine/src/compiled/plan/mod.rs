@@ -5,7 +5,7 @@ mod view;
 
 use crate::compiled::schedule::{End, Outcome, Segment};
 use crate::compiled::table::Table;
-use crate::compiled::typed::Literal;
+use crate::compiled::leaf::Literal;
 use crate::compiled::{Body, CompiledGraph, Condition, Kind, Step};
 use petgraph::prelude::NodeIndex;
 use std::sync::{Arc, OnceLock, RwLock};

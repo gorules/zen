@@ -2,7 +2,7 @@ use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
-use crate::compiled::typed::{Bits, Leaf};
+use crate::compiled::leaf::{Bits, Leaf};
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 use crate::compiled::shred::{Normalizer, Shred};
 use crate::policy::evaluator::EvalArtifact;
-use crate::compiled::typed::{Bits, ColumnBuilder, Leaf};
+use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};
@@ -238,7 +238,7 @@ impl<'a> Entity<'a> {
                 (Symbol::from(field.name.as_ref()), field.leaf.clone(), present)
             })
             .collect();
-        Leaf::Records(Rc::new(crate::compiled::typed::Records::new(rows, offsets, valid, fields, None)))
+        Leaf::Records(Rc::new(crate::compiled::leaf::Records::new(rows, offsets, valid, fields, None)))
     }
 
     pub fn compose(&self, row: usize) -> Option<Variable> {

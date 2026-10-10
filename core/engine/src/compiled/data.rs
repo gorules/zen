@@ -1,4 +1,4 @@
-use crate::compiled::typed::{Bits, ColumnBuilder, Leaf};
+use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
 use crate::decision_graph::walker::GraphWalker;
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;

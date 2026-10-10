@@ -1,7 +1,7 @@
 use crate::compiled::bound::{Bound, Outs};
 use crate::compiled::data::Col;
 use crate::compiled::data::Mask;
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf, Literal, Records, Store, Templated};
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dict, Leaf, Literal, Records, Store, Templated};
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;

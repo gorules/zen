@@ -704,9 +704,12 @@ impl<'a> Run<'_, 'a> {
                         Cond::Rows(op) => Some(self.rows_condition(seg, op, positions).into()),
                         Cond::Lane(op) => {
                             let uniform = op.uniform;
-                            let first: Rc<[usize]> = Rc::from([positions.and_then(|p| p.first().copied()).unwrap_or(0)]);
+                            let first: Rc<[usize]>;
                             let local = match uniform {
-                                true => Some(&first),
+                                true => {
+                                    first = Rc::from([positions.and_then(|p| p.first().copied()).unwrap_or(0)]);
+                                    Some(&first)
+                                }
                                 false => positions,
                             };
                             self.lane(seg, op, local, false);
@@ -720,16 +723,20 @@ impl<'a> Run<'_, 'a> {
                     })
                     .collect();
                 let words = conditions.len().div_ceil(64).max(1);
-                let reach_bits: Vec<u64> = match positions {
-                    None => self.store.ones.to_vec(),
+                let ones = self.store.ones.clone();
+                let owned: Vec<u64>;
+                let reach_bits: &[u64] = match positions {
+                    None => &ones,
                     Some(p) => {
                         let mut bits = vec![0u64; rows.div_ceil(64)];
                         p.iter().for_each(|&row| Bits::set(&mut bits, row, true));
-                        bits
+                        owned = bits;
+                        &owned
                     }
                 };
-                let uniform = truths.iter().all(|t| t.as_ref().is_none_or(|t| Rc::ptr_eq(t, &self.store.ones)));
-                let mut groups: Vec<(Vec<u64>, Vec<usize>)> = Vec::new();
+                let uniform = truths.iter().all(|t| t.as_ref().is_none_or(|t| Rc::ptr_eq(t, &ones)));
+                let mut keys: Vec<u64> = Vec::with_capacity(words * (conditions.len() + 1));
+                let mut sets: Vec<Vec<usize>> = Vec::with_capacity(conditions.len() + 1);
                 let members = |bits: &[u64]| -> Vec<usize> {
                     let mut found = Vec::with_capacity(bits.iter().map(|word| word.count_ones() as usize).sum());
                     found.extend(
@@ -749,41 +756,44 @@ impl<'a> Run<'_, 'a> {
                     found
                 };
                 if uniform || *first {
-                    let mut remaining = reach_bits.clone();
+                    let mut remaining = reach_bits.to_vec();
+                    let mut hits = vec![0u64; remaining.len()];
                     for (index, truth) in truths.iter().enumerate() {
                         let Some(truth) = truth else {
                             continue;
                         };
-                        let hit: Vec<u64> = remaining.iter().zip(truth.iter()).map(|(r, t)| r & t).collect();
-                        if Bits::none(&hit) {
+                        let hit = &mut hits[..remaining.len().min(truth.len())];
+                        hit.iter_mut().zip(remaining.iter().zip(truth.iter())).for_each(|(h, (r, t))| *h = r & t);
+                        if Bits::none(hit) {
                             continue;
                         }
-                        let mut key = vec![0u64; words];
+                        let at = keys.len();
+                        keys.resize(at + words, 0);
                         if uniform && !*first {
                             for (i, t) in truths.iter().enumerate() {
                                 if t.is_some() {
-                                    key[i / 64] |= 1 << (i % 64);
+                                    keys[at + i / 64] |= 1 << (i % 64);
                                 }
                             }
-                            groups.push((key, members(&hit)));
-                            remaining.iter_mut().for_each(|r| *r = 0);
+                            sets.push(members(hit));
+                            remaining.fill(0);
                             break;
                         }
-                        key[index / 64] |= 1 << (index % 64);
-                        remaining.iter_mut().zip(&hit).for_each(|(r, h)| *r &= !h);
-                        groups.push((key, match hit == reach_bits {
+                        keys[at + index / 64] |= 1 << (index % 64);
+                        remaining.iter_mut().zip(hit.iter()).for_each(|(r, h)| *r &= !h);
+                        sets.push(match *hit == *reach_bits {
                             true => Vec::new(),
-                            false => members(&hit),
-                        }));
+                            false => members(hit),
+                        });
                     }
                     if !Bits::none(&remaining) {
-                        groups.push((vec![0u64; words], match remaining == reach_bits {
+                        keys.resize(keys.len() + words, 0);
+                        sets.push(match remaining.as_slice() == reach_bits {
                             true => Vec::new(),
                             false => members(&remaining),
-                        }));
+                        });
                     }
                 } else if words == 1 {
-                    let mut keyed: Vec<(u64, Vec<usize>)> = Vec::new();
                     let mut last = 0usize;
                     let mut visit = |row: usize| {
                         let key = truths
@@ -791,54 +801,55 @@ impl<'a> Run<'_, 'a> {
                             .enumerate()
                             .filter(|(_, t)| t.as_ref().is_some_and(|t| Bits::get(t, row)))
                             .fold(0u64, |k, (index, _)| k | 1 << index);
-                        let at = match keyed.get(last).is_some_and(|(k, _)| *k == key) {
+                        let at = match keys.get(last).is_some_and(|k| *k == key) {
                             true => last,
-                            false => match keyed.iter().position(|(k, _)| *k == key) {
+                            false => match keys.iter().position(|k| *k == key) {
                                 Some(g) => g,
                                 None => {
-                                    keyed.push((key, Vec::new()));
-                                    keyed.len() - 1
+                                    keys.push(key);
+                                    sets.push(Vec::new());
+                                    keys.len() - 1
                                 }
                             },
                         };
-                        keyed[at].1.push(row);
+                        sets[at].push(row);
                         last = at;
                     };
                     match positions {
                         Some(p) => p.iter().for_each(|&row| visit(row)),
                         None => (0..rows).for_each(&mut visit),
                     }
-                    groups.extend(keyed.into_iter().map(|(key, members)| (vec![key], members)));
                 } else {
                     let mut key = vec![0u64; words];
                     let mut last: Option<usize> = None;
-                    let reach: Vec<usize> = match positions {
-                        Some(p) => p.to_vec(),
-                        None => (0..rows).collect(),
-                    };
-                    for &row in &reach {
-                        key.iter_mut().for_each(|w| *w = 0);
+                    let mut visit = |row: usize| {
+                        key.fill(0);
                         for (index, truth) in truths.iter().enumerate() {
                             if truth.as_ref().is_some_and(|t| Bits::get(t, row)) {
                                 key[index / 64] |= 1 << (index % 64);
                             }
                         }
-                        let at = match last.filter(|&g| groups[g].0 == key) {
+                        let at = match last.filter(|&g| keys.get(g * words..(g + 1) * words) == Some(key.as_slice())) {
                             Some(g) => g,
-                            None => match groups.iter().position(|(k, _)| *k == key) {
+                            None => match keys.chunks_exact(words).position(|k| k == key.as_slice()) {
                                 Some(g) => g,
                                 None => {
-                                    groups.push((key.clone(), Vec::new()));
-                                    groups.len() - 1
+                                    keys.extend_from_slice(&key);
+                                    sets.push(Vec::new());
+                                    sets.len() - 1
                                 }
                             },
                         };
-                        groups[at].1.push(row);
+                        sets[at].push(row);
                         last = Some(at);
+                    };
+                    match positions {
+                        Some(p) => p.iter().for_each(|&row| visit(row)),
+                        None => (0..rows).for_each(&mut visit),
                     }
                 }
-                for (key, members) in groups {
-                    let child = seg.child(self.graph, self.layout, &key);
+                for (key, members) in keys.chunks_exact(words).zip(sets) {
+                    let child = seg.child(self.graph, self.layout, key);
                     let child = child.as_ref().as_ref().map_err(String::clone)?;
                     let members: Option<Rc<[usize]>> = match (members.is_empty(), members.len() == rows) {
                         (true, _) => positions.cloned(),
@@ -1872,8 +1883,8 @@ impl<'a> Run<'_, 'a> {
         let mut table = vec![(u64::MAX, u32::MAX); slots];
         let mask = slots - 1;
         let mut reps = Vec::new();
-        let mut ids = Vec::with_capacity(local);
-        for (at, &key) in keys.iter().enumerate() {
+        let mut ids = vec![0u32; local];
+        for ((at, &key), id) in keys.iter().enumerate().zip(ids.iter_mut()) {
             let mut slot = match dense {
                 true => key as usize,
                 false => (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32) as usize & mask,
@@ -1889,7 +1900,7 @@ impl<'a> Run<'_, 'a> {
                     return None;
                 }
             }
-            ids.push(entry.1);
+            *id = entry.1;
         }
         Some((reps, ids))
     }
@@ -1904,7 +1915,10 @@ impl<'a> Run<'_, 'a> {
             true => leaves.iter().map(Leaf::records).collect(),
             false => Vec::new(),
         };
-        let parts: Vec<Option<Vec<(&str, Column)>>> = held.iter().map(|r| r.as_ref().map(|r| r.parts())).collect();
+        let parts: Vec<Option<Vec<(&str, Column)>>> = match held.iter().any(Option::is_some) {
+            true => held.iter().map(|r| r.as_ref().map(|r| r.parts())).collect(),
+            false => Vec::new(),
+        };
         let items: Vec<Option<Column>> = held.iter().zip(&parts).map(|(r, p)| Some(r.as_ref()?.item(p.as_ref()?))).collect();
         let mut columns = Columns::new(rows);
         columns.columns.reserve_exact(op.reads.len());
@@ -2046,7 +2060,10 @@ impl<'a> Run<'_, 'a> {
             true => leaves.iter().map(|leaf| leaf.as_ref().and_then(Leaf::records)).collect(),
             false => Vec::new(),
         };
-        let parts: Vec<Option<Vec<(&str, Column)>>> = held.iter().map(|r| r.as_ref().map(|r| r.parts())).collect();
+        let parts: Vec<Option<Vec<(&str, Column)>>> = match held.iter().any(Option::is_some) {
+            true => held.iter().map(|r| r.as_ref().map(|r| r.parts())).collect(),
+            false => Vec::new(),
+        };
         let items: Vec<Option<Column>> = held.iter().zip(&parts).map(|(r, p)| Some(r.as_ref()?.item(p.as_ref()?))).collect();
         let views: Vec<Option<Column>> = leaves
             .iter()

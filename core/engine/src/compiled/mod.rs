@@ -1517,20 +1517,36 @@ impl CompiledGraph {
         let Some((validator, schema)) = Self::validator(step, content, extensions) else {
             return failures;
         };
-        let sure = schema::ObjectSchema::cached(&schema).and_then(|columns| columns.sure(data));
-        let doubtful: Vec<(usize, Variable)> = match &sure {
-            Some(sure) => (0..data.len())
-                .filter(|&i| !sure[i])
-                .map(|i| (i, data.materialize_row(i)))
+        let verdicts = schema::ObjectSchema::cached(&schema).and_then(|columns| columns.verdicts(data));
+        let doubtful: Vec<(usize, Option<Variable>, Option<u64>)> = match &verdicts {
+            Some(verdicts) => (0..data.len())
+                .filter(|&i| !verdicts.sure[i])
+                .map(|i| match verdicts.missing.get(i).copied().flatten() {
+                    Some(key) => (i, None, Some(key)),
+                    None => (i, Some(data.materialize_row(i)), None),
+                })
                 .collect(),
-            None => data.materialized().iter().cloned().enumerate().collect(),
+            None => data.materialized().iter().cloned().enumerate().map(|(i, value)| (i, Some(value), None)).collect(),
         };
-        for (i, value) in doubtful {
-            if validator.is_valid(VariableNode::new(&value, &Guards::default())) {
+        let mut memo: Vec<(u64, Option<String>)> = Vec::new();
+        for (i, value, key) in doubtful {
+            if let Some((_, known)) = key.and_then(|key| memo.iter().find(|(k, _)| *k == key)) {
+                if let Some(e) = known {
+                    failures.push((i, e.clone()));
+                }
                 continue;
             }
+            let value = match value {
+                Some(value) if validator.is_valid(VariableNode::new(&value, &Guards::default())) => continue,
+                Some(value) => value,
+                None => data.materialize_row(i),
+            };
             let nodes = nodes.get(i).cloned().flatten();
-            if let Err(e) = self.boundary(step, value, nodes, content, extensions).await {
+            let failure = self.boundary(step, value, nodes, content, extensions).await.err();
+            if let Some(key) = key.filter(|_| memo.len() < 64) {
+                memo.push((key, failure.clone()));
+            }
+            if let Some(e) = failure {
                 failures.push((i, e));
             }
         }

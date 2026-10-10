@@ -3,6 +3,7 @@ mod run;
 mod typed;
 mod view;
 
+use crate::compiled::core::segments::Children;
 use crate::compiled::graph::schedule::{End, Outcome, Segment};
 use crate::compiled::graph::table::Table;
 use crate::compiled::leaf::Literal;
@@ -122,7 +123,7 @@ pub(crate) enum SegEnd {
         first: bool,
         ids: Vec<Arc<str>>,
         conditions: Vec<Cond>,
-        children: RwLock<Vec<(Vec<u64>, Bound)>>,
+        children: Children<Vec<u64>, Bound>,
     },
 }
 
@@ -930,7 +931,7 @@ impl<'g> Builder<'g> {
                     first: *first,
                     ids: conditions.iter().map(|(id, _)| id.clone()).collect(),
                     conditions: built,
-                    children: RwLock::new(Vec::new()),
+                    children: Children::new(),
                 }
             }
         };
@@ -950,11 +951,7 @@ impl SegPlan {
     fn collect(&self, hosted: &mut Vec<String>) -> Result<(), String> {
         hosted.extend(self.hosted.iter().cloned());
         if let SegEnd::Switch { children, .. } = &self.end {
-            if let Ok(children) = children.read() {
-                for (_, child) in children.iter() {
-                    child.as_ref().as_ref().map_err(String::clone)?.collect(hosted)?;
-                }
-            }
+            children.each(|child| child.as_ref().as_ref().map_err(String::clone)?.collect(hosted))?;
         }
         Ok(())
     }
@@ -963,11 +960,10 @@ impl SegPlan {
         let SegEnd::Switch { children, ids, .. } = &self.end else {
             return Arc::new(Err("not a switch".into()));
         };
-        if let Ok(cache) = children.read() {
-            if let Some((_, child)) = cache.iter().find(|(k, _)| k.as_slice() == key) {
-                return child.clone();
-            }
-        }
+        children.get(key, || self.branch(graph, layout, ids, key))
+    }
+
+    fn branch(&self, graph: &CompiledGraph, layout: &Layout, ids: &[Arc<str>], key: &[u64]) -> Bound {
         let outcome: Outcome = ids
             .iter()
             .enumerate()
@@ -987,11 +983,7 @@ impl SegPlan {
             hosted: Vec::new(),
             null: None,
         };
-        let built: Bound = Arc::new(builder.segment(segment, layout).map(Arc::new));
-        if let Ok(mut cache) = children.write() {
-            cache.push((key.to_vec(), built.clone()));
-        }
-        built
+        Arc::new(builder.segment(segment, layout).map(Arc::new))
     }
 }
 

@@ -2,8 +2,8 @@ use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph
 use crate::model::DecisionNodeKind;
 use petgraph::prelude::NodeIndex;
 use petgraph::Incoming;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use crate::compiled::core::segments::Children;
+use std::sync::Arc;
 
 pub(crate) type Outcome = Arc<[Arc<str>]>;
 
@@ -21,7 +21,7 @@ pub(crate) enum End {
         node: NodeIndex,
         parents: Box<[NodeIndex]>,
         visible: Box<[NodeIndex]>,
-        children: RwLock<HashMap<Outcome, Arc<Segment>>>,
+        children: Children<Outcome, Arc<Segment>>,
     },
 }
 
@@ -77,7 +77,7 @@ impl<'a> Replay<'a> {
                             node,
                             parents,
                             visible,
-                            children: RwLock::new(HashMap::new()),
+                            children: Children::new(),
                         },
                     };
                 }

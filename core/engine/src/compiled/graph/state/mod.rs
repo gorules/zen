@@ -64,16 +64,11 @@ impl CompiledGraph {
         let End::Switch { children, .. } = &segment.end else {
             return self.root.clone();
         };
-        if let Some(found) = children.read().ok().and_then(|c| c.get(&outcome).cloned()) {
-            return found;
-        }
-        let mut path = segment.path.to_vec();
-        path.push(outcome.clone());
-        let built = Arc::new(Replay::new(&self.graph).segment(&path));
-        match children.write() {
-            Ok(mut map) => map.entry(outcome).or_insert(built).clone(),
-            Err(_) => built,
-        }
+        children.get(&outcome, || {
+            let mut path = segment.path.to_vec();
+            path.push(outcome.clone());
+            Arc::new(Replay::new(&self.graph).segment(&path))
+        })
     }
 
     fn node_columns<'a>(&self, step: &Step, state: &State<'a>, visible: &[NodeIndex], rows: &Rc<[usize]>, with_nodes: bool) -> Vec<NodeColumn<'a>> {

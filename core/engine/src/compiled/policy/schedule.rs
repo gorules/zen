@@ -2,7 +2,8 @@ use crate::policy::blocks::{Block, BlockKind, ConditionalReads};
 use crate::policy::evaluator::EvalArtifact;
 use crate::workspace::types::BlockRef;
 use ahash::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use crate::compiled::core::segments::Children;
+use std::sync::Arc;
 
 pub(crate) type Demand = Arc<[Arc<str>]>;
 
@@ -16,7 +17,7 @@ pub(crate) enum End {
     Finish,
     Branch {
         block: usize,
-        children: RwLock<HashMap<Demand, Arc<Segment>>>,
+        children: Children<Demand, Arc<Segment>>,
     },
 }
 
@@ -150,7 +151,7 @@ impl Replay<'_> {
         let end = match (finished, sim.stopped) {
             (false, Some(block)) => End::Branch {
                 block,
-                children: RwLock::new(HashMap::default()),
+                children: Children::new(),
             },
             _ => End::Finish,
         };

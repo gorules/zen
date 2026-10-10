@@ -325,23 +325,18 @@ impl PolicyPlan {
         let End::Branch { children, .. } = &segment.end else {
             return Arc::new(Segment::finished());
         };
-        if let Some(child) = children.read().ok().and_then(|c| c.get(&demand).cloned()) {
-            return child;
-        }
-        let mut path = segment.path.to_vec();
-        path.push(demand.clone());
-        let child = Arc::new(
-            Replay {
-                artifact,
-                blocks: &self.blocks,
-                roots: &self.roots,
-            }
-            .segment(&path),
-        );
-        if let Ok(mut c) = children.write() {
-            return c.entry(demand).or_insert(child).clone();
-        }
-        child
+        children.get(&demand, || {
+            let mut path = segment.path.to_vec();
+            path.push(demand.clone());
+            Arc::new(
+                Replay {
+                    artifact,
+                    blocks: &self.blocks,
+                    roots: &self.roots,
+                }
+                .segment(&path),
+            )
+        })
     }
 
     pub(crate) fn evaluate(

@@ -1,5 +1,6 @@
 use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
+use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
 use crate::compiled::leaf::{Bits, Leaf};
@@ -211,7 +212,7 @@ impl<'s, 'a> Pass<'s, 'a> {
     pub(super) fn typed(&mut self, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> (usize, Vec<usize>) {
         let total = self.sheet.rows;
         let full = rows.len() == total;
-        if !full && rows.len() * 4 < total {
+        if Density::sparse(rows.len(), total) || Switch::Always.path().0 == Path::Lane {
             return (0, Vec::new());
         }
         let plan = self.plan;

@@ -1,12 +1,12 @@
 use super::view::{Expr, Masks, M, Ref, Shape, SlotId};
 use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
+use crate::compiled::core::switch::Cost;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::Seen;
 use crate::compiled::graph::table::Table;
 use crate::compiled::graph::{Body, CompiledGraph, Kind};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use zen_expression::lane::{Binding as Site, Fusion};
 use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved};
 
@@ -55,18 +55,6 @@ enum Attempt {
     Typed(Box<TypedOp>, usize),
     Deferred,
     Failed,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Path {
-    Typed,
-    Lane,
-}
-
-pub(crate) struct Cost {
-    calls: AtomicU32,
-    typed: AtomicU64,
-    lane: AtomicU64,
 }
 
 struct Probe<'p> {
@@ -123,52 +111,6 @@ impl Deferred {
         };
         variants.push((seen.to_vec(), pieces.clone()));
         pieces
-    }
-}
-
-impl Cost {
-    const WARM: u32 = 2;
-    const PERIOD: u32 = 64;
-
-    fn new() -> Self {
-        Self {
-            calls: AtomicU32::new(0),
-            typed: AtomicU64::new(u64::MAX),
-            lane: AtomicU64::new(u64::MAX),
-        }
-    }
-
-    pub fn path(&self) -> (Path, bool) {
-        let call = self.calls.fetch_add(1, Ordering::Relaxed);
-        if call < Self::WARM {
-            return (Path::Typed, false);
-        }
-        if call < 2 * Self::WARM {
-            return (Path::Lane, false);
-        }
-        let (faster, slower) = match self.typed.load(Ordering::Relaxed) <= self.lane.load(Ordering::Relaxed) {
-            true => (Path::Typed, Path::Lane),
-            false => (Path::Lane, Path::Typed),
-        };
-        match call % Self::PERIOD {
-            0 => (slower, true),
-            1 => (faster, true),
-            _ => (faster, false),
-        }
-    }
-
-    pub fn record(&self, (path, fresh): (Path, bool), elapsed: Duration, rows: usize) {
-        let per = u64::try_from(elapsed.as_nanos().saturating_mul(1024) / rows.max(1) as u128).unwrap_or(u64::MAX - 1);
-        let cell = match path {
-            Path::Typed => &self.typed,
-            Path::Lane => &self.lane,
-        };
-        match fresh {
-            true => cell.store(per, Ordering::Relaxed),
-            false => {
-                cell.fetch_min(per, Ordering::Relaxed);
-            }
-        }
     }
 }
 

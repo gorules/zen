@@ -1,3 +1,4 @@
+mod core;
 pub(crate) mod exact;
 mod graph;
 mod leaf;

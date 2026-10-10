@@ -696,7 +696,20 @@ pub(crate) struct Input<'a> {
 #[derive(Debug)]
 pub(crate) struct Masked<'a> {
     inner: Leaf<'a>,
-    bits: Rc<[u64]>,
+    mask: Rc<[u64]>,
+    bits: OnceCell<Rc<[u64]>>,
+}
+
+impl Masked<'_> {
+    fn bits(&self) -> &Rc<[u64]> {
+        self.bits.get_or_init(|| {
+            let rows = self.inner.len();
+            let mut bits = self.inner.validity(rows);
+            bits.iter_mut().zip(self.mask.iter()).for_each(|(b, m)| *b &= m);
+            bits.iter_mut().skip(self.mask.len()).for_each(|b| *b = 0);
+            bits.into()
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -1105,10 +1118,10 @@ impl<'a> Leaf<'a> {
             Leaf::Masked(masked) => match &masked.inner {
                 Leaf::Input(input) if Self::struct_list(input.column) => Some(Items::Input {
                     column: input.column,
-                    mask: Some(masked.bits.clone()),
+                    mask: Some(masked.bits().clone()),
                 }),
                 Leaf::Records(records) => {
-                    let valid: Vec<u64> = records.valid.iter().zip(masked.bits.iter()).map(|(v, m)| v & m).collect();
+                    let valid: Vec<u64> = records.valid.iter().zip(masked.bits().iter()).map(|(v, m)| v & m).collect();
                     Some(Items::Records(Rc::new(Records::new(records.rows, records.offsets.clone(), valid, records.fields.clone(), records.nulled.clone()))))
                 }
                 _ => None,
@@ -1150,13 +1163,11 @@ impl<'a> Leaf<'a> {
     pub fn masked(inner: Leaf<'a>, mask: &Rc<[u64]>) -> Leaf<'a> {
         let rows = inner.len();
         let trimmed = mask.last().is_none_or(|w| rows.is_multiple_of(64) || w >> (rows % 64) == 0);
+        let bits = OnceCell::new();
         if inner.all_valid() && trimmed && mask.len() == rows.div_ceil(64) {
-            return Leaf::Masked(Rc::new(Masked { inner, bits: mask.clone() }));
+            let _ = bits.set(mask.clone());
         }
-        let mut bits = inner.validity(rows);
-        bits.iter_mut().zip(mask.iter()).for_each(|(b, m)| *b &= m);
-        bits.iter_mut().skip(mask.len()).for_each(|b| *b = 0);
-        Leaf::Masked(Rc::new(Masked { inner, bits: bits.into() }))
+        Leaf::Masked(Rc::new(Masked { inner, mask: mask.clone(), bits }))
     }
 
     fn all_valid(&self) -> bool {
@@ -1267,26 +1278,66 @@ impl<'a> Leaf<'a> {
                 }
                 Store::Any(out)
             }
-            _ => {
-                let mut builder = ColumnBuilder::with_capacity(rows);
-                let mut next = positions.iter().enumerate().peekable();
-                for row in 0..rows {
-                    match next.peek() {
-                        Some(&(i, &at)) if at == row => {
-                            builder.push_cell(&column, i);
-                            next.next();
-                        }
-                        _ => builder.push_null(),
-                    }
-                }
-                return Leaf::typed(builder.finish());
+            Values::Text { .. } | Values::Utf8 { .. } => {
+                return Self::spread_text(&column, positions, rows).map_or_else(|| Self::spread_cells(&column, positions, rows), Leaf::typed)
             }
+            _ => return Self::spread_cells(&column, positions, rows),
         };
         Leaf::typed(Array {
             values,
             valid: Some(valid),
             rows,
         })
+    }
+
+    fn spread_text(column: &Column, positions: &[usize], rows: usize) -> Option<Array> {
+        let mut offsets = Vec::with_capacity(rows + 1);
+        let mut data = String::new();
+        let mut valid = vec![0u64; rows.div_ceil(64)];
+        let (mut nulls, mut filled) = (false, false);
+        let mut next = positions.iter().enumerate().peekable();
+        offsets.push(0i32);
+        for row in 0..rows {
+            let text = match next.peek() {
+                Some(&(i, &at)) if at == row => {
+                    next.next();
+                    match column.valid(i) {
+                        true => column.text(i),
+                        false => None,
+                    }
+                }
+                _ => None,
+            };
+            match text {
+                Some(text) => {
+                    data.push_str(text);
+                    valid[row >> 6] |= 1 << (row & 63);
+                    filled = true;
+                }
+                None => nulls = true,
+            }
+            offsets.push(data.len() as i32);
+        }
+        filled.then_some(Array {
+            values: Store::Text { offsets, data },
+            valid: nulls.then_some(valid),
+            rows,
+        })
+    }
+
+    fn spread_cells(column: &Column, positions: &[usize], rows: usize) -> Leaf<'a> {
+        let mut builder = ColumnBuilder::with_capacity(rows);
+        let mut next = positions.iter().enumerate().peekable();
+        for row in 0..rows {
+            match next.peek() {
+                Some(&(i, &at)) if at == row => {
+                    builder.push_cell(column, i);
+                    next.next();
+                }
+                _ => builder.push_null(),
+            }
+        }
+        Leaf::typed(builder.finish())
     }
 
     pub fn nulls(rows: usize) -> Leaf<'a> {
@@ -1342,6 +1393,11 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn objects(&self) -> bool {
+        if let Leaf::Masked(_) | Leaf::Scattered(_) = self {
+            if let Some(found) = self.plain_objects() {
+                return found;
+            }
+        }
         match self {
             Leaf::Any(values) => values.iter().any(|v| matches!(v, Variable::Object(_))),
             Leaf::Picked(picked) => picked.source.objects(),
@@ -1358,6 +1414,58 @@ impl<'a> Leaf<'a> {
                 } => values.iter().any(|v| matches!(v, Variable::Object(_))),
                 _ => false,
             },
+        }
+    }
+
+    fn plain_objects(&self) -> Option<bool> {
+        match self {
+            _ if self.objectless() => Some(false),
+            Leaf::Typed(_) | Leaf::Input(_) | Leaf::Any(_) => Some(self.objects()),
+            Leaf::Masked(masked) => masked.inner.plain_objects(),
+            _ => None,
+        }
+    }
+
+    fn objectless(&self) -> bool {
+        let plain = |values: &[Variable]| !values.iter().any(|v| matches!(v, Variable::Object(_)));
+        match self {
+            _ if self.scalar() => true,
+            Leaf::Any(values) => plain(values),
+            Leaf::Typed(typed) => match &typed.values {
+                Store::Any(values) => plain(values),
+                Store::Coded { dict, .. } => matches!(&**dict, Dict::Any(values) if plain(values)),
+                _ => false,
+            },
+            Leaf::Input(input) => match input.column.values {
+                Values::Any(values) | Values::Dict { values: Dictionary::Any(values), .. } => plain(values),
+                _ => false,
+            },
+            Leaf::Templated(templated) => !templated.templates.iter().any(|literal| matches!(literal, Literal::Object(_))),
+            Leaf::Masked(masked) => masked.inner.objectless(),
+            Leaf::Scattered(scattered) => scattered.inner.objectless(),
+            Leaf::Picked(picked) => picked.source.objectless(),
+            Leaf::Stitched(stitched) => stitched.sources.iter().all(Leaf::objectless),
+            Leaf::Records(_) => false,
+        }
+    }
+
+    fn scalar(&self) -> bool {
+        match self {
+            Leaf::Typed(typed) => match &typed.values {
+                Store::Scaled { .. } | Store::Bool(_) | Store::Text { .. } => true,
+                Store::Coded { dict, .. } => !matches!(**dict, Dict::Any(_)),
+                Store::Any(_) | Store::List { .. } => false,
+            },
+            Leaf::Masked(masked) => masked.inner.scalar(),
+            Leaf::Scattered(scattered) => scattered.inner.scalar(),
+            Leaf::Picked(picked) => picked.source.scalar(),
+            Leaf::Stitched(stitched) => stitched.sources.iter().all(Leaf::scalar),
+            Leaf::Input(input) => match input.column.values {
+                Values::Dict { values, .. } => !matches!(values, Dictionary::Any(_) | Dictionary::Column(_)),
+                Values::List { .. } | Values::Struct { .. } | Values::Any(_) => false,
+                _ => true,
+            },
+            _ => false,
         }
     }
 
@@ -1427,7 +1535,7 @@ impl<'a> Leaf<'a> {
             Leaf::Scattered(scattered) => scattered.dense.get_or_init(|| Self::spread(scattered)).column(),
             Leaf::Masked(masked) => Column {
                 values: masked.inner.column().values,
-                validity: Some((&masked.bits, 0)),
+                validity: Some((masked.bits(), 0)),
             },
             Leaf::Any(values) => Column::new(Values::Any(values)),
             Leaf::Typed(typed) => typed.column(),
@@ -1457,7 +1565,7 @@ impl<'a> Leaf<'a> {
     pub fn valid_at(&self, row: usize) -> bool {
         match self {
             Leaf::Input(input) => input.column.valid(row),
-            Leaf::Masked(masked) => Bits::get(&masked.bits, row),
+            Leaf::Masked(masked) => Bits::get(masked.bits(), row),
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
             Leaf::Any(_) | Leaf::Records(_) => true,
@@ -1479,7 +1587,7 @@ impl<'a> Leaf<'a> {
             },
             Leaf::Any(_) | Leaf::Records(_) => Bits::ones(rows),
             Leaf::Templated(templated) => Bits::window(&templated.valid, 0, rows),
-            Leaf::Masked(masked) => Bits::window(&masked.bits, 0, rows),
+            Leaf::Masked(masked) => Bits::window(masked.bits(), 0, rows),
             Leaf::Scattered(_) => match self.column().validity {
                 Some((bits, offset)) => Bits::window(bits, offset, rows),
                 None => Bits::ones(rows),

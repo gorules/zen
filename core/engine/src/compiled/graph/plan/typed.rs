@@ -1,12 +1,13 @@
 use super::view::{Expr, Masks, M, Ref, Shape, SlotId};
 use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
 use crate::compiled::core::switch::Cost;
+use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::Seen;
 use crate::compiled::graph::table::Table;
 use crate::compiled::graph::{Body, CompiledGraph, Kind};
 use std::sync::atomic::AtomicU32;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use zen_expression::lane::{Binding as Site, Fusion};
 use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved};
 
@@ -40,7 +41,7 @@ type Variant = (Vec<Seen>, Arc<[Piece]>);
 
 pub(crate) struct Deferred {
     pub keys: Vec<SlotId>,
-    variants: RwLock<Vec<Variant>>,
+    variants: Variants<Variant>,
 }
 
 pub(crate) struct Grouping<'g> {
@@ -92,25 +93,14 @@ impl Deferred {
     const VARIANTS: usize = 8;
 
     fn new(keys: Vec<SlotId>) -> Self {
-        Self { keys, variants: RwLock::new(Vec::new()) }
+        Self { keys, variants: Variants::new(Self::VARIANTS) }
     }
 
     pub fn variant(&self, seen: &[Seen], units: usize, build: impl FnOnce() -> Vec<Piece>) -> Arc<[Piece]> {
-        if let Some(found) = self.variants.read().ok().and_then(|variants| variants.iter().find(|(key, _)| key == seen).map(|(_, pieces)| pieces.clone())) {
-            return found;
-        }
-        let Ok(mut variants) = self.variants.write() else {
-            return (0..units).map(|_| Piece::Unit).collect();
-        };
-        if let Some((_, pieces)) = variants.iter().find(|(key, _)| key == seen) {
-            return pieces.clone();
-        }
-        let pieces: Arc<[Piece]> = match variants.len() < Self::VARIANTS {
-            true => build().into(),
-            false => (0..units).map(|_| Piece::Unit).collect(),
-        };
-        variants.push((seen.to_vec(), pieces.clone()));
-        pieces
+        let plain = || -> Arc<[Piece]> { (0..units).map(|_| Piece::Unit).collect() };
+        self.variants
+            .get_or_build(|(key, pieces)| (key == seen).then(|| pieces.clone()), || (seen.to_vec(), build().into()), || (seen.to_vec(), plain()))
+            .unwrap_or_else(plain)
     }
 }
 

@@ -1,6 +1,7 @@
 use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Density, Path, Switch};
+use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
 use crate::compiled::leaf::{Bits, Leaf};
@@ -189,20 +190,18 @@ impl Fusions {
 
     fn group(&self, pass: &Pass, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> Option<(Arc<TypedGroup>, Vec<Source>)> {
         let key = (units.iter().map(|(block, _, _)| *block).collect::<Vec<usize>>(), entity.is_some());
-        let found = self.typed.read().ok().and_then(|cache| {
-            let variants = cache.get(&key)?;
-            variants.iter().find_map(|group| Some((group.clone(), group.replay(pass, entity, rows)?)))
-        });
+        let found = self
+            .typed
+            .read()
+            .ok()
+            .and_then(|cache| cache.get(&key)?.find_map(|group| Some((group.clone(), group.replay(pass, entity, rows)?))));
         if found.is_some() {
             return found;
         }
         let group = Arc::new(TypedGroup::lower(pass, units, entity, rows));
         let sources = group.replay(pass, entity, rows)?;
         if let Ok(mut cache) = self.typed.write() {
-            let variants = cache.entry(key).or_default();
-            if variants.len() < Self::VARIANTS {
-                variants.push(group.clone());
-            }
+            cache.entry(key).or_insert_with(|| Variants::new(Self::VARIANTS)).keep(group.clone());
         }
         Some((group, sources))
     }

@@ -7,11 +7,12 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 use super::typed::TypedGroup;
 use std::sync::{Arc, RwLock};
+use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
 use zen_expression::lane::{Fusion, LaneProgram};
 use zen_expression::typed::{Hit, TableRule, TableSpec};
 
-type Variants = ahash::HashMap<(Vec<usize>, bool), Vec<Arc<TypedGroup>>>;
+type Groups = ahash::HashMap<(Vec<usize>, bool), Variants<Arc<TypedGroup>>>;
 
 #[derive(Default)]
 pub(crate) struct Fusions {
@@ -19,7 +20,7 @@ pub(crate) struct Fusions {
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
     tables: RwLock<ahash::HashMap<usize, bool>>,
     runs: RwLock<ahash::HashMap<(Vec<usize>, bool), usize>>,
-    pub(super) typed: RwLock<Variants>,
+    pub(super) typed: RwLock<Groups>,
 }
 
 pub(crate) struct Effects {

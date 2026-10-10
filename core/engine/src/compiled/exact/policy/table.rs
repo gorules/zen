@@ -141,8 +141,10 @@ impl Exact<'_> {
                 scalar_written.insert(col.field.clone());
             }
         }
-        for (field, values) in collected {
-            self.site.write(&field, Variable::from_array(values));
+        for col in &ir.outputs {
+            if let Some(values) = collected.remove(&col.field) {
+                self.site.write(&col.field, Variable::from_array(values));
+            }
         }
 
         let extras = selection

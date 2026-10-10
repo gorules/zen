@@ -7,6 +7,7 @@ use crate::compiled::graph::{Body, Kind};
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Binding as Bind, Column, Columns};
+use crate::compiled::core::exec::Dedup;
 use super::Run;
 use super::store::{Spread, Store};
 
@@ -40,7 +41,7 @@ impl<'a> Run<'_, 'a> {
             (TableMode::First, true) => {
                 let present: Vec<Leaf<'a>> = leaves.iter().flatten().cloned().collect();
                 match present.len() > 1 {
-                    true => Self::distinct(&present, &[], None, local),
+                    true => Dedup::distinct(&present, &[], None, local),
                     false => None,
                 }
             }

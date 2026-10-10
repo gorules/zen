@@ -1,16 +1,15 @@
 use crate::compiled::graph::plan::view::{M, SlotId};
 use crate::compiled::graph::table::{First, Table};
+use crate::compiled::core::exec::{Hint, ListPart, Select, TypedCall};
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::graph::plan::typed::{Deferred, Grouping, Piece, Target, TypedOp};
 use crate::compiled::graph::plan::{Op, SegPlan, TableOp};
-use zen_expression::typed::{Batch, Data as Slotted, Slot};
+use zen_expression::typed::{Data as Slotted, Slot};
 use crate::compiled::shred::{Normalizer, Seen};
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::graph::{Body, Kind};
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
-use zen_expression::lane::{Column, Values};
 use super::Run;
 use super::store::{Lowered, Prepared, Store};
 
@@ -243,23 +242,13 @@ impl<'a> Run<'_, 'a> {
 
     fn lowered(&mut self, seg: &SegPlan, op: &TypedOp, positions: Option<&Rc<[usize]>>) -> Option<Lowered> {
         let rows = self.store.rows;
-        let mut hints: Vec<Option<(Rc<[i32]>, usize)>> = op
+        let mut hints: Vec<Hint> = op
             .columns
             .iter()
             .map(|read| self.store.hints.iter().find(|(slot, _, _)| *slot == read.slot).map(|(_, codes, size)| (codes.clone(), *size)))
             .collect();
-        let long = op.program.instructions() >= TypedOp::LONG * op.columns.len();
-        let attempt = op.sparse.load(Ordering::Relaxed) == 0 && op.lists.is_empty();
         let raw: Vec<Leaf<'a>> = op.columns.iter().map(|read| self.store.leaf(read.slot)).collect();
-        let keyed = attempt
-            && raw.iter().zip(&hints).all(|(leaf, hint)| {
-                hint.is_some()
-                    || match leaf.column().values {
-                        Values::Dict { .. } | Values::Bool { .. } => true,
-                        Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) | Values::Text { .. } => long,
-                        _ => false,
-                    }
-            });
+        let keyed = op.dedup.ready() && op.lists.is_empty() && op.dedup.eligible(&op.program, &raw, &hints);
         let mut prefault: Option<Vec<u64>> = None;
         let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(op.columns.len());
         for (at, read) in op.columns.iter().enumerate() {
@@ -270,38 +259,20 @@ impl<'a> Run<'_, 'a> {
             }
             leaves.push(leaf);
         }
-        let distinct = match keyed {
-            true => {
-                for (leaf, hint) in leaves.iter().zip(hints.iter_mut()).filter(|(_, hint)| hint.is_none()) {
-                    *hint = Self::numbered(&leaf.column(), rows);
-                }
-                let distinct = Self::distinct(&leaves, &hints, positions, rows);
-                if distinct.is_none() {
-                    op.sparse.store(TypedOp::SPARSE, Ordering::Relaxed);
-                }
-                distinct
-            }
-            false => {
-                let _ = op.sparse.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| left.checked_sub(1));
-                None
-            }
-        };
-        let mut out = op.program.outputs();
-        match distinct {
+        match op.dedup.learn(keyed, &leaves, &mut hints, positions, rows) {
             Some((reps, ids)) => {
                 let picks: Rc<[usize]> = reps.into();
                 let picked: Vec<Leaf<'a>> = leaves.iter().map(|leaf| leaf.pick(&picks)).collect();
-                let mut batch = Batch::new(picks.len());
-                picked.iter().for_each(|leaf| batch.push_column(leaf.column()));
-                op.program.run(&batch, &mut out, None).ok()?;
-                Some((out, Some(ids), None, prefault))
+                let call = TypedCall {
+                    rows: picks.len(),
+                    columns: &picked,
+                    lists: Vec::new(),
+                    select: None,
+                };
+                Some((call.run(&op.program)?, Some(ids), None, prefault))
             }
             None => {
-                let select: Option<Vec<u64>> = positions.map(|positions| {
-                    let mut bits = vec![0u64; rows.div_ceil(64)];
-                    positions.iter().for_each(|&row| Bits::set(&mut bits, row, true));
-                    bits
-                });
+                let select: Option<Vec<u64>> = positions.map(|positions| Select::bits(rows, positions));
                 let mut listed: Vec<Prepared<'a>> = Vec::with_capacity(op.lists.len());
                 for (read, chain) in &op.lists {
                     let chain: Vec<&str> = chain.iter().map(|field| field.as_ref()).collect();
@@ -323,58 +294,15 @@ impl<'a> Run<'_, 'a> {
                     };
                     listed.push((listing, validity, faults));
                 }
-                let mut batch = Batch::new(rows);
-                leaves.iter().for_each(|leaf| batch.push_column(leaf.column()));
-                for ((listing, validity, faults), def) in listed.iter().zip(&op.program.hir().schema.lists) {
-                    let list = listing.frame.list(validity.as_deref(), listing.columns(&def.fields)?);
-                    batch.push_list(match faults.as_deref().or(listing.hosted.as_deref()) {
-                        Some(bits) => list.faults(bits, 0),
-                        None => list,
-                    });
-                }
-                op.program.run(&batch, &mut out, select.as_deref()).ok()?;
+                let call = TypedCall {
+                    rows,
+                    columns: &leaves,
+                    lists: listed.iter().map(|(listing, validity, faults)| ListPart::Listing(listing, validity.as_deref(), faults.as_deref())).collect(),
+                    select: select.as_deref(),
+                };
+                let out = call.run(&op.program)?;
                 Some((out, None, select, prefault))
             }
         }
-    }
-
-    fn numbered(column: &Column, rows: usize) -> Option<(Rc<[i32]>, usize)> {
-        const SLOTS: usize = 256;
-        const LIMIT: usize = 128;
-        let (mant, scale) = match column.values {
-            Values::Scaled { mant, scale } => (mant.get(..rows)?, Some(scale.get(..rows)?)),
-            Values::I64(values) => (values.get(..rows)?, None),
-            _ => return None,
-        };
-        let mut table = [(0i64, 0u8, u8::MAX); SLOTS];
-        let mut count = 0usize;
-        let mut codes: Vec<i32> = Vec::with_capacity(rows);
-        let mut last: Option<(i64, u8, i32)> = None;
-        for (at, &m) in mant.iter().enumerate() {
-            let s = scale.map_or(0, |scale| scale[at]);
-            if let Some((_, _, code)) = last.filter(|(lm, ls, _)| *lm == m && *ls == s) {
-                codes.push(code);
-                continue;
-            }
-            let mut slot = ((m as u64 ^ u64::from(s) << 56).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 56) as usize;
-            let code = loop {
-                let entry = &mut table[slot];
-                if entry.2 == u8::MAX {
-                    if count >= LIMIT {
-                        return None;
-                    }
-                    *entry = (m, s, count as u8);
-                    count += 1;
-                    break i32::from(entry.2);
-                }
-                if entry.0 == m && entry.1 == s {
-                    break i32::from(entry.2);
-                }
-                slot = (slot + 1) % SLOTS;
-            };
-            last = Some((m, s, code));
-            codes.push(code);
-        }
-        Some((codes.into(), count))
     }
 }

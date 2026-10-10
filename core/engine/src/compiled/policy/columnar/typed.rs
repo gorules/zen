@@ -2,14 +2,15 @@ use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::core::variants::Variants;
+use crate::compiled::core::exec::{ListPart, Select, TypedCall};
 use crate::compiled::core::list::Frame;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
-use crate::compiled::leaf::{Bits, Leaf};
+use crate::compiled::leaf::Leaf;
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::typed::{Batch, Lowering, Outputs, Program, Resolve, Resolved};
+use zen_expression::typed::{Lowering, Outputs, Program, Resolve, Resolved};
 
 pub(crate) struct TypedGroup {
     program: Option<Program>,
@@ -230,11 +231,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             },
             None => None,
         };
-        let select = (!full).then(|| {
-            let mut bits = vec![0u64; total.div_ceil(64)];
-            rows.iter().for_each(|&row| Bits::set(&mut bits, row, true));
-            bits
-        });
+        let select = (!full).then(|| Select::bits(total, rows));
         let Some(mut out) = self.execute(&group, program, &sources, entity, select.as_deref()) else {
             return (0, Vec::new());
         };
@@ -308,23 +305,19 @@ impl<'s, 'a> Pass<'s, 'a> {
                 },
             });
         }
-        let mut batch = Batch::new(self.sheet.rows);
-        columns.iter().for_each(|leaf| batch.push_column(leaf.column()));
-        for (part, def) in parts.iter().zip(&program.hir().schema.lists) {
-            batch.push_list(match part {
-                Part::Entity(frame, fields) => frame.list(None, fields.iter().map(Leaf::column).collect()),
-                Part::Listed(listing) => {
-                    let list = listing.frame.list(None, listing.columns(&def.fields)?);
-                    match listing.hosted.as_deref() {
-                        Some(bits) => list.faults(bits, 0),
-                        None => list,
-                    }
-                }
-            });
-        }
-        let mut out = program.outputs();
-        program.run(&batch, &mut out, select).ok()?;
-        Some(out)
+        let call = TypedCall {
+            rows: self.sheet.rows,
+            columns: &columns,
+            lists: parts
+                .iter()
+                .map(|part| match part {
+                    Part::Entity(frame, fields) => ListPart::Frame(frame, fields.iter().map(Leaf::column).collect()),
+                    Part::Listed(listing) => ListPart::Listing(listing, None, None),
+                })
+                .collect(),
+            select,
+        };
+        call.run(program)
     }
 
     fn listing(&self, key: String, stable: bool, build: impl FnOnce() -> Option<Listing<'a>>) -> Option<(usize, Rc<Listing<'a>>)> {

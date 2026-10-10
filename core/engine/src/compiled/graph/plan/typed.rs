@@ -1,12 +1,12 @@
 use super::view::{Expr, Masks, M, Ref, Shape, SlotId};
 use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
+use crate::compiled::core::exec::Dedup;
 use crate::compiled::core::switch::Cost;
 use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::Seen;
 use crate::compiled::graph::table::Table;
 use crate::compiled::graph::{Body, CompiledGraph, Kind};
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use zen_expression::lane::{Binding as Site, Fusion};
 use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved};
@@ -27,7 +27,7 @@ pub(crate) struct TypedOp {
     pub lists: Vec<(Ref, Vec<Arc<str>>)>,
     pub targets: Vec<Vec<Target>>,
     pub cost: Cost,
-    pub sparse: AtomicU32,
+    pub dedup: Dedup,
     pub shared: Vec<bool>,
 }
 
@@ -72,9 +72,6 @@ struct Probe<'p> {
 }
 
 impl TypedOp {
-    pub const SPARSE: u32 = 16;
-    pub const LONG: usize = 24;
-
     fn new(program: Typed, columns: Vec<Ref>, lists: Vec<(Ref, Vec<Arc<str>>)>, targets: Vec<Vec<Target>>) -> Self {
         Self {
             exports: Exports::of(program.hir()),
@@ -83,7 +80,7 @@ impl TypedOp {
             lists,
             targets,
             cost: Cost::new(),
-            sparse: AtomicU32::new(0),
+            dedup: Dedup::new(),
             shared: Vec::new(),
         }
     }

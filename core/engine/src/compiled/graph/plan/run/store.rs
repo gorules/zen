@@ -50,7 +50,6 @@ type Cached<'a> = (SlotId, Rc<str>, Option<Rc<Listing<'a>>>);
 pub(super) type Prepared<'a> = (Rc<Listing<'a>>, Option<Vec<u64>>, Option<Vec<u64>>);
 pub(super) type Branch = (Arc<SegPlan>, Option<Rc<[usize]>>);
 pub(super) type Pending = (Arc<SegPlan>, Option<Rc<[usize]>>, Option<(usize, usize)>);
-pub(super) type Hint = Option<(Rc<[i32]>, usize)>;
 pub(super) type Flat<'a> = (Arc<str>, Leaf<'a>, Option<Rc<[u64]>>);
 pub(super) type Layered<'a> = (Arc<str>, Leaf<'a>, Rc<[u64]>);
 

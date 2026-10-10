@@ -1,12 +1,13 @@
 use crate::compiled::graph::plan::{LaneOp, Program, SegPlan};
 use crate::compiled::graph::bound::{Bound, Outs};
-use crate::compiled::leaf::{Array, Bits, Leaf, Records};
+use crate::compiled::leaf::{Array, Leaf, Records};
 use crate::compiled::graph::{Body, CompiledGraph, Condition, Kind};
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::lane::{Column, Columns, LaneProgram, Values};
+use zen_expression::lane::{Column, Columns, LaneProgram};
+use crate::compiled::core::exec::Dedup;
 use super::Run;
-use super::store::{Entries, Hint};
+use super::store::Entries;
 
 impl<'a> Run<'_, 'a> {
     fn program<'g>(graph: &'g CompiledGraph, op: &'g LaneOp) -> Option<(&'g LaneProgram, Entries<'g>)> {
@@ -23,113 +24,6 @@ impl<'a> Run<'_, 'a> {
             },
             _ => None,
         }
-    }
-
-    pub(super) fn distinct(leaves: &[Leaf<'a>], hints: &[Hint], positions: Option<&Rc<[usize]>>, rows: usize) -> Option<(Vec<usize>, Vec<u32>)> {
-        let local = positions.map_or(rows, |p| p.len());
-        if leaves.is_empty() || local < 16 {
-            return None;
-        }
-        let listed: Vec<bool> = leaves.iter().map(|leaf| leaf.records().is_some()).collect();
-        if listed.iter().enumerate().any(|(at, &listed)| listed && hints.get(at).is_none_or(Option::is_none)) {
-            return None;
-        }
-        let held: Vec<Option<Vec<u64>>> = leaves
-            .iter()
-            .zip(&listed)
-            .map(|(leaf, &listed)| listed.then(|| leaf.validity(rows)))
-            .collect();
-        let columns: Vec<Column> = leaves
-            .iter()
-            .zip(&held)
-            .map(|(leaf, held)| match held {
-                Some(bits) => Column {
-                    values: Values::Any(&[]),
-                    validity: Some((bits.as_slice(), 0)),
-                },
-                None => leaf.column(),
-            })
-            .collect();
-        let mut strides = Vec::with_capacity(columns.len());
-        let mut size = 1u64;
-        for (at, column) in columns.iter().enumerate() {
-            let width = match (column.values, hints.get(at).and_then(Option::as_ref)) {
-                (_, Some((_, size))) => *size as u64 + 1,
-                (Values::Dict { values, .. }, None) => values.len() as u64 + 1,
-                (Values::Bool { .. }, None) => 3,
-                _ => return None,
-            };
-            strides.push(size);
-            size = size.checked_mul(width)?;
-        }
-        let mut keys = vec![0u64; local];
-        for (index, (column, stride)) in columns.iter().zip(&strides).enumerate() {
-            let hint = hints.get(index).and_then(Option::as_ref);
-            let code = |row: usize, code: i32| match column.valid(row) {
-                true => u64::try_from(code).map_or(0, |k| k + 1),
-                false => 0,
-            };
-            let codes: Option<&[i32]> = match (hint, column.values) {
-                (Some((codes, _)), _) => Some(codes),
-                (None, Values::Dict { keys, .. }) => Some(keys),
-                _ => None,
-            };
-            match (codes, column.values) {
-                (Some(codes), _) if positions.is_none() && column.validity.is_none() && codes.len() >= local => {
-                    for (key, &code) in keys.iter_mut().zip(codes) {
-                        *key += (code.max(-1) + 1) as u64 * stride;
-                    }
-                }
-                (Some(codes), _) if positions.is_none() && codes.len() >= local => {
-                    let valid = column.validity.map_or_else(|| Bits::ones(local), |(bits, offset)| Bits::window(bits, offset, local));
-                    for ((at, key), &code) in keys.iter_mut().enumerate().zip(codes) {
-                        let live = (valid[at >> 6] >> (at & 63)) & 1;
-                        *key += (code.max(-1) + 1) as u64 * live * stride;
-                    }
-                }
-                (Some(codes), _) => {
-                    for (at, key) in keys.iter_mut().enumerate() {
-                        let row = positions.map_or(at, |p| p[at]);
-                        *key += code(row, codes.get(row).copied().unwrap_or(-1)) * stride;
-                    }
-                }
-                (None, Values::Bool { bits, offset }) => {
-                    for (at, key) in keys.iter_mut().enumerate() {
-                        let row = positions.map_or(at, |p| p[at]);
-                        *key += code(row, i32::from(Bits::get(bits, offset + row))) * stride;
-                    }
-                }
-                _ => return None,
-            }
-        }
-        let dense = size <= 4096;
-        let slots = match dense {
-            true => size as usize,
-            false => (local / 2).next_power_of_two().max(16) * 2,
-        };
-        let mut table = vec![(u64::MAX, u32::MAX); slots];
-        let mask = slots - 1;
-        let mut reps = Vec::new();
-        let mut ids = vec![0u32; local];
-        for ((at, &key), id) in keys.iter().enumerate().zip(ids.iter_mut()) {
-            let mut slot = match dense {
-                true => key as usize,
-                false => (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32) as usize & mask,
-            };
-            while !dense && table[slot].1 != u32::MAX && table[slot].0 != key {
-                slot = (slot + 1) & mask;
-            }
-            let entry = table.get_mut(slot)?;
-            if entry.1 == u32::MAX {
-                *entry = (key, reps.len() as u32);
-                reps.push(positions.map_or(at, |p| p[at]));
-                if reps.len() * 4 > local {
-                    return None;
-                }
-            }
-            *id = entry.1;
-        }
-        Some((reps, ids))
     }
 
     pub(super) fn lane(&mut self, seg: &SegPlan, op: &LaneOp, positions: Option<&Rc<[usize]>>, report: bool) {
@@ -175,7 +69,7 @@ impl<'a> Run<'_, 'a> {
                     .iter()
                     .map(|(_, r)| self.store.hints.iter().find(|(slot, _, _)| *slot == r.slot).map(|(_, codes, size)| (codes.clone(), *size)))
                     .collect();
-                Self::distinct(&leaves, &hints, positions, rows)
+                Dedup::distinct(&leaves, &hints, positions, rows)
             }
             false => None,
         };

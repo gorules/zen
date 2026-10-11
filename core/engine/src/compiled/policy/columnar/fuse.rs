@@ -7,19 +7,21 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 use super::typed::TypedGroup;
 use std::sync::{Arc, RwLock};
+use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
 use zen_expression::lane::{Fusion, LaneProgram};
 use zen_expression::typed::{Hit, TableRule, TableSpec};
 
 type Groups = ahash::HashMap<(Vec<usize>, bool), Variants<Arc<TypedGroup>>>;
+type Lanes = ahash::HashMap<Vec<usize>, Option<Arc<Fused<Sink>>>>;
 
 #[derive(Default)]
 pub(crate) struct Fusions {
-    groups: RwLock<ahash::HashMap<Vec<usize>, Option<Arc<Fused>>>>,
+    groups: RwLock<Lanes>,
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
     tables: RwLock<ahash::HashMap<usize, bool>>,
-    runs: RwLock<ahash::HashMap<(Vec<usize>, bool), usize>>,
+    runs: Runs<(Vec<usize>, bool)>,
     pub(super) typed: RwLock<Groups>,
 }
 
@@ -32,11 +34,6 @@ struct Item {
     units: Vec<(usize, usize, usize)>,
     domain: Option<Option<usize>>,
     written: Vec<(Arc<str>, bool)>,
-}
-
-pub(crate) struct Fused {
-    program: LaneProgram,
-    sinks: Vec<Sink>,
 }
 
 pub(super) enum Sink {
@@ -55,7 +52,7 @@ impl Fusions {
         if let Some(found) = self.tables.read().ok().and_then(|cache| cache.get(&block).copied()) {
             return found;
         }
-        let fusable = Fused::fusable(ir);
+        let fusable = Fused::<Sink>::fusable(ir);
         if let Ok(mut cache) = self.tables.write() {
             cache.insert(block, fusable);
         }
@@ -73,24 +70,11 @@ impl Fusions {
         built
     }
 
-    fn run(&self, blocks: &[usize], member: bool) -> Option<usize> {
-        self.runs.read().ok().and_then(|cache| cache.get(&(blocks.to_vec(), member)).copied())
-    }
-
-    fn ran(&self, blocks: &[usize], member: bool, run: usize) {
-        if self.run(blocks, member) == Some(run) {
-            return;
-        }
-        if let Ok(mut cache) = self.runs.write() {
-            cache.insert((blocks.to_vec(), member), run);
-        }
-    }
-
-    fn get(&self, plan: &PolicyPlan, blocks: &[usize], member: bool) -> Option<Arc<Fused>> {
+    fn get(&self, plan: &PolicyPlan, blocks: &[usize], member: bool) -> Option<Arc<Fused<Sink>>> {
         if let Some(found) = self.groups.read().ok().and_then(|cache| cache.get(blocks).cloned()) {
             return found;
         }
-        let built = Fused::compile(plan, blocks, member).map(Arc::new);
+        let built = Fused::<Sink>::compile(plan, blocks, member).map(Arc::new);
         match self.groups.write() {
             Ok(mut cache) => cache.entry(blocks.to_vec()).or_insert(built).clone(),
             Err(_) => built,
@@ -148,7 +132,7 @@ impl Effects {
     }
 }
 
-impl Fused {
+impl Fused<Sink> {
     const RULES: usize = 64;
 
     fn compile(plan: &PolicyPlan, blocks: &[usize], member: bool) -> Option<Self> {
@@ -162,10 +146,7 @@ impl Fused {
             entries.extend(unit);
             sinks.extend(sunk);
         }
-        let outputs = entries.iter().filter(|entry| !matches!(entry, Fusion::Hidden { .. })).count();
-        let program = LaneProgram::compile_fused(&entries).ok()?;
-        let p = program.program();
-        (!(p.writes_env || p.chain || p.opaque() || p.rows) && p.outputs.len() == outputs).then_some(Self { program, sinks })
+        Self::build(&entries, sinks)
     }
 
     pub(super) fn entries(plan: &PolicyPlan, block: usize, member: bool) -> Option<(Vec<Fusion>, Vec<Sink>)> {
@@ -346,7 +327,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                         let (consumed, faulted) = self.typed(&item.units[at..], entity, rows);
                         if consumed > 0 {
                             if let Some(from) = laning.take() {
-                                fusions.ran(&blocks[from..], member, at - from);
+                                fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
                             }
                             self.counts.0 += consumed;
                             if !faulted.is_empty() {
@@ -356,7 +337,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                             continue;
                         }
                         if laning.is_none() {
-                            let run = fusions.run(&blocks[at..], member).map_or(0, |run| run.min(blocks.len() - at));
+                            let run = fusions.runs.run(&(blocks[at..].to_vec(), member)).map_or(0, |run| run.min(blocks.len() - at));
                             if let Some(fused) = (run > 1).then(|| fusions.get(plan, &blocks[at..at + run], member)).flatten() {
                                 self.fused(&fused, entity, rows);
                                 self.counts.1 += run;
@@ -377,7 +358,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                         at += 1;
                     }
                     if let (Some(from), true) = (laning, at == item.units.len()) {
-                        fusions.ran(&blocks[from..], member, at - from);
+                        fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
                     }
                     continue;
                 }
@@ -559,7 +540,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 .all(|(at, c)| c.depth == 0 && (at == last || matches!(c.operator, ConditionOperator::And)))
     }
 
-    fn fused(&mut self, fused: &Fused, entity: Option<usize>, rows: &[usize]) {
+    fn fused(&mut self, fused: &Fused<Sink>, entity: Option<usize>, rows: &[usize]) {
         match entity {
             None => {
                 let (leaves, failed) = self.run_outs(&fused.program, rows);

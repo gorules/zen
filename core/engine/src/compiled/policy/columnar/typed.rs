@@ -1,4 +1,5 @@
-use super::fuse::{Fused, Fusions, Sink};
+use super::fuse::{Fusions, Sink};
+use crate::compiled::core::fuse::Fused;
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::core::variants::Variants;
@@ -103,11 +104,11 @@ impl TypedGroup {
             |(lowering, probe, sinks), at| {
                 let block = units[at].0;
                 let lowered = match &pass.plan.blocks.rules[block].kind {
-                    BlockKind::DecisionTable(ir) => Fused::spec(ir).map(|spec| {
+                    BlockKind::DecisionTable(ir) => Fused::<Sink>::spec(ir).map(|spec| {
                         let sunk: Vec<Sink> = spec.outputs.iter().map(|key| Sink::Write(Arc::from(key.as_str()))).collect();
                         (lowering.table(&spec, probe), sunk)
                     }),
-                    _ => Fused::entries(pass.plan, block, entity.is_some()).map(|(entries, sunk)| (lowering.unit(&entries, probe), sunk)),
+                    _ => Fused::<Sink>::entries(pass.plan, block, entity.is_some()).map(|(entries, sunk)| (lowering.unit(&entries, probe), sunk)),
                 };
                 match lowered {
                     Some((Ok(()), sunk)) => {

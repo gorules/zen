@@ -684,6 +684,27 @@ fn policy_column_order_is_path_independent() {
 }
 
 #[test]
+fn policy_tables_match_coded_nulls_against_null_cells() {
+    use zen_expression::lane::{Column, Columns, Dictionary, Values};
+    let ws = Anchor::workspace_with(r#"{models: {a: {k: "string?"}}, blocks: [{table: "cls", inputs: ["a.k"], outputs: ["a.cls"], rules: [["null", "'null'"], ["", "'other'"]]}]}"#);
+    let keys = [0i32, -1, 0, -1, 1];
+    let column = Column::new(Values::Dict {
+        keys: &keys,
+        values: Dictionary::Text { offsets: &[0, 1, 1], data: "x" },
+    });
+    let columns = Columns::new(keys.len()).column("a.k", column);
+    let want = ["other", "null", "other", "null", "other"];
+    for call in 0..4 {
+        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns).expect("columnar");
+        for (row, want) in want.iter().enumerate() {
+            assert!(output.errors[row].is_none(), "call {call} row {row}: {:?}", output.errors[row]);
+            let cls = output.row(row).dot("a.cls").map(|v| v.to_value());
+            assert_eq!(cls, Some(Value::from(*want)), "call {call} row {row}");
+        }
+    }
+}
+
+#[test]
 fn policy_anchor_is_fully_typed() {
     if Reference::unavailable("anchor") {
         return;

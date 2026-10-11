@@ -385,6 +385,78 @@
   ],
 }
 
+{
+  name: "table cells over the output of an unmatched table, beside a field-less column",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["k"], rules: [["'yes'", "'hit'"]]},
+      {table: "cls", inputs: ["k", null], outputs: ["cls"], rules: [
+        ["null", "m != 'zzz'", "'null'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {cls: "other"}],
+    [{m: "no"}, {cls: "null"}],
+    [{m: "no", k: "request"}, {cls: "null"}],
+  ],
+}
+
+{
+  name: "table cells over the output of an unmatched table, beside a computed cell",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["k", "m"], rules: [["'yes'", "'hit'", "'yes'"], ["'no'", "", "'no'"]]},
+      {table: "cls", inputs: ["k", "m"], outputs: ["cls"], rules: [
+        ["null", "", "'null'"],
+        ["", "len($) > 0", "'other'"],
+        ["", "", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {cls: "other"}],
+    [{m: "no"}, {cls: "null"}],
+    [{m: "no", k: "request"}, {cls: "null"}],
+  ],
+}
+
+{
+  name: "boolean and number cells over the output of an unmatched table, beside a field-less column",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["b", "n"], rules: [["'yes'", "true", "5"]]},
+      {table: "cls", inputs: ["b", "n", null], outputs: ["bc", "nc"], rules: [
+        ["null", "null", "true", "'null'", "'null'"],
+        ["true", "> 1", "", "'true'", "'big'"],
+        ["", "", "", "'other'", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {bc: "true", nc: "big"}],
+    [{m: "no"}, {bc: "null", nc: "null"}],
+  ],
+}
+
+{
+  name: "an absent request field against a null cell, beside a field-less column",
+  graph: {
+    nodes: [
+      {table: "cls", inputs: ["k", null], outputs: ["cls"], rules: [
+        ["null", "true", "'null'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {cls: "null"}],
+    [{k: null}, {cls: "null"}],
+    [{k: "a"}, {cls: "other"}],
+  ],
+}
+
 // --- Switch nodes ----------------------------------------------------------------------------------
 // A switch passes its input on unchanged, nulls included. A branch it does not take never runs: its
 // node has no $nodes entry and contributes nothing to a later join.

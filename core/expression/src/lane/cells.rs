@@ -718,7 +718,11 @@ impl CellSet {
                 }
             }
             (_, true, _) => {
-                if let Some(matched) = column.bytes(row).and_then(|t| self.text(t)) {
+                let matched = match column.bytes(row) {
+                    Some(text) => self.text(text),
+                    None => self.null.as_ref(),
+                };
+                if let Some(matched) = matched {
                     Self::or(bits, matched);
                 }
             }

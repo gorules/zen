@@ -333,6 +333,55 @@ async fn struct_inputs_match_the_walker() {
 }
 
 #[tokio::test]
+async fn columnar_tables_match_coded_nulls_against_null_cells() {
+    use zen_expression::lane::{Column, Columns, Dictionary, Values};
+    let table = |inputs: Value, first: Value| -> Decision {
+        let content: zen_engine::model::GraphContent = serde_json::from_value(serde_json::json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": {} },
+                {
+                    "id": "cls", "name": "cls", "type": "decisionTableNode",
+                    "content": {
+                        "hitPolicy": "first",
+                        "inputs": inputs,
+                        "outputs": [{ "id": "o1", "name": "cls", "field": "cls" }],
+                        "rules": [first, { "_id": "r2", "o1": "'other'" }]
+                    }
+                },
+                { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+            ],
+            "edges": [
+                { "id": "e1", "sourceId": "in", "targetId": "cls" },
+                { "id": "e2", "sourceId": "cls", "targetId": "out" }
+            ]
+        }))
+        .expect("graph");
+        let mut decision = Decision::from(Arc::new(content));
+        decision.compile();
+        decision
+    };
+    let dispatched = table(serde_json::json!([{ "id": "i1", "name": "k", "field": "k" }]), serde_json::json!({ "_id": "r1", "i1": "null", "o1": "'null'" }));
+    let generic = table(
+        serde_json::json!([{ "id": "i1", "name": "k", "field": "k" }, { "id": "i2", "name": "always" }]),
+        serde_json::json!({ "_id": "r1", "i1": "null", "i2": "true", "o1": "'null'" }),
+    );
+    let keys = [0i32, -1, 0, -1, 1];
+    let column = Column::new(Values::Dict {
+        keys: &keys,
+        values: Dictionary::Text { offsets: &[0, 1, 1], data: "x" },
+    });
+    let columns = Columns::new(keys.len()).column("k", column);
+    let want = ["other", "null", "other", "null", "other"];
+    for (label, decision) in [("dispatched", &dispatched), ("generic", &generic)] {
+        let output = decision.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        for (row, want) in want.iter().enumerate() {
+            assert!(output.errors[row].is_none(), "{label} row {row}: {:?}", output.errors[row]);
+            assert_eq!(output.row(row).to_value(), serde_json::json!({ "cls": want }), "{label} row {row}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn columnar_function_rows_time_out_independently() {
     let fixture = Fixture::load_all().into_iter().find(|f| f.name == "infinite-function.json").expect("fixture");
     let mut compiled = Decision::from(Arc::new(fixture.content.clone()));

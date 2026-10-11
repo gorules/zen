@@ -480,6 +480,64 @@
   ],
 }
 
+{
+  name: "a table over the null output of an unmatched table",
+  policy: {
+    models: {a: {m: "string"}},
+    blocks: [
+      {table: "p", inputs: ["a.m"], outputs: ["a.k"], rules: [["'yes'", "'hit'"]]},
+      {table: "cls", inputs: ["a.k"], outputs: ["a.cls"], rules: [["null", "'null'"], ["", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{a: {m: "yes"}}, {a: {m: "yes", k: "hit", cls: "other"}}],
+    [{a: {m: "no"}}, {a: {m: "no", k: null, cls: "null"}}],
+  ],
+}
+
+{
+  name: "a table over the null output of a match without a default arm",
+  policy: {
+    models: {a: {m: "string"}},
+    blocks: [
+      {match: "a.k", arms: [["a.m == 'yes'", "'hit'"], ["", "null"]]},
+      {table: "cls", inputs: ["a.k"], outputs: ["a.cls"], rules: [["null", "'null'"], ["", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{a: {m: "yes"}}, {a: {m: "yes", k: "hit", cls: "other"}}],
+    [{a: {m: "no"}}, {a: {m: "no", k: null, cls: "null"}}],
+  ],
+}
+
+{
+  name: "boolean and number tables over the null outputs of an unmatched table",
+  policy: {
+    models: {a: {m: "string"}},
+    blocks: [
+      {table: "p", inputs: ["a.m"], outputs: ["a.b", "a.n"], rules: [["'yes'", "true", "5"]]},
+      {table: "cls", inputs: ["a.b", "a.n"], outputs: ["a.bc", "a.nc"], rules: [["null", "null", "'null'", "'null'"], ["true", "5", "'true'", "'five'"], ["", "", "'other'", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{a: {m: "yes"}}, {a: {m: "yes", b: true, n: 5, bc: "true", nc: "five"}}],
+    [{a: {m: "no"}}, {a: {m: "no", b: null, n: null, bc: "null", nc: "null"}}],
+  ],
+}
+
+{
+  name: "a table over an absent optional field with a null row",
+  policy: {
+    models: {a: {k: "string?"}},
+    blocks: [{table: "cls", inputs: ["a.k"], outputs: ["a.cls"], rules: [["null", "'null'"], ["", "'other'"]]}],
+  },
+  cases: [
+    [{a: {}}, {a: {cls: "null"}}],
+    [{a: {k: null}}, {a: {k: null, cls: "null"}}],
+    [{a: {k: "x"}}, {a: {k: "x", cls: "other"}}],
+  ],
+}
+
 // --- Null through intermediates ---------------------------------------------------------------
 
 {

@@ -5,6 +5,7 @@ use crate::compiled::core::variants::Variants;
 use crate::compiled::core::exec::{ListPart, Select, TypedCall};
 use crate::compiled::core::group::{Built, Prefix, Step};
 use crate::compiled::core::list::Frame;
+use crate::compiled::core::retry::Take;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
 use crate::compiled::leaf::Leaf;
@@ -245,17 +246,13 @@ impl<'s, 'a> Pass<'s, 'a> {
         let Some(mut out) = self.execute(&group, program, &sources, entity, select.as_deref()) else {
             return (0, Vec::new());
         };
-        let faulted: Vec<usize> = match out.faults().any() {
-            true => rows.iter().copied().filter(|&row| out.faults().get(row)).collect(),
-            false => Vec::new(),
+        let (faulted, kept) = match out.faults().any() {
+            true => Take::among(out.faults().words(), rows),
+            false => (Vec::new(), Vec::new()),
         };
-        let kept: Vec<usize>;
         let rows = match faulted.is_empty() {
             true => rows,
-            false => {
-                kept = rows.iter().copied().filter(|&row| !out.faults().get(row)).collect();
-                kept.as_slice()
-            }
+            false => kept.as_slice(),
         };
         if rows.is_empty() {
             return (group.units, faulted);

@@ -1,6 +1,7 @@
 use crate::compiled::graph::plan::view::{M, SlotId};
 use crate::compiled::graph::table::{First, Table};
 use crate::compiled::core::exec::{Hint, ListPart, Select, TypedCall};
+use crate::compiled::core::retry::Take;
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::graph::plan::typed::{Deferred, Grouping, Piece, Target, TypedOp};
 use crate::compiled::graph::plan::{Op, SegPlan, TableOp};
@@ -95,15 +96,10 @@ impl<'a> Run<'_, 'a> {
         let local = positions.map_or(rows, |p| p.len());
         self.store.counts.0 += units.len();
         let ids = keyed.as_deref();
-        let words = rows.div_ceil(64);
-        let mut take = vec![0u64; words];
-        if let Some(prefault) = prefault {
-            match positions {
-                Some(positions) => positions.iter().filter(|&&row| Bits::get(&prefault, row)).for_each(|&row| Bits::set(&mut take, row, true)),
-                None => take.iter_mut().zip(&prefault).for_each(|(t, f)| *t |= f),
-            }
-        }
-        let mut faulted = !Bits::none(&take);
+        let spots = positions.map(|p| &p[..]);
+        let mut take = Take::new(rows);
+        take.seed(prefault.as_deref(), spots);
+        let mut faulted = take.any();
         let mut dicts = op.exports.dictionaries();
         let mut at = 0;
         for (unit, targets) in units.iter().zip(&op.targets) {
@@ -115,24 +111,20 @@ impl<'a> Run<'_, 'a> {
                     failed.resize(failed.len().max(words.len()), 0);
                     failed.iter_mut().zip(words).for_each(|(f, w)| *f |= w);
                 }
-                match ids {
-                    Some(ids) => (0..local).filter(|&at| Bits::get(&failed, ids[at] as usize)).for_each(|at| Bits::set(&mut take, positions.map_or(at, |p| p[at]), true)),
-                    None => take.iter_mut().zip(&failed).for_each(|(t, f)| *t |= f),
-                }
-                Bits::trim(&mut take, rows);
+                take.absorb(&failed, ids, spots, local);
                 faulted = true;
             }
             if faulted {
-                let rerun: Vec<usize> = Bits::rows(&take).filter(|&row| self.store.errors[row].is_none()).collect();
-                take.iter_mut().for_each(|word| *word = 0);
+                let errors = &self.store.errors;
+                let rerun: Vec<usize> = take.drain(|row| errors[row].is_none());
                 if !rerun.is_empty() {
                     let rerun: Rc<[usize]> = rerun.into();
                     self.settled = false;
                     self.unit(seg, unit, Some(&rerun));
                     self.settled = true;
-                    rerun.iter().filter(|&&row| self.store.errors[row].is_none()).for_each(|&row| Bits::set(&mut take, row, true));
+                    rerun.iter().filter(|&&row| self.store.errors[row].is_none()).for_each(|&row| take.set(row));
                 }
-                faulted = !Bits::none(&take);
+                faulted = take.any();
             }
             let mut leaves: Vec<(SlotId, Leaf<'a>)> = Vec::with_capacity(targets.len());
             let mut masks: Vec<(M, Rc<[u64]>)> = Vec::new();
@@ -165,8 +157,7 @@ impl<'a> Run<'_, 'a> {
                 let leaf = match faulted {
                     false => leaf,
                     true => {
-                        let located: Rc<[(usize, usize)]> = (0..rows).map(|row| (usize::from(Bits::get(&take, row)), row)).collect();
-                        Leaf::stitched(vec![leaf, self.store.leaf(id)], located)
+                        Leaf::stitched(vec![leaf, self.store.leaf(id)], take.located())
                     }
                 };
                 if let Some(entry) = self.store.slots.get_mut(id as usize) {
@@ -185,7 +176,7 @@ impl<'a> Run<'_, 'a> {
                 Bits::trim(&mut bits, rows);
                 if faulted {
                     let laned = self.store.mask(seg, m);
-                    bits.iter_mut().zip(laned.iter().zip(&take)).for_each(|(bit, (lane, fault))| *bit = (*bit & !fault) | (lane & fault));
+                    bits.iter_mut().zip(laned.iter().zip(take.bits())).for_each(|(bit, (lane, fault))| *bit = (*bit & !fault) | (lane & fault));
                 }
                 self.store.produce(m, bits.into());
             }

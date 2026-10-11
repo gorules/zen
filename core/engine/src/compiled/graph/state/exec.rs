@@ -33,16 +33,7 @@ impl CompiledGraph {
             Kind::Input => Data::plain(rows.clone(), rows.iter().map(|&r| inputs[r].clone()).collect()),
             _ => Self::input_of(state, &event.parents, rows),
         };
-        let column_path = match &step.kind {
-            Kind::Node { body, transform } => {
-                (transform.input_field.is_none() || transform.base.is_some())
-                    && !transform.looped
-                    && rows.len() > 1
-                    && !(transform.output_path.is_some() && matches!(body, Body::Expression { keys, .. } if keys.is_empty()))
-            }
-            _ => false,
-        };
-        let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, column_path);
+        let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, step.column_path(rows.len()));
 
         if matches!(step.kind, Kind::Host) {
             let materialized = data.materialized();
@@ -152,14 +143,7 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn rowwise<'a>(&self, runner: &mut LaneRunner, step: &Step, data: Data<'a>, nodes: &[Option<Variable>]) -> (Data<'a>, Vec<(usize, String)>) {
         let rows: Rc<[usize]> = (0..data.len()).collect();
-        let based = match &step.kind {
-            Kind::Node { transform, .. } if !transform.looped => transform.base.as_deref(),
-            _ => None,
-        };
-        let foreign = matches!(&step.kind, Kind::Node { body: Body::Expression { walked: true, .. }, .. })
-            || matches!(&data.shape, data::Shape::Plain(values) if values.iter().any(Self::foreign))
-            || Self::foreign_base(&data, based);
-        if foreign {
+        if Self::foreign_input(step, &data) {
             plan::census::Census::mark("walked");
             let mut failures = Vec::new();
             let values: Col = data
@@ -261,6 +245,16 @@ impl CompiledGraph {
         }
     }
 
+    fn foreign_input(step: &Step, data: &Data) -> bool {
+        let based = match &step.kind {
+            Kind::Node { transform, .. } if !transform.looped => transform.base.as_deref(),
+            _ => None,
+        };
+        matches!(&step.kind, Kind::Node { body: Body::Expression { walked: true, .. }, .. })
+            || matches!(&data.shape, data::Shape::Plain(values) if values.iter().any(Self::foreign))
+            || Self::foreign_base(data, based)
+    }
+
     fn foreign_base(data: &Data, rebase: Option<&str>) -> bool {
         let Some(base) = rebase else {
             return false;
@@ -279,13 +273,7 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn execute_now<'a>(&self, step: &Step, event: &Execute, rows: &Rc<[usize]>, state: &mut State<'a>, with_nodes: bool) {
         let data = Self::input_of(state, &event.parents, rows);
-        let based = match &step.kind {
-            Kind::Node { transform, .. } if !transform.looped => transform.base.as_deref(),
-            _ => None,
-        };
-        let foreign = matches!(&step.kind, Kind::Node { body: Body::Expression { walked: true, .. }, .. })
-            || matches!(&data.shape, data::Shape::Plain(values) if values.iter().any(Self::foreign))
-            || Self::foreign_base(&data, based);
+        let foreign = Self::foreign_input(step, &data);
         let (output, failures) = match &step.kind {
             Kind::Node { .. } if foreign => {
                 let values = data.materialized();
@@ -307,12 +295,8 @@ impl CompiledGraph {
                     .collect();
                 (Data::plain(rows.clone(), outputs.into()), failures)
             }
-            Kind::Node { body, transform } => {
-                let column_path = (transform.input_field.is_none() || transform.base.is_some())
-                    && !transform.looped
-                    && rows.len() > 1
-                    && !(transform.output_path.is_some() && matches!(body, Body::Expression { keys, .. } if keys.is_empty()));
-                let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, column_path);
+            Kind::Node { .. } => {
+                let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, step.column_path(rows.len()));
                 self.node(step, rows, &data, &nodes, &extra)
             }
             _ => (data, Vec::new()),

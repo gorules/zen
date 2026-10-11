@@ -74,6 +74,18 @@ pub(super) struct Step {
 pub(super) type StaticRead = (Arc<str>, Arc<str>, Arc<str>);
 
 impl Step {
+    pub(super) fn column_path(&self, rows: usize) -> bool {
+        match &self.kind {
+            Kind::Node { body, transform } => {
+                (transform.input_field.is_none() || transform.base.is_some())
+                    && !transform.looped
+                    && rows > 1
+                    && !(transform.output_path.is_some() && matches!(body, Body::Expression { keys, .. } if keys.is_empty()))
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn shared_programs(&self) -> Option<&Arc<Programs>> {
         self.eager.then(|| self.programs())
     }

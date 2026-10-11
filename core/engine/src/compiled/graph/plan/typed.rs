@@ -1,6 +1,7 @@
 use super::view::{Expr, Masks, M, Ref, Shape, SlotId};
 use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
 use crate::compiled::core::exec::Dedup;
+use crate::compiled::core::group::{Attempt, Built, Prefix, Step};
 use crate::compiled::core::switch::Cost;
 use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
@@ -50,12 +51,6 @@ pub(crate) struct Grouping<'g> {
     pub slots: &'g [SlotInfo],
     pub seen: &'g [(SlotId, Seen)],
     pub listing: Option<Lister<'g>>,
-}
-
-enum Attempt {
-    Typed(Box<TypedOp>, usize),
-    Deferred,
-    Failed,
 }
 
 struct Probe<'p> {
@@ -384,117 +379,124 @@ impl Grouping<'_> {
         Some(reads)
     }
 
-    fn lower(&self, ops: &[Op]) -> Attempt {
-        let mut limit = ops.len();
-        loop {
-            let mut lowering = Lowering::graph();
-            let mut probe = Probe {
-                masks: self.masks,
-                slots: self.slots,
-                seen: self.seen,
-                listing: self.listing,
-                lists: Vec::new(),
-                deferred: false,
-                reads: Vec::new(),
-                outputs: Vec::new(),
-                produced: Vec::new(),
-                columns: Vec::new(),
+    fn lower(&self, ops: &[Op]) -> Attempt<Box<TypedOp>> {
+        Prefix::lower(
+            ops.len(),
+            || {
+                let probe = Probe {
+                    masks: self.masks,
+                    slots: self.slots,
+                    seen: self.seen,
+                    listing: self.listing,
+                    lists: Vec::new(),
+                    deferred: false,
+                    reads: Vec::new(),
+                    outputs: Vec::new(),
+                    produced: Vec::new(),
+                    columns: Vec::new(),
+                };
+                (Lowering::graph(), probe, Vec::new(), Vec::new())
+            },
+            |(lowering, probe, targets, kept), at| self.unit(&ops[at], lowering, probe, targets, kept),
+            |(lowering, probe, targets, kept)| self.build(lowering, probe, targets, kept),
+        )
+    }
+
+    fn unit(&self, op: &Op, lowering: &mut Lowering, probe: &mut Probe, targets: &mut Vec<Vec<Target>>, kept: &mut Vec<bool>) -> Step<Attempt<Box<TypedOp>>> {
+        let base = lowering.outputs();
+        probe.deferred = false;
+        let lowered = match op {
+            Op::Lane(lane) if self.eligible(op) => {
+                let Some(reads) = self.sites(lane) else {
+                    return Step::Stop;
+                };
+                probe.reads = reads;
+                let entries: Vec<Fusion> = lane
+                    .sources
+                    .iter()
+                    .map(|(key, source)| Fusion::Output {
+                        key: key.to_string(),
+                        source: source.to_string(),
+                    })
+                    .collect();
+                lowering.unit(&entries, probe)
+            }
+            Op::Table(table) if self.eligible(op) => {
+                let Some(spec) = self.tabled(table).and_then(|t| t.spec.as_ref()) else {
+                    return Step::Stop;
+                };
+                probe.reads = table.reads.clone();
+                lowering.table(spec, probe)
+            }
+            _ => return Step::Stop,
+        };
+        if lowered.is_err() {
+            return match lowering.units() == 0 && probe.deferred {
+                true => Step::Done(Attempt::Deferred),
+                false => Step::Stop,
             };
-            let mut targets: Vec<Vec<Target>> = Vec::new();
-            let mut kept: Vec<bool> = Vec::new();
-            for op in &ops[..limit] {
-                let base = lowering.outputs();
-                probe.deferred = false;
-                let lowered = match op {
-                    Op::Lane(lane) if self.eligible(op) => {
-                        let Some(reads) = self.sites(lane) else {
-                            break;
-                        };
-                        probe.reads = reads;
-                        let entries: Vec<Fusion> = lane
-                            .sources
-                            .iter()
-                            .map(|(key, source)| Fusion::Output {
-                                key: key.to_string(),
-                                source: source.to_string(),
-                            })
-                            .collect();
-                        lowering.unit(&entries, &mut probe)
-                    }
-                    Op::Table(table) if self.eligible(op) => {
-                        let Some(spec) = self.tabled(table).and_then(|t| t.spec.as_ref()) else {
-                            break;
-                        };
-                        probe.reads = table.reads.clone();
-                        lowering.table(spec, &mut probe)
-                    }
-                    _ => break,
-                };
-                if lowered.is_err() {
-                    if lowering.units() == 0 && probe.deferred {
-                        return Attempt::Deferred;
-                    }
-                    break;
-                }
-                let unit: Vec<Option<Target>> = match op {
-                    Op::Lane(lane) => {
-                        for (at, slot) in lane.outs.iter().enumerate() {
-                            probe.outputs.push((*slot, vec![M::All], base + at));
-                        }
-                        lane.outs.iter().map(|slot| Some(Target::Slot(*slot))).collect()
-                    }
-                    Op::Table(table) => {
-                        for (at, (slot, present)) in table.outs.iter().zip(&table.present).enumerate() {
-                            probe.outputs.push((*slot, vec![M::All, *present, table.matched], base + at));
-                        }
-                        probe.produced.extend(table.present.iter().copied());
-                        probe.produced.push(table.matched);
-                        let literal = self.tabled(table).is_some_and(Table::literal);
-                        table
-                            .outs
-                            .iter()
-                            .map(|slot| (!literal).then_some(Target::Slot(*slot)))
-                            .chain(std::iter::once(Some(Target::Choice)))
-                            .collect()
-                    }
-                    _ => Vec::new(),
-                };
-                if lowering.outputs() != base + unit.len() {
-                    return Attempt::Failed;
-                }
-                kept.extend(unit.iter().map(Option::is_some));
-                targets.push(unit.into_iter().flatten().collect());
-            }
-            let consumed = lowering.units();
-            if consumed == 0 {
-                return Attempt::Failed;
-            }
-            kept.resize(lowering.outputs(), true);
-            lowering.retain(|at| kept.get(at).copied().unwrap_or(true));
-            match Typed::new(lowering.finish()) {
-                Ok(program) => {
-                    let schema = &program.hir().schema;
-                    let columns = schema
-                        .columns
-                        .iter()
-                        .map(|column| probe.columns.iter().find(|(key, _)| *key == column.path).map(|(_, read)| *read))
-                        .collect::<Option<Vec<Ref>>>();
-                    let lists = (0..schema.lists.len())
-                        .map(|at| {
-                            let chain = schema.chain(at as u16);
-                            let (key, rest) = chain.split_first()?;
-                            let (_, read) = probe.lists.iter().find(|(k, _)| k.as_str() == *key)?;
-                            Some((*read, rest.iter().map(|field| Arc::from(*field)).collect()))
-                        })
-                        .collect::<Option<Vec<(Ref, Vec<Arc<str>>)>>>();
-                    return match (columns, lists) {
-                        (Some(columns), Some(lists)) => Attempt::Typed(Box::new(TypedOp::new(program, columns, lists, targets)), consumed),
-                        _ => Attempt::Failed,
-                    };
-                }
-                Err(_) if consumed == 1 => return Attempt::Failed,
-                Err(_) => limit = consumed - 1,
-            }
         }
+        let unit: Vec<Option<Target>> = match op {
+            Op::Lane(lane) => {
+                for (at, slot) in lane.outs.iter().enumerate() {
+                    probe.outputs.push((*slot, vec![M::All], base + at));
+                }
+                lane.outs.iter().map(|slot| Some(Target::Slot(*slot))).collect()
+            }
+            Op::Table(table) => {
+                for (at, (slot, present)) in table.outs.iter().zip(&table.present).enumerate() {
+                    probe.outputs.push((*slot, vec![M::All, *present, table.matched], base + at));
+                }
+                probe.produced.extend(table.present.iter().copied());
+                probe.produced.push(table.matched);
+                let literal = self.tabled(table).is_some_and(Table::literal);
+                table
+                    .outs
+                    .iter()
+                    .map(|slot| (!literal).then_some(Target::Slot(*slot)))
+                    .chain(std::iter::once(Some(Target::Choice)))
+                    .collect()
+            }
+            _ => Vec::new(),
+        };
+        if lowering.outputs() != base + unit.len() {
+            return Step::Done(Attempt::Failed);
+        }
+        kept.extend(unit.iter().map(Option::is_some));
+        targets.push(unit.into_iter().flatten().collect());
+        Step::Lowered
+    }
+
+    fn build(&self, mut lowering: Lowering, probe: Probe, targets: Vec<Vec<Target>>, mut kept: Vec<bool>) -> Built<Attempt<Box<TypedOp>>> {
+        let consumed = lowering.units();
+        if consumed == 0 {
+            return Built::Done(Attempt::Failed);
+        }
+        kept.resize(lowering.outputs(), true);
+        lowering.retain(|at| kept.get(at).copied().unwrap_or(true));
+        let Ok(program) = Typed::new(lowering.finish()) else {
+            return Built::Shrink {
+                consumed,
+                fallback: Attempt::Failed,
+            };
+        };
+        let schema = &program.hir().schema;
+        let columns = schema
+            .columns
+            .iter()
+            .map(|column| probe.columns.iter().find(|(key, _)| *key == column.path).map(|(_, read)| *read))
+            .collect::<Option<Vec<Ref>>>();
+        let lists = (0..schema.lists.len())
+            .map(|at| {
+                let chain = schema.chain(at as u16);
+                let (key, rest) = chain.split_first()?;
+                let (_, read) = probe.lists.iter().find(|(k, _)| k.as_str() == *key)?;
+                Some((*read, rest.iter().map(|field| Arc::from(*field)).collect()))
+            })
+            .collect::<Option<Vec<(Ref, Vec<Arc<str>>)>>>();
+        Built::Done(match (columns, lists) {
+            (Some(columns), Some(lists)) => Attempt::Typed(Box::new(TypedOp::new(program, columns, lists, targets)), consumed),
+            _ => Attempt::Failed,
+        })
     }
 }

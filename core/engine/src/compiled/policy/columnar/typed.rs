@@ -3,6 +3,7 @@ use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Density, Path, Switch};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::core::exec::{ListPart, Select, TypedCall};
+use crate::compiled::core::group::{Built, Prefix, Step};
 use crate::compiled::core::list::Frame;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
@@ -86,45 +87,54 @@ impl Probe<'_, '_, '_> {
 
 impl TypedGroup {
     fn lower(pass: &Pass, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> Self {
-        let mut limit = units.len();
-        loop {
-            let mut probe = Probe {
-                pass,
-                entity,
-                rows,
-                record: Vec::new(),
-            };
-            let member = entity.map(|at| &pass.sheet.entities[at]).map(|e| (e.name.as_ref(), e.path.as_ref()));
-            let mut lowering = Lowering::new(member);
-            let mut sinks = Vec::new();
-            for &(block, _, _) in &units[..limit] {
+        let member = entity.map(|at| &pass.sheet.entities[at]).map(|e| (e.name.as_ref(), e.path.as_ref()));
+        Prefix::lower(
+            units.len(),
+            || {
+                let probe = Probe {
+                    pass,
+                    entity,
+                    rows,
+                    record: Vec::new(),
+                };
+                (Lowering::new(member), probe, Vec::new())
+            },
+            |(lowering, probe, sinks), at| {
+                let block = units[at].0;
                 let lowered = match &pass.plan.blocks.rules[block].kind {
                     BlockKind::DecisionTable(ir) => Fused::spec(ir).map(|spec| {
                         let sunk: Vec<Sink> = spec.outputs.iter().map(|key| Sink::Write(Arc::from(key.as_str()))).collect();
-                        (lowering.table(&spec, &mut probe), sunk)
+                        (lowering.table(&spec, probe), sunk)
                     }),
-                    _ => Fused::entries(pass.plan, block, entity.is_some()).map(|(entries, sunk)| (lowering.unit(&entries, &mut probe), sunk)),
+                    _ => Fused::entries(pass.plan, block, entity.is_some()).map(|(entries, sunk)| (lowering.unit(&entries, probe), sunk)),
                 };
                 match lowered {
-                    Some((Ok(()), sunk)) => sinks.extend(sunk),
-                    _ => break,
+                    Some((Ok(()), sunk)) => {
+                        sinks.extend(sunk);
+                        Step::Lowered
+                    }
+                    _ => Step::Stop,
                 }
-            }
-            let consumed = lowering.units();
-            let record = probe.record;
-            if consumed == 0 {
-                return Self::empty(record);
-            }
-            let built = match Program::new(lowering.finish()) {
-                Ok(program) => Self::new(program, sinks, consumed, record, entity.is_some()),
-                Err(_) => Err(record),
-            };
-            match built {
-                Ok(group) => return group,
-                Err(record) if consumed == 1 => return Self::empty(record),
-                Err(_) => limit = consumed - 1,
-            }
-        }
+            },
+            |(lowering, probe, sinks)| {
+                let consumed = lowering.units();
+                let record = probe.record;
+                if consumed == 0 {
+                    return Built::Done(Self::empty(record));
+                }
+                let built = match Program::new(lowering.finish()) {
+                    Ok(program) => Self::new(program, sinks, consumed, record, entity.is_some()),
+                    Err(_) => Err(record),
+                };
+                match built {
+                    Ok(group) => Built::Done(group),
+                    Err(record) => Built::Shrink {
+                        consumed,
+                        fallback: Self::empty(record),
+                    },
+                }
+            },
+        )
     }
 
     fn empty(record: Vec<Probed>) -> Self {

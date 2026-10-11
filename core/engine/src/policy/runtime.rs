@@ -122,6 +122,8 @@ impl CompiledSet {
     pub(crate) fn build_sync(loader: &DynamicLoader, keys: &[Arc<str>]) -> CompiledSet {
         let mut workspace = Workspace::new();
         let mut policy_keys: Vec<Arc<str>> = Vec::new();
+        let mut graph_keys: Vec<Arc<str>> = Vec::new();
+        let mut outcomes = false;
         let mut failures: Vec<CompileFailure> = Vec::new();
         let mut entries: HashMap<Arc<str>, CompiledEntry> = HashMap::default();
 
@@ -143,6 +145,7 @@ impl CompiledSet {
             };
             match content.as_ref() {
                 DecisionContent::Policy(policy) => {
+                    outcomes |= Self::declares_outcomes(&policy.0);
                     workspace.set_policy_arc(key.clone(), policy.0.clone());
                     policy_keys.push(key.clone());
                 }
@@ -158,6 +161,7 @@ impl CompiledSet {
                         let mut compiled = graph.clone();
                         Arc::make_mut(&mut compiled).compile();
                         entries.insert(key.clone(), CompiledEntry::Graph(compiled));
+                        graph_keys.push(key.clone());
                     }
                 },
             }
@@ -192,6 +196,31 @@ impl CompiledSet {
             });
         }
 
+        // A graph node reading an outcome (known only after the decision)
+        // fails its graph, as it fails a policy.
+        if outcomes {
+            for key in &graph_keys {
+                let diagnostics: Vec<Diagnostic> = workspace
+                    .diagnostics(key)
+                    .into_iter()
+                    .filter(|d| {
+                        d.severity == Severity::Error
+                            && d.code == crate::workspace::types::DiagnosticCode::OutcomeRead
+                    })
+                    .collect();
+                if diagnostics.is_empty() {
+                    continue;
+                }
+                entries.remove(key);
+                failures.push(CompileFailure {
+                    key: key.clone(),
+                    kind: "graph",
+                    diagnostics,
+                    error: None,
+                });
+            }
+        }
+
         let reads = entries.keys().map(|key| (key.clone(), workspace.reads(key))).collect();
         CompiledSet { entries, failures, reads }
     }
@@ -213,6 +242,16 @@ impl CompiledSet {
             self.entries
                 .get_key_value(candidate.as_str())
                 .map(|(k, _)| k.clone())
+        })
+    }
+
+    /// Whether a policy declares an outcome on a data model property.
+    fn declares_outcomes(policy: &PolicyDocument) -> bool {
+        policy.blocks.iter().any(|block| match block {
+            crate::policy::raw::BlockDoc::DataModel { data, .. } => {
+                data.properties.iter().any(|p| p.outcome.is_some())
+            }
+            _ => false,
         })
     }
 

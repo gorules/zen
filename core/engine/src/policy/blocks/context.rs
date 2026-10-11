@@ -13,7 +13,7 @@ use crate::analysis::table::{HitMode, VerifyInput, VerifyOutput, VerifyTable};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::db::AnalysisPass;
+use crate::workspace::db::{AnalysisPass, Db};
 use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
     Severity, WriteTrace,
@@ -160,8 +160,9 @@ impl AnalysisContext {
                 &self.scope,
             ),
         };
+        let reads_from = self.reads.len();
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id, source, kind);
+        self.absorb_diagnostics(&analysis, &expression_id, source, kind, reads_from);
         analysis
     }
 
@@ -196,8 +197,15 @@ impl AnalysisContext {
                 scope,
             ),
         };
+        let reads_from = self.reads.len();
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id, source, ExpressionKind::Unary);
+        self.absorb_diagnostics(
+            &analysis,
+            &expression_id,
+            source,
+            ExpressionKind::Unary,
+            reads_from,
+        );
         analysis
     }
 
@@ -498,6 +506,7 @@ impl AnalysisContext {
         expression_id: &Option<Arc<str>>,
         source: &str,
         kind: ExpressionKind,
+        reads_from: usize,
     ) {
         let first = self.diagnostics.len();
         for diag in &analysis.diagnostics {
@@ -518,6 +527,7 @@ impl AnalysisContext {
             matches!(kind, ExpressionKind::Unary),
             OnError::Raise,
         );
+        Db::locate_unknown_members(&mut self.diagnostics[first..], &self.reads[reads_from..]);
     }
 }
 

@@ -50,6 +50,10 @@ pub enum CursorTarget {
     FeatureExpr {
         id: Arc<str>,
     },
+    /// A data model property's `outcome.expr`.
+    OutcomeExpr {
+        id: Arc<str>,
+    },
     /// A data model property's `compute`.
     ComputeExpr {
         id: Arc<str>,
@@ -74,11 +78,13 @@ pub enum CursorTarget {
 }
 
 impl CursorTarget {
-    /// On an expression of a data model property (feature, compute, model).
+    /// On an expression of a data model property (feature, outcome,
+    /// compute, model).
     pub fn is_data_model_expression(&self) -> bool {
         matches!(
             self,
             CursorTarget::FeatureExpr { .. }
+                | CursorTarget::OutcomeExpr { .. }
                 | CursorTarget::ComputeExpr { .. }
                 | CursorTarget::ModelInput { .. }
                 | CursorTarget::ModelWhen { .. }

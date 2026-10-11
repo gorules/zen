@@ -32,6 +32,8 @@ export type PolicyCursorTarget =
   | { kind: 'transformInput' }
   /** A data model property's `feature.expr` (`id` is the property id). */
   | { kind: 'featureExpr'; id: string }
+  /** A data model property's `outcome.expr` (`id` is the property id). */
+  | { kind: 'outcomeExpr'; id: string }
   /** A data model property's per-event `compute`. */
   | { kind: 'computeExpr'; id: string }
   /** The request path given to a model input, `model.inputs[input]`. */
@@ -62,16 +64,21 @@ export type PolicyFieldOrigin =
  * How the host supplies a field. A feature with windows is one field per
  * window: `txn_count` over `1h` is the field `txn_count_1h` with
  * `base: 'txn_count'`, `window: '1h'`. A feature without `default` is
- * nullable (unknown or not covered).
+ * nullable (unknown or not covered). An outcome is known only after the
+ * decision: computed offline, never in a request, never read by rules
+ * (always nullable); `maturity` is in days (`30d`): when a decision is old
+ * enough to trust a "no" (the answer itself is never hidden).
  */
 export type PolicyFieldSupply =
   | { kind: 'feature'; base: string; expr: string; window?: string; default?: unknown }
+  | { kind: 'outcome'; expr?: string; maturity?: string }
   | { kind: 'compute'; expr: string }
   | { kind: 'model'; datasource?: string }
   | { kind: 'members'; by: 'key' | 'events' };
 export type PolicyDiagnosticCode =
   | 'UNDEFINED_VARIABLE'
   | 'TYPE_MISMATCH'
+  | 'NULLABLE_CONDITION'
   | 'INVALID_EXPRESSION'
   | 'PARSE_ERROR'
   | 'MISSING_DEFAULT_BRANCH'
@@ -94,6 +101,8 @@ export type PolicyDiagnosticCode =
   | 'DEPRECATED_TYPE'
   | 'FEATURE_SHAPE'
   | 'IGNORED_ATTRIBUTE'
+  | 'INVALID_OUTCOME'
+  | 'OUTCOME_READ'
   | 'MAX_DEPTH_EXCEEDED'
   | 'IMPORT_NOT_FOUND'
   | 'CIRCULAR_IMPORT'

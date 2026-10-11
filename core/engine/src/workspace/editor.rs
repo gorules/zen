@@ -67,6 +67,7 @@ impl Db {
             if !matches!(
                 cursor.target,
                 CursorTarget::FeatureExpr { .. }
+                    | CursorTarget::OutcomeExpr { .. }
                     | CursorTarget::ComputeExpr { .. }
                     | CursorTarget::ModelRequest { .. }
                     | CursorTarget::ModelResponse { .. }
@@ -84,12 +85,21 @@ impl Db {
             let segments: Vec<Rc<str>> = parent.iter().map(|s| Rc::from(*s)).collect();
             unit.entity_graph.resolve_path_to_element(&segments)?
         };
-        unit.entities
-            .get(&entity)?
-            .properties
-            .iter()
-            .find(|p| p.name.as_ref() == *field)?
-            .supply_detail()
+        let dm = unit.entities.get(&entity)?;
+        match dm.properties.iter().find(|p| p.name.as_ref() == *field) {
+            Some(prop) => prop.supply_detail(),
+            // A maturity flag, in the entity's own outcome expressions.
+            None if parent.is_empty()
+                && matches!(cursor.target, CursorTarget::OutcomeExpr { .. }) =>
+            {
+                let outcome = dm.flagged_outcome(field)?;
+                Some(crate::policy::ir::maturity_flag_detail(
+                    &outcome.name,
+                    outcome.outcome_maturity()?,
+                ))
+            }
+            None => None,
+        }
     }
 
     pub fn completions(&self, cursor: &Cursor) -> Vec<Completion> {

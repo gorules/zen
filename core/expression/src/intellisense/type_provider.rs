@@ -65,9 +65,28 @@ pub struct TypesProvider {
     types: HashMap<usize, TypeInfo>,
     codes: HashMap<usize, ErrorCode>,
     strict: bool,
+    /// Paths known not to be null here (`x` in `x != null and x`, in the
+    /// `else` of `x == null ? … : x`).
+    narrowed: Vec<String>,
 }
 
 pub(crate) type ErrorCode = (&'static str, DiagnosticArgs);
+
+/// A `bool?` where a bool is required: a null condition fails at run time.
+pub(crate) const NULLABLE_CONDITION: &str = "type.nullable-condition";
+
+/// The message for a `bool?` condition, naming the operand (its source
+/// text, else its path) when known.
+pub(crate) fn nullable_condition_message(operand: Option<&str>, ty: &str) -> String {
+    match operand {
+        Some(x) => format!(
+            "`{x}` may be null (`{ty}`): a null condition fails; write `{x} == true`, `{x} ?? false`, or `{x} == null ? … : …`."
+        ),
+        None => format!(
+            "Condition may be null (`{ty}`): a null condition fails; compare with `== true` or add `?? false`."
+        ),
+    }
+}
 
 impl TypesProvider {
     pub fn generate(root: &Node, scope: IntelliSenseScope, strict: bool) -> Self {
@@ -75,6 +94,7 @@ impl TypesProvider {
             types: HashMap::new(),
             codes: HashMap::new(),
             strict,
+            narrowed: Vec::new(),
         };
 
         s.determine(root, scope);
@@ -133,6 +153,104 @@ impl TypesProvider {
             "type.mismatch",
             DiagnosticArgs::from([("expected", expected), ("got", got.to_string())]),
         )
+    }
+
+    /// A `bool?` where a bool is required (a condition, an operand of
+    /// `and`/`or`/`not`, a callback's condition): a null fails at run time.
+    fn nullable_condition(&mut self, operand: &Node, ty: &VariableType) -> bool {
+        let VariableType::Nullable(inner) = ty else {
+            return false;
+        };
+        if !matches!(inner.as_ref(), VariableType::Bool) {
+            return false;
+        }
+        let target = match operand {
+            Node::Closure { body, .. } => *body,
+            other => other,
+        };
+        let path = Self::path_of(target);
+        let ty = ty.to_string();
+        let message = nullable_condition_message(path.as_deref(), &ty);
+        let mut args = DiagnosticArgs::from([("type", ty)]);
+        if let Some(path) = path {
+            args.insert("operand", path);
+        }
+        self.set_coded_error(target, message, (NULLABLE_CONDITION, args));
+        true
+    }
+
+    /// The data path a node reads (`a.b`, `#.c`, `$root.d`), if it is one.
+    fn path_of(node: &Node) -> Option<String> {
+        match node {
+            Node::Parenthesized(inner) => Self::path_of(inner),
+            Node::Identifier(name) => Some(name.to_string()),
+            Node::Pointer => Some("#".to_string()),
+            Node::Root => Some("$root".to_string()),
+            Node::Member {
+                node,
+                property: Node::String(key),
+            } => Some(format!("{}.{key}", Self::path_of(node)?)),
+            _ => None,
+        }
+    }
+
+    /// The paths not null when `node` is `truthy`: `x != null`,
+    /// `x == true`, through `and` (when true), `or` (when false) and `not`.
+    fn non_null_when(node: &Node, truthy: bool, out: &mut Vec<String>) {
+        match node {
+            Node::Parenthesized(inner) => Self::non_null_when(inner, truthy, out),
+            Node::Unary {
+                node,
+                operator: Operator::Logical(LogicalOperator::Not),
+            } => Self::non_null_when(node, !truthy, out),
+            Node::Binary {
+                left,
+                operator: Operator::Logical(logical),
+                right,
+            } => match (logical, truthy) {
+                (LogicalOperator::And, true) | (LogicalOperator::Or, false) => {
+                    Self::non_null_when(left, truthy, out);
+                    Self::non_null_when(right, truthy, out);
+                }
+                _ => {}
+            },
+            Node::Binary {
+                left,
+                operator: Operator::Comparison(comparison),
+                right,
+            } => {
+                let (value, other) = match (left, right) {
+                    (value, other @ (Node::Null | Node::Bool(_))) => (value, other),
+                    (other @ (Node::Null | Node::Bool(_)), value) => (value, other),
+                    _ => return,
+                };
+                let holds = match (comparison, other) {
+                    (ComparisonOperator::NotEqual, Node::Null) => truthy,
+                    (ComparisonOperator::Equal, Node::Null) => !truthy,
+                    (ComparisonOperator::Equal, Node::Bool(_)) => truthy,
+                    _ => false,
+                };
+                if let Some(path) = holds.then(|| Self::path_of(value)).flatten() {
+                    out.push(path);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `determine` with the paths `condition` proves not null when `truthy`.
+    fn determine_narrowed(
+        &mut self,
+        node: &Node,
+        scope: IntelliSenseScope,
+        condition: &Node,
+        truthy: bool,
+    ) -> TypeInfo {
+        let depth = self.narrowed.len();
+        Self::non_null_when(condition, truthy, &mut self.narrowed);
+        let ty = self.determine(node, scope);
+        self.narrowed.truncate(depth);
+        ty
     }
 
     fn maybe_nullable(kind: VariableType, nullable: bool) -> TypeInfo {
@@ -349,7 +467,15 @@ impl TypesProvider {
                 operator,
             } => {
                 let left_type = self.determine(left, scope.clone());
-                let right_type = self.determine(right, scope.clone());
+                let right_type = match operator {
+                    Operator::Logical(LogicalOperator::And) => {
+                        self.determine_narrowed(right, scope.clone(), left, true)
+                    }
+                    Operator::Logical(LogicalOperator::Or) => {
+                        self.determine_narrowed(right, scope.clone(), left, false)
+                    }
+                    _ => self.determine(right, scope.clone()),
+                };
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
@@ -376,7 +502,16 @@ impl TypesProvider {
                     },
                     Operator::Logical(l) => match l {
                         LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not => {
-                            match (left_type.deref(), right_type.deref()) {
+                            let left_null = self.nullable_condition(left, &left_type);
+                            let right_null = self.nullable_condition(right, &right_type);
+                            // Reported above: checked as the bool it holds.
+                            let held = |ty: &TypeInfo, null: bool| match (&ty.kind, null) {
+                                (VariableType::Nullable(inner), true) => inner.as_ref().clone(),
+                                (kind, _) => kind.clone(),
+                            };
+                            let left_held = held(&left_type, left_null);
+                            let right_held = held(&right_type, right_null);
+                            match (left_held, right_held) {
                                 (VariableType::Bool | VariableType::Any, VariableType::Bool | VariableType::Any) => V(VariableType::Bool),
                                 _ => Error(format!(
                                     "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
@@ -493,15 +628,17 @@ impl TypesProvider {
                 on_false,
             } => {
                 let condition_type = self.determine(condition, scope.clone());
-                if !condition_type.satisfies(&VariableType::Bool) {
+                if !self.nullable_condition(condition, &condition_type)
+                    && !condition_type.satisfies(&VariableType::Bool)
+                {
                     self.set_error(
                         condition,
                         format!("Ternary operator cannot be applied to type `{condition_type}`."),
                     );
                 }
 
-                let true_type = self.determine(on_true, scope.clone());
-                let false_type = self.determine(on_false, scope.clone());
+                let true_type = self.determine_narrowed(on_true, scope.clone(), condition, true);
+                let false_type = self.determine_narrowed(on_false, scope.clone(), condition, false);
 
                 V(true_type.kind.merge(&false_type.kind))
             }
@@ -524,7 +661,9 @@ impl TypesProvider {
                     },
                     Operator::Logical(logical) => match logical {
                         LogicalOperator::Not => {
-                            if !node_type.satisfies(&VariableType::Bool) {
+                            if !self.nullable_condition(node, &node_type)
+                                && !node_type.satisfies(&VariableType::Bool)
+                            {
                                 self.set_error(node, format!("Operator `{operator}` cannot be applied to type `{node_type}`."))
                             }
 
@@ -610,7 +749,15 @@ impl TypesProvider {
                                 .insert(Rc::from(alias_name), ptr_type_inner.clone());
                         }
 
+                        // `#` and the alias are the item here, not what
+                        // they were outside.
+                        let outer = self.narrowed.clone();
+                        self.narrowed.retain(|path| {
+                            let root = path.split('.').next().unwrap_or_default();
+                            root != "#" && alias.is_none_or(|alias| root != alias)
+                        });
                         let new_type = self.determine(arguments[i], closure_scope);
+                        self.narrowed = outer;
                         type_list[i] = new_type.kind;
                     }
                 }
@@ -676,7 +823,10 @@ impl TypesProvider {
                         }
 
                         for i in 1..arguments.len() {
-                            if c.is_predicate(i) && !type_list[i].satisfies(&VariableType::Bool) {
+                            if c.is_predicate(i)
+                                && !self.nullable_condition(arguments[i], &type_list[i])
+                                && !type_list[i].satisfies(&VariableType::Bool)
+                            {
                                 self.set_error(
                                     arguments[i],
                                     format!(
@@ -901,6 +1051,15 @@ impl TypesProvider {
 
         if let Some(error) = on_fly_error {
             node_type.error.replace(error);
+        }
+
+        // Proven not null (`x != null and x`): `x` is its inner type here.
+        if !self.narrowed.is_empty() && matches!(node, Node::Identifier(_) | Node::Member { .. }) {
+            if let VariableType::Nullable(inner) = &node_type.kind {
+                if Self::path_of(node).is_some_and(|path| self.narrowed.contains(&path)) {
+                    node_type.kind = inner.as_ref().clone();
+                }
+            }
         }
 
         self.set_type(node, node_type.clone());

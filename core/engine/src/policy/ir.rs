@@ -196,6 +196,17 @@ pub enum Supply {
         #[serde(skip_serializing_if = "Option::is_none")]
         default: Option<serde_json::Value>,
     },
+    /// An outcome: what happened after the decision, computed offline by
+    /// the host (training labels, impact analysis). Never in the request
+    /// and never read by rules; `maturity` (days, `30d`) as written: when a
+    /// "no" can be trusted (the answer itself is never hidden).
+    /// Without `expr`, the entity's own column (a column outcome).
+    Outcome {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expr: Option<Arc<str>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        maturity: Option<Arc<str>>,
+    },
     /// Computed per event from the event's other properties.
     Compute { expr: Arc<str> },
     /// A model's output.
@@ -225,6 +236,16 @@ impl Supply {
                 Some(window) => format!("{expr} · {window}"),
                 None => expr.to_string(),
             },
+            Supply::Outcome { expr, maturity } => {
+                let outcome = match expr {
+                    Some(expr) => format!("outcome {expr}"),
+                    None => "outcome from its column".to_string(),
+                };
+                match maturity {
+                    Some(days) => format!("{outcome} · mature after {days}"),
+                    None => outcome,
+                }
+            }
             Supply::Compute { expr } => expr.to_string(),
             Supply::Model { datasource } => match datasource {
                 Some(datasource) => format!("model {datasource}"),
@@ -240,6 +261,20 @@ impl Property {
     /// A stored relationship: members the host finds (`on` / `through`).
     pub fn is_stored(&self) -> bool {
         matches!(self.supply.as_deref(), Some(Supply::Members { .. }))
+    }
+
+    /// An outcome: known only after the decision, so never in a request
+    /// and never read by rules, features or calls.
+    pub fn is_outcome(&self) -> bool {
+        matches!(self.supply.as_deref(), Some(Supply::Outcome { .. }))
+    }
+
+    /// An outcome's `maturity` (`30d`), when it declares one.
+    pub fn outcome_maturity(&self) -> Option<&Arc<str>> {
+        match self.supply.as_deref() {
+            Some(Supply::Outcome { maturity, .. }) => maturity.as_ref(),
+            _ => None,
+        }
     }
 
     /// The type as written, with `[]` and `?`: `integer?`.
@@ -360,8 +395,13 @@ impl DataModelIr {
         }
         let mut fields: HashMap<Rc<str>, VariableType> = HashMap::new();
         if let Some(dm) = entities.get(name) {
-            // A stored relationship is never on the wire: the host finds its members.
-            for prop in dm.properties.iter().filter(|p| !p.is_stored()) {
+            // A stored relationship is never on the wire: the host finds its
+            // members. Nor is an outcome: it is known only after the decision.
+            for prop in dm
+                .properties
+                .iter()
+                .filter(|p| !p.is_stored() && !p.is_outcome())
+            {
                 fields.insert(
                     Rc::from(prop.name.as_ref()),
                     Self::wire_property_type(prop, entities, dictionaries, visited),
@@ -528,6 +568,74 @@ impl DataModelIr {
                 _ => None,
             };
 
+            let at = || {
+                DiagnosticLocation::expression(
+                    policy_path.clone(),
+                    id.clone(),
+                    prop.id.clone(),
+                    None,
+                )
+            };
+            if prop.feature.is_some() && prop.outcome.is_some() {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::InvalidOutcome,
+                    at(),
+                    format!(
+                        "`{prop_name}` in entity '{name}' has both `feature` and `outcome`: a property is a feature (known at the decision) or an outcome (known after it), not both"
+                    ),
+                ));
+            }
+
+            // An outcome: known only after the decision, computed offline by
+            // the host. Never in the request, so null to anything that reads
+            // the entity (rules can't: see the diagnostics).
+            // Without `expr`, the entity's own column (typed by `type`).
+            if let (None, Some(outcome)) = (&prop.feature, &prop.outcome) {
+                if outcome.rest.contains_key("unknownFor") {
+                    diagnostics.push(Diagnostic::warning(
+                        DiagnosticCode::InvalidOutcome,
+                        at(),
+                        format!(
+                            "`unknownFor` is now `maturity` in outcome '{prop_name}' in entity '{name}'"
+                        ),
+                    ));
+                }
+                let maturity = match &outcome.maturity {
+                    None => None,
+                    Some(serde_json::Value::String(days)) if is_duration(days, &["d"]) => {
+                        Some(Arc::from(days.as_str()))
+                    }
+                    Some(other) => {
+                        let shown = match other {
+                            serde_json::Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        };
+                        diagnostics.push(Diagnostic::error(
+                            DiagnosticCode::InvalidDuration,
+                            at(),
+                            format!(
+                                "`maturity` of outcome '{prop_name}' in entity '{name}' is a number of days such as 30d, 120d or 365d, not `{shown}`"
+                            ),
+                        ));
+                        None
+                    }
+                };
+                properties.push(Property {
+                    id: prop.id.clone(),
+                    name: prop_name,
+                    kind,
+                    array: prop.array,
+                    optional: true,
+                    exact,
+                    default: None,
+                    supply: Some(Arc::new(Supply::Outcome {
+                        expr: outcome.expr.clone(),
+                        maturity,
+                    })),
+                });
+                continue;
+            }
+
             // A feature: the host supplies it, one property per window
             // (`txn_count` over 1h, 7d: `txn_count_1h`, `txn_count_7d`).
             // Without a `default` (or `required`) it is absent when unknown
@@ -649,6 +757,32 @@ impl DataModelIr {
 
         Self::computes_propagate_null(doc, &mut properties);
 
+        // An outcome with `maturity` gives its outcome expressions a flag,
+        // `<name>_mature`: a real property of that name would hide it.
+        for prop in &properties {
+            let Some(base) = prop.name.strip_suffix(MATURE_SUFFIX) else {
+                continue;
+            };
+            if properties
+                .iter()
+                .any(|p| *p.name == *base && p.outcome_maturity().is_some())
+            {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::InvalidOutcome,
+                    DiagnosticLocation::expression(
+                        policy_path.clone(),
+                        id.clone(),
+                        prop.id.clone(),
+                        None,
+                    ),
+                    format!(
+                        "`{}` clashes with the maturity flag of outcome `{base}`; rename one",
+                        prop.name
+                    ),
+                ));
+            }
+        }
+
         let records = if doc.events.is_some() {
             Records::Events
         } else if doc.reference.is_some() {
@@ -757,6 +891,166 @@ impl DataModelIr {
                 }
             }
         }
+    }
+}
+
+/// What names an outcome's maturity flag: `fraud_mature` for `fraud`.
+pub(crate) const MATURE_SUFFIX: &str = "_mature";
+
+/// The detail of a maturity flag in completions and hover.
+pub(crate) fn maturity_flag_detail(outcome: &str, maturity: &str) -> String {
+    format!("bool · whether `{outcome}` is mature (after {maturity})")
+}
+
+/// Who reads an outcome too early, for [`outcome_read_message`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutcomeReader {
+    /// A rule block or a graph node.
+    Rules,
+    /// A feature's expression or a compute.
+    Features,
+    /// A call's request, response or `when`.
+    Calls,
+}
+
+/// A read of an outcome before it is known: `transaction.fraud` is
+/// known only after the decision.
+pub(crate) fn outcome_read_message(field: &str, reader: OutcomeReader) -> String {
+    let who = match reader {
+        OutcomeReader::Rules => "rules",
+        OutcomeReader::Features => "features",
+        OutcomeReader::Calls => "calls",
+    };
+    format!("`{field}` is an outcome: known only after the decision; {who} cannot read it")
+}
+
+impl DataModelIr {
+    /// The outcome a maturity flag names (`fraud_mature` → `fraud`), with
+    /// or without `maturity`; none when `name` is a real property (it
+    /// hides the flag) or names no outcome.
+    pub(crate) fn flagged_outcome(&self, name: &str) -> Option<&Property> {
+        let base = name.strip_suffix(MATURE_SUFFIX)?;
+        if self.properties.iter().any(|p| *p.name == *name) {
+            return None;
+        }
+        self.properties
+            .iter()
+            .find(|p| *p.name == *base && p.is_outcome())
+    }
+
+    /// A maturity flag: `fraud_mature` of `fraud`, an outcome with `maturity`.
+    pub(crate) fn is_maturity_flag(&self, name: &str) -> bool {
+        self.flagged_outcome(name)
+            .is_some_and(|p| p.outcome_maturity().is_some())
+    }
+
+    /// The outcome a read reaches, as `entity.field`: on the way through
+    /// references and relationships (`claim.customer.claims_after`), from
+    /// `entity`'s own fields when the path starts with one, else from the
+    /// entity it names (`transaction.fraud`, `$root.transaction.fraud`).
+    pub(crate) fn outcome_at<S: std::hash::BuildHasher>(
+        entities: &std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity: Option<&str>,
+        path: &str,
+    ) -> Option<String> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (rooted, segments) = match segments.split_first() {
+            Some((&"$root", rest)) => (true, rest),
+            _ => (false, segments.as_slice()),
+        };
+        let first = *segments.first()?;
+        let has = |dm: &DataModelIr, field: &str| {
+            dm.properties.iter().any(|p| *p.name == *field) || dm.is_maturity_flag(field)
+        };
+        let (mut current, mut rest) = match entity.and_then(|e| entities.get(e)) {
+            Some(dm) if !rooted && has(dm, first) => (dm.clone(), segments),
+            _ => (entities.get(first)?.clone(), &segments[1..]),
+        };
+        while let Some((field, tail)) = rest.split_first() {
+            // A maturity flag is as much an outcome as its outcome.
+            if tail.is_empty() && current.is_maturity_flag(field) {
+                return Some(format!("{}.{field}", current.name));
+            }
+            let prop = current.properties.iter().find(|p| *p.name == **field)?;
+            if prop.is_outcome() {
+                return Some(format!("{}.{field}", current.name));
+            }
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target }
+                    if !tail.is_empty() =>
+                {
+                    current = entities.get(target)?.clone();
+                    rest = tail;
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    /// The entity a path's value is, through references and relationships
+    /// (`transaction.card` → `card`): from `entity`'s own fields when the
+    /// path starts with one, else from the entity it names (`$root.card`).
+    pub(crate) fn entity_at<'a, S: std::hash::BuildHasher>(
+        entities: &'a std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity: Option<&str>,
+        path: &str,
+    ) -> Option<&'a Arc<DataModelIr>> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (rooted, segments) = match segments.split_first() {
+            Some((&"$root", rest)) => (true, rest),
+            _ => (false, segments.as_slice()),
+        };
+        let first = *segments.first()?;
+        let own = entity
+            .and_then(|e| entities.get(e))
+            .filter(|dm| dm.properties.iter().any(|p| *p.name == *first));
+        let named = entities.get(first).map(|dm| (dm, &segments[1..]));
+        let (mut current, rest) = match (rooted, own, named) {
+            (true, _, Some(named)) | (false, None, Some(named)) => named,
+            (_, Some(own), _) => (own, segments),
+            _ => return None,
+        };
+        for field in rest {
+            let prop = current.properties.iter().find(|p| *p.name == **field)?;
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target } => {
+                    current = entities.get(target)?;
+                }
+                _ => return None,
+            }
+        }
+        Some(current)
+    }
+
+    /// What reading `name`, no field of this entity, means: a windowed
+    /// feature's name as written lists its windows (`txn_count` →
+    /// `txn_count_7d` or `txn_count_30d`), else the entity has no `name`.
+    /// None when `name` is a field (or a maturity flag) after all.
+    pub(crate) fn unknown_member_message(&self, name: &str) -> Option<String> {
+        if self.properties.iter().any(|p| *p.name == *name) || self.is_maturity_flag(name) {
+            return None;
+        }
+        let windows: Vec<String> = self
+            .properties
+            .iter()
+            .filter(|p| match p.supply.as_deref() {
+                Some(Supply::Feature {
+                    base,
+                    window: Some(_),
+                    ..
+                }) => **base == *name,
+                _ => false,
+            })
+            .map(|p| format!("`{}`", p.name))
+            .collect();
+        Some(match windows.split_last() {
+            None => format!("`{}` has no `{name}`", self.name),
+            Some((last, [])) => format!("`{name}` has windows: read {last}"),
+            Some((last, rest)) => {
+                format!("`{name}` has windows: read {} or {last}", rest.join(", "))
+            }
+        })
     }
 }
 

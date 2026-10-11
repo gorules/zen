@@ -179,6 +179,8 @@ impl Db {
         let mut result: Vec<InputProperty> = self
             .walk_visible_properties(&req.policy_path)
             .into_iter()
+            // An outcome is known only after the decision: never an input.
+            .filter(|vp| !vp.property.is_outcome())
             .filter(|vp| match &vp.scope {
                 PropertyScope::Entity(entity) => {
                     root_entities.contains(entity)
@@ -211,7 +213,11 @@ impl Db {
                 // comes from the store or a source (events, reference data,
                 // features).
                 let hosted = entities.get(target).is_some_and(|dm| {
-                    dm.records != Records::Plain || dm.properties.iter().any(|p| p.supply.is_some())
+                    dm.records != Records::Plain
+                        || dm
+                            .properties
+                            .iter()
+                            .any(|p| p.supply.is_some() && !p.is_outcome())
                 });
                 result.push(InputProperty {
                     path: target.clone(),

@@ -257,6 +257,7 @@ impl DataModelDoc {
     pub fn expression(&self, target: &crate::workspace::types::CursorTarget) -> Option<Arc<str>> {
         use crate::workspace::types::CursorTarget;
         let (CursorTarget::FeatureExpr { id }
+        | CursorTarget::OutcomeExpr { id }
         | CursorTarget::ComputeExpr { id }
         | CursorTarget::ModelInput { id, .. }
         | CursorTarget::ModelWhen { id }
@@ -271,6 +272,12 @@ impl DataModelDoc {
         };
         Some(match target {
             CursorTarget::FeatureExpr { .. } => prop.feature.as_ref()?.expr.clone(),
+            CursorTarget::OutcomeExpr { .. } => prop
+                .outcome
+                .as_ref()?
+                .expr
+                .clone()
+                .unwrap_or_else(|| Arc::from("")),
             CursorTarget::ComputeExpr { .. } => prop.compute.clone().unwrap_or_else(|| Arc::from("")),
             CursorTarget::ModelInput { input, .. } => {
                 model_str(prop.model.as_ref()?.get("inputs")?.get(input.as_ref()))
@@ -306,6 +313,10 @@ pub struct PropertyDoc {
     /// input property `<name>_<window>`; see [`FeatureDoc`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<FeatureDoc>,
+    /// An outcome: what happened after the decision (a chargeback, how a
+    /// claim ended), computed offline by the host; see [`OutcomeDoc`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<OutcomeDoc>,
     /// Computed per event by the host from the event's other properties
     /// (an events entity's `amount_gbp = amount * fx_rate`): always supplied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -344,6 +355,8 @@ struct PropertyDocWire {
     #[serde(default)]
     feature: Option<FeatureDoc>,
     #[serde(default)]
+    outcome: Option<OutcomeDoc>,
+    #[serde(default)]
     compute: Option<Arc<str>>,
     #[serde(default)]
     column: Option<Arc<str>>,
@@ -371,6 +384,7 @@ impl From<PropertyDocWire> for PropertyDoc {
             array: wire.array,
             optional: wire.optional,
             feature: wire.feature,
+            outcome: wire.outcome,
             compute: wire.compute,
             column: wire.column,
             model: wire.model,
@@ -399,6 +413,35 @@ pub struct FeatureDoc {
     pub default: Option<serde_json::Value>,
     #[serde(flatten)]
     pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// An outcome on a property: what is known about the entity after the
+/// decision, read offline (training labels, impact analysis), never by
+/// rules. `expr` is a feature expression that also reads `decidedAt`;
+/// without one (absent, or blank: read as absent and written back without
+/// it) the outcome is the entity's own column, named like the property (or
+/// its `column`), read by the host. The answer is always the value as known
+/// (never hidden); `maturity` (days, `30d`) says when a decision is old
+/// enough to trust a negative answer. Kept as written (`maturity` as any
+/// value, checked by the parser).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeDoc {
+    #[serde(
+        default,
+        deserialize_with = "non_blank",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expr: Option<Arc<str>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maturity: Option<serde_json::Value>,
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A string, `None` when absent, `null` or blank.
+fn non_blank<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Arc<str>>, D::Error> {
+    Ok(Option::<Arc<str>>::deserialize(deserializer)?.filter(|text| !text.trim().is_empty()))
 }
 
 /// A value as written, `null` included (`Some(null)`, not `None`).

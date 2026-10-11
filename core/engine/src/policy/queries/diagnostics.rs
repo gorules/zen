@@ -7,9 +7,11 @@ use zen_expression::variable::VariableType;
 use crate::analysis::nullable::NullableOperand;
 
 use crate::policy::blocks::{
-    AnalysisContext, BlockKind, IntelliSenseSource, ReadFlattener, SharedIntelliSense,
+    AnalysisContext, BlockKind, IntelliSenseSource, PropertyRead, ReadFlattener, SharedIntelliSense,
 };
-use crate::policy::ir::{is_duration, PropertyTypeIr};
+use crate::policy::ir::{
+    is_duration, outcome_read_message, DataModelIr, OutcomeReader, PropertyTypeIr,
+};
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
@@ -18,6 +20,11 @@ use crate::workspace::db::{AnalysisPass, Db, Unit};
 use crate::workspace::types::{
     BlockRef, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind,
 };
+
+/// The expression crate's code for a member no object has.
+const UNKNOWN_MEMBER: &str = "type.unknown-member";
+/// The path an unknown member is read at, aliases resolved.
+const READ_PATH: &str = "readPath";
 
 impl Db {
     pub fn compute_policy_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
@@ -72,6 +79,8 @@ impl Db {
 
         out.extend(self.unreachable_reads_diagnostics(path));
 
+        out.extend(self.outcome_reads_in(&unit, path));
+
         out.extend(self.nested_iteration_diagnostics(path));
 
         out.extend(Linter::standard().run(self, path));
@@ -80,7 +89,126 @@ impl Db {
 
         out.extend(self.data_model_expression_diagnostics(path));
 
+        Self::drop_refused_unknowns(&mut out);
+        Self::explain_unknown_members(&mut out, &unit.entities, |d| {
+            let block_id = d.location.block_id.as_deref()?;
+            let policy = self.raw_policy(&d.location.policy_path)?;
+            policy.blocks.iter().find_map(|block| match block {
+                BlockDoc::DataModel { id, data } if id.as_ref() == block_id => {
+                    Some(data.name.clone())
+                }
+                _ => None,
+            })
+        });
         out
+    }
+
+    /// A read refused as an outcome (a maturity flag, `fraud_mature`, is
+    /// no field of the entity) is not also an unknown name within it.
+    pub(crate) fn drop_refused_unknowns(out: &mut Vec<Diagnostic>) {
+        let refused: Vec<DiagnosticLocation> = out
+            .iter()
+            .filter(|d| {
+                d.location.span.is_some()
+                    && matches!(
+                        d.code,
+                        DiagnosticCode::OutcomeRead | DiagnosticCode::InvalidOutcome
+                    )
+            })
+            .map(|d| d.location.clone())
+            .collect();
+        if refused.is_empty() {
+            return;
+        }
+        out.retain(|d| {
+            let (DiagnosticCode::UndefinedVariable, Some((start, end))) = (d.code, d.location.span)
+            else {
+                return true;
+            };
+            !refused.iter().any(|at| {
+                at.policy_path == d.location.policy_path
+                    && at.block_id == d.location.block_id
+                    && at.expression_id == d.location.expression_id
+                    && at.span.is_some_and(|(s, e)| s <= start && end <= e)
+            })
+        });
+    }
+
+    /// Names what an unknown member is read from: the path read (aliases
+    /// resolved: `t.card.txn_count` in `sum(transaction as t, …)` is
+    /// `transaction.card.txn_count`), for [`Db::explain_unknown_members`].
+    pub(crate) fn locate_unknown_members(diagnostics: &mut [Diagnostic], reads: &[PropertyRead]) {
+        for d in diagnostics.iter_mut() {
+            if d.expr_code != Some(UNKNOWN_MEMBER) || d.args.contains_key(READ_PATH) {
+                continue;
+            }
+            let (Some(name), Some((start, end))) = (d.args.get("name"), d.location.span) else {
+                continue;
+            };
+            // At the object read (`transaction.card`), by the read through it.
+            let found = reads.iter().find_map(|read| {
+                let (s, e) = read.span?;
+                if read.expression_id != d.location.expression_id || s != start || e <= end {
+                    return None;
+                }
+                let segments: Vec<&str> = read.path.split('.').collect();
+                let at = segments.iter().skip(1).position(|s| s == name)? + 1;
+                Some((
+                    segments[..=at].join("."),
+                    (at + 1 == segments.len()).then_some(e),
+                ))
+            });
+            let Some((path, whole)) = found else {
+                continue;
+            };
+            d.args.insert(READ_PATH, path);
+            // The whole read when it ends at the member: `transaction.card.txn_count`.
+            if let Some(e) = whole {
+                d.location.span = Some((start, e));
+            }
+        }
+    }
+
+    /// An unknown member of an entity, named for it: a windowed feature's
+    /// name as written lists its windows (`txn_count` → `txn_count_7d` or
+    /// `txn_count_30d`), any other "`card` has no `foo`". `entity_of` is the
+    /// entity a diagnostic's paths start from (a feature's own, a graph's
+    /// request), if any. Other objects keep the generic message.
+    pub(crate) fn explain_unknown_members<S: std::hash::BuildHasher>(
+        out: &mut [Diagnostic],
+        entities: &std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity_of: impl Fn(&Diagnostic) -> Option<Arc<str>>,
+    ) {
+        for d in out.iter_mut() {
+            if d.code != DiagnosticCode::UndefinedVariable || d.expr_code != Some(UNKNOWN_MEMBER) {
+                continue;
+            }
+            let (Some(name), Some(path)) = (d.args.get("name"), d.args.get(READ_PATH)) else {
+                continue;
+            };
+            let Some(parent) = path
+                .strip_suffix(name.as_str())
+                .and_then(|p| p.strip_suffix('.'))
+            else {
+                continue;
+            };
+            let entity = entity_of(d);
+            let Some(dm) = DataModelIr::entity_at(entities, entity.as_deref(), parent) else {
+                continue;
+            };
+            let Some(message) = dm.unknown_member_message(name) else {
+                continue;
+            };
+            let generic = d
+                .args
+                .get("of")
+                .map(|of| format!("'{name}' is not a valid member of `{of}`."));
+            d.message = match generic.filter(|g| d.message.contains(g.as_str())) {
+                Some(generic) => d.message.replace(&generic, &message),
+                None => message,
+            };
+            d.args.insert("entity", dm.name.to_string());
+        }
     }
 
     /// Expressions on data model properties (features, per-event computes,
@@ -155,8 +283,22 @@ impl Db {
                             }));
                         }
                     }
-                    if matches!(cursor.target, CursorTarget::FeatureExpr { .. }) {
+                    if matches!(
+                        cursor.target,
+                        CursorTarget::FeatureExpr { .. } | CursorTarget::OutcomeExpr { .. }
+                    ) {
                         out.extend(Self::feature_shape(
+                            path,
+                            id,
+                            prop,
+                            &cursor.target,
+                            &source,
+                            &scope_type,
+                            &intellisense,
+                        ));
+                    }
+                    if matches!(cursor.target, CursorTarget::OutcomeExpr { .. }) {
+                        out.extend(Self::outcome_type(
                             path,
                             id,
                             prop,
@@ -164,6 +306,60 @@ impl Db {
                             &scope_type,
                             &intellisense,
                         ));
+                        // `x_mature` of an outcome `x` that declares no maturity.
+                        let entity = unit.entities.get(&data.name);
+                        for read in summary.reads.iter().filter(|read| !read.unresolved) {
+                            let Some(outcome) = entity
+                                .and_then(|dm| dm.flagged_outcome(&read.path))
+                                .filter(|outcome| outcome.outcome_maturity().is_none())
+                            else {
+                                continue;
+                            };
+                            out.push(Diagnostic::error(
+                                DiagnosticCode::InvalidOutcome,
+                                DiagnosticLocation::expression(
+                                    path.clone(),
+                                    id.clone(),
+                                    prop.id.clone(),
+                                    read.span,
+                                )
+                                .with_target(cursor.target.clone()),
+                                format!("`{}` declares no maturity", outcome.name),
+                            ));
+                        }
+                    } else {
+                        // Known only after the decision: nothing that runs at
+                        // it (a feature, a compute, a call) reads an outcome.
+                        let reader = match cursor.target {
+                            CursorTarget::FeatureExpr { .. } | CursorTarget::ComputeExpr { .. } => {
+                                OutcomeReader::Features
+                            }
+                            _ => OutcomeReader::Calls,
+                        };
+                        let mut flagged: HashSet<(String, Option<(u32, u32)>)> = HashSet::default();
+                        for read in summary.reads.iter().filter(|read| !read.unresolved) {
+                            let Some(field) = DataModelIr::outcome_at(
+                                &unit.entities,
+                                Some(&data.name),
+                                &read.path,
+                            ) else {
+                                continue;
+                            };
+                            if !flagged.insert((field.clone(), read.span)) {
+                                continue;
+                            }
+                            out.push(Diagnostic::error(
+                                DiagnosticCode::OutcomeRead,
+                                DiagnosticLocation::expression(
+                                    path.clone(),
+                                    id.clone(),
+                                    prop.id.clone(),
+                                    read.span,
+                                )
+                                .with_target(cursor.target.clone()),
+                                outcome_read_message(&field, reader),
+                            ));
+                        }
                     }
                     let diagnostics = summary
                         .diagnostics
@@ -231,6 +427,12 @@ impl Db {
                 id: prop.id.clone(),
             });
         }
+        // A column outcome (no `expr`) has no expression: typed by `type`.
+        if prop.outcome.as_ref().is_some_and(|o| o.expr.is_some()) {
+            targets.push(CursorTarget::OutcomeExpr {
+                id: prop.id.clone(),
+            });
+        }
         if prop.compute.is_some() {
             targets.push(CursorTarget::ComputeExpr {
                 id: prop.id.clone(),
@@ -263,10 +465,10 @@ impl Db {
         targets
     }
 
-    /// Derived features and computes: null in, null out.
+    /// Derived features, outcomes and computes: null in, null out.
     fn propagates_null(prop: &PropertyDoc, target: &CursorTarget) -> bool {
         match target {
-            CursorTarget::ComputeExpr { .. } => true,
+            CursorTarget::ComputeExpr { .. } | CursorTarget::OutcomeExpr { .. } => true,
             CursorTarget::FeatureExpr { .. } => prop
                 .feature
                 .as_ref()
@@ -276,7 +478,7 @@ impl Db {
     }
 
     /// Whether what an expression reads must be there before the property:
-    /// derived features, computes and calls (their request, `when` and
+    /// derived features, outcomes, computes and calls (their request, `when` and
     /// response; a call with named inputs reads the request, not the entity).
     fn orders(prop: &PropertyDoc, target: &CursorTarget) -> bool {
         Self::propagates_null(prop, target)
@@ -305,11 +507,14 @@ impl Db {
         };
         let mut out = Vec::new();
         while let Some((field, tail)) = rest.split_first() {
-            let Some(prop) = unit
-                .entities
-                .get(entity)
-                .and_then(|dm| dm.properties.iter().find(|p| p.name.as_ref() == *field))
+            let dm = unit.entities.get(entity);
+            let Some(prop) =
+                dm.and_then(|dm| dm.properties.iter().find(|p| p.name.as_ref() == *field))
             else {
+                // A maturity flag reads its outcome (`fraud_mature`: `fraud`).
+                if let Some(outcome) = dm.and_then(|dm| dm.flagged_outcome(field)) {
+                    out.push(Arc::from(format!("{entity}.{}", outcome.name)));
+                }
                 break;
             };
             out.push(Arc::from(format!("{entity}.{field}")));
@@ -326,13 +531,15 @@ impl Db {
         out
     }
 
-    /// A feature's shape against its property: a list (`topK`, `lastN`,
-    /// `unique`) needs `array: true`, a single value can't have it. A
-    /// grouped feature (a map, on an `object` property) is either.
+    /// A feature's (or an outcome's) shape against its property: a list
+    /// (`topK`, `lastN`, `unique`) needs `array: true`, a single value can't
+    /// have it. A grouped feature (a map, on an `object` property) is either.
+    #[allow(clippy::too_many_arguments)]
     fn feature_shape(
         path: &Arc<str>,
         block_id: &Arc<str>,
         prop: &PropertyDoc,
+        target: &CursorTarget,
         source: &Arc<str>,
         scope: &VariableType,
         intellisense: &SharedIntelliSense,
@@ -363,7 +570,11 @@ impl Db {
         ];
         // A selector that gives the whole event (`argMax(t, t.amount)`,
         // `first(t, cond)`) is no feature: a feature is a value. Same rule
-        // and wording as the feature store's.
+        // and wording as the feature store's (an outcome is a value too).
+        let what = match target {
+            CursorTarget::OutcomeExpr { .. } => "an outcome",
+            _ => "a feature",
+        };
         let whole_event = intellisense
             .borrow_mut()
             .with_ast(source, false, |root, _| {
@@ -390,7 +601,7 @@ impl Db {
                 };
                 match (name.as_str(), arguments.len()) {
                     ("argMax" | "argMin", 2) => Some(format!(
-                        "`{name}(events, by)` gives the whole event; a feature is a value: name what to return before the column to rank by: `{name}(transactions as t, t.merchant, t.amount [, cond])`"
+                        "`{name}(events, by)` gives the whole event; {what} is a value: name what to return before the column to rank by: `{name}(transactions as t, t.merchant, t.amount [, cond])`"
                     )),
                     ("first" | "last", 1) => Some(name),
                     ("first" | "last", 2) if !column(arguments[1]) => Some(name),
@@ -403,15 +614,18 @@ impl Db {
                 found
             } else {
                 format!(
-                    "`{found}` here gives the whole event; a feature is a value: name what to return, e.g. `{found}(transaction as t, t.merchant [, <condition>])`"
+                    "`{found}` here gives the whole event; {what} is a value: name what to return, e.g. `{found}(transaction as t, t.merchant [, <condition>])`"
                 )
             };
             return Some(Diagnostic::error(
                 DiagnosticCode::FeatureShape,
-                DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
-                    .with_target(CursorTarget::FeatureExpr {
-                        id: prop.id.clone(),
-                    }),
+                DiagnosticLocation::expression(
+                    path.clone(),
+                    block_id.clone(),
+                    prop.id.clone(),
+                    None,
+                )
+                .with_target(target.clone()),
                 message,
             ));
         }
@@ -473,10 +687,74 @@ impl Db {
         Some(Diagnostic::error(
             DiagnosticCode::FeatureShape,
             DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
-                .with_target(CursorTarget::FeatureExpr {
+                .with_target(target.clone()),
+            message,
+        ))
+    }
+
+    /// An outcome's value against its property's `type`: `count(..) > 0` is
+    /// a boolean, `count(..)` a number. Unknown types (and `object`/`any`
+    /// properties) aren't checked; a list is its items (its shape is
+    /// [`Self::feature_shape`]'s).
+    fn outcome_type(
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        prop: &PropertyDoc,
+        source: &Arc<str>,
+        scope: &VariableType,
+        intellisense: &SharedIntelliSense,
+    ) -> Option<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        let returns = IntelliSenseSource::analyze(
+            &mut intellisense.borrow_mut(),
+            source,
+            ExpressionKind::Standard,
+            scope,
+        )
+        .return_type
+        .shallow_clone();
+        let unwrap = |kind: VariableType| match kind {
+            VariableType::Nullable(inner) => inner.as_ref().shallow_clone(),
+            other => other,
+        };
+        let returns = match unwrap(returns) {
+            VariableType::Array(item) => unwrap(item.as_ref().shallow_clone()),
+            other => other,
+        };
+        let found = match returns {
+            VariableType::Number => "number",
+            VariableType::Bool => "boolean",
+            VariableType::String | VariableType::Const(_) | VariableType::Enum(..) => "string",
+            VariableType::Date => "date",
+            _ => return None,
+        };
+        let declared = match &prop.property_type {
+            PropertyTypeDoc::Number | PropertyTypeDoc::Decimal | PropertyTypeDoc::Integer => {
+                "number"
+            }
+            PropertyTypeDoc::Boolean => "boolean",
+            PropertyTypeDoc::String { .. } => "string",
+            PropertyTypeDoc::Date | PropertyTypeDoc::Timestamp => "date",
+            // A reference holds the id of what it names.
+            PropertyTypeDoc::Reference { .. } => "string",
+            PropertyTypeDoc::Object
+            | PropertyTypeDoc::Any
+            | PropertyTypeDoc::Relationship { .. } => return None,
+        };
+        // A date may be written as its text.
+        if found == declared || (declared == "date" && found == "string") {
+            return None;
+        }
+        Some(Diagnostic::error(
+            DiagnosticCode::TypeMismatch,
+            DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
+                .with_target(CursorTarget::OutcomeExpr {
                     id: prop.id.clone(),
                 }),
-            message,
+            format!(
+                "outcome `{}` gives a {found}, but its `type` is {declared}",
+                prop.name
+            ),
         ))
     }
 
@@ -929,6 +1207,42 @@ impl Db {
         out.extend(self.nested_iteration_in(unit, target));
         out.extend(self.unreachable_reads_in(unit, target));
         out.extend(self.self_referencing_writes_in(unit, target));
+        out.extend(self.outcome_reads_in(unit, target));
+        out
+    }
+
+    /// A rule reading an outcome (`transaction.fraud`, through a reference
+    /// `claim.customer.claims_after`, or iterating `customer.claims` and
+    /// reading each one's): known only after the decision, so never there
+    /// when rules run. An error, so a compile fails too.
+    fn outcome_reads_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        let shallow = self.shallow();
+        for rule in shallow.rules_for(target) {
+            let mut flagged: HashSet<(Option<Arc<str>>, Option<(u32, u32)>)> = HashSet::default();
+            for read in rule.reads.iter().filter(|read| !read.unresolved) {
+                let field = match unit.entity_graph.global_property(&read.path) {
+                    Some(global) if global.is_outcome() => Some(global.name.to_string()),
+                    _ => DataModelIr::outcome_at(&unit.entities, None, &read.path),
+                };
+                let Some(field) = field else {
+                    continue;
+                };
+                if !flagged.insert((read.expression_id.clone(), read.span)) {
+                    continue;
+                }
+                out.push(Diagnostic::error(
+                    DiagnosticCode::OutcomeRead,
+                    DiagnosticLocation::expression(
+                        rule.policy_path.clone(),
+                        rule.block_id.clone(),
+                        read.expression_id.clone().unwrap_or_else(|| Arc::from("")),
+                        read.span,
+                    ),
+                    outcome_read_message(&field, OutcomeReader::Rules),
+                ));
+            }
+        }
         out
     }
 

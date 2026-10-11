@@ -699,12 +699,12 @@ expression = "a and b"
 input = '{"Object": {"a": {"Nullable": "Bool"}, "b": "Bool"}}'
 
 [test.loose]
-return_type = '"Any"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
 
 [test.strict]
-return_type = '"Any"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
 
 [[test]]
 name = "logical: nullable or bool => error"
@@ -712,12 +712,12 @@ expression = "a or b"
 input = '{"Object": {"a": {"Nullable": "Bool"}, "b": "Bool"}}'
 
 [test.loose]
-return_type = '"Any"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
 
 [test.strict]
-return_type = '"Any"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
 
 [[test]]
 name = "logical: not nullable => error"
@@ -726,11 +726,157 @@ input = '{"Object": {"a": {"Nullable": "Bool"}}}'
 
 [test.loose]
 return_type = '"Bool"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition" }]
 
 [test.strict]
 return_type = '"Bool"'
-diagnostics = [{ source = "type_check", severity = "error" }]
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition" }]
+
+# =============================================================================
+# Nullable conditions and narrowing
+# =============================================================================
+
+[[test]]
+name = "condition: nullable ternary condition => error"
+expression = "a ? 1 : 2"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Number"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
+
+[test.strict]
+return_type = '"Number"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "a", type = "bool?" } }]
+
+[[test]]
+name = "condition: nullable member named as written"
+expression = "user.active or b"
+input = '{"Object": {"user": {"Object": {"active": {"Nullable": "Bool"}}}, "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "user.active" } }]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "user.active" } }]
+
+[[test]]
+name = "condition: nullable callback condition => error"
+expression = "some(items, #.flag)"
+input = '{"Object": {"items": {"Array": {"Object": {"flag": {"Nullable": "Bool"}}}}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "#.flag" } }]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "#.flag" } }]
+
+[[test]]
+name = "condition: compared with true => clean"
+expression = "a == true ? 1 : 2"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "condition: defaulted => clean"
+expression = "(a ?? false) and b"
+input = '{"Object": {"a": {"Nullable": "Bool"}, "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "narrowing: x != null and x"
+expression = "a != null and a"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "narrowing: x == null or x"
+expression = "a == null or not a"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "narrowing: else branch of x == null"
+expression = "a == null ? 0 : (a ? 1 : 2)"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "narrowing: then branch of x != null, member"
+expression = "u.a != null ? (u.a and b) : false"
+input = '{"Object": {"u": {"Object": {"a": {"Nullable": "Bool"}}}, "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "narrowing: x == null ? null : x stays nullable"
+expression = "a == null ? null : a"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "Bool"}'
+
+[test.strict]
+return_type = '{"Nullable": "Bool"}'
+
+[[test]]
+name = "narrowing: not in the other branch"
+expression = "a != null ? 0 : (a ? 1 : 2)"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Number"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition" }]
+
+[test.strict]
+return_type = '"Number"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition" }]
+
+[[test]]
+name = "narrowing: # in a callback is the item, not the outer #"
+expression = "#.a != null and some(items, #.a)"
+input = '{"Object": {"a": {"Nullable": "Bool"}, "items": {"Array": {"Object": {"a": {"Nullable": "Bool"}}}}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "#.a" } }]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error", code = "type.nullable-condition", args = { operand = "#.a" } }]
 
 # =============================================================================
 # Edge cases

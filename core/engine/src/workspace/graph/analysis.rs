@@ -191,7 +191,11 @@ impl<'a> GraphAnalyzer<'a> {
             .into_iter()
             .map(|b| (b.ir.name.clone(), b.ir))
             .collect();
-        let types = RequestTypes { entities: &entities, dictionaries: &dictionaries };
+        let types = RequestTypes {
+            entities: &entities,
+            dictionaries: &dictionaries,
+            outcomes: true,
+        };
         let (input, roots) = types.input(&target);
         RequestTarget::Entity { input, roots }
     }
@@ -256,7 +260,13 @@ impl<'a> GraphAnalyzer<'a> {
         let inferred_inputs = self.inferred_inputs(&topology, &nodes, &graph_input);
         self.lint_output_any(&topology, &nodes, &graph_input);
         self.lint_unreachable(&topology);
+        self.check_outcome_reads();
         self.lint_expressions();
+        Db::drop_refused_unknowns(&mut self.diagnostics);
+        if let Some(target) = self.content.request_target() {
+            let entities = self.db.graph_entities(&self.content.imports);
+            Db::explain_unknown_members(&mut self.diagnostics, &entities, |_| Some(target.clone()));
+        }
         self.locate_nullable_sources(&topology);
         self.sort_diagnostics(&topology);
 
@@ -266,6 +276,83 @@ impl<'a> GraphAnalyzer<'a> {
             signature: GraphSignature { input, output },
             nodes,
             inferred_inputs,
+        }
+    }
+
+    /// A node reading an outcome of the Request node's entity (`fraud`,
+    /// through a reference `customer.claims_after`): known only after the
+    /// decision, so never in the request. An error, so a compile fails too.
+    fn check_outcome_reads(&mut self) {
+        use crate::policy::ir::{outcome_read_message, DataModelIr, OutcomeReader};
+        use crate::workspace::graph::editor::{NodePaths, ReadBase};
+        let Some(target) = self.content.request_target() else {
+            return;
+        };
+        let entities = self.db.graph_entities(&self.content.imports);
+        let Some(entity) = entities.get(&target) else {
+            return;
+        };
+        if !entities
+            .values()
+            .any(|dm| dm.properties.iter().any(|p| p.is_outcome()))
+        {
+            return;
+        }
+        let intellisense = self.db.graph_intellisense();
+        for node in &self.content.nodes {
+            if !matches!(
+                node.kind,
+                DecisionNodeKind::ExpressionNode { .. }
+                    | DecisionNodeKind::DecisionTableNode { .. }
+                    | DecisionNodeKind::SwitchNode { .. }
+            ) {
+                continue;
+            }
+            let paths = NodePaths::new(node);
+            for site in Self::node_sites(node) {
+                let deps = match site.kind {
+                    ExpressionKind::Standard => intellisense.borrow_mut().reads(&site.source),
+                    ExpressionKind::Unary => intellisense.borrow_mut().reads_unary(&site.source),
+                };
+                let mut reads = Vec::new();
+                ReadFlattener::extend_from_deps(&deps, &site.expression_id, &mut reads);
+                for read in reads.iter().filter(|read| !read.unresolved) {
+                    let path = read.path.as_ref();
+                    if path.starts_with('$') {
+                        continue;
+                    }
+                    // What the node reads from the request: its input, or
+                    // under its `inputField`.
+                    let global = match (&paths.read_base, &site.target) {
+                        (_, CursorTarget::TransformInput) | (ReadBase::NodeInput, _) => {
+                            path.to_string()
+                        }
+                        (ReadBase::Prefixed(prefix), _) => format!("{}.{path}", prefix.join(".")),
+                        (ReadBase::Opaque, _) => continue,
+                    };
+                    let first = global.split('.').next().unwrap_or_default();
+                    if !entity.properties.iter().any(|p| *p.name == *first)
+                        && !entity.is_maturity_flag(first)
+                    {
+                        continue;
+                    }
+                    let Some(field) = DataModelIr::outcome_at(&entities, Some(&target), &global)
+                    else {
+                        continue;
+                    };
+                    self.diagnostics.push(Diagnostic::error(
+                        DiagnosticCode::OutcomeRead,
+                        DiagnosticLocation {
+                            policy_path: self.path.clone(),
+                            block_id: Some(node.id.clone()),
+                            expression_id: site.expression_id.clone(),
+                            span: read.span,
+                            target: Some(site.target.clone()),
+                        },
+                        outcome_read_message(&field, OutcomeReader::Rules),
+                    ));
+                }
+            }
         }
     }
 
@@ -2440,6 +2527,14 @@ impl<'a> GraphAnalyzer<'a> {
             matches!(kind, ExpressionKind::Unary),
             on_error,
         );
+        if self.diagnostics[first..]
+            .iter()
+            .any(|d| d.code == DiagnosticCode::UndefinedVariable)
+        {
+            let mut reads = Vec::new();
+            ReadFlattener::extend_from_deps(&analysis.reads, &expression_id, &mut reads);
+            Db::locate_unknown_members(&mut self.diagnostics[first..], &reads);
+        }
         if self.validate {
             self.validate_read_paths(node_id, &expression_id, &target, &analysis.reads, scope);
         }

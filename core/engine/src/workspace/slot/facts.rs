@@ -185,6 +185,14 @@ impl Db {
                         if let Some(feature) = prop.feature.as_ref().filter(|f| !f.expr.is_empty()) {
                             push(CursorTarget::FeatureExpr { id: prop.id.clone() }, &feature.expr);
                         }
+                        if let Some(expr) = prop.outcome.as_ref().and_then(|o| o.expr.as_ref()) {
+                            push(
+                                CursorTarget::OutcomeExpr {
+                                    id: prop.id.clone(),
+                                },
+                                expr,
+                            );
+                        }
                         if let Some(compute) = prop.compute.as_ref().filter(|c| !c.is_empty()) {
                             push(CursorTarget::ComputeExpr { id: prop.id.clone() }, compute);
                         }

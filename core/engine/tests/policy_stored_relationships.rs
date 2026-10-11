@@ -83,7 +83,10 @@ fn rollups_aggregate_the_members_features() {
 
     // A member property that doesn't exist; a condition on the member.
     let ws = doc("avg(merchants as m, m.salez_30d)", vec![], through(), "true");
-    assert!(errors(&ws).iter().any(|m| m.contains("salez_30d")), "{:#?}", errors(&ws));
+    assert_eq!(errors(&ws), vec!["`merchant` has no `salez_30d`"]);
+    // A member's windowed feature as written: its windows.
+    let ws = doc("avg(merchants as m, m.sales)", vec![], through(), "true");
+    assert_eq!(errors(&ws), vec!["`sales` has windows: read `sales_30d`"]);
     let ws = doc("count(merchants as m, m.risk == 'High')", vec![], through(), "true");
     assert!(errors(&ws).is_empty(), "{:#?}", errors(&ws));
 }

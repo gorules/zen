@@ -40,6 +40,10 @@ impl RequestTarget {
 pub(crate) struct RequestTypes<'a> {
     pub entities: &'a HashMap<Arc<str>, Arc<DataModelIr>>,
     pub dictionaries: &'a HashMap<Arc<str>, Arc<DictionaryIr>>,
+    /// Whether outcomes are fields: as nodes read the request (so a read of
+    /// one is found and refused), not as a request schema has it (known
+    /// only after the decision, never sent).
+    pub outcomes: bool,
 }
 
 /// How many links (references, relationships) a request's type opens from
@@ -69,6 +73,7 @@ impl RequestTypes<'_> {
         let fields: HashMap<Rc<str>, VariableType> = dm
             .properties
             .iter()
+            .filter(|prop| self.outcomes || !prop.is_outcome())
             .map(|prop| (Rc::from(prop.name.as_ref()), self.field(prop, depth)))
             .collect();
         VariableType::Object(Rc::new(RefCell::new(fields)))

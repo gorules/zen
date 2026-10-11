@@ -224,10 +224,13 @@ impl Db {
         let types = RequestTypes {
             entities: &entities,
             dictionaries: &dictionaries,
+            outcomes: false,
         };
         let mut properties: Vec<InputProperty> = entity
             .properties
             .iter()
+            // An outcome is known only after the decision: never an input.
+            .filter(|property| !property.is_outcome())
             .map(|property| {
                 InputProperty::of_property(
                     property.name.clone(),

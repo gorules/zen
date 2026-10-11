@@ -16,7 +16,7 @@ use crate::model::GraphContent;
 use crate::policy::blocks::{
     BlockKind, DecisionTableIr, IntelliSenseSource, SharedIntelliSense, ROW_ID_KEY,
 };
-use crate::policy::ir::{DataModelIr, PropertyTypeIr, Records};
+use crate::policy::ir::{DataModelIr, PropertyTypeIr, Records, MATURE_SUFFIX};
 use crate::policy::raw::BlockDoc;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::{Db, Unit};
@@ -80,6 +80,28 @@ impl Db {
         let object = |fields: HashMap<Rc<str>, VariableType>| {
             VariableType::Object(Rc::new(RefCell::new(fields)))
         };
+        // The records a windowed feature (or an outcome) aggregates: each
+        // events or reference entity by name, as a list (all entities when
+        // there are none).
+        let sources = || -> HashMap<Rc<str>, VariableType> {
+            let mut sources: Vec<&Arc<DataModelIr>> = unit
+                .entities
+                .values()
+                .filter(|dm| dm.records != Records::Plain)
+                .collect();
+            if sources.is_empty() {
+                sources = unit.entities.values().collect();
+            }
+            sources
+                .into_iter()
+                .map(|dm| {
+                    (
+                        Rc::from(dm.name.as_ref()),
+                        enriched.declared_at(&dm.name).array(),
+                    )
+                })
+                .collect()
+        };
         match &cursor.target {
             CursorTarget::FeatureExpr { id } => {
                 let BlockDoc::DataModel { data, .. } = self.block_doc(&BlockRef {
@@ -92,23 +114,7 @@ impl Db {
                 let feature = data.properties.iter().find(|p| p.id == *id)?.feature.as_ref()?;
                 let windowed = feature.window.as_ref().is_some_and(|w| !w.list().is_empty());
                 let mut fields = if windowed {
-                    let mut sources: Vec<&Arc<DataModelIr>> = unit
-                        .entities
-                        .values()
-                        .filter(|dm| dm.records != Records::Plain)
-                        .collect();
-                    if sources.is_empty() {
-                        sources = unit.entities.values().collect();
-                    }
-                    sources
-                        .into_iter()
-                        .map(|dm| {
-                            (
-                                Rc::from(dm.name.as_ref()),
-                                enriched.declared_at(&dm.name).array(),
-                            )
-                        })
-                        .collect()
+                    sources()
                 } else {
                     // Derived at read time: the instant read for.
                     let mut fields = own();
@@ -116,6 +122,71 @@ impl Db {
                     fields
                 };
                 // A name the scope has already is the real one: never shadowed.
+                fields
+                    .entry(Rc::from("params"))
+                    .or_insert_with(|| self.feature_params(&unit));
+                Some(CursorScope::value(object(fields), None))
+            }
+            // An outcome: what is known after the decision. The entity's
+            // fields, features and other outcomes; the records that
+            // reference it (`count(chargeback as c, ..)`); through a
+            // reference, the records referencing the same entity
+            // (`customer.claim`: the claims of this entity's customer); and
+            // `decidedAt`, the decision's time. Never a decision's result.
+            CursorTarget::OutcomeExpr { .. } => {
+                let mut fields = own();
+                for prop in &entry.ir.properties {
+                    let PropertyTypeIr::Reference { target } = &prop.kind else {
+                        continue;
+                    };
+                    let key: Rc<str> = Rc::from(prop.name.as_ref());
+                    let Some(declared) = fields.get(&key) else {
+                        continue;
+                    };
+                    let (base, nullable) = match declared {
+                        VariableType::Nullable(inner) => (inner.as_ref().shallow_clone(), true),
+                        other => (other.shallow_clone(), false),
+                    };
+                    let VariableType::Object(target_fields) = base else {
+                        continue;
+                    };
+                    let mut through = target_fields.borrow().clone();
+                    for dm in unit.entities.values() {
+                        let references = dm.properties.iter().any(|p| {
+                            matches!(&p.kind, PropertyTypeIr::Reference { target: t } if t == target)
+                        });
+                        if references {
+                            through
+                                .entry(Rc::from(dm.name.as_ref()))
+                                .or_insert_with(|| enriched.declared_at(&dm.name).array());
+                        }
+                    }
+                    let through = object(through);
+                    fields.insert(
+                        key,
+                        if nullable {
+                            VariableType::Nullable(Rc::new(through))
+                        } else {
+                            through
+                        },
+                    );
+                }
+                // Each outcome with `maturity`: whether the decision is old
+                // enough to trust a "no" (`fraud_mature`).
+                for prop in &entry.ir.properties {
+                    if prop.outcome_maturity().is_some() {
+                        fields
+                            .entry(Rc::from(format!("{}{MATURE_SUFFIX}", prop.name)))
+                            .or_insert(VariableType::Bool);
+                    }
+                }
+                // A name the scope has already is the real one: never shadowed.
+                for (name, records) in sources() {
+                    fields.entry(name).or_insert(records);
+                }
+                fields
+                    .entry(Rc::from("decidedAt"))
+                    .or_insert(VariableType::Date);
                 fields
                     .entry(Rc::from("params"))
                     .or_insert_with(|| self.feature_params(&unit));

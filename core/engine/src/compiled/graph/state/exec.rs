@@ -11,7 +11,7 @@ use std::rc::Rc;
 use zen_expression::lane::LaneRunner;
 use zen_expression::Variable;
 use zen_types::decision::FunctionNodeContent;
-use crate::compiled::graph::{Body, CompiledGraph, Kind, NodeColumn, Source, State, Step, data, plan};
+use crate::compiled::graph::{Body, CompiledGraph, Kind, NodeColumn, State, Step, data, plan};
 
 impl CompiledGraph {
     #[allow(clippy::too_many_arguments)]
@@ -19,7 +19,7 @@ impl CompiledGraph {
         &self,
         event: &Execute,
         rows: &Rc<[usize]>,
-        source: &Source<'a>,
+        inputs: &[Variable],
         state: &mut State<'a>,
         content: &Arc<GraphContent>,
         extensions: &NodeHandlerExtensions,
@@ -30,14 +30,14 @@ impl CompiledGraph {
             return;
         };
         let data = match step.kind {
-            Kind::Input => source.input(rows),
+            Kind::Input => Data::plain(rows.clone(), rows.iter().map(|&r| inputs[r].clone()).collect()),
             _ => Self::input_of(state, &event.parents, rows),
         };
         let column_path = match &step.kind {
             Kind::Node { body, transform } => {
                 (transform.input_field.is_none() || transform.base.is_some())
                     && !transform.looped
-                    && (rows.len() > 1 || matches!(source, Source::Columns(_)))
+                    && rows.len() > 1
                     && !(transform.output_path.is_some() && matches!(body, Body::Expression { keys, .. } if keys.is_empty()))
             }
             _ => false,
@@ -64,10 +64,6 @@ impl CompiledGraph {
         let (output, failures): (Data<'a>, Vec<(usize, String)>) = match &step.kind {
             Kind::Switch { .. } | Kind::Host => (data, Vec::new()),
             Kind::Output if !step.schema => (data, Vec::new()),
-            Kind::Input if matches!(source, Source::Columns(_)) && Self::columnar_input(step, content, extensions) => {
-                let failures = self.validate_input(step, &data, &nodes, content, extensions).await;
-                (data, failures)
-            }
             Kind::Input if !step.schema && Self::unresolved(content, &step.node) => {
                 let values: Col = data
                     .materialized()
@@ -80,7 +76,7 @@ impl CompiledGraph {
                 let (values, failures) = self.bounded(step, &data.materialized(), &nodes, content, extensions).await;
                 (Data::plain(rows.clone(), values.into()), failures)
             }
-            Kind::Node { .. } => self.node(step, rows, source, &data, &nodes, &extra),
+            Kind::Node { .. } => self.node(step, rows, &data, &nodes, &extra),
         };
 
         for (i, message) in failures {
@@ -180,28 +176,25 @@ impl CompiledGraph {
                 .collect();
             return (Data::plain(rows, values), failures);
         }
-        self.node_with(runner, step, &rows, &Source::Rows(&[]), &data, nodes, &[])
+        self.node_with(runner, step, &rows, &data, nodes, &[])
     }
 
     fn node<'a>(
         &self,
         step: &Step,
         rows: &Rc<[usize]>,
-        source: &Source<'a>,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
         extra: &[NodeColumn<'a>],
     ) -> (Data<'a>, Vec<(usize, String)>) {
-        Self::RUNNER.with_borrow_mut(|runner| self.node_with(runner, step, rows, source, data, nodes, extra))
+        Self::RUNNER.with_borrow_mut(|runner| self.node_with(runner, step, rows, data, nodes, extra))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn node_with<'a>(
         &self,
         runner: &mut LaneRunner,
         step: &Step,
         rows: &Rc<[usize]>,
-        source: &Source<'a>,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
         extra: &[NodeColumn<'a>],
@@ -210,7 +203,7 @@ impl CompiledGraph {
             return (Data::plain(rows.clone(), Rc::from(Vec::new())), Vec::new());
         };
         {
-            let wide = rows.len() > 1 || matches!(source, Source::Columns(_));
+            let wide = rows.len() > 1;
             let rebase = match (&transform.input_field, &transform.base, transform.looped) {
                 (None, _, false) => Some(None),
                 (Some(_), Some(base), false) => Some(Some(base.as_ref())),
@@ -284,7 +277,7 @@ impl CompiledGraph {
         }
     }
 
-    pub(in crate::compiled::graph) fn execute_now<'a>(&self, step: &Step, event: &Execute, rows: &Rc<[usize]>, source: &Source<'a>, state: &mut State<'a>, with_nodes: bool) {
+    pub(in crate::compiled::graph) fn execute_now<'a>(&self, step: &Step, event: &Execute, rows: &Rc<[usize]>, state: &mut State<'a>, with_nodes: bool) {
         let data = Self::input_of(state, &event.parents, rows);
         let based = match &step.kind {
             Kind::Node { transform, .. } if !transform.looped => transform.base.as_deref(),
@@ -317,10 +310,10 @@ impl CompiledGraph {
             Kind::Node { body, transform } => {
                 let column_path = (transform.input_field.is_none() || transform.base.is_some())
                     && !transform.looped
-                    && (rows.len() > 1 || matches!(source, Source::Columns(_)))
+                    && rows.len() > 1
                     && !(transform.output_path.is_some() && matches!(body, Body::Expression { keys, .. } if keys.is_empty()));
                 let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, column_path);
-                self.node(step, rows, source, &data, &nodes, &extra)
+                self.node(step, rows, &data, &nodes, &extra)
             }
             _ => (data, Vec::new()),
         };

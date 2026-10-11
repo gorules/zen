@@ -35,7 +35,6 @@ pub(crate) struct State<'a> {
     pub(crate) errors: Vec<Option<Box<EvaluationError>>>,
     failed: usize,
     pub(in crate::compiled::graph) results: Vec<Option<Variable>>,
-    pub(crate) endings: Vec<(Rc<[usize]>, Vec<Data<'a>>)>,
     nesting: Nesting<'a>,
 }
 
@@ -43,20 +42,6 @@ pub(crate) struct State<'a> {
 pub(crate) struct Nesting<'a> {
     pub(in crate::compiled::graph) parents: Option<&'a [Option<Variable>]>,
     pub(in crate::compiled::graph) iteration: u8,
-}
-
-pub(crate) enum Source<'a> {
-    Rows(&'a [Variable]),
-    Columns(Rc<Data<'a>>),
-}
-
-impl<'a> Source<'a> {
-    fn input(&self, rows: &Rc<[usize]>) -> Data<'a> {
-        match self {
-            Source::Rows(inputs) => Data::plain(rows.clone(), rows.iter().map(|&r| inputs[r].clone()).collect()),
-            Source::Columns(data) => Data::gather(std::slice::from_ref(data), rows),
-        }
-    }
 }
 
 impl CompiledGraph {
@@ -186,13 +171,13 @@ impl CompiledGraph {
         }
     }
 
-    pub(in crate::compiled::graph) async fn run<'a>(&self, host: Host<'_>, source: &Source<'a>, count: usize, columnar: bool, nesting: Nesting<'a>) -> State<'a> {
+    pub(in crate::compiled::graph) async fn run<'a>(&self, host: Host<'_>, inputs: &[Variable], nesting: Nesting<'a>) -> State<'a> {
         let Host { content, extensions, max_depth } = host;
+        let count = inputs.len();
         let mut state = State {
             nodes: vec![Vec::new(); self.steps.len()],
             errors: (0..count).map(|_| None).collect(),
             results: vec![None; count],
-            endings: Vec::new(),
             failed: 0,
             nesting,
         };
@@ -211,9 +196,9 @@ impl CompiledGraph {
                     break;
                 }
                 match self.step_at(event.node).filter(|step| Self::immediate(step)) {
-                    Some(step) => self.execute_now(step, event, &rows, source, &mut state, with_nodes),
+                    Some(step) => self.execute_now(step, event, &rows, &mut state, with_nodes),
                     None => {
-                        self.execute(event, &rows, source, &mut state, content, extensions, with_nodes, max_depth)
+                        self.execute(event, &rows, inputs, &mut state, content, extensions, with_nodes, max_depth)
                             .await
                     }
                 }
@@ -223,16 +208,6 @@ impl CompiledGraph {
                 continue;
             }
             match &segment.end {
-                End::Finish(ending) if columnar => {
-                    let datas: Vec<Data<'a>> = ending
-                        .iter()
-                        .filter_map(|nid| {
-                            let pieces = state.nodes.get(nid.index())?;
-                            (!pieces.is_empty()).then(|| Data::gather(pieces, &rows))
-                        })
-                        .collect();
-                    state.endings.push((rows.clone(), datas));
-                }
                 End::Finish(ending) => {
                     let columns: Vec<Col> = ending
                         .iter()

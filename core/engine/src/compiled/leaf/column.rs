@@ -2,7 +2,7 @@ use std::cell::OnceCell;
 use std::rc::Rc;
 use zen_expression::lane::{Column, Dictionary, Values};
 use zen_expression::Variable;
-use super::{Array, Bits, ColumnBuilder, Dict, Input, Items, Literal, Masked, Passed, Picked, Records, Scattered, Stitched, Store, Templated};
+use super::{Array, Bits, ColumnBuilder, Dict, Input, Items, Literal, Masked, Picked, Records, Scattered, Stitched, Store, Templated};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Leaf<'a> {
@@ -257,17 +257,6 @@ impl<'a> Leaf<'a> {
             rows,
             valued: OnceCell::new(),
         }))
-    }
-
-    pub fn passed(&self) -> Option<Passed<'_, 'a>> {
-        match self {
-            Leaf::Input(input) => Some((input, None)),
-            Leaf::Picked(picked) => match &picked.source {
-                Leaf::Input(input) => Some((input, Some(&picked.positions))),
-                _ => None,
-            },
-            _ => None,
-        }
     }
 
     pub fn stitched(sources: Vec<Leaf<'a>>, located: Rc<[(usize, usize)]>) -> Leaf<'a> {

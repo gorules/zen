@@ -988,10 +988,10 @@ impl SegPlan {
 }
 
 impl Plan {
-    pub fn analyze(_graph: &CompiledGraph) -> Result<Plan, String> {
-        Ok(Plan {
+    pub fn analyze(_graph: &CompiledGraph) -> Plan {
+        Plan {
             roots: RwLock::new(Vec::new()),
-        })
+        }
     }
 
     pub fn analyze_step(step: &Step) -> Result<(), String> {

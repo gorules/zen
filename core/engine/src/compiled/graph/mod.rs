@@ -25,7 +25,7 @@ use std::time::Instant;
 use zen_expression::lane::Columns;
 use zen_expression::lane::LaneRunner;
 use zen_expression::Variable;
-pub(crate) use state::{Nesting, Source, State};
+pub(crate) use state::{Nesting, State};
 use state::Host;
 use state::NodeColumn;
 use step::{Body, Condition, Hit, Kind, Step, Transform};
@@ -35,7 +35,7 @@ pub struct CompiledGraph {
     steps: Vec<Option<Step>>,
     root: Arc<Segment>,
     dictionaries: bool,
-    plan: OnceLock<Option<plan::Plan>>,
+    plan: OnceLock<plan::Plan>,
 }
 
 pub struct CompiledPlan(Result<CompiledGraph, Refusal>);
@@ -114,25 +114,12 @@ impl CompiledGraph {
         plan::census::Census::take()
     }
 
-    fn plan(&self) -> Option<&plan::Plan> {
-        self.plan
-            .get_or_init(|| match std::env::var("ZEN_LEGACY") {
-                Ok(_) => None,
-                Err(_) => plan::Plan::analyze(self).ok(),
-            })
-            .as_ref()
+    fn plan(&self) -> &plan::Plan {
+        self.plan.get_or_init(|| plan::Plan::analyze(self))
     }
 
     pub(crate) fn plan_verdict(&self, columns: &Columns) -> Result<(), String> {
-        match self.plan() {
-            Some(plan) => plan.verdict(self, columns),
-            None => Err(self
-                .steps
-                .iter()
-                .flatten()
-                .find_map(|step| plan::Plan::analyze_step(step).err())
-                .unwrap_or_else(|| "refused".into())),
-        }
+        self.plan().verdict(self, columns)
     }
 
     pub(crate) async fn evaluate(
@@ -144,7 +131,7 @@ impl CompiledGraph {
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let start = Instant::now();
         let state = self
-            .run(Host { content, extensions, max_depth }, &Source::Rows(inputs), inputs.len(), false, Nesting::default())
+            .run(Host { content, extensions, max_depth }, inputs, Nesting::default())
             .await;
         let performance = format!("{:.1?}", start.elapsed());
         state
@@ -172,7 +159,7 @@ impl CompiledGraph {
         let start = Instant::now();
         let inputs = [input];
         let state = self
-            .run(Host { content, extensions, max_depth }, &Source::Rows(&inputs), 1, false, Nesting::default())
+            .run(Host { content, extensions, max_depth }, &inputs, Nesting::default())
             .await;
         if let Some(error) = state.errors.into_iter().next().flatten() {
             return Err(error);

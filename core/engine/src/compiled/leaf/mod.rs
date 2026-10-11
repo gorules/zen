@@ -14,4 +14,4 @@ pub(crate) use column::Leaf;
 pub(crate) use dict::Dict;
 pub(crate) use literal::Literal;
 pub(crate) use records::{Field, Items, Records};
-pub(crate) use views::{Input, Masked, Passed, Picked, Scattered, Stitched, Templated};
+pub(crate) use views::{Input, Masked, Picked, Scattered, Stitched, Templated};

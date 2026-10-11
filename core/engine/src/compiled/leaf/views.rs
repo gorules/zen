@@ -18,8 +18,6 @@ pub(crate) struct Stitched<'a> {
     pub(super) dense: OnceCell<Leaf<'a>>,
 }
 
-pub(crate) type Passed<'l, 'a> = (&'l Rc<Input<'a>>, Option<&'l Rc<[usize]>>);
-
 #[derive(Debug)]
 pub(crate) struct Input<'a> {
     pub column: Column<'a>,

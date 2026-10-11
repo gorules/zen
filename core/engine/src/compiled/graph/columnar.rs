@@ -1,9 +1,8 @@
-use crate::compiled::graph::data::{Data, Layer, Mask, Shape};
+use crate::compiled::graph::data::{Data, Layer, Mask};
 use crate::compiled::shred::Normalizer;
-use crate::compiled::leaf::{ColumnBuilder, Input, Leaf};
-use crate::compiled::graph::{CompiledGraph, Host, Source};
+use crate::compiled::leaf::Leaf;
+use crate::compiled::graph::CompiledGraph;
 use crate::decision_graph::cleaner::{VariableCleaner, ZEN_RESERVED_PROPERTIES};
-use crate::decision_graph::walker::GraphWalker;
 use crate::model::GraphContent;
 use crate::nodes::NodeHandlerExtensions;
 use crate::EvaluationError;
@@ -107,11 +106,6 @@ impl ColumnarOutput<'_> {
     }
 }
 
-struct Group<'a> {
-    rows: Rc<[usize]>,
-    leaves: Vec<(Arc<str>, Leaf<'a>)>,
-}
-
 impl CompiledGraph {
     fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
         let rows = columns.rows;
@@ -166,44 +160,6 @@ impl CompiledGraph {
                         }),
                     )
                 })
-                .collect(),
-        )
-    }
-
-    fn reserved(path: &str) -> bool {
-        path.split('.').any(|segment| segment == "$nodes")
-    }
-
-    fn leaves<'a>(datas: &[Data<'a>]) -> Option<Vec<(Arc<str>, Leaf<'a>)>> {
-        let folded;
-        let single = match datas {
-            [single] => single,
-            [first, ..] if datas.iter().all(Data::patchable) => {
-                let mut acc = Data::empty(&first.rows);
-                for data in datas {
-                    acc = acc.layered(data.patch()?);
-                }
-                folded = acc;
-                &folded
-            }
-            _ => return None,
-        };
-        let Shape::Patched { base: None, leaves, .. } = &single.shape else {
-            return None;
-        };
-        let overlapping = leaves.iter().any(|(a, _)| {
-            leaves
-                .iter()
-                .any(|(b, _)| b.strip_prefix(a.as_ref()).is_some_and(|rest| rest.starts_with('.')))
-        });
-        if overlapping {
-            return None;
-        }
-        Some(
-            leaves
-                .iter()
-                .filter(|(path, _)| !Self::reserved(path))
-                .map(|(path, leaf)| (path.clone(), Self::cleaned(leaf)))
                 .collect(),
         )
     }
@@ -268,40 +224,6 @@ impl CompiledGraph {
         }
     }
 
-    fn flattened<'a>(rows: &Rc<[usize]>, datas: &[Data<'a>]) -> Group<'a> {
-        let columns: Vec<_> = datas.iter().map(Data::materialized).collect();
-        let mut paths: Vec<Arc<str>> = Vec::new();
-        let mut values: Vec<Vec<Variable>> = Vec::new();
-        for i in 0..rows.len() {
-            let result = match columns.as_slice() {
-                [single] => GraphWalker::merge_ending(std::iter::once(&single[i])),
-                _ => GraphWalker::merge_ending(columns.iter().map(|c| &c[i])),
-            };
-            VariableCleaner::new().clean(&result);
-            let mut entries = Vec::new();
-            Self::flatten(&result, "", &mut entries);
-            for (path, value) in entries {
-                let at = match paths.iter().position(|p| p.as_ref() == path) {
-                    Some(at) => at,
-                    None => {
-                        paths.push(Arc::from(path));
-                        values.push(vec![Variable::Null; rows.len()]);
-                        values.len() - 1
-                    }
-                };
-                values[at][i] = value;
-            }
-        }
-        Group {
-            rows: rows.clone(),
-            leaves: paths
-                .into_iter()
-                .zip(values)
-                .map(|(path, column)| (path, Leaf::Any(column.into())))
-                .collect(),
-        }
-    }
-
     pub(crate) async fn evaluate_columns<'a>(
         &self,
         content: &Arc<GraphContent>,
@@ -309,109 +231,14 @@ impl CompiledGraph {
         max_depth: u8,
         columns: &'a Columns<'a>,
     ) -> ColumnarOutput<'a> {
-        if let (true, Some(plan)) = (max_depth > 0, self.plan()) {
+        if max_depth > 0 {
             if let Some(failures) = self.planned_input(content, extensions, columns).await {
-                if let Some(output) = plan.evaluate(self, content, extensions, max_depth, columns, failures).await {
+                if let Some(output) = self.plan().evaluate(self, content, extensions, max_depth, columns, failures).await {
                     return output;
                 }
             }
         }
-        let count = columns.rows;
-        let source = Source::Columns(Rc::new(Self::input_data(columns)));
-        let state = self.run(Host { content, extensions, max_depth }, &source, count, true, crate::compiled::graph::Nesting::default()).await;
-        let groups: Vec<Group<'a>> = state
-            .endings
-            .iter()
-            .map(|(rows, datas)| match Self::leaves(datas) {
-                Some(leaves) => Group {
-                    rows: rows.clone(),
-                    leaves,
-                },
-                None => Self::flattened(rows, datas),
-            })
-            .collect();
-        let identity = |rows: &[usize]| rows.len() == count && rows.iter().enumerate().all(|(i, r)| i == *r);
-        let columns = match groups.as_slice() {
-            [single] if identity(&single.rows) => single
-                .leaves
-                .iter()
-                .map(|(path, leaf)| (path.clone(), OutputColumn(leaf.clone())))
-                .collect(),
-            _ => {
-                let mut owner: Vec<Option<(usize, usize)>> = vec![None; count];
-                for (g, group) in groups.iter().enumerate() {
-                    for (i, &row) in group.rows.iter().enumerate() {
-                        owner[row] = Some((g, i));
-                    }
-                }
-                let mut paths: Vec<Arc<str>> = Vec::new();
-                for group in &groups {
-                    for (path, _) in &group.leaves {
-                        if !paths.contains(path) {
-                            paths.push(path.clone());
-                        }
-                    }
-                }
-                let owned = owner
-                    .iter()
-                    .zip(&state.errors)
-                    .all(|(owner, error)| owner.is_some() || error.is_some());
-                let mut aligned: Vec<Vec<(*const [usize], bool)>> = vec![Vec::new(); groups.len()];
-                let mut passes = |g: usize, leaf: &Leaf<'a>| -> Option<Rc<Input<'a>>> {
-                    let (input, positions) = leaf.passed()?;
-                    let rows = &groups[g].rows;
-                    let ok = match positions {
-                        None => rows.len() == input.rows && rows.iter().enumerate().all(|(i, r)| i == *r),
-                        Some(positions) => {
-                            let key = Rc::as_ptr(positions);
-                            match aligned[g].iter().find(|(k, _)| std::ptr::eq(*k, key)) {
-                                Some((_, ok)) => *ok,
-                                None => {
-                                    let ok = positions.as_ref() == rows.as_ref();
-                                    aligned[g].push((key, ok));
-                                    ok
-                                }
-                            }
-                        }
-                    };
-                    ok.then(|| input.clone())
-                };
-                paths
-                    .into_iter()
-                    .map(|path| {
-                        let found: Vec<Option<&Leaf<'a>>> = groups
-                            .iter()
-                            .map(|g| g.leaves.iter().find(|(p, _)| *p == path).map(|(_, l)| l))
-                            .collect();
-                        let passed: Option<Vec<Rc<Input<'a>>>> = match owned {
-                            true => found.iter().enumerate().map(|(g, leaf)| leaf.and_then(|leaf| passes(g, leaf))).collect(),
-                            false => None,
-                        };
-                        if let Some(first) = passed.as_ref().and_then(|p| p.first().filter(|first| p.iter().all(|x| Rc::ptr_eq(x, first)))) {
-                            return (path, OutputColumn(Leaf::Input(first.clone())));
-                        }
-                        let sources: Vec<Option<Column>> = groups
-                            .iter()
-                            .map(|g| g.leaves.iter().find(|(p, _)| *p == path).map(|(_, l)| l.column()))
-                            .collect();
-                        let mut builder = ColumnBuilder::with_capacity(count);
-                        for slot in &owner {
-                            match slot.and_then(|(g, i)| sources[g].as_ref().map(|column| (column, i))) {
-                                Some((column, i)) => builder.push_cell(column, i),
-                                None => builder.push_null(),
-                            }
-                        }
-                        (path, OutputColumn(Leaf::typed(builder.finish())))
-                    })
-                    .collect()
-            }
-        };
-        ColumnarOutput {
-            rows: count,
-            columns,
-            errors: state.errors.into_iter().map(|error| error.map(Rc::from)).collect(),
-            typed: 0,
-            laned: 0,
-        }
+        let inputs = Self::input_data(columns).materialized();
+        ColumnarOutput::from_results(self.evaluate(content, extensions, max_depth, &inputs).await)
     }
 }

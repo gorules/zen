@@ -1,5 +1,5 @@
 use super::call::{Call, Load};
-use super::{CompiledGraph, Host, Nesting, Source, Step};
+use super::{CompiledGraph, Host, Nesting, Step};
 use crate::loader::LoaderError;
 use crate::model::GraphContent;
 use crate::nodes::custom::{CustomDecisionNode, CustomNodeRequest};
@@ -128,7 +128,7 @@ impl CompiledGraph {
             parents: Some(&parents),
             iteration: iteration + 1,
         };
-        let state = Box::pin(compiled.run(Host { content: &content, extensions: &extensions, max_depth }, &Source::Rows(inputs), inputs.len(), false, nesting)).await;
+        let state = Box::pin(compiled.run(Host { content: &content, extensions: &extensions, max_depth }, inputs, nesting)).await;
         state
             .errors
             .into_iter()

@@ -51,6 +51,7 @@ pub(super) struct Sheet<'a> {
     pub(super) inputs: Vec<Column<'a>>,
     pub(super) entities: Vec<Entity<'a>>,
     pub(super) refs: Vec<Arc<str>>,
+    order: Vec<usize>,
 }
 
 impl<'a> Sheet<'a> {
@@ -77,6 +78,7 @@ impl<'a> Sheet<'a> {
         }
         Some(Self {
             rows,
+            order: (0..entries.len()).collect(),
             entries,
             inputs,
             entities: Vec::new(),
@@ -167,7 +169,8 @@ impl<'a> Sheet<'a> {
 
     pub(super) fn object(&self, row: usize) -> Variable {
         let object = Variable::empty_object();
-        for (index, entry) in self.entries.iter().enumerate() {
+        for &index in &self.order {
+            let entry = &self.entries[index];
             if entry.dead {
                 continue;
             }
@@ -233,24 +236,39 @@ impl<'a> Sheet<'a> {
             }
             _ => (leaf, present),
         };
-        self.entries.push(Entry {
-            path,
-            leaf,
-            present,
-            input: false,
-            dead: false,
-        });
+        self.push(
+            Entry {
+                path,
+                leaf,
+                present,
+                input: false,
+                dead: false,
+            },
+            previous.filter(|&at| self.entries[at].dead),
+        );
+    }
+
+    fn push(&mut self, entry: Entry<'a>, replaces: Option<usize>) {
+        let index = self.entries.len();
+        self.entries.push(entry);
+        match replaces.and_then(|at| self.order.iter().position(|&slot| slot == at)) {
+            Some(slot) => self.order[slot] = index,
+            None => self.order.push(index),
+        }
     }
 
     pub(super) fn hosted(&mut self, path: Arc<str>, values: Vec<Variable>, present: Vec<u64>) {
         let full = present.iter().map(|w| w.count_ones() as usize).sum::<usize>() == self.rows;
-        self.entries.push(Entry {
-            path,
-            leaf: Leaf::Any(values.into()),
-            present: (!full).then(|| present.into()),
-            input: false,
-            dead: false,
-        });
+        self.push(
+            Entry {
+                path,
+                leaf: Leaf::Any(values.into()),
+                present: (!full).then(|| present.into()),
+                input: false,
+                dead: false,
+            },
+            None,
+        );
     }
 
     pub(super) fn columns(leaves: Vec<Present<'a>>) -> Vec<(Arc<str>, OutputColumn<'a>)> {
@@ -276,9 +294,9 @@ impl<'a> Sheet<'a> {
         });
         match nested {
             false => self
-                .entries
+                .order
                 .iter()
-                .enumerate()
+                .map(|&index| (index, &self.entries[index]))
                 .filter(|(_, entry)| !entry.dead)
                 .map(|(index, entry)| {
                     if let Some(entity) = self.active(index) {

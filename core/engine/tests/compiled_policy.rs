@@ -650,6 +650,40 @@ fn policy_columnar_shredded_irregular_lists() {
 }
 
 #[test]
+fn policy_column_order_is_path_independent() {
+    let cases = [
+        (
+            r#"{models: {a: {x: "number"}}, blocks: [{expression: "a.ok", value: "a.x - 1"}, {expression: "a.big", value: "a.x * a.x"}]}"#,
+            r#"[{"a": {"x": 5}}, {"a": {"x": 1000000000000000}}]"#,
+            ["a.x", "a.big", "a.ok"].as_slice(),
+        ),
+        (
+            r#"{models: {a: {x: "number", y: "number"}}, blocks: [{expression: "a.q", value: "a.x / a.y"}, {table: "dt", inputs: ["a.q"], outputs: ["a.band"], rules: [["> 1", "'big'"], ["", "'small'"]]}]}"#,
+            r#"[{"a": {"x": 4, "y": 2}}, {"a": {"x": 4, "y": 0}}]"#,
+            ["a.x", "a.y", "a.q", "a.band"].as_slice(),
+        ),
+        (
+            r#"{models: {a: {x: "number", y: "number"}}, blocks: [{expression: "a.q", value: "a.x / a.y"}, {match: "a.band", arms: [["a.q > 1", "'big'"], ["", "'small'"]]}]}"#,
+            r#"[{"a": {"x": 4, "y": 2}}, {"a": {"x": 4, "y": 0}}]"#,
+            ["a.x", "a.y", "a.q", "a.band"].as_slice(),
+        ),
+    ];
+    for (policy, rows, order) in cases {
+        let ws = Anchor::workspace_with(policy);
+        let pair: Vec<Value> = serde_json::from_str(rows).expect("rows");
+        let values: Vec<Value> = (0..64).map(|row| pair[row % 2].clone()).collect();
+        let built = Built::new(&values).expect("flat columns");
+        let columns = built.columns();
+        for call in 0..8 {
+            let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns).expect("columnar");
+            let got: Vec<&str> = output.columns.iter().map(|(path, _)| path.as_ref()).collect();
+            assert_eq!(got, order, "call {call}: typed {}, laned {}", output.typed, output.laned);
+            assert!((0..output.rows).all(|row| output.errors[row].is_some() == (row % 2 == 1)), "call {call}: errors");
+        }
+    }
+}
+
+#[test]
 fn policy_anchor_is_fully_typed() {
     if Reference::unavailable("anchor") {
         return;

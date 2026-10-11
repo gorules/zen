@@ -6,6 +6,7 @@ use fixedbitset::FixedBitSet;
 use zen_expression::variable::Variable;
 use zen_types::decision::DecisionTableInputField;
 
+use crate::compiled::exact::index::Candidates;
 use super::Exact;
 use crate::policy::blocks::{DecisionTableIr, ExecutionError, TableSelection};
 use crate::workspace::types::{BlockTrace, DecisionTableExtras};
@@ -174,42 +175,14 @@ impl Exact<'_> {
         let Some(index) = ir.table_index() else {
             return Ok(None);
         };
-        let mut acc: Option<FixedBitSet> = None;
-        for (col_idx, column) in index.columns.iter().enumerate() {
-            let Some(column) = column else {
-                continue;
-            };
-            let Some(field) = ir.inputs[col_idx]
-                .field
-                .as_ref()
-                .filter(|f| !f.is_empty())
-            else {
-                continue;
-            };
-            let value = match &col_refs[col_idx] {
-                Some(value) => value.shallow_clone(),
-                None => {
-                    let value = self
-                        .session
-                        .run_standard(field)
-                        .map_err(|e| self.site.expression_error(field, e))?;
-                    col_refs[col_idx] = Some(value.shallow_clone());
-                    value
-                }
-            };
-            if matches!(value, Variable::Dynamic(_)) {
-                return Ok(None);
+        Candidates::narrow(index, &ir.inputs, |col_idx, field| match &col_refs[col_idx] {
+            Some(value) => Ok(Some(value.shallow_clone())),
+            None => {
+                let value = self.session.run_standard(field).map_err(|e| self.site.expression_error(field, e))?;
+                col_refs[col_idx] = Some(value.shallow_clone());
+                Ok(Some(value))
             }
-            let mut col_rows = column.fallback.clone();
-            if let Some(hit) = column.rows_for(&value) {
-                col_rows.union_with(hit);
-            }
-            match &mut acc {
-                None => acc = Some(col_rows),
-                Some(set) => set.intersect_with(&col_rows),
-            }
-        }
-        Ok(acc)
+        })
     }
 
     fn evaluate_row_inputs_pruned(

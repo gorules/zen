@@ -1,3 +1,4 @@
+use crate::compiled::exact::index::Candidates;
 use super::{Ctx, Row};
 use crate::decision_graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
 use crate::nodes::decision_table::index::TableIndex;
@@ -165,40 +166,10 @@ impl<'a> RowTable<'a> {
     }
 
     fn candidate_rows(index: &TableIndex, inputs: &[DecisionTableInputField], session: &mut Session) -> Option<FixedBitSet> {
-        let mut acc: Option<FixedBitSet> = None;
-        for (col_idx, column) in index.columns.iter().enumerate() {
-            let Some(column) = column else {
-                continue;
-            };
-            let Some(field) = inputs[col_idx].field.as_ref().filter(|f| !f.is_empty()) else {
-                continue;
-            };
-            session.set_reference(field).ok()?;
-            let value = session.get_reference(field)?;
-            if matches!(value, Variable::Dynamic(_)) {
-                return None;
-            }
-            let hit = column.rows_for(&value);
-            match &mut acc {
-                None => {
-                    let mut first = column.fallback.clone();
-                    if let Some(hit) = hit {
-                        first.union_with(hit);
-                    }
-                    acc = Some(first);
-                }
-                Some(acc) => {
-                    let fallback = column.fallback.as_slice();
-                    let hit = hit.map(FixedBitSet::as_slice).unwrap_or_default();
-                    for (i, word) in acc.as_mut_slice().iter_mut().enumerate() {
-                        let f = fallback.get(i).copied().unwrap_or(0);
-                        let h = hit.get(i).copied().unwrap_or(0);
-                        *word &= f | h;
-                    }
-                }
-            }
-        }
-        acc
+        let narrowed: Result<_, std::convert::Infallible> = Candidates::narrow(index, inputs, |_, field| {
+            Ok(session.set_reference(field).ok().and_then(|_| session.get_reference(field)))
+        });
+        narrowed.ok().flatten()
     }
 
     fn handle_first_hit_collect(mut self) -> NodeResult {

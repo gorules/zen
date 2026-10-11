@@ -1,4 +1,4 @@
-use ahash::HashMap;
+use crate::compiled::core::special::Specialized;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zen_expression::lane::{Binding, Columns, Fault, Kind, LaneProgram, LaneRunner, Output};
@@ -65,11 +65,11 @@ impl Drop for Outs {
 
 pub(crate) type Many = Result<Vec<Variable>, (usize, IsolateError)>;
 
-type Specialized = HashMap<(u64, Vec<Option<Kind>>), Option<Rc<LaneProgram>>>;
+type Programs = Specialized<(u64, Vec<Option<Kind>>), Option<Rc<LaneProgram>>>;
 
 impl<'a> Bound<'a> {
     thread_local! {
-        static SPECIALIZED: RefCell<Specialized> = RefCell::new(HashMap::default());
+        static SPECIALIZED: RefCell<Programs> = RefCell::new(Specialized::new(usize::MAX));
         static BLANK: RefCell<Rc<[Scope]>> = RefCell::new(Rc::from([]));
     }
 
@@ -115,12 +115,7 @@ impl<'a> Bound<'a> {
         if signature.iter().all(|k| matches!(k, None | Some(Kind::Dyn))) {
             return None;
         }
-        Self::SPECIALIZED.with_borrow_mut(|cache| {
-            cache
-                .entry((p.id, signature))
-                .or_insert_with(|| program.specialize_bound(&self.columns, bind).ok().map(Rc::new))
-                .clone()
-        })
+        Self::SPECIALIZED.with_borrow_mut(|cache| cache.get_or_insert_with((p.id, signature), || program.specialize_bound(&self.columns, bind).ok().map(Rc::new)))
     }
 
     pub fn many(&self, runner: &mut LaneRunner, program: &LaneProgram, subset: Option<&[usize]>, mut sink: impl FnMut(usize, Many)) {

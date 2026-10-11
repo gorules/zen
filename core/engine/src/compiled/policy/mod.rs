@@ -13,6 +13,7 @@ use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};
 use crate::policy::blocks::Block;
 use crate::policy::evaluator::{EvalArtifact, Iteration};
 use crate::policy::host::{HostState, InstanceSlot, Iterated, Pick, Picked};
+use crate::compiled::core::special::Specialized;
 use crate::workspace::types::BlockRef;
 use zen_expression::lane::SourceInfo;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
@@ -159,7 +160,7 @@ pub(crate) struct PolicyPlan {
     members: Vec<Option<Native>>,
     roots: Vec<Arc<str>>,
     root: Arc<Segment>,
-    special: std::sync::RwLock<ahash::HashMap<(usize, u64), Arc<LaneProgram>>>,
+    special: std::sync::RwLock<Specialized<(usize, u64), Arc<LaneProgram>>>,
     iterations: Vec<Option<Iteration>>,
     safe: std::sync::OnceLock<Vec<Iteration>>,
     fusions: columnar::Fusions,
@@ -199,6 +200,8 @@ impl Rows<'_> {
 }
 
 impl PolicyPlan {
+    const SPECIAL: usize = 4096;
+
     thread_local! {
         static RUNNER: RefCell<LaneRunner> = RefCell::new(LaneRunner::new());
     }
@@ -247,7 +250,7 @@ impl PolicyPlan {
             members,
             roots,
             root,
-            special: std::sync::RwLock::new(ahash::HashMap::default()),
+            special: std::sync::RwLock::new(Specialized::new(Self::SPECIAL)),
             iterations,
             safe: std::sync::OnceLock::new(),
             fusions: columnar::Fusions::default(),
@@ -285,14 +288,11 @@ impl PolicyPlan {
 
     fn special(&self, program: &LaneProgram, columns: &zen_expression::lane::Columns) -> Option<Arc<LaneProgram>> {
         let key = (program.program().id as usize, Self::signature(columns));
-        if let Some(found) = self.special.read().ok().and_then(|cache| cache.get(&key).cloned()) {
+        if let Some(found) = self.special.read().ok().and_then(|cache| cache.get(&key)) {
             return Some(found);
         }
         let built = Arc::new(program.specialize_columns(columns).ok()?);
         if let Ok(mut cache) = self.special.write() {
-            if cache.len() > 4096 {
-                cache.clear();
-            }
             cache.insert(key, built.clone());
         }
         Some(built)

@@ -1,6 +1,7 @@
 use crate::compiled::core::list::Frame;
 use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Records, Store};
 use crate::nodes::input::dates::DeclaredDates;
+use std::cell::Ref;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Dictionary, Values};
@@ -26,6 +27,13 @@ struct Coder<'d> {
     data: &'d [u8],
     slots: [u8; Coder::SLOTS],
     entries: Vec<((u64, u64, usize), usize)>,
+}
+
+struct Interner {
+    slots: [u8; Coder::SLOTS],
+    keys: Vec<(u64, u64, usize)>,
+    offsets: Vec<i32>,
+    data: String,
 }
 
 struct Trie {
@@ -120,14 +128,14 @@ impl Shredder {
         self.columns
             .into_iter()
             .map(|(path, values, present)| {
-                let mut field = FieldBuilder::new(path.clone(), 0, rows);
+                let mut field = FieldBuilder::new(path.clone(), 0, false);
                 for (row, value) in values.iter().enumerate() {
                     match Bits::get(&present, row) {
                         true => field.push(value, rows),
                         false => field.missing(),
                     }
                 }
-                let (_, array) = field.array(false);
+                let (_, array) = field.array();
                 (path, Leaf::typed(array), Some(present.into()))
             })
             .collect()
@@ -375,8 +383,7 @@ impl<'d> Coder<'d> {
     fn code(&mut self, lo: usize, hi: usize) -> Option<i32> {
         let len = hi.checked_sub(lo)?;
         let key = (self.word(lo, len), self.word(lo + 8, len.saturating_sub(8)), len);
-        let hash = (key.0 ^ key.1.rotate_left(29) ^ (len as u64).rotate_right(8)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        let mut slot = (hash >> 57) as usize;
+        let mut slot = Self::slot(key);
         loop {
             match self.slots[slot] {
                 u8::MAX => {
@@ -398,6 +405,12 @@ impl<'d> Coder<'d> {
         }
     }
 
+    #[inline]
+    fn slot((low, high, len): (u64, u64, usize)) -> usize {
+        let hash = (low ^ high.rotate_left(29) ^ (len as u64).rotate_right(8)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        (hash >> 57) as usize
+    }
+
     fn codes(mut self, offsets: &[i32]) -> Option<(Vec<i32>, Dict)> {
         let mut codes = Vec::with_capacity(offsets.len().saturating_sub(1));
         for (at, w) in offsets.windows(2).enumerate() {
@@ -417,43 +430,136 @@ impl<'d> Coder<'d> {
     }
 }
 
+impl Interner {
+    fn new() -> Self {
+        Self {
+            slots: [u8::MAX; Coder::SLOTS],
+            keys: Vec::new(),
+            offsets: vec![0],
+            data: String::new(),
+        }
+    }
+
+    #[inline(always)]
+    fn key(bytes: &[u8]) -> (u64, u64, usize) {
+        let len = bytes.len();
+        let at = |lo: usize| bytes.get(lo..).and_then(<[u8]>::first_chunk::<8>).map_or(0, |word| u64::from_le_bytes(*word));
+        let half = |lo: usize| bytes.get(lo..).and_then(<[u8]>::first_chunk::<4>).map_or(0, |word| u64::from(u32::from_le_bytes(*word)));
+        let byte = |lo: usize| bytes.get(lo).map_or(0, |&byte| u64::from(byte));
+        let words = match len {
+            0 => (0, 0),
+            1..=3 => (byte(0) | byte(len / 2) << 8 | byte(len - 1) << 16, 0),
+            4..=8 => (half(0) | half(len - 4) << 32, 0),
+            9..=16 => (at(0), at(len - 8)),
+            _ => (at(0), at(8)),
+        };
+        (words.0, words.1, len)
+    }
+
+    fn text(&self, code: i32) -> &str {
+        let at = usize::try_from(code).unwrap_or(usize::MAX);
+        let range = self.offsets.get(at).zip(self.offsets.get(at.wrapping_add(1)));
+        range.and_then(|(&lo, &hi)| self.data.get(usize::try_from(lo).ok()?..usize::try_from(hi).ok()?)).unwrap_or_default()
+    }
+
+    #[inline(always)]
+    fn found(&self, text: &str) -> Option<i32> {
+        let key = Self::key(text.as_bytes());
+        let mut slot = Coder::slot(key);
+        loop {
+            let at = self.slots[slot];
+            let code = i32::from(at);
+            match self.keys.get(usize::from(at)) {
+                None => return None,
+                Some(known) if *known == key && (key.2 <= 16 || self.text(code) == text) => return Some(code),
+                Some(_) => slot = (slot + 1) % Coder::SLOTS,
+            }
+        }
+    }
+
+    fn code(&mut self, text: &str) -> Option<i32> {
+        let bytes = text.as_bytes();
+        let len = bytes.len();
+        let key = Self::key(bytes);
+        let mut slot = Coder::slot(key);
+        loop {
+            match self.slots[slot] {
+                u8::MAX => {
+                    if self.keys.len() >= Coder::LIMIT {
+                        return None;
+                    }
+                    let code = i32::try_from(self.keys.len()).ok()?;
+                    let end = i32::try_from(self.data.len() + len).ok()?;
+                    self.slots[slot] = self.keys.len() as u8;
+                    self.keys.push(key);
+                    self.data.push_str(text);
+                    self.offsets.push(end);
+                    return Some(code);
+                }
+                at => {
+                    let code = i32::from(at);
+                    if self.keys[usize::from(at)] == key && (len <= 16 || self.text(code) == text) {
+                        return Some(code);
+                    }
+                    slot = (slot + 1) % Coder::SLOTS;
+                }
+            }
+        }
+    }
+
+    fn dict(self) -> Dict {
+        Dict::Text { offsets: self.offsets, data: self.data }
+    }
+}
+
 enum Cells {
     Empty,
     Scaled { mant: Vec<i64>, scale: Vec<u8> },
     Text { offsets: Vec<i32>, data: String },
+    Coded { codes: Vec<i32>, words: Interner, bytes: usize },
     Bool(Vec<u64>),
     Any(Vec<Variable>),
 }
 
 struct FieldBuilder {
     name: Arc<str>,
+    coded: bool,
     cells: Cells,
-    present: Vec<u64>,
+    gaps: Option<Vec<u64>>,
     len: usize,
-    count: usize,
 }
 
 impl FieldBuilder {
-    fn new(name: Arc<str>, len: usize, capacity: usize) -> Self {
+    fn new(name: Arc<str>, len: usize, coded: bool) -> Self {
         let mut field = Self {
             name,
+            coded,
             cells: Cells::Empty,
-            present: Vec::with_capacity(capacity.div_ceil(64)),
+            gaps: None,
             len: 0,
-            count: 0,
         };
         (0..len).for_each(|_| field.missing());
         field
     }
 
-
+    #[inline]
     fn bit(&mut self, on: bool) {
-        if self.len & 63 == 0 {
-            self.present.push(0);
+        let len = self.len;
+        let gaps = match (&mut self.gaps, on) {
+            (None, true) => return,
+            (Some(gaps), _) => gaps,
+            (gaps @ None, false) => gaps.insert(Bits::ones(len)),
+        };
+        if len & 63 == 0 {
+            gaps.push(0);
         }
         if on {
-            Bits::set(&mut self.present, self.len, true);
+            Bits::set(gaps, len, true);
         }
+    }
+
+    fn present(&self, at: usize) -> bool {
+        self.gaps.as_ref().is_none_or(|gaps| Bits::get(gaps, at))
     }
 
     fn missing(&mut self) {
@@ -465,18 +571,86 @@ impl FieldBuilder {
                 scale.push(0);
             }
             Cells::Text { offsets, data } => offsets.push(data.len() as i32),
+            Cells::Coded { .. } => {
+                self.text("");
+            }
             Cells::Any(values) => values.push(Variable::Null),
         }
         self.len += 1;
     }
 
+    #[inline]
+    fn text(&mut self, text: &str) -> bool {
+        match &mut self.cells {
+            Cells::Coded { codes, words, bytes } => {
+                let end = bytes.checked_add(text.len()).filter(|&end| i32::try_from(end).is_ok());
+                if let Some((end, code)) = end.zip(words.found(text)).filter(|_| codes.len() != Coder::SAMPLE) {
+                    codes.push(code);
+                    *bytes = end;
+                    return true;
+                }
+                self.spell(text)
+            }
+            Cells::Text { offsets, data } => Self::spelt(offsets, data, text),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    fn spelt(offsets: &mut Vec<i32>, data: &mut String, text: &str) -> bool {
+        match i32::try_from(data.len() + text.len()) {
+            Ok(end) => {
+                data.push_str(text);
+                offsets.push(end);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn spell(&mut self, text: &str) -> bool {
+        if let Cells::Coded { codes, words, bytes } = &mut self.cells {
+            let Some(end) = bytes.checked_add(text.len()).filter(|&end| i32::try_from(end).is_ok()) else {
+                return false;
+            };
+            let sampled = codes.len() != Coder::SAMPLE || words.keys.len() <= Coder::SAMPLED;
+            if let Some(code) = sampled.then(|| words.code(text)).flatten() {
+                codes.push(code);
+                *bytes = end;
+                return true;
+            }
+            self.cells = self.spelled();
+        }
+        match &mut self.cells {
+            Cells::Text { offsets, data } => Self::spelt(offsets, data, text),
+            _ => false,
+        }
+    }
+
+    fn spelled(&self) -> Cells {
+        let Cells::Coded { codes, words, bytes } = &self.cells else {
+            return Cells::Empty;
+        };
+        let mut offsets = Vec::with_capacity(codes.capacity() + 1);
+        let mut data = String::with_capacity(*bytes);
+        offsets.push(0);
+        for &code in codes {
+            data.push_str(words.text(code));
+            offsets.push(data.len() as i32);
+        }
+        Cells::Text { offsets, data }
+    }
+
     fn variables(&self) -> Vec<Variable> {
         let mut values = Vec::with_capacity(self.len + 1);
         for at in 0..self.len {
-            let value = match (&self.cells, Bits::get(&self.present, at)) {
+            let value = match (&self.cells, self.present(at)) {
                 (_, false) | (Cells::Empty, _) => Variable::Null,
                 (Cells::Scaled { mant, scale }, true) => Variable::Number(rust_decimal::Decimal::new(mant[at], u32::from(scale[at]))),
                 (Cells::Text { offsets, data }, true) => Variable::String(data[offsets[at] as usize..offsets[at + 1] as usize].into()),
+                (Cells::Coded { codes, words, .. }, true) => Variable::String(words.text(codes[at]).into()),
                 (Cells::Bool(bits), true) => Variable::Bool(Bits::get(bits, at)),
                 (Cells::Any(values), true) => values[at].clone(),
             };
@@ -494,6 +668,11 @@ impl FieldBuilder {
                 scale.resize(len, 0);
                 Cells::Scaled { mant, scale }
             }
+            Variable::String(_) if self.coded => Cells::Coded {
+                codes: Vec::with_capacity(capacity),
+                words: Interner::new(),
+                bytes: 0,
+            },
             Variable::String(_) => {
                 let mut offsets = Vec::with_capacity(capacity + 1);
                 offsets.resize(len + 1, 0);
@@ -506,6 +685,11 @@ impl FieldBuilder {
                 Cells::Any(values)
             }
         };
+        if matches!(self.cells, Cells::Coded { .. }) {
+            (0..len).for_each(|_| {
+                self.text("");
+            });
+        }
     }
 
     #[inline(always)]
@@ -523,16 +707,12 @@ impl FieldBuilder {
                 }
                 None => false,
             },
-            (Cells::Text { offsets, data }, Variable::String(text)) => match i32::try_from(data.len() + text.len()) {
-                Ok(end) => {
-                    data.push_str(text);
-                    offsets.push(end);
-                    true
-                }
-                Err(_) => false,
-            },
+            (Cells::Text { .. } | Cells::Coded { .. }, Variable::String(text)) => self.text(text),
             (Cells::Bool(bits), Variable::Bool(on)) => {
-                bits.resize((len + 1).div_ceil(64), 0);
+                let words = (len + 1).div_ceil(64);
+                if bits.len() < words {
+                    bits.resize(words, 0);
+                }
                 Bits::set(bits, len, *on);
                 true
             }
@@ -549,7 +729,71 @@ impl FieldBuilder {
         }
         self.bit(true);
         self.len += 1;
-        self.count += 1;
+    }
+
+    fn fill<'v>(&mut self, values: impl Iterator<Item = &'v Variable> + Clone, count: usize, capacity: usize) {
+        match self.typed(values.clone(), count) {
+            Some(cells) => {
+                self.cells = cells;
+                self.len = count;
+            }
+            None => values.for_each(|value| self.push(value, capacity)),
+        }
+    }
+
+    fn typed<'v>(&self, mut values: impl Iterator<Item = &'v Variable> + Clone, count: usize) -> Option<Cells> {
+        if self.len != 0 || !matches!(self.cells, Cells::Empty) {
+            return None;
+        }
+        match values.clone().next()? {
+            Variable::Number(_) => {
+                let (mut mant, mut scale) = (Vec::with_capacity(count), Vec::with_capacity(count));
+                for value in values {
+                    let Variable::Number(n) = value else {
+                        return None;
+                    };
+                    let (m, s) = Store::part(n)?;
+                    mant.push(m);
+                    scale.push(s);
+                }
+                (mant.len() == count).then_some(Cells::Scaled { mant, scale })
+            }
+            Variable::Bool(_) => {
+                let mut bits = Vec::with_capacity(count.div_ceil(64));
+                let (mut word, mut len) = (0u64, 0usize);
+                for value in values {
+                    let Variable::Bool(on) = value else {
+                        return None;
+                    };
+                    word |= u64::from(*on) << (len & 63);
+                    len += 1;
+                    if len & 63 == 0 {
+                        bits.push(word);
+                        word = 0;
+                    }
+                }
+                if len & 63 != 0 {
+                    bits.push(word);
+                }
+                (len == count).then_some(Cells::Bool(bits))
+            }
+            Variable::String(_) if self.coded => {
+                let (mut codes, mut words, mut bytes) = (Vec::with_capacity(count), Interner::new(), 0usize);
+                values.try_for_each(|value| {
+                    let Variable::String(text) = value else {
+                        return None;
+                    };
+                    if codes.len() == Coder::SAMPLE && words.keys.len() > Coder::SAMPLED {
+                        return None;
+                    }
+                    bytes = bytes.checked_add(text.len()).filter(|&end| i32::try_from(end).is_ok())?;
+                    codes.push(words.found(text).or_else(|| words.code(text))?);
+                    Some(())
+                })?;
+                (codes.len() == count).then_some(Cells::Coded { codes, words, bytes })
+            }
+            _ => None,
+        }
     }
 
     fn truncate(&mut self, len: usize) {
@@ -559,22 +803,21 @@ impl FieldBuilder {
         let mut values = self.variables();
         values.truncate(len);
         self.cells = Cells::Any(values);
-        self.present.truncate(len.div_ceil(64));
-        Bits::trim(&mut self.present, len);
-        self.count = (0..len).filter(|&at| Bits::get(&self.present, at)).count();
+        if let Some(gaps) = &mut self.gaps {
+            gaps.truncate(len.div_ceil(64));
+            Bits::trim(gaps, len);
+        }
         self.len = len;
     }
 
-    fn array(self, code: bool) -> (Arc<str>, Array) {
+    fn array(self) -> (Arc<str>, Array) {
         let len = self.len;
-        let valid = (self.count < len).then_some(self.present);
+        let valid = self.gaps.filter(|gaps| !Bits::full(gaps, 0, len));
         let store = match self.cells {
             Cells::Empty => Store::Any(vec![Variable::Null; len]),
             Cells::Scaled { mant, scale } => Store::Scaled { mant, scale },
-            Cells::Text { offsets, data } => match code.then(|| Coder::new(data.as_bytes()).codes(&offsets)).flatten() {
-                Some((codes, dict)) => Store::Coded { codes: codes.into(), dict: Rc::new(dict) },
-                None => Store::Text { offsets, data },
-            },
+            Cells::Text { offsets, data } => Store::Text { offsets, data },
+            Cells::Coded { codes, words, .. } => Store::Coded { codes: codes.into(), dict: Rc::new(words.dict()) },
             Cells::Bool(mut bits) => {
                 bits.resize(len.div_ceil(64), 0);
                 Store::Bool(bits)
@@ -626,7 +869,7 @@ impl ListBuilder {
         if key.is_empty() || key.contains('.') {
             return None;
         }
-        self.fields.push(FieldBuilder::new(Arc::from(key), self.children, self.capacity));
+        self.fields.push(FieldBuilder::new(Arc::from(key), self.children, true));
         Some(self.fields.len() - 1)
     }
 
@@ -710,6 +953,93 @@ impl ListBuilder {
         Some(())
     }
 
+    fn each(mut self, column: &Column) -> Option<Shred> {
+        for row in 0..self.rows {
+            if !column.valid(row) {
+                Bits::set(&mut self.validity, row, false);
+                self.close()?;
+                continue;
+            }
+            match column.values {
+                Values::Any(values) => match values.get(row) {
+                    Some(Variable::Array(items)) => self.row(row, &items.borrow()),
+                    _ => self.host(row),
+                },
+                Values::List {
+                    child: Dictionary::Any(items),
+                    ..
+                } => match column.range(row).and_then(|(a, b)| items.get(a..b)) {
+                    Some(slice) => self.row(row, slice),
+                    None => self.host(row),
+                },
+                _ => return None,
+            }
+            self.close()?;
+        }
+        Some(self.finish())
+    }
+
+    fn uniform(mut self, column: &Column, values: &[Variable]) -> Option<Option<Shred>> {
+        let mut lists = Vec::with_capacity(self.rows);
+        for row in 0..self.rows {
+            match values.get(row) {
+                _ if !column.valid(row) => Bits::set(&mut self.validity, row, false),
+                Some(Variable::Array(items)) => {
+                    let list = items.borrow();
+                    self.children += list.len();
+                    lists.push(list);
+                }
+                _ => self.host(row),
+            }
+            if self.close().is_none() {
+                return Some(None);
+            }
+        }
+        self.capacity = self.children;
+        self.children = 0;
+        let mut items = Vec::with_capacity(self.capacity);
+        let mut last = (0, 0, 0);
+        for item in lists.iter().flat_map(|list| list.iter()) {
+            let Variable::Object(map) = item else {
+                return None;
+            };
+            let map = map.borrow();
+            let (shape, values) = map.slots()?;
+            if shape.id() != last.0 || items.is_empty() {
+                let known = self.shapes.len();
+                let layout = self.layout(shape)?;
+                let slots = &self.shapes[layout].1;
+                if layout >= known && slots.iter().enumerate().any(|(at, slot)| slots[..at].contains(slot)) {
+                    return None;
+                }
+                last = (shape.id(), layout, slots.len());
+            }
+            if last.2 != values.len() {
+                return None;
+            }
+            items.push((last.1, Ref::map(map, |map| map.slots().map_or(&[][..], |(_, values)| values))));
+            self.children += 1;
+        }
+        let capacity = self.capacity;
+        let shapes = &self.shapes;
+        for (index, field) in self.fields.iter_mut().enumerate() {
+            let slot = |layout: usize| shapes.get(layout).and_then(|(_, slots)| slots.iter().position(|&at| at == index));
+            let slots: Vec<Option<usize>> = (0..shapes.len()).map(slot).collect();
+            let from = field.len;
+            match (from, slots.first().copied().flatten()) {
+                (0, Some(at)) if slots.iter().all(|slot| *slot == Some(at)) => field.fill(items.iter().filter_map(|(_, values)| values.get(at)), items.len(), capacity),
+                _ => {
+                    let cells = items.get(from..).unwrap_or_default().iter().map(|(layout, values)| slots.get(*layout).copied().flatten().and_then(|at| values.get(at)));
+                    cells.for_each(|cell| match cell {
+                        Some(value) => field.push(value, capacity),
+                        None => field.missing(),
+                    })
+                }
+            }
+        }
+        Some(Some(self.finish()))
+    }
+
     fn finish(self) -> Shred {
         let validity = match Bits::ones(self.rows) == self.validity {
             true => None,
@@ -721,7 +1051,7 @@ impl ListBuilder {
                 validity,
                 children: self.children,
             },
-            fields: self.fields.into_iter().map(|field| field.array(true)).collect(),
+            fields: self.fields.into_iter().map(FieldBuilder::array).collect(),
             hosted: self.hosted.into(),
         }
     }
@@ -730,41 +1060,23 @@ impl ListBuilder {
 impl Shred {
     pub fn of(column: &Column, rows: usize) -> Option<Shred> {
         let capacity = match column.values {
-            Values::Any(values) => values
-                .iter()
-                .take(rows)
-                .map(|value| match value {
-                    Variable::Array(items) => items.borrow().len(),
-                    _ => 0,
-                })
-                .sum(),
+            Values::Any(values) => {
+                if let Some(shred) = ListBuilder::new(rows, 0).uniform(column, values) {
+                    return shred;
+                }
+                values
+                    .iter()
+                    .take(rows)
+                    .map(|value| match value {
+                        Variable::Array(items) => items.borrow().len(),
+                        _ => 0,
+                    })
+                    .sum()
+            }
             Values::List { child, .. } => child.len(),
             _ => return None,
         };
-        let mut builder = ListBuilder::new(rows, capacity);
-        for row in 0..rows {
-            if !column.valid(row) {
-                Bits::set(&mut builder.validity, row, false);
-                builder.close()?;
-                continue;
-            }
-            match column.values {
-                Values::Any(values) => match values.get(row) {
-                    Some(Variable::Array(items)) => builder.row(row, &items.borrow()),
-                    _ => builder.host(row),
-                },
-                Values::List {
-                    child: Dictionary::Any(items),
-                    ..
-                } => match column.range(row).and_then(|(a, b)| items.get(a..b)) {
-                    Some(slice) => builder.row(row, slice),
-                    None => builder.host(row),
-                },
-                _ => return None,
-            }
-            builder.close()?;
-        }
-        Some(builder.finish())
+        ListBuilder::new(rows, capacity).each(column)
     }
 }
 
@@ -962,7 +1274,7 @@ impl<'a> Listing<'a> {
         builder.nulls = true;
         builder.primitive = !objects;
         if builder.primitive {
-            builder.fields.push(FieldBuilder::new(Arc::from(""), 0, capacity));
+            builder.fields.push(FieldBuilder::new(Arc::from(""), 0, true));
         }
         for row in 0..owners {
             match Self::items(column, row) {
@@ -1007,5 +1319,159 @@ impl Normalizer {
             },
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    struct Random(u64);
+
+    impl Random {
+        fn next(&mut self, n: u64) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0 % n.max(1)
+        }
+
+        fn text(&mut self, wide: u64) -> Value {
+            let pool = ["", "a", "ab", "abc", "loan", "saving", "savings", "checking", "currency", "a much longer text value", "a much longer text valuf", "ü€x"];
+            match wide {
+                0 => json!(pool[self.next(pool.len() as u64) as usize]),
+                spread => json!(format!("w{}", self.next(spread))),
+            }
+        }
+
+        fn value(&mut self, kind: u64, wide: u64) -> Value {
+            match kind {
+                0 => json!(self.next(5000)),
+                1 => json!(self.next(5000) as f64 / 8.0),
+                2 => self.text(wide),
+                3 => json!(self.next(2) == 0),
+                4 => Value::Null,
+                5 => json!([self.next(3)]),
+                6 => json!({"x": 1}),
+                _ => serde_json::from_str("123456789012345678901234567890").unwrap_or(Value::Null),
+            }
+        }
+
+        fn rows(&mut self, mixed: u64) -> Vec<Variable> {
+            let keys = ["balance", "kind", "active", "rate", "note"];
+            let kinds: Vec<u64> = (0..keys.len()).map(|_| self.next(4)).collect();
+            let wide = [0, 0, 0, 8, 16, 17, 18, 40, 64, 65, 90][self.next(11) as usize];
+            let many = self.next(4) == 0;
+            (0..self.next(70) + 1)
+                .map(|_| {
+                    if self.next(12) == 0 {
+                        let kind = self.next(3);
+                        return Variable::from(self.value(kind, wide));
+                    }
+                    let items: Vec<Value> = (0..self.next(if many { 40 } else { 6 }))
+                        .map(|_| {
+                            if mixed > 0 && self.next(200 / mixed) == 0 {
+                                let kind = self.next(8);
+                                return self.value(kind, wide);
+                            }
+                            let mut map = serde_json::Map::new();
+                            for (at, key) in keys.iter().enumerate() {
+                                if mixed > 0 && self.next(12) == 0 {
+                                    continue;
+                                }
+                                let kind = match mixed > 0 && self.next(40) == 0 {
+                                    true => self.next(8),
+                                    false => kinds[at],
+                                };
+                                map.insert(key.to_string(), self.value(kind, wide));
+                            }
+                            let odd = if mixed == 2 { self.next(300) } else { 9 };
+                            match odd {
+                                0 => {
+                                    map.insert("a.b".to_string(), json!(1));
+                                }
+                                1 => {
+                                    (0..40).for_each(|at| {
+                                        map.insert(format!("k{at}"), json!(at));
+                                    });
+                                }
+                                _ => {}
+                            }
+                            Value::Object(map)
+                        })
+                        .collect();
+                    Variable::from(Value::Array(items))
+                })
+                .collect()
+        }
+    }
+
+    fn render(shred: Option<Shred>) -> String {
+        let Some(shred) = shred else {
+            return "none".to_string();
+        };
+        let fields: Vec<String> = shred.fields.iter().map(|(name, array)| format!("{name}={array:?}")).collect();
+        format!("{:?} {:?} {} {:?} {fields:?}", shred.frame.offsets, shred.frame.validity, shred.frame.children, shred.hosted)
+    }
+
+    fn recoded(shred: &Option<Shred>) -> usize {
+        let fields = shred.iter().flat_map(|shred| shred.fields.iter());
+        fields
+            .map(|(_, array)| match array.store() {
+                Store::Coded { codes, dict } => {
+                    let Dict::Text { offsets, data } = dict.as_ref() else {
+                        panic!("coded text dictionary");
+                    };
+                    let mut spelled = vec![0i32];
+                    let mut text = String::new();
+                    for &code in codes.iter() {
+                        let at = usize::try_from(code).unwrap_or(usize::MAX);
+                        text.push_str(&data[offsets[at] as usize..offsets[at + 1] as usize]);
+                        spelled.push(text.len() as i32);
+                    }
+                    let (again, dict_again) = Coder::new(text.as_bytes()).codes(&spelled).expect("old coder codes");
+                    assert_eq!(again.as_slice(), codes.as_ref());
+                    assert_eq!(format!("{dict_again:?}"), format!("{dict:?}"));
+                    1
+                }
+                Store::Text { offsets, data } => {
+                    assert!(Coder::new(data.as_bytes()).codes(offsets).is_none());
+                    0
+                }
+                _ => 0,
+            })
+            .sum()
+    }
+
+    #[test]
+    fn uniform_lists_shred_like_row_by_row() {
+        let mut random = Random(0x9E37_79B9_7F4A_7C15);
+        let (mut uniform, mut coded) = (0, 0);
+        for round in 0..3000u64 {
+            let rows = random.rows(round % 3);
+            let count = rows.len();
+            let valid = Bits::of(count, |_| random.next(9) != 0);
+            let column = match round % 2 {
+                0 => Column::new(Values::Any(&rows)),
+                _ => Column::with_validity(Values::Any(&rows), &valid, 0),
+            };
+            let capacity = rows
+                .iter()
+                .map(|value| match value {
+                    Variable::Array(items) => items.borrow().len(),
+                    _ => 0,
+                })
+                .sum();
+            let generic = ListBuilder::new(count, capacity).each(&column);
+            coded += recoded(&generic);
+            let expected = render(generic);
+            if let Some(shred) = ListBuilder::new(count, capacity).uniform(&column, &rows) {
+                uniform += 1;
+                assert_eq!(render(shred), expected, "round {round}");
+            }
+            assert_eq!(render(Shred::of(&column, count)), expected, "round {round}");
+        }
+        assert!(uniform > 1000 && coded > 1000, "{uniform} {coded}");
     }
 }

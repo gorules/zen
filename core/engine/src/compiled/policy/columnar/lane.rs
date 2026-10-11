@@ -101,7 +101,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             .filter_map(|slot| match slot {
                 Slot::Composed(at) if !cached => {
                     let entity = &self.sheet.entities[*at];
-                    Some((*at, (0..entity.fields.len()).map(|f| (entity.fields[f].name.clone(), entity.view(f))).collect()))
+                    Some((*at, (0..entity.fields.len()).map(|f| (entity.fields[f].0.clone(), entity.view(f))).collect()))
                 }
                 _ => None,
             })
@@ -113,7 +113,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 (entity.frame.children, entity.frame.offsets.as_ref(), entity.frame.validity.as_deref().map(|bits| (bits, 0)))
             })
             .collect();
-        let fields: Vec<Vec<(&str, Column)>> = parts.iter().map(|(_, leaves)| leaves.iter().map(|(n, l)| (n.as_ref(), l.column())).collect()).collect();
+        let fields: Vec<Vec<(&str, Column)>> = parts.iter().map(|(_, leaves)| leaves.iter().map(|(n, l)| (n.as_str(), l.column())).collect()).collect();
         let structs: Vec<Column> = fields
             .iter()
             .zip(&shapes)

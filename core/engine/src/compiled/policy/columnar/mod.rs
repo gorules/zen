@@ -26,10 +26,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::LaneRunner;
 use zen_expression::{Scope, Variable};
-use zen_types::symbol::Symbol;
 
 type Listed<'a> = (Rc<str>, bool, Option<Rc<Listing<'a>>>);
-type Fields<'a> = (usize, Vec<(Symbol, Leaf<'a>)>);
+type Fields<'a> = (usize, Vec<(Arc<str>, Leaf<'a>)>);
 type Extent<'p> = (usize, &'p [i32], Option<(&'p [u64], usize)>);
 type Present<'a> = (Arc<str>, Leaf<'a>, Option<Rc<[u64]>>);
 

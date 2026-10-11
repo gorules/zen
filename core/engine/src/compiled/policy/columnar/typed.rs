@@ -455,10 +455,10 @@ impl<'s, 'a> Pass<'s, 'a> {
                     }
                     let mut fields = Vec::new();
                     let mut index = Vec::new();
-                    for (f, (name, _, _)) in owner.fields.iter().enumerate() {
+                    for (f, field) in owner.fields.iter().enumerate() {
                         let class = Normalizer::class(&owner.view(f).column().values);
-                        if let (Some(class), true) = (class, owner.field(name.as_str()) == Some(f)) {
-                            fields.push((Arc::from(name.as_str()), class));
+                        if let (Some(class), true) = (class, owner.field(&field.name) == Some(f)) {
+                            fields.push((field.name.clone(), class));
                             index.push(f);
                         }
                     }

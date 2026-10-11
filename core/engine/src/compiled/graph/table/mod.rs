@@ -2,7 +2,6 @@ mod cells;
 mod collect;
 mod dispatch;
 mod first;
-mod frozen;
 mod fused;
 mod strict;
 
@@ -10,7 +9,6 @@ pub(crate) use dispatch::Dispatch;
 pub(crate) use first::First;
 pub(crate) use strict::Matching;
 use cells::{Built, OutputCells};
-use frozen::{Frozen, Static};
 use fused::FusedCells;
 use strict::Strict;
 use crate::compiled::graph::bound::{Bound, Outs};
@@ -131,7 +129,6 @@ pub(crate) struct Table {
     id: u64,
     fused: Option<FusedCells>,
     positions: Vec<Option<u32>>,
-    statics: Vec<Static>,
     dispatch: Option<Dispatch>,
     all_paths: Arc<[Arc<str>]>,
     hit: Hit,
@@ -345,13 +342,12 @@ impl Table {
                 .any(|token| matches!(token, "rand" | "date" | "time" | "d" | "now" | "dateString" | "isToday"))
         };
         let stable = content.rules.iter().all(|rule| rule.values().all(|cell| !clocked(cell.as_ref())));
-        let mut table = Self {
+        let table = Self {
             id: Self::next_id(),
             spec: Self::spec(content),
             stable,
             fused,
             positions,
-            statics: Vec::new(),
             dispatch: Dispatch::build(&columns, rules, words),
             literal,
             split,
@@ -364,26 +360,6 @@ impl Table {
             collect_columns,
             strict: None,
         };
-        let empty = First {
-            rules: table.outputs.len(),
-            codes: Vec::new(),
-            batches: Vec::new(),
-            starts: vec![0],
-        };
-        let all = Bits::ones(table.outputs.len());
-        table.statics = (0..slots)
-            .map(|slot| {
-                let computed = (0..table.outputs.len()).any(|rule| {
-                    table.positions[rule * slots + slot].is_some() && table.outputs[rule].literals.is_none()
-                });
-                match computed {
-                    true => None,
-                    false => table
-                        .slot(&empty, slot, slots, &table.positions, &all)
-                        .and_then(|(dict, valid, written)| Some((Frozen::of(dict)?, valid, written))),
-                }
-            })
-            .collect();
         Ok(table)
     }
 
@@ -501,11 +477,23 @@ impl Table {
     }
 
     pub fn slot_kind(&self, path: &str) -> Option<u8> {
+        let slots = self.all_paths.len();
         let slot = self.all_paths.iter().position(|p| p.as_ref() == path)?;
-        match self.statics.get(slot)?.as_ref()?.0 {
-            Frozen::Scaled { .. } => Some(0),
-            Frozen::Bool(_) => Some(1),
-            Frozen::Text { .. } => Some(2),
+        let rules = self.outputs.len();
+        if (0..rules).any(|rule| self.positions[rule * slots + slot].is_some() && self.outputs[rule].literals.is_none()) {
+            return None;
+        }
+        let empty = First {
+            rules,
+            codes: Vec::new(),
+            batches: Vec::new(),
+            starts: vec![0],
+        };
+        match self.slot(&empty, slot, slots, &self.positions, &Bits::ones(rules))?.0 {
+            Dict::Scaled { .. } => Some(0),
+            Dict::Bool(_) => Some(1),
+            Dict::Text { .. } => Some(2),
+            Dict::Any(_) => None,
         }
     }
 
@@ -732,10 +720,6 @@ impl Table {
     fn next_id() -> u64 {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    thread_local! {
-        static THAWED: std::cell::RefCell<ahash::HashMap<(u64, usize), Rc<Dict>>> = std::cell::RefCell::new(ahash::HashMap::default());
     }
 
     fn peeled(runner: &mut LaneRunner, cells: &CellSet, column: &LaneColumn, rows: usize, out: &mut Vec<u64>) -> bool {

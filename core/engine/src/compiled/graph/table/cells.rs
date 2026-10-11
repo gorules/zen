@@ -506,12 +506,9 @@ impl Table {
         let mut masks: Vec<Keyed<'_, u64>> = Vec::new();
         let mut filtered: Vec<Keyed<'_, i32>> = Vec::new();
         for slot in 0..slots {
-            let found: Option<Found<'_>> = match (self.statics.get(slot).and_then(Option::as_ref), first.batches.is_empty()) {
-                (Some((dict, valid, written)), true) => Some((self.thawed(slot, dict), Cow::Borrowed(valid), Cow::Borrowed(written))),
-                _ => self
-                    .slot(&first, slot, slots, positions, &used)
-                    .map(|(dict, valid, written)| (Rc::new(dict), Cow::Owned(valid), Cow::Owned(written))),
-            };
+            let found: Option<Found<'_>> = self
+                .slot(&first, slot, slots, positions, &used)
+                .map(|(dict, valid, written)| (Rc::new(dict), Cow::Owned(valid), Cow::Owned(written)));
             let Some((dict, valid, written)) = found else {
                 let leaf = match self.templated(&first, slot, slots, positions) {
                     Some(leaf) => leaf,

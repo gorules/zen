@@ -105,7 +105,6 @@ impl Table {
             id: Self::next_id(),
             fused: None,
             positions: Vec::new(),
-            statics: Vec::new(),
             dispatch: None,
             all_paths: Arc::from([]),
             hit: Hit::First,

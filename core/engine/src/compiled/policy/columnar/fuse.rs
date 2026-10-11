@@ -5,8 +5,9 @@ use crate::compiled::leaf::{Array, Bits, Leaf, Store};
 use crate::policy::blocks::{AssertionIr, BlockKind, ConditionOperator, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
 use std::rc::Rc;
-use super::typed::TypedGroup;
+use super::typed::{Typed, TypedGroup};
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
@@ -324,17 +325,38 @@ impl<'s, 'a> Pass<'s, 'a> {
                         if rows.is_empty() {
                             break;
                         }
-                        let (consumed, faulted) = self.typed(&item.units[at..], entity, rows);
-                        if consumed > 0 {
-                            if let Some(from) = laning.take() {
-                                fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
+                        match self.typed(&item.units[at..], entity, rows) {
+                            Typed::Ran(consumed, faulted) => {
+                                if let Some(from) = laning.take() {
+                                    fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
+                                }
+                                self.counts.0 += consumed;
+                                if !faulted.is_empty() {
+                                    self.retry(&events, &item.units[at..at + consumed], faulted);
+                                }
+                                at += consumed;
+                                continue;
                             }
-                            self.counts.0 += consumed;
-                            if !faulted.is_empty() {
-                                self.retry(&events, &item.units[at..at + consumed], faulted);
+                            Typed::Lane(group, path) => {
+                                if let Some(from) = laning.take() {
+                                    fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
+                                }
+                                let (start, count) = (Instant::now(), rows.len());
+                                for &(_, first, len) in &item.units[at..at + group.units] {
+                                    for event in &events[first..first + len] {
+                                        fresh(self, rows);
+                                        if rows.is_empty() {
+                                            break;
+                                        }
+                                        self.event(*event, rows);
+                                    }
+                                }
+                                group.cost.record(path, start.elapsed(), count);
+                                self.counts.1 += group.units;
+                                at += group.units;
+                                continue;
                             }
-                            at += consumed;
-                            continue;
+                            Typed::Skipped => {}
                         }
                         if laning.is_none() {
                             let run = fusions.runs.run(&(blocks[at..].to_vec(), member)).map_or(0, |run| run.min(blocks.len() - at));

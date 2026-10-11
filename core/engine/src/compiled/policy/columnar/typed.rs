@@ -1,7 +1,7 @@
 use super::fuse::{Fusions, Sink};
 use crate::compiled::core::fuse::Fused;
 use super::{Bind, Member, Pass, Sheet};
-use crate::compiled::core::switch::{Density, Path, Switch};
+use crate::compiled::core::switch::{Cost, Density, Path};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::core::exec::{ListPart, Select, TypedCall};
 use crate::compiled::core::group::{Built, Prefix, Step};
@@ -13,12 +13,14 @@ use crate::compiled::leaf::Leaf;
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 use zen_expression::typed::{Lowering, Outputs, Program, Resolve, Resolved};
 
 pub(crate) struct TypedGroup {
     program: Option<Program>,
     sinks: Vec<Sink>,
-    units: usize,
+    pub(super) units: usize,
+    pub(super) cost: Cost,
     probe: Box<[Probed]>,
     columns: Vec<usize>,
     lists: Vec<Option<usize>>,
@@ -144,6 +146,7 @@ impl TypedGroup {
             program: None,
             sinks: Vec::new(),
             units: 0,
+            cost: Cost::new(),
             probe: record.into(),
             columns: Vec::new(),
             lists: Vec::new(),
@@ -180,6 +183,7 @@ impl TypedGroup {
             program: Some(program),
             sinks,
             units,
+            cost: Cost::new(),
             probe: record.into(),
             columns,
             lists,
@@ -221,31 +225,42 @@ impl Fusions {
     }
 }
 
+pub(super) enum Typed {
+    Ran(usize, Vec<usize>),
+    Lane(Arc<TypedGroup>, (Path, bool)),
+    Skipped,
+}
+
 impl<'s, 'a> Pass<'s, 'a> {
-    pub(super) fn typed(&mut self, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> (usize, Vec<usize>) {
+    pub(super) fn typed(&mut self, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> Typed {
         let total = self.sheet.rows;
         let full = rows.len() == total;
-        if Density::sparse(rows.len(), total) || Switch::Always.path().0 == Path::Lane {
-            return (0, Vec::new());
+        if Density::sparse(rows.len(), total) {
+            return Typed::Skipped;
         }
         let plan = self.plan;
         self.listed.borrow_mut().retain(|(_, stable, _)| *stable);
         let Some((group, sources)) = plan.fusions.group(self, units, entity, rows) else {
-            return (0, Vec::new());
+            return Typed::Skipped;
         };
         let Some(program) = group.program.as_ref() else {
-            return (0, Vec::new());
+            return Typed::Skipped;
         };
         let span = match entity {
             Some(at) => match self.sheet.entities[at].frame.span(self.sheet.rows) {
                 Some(span) => Some((at, span)),
-                None => return (0, Vec::new()),
+                None => return Typed::Skipped,
             },
             None => None,
         };
+        let path = group.cost.path();
+        if path.0 == Path::Lane {
+            return Typed::Lane(group, path);
+        }
+        let (start, count) = (Instant::now(), rows.len());
         let select = (!full).then(|| Select::bits(total, rows));
         let Some(mut out) = self.execute(&group, program, &sources, entity, select.as_deref()) else {
-            return (0, Vec::new());
+            return Typed::Skipped;
         };
         let (faulted, kept) = match out.faults().any() {
             true => Take::among(out.faults().words(), rows),
@@ -256,7 +271,8 @@ impl<'s, 'a> Pass<'s, 'a> {
             false => kept.as_slice(),
         };
         if rows.is_empty() {
-            return (group.units, faulted);
+            group.cost.record(path, start.elapsed(), count);
+            return Typed::Ran(group.units, faulted);
         }
         let full = rows.len() == total;
         let leaves: Vec<Leaf<'a>> = group.exports.leaves(&mut out);
@@ -283,7 +299,8 @@ impl<'s, 'a> Pass<'s, 'a> {
                 self.sink(&group.sinks, leaves, Some((at, &kids)), rows);
             }
         }
-        (group.units, faulted)
+        group.cost.record(path, start.elapsed(), count);
+        Typed::Ran(group.units, faulted)
     }
 
     fn execute(&self, group: &TypedGroup, program: &Program, sources: &[Source], entity: Option<usize>, select: Option<&[u64]>) -> Option<Outputs> {

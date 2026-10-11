@@ -15,30 +15,9 @@ pub(crate) struct Cost {
 
 pub(crate) struct Density;
 
-#[derive(Clone, Copy)]
-pub(crate) enum Switch<'c> {
-    Always,
-    Measured(&'c Cost),
-}
-
 impl Density {
     pub(crate) fn sparse(local: usize, rows: usize) -> bool {
         local * 4 < rows
-    }
-}
-
-impl Switch<'_> {
-    pub(crate) fn path(self) -> (Path, bool) {
-        match self {
-            Switch::Always => (Path::Typed, false),
-            Switch::Measured(cost) => cost.path(),
-        }
-    }
-
-    pub(crate) fn record(self, path: (Path, bool), elapsed: Duration, rows: usize) {
-        if let Switch::Measured(cost) = self {
-            cost.record(path, elapsed, rows);
-        }
     }
 }
 
@@ -90,7 +69,7 @@ impl Cost {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cost, Density, Path, Switch};
+    use super::{Cost, Density, Path};
     use std::time::Duration;
 
     fn timed(cost: &Cost, typed: u64, lane: u64) -> Vec<(Path, bool)> {
@@ -144,14 +123,6 @@ mod tests {
         cost.record((Path::Typed, false), Duration::from_nanos(5), 1024);
         assert_eq!(cost.path(), (Path::Typed, true));
         assert_eq!(cost.path(), (Path::Typed, false));
-    }
-
-    #[test]
-    fn always_switch_never_touches_the_cost() {
-        let cost = Cost::new();
-        assert_eq!(Switch::Always.path(), (Path::Typed, false));
-        Switch::Always.record((Path::Lane, true), Duration::from_nanos(1), 1);
-        assert_eq!(Switch::Measured(&cost).path(), (Path::Typed, false));
     }
 
     #[test]

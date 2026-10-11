@@ -2,7 +2,7 @@ use crate::compiled::graph::plan::view::{M, SlotId};
 use crate::compiled::graph::table::{First, Table};
 use crate::compiled::core::exec::{Hint, ListPart, Select, TypedCall};
 use crate::compiled::core::retry::Take;
-use crate::compiled::core::switch::{Density, Path, Switch};
+use crate::compiled::core::switch::{Density, Path};
 use crate::compiled::graph::plan::typed::{Deferred, Grouping, Piece, Target, TypedOp};
 use crate::compiled::graph::plan::{Op, SegPlan, TableOp};
 use zen_expression::typed::{Data as Slotted, Slot};
@@ -66,8 +66,7 @@ impl<'a> Run<'_, 'a> {
             self.laned(seg, units, positions);
             return;
         }
-        let switch = Switch::Measured(&op.cost);
-        let path = switch.path();
+        let path = op.cost.path();
         let start = Instant::now();
         let typed = match path.0 {
             Path::Typed => self.lowered(seg, op, positions).map(|lowered| self.merged(seg, op, units, positions, lowered)).is_some(),
@@ -76,7 +75,7 @@ impl<'a> Run<'_, 'a> {
         if !typed {
             self.laned(seg, units, positions);
         }
-        switch.record(path, start.elapsed(), local);
+        op.cost.record(path, start.elapsed(), local);
     }
 
     fn laned(&mut self, seg: &SegPlan, units: &[Op], positions: Option<&Rc<[usize]>>) {

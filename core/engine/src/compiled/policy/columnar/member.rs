@@ -1,7 +1,7 @@
 use crate::compiled::policy::schedule::{Demand, Event};
-use crate::compiled::policy::{Fixed, Native, PolicyPlan};
+use crate::compiled::policy::{Native, PolicyPlan};
 use crate::compiled::graph::bound::Outs;
-use crate::compiled::leaf::{Array, ColumnBuilder, Dict, Leaf};
+use crate::compiled::leaf::{Array, ColumnBuilder, Dict, Leaf, Literal};
 use crate::policy::blocks::MatchSelection;
 use crate::policy::host::Pick;
 use std::rc::Rc;
@@ -115,7 +115,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 };
                 Some((Self::programs(native), vec![key]))
             }
-            (None, Some(table)) => Some((table.programs(), table.outputs.iter().map(|o| &o.field).collect())),
+            (None, Some(table)) => Some((table.programs(), table.picked().iter().map(|o| &o.field).collect())),
             (None, None) => None,
         }
     }
@@ -313,7 +313,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                     }
                 }
                 if groups.iter().enumerate().all(|(arm, locals)| locals.is_empty() || constants.get(arm).is_some_and(Option::is_some)) {
-                    let values: Vec<Variable> = constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Fixed::variable)).collect();
+                    let values: Vec<Variable> = constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Literal::variable)).collect();
                     let mut codes = vec![-1i32; kids.len()];
                     for (arm, locals) in groups.iter().enumerate() {
                         locals.iter().for_each(|&local| codes[local] = arm as i32);

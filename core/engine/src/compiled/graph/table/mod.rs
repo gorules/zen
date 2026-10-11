@@ -4,12 +4,15 @@ mod dispatch;
 mod first;
 mod frozen;
 mod fused;
+mod strict;
 
 pub(crate) use dispatch::Dispatch;
 pub(crate) use first::First;
+pub(crate) use strict::Matching;
 use cells::{Built, OutputCells};
 use frozen::{Frozen, Static};
 use fused::FusedCells;
+use strict::Strict;
 use crate::compiled::graph::bound::{Bound, Outs};
 use crate::compiled::leaf::{Array, Bits, Dict, Literal, Store};
 use std::borrow::Cow;
@@ -141,6 +144,7 @@ pub(crate) struct Table {
     literal: bool,
     pub stable: bool,
     pub spec: Option<TableSpec>,
+    strict: Option<Box<Strict>>,
 }
 
 enum Part {
@@ -186,12 +190,7 @@ impl Table {
                 .iter()
                 .map(|rule| rule.get(&input.id).map(|c| c.as_ref()).filter(|c| !c.is_empty()))
                 .collect();
-            let mut empty = vec![0u64; words];
-            for (rule, cell) in cells.iter().enumerate() {
-                if cell.is_none() {
-                    bit(&mut empty, rule);
-                }
-            }
+            let empty = Self::empty(&cells, words);
             match &input.field {
                 Some(field) => {
                     let program = LaneProgram::standard(field).map_err(|e| e.to_string())?;
@@ -363,6 +362,7 @@ impl Table {
             columns,
             outputs,
             collect_columns,
+            strict: None,
         };
         let empty = First {
             rules: table.outputs.len(),
@@ -439,7 +439,34 @@ impl Table {
         })
     }
 
+    fn empty(cells: &[Option<&str>], words: usize) -> Vec<u64> {
+        let mut empty = vec![0u64; words];
+        for (rule, cell) in cells.iter().enumerate() {
+            if cell.is_none() {
+                empty[rule / 64] |= 1 << (rule % 64);
+            }
+        }
+        empty
+    }
+
+    pub fn open(&self, rows: usize) -> Vec<u64> {
+        let words = self.words;
+        let tail = match (self.rules, self.rules % 64) {
+            (0, _) => 0,
+            (_, 0) => u64::MAX,
+            (_, t) => (1u64 << t) - 1,
+        };
+        let mut all = vec![u64::MAX; rows * words];
+        for row in 0..rows {
+            all[row * words + words - 1] &= tail;
+        }
+        all
+    }
+
     pub fn programs(&self) -> Vec<&LaneProgram> {
+        if let Some(strict) = &self.strict {
+            return self.fields().chain(strict.cells()).collect();
+        }
         let mut programs: Vec<&LaneProgram> = Vec::new();
         for column in &self.columns {
             match column {
@@ -530,15 +557,7 @@ impl Table {
         }
         let (rows, words) = (bound.rows(), self.words);
         let scopes = bound.scopes();
-        let mut all = vec![u64::MAX; rows * words];
-        let tail = match (self.rules, self.rules % 64) {
-            (0, _) => 0,
-            (_, 0) => u64::MAX,
-            (_, t) => (1u64 << t) - 1,
-        };
-        for row in 0..rows {
-            all[row * words + words - 1] &= tail;
-        }
+        let mut all = self.open(rows);
         let mut bits = Vec::new();
         let mut deferred = Vec::new();
         let fused = self.fused_truths(runner, bound);

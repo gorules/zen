@@ -494,7 +494,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                     None => None,
                 };
                 let ready = len == 2 && self.quiet(block) && plan.fusions.table(block, ir);
-                let writes: Vec<(Arc<str>, bool)> = table.outputs.iter().map(|o| (o.field.clone(), true)).collect();
+                let writes: Vec<(Arc<str>, bool)> = table.picked().iter().map(|o| (o.field.clone(), true)).collect();
                 ready.then_some((entity, table.programs(), writes))?
             }
             (Some(_), _) => return None,

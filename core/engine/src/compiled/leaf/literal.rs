@@ -1,4 +1,5 @@
-use zen_expression::Variable;
+use zen_expression::lane::{LaneProgram, LaneRunner};
+use zen_expression::{Scope, Variable};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Literal {
@@ -11,6 +12,20 @@ pub(crate) enum Literal {
 }
 
 impl Literal {
+    pub fn constant(runner: &mut LaneRunner, program: &LaneProgram) -> Option<Literal> {
+        let p = program.program();
+        if !p.site_keys.is_empty() || p.opaque() || p.writes_env || p.chain || !p.timeless() {
+            return None;
+        }
+        match runner.evaluate_one(program, &Scope::default()).ok()? {
+            Variable::Null => Some(Literal::Null),
+            Variable::Bool(b) => Some(Literal::Bool(b)),
+            Variable::Number(n) => Some(Literal::Num(n)),
+            Variable::String(s) => Some(Literal::Str(std::sync::Arc::from(&*s))),
+            _ => None,
+        }
+    }
+
     pub fn variable(&self) -> Variable {
         match self {
             Literal::Null => Variable::Null,

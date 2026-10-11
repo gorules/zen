@@ -1,5 +1,5 @@
-use crate::compiled::policy::{Fixed, Native};
-use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Leaf};
+use crate::compiled::policy::Native;
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Leaf, Literal};
 use crate::policy::blocks::{AssertionIr, MatchIr};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -144,19 +144,19 @@ impl<'s, 'a> Pass<'s, 'a> {
         self.arms.iter().find(|(b, _)| *b == block).and_then(|(_, arms)| arms[row])
     }
 
-    pub(super) fn constant(values: &[Option<LaneProgram>], constants: &[Option<Fixed>]) -> bool {
+    pub(super) fn constant(values: &[Option<LaneProgram>], constants: &[Option<Literal>]) -> bool {
         values.iter().enumerate().all(|(arm, value)| value.is_none() || constants.get(arm).is_some_and(Option::is_some))
     }
 
-    pub(super) fn fixed(constants: &[Option<Fixed>]) -> Vec<Variable> {
-        constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Fixed::variable)).collect()
+    pub(super) fn fixed(constants: &[Option<Literal>]) -> Vec<Variable> {
+        constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Literal::variable)).collect()
     }
 
     pub(super) fn code(arm: Option<usize>, values: &[Option<LaneProgram>]) -> i32 {
         arm.filter(|&arm| values.get(arm).is_some_and(Option::is_some)).map_or(-1, |arm| arm as i32)
     }
 
-    pub(super) fn commit(&mut self, block: usize, ir: &MatchIr, values: &[Option<LaneProgram>], constants: &[Option<Fixed>], positions: &[usize]) {
+    pub(super) fn commit(&mut self, block: usize, ir: &MatchIr, values: &[Option<LaneProgram>], constants: &[Option<Literal>], positions: &[usize]) {
         if Self::constant(values, constants) {
             let codes: Vec<i32> = match self.arms.iter().find(|(b, _)| *b == block) {
                 Some((_, arms)) => positions.iter().map(|&row| Self::code(arms[row], values)).collect(),
@@ -172,7 +172,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             }
         }
         if groups.iter().enumerate().all(|(arm, locals)| locals.is_empty() || constants.get(arm).is_some_and(Option::is_some)) {
-            let values: Vec<Variable> = constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Fixed::variable)).collect();
+            let values: Vec<Variable> = constants.iter().map(|c| c.as_ref().map_or(Variable::Null, Literal::variable)).collect();
             let mut codes = vec![-1i32; positions.len()];
             for (arm, locals) in groups.iter().enumerate() {
                 locals.iter().for_each(|&local| codes[local] = arm as i32);
@@ -217,7 +217,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         if let (Some(table), false) = (&self.plan.tables[block], self.hosted(block, row)) {
             if let Some((_, chosen)) = self.chosen.iter().find(|(b, _)| *b == block) {
-                let outputs = table.outputs.len().max(1);
+                let outputs = table.picked().len().max(1);
                 let unit = |unit: usize| -> Vec<u32> { (0..outputs).map(|c| chosen.get(unit * outputs + c).copied().unwrap_or(u32::MAX)).collect() };
                 let mut units: Vec<Vec<u32>> = match self.entity_of(block) {
                     None => vec![unit(row)],

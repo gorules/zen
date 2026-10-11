@@ -3,7 +3,6 @@ mod columnar;
 mod entity;
 mod host;
 mod schedule;
-mod table;
 mod traced;
 
 pub use columnar::PolicyColumnarOutput;
@@ -14,6 +13,8 @@ use crate::policy::blocks::Block;
 use crate::policy::evaluator::{EvalArtifact, Iteration};
 use crate::policy::host::{HostState, InstanceSlot, Iterated, Pick, Picked};
 use crate::compiled::core::special::Specialized;
+use crate::compiled::graph::table::Table;
+use crate::compiled::leaf::Literal;
 use crate::workspace::types::BlockRef;
 use zen_expression::lane::SourceInfo;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
@@ -38,41 +39,8 @@ enum Native {
         conditions: Vec<Option<LaneProgram>>,
         values: Vec<Option<LaneProgram>>,
         pick: Option<Box<LaneProgram>>,
-        constants: Vec<Option<Fixed>>,
+        constants: Vec<Option<Literal>>,
     },
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Fixed {
-    Null,
-    Bool(bool),
-    Number(rust_decimal::Decimal),
-    Text(Arc<str>),
-}
-
-impl Fixed {
-    pub(crate) fn of(runner: &mut LaneRunner, program: &LaneProgram) -> Option<Self> {
-        let p = program.program();
-        if !p.site_keys.is_empty() || p.opaque() || p.writes_env || p.chain || !p.timeless() {
-            return None;
-        }
-        match runner.evaluate_one(program, &Scope::default()).ok()? {
-            Variable::Null => Some(Fixed::Null),
-            Variable::Bool(b) => Some(Fixed::Bool(b)),
-            Variable::Number(n) => Some(Fixed::Number(n)),
-            Variable::String(s) => Some(Fixed::Text(Arc::from(&*s))),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn variable(&self) -> Variable {
-        match self {
-            Fixed::Null => Variable::Null,
-            Fixed::Bool(b) => Variable::Bool(*b),
-            Fixed::Number(n) => Variable::Number(*n),
-            Fixed::Text(s) => Variable::String(s.as_ref().into()),
-        }
-    }
 }
 
 impl Native {
@@ -119,7 +87,7 @@ impl Native {
             BlockKind::Match(ir) => {
                 let values = ir.arms.iter().map(|arm| Self::optional(&arm.value)).collect::<Option<Vec<_>>>()?;
                 let mut runner = LaneRunner::new();
-                let constants = values.iter().map(|value| Fixed::of(&mut runner, value.as_ref()?)).collect();
+                let constants = values.iter().map(|value| Literal::constant(&mut runner, value.as_ref()?)).collect();
                 Some(Native::Match {
                     ir: ir.clone(),
                     conditions: ir
@@ -156,7 +124,7 @@ pub(crate) struct PolicyPlan {
     blocks: Blocks,
     natives: Vec<Option<Native>>,
     iterated: Vec<bool>,
-    tables: Vec<Option<table::TableNative>>,
+    tables: Vec<Option<Table>>,
     members: Vec<Option<Native>>,
     roots: Vec<Arc<str>>,
     root: Arc<Segment>,
@@ -232,7 +200,7 @@ impl PolicyPlan {
             .rules
             .iter()
             .map(|rule| match &rule.kind {
-                BlockKind::DecisionTable(ir) => table::TableNative::compile(ir),
+                BlockKind::DecisionTable(ir) => Table::strict(ir),
                 _ => None,
             })
             .collect();

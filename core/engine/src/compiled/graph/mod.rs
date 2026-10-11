@@ -7,7 +7,7 @@ mod state;
 mod step;
 pub use columnar::{ColumnarOutput, OutputColumn, RecordsView};
 mod schedule;
-mod table;
+pub(super) mod table;
 pub(super) mod columnar;
 mod data;
 mod schema;

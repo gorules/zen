@@ -1,6 +1,7 @@
 use super::view::{Expr, Masks, M, Ref, Shape, SlotId};
 use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
 use crate::compiled::core::exec::Dedup;
+use super::census::Census;
 use crate::compiled::core::group::{Attempt, Built, Prefix, Step};
 use crate::compiled::core::switch::Cost;
 use crate::compiled::core::variants::Variants;
@@ -10,7 +11,7 @@ use crate::compiled::graph::table::Table;
 use crate::compiled::graph::{Body, CompiledGraph, Kind};
 use std::sync::Arc;
 use zen_expression::lane::{Binding as Site, Fusion};
-use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved};
+use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved, TableSpec};
 
 pub(crate) enum Target {
     Slot(SlotId),
@@ -60,6 +61,7 @@ struct Probe<'p> {
     listing: Option<Lister<'p>>,
     lists: Vec<(String, Ref)>,
     deferred: bool,
+    novel: bool,
     reads: Vec<(Arc<str>, Option<Ref>)>,
     outputs: Vec<(SlotId, Vec<M>, usize)>,
     produced: Vec<M>,
@@ -99,6 +101,7 @@ impl Deferred {
 impl Resolve for Probe<'_> {
     fn path(&mut self, path: &str) -> Resolved {
         let Some((_, read)) = self.reads.iter().find(|(key, _)| key.as_ref() == path) else {
+            Census::note("unbound: ");
             return Resolved::Unsupported;
         };
         let Some(read) = *read else {
@@ -107,30 +110,60 @@ impl Resolve for Probe<'_> {
         if let Some((_, allowed, at)) = self.outputs.iter().find(|(slot, _, _)| *slot == read.slot) {
             return match allowed.contains(&read.present) || self.covers(read.present, read.slot, allowed) {
                 true => Resolved::Output(*at),
-                false => Resolved::Unsupported,
+                false => {
+                    Census::note("output mask: ");
+                    Resolved::Unsupported
+                }
             };
         }
         if self.depends(read.present) {
+            Census::note("depends: ");
             return Resolved::Unsupported;
         }
-        let class = match self.slots.get(read.slot as usize).map(|info| info.shape) {
+        let slot = self.slots.get(read.slot as usize);
+        let class = match slot.map(|info| info.shape) {
             Some(Shape::Num) => Class::Num,
             Some(Shape::Bool) => Class::Bool,
             Some(Shape::Text) => Class::Text,
             Some(Shape::Null) => return Resolved::Absent,
-            Some(Shape::Dyn) => match self.seen.iter().find(|(slot, _)| *slot == read.slot).map(|(_, seen)| *seen) {
+            Some(shape @ (Shape::Dyn | Shape::Unknown)) if shape == Shape::Dyn || slot.is_some_and(|info| matches!(info.source, Source::Input(_))) => match self.observed(read.slot, shape) {
                 Some(Seen::Num) => Class::Num,
                 Some(Seen::Bool) => Class::Bool,
                 Some(Seen::Text) => Class::Text,
                 Some(Seen::Null) => return Resolved::Absent,
                 Some(Seen::List) => return self.listed(read),
-                Some(Seen::Mixed) => return Resolved::Unsupported,
+                Some(Seen::Mixed) => {
+                    Census::note("mixed: ");
+                    return Resolved::Unsupported;
+                }
                 None => {
                     self.deferred = true;
                     return Resolved::Unsupported;
                 }
             },
-            _ => return Resolved::Unsupported,
+            Some(Shape::List) => {
+                return match self.listing {
+                    Some(_) => match self.listed(read) {
+                        Resolved::KeyedList(key, fields) if fields.iter().all(|(name, _)| name.is_empty()) => {
+                            self.novel = true;
+                            Resolved::KeyedList(key, fields)
+                        }
+                        _ => {
+                            Census::note("object list: ");
+                            Resolved::Unsupported
+                        }
+                    },
+                    None => {
+                        self.deferred = true;
+                        Census::note("list: ");
+                        Resolved::Unsupported
+                    }
+                };
+            }
+            other => {
+                Census::note(&format!("shape {other:?}: "));
+                return Resolved::Unsupported;
+            }
         };
         let key = format!("#{}:{:?}", read.slot, read.present);
         if !self.columns.iter().any(|(k, _)| *k == key) {
@@ -141,6 +174,10 @@ impl Resolve for Probe<'_> {
 
     fn alias(&mut self, _field: &str) -> Resolved {
         Resolved::Unsupported
+    }
+
+    fn novel(&mut self) -> bool {
+        std::mem::take(&mut self.novel)
     }
 
     fn nested(&mut self, chain: &[&str]) -> Resolved {
@@ -160,8 +197,15 @@ impl Resolve for Probe<'_> {
 impl Probe<'_> {
     const ATOMS: usize = 12;
 
+    fn observed(&mut self, slot: SlotId, shape: Shape) -> Option<Seen> {
+        let seen = self.seen.iter().find(|(at, _)| *at == slot).map(|(_, seen)| *seen);
+        self.novel |= shape == Shape::Unknown && seen.is_some();
+        seen
+    }
+
     fn listed(&mut self, read: Ref) -> Resolved {
         let Some(fields) = self.listing.and_then(|listing| listing(read.slot, &[])) else {
+            Census::note("unlisted: ");
             return Resolved::Unsupported;
         };
         let key = format!("#{}:{:?}", read.slot, read.present);
@@ -252,6 +296,8 @@ impl Builder<'_> {
                 true => run.push(op),
                 false => {
                     self.flush(&mut run, &mut grouped);
+                    Census::reason(|| Grouping::ineligible(&op));
+                    Census::refuse(&op, self.graph);
                     grouped.push(op);
                 }
             }
@@ -307,6 +353,10 @@ impl Grouping<'_> {
         while let Some(rest) = ops.get(at..).filter(|rest| !rest.is_empty()) {
             match self.lower(rest) {
                 Attempt::Typed(_, n) if rest.iter().take(n).all(|op| matches!(op, Op::Lane(lane) if lane.uniform)) => {
+                    for op in rest.iter().take(n) {
+                        Census::reason(|| "uniform".into());
+                        Census::refuse(op, self.graph);
+                    }
                     pieces.extend((0..n).map(|_| Piece::Unit));
                     at += n;
                 }
@@ -319,6 +369,7 @@ impl Grouping<'_> {
                     at = ops.len();
                 }
                 Attempt::Failed => {
+                    Census::refuse(&rest[0], self.graph);
                     pieces.push(Piece::Unit);
                     at += 1;
                 }
@@ -337,7 +388,7 @@ impl Grouping<'_> {
                 _ => (Vec::new(), &[]),
             };
             for slot in reads {
-                let dynamic = matches!(self.slots.get(slot as usize), Some(SlotInfo { shape: Shape::Dyn, .. }));
+                let dynamic = matches!(self.slots.get(slot as usize), Some(SlotInfo { shape: Shape::Dyn, .. } | SlotInfo { shape: Shape::Unknown, source: Source::Input(_) }));
                 if dynamic && !produced.contains(&slot) && !keys.contains(&slot) {
                     keys.push(slot);
                 }
@@ -390,6 +441,7 @@ impl Grouping<'_> {
                     listing: self.listing,
                     lists: Vec::new(),
                     deferred: false,
+                    novel: false,
                     reads: Vec::new(),
                     outputs: Vec::new(),
                     produced: Vec::new(),
@@ -405,6 +457,9 @@ impl Grouping<'_> {
     fn unit(&self, op: &Op, lowering: &mut Lowering, probe: &mut Probe, targets: &mut Vec<Vec<Target>>, kept: &mut Vec<bool>) -> Step<Attempt<Box<TypedOp>>> {
         let base = lowering.outputs();
         probe.deferred = false;
+        probe.novel = false;
+        let mut blanked: Vec<bool> = Vec::new();
+        Census::fresh();
         let lowered = match op {
             Op::Lane(lane) if self.eligible(op) => {
                 let Some(reads) = self.sites(lane) else {
@@ -422,15 +477,26 @@ impl Grouping<'_> {
                 lowering.unit(&entries, probe)
             }
             Op::Table(table) if self.eligible(op) => {
-                let Some(spec) = self.tabled(table).and_then(|t| t.spec.as_ref()) else {
+                let Some((found, spec)) = self.tabled(table).and_then(|t| Some((t, t.spec.as_ref()?))) else {
                     return Step::Stop;
                 };
                 probe.reads = table.reads.clone();
-                lowering.table(spec, probe)
+                match Self::blank(found, spec) {
+                    Some((blank, columns)) => {
+                        probe.novel = true;
+                        blanked = columns;
+                        lowering.table(&blank, probe)
+                    }
+                    None => lowering.table(spec, probe),
+                }
             }
-            _ => return Step::Stop,
+            _ => {
+                Census::reason(|| Self::ineligible(op));
+                return Step::Stop;
+            }
         };
-        if lowered.is_err() {
+        if let Err(e) = &lowered {
+            Census::reason(|| e.0.clone());
             return match lowering.units() == 0 && probe.deferred {
                 true => Step::Done(Attempt::Deferred),
                 false => Step::Stop,
@@ -445,7 +511,9 @@ impl Grouping<'_> {
             }
             Op::Table(table) => {
                 for (at, (slot, present)) in table.outs.iter().zip(&table.present).enumerate() {
-                    probe.outputs.push((*slot, vec![M::All, *present, table.matched], base + at));
+                    if !blanked.get(at).copied().unwrap_or(false) {
+                        probe.outputs.push((*slot, vec![M::All, *present, table.matched], base + at));
+                    }
                 }
                 probe.produced.extend(table.present.iter().copied());
                 probe.produced.push(table.matched);
@@ -460,6 +528,7 @@ impl Grouping<'_> {
             _ => Vec::new(),
         };
         if lowering.outputs() != base + unit.len() {
+            Census::reason(|| "output count".into());
             return Step::Done(Attempt::Failed);
         }
         kept.extend(unit.iter().map(Option::is_some));
@@ -474,11 +543,15 @@ impl Grouping<'_> {
         }
         kept.resize(lowering.outputs(), true);
         lowering.retain(|at| kept.get(at).copied().unwrap_or(true));
-        let Ok(program) = Typed::new(lowering.finish()) else {
-            return Built::Shrink {
-                consumed,
-                fallback: Attempt::Failed,
-            };
+        let program = match Typed::new(lowering.finish()) {
+            Ok(program) => program,
+            Err(e) => {
+                Census::reason(|| format!("build: {}", e.0));
+                return Built::Shrink {
+                    consumed,
+                    fallback: Attempt::Failed,
+                };
+            }
         };
         let schema = &program.hir().schema;
         let columns = schema
@@ -496,7 +569,40 @@ impl Grouping<'_> {
             .collect::<Option<Vec<(Ref, Vec<Arc<str>>)>>>();
         Built::Done(match (columns, lists) {
             (Some(columns), Some(lists)) => Attempt::Typed(Box::new(TypedOp::new(program, columns, lists, targets)), consumed),
-            _ => Attempt::Failed,
+            _ => {
+                Census::reason(|| "columns unresolved".into());
+                Attempt::Failed
+            }
         })
+    }
+
+    fn blank(table: &Table, spec: &TableSpec) -> Option<(TableSpec, Vec<bool>)> {
+        if !table.literal() {
+            return None;
+        }
+        let composite = |value: &Option<String>| value.as_deref().is_some_and(|v| v.trim_start().starts_with(['[', '{']));
+        let columns: Vec<bool> = (0..spec.outputs.len()).map(|at| spec.rules.iter().any(|rule| rule.values.get(at).is_some_and(composite))).collect();
+        if !columns.contains(&true) {
+            return None;
+        }
+        let mut blank = spec.clone();
+        for rule in &mut blank.rules {
+            for (value, blanked) in rule.values.iter_mut().zip(&columns) {
+                if *blanked {
+                    *value = None;
+                }
+            }
+        }
+        Some((blank, columns))
+    }
+
+    fn ineligible(op: &Op) -> String {
+        match op {
+            Op::Lane(lane) if !matches!(lane.program, Program::Expression) => "ineligible: switch/field program".into(),
+            Op::Lane(_) => "ineligible: sources".into(),
+            Op::Table(table) if table.mode != TableMode::First => "ineligible: collect/rows table".into(),
+            Op::Table(_) => "ineligible: table spec".into(),
+            _ => "ineligible".into(),
+        }
     }
 }

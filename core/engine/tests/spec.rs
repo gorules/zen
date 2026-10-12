@@ -438,6 +438,11 @@ fn policy_engines_match_driver() {
     engines.failures.extend(engines.reference.missing());
     eprintln!("policy engines: {} cases, {} columnar rows ({} with struct lists, {} hosted per row), {} mismatches", engines.compared, engines.columnar, engines.nested, engines.hosted, engines.failures.len());
     eprintln!("policy engines: {} typed units, {} laned units", engines.typed, engines.laned);
+    if std::env::var("ZEN_CENSUS").is_ok() {
+        for (key, calls, rows, ns) in zen_engine::Decision::census() {
+            println!("CENSUS\tspec-policy\t{key}\t{calls}\t{rows}\t{ns}");
+        }
+    }
     assert!(std::env::var("ZEN_TYPED").is_ok_and(|v| v.trim() == "0") || engines.typed > 0, "no policy unit ran typed");
     Differential::assert(problems, engines.failures);
 }

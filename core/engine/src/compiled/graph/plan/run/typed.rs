@@ -13,6 +13,7 @@ use crate::compiled::graph::{Body, Kind};
 use std::rc::Rc;
 use std::time::Instant;
 use super::Run;
+use crate::compiled::graph::plan::census::Census;
 use super::store::{Lowered, Prepared, Store};
 
 type Held<'a> = (Choice, Vec<Leaf<'a>>, Vec<Hint>);
@@ -46,7 +47,10 @@ impl<'a> Run<'_, 'a> {
                 Piece::Unit => {
                     if let Some(unit) = units.get(at) {
                         self.store.counts.1 += 1;
-                        self.unit(seg, unit, live.as_ref());
+                        match Census::on() {
+                            true => self.timed(seg, unit, live.as_ref()),
+                            false => self.unit(seg, unit, live.as_ref()),
+                        }
                     }
                     at += 1;
                 }
@@ -66,7 +70,10 @@ impl<'a> Run<'_, 'a> {
         let rows = self.store.rows;
         let local = positions.map_or(rows, |p| p.len());
         if Density::sparse(local, rows) {
-            self.laned(seg, units, positions);
+            match Census::on() {
+                true => self.fell("sparse", seg, units, positions, local),
+                false => self.laned(seg, units, positions),
+            }
             return;
         }
         let path = op.cost.path();
@@ -77,11 +84,22 @@ impl<'a> Run<'_, 'a> {
             Path::Lane => false,
         };
         if !typed {
-            self.laned(seg, units, positions);
+            match Census::on() {
+                true => self.fell(&format!("{:?}", path.0), seg, units, positions, local),
+                false => self.laned(seg, units, positions),
+            }
         }
         let (choice, leaves, hints) = held;
         op.dedup.settle(&op.cost, path, choice, start.elapsed(), local);
         op.dedup.probe(&op.cost, self, local, |run| run.coded(op, &leaves, &hints, positions));
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn fell(&mut self, what: &str, seg: &SegPlan, units: &[Op], positions: Option<&Rc<[usize]>>, local: usize) {
+        let start = Instant::now();
+        self.laned(seg, units, positions);
+        Census::record(format!("typed->lane | {what}"), local, start.elapsed().as_nanos());
     }
 
     fn laned(&mut self, seg: &SegPlan, units: &[Op], positions: Option<&Rc<[usize]>>) {

@@ -2,6 +2,7 @@ use crate::compiled::graph::data::Data;
 use zen_expression::Variable;
 use crate::compiled::graph::plan::census::Census;
 use crate::compiled::graph::plan::{Layout, Op, Program, SegEnd, SegPlan};
+use crate::compiled::graph::plan::typed::TypedOp;
 use crate::decision_graph::walker::GraphWalker;
 use crate::compiled::graph::Host;
 use crate::compiled::leaf::{Bits, Leaf};
@@ -88,13 +89,22 @@ impl<'a> Run<'_, 'a> {
                     if matches!(lane.program, Program::Expression) {
                         self.store.counts.1 += 1;
                     }
-                    self.lane(seg, lane, positions, true);
+                    match Census::on() {
+                        true => self.timed(seg, op, positions),
+                        false => self.lane(seg, lane, positions, true),
+                    }
                 }
                 Op::Table(table) => {
                     self.store.counts.1 += 1;
-                    self.table(seg, table, positions);
+                    match Census::on() {
+                        true => self.timed(seg, op, positions),
+                        false => self.table(seg, table, positions),
+                    }
                 }
-                Op::Typed { op, units } => self.typed(seg, op, units, positions),
+                Op::Typed { op, units } => match Census::on() {
+                    true => self.grouped(seg, op, units, positions),
+                    false => self.typed(seg, op, units, positions),
+                },
                 Op::Deferred { op, units } => self.deferred(seg, op, units, positions),
                 Op::Rows(op) => {
                     Census::begin();
@@ -205,6 +215,29 @@ impl<'a> Run<'_, 'a> {
             }
             SegEnd::Switch { first, conditions, .. } => self.fan_out(seg, positions, *first, conditions, children),
         }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn timed(&mut self, seg: &SegPlan, op: &Op, positions: Option<&Rc<[usize]>>) {
+        let start = std::time::Instant::now();
+        self.unit(seg, op, positions);
+        let rows = positions.map_or(self.store.rows, |p| p.len());
+        if let Some(key) = op.census(self.graph) {
+            let what = match op {
+                Op::Table(_) => "table",
+                _ => "lane",
+            };
+            Census::fallback(key, what, rows, start.elapsed().as_nanos());
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn grouped(&mut self, seg: &SegPlan, op: &TypedOp, units: &[Op], positions: Option<&Rc<[usize]>>) {
+        let start = std::time::Instant::now();
+        self.typed(seg, op, units, positions);
+        Census::record("typed | group".into(), positions.map_or(self.store.rows, |p| p.len()), start.elapsed().as_nanos());
     }
 
     fn unit(&mut self, seg: &SegPlan, op: &Op, positions: Option<&Rc<[usize]>>) {

@@ -89,6 +89,17 @@ impl Buf {
 }
 
 impl<'e, 'x> Exec<'e, 'x> {
+    fn same(a: &Given, b: &Given) -> bool {
+        match (a, b) {
+            (Given::Null, Given::Null) => true,
+            (Given::Num(x), Given::Num(y)) => x.mantissa() == y.mantissa() && x.scale() == y.scale(),
+            (Given::Bool(x), Given::Bool(y)) => x == y,
+            (Given::Str(x), Given::Str(y)) => x == y,
+            (Given::Date(x), Given::Date(y)) => x == y && x.0.map(|at| at.timezone()) == y.0.map(|at| at.timezone()),
+            _ => false,
+        }
+    }
+
     fn dated<'a>(&'a self, arg: &'a Arg, rep: Rep, regs: &'a Others) -> DV<'a, 'x> {
         match (arg, rep) {
             (Arg::Reg(r), rep) if rep != Rep::Text => DV::Reg(&regs[*r as usize], rep),
@@ -156,6 +167,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                     }
                 }
                 let mut given: SmallVec<[Given; 4]> = SmallVec::new();
+                let mut seen: SmallVec<[Given; 4]> = SmallVec::new();
+                let mut last: Option<Option<Out>> = None;
                 self.each(act, &skip, |i| {
                     given.clear();
                     for v in &views {
@@ -167,7 +180,13 @@ impl<'e, 'x> Exec<'e, 'x> {
                             }
                         }
                     }
-                    let stored = Builtins::raw(builtin, &given).is_ok_and(|out| d.store(*rep, i, out));
+                    let repeated = last.is_some() && seen.len() == given.len() && seen.iter().zip(&given).all(|(a, b)| Self::same(a, b));
+                    if !repeated {
+                        last = Some(Builtins::raw(builtin, &given).ok());
+                        seen.clear();
+                        seen.extend(given.iter().copied());
+                    }
+                    let stored = last.clone().flatten().is_some_and(|out| d.store(*rep, i, out));
                     if !stored {
                         broken.push(i);
                     }
@@ -202,11 +221,18 @@ impl<'e, 'x> Exec<'e, 'x> {
                     }
                     (Clock::Text, [date]) => {
                         d.texts(n);
+                        let mut last = None;
                         self.each(act, &skip, |i| match date.given(start, i) {
-                            Some(Given::Date(x)) => match x.rendered() {
-                                Some(text) => d.push(i, text.as_bytes()),
-                                None => broken.push(i),
-                            },
+                            Some(Given::Date(x)) => {
+                                let key = (x, x.0.map(|at| at.timezone()));
+                                if last.as_ref().is_none_or(|(seen, _)| *seen != key) {
+                                    last = Some((key, x.rendered()));
+                                }
+                                match last.as_ref().and_then(|(_, text)| text.as_deref()) {
+                                    Some(text) => d.push(i, text.as_bytes()),
+                                    None => broken.push(i),
+                                }
+                            }
                             _ => K::set(&mut d.valid, i, false),
                         });
                     }

@@ -65,6 +65,9 @@ pub trait Resolve {
         let _ = chain;
         Resolved::Unsupported
     }
+    fn novel(&mut self) -> bool {
+        false
+    }
 }
 
 pub struct Lowering {
@@ -80,6 +83,8 @@ pub struct Lowering {
     units: usize,
     graph: bool,
     local: usize,
+    novel: usize,
+    lone: bool,
 }
 
 struct Mark {
@@ -92,6 +97,7 @@ struct Mark {
     dicts: Vec<usize>,
     literal: Option<DictId>,
     classes: usize,
+    novel: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -100,6 +106,7 @@ struct Ctx {
     pointer: Option<ListId>,
     item: Option<NodeId>,
     dollar: Option<NodeId>,
+    list: Option<Seq>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +148,7 @@ impl TableRule {
 
 impl Lowering {
     const DEPTH: u32 = 3;
+    const NATIVE_INPUTS: usize = 1;
 
     pub fn new(member: Option<(&str, &str)>) -> Self {
         let mut schema = Schema::default();
@@ -161,6 +169,8 @@ impl Lowering {
             units: 0,
             graph: false,
             local: 0,
+            novel: 0,
+            lone: false,
         }
     }
 
@@ -172,22 +182,37 @@ impl Lowering {
         let mark = self.mark();
         self.local = self.names.len();
         let result = entries.iter().try_for_each(|entry| self.entry(entry, resolve));
-        self.settle(mark, result)
+        self.settle(mark, result, resolve)
     }
 
     pub fn table(&mut self, spec: &TableSpec, resolve: &mut dyn Resolve) -> Result<(), Unsupported> {
         let mark = self.mark();
         self.local = self.names.len();
         let result = self.tabled(spec, resolve);
-        self.settle(mark, result)
+        self.settle(mark, result, resolve)
     }
 
-    fn settle(&mut self, mark: Mark, result: Result<(), Unsupported>) -> Result<(), Unsupported> {
+    fn settle(&mut self, mark: Mark, result: Result<(), Unsupported>, resolve: &mut dyn Resolve) -> Result<(), Unsupported> {
+        if resolve.novel() {
+            self.novel += 1;
+        }
+        let fresh = self.novel > mark.novel;
+        let result = match result {
+            Ok(()) if self.units > 0 && (fresh || self.lone) => Err(Unsupported::new("isolated: new typed coverage")),
+            other => other,
+        };
         match result {
-            Ok(()) => self.units += 1,
+            Ok(()) => {
+                self.units += 1;
+                self.lone |= fresh;
+            }
             Err(_) => self.rollback(mark),
         }
         result
+    }
+
+    fn widen(&mut self) {
+        self.novel += 1;
     }
 
     pub fn units(&self) -> usize {
@@ -222,6 +247,7 @@ impl Lowering {
             dicts: self.schema.dicts.iter().map(|d| d.values.len()).collect(),
             literal: self.literal,
             classes: self.classes.len(),
+            novel: self.novel,
         }
     }
 
@@ -242,6 +268,7 @@ impl Lowering {
         }
         self.literal = mark.literal;
         self.classes.truncate(mark.classes);
+        self.novel = mark.novel;
     }
 
     fn prune(&mut self) {
@@ -283,8 +310,8 @@ impl Lowering {
 
     fn ctx(&self) -> Ctx {
         match self.member {
-            Some(list) => Ctx { scope: Scope::Elem(list), pointer: None, item: None, dollar: None },
-            None => Ctx { scope: Scope::Row, pointer: None, item: None, dollar: None },
+            Some(list) => Ctx { scope: Scope::Elem(list), pointer: None, item: None, dollar: None, list: None },
+            None => Ctx { scope: Scope::Row, pointer: None, item: None, dollar: None, list: None },
         }
     }
 
@@ -318,8 +345,9 @@ impl Lowering {
             return Err(Unsupported::new("empty table"));
         }
         let ctx = self.ctx();
-        let mut targets: Vec<Option<NodeId>> = vec![None; spec.inputs.len()];
+        let mut targets: Vec<Option<Ctx>> = vec![None; spec.inputs.len()];
         let mut conds = Vec::with_capacity(spec.rules.len());
+        let mut folded = false;
         for rule in &spec.rules {
             let mut cond: Option<NodeId> = None;
             for (at, cell) in rule.cells.iter().enumerate() {
@@ -330,11 +358,11 @@ impl Lowering {
                     return Err(Unsupported::new("blank table cell"));
                 }
                 let test = match (spec.inputs.get(at).and_then(Option::as_deref), targets.get(at).copied().flatten()) {
-                    (Some(_), Some(target)) => self.parse(cell, true, Ctx { dollar: Some(target), ..ctx }, r)?,
+                    (Some(_), Some(target)) => self.parse(cell, true, target, r)?,
                     (Some(field), None) => {
-                        let target = self.parse(field, false, ctx, r)?;
+                        let target = self.target(field, ctx, r)?;
                         targets[at] = Some(target);
-                        self.parse(cell, true, Ctx { dollar: Some(target), ..ctx }, r)?
+                        self.parse(cell, true, target, r)?
                     }
                     (None, _) => self.parse(cell, false, ctx, r)?,
                 };
@@ -343,6 +371,12 @@ impl Lowering {
                     Hit::Lenient => self.guarded(test)?,
                     Hit::Strict => test,
                 };
+                if spec.hit == Hit::Lenient && self.lit(test) == Some(&Lit::Bool(false)) {
+                    self.widen();
+                    folded = true;
+                    cond = Some(test);
+                    break;
+                }
                 cond = Some(match cond {
                     None => test,
                     Some(left) => self.logic(true, left, test)?,
@@ -352,6 +386,9 @@ impl Lowering {
                 Some(c) => c,
                 None => self.konst(Lit::Bool(true)),
             });
+        }
+        if folded && spec.inputs.len() <= Self::NATIVE_INPUTS && conds.iter().all(|c| self.lit(*c).is_some()) {
+            return Err(Unsupported::new("constant table"));
         }
         let total = conds.iter().any(|c| self.nodes[*c as usize].op == Op::Const(Lit::Bool(true)));
         let (scope, conds) = match self.member {
@@ -380,6 +417,19 @@ impl Lowering {
         Ok(())
     }
 
+    fn target(&mut self, field: &str, ctx: Ctx, r: &mut dyn Resolve) -> Result<Ctx, Unsupported> {
+        match self.parse(field, false, ctx, r) {
+            Ok(target) => Ok(Ctx { dollar: Some(target), ..ctx }),
+            Err(e) => {
+                self.widen();
+                match self.parsed(field, false, ctx, r, |this, ast, ctx, r| this.seq(ast, ctx, r)) {
+                    Ok(seq) => Ok(Ctx { list: Some(seq), ..ctx }),
+                    Err(_) => Err(e),
+                }
+            }
+        }
+    }
+
     fn leftmost(&self, id: NodeId) -> Vec<NodeId> {
         match &self.nodes[id as usize].op {
             Op::And(a, _) | Op::Or(a, _) | Op::Not(a) => self.leftmost(*a),
@@ -395,6 +445,10 @@ impl Lowering {
             return self.logic(true, a, b);
         }
         let operands = self.leftmost(id);
+        if operands.iter().any(|x| self.lit(*x) == Some(&Lit::Null)) {
+            self.widen();
+            return Ok(self.konst(Lit::Bool(false)));
+        }
         let null = self.konst(Lit::Null);
         let mut valid: Option<NodeId> = None;
         let nullable: Vec<NodeId> = operands.into_iter().filter(|x| self.ty(*x).nullable).collect();
@@ -746,14 +800,12 @@ impl Lowering {
         let base = Self::segments(ast, &mut segments)?;
         let rest = segments.join(".");
         match base {
-            Base::Pointer => {
-                let list = ctx.pointer.ok_or_else(|| Unsupported::new("# outside a closure"))?;
-                match (ctx.item, rest.is_empty()) {
-                    (Some(item), true) => Ok(item),
-                    (Some(_), false) => Err(Unsupported::new("member of a mapped element")),
-                    (None, _) => self.field(list, &rest, None, r),
-                }
-            }
+            Base::Pointer => match (ctx.item, ctx.pointer, rest.is_empty()) {
+                (Some(item), _, true) => Ok(item),
+                (Some(_), _, false) => Err(Unsupported::new("member of a mapped element")),
+                (None, Some(list), _) => self.field(list, &rest, None, r),
+                (None, None, _) => Err(Unsupported::new("# outside a closure")),
+            },
             Base::Dollar if segments.is_empty() => ctx.dollar.ok_or_else(|| Unsupported::new("$ outside a table cell")),
             Base::Dollar if ctx.dollar.is_some() => Err(Unsupported::new("member of $ in a table cell")),
             Base::Dollar => Self::scalar(self.own(&rest).ok_or_else(|| Unsupported::new(format!("unknown $.{rest}")))?, &rest),
@@ -1014,6 +1066,10 @@ impl Lowering {
             (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) if eq => (a, b),
             (Kind::Null, _) | (_, Kind::Null) if eq => (a, b),
             (Kind::Num(_), Kind::Num(_)) => (a, b),
+            (Kind::Null, Kind::Num(_) | Kind::Null) | (Kind::Num(_), Kind::Null) => {
+                self.widen();
+                (a, b)
+            }
             (x, y) if eq && Self::family(x).zip(Self::family(y)).is_some_and(|(p, q)| p != q) => return self.mismatch(op, a, b),
             _ => return Err(Unsupported::new(format!("compare {op:?} between {ka} and {kb}"))),
         };
@@ -1219,6 +1275,37 @@ impl Lowering {
                 };
                 self.fold(Fold::Count, seq, Some(filter), None)
             }
+            (FunctionKind::Internal(InternalFunction::Contains), [Ast::Array(items), x]) => {
+                self.widen();
+                let x = self.expr(x, ctx, r)?;
+                let items = self.literals_of(items, ctx, r)?;
+                let mut hits = Vec::with_capacity(items.len());
+                for item in items {
+                    hits.push(self.belongs(x, item)?);
+                }
+                self.chain(false, hits)
+            }
+            (FunctionKind::Closure(c @ (ClosureFunction::Some | ClosureFunction::All | ClosureFunction::None)), [Ast::Array(items), body]) => {
+                self.widen();
+                let body = Self::closure(body)?;
+                let items = self.literals_of(items, ctx, r)?;
+                let mut tests = Vec::with_capacity(items.len());
+                for item in items {
+                    let test = self.expr(body, Ctx { item: Some(item), ..ctx }, r)?;
+                    if self.ty(test) != Ty::boolean() {
+                        return Err(Unsupported::new(format!("predicate: unexpected type {}", self.ty(test))));
+                    }
+                    tests.push(test);
+                }
+                match c {
+                    ClosureFunction::Some => self.chain(false, tests),
+                    ClosureFunction::All => self.chain(true, tests),
+                    _ => {
+                        let any = self.chain(false, tests)?;
+                        self.not(any)
+                    }
+                }
+            }
             (FunctionKind::Internal(InternalFunction::Contains), [list, x]) => match self.seq(list, ctx, r) {
                 Ok(seq) => {
                     let x = self.expr(x, ctx, r)?;
@@ -1370,6 +1457,29 @@ impl Lowering {
         }
     }
 
+    fn literals_of(&mut self, items: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Result<Vec<NodeId>, Unsupported> {
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            let id = self.expr(item, ctx, r)?;
+            match self.lit(id) {
+                Some(Lit::Num(_) | Lit::Bool(_) | Lit::Text(_) | Lit::Null) => out.push(id),
+                _ => return Err(Unsupported::new("list literal: non-literal item")),
+            }
+        }
+        Ok(out)
+    }
+
+    fn chain(&mut self, and: bool, tests: Vec<NodeId>) -> Lowered {
+        let mut tests = tests.into_iter();
+        let Some(mut acc) = tests.next() else {
+            return Ok(self.konst(Lit::Bool(and)));
+        };
+        for test in tests {
+            acc = self.logic(and, acc, test)?;
+        }
+        Ok(acc)
+    }
+
     fn direct(&self, id: NodeId) -> bool {
         matches!(self.nodes[id as usize].op, Op::Column(_) | Op::Field(..))
     }
@@ -1487,7 +1597,15 @@ impl Lowering {
     }
 
     fn test(&mut self, func: Func, a: NodeId, b: NodeId) -> Lowered {
-        let (a, b) = (self.textual(a)?, self.textual(b)?);
+        let failing = |this: &mut Self, x: NodeId| {
+            let null = func != Func::Matches && this.kind(x) == Kind::Null;
+            if null {
+                this.widen();
+            }
+            null
+        };
+        let a = if failing(self, a) { a } else { self.textual(a)? };
+        let b = if failing(self, b) { b } else { self.textual(b)? };
         if func == Func::Matches {
             let Some(Lit::Text(pattern)) = self.lit(b) else {
                 return Err(Unsupported::new("matches: pattern must be a string literal"));
@@ -1522,7 +1640,7 @@ impl Lowering {
     }
 
     fn inner(ctx: Ctx, seq: Seq) -> Ctx {
-        Ctx { scope: Scope::Elem(seq.list), pointer: Some(seq.list), item: seq.value, dollar: ctx.dollar }
+        Ctx { scope: Scope::Elem(seq.list), pointer: Some(seq.list), item: seq.value, dollar: ctx.dollar, list: ctx.list }
     }
 
     fn lifted(&mut self, id: NodeId, list: ListId) -> Lowered {
@@ -1602,6 +1720,7 @@ impl Lowering {
                 }
                 Ok(Self::plain(self.nested(parent, &rest, r)?))
             }
+            Base::Dollar if rest.is_empty() && ctx.list.is_some() => ctx.list.ok_or_else(|| Unsupported::new("list source $")),
             Base::Dollar if ctx.dollar.is_some() || rest.is_empty() => Err(Unsupported::new("list source $")),
             Base::Dollar => match self.own(&rest) {
                 Some(Named::Seq(seq)) => Ok(seq),

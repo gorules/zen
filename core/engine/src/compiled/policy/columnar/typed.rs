@@ -8,6 +8,7 @@ use crate::compiled::core::group::{Built, Prefix, Step};
 use crate::compiled::core::list::Frame;
 use crate::compiled::core::retry::Take;
 use crate::compiled::lowered::Exports;
+use crate::compiled::graph::Census;
 use crate::compiled::shred::{Listing, Normalizer};
 use crate::compiled::leaf::Leaf;
 use crate::policy::blocks::BlockKind;
@@ -119,7 +120,14 @@ impl TypedGroup {
                         sinks.extend(sunk);
                         Step::Lowered
                     }
-                    _ => Step::Stop,
+                    Some((Err(e), _)) => {
+                        Census::reason(|| e.0);
+                        Step::Stop
+                    }
+                    None => {
+                        Census::reason(|| "no entries".into());
+                        Step::Stop
+                    }
                 }
             },
             |(lowering, probe, sinks)| {
@@ -130,7 +138,10 @@ impl TypedGroup {
                 }
                 let built = match Program::new(lowering.finish()) {
                     Ok(program) => Self::new(program, sinks, consumed, record, entity.is_some()),
-                    Err(_) => Err(record),
+                    Err(e) => {
+                        Census::reason(|| format!("build: {}", e.0));
+                        Err(record)
+                    }
                 };
                 match built {
                     Ok(group) => Built::Done(group),
@@ -179,6 +190,7 @@ impl TypedGroup {
             (false, _) => Some(Vec::new()),
         };
         let (Some(columns), Some(lists), Some(fields)) = (columns, lists, fields) else {
+            Census::reason(|| "columns unresolved".into());
             return Err(record);
         };
         let exports = Exports::of(hir);
@@ -221,6 +233,9 @@ impl Fusions {
             return found;
         }
         let group = Arc::new(TypedGroup::lower(pass, units, entity, rows));
+        if group.program.is_none() {
+            Census::reject((Arc::as_ptr(&group) as usize, "policy".into()));
+        }
         let sources = group.replay(pass, entity, rows)?;
         if let Ok(mut cache) = self.typed.write() {
             cache.entry(key).or_insert_with(|| Variants::new(Self::VARIANTS)).keep(group.clone());
@@ -240,20 +255,26 @@ impl<'s, 'a> Pass<'s, 'a> {
         let total = self.sheet.rows;
         let full = rows.len() == total;
         if Density::sparse(rows.len(), total) {
+            Census::reason(|| "sparse".into());
             return Typed::Skipped;
         }
         let plan = self.plan;
         self.listed.borrow_mut().retain(|(_, stable, _)| *stable);
         let Some((group, sources)) = plan.fusions.group(self, units, entity, rows) else {
+            Census::reason(|| "replay".into());
             return Typed::Skipped;
         };
         let Some(program) = group.program.as_ref() else {
+            Census::recall(&(Arc::as_ptr(&group) as usize, "policy".into()));
             return Typed::Skipped;
         };
         let span = match entity {
             Some(at) => match self.sheet.entities[at].frame.span(self.sheet.rows) {
                 Some(span) => Some((at, span)),
-                None => return Typed::Skipped,
+                None => {
+                    Census::reason(|| "span".into());
+                    return Typed::Skipped;
+                }
             },
             None => None,
         };
@@ -273,6 +294,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             false => (self.execute(&group, program, &sources, entity, select.as_deref()), Choice::default()),
         };
         let Some(mut out) = out else {
+            Census::reason(|| "execute".into());
             return Typed::Skipped;
         };
         let (faulted, kept) = match out.faults().any() {

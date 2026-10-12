@@ -11,6 +11,7 @@ use std::time::Instant;
 use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::lowered::Exports;
+use crate::compiled::graph::Census;
 use zen_expression::lane::{Fusion, LaneProgram};
 use zen_expression::typed::{Hit, TableRule, TableSpec};
 
@@ -325,8 +326,12 @@ impl<'s, 'a> Pass<'s, 'a> {
                         if rows.is_empty() {
                             break;
                         }
+                        let began = Census::on().then(|| (Instant::now(), rows.len()));
                         match self.typed(&item.units[at..], entity, rows) {
                             Typed::Ran(consumed, faulted) => {
+                                if let Some((start, count)) = began {
+                                    Census::record("policy typed | group".into(), count, start.elapsed().as_nanos());
+                                }
                                 if let Some(from) = laning.take() {
                                     fusions.runs.ran((blocks[from..].to_vec(), member), at - from);
                                 }
@@ -358,12 +363,16 @@ impl<'s, 'a> Pass<'s, 'a> {
                             }
                             Typed::Skipped => {}
                         }
+                        let census = Census::on().then(|| (Census::taken(), Instant::now(), rows.len()));
                         if laning.is_none() {
                             let run = fusions.runs.run(&(blocks[at..].to_vec(), member)).map_or(0, |run| run.min(blocks.len() - at));
                             if let Some(fused) = (run > 1).then(|| fusions.get(plan, &blocks[at..at + run], member)).flatten() {
                                 self.fused(&fused, entity, rows);
                                 self.counts.1 += run;
                                 at += run;
+                                if let Some((why, start, count)) = census {
+                                    Census::record(format!("policy lane | fused | {why}"), count, start.elapsed().as_nanos());
+                                }
                                 continue;
                             }
                             laning = Some(at);
@@ -376,6 +385,9 @@ impl<'s, 'a> Pass<'s, 'a> {
                             }
                             self.event(*event, rows);
                         }
+                        if let Some((why, start, count)) = census {
+                            Census::record(format!("policy lane | unit | {why}"), count, start.elapsed().as_nanos());
+                        }
                         self.counts.1 += 1;
                         at += 1;
                     }
@@ -386,6 +398,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 }
             }
             self.counts.1 += item.units.len();
+            let census = Census::on().then(|| (Instant::now(), rows.len(), item.domain.is_some()));
             let group = match (item.domain, blocks.len() > 1) {
                 (Some(domain), true) => self.regroup(&item, rows).and_then(|entity| {
                     let fused = self.plan.fusions.get(self.plan, &blocks, domain.is_some())?;
@@ -406,6 +419,9 @@ impl<'s, 'a> Pass<'s, 'a> {
                         }
                     }
                 }
+            }
+            if let Some((start, count, domain)) = census {
+                Census::record(format!("policy lane | whole item | domain {domain} typed {typed}"), count, start.elapsed().as_nanos());
             }
         }
         fresh(self, rows);

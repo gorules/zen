@@ -77,9 +77,21 @@ impl Block {
 }
 
 impl Workload {
-    pub(crate) const NAMES: [&'static str; 19] = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13", "W14", "W15", "W16", "W17", "W18", "W19"];
+    pub(crate) const NAMES: [&'static str; 21] =
+        ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13", "W14", "W15", "W16", "W17", "W18", "W19", "W20", "W21"];
 
-    pub(crate) const FAULTY: [&'static str; 11] = ["W6", "W8", "W9", "W10", "W11", "W12", "W13", "W15", "W17", "W18", "W19"];
+    pub(crate) const FAULTY: [&'static str; 13] = ["W6", "W8", "W9", "W10", "W11", "W12", "W13", "W15", "W17", "W18", "W19", "W20", "W21"];
+
+    const W20_SOURCE: &'static str = "(contains(['a', 'bb', null], w.s) ? 1 : 0) + (some(['a', 'c'], startsWith(w.k, #)) ? 10 : 0) + (none([1, 2.5], # == w.n) ? 100 : 0) + (all(['x', 'y'], w.s != #) ? 1000 : 0)";
+
+    const W21_RULES: [([&'static str; 4], [&'static str; 2]); 6] = [
+        (["< 5", "", "", ""], ["'gone'", "1"]),
+        (["startsWith($, 'q')", "", "", ""], ["'text'", "2"]),
+        (["", "", "contains([1, 2.5, 3], $)", ""], ["'listed'", "w.n * 3"]),
+        (["", "some(['a', 'bb'], # == $)", "", ""], ["'some'", "w.n * 3"]),
+        (["", "", "> 7", "true"], ["'big'", "w.n - 1"]),
+        (["", "", "", ""], ["'rest'", "w.n * 3"]),
+    ];
 
     const W14_KEYS: [(&'static str, &'static str); 48] = [
         ("p", "d(e.at)"),
@@ -439,6 +451,8 @@ impl Workload {
             "W17" => Self::w17(),
             "W18" => Self::w18(),
             "W19" => Self::w19(),
+            "W20" => Self::w20(),
+            "W21" => Self::w21(),
             _ => Self::w4(),
         }
     }
@@ -470,6 +484,7 @@ impl Workload {
             "W12" | "W13" => Self::w12_rows(count),
             "W14" | "W15" | "W19" => Self::w14_rows(count),
             "W18" => Self::w18_rows(count),
+            "W20" | "W21" => Self::w20_rows(count),
             "W16" | "W17" => Self::w16_rows(count),
             _ => Self::w4_rows(count),
         }
@@ -488,6 +503,7 @@ impl Workload {
             "W12" | "W13" => Self::w12_extremes(),
             "W14" | "W15" | "W19" => Self::w14_extremes(),
             "W18" => Self::w18_extremes(),
+            "W20" | "W21" => Self::w20_extremes(),
             "W16" | "W17" => Self::w16_extremes(),
             _ => Self::w4_extremes(),
         }
@@ -824,6 +840,73 @@ impl Workload {
     fn w19() -> Workload {
         Self::mock();
         Workload { name: "W19", spec: Self::w14_spec(), dialect: Dialect::Graph, member: None, blocks: Self::W19_KEYS.iter().map(|(k, s)| Self::expr(k, s)).collect() }
+    }
+
+    fn w20_spec() -> Spec {
+        Spec {
+            columns: vec![
+                Self::col("w.n", Class::Num, Enc::Scaled),
+                Self::col("w.s", Class::Text, Enc::Text),
+                Self::col("w.k", Class::Text, Enc::Dict),
+                Self::col("w.b", Class::Bool, Enc::Bool),
+            ],
+            lists: Vec::new(),
+        }
+    }
+
+    fn w20() -> Workload {
+        Workload { name: "W20", spec: Self::w20_spec(), dialect: Dialect::Graph, member: None, blocks: vec![Self::expr("out", Self::W20_SOURCE)] }
+    }
+
+    fn w21() -> Workload {
+        Workload {
+            name: "W21",
+            spec: Self::w20_spec(),
+            dialect: Dialect::Graph,
+            member: None,
+            blocks: vec![Block::Table {
+                inputs: ["w.gone", "w.s", "w.n", "w.b"].iter().map(|s| s.to_string()).collect(),
+                outputs: vec!["out".to_string(), "v".to_string()],
+                rules: Self::W21_RULES
+                    .iter()
+                    .map(|(cells, values)| Rule { cells: cells.iter().map(|c| c.to_string()).collect(), values: values.iter().map(|v| v.to_string()).collect() })
+                    .collect(),
+            }],
+        }
+    }
+
+    fn w20_rows(count: usize) -> Vec<Row> {
+        let mut rng = Rng::new(53);
+        let texts = ["a", "bb", "c", "ab", "x", "y", "ca"];
+        (0..count)
+            .map(|_| {
+                let n = match rng.pick(9) {
+                    0 => Value::Null,
+                    1 => Self::d(25, 1),
+                    _ => Self::d(rng.pick(2_000) as i64 - 300, rng.pick(3) as u8),
+                };
+                let mut text = |rng: &mut Rng| match rng.pick(8) {
+                    0 => Value::Null,
+                    _ => Self::s(texts[rng.pick(texts.len() as u64) as usize]),
+                };
+                let (s, k) = (text(&mut rng), text(&mut rng));
+                let b = match rng.pick(5) {
+                    0 => Value::Null,
+                    pick => Value::Bool(pick % 2 == 0),
+                };
+                Row { columns: vec![n, s, k, b], lists: Vec::new() }
+            })
+            .collect()
+    }
+
+    fn w20_extremes() -> Vec<Row> {
+        let row = |n: Value, s: Value, k: Value, b: Value| Row { columns: vec![n, s, k, b], lists: Vec::new() };
+        vec![
+            row(Value::Null, Value::Null, Value::Null, Value::Null),
+            row(Self::n(i64::MAX), Self::s(""), Self::s("a"), Value::Bool(true)),
+            row(Self::d(i64::MIN + 1, 18), Self::s("bb"), Self::s("c"), Value::Bool(false)),
+            row(Self::d(10, 1), Self::s("x"), Self::s("ab"), Value::Null),
+        ]
     }
 
     fn w18() -> Workload {

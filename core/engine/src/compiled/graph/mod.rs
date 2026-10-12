@@ -18,6 +18,7 @@ use crate::model::GraphContent;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use schedule::Segment;
+pub(crate) use plan::census::Census;
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, OnceLock};

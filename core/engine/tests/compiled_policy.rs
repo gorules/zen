@@ -968,6 +968,11 @@ fn policy_anchor_throughput() {
         return;
     }
     results.push(("columnar struct lists", Anchor::time(count, || Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns))))));
+    if std::env::var("ZEN_CENSUS").is_ok() {
+        for (key, calls, rows, ns) in zen_engine::Decision::census() {
+            println!("CENSUS\tanchor\t{key}\t{calls}\t{rows}\t{ns}");
+        }
+    }
     let mut programs = vec![None; 8];
     let mut runner = zen_expression::lane::LaneRunner::new();
     let mut stages = [0f64; 8];

@@ -195,7 +195,10 @@ async fn columnar_graphs_match_the_walker() {
     let mut failures: Vec<String> = Vec::new();
     let (mut compared, mut skipped) = (0usize, 0usize);
     for fixture in Fixture::load_all() {
-        if NETWORK_BOUND.contains(&fixture.name.as_str()) || TIME_BOUND.contains(&fixture.name.as_str()) {
+        if NETWORK_BOUND.contains(&fixture.name.as_str())
+            || TIME_BOUND.contains(&fixture.name.as_str())
+            || std::env::var("BENCH_FILE").is_ok_and(|f| !fixture.name.contains(f.as_str()))
+        {
             continue;
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
@@ -256,7 +259,10 @@ async fn struct_inputs_match_the_walker() {
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
-        if NETWORK_BOUND.contains(&fixture.name.as_str()) || TIME_BOUND.contains(&fixture.name.as_str()) {
+        if NETWORK_BOUND.contains(&fixture.name.as_str())
+            || TIME_BOUND.contains(&fixture.name.as_str())
+            || std::env::var("BENCH_FILE").is_ok_and(|f| !fixture.name.contains(f.as_str()))
+        {
             continue;
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
@@ -969,6 +975,12 @@ async fn plan_census() {
         .unwrap_or_default();
     let mut reasons: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for fixture in Fixture::load_all() {
+        if NETWORK_BOUND.contains(&fixture.name.as_str())
+            || TIME_BOUND.contains(&fixture.name.as_str())
+            || std::env::var("BENCH_FILE").is_ok_and(|f| !fixture.name.contains(f.as_str()))
+        {
+            continue;
+        }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
         let variants = match std::env::var("BENCH_VALID").is_ok() && !fixture.inputs.is_empty() {

@@ -401,6 +401,67 @@ async fn columnar_function_rows_time_out_independently() {
     assert!(elapsed < std::time::Duration::from_secs(30), "{elapsed:?}");
 }
 
+struct FunctionNode;
+
+impl FunctionNode {
+    const LEAKS: &'static [&'static str] = &[
+        "export const handler = async (input) => { const f = () => Math; f().seen = (f().seen || 0) + 1; return { n: f().seen, row: input.n } }",
+        "export const handler = async (input) => { const o = { m: Math }; o.m.seen = (o.m.seen || 0) + 1; return { n: o.m.seen, row: input.n } }",
+        "export const handler = async (input) => { const bump = (t) => { t.seen = (t.seen || 0) + 1; return t.seen }; return { n: bump(JSON), row: input.n } }",
+    ];
+
+    fn graph(content: Value) -> Arc<zen_engine::model::GraphContent> {
+        let graph = serde_json::json!({
+            "nodes": [
+                { "id": "in", "type": "inputNode", "name": "Request", "position": { "x": 0, "y": 0 } },
+                { "id": "fn", "type": "functionNode", "name": "Function", "position": { "x": 0, "y": 0 }, "content": content },
+                { "id": "out", "type": "outputNode", "name": "Response", "position": { "x": 0, "y": 0 } }
+            ],
+            "edges": [
+                { "id": "e1", "type": "edge", "sourceId": "in", "targetId": "fn" },
+                { "id": "e2", "type": "edge", "sourceId": "fn", "targetId": "out" }
+            ]
+        });
+        match serde_json::from_value(graph) {
+            Ok(zen_engine::model::DecisionContent::Graph(graph)) => graph,
+            _ => panic!("graph"),
+        }
+    }
+
+    async fn compare(contents: &[Value], rows: &[Value]) -> Vec<String> {
+        let built = Built::new(rows).expect("columns");
+        let columns = built.columns();
+        let mut failures = Vec::new();
+        for content in contents {
+            let mut compiled = Decision::from(FunctionNode::graph(content.clone()));
+            compiled.compile();
+            let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            for row in 0..rows.len() {
+                let want = match compiled.evaluate(columns.row(row)).await {
+                    Ok(r) => Ok(Built::normalized(r.result.to_value())),
+                    Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
+                };
+                let got = match &output.errors[row] {
+                    Some(e) => Err(serde_json::to_value(&**e).map(|v| v.to_string()).unwrap_or_default()),
+                    None => Ok(Built::normalized(output.row(row).to_value())),
+                };
+                if got != want {
+                    failures.push(format!("{content}\n  row {row}\n  single   {want:?}\n  columnar {got:?}"));
+                }
+            }
+        }
+        failures
+    }
+}
+
+#[tokio::test]
+async fn columnar_function_v2_shared_state_matches_rows() {
+    let rows: Vec<Value> = (0..6).map(|n| serde_json::json!({ "n": n })).collect();
+    let contents: Vec<Value> = FunctionNode::LEAKS.iter().map(|source| serde_json::json!({ "source": source })).collect();
+    let failures = FunctionNode::compare(&contents, &rows).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
 #[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]

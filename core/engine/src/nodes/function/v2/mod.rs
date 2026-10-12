@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::nodes::definition::NodeHandler;
+use crate::nodes::function::purity::Purity;
 use crate::nodes::function::v2::error::{FunctionError, FunctionResult};
 use crate::nodes::function::v2::function::Function;
 use crate::nodes::function::v2::module::console::Log;
@@ -19,7 +20,6 @@ use zen_types::variable::Variable;
 
 pub(crate) mod error;
 pub(crate) mod function;
-pub(crate) mod isolation;
 pub(crate) mod listener;
 pub(crate) mod module;
 pub(crate) mod serde;
@@ -128,7 +128,7 @@ impl FunctionV2NodeHandler {
             .as_ref()
             .and_then(|stripped| stripped.get(content.source.as_ref()).cloned())
             .unwrap_or_else(|| strip::TypeStripper::strip(content.source.deref()));
-        if isolation::Isolation::shareable(source.as_ref()) || rows.len() < 2 {
+        if rows.len() < 2 || Purity::module(source.as_ref()) {
             return Self::run(id, &source, extensions, config, iteration, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());

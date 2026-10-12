@@ -23,7 +23,7 @@ pub(crate) enum Seen {
     Mixed,
 }
 
-struct Coder<'d> {
+pub(crate) struct Coder<'d> {
     data: &'d [u8],
     slots: [u8; Coder::SLOTS],
     entries: Vec<((u64, u64, usize), usize)>,
@@ -411,7 +411,7 @@ impl<'d> Coder<'d> {
         (hash >> 57) as usize
     }
 
-    fn codes(mut self, offsets: &[i32]) -> Option<(Vec<i32>, Dict)> {
+    fn scan(&mut self, offsets: &[i32]) -> Option<Vec<i32>> {
         let mut codes = Vec::with_capacity(offsets.len().saturating_sub(1));
         for (at, w) in offsets.windows(2).enumerate() {
             if at == Self::SAMPLE && self.entries.len() > Self::SAMPLED {
@@ -419,6 +419,17 @@ impl<'d> Coder<'d> {
             }
             codes.push(self.code(usize::try_from(w[0]).ok()?, usize::try_from(w[1]).ok()?)?);
         }
+        Some(codes)
+    }
+
+    pub(crate) fn keys(data: &'d [u8], offsets: &[i32]) -> Option<(Rc<[i32]>, usize)> {
+        let mut coder = Self::new(data);
+        let codes = coder.scan(offsets)?;
+        Some((codes.into(), coder.entries.len()))
+    }
+
+    fn codes(mut self, offsets: &[i32]) -> Option<(Vec<i32>, Dict)> {
+        let codes = self.scan(offsets)?;
         let mut dict_offsets = Vec::with_capacity(self.entries.len() + 1);
         let mut text = String::new();
         dict_offsets.push(0);

@@ -52,6 +52,16 @@ impl Cost {
         }
     }
 
+    pub(crate) fn typed(&self, per: u64) {
+        self.typed.store(per, Ordering::Relaxed);
+    }
+
+    pub(crate) fn credit(&self, saving: u64) {
+        if saving > 0 {
+            let _ = self.typed.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |typed| Some(typed.saturating_sub(saving)));
+        }
+    }
+
     pub(crate) fn record(&self, (path, fresh): (Path, bool), elapsed: Duration, rows: usize) {
         let per = u64::try_from(elapsed.as_nanos().saturating_mul(1024) / rows.max(1) as u128).unwrap_or(u64::MAX - 1);
         let cell = match path {

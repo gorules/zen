@@ -6,6 +6,7 @@ use crate::compiled::graph::plan::{SegPlan, Source};
 use zen_expression::typed::Outputs;
 use crate::nodes::NodeError;
 use crate::compiled::shred::{Listing, Normalizer};
+use crate::compiled::core::exec::{Dedup, Hint};
 use crate::compiled::leaf::{Bits, Dict, Leaf, Records};
 use crate::EvaluationError;
 use std::rc::Rc;
@@ -70,6 +71,7 @@ pub(crate) struct Store<'a> {
     pub(super) groups: Vec<Group<'a>>,
     pub(super) hints: Vec<(SlotId, Rc<[i32]>, usize)>,
     views: Vec<(SlotId, bool, Option<Shown<'a>>)>,
+    codes: Vec<(SlotId, bool, Hint)>,
     viewed: Vec<(SlotId, M, bool, Leaf<'a>)>,
     listings: std::cell::RefCell<Vec<Cached<'a>>>,
     pub(super) counts: (usize, usize),
@@ -127,6 +129,7 @@ impl<'a> Store<'a> {
             groups: Vec::new(),
             hints: Vec::new(),
             views: Vec::new(),
+            codes: Vec::new(),
             viewed: Vec::new(),
             listings: std::cell::RefCell::new(Vec::new()),
             counts: (0, 0),
@@ -150,6 +153,7 @@ impl<'a> Store<'a> {
         };
         self.masked.retain(|(slot, m, _)| kept(*slot, *m));
         self.views.retain(|(slot, ..)| kept(*slot, M::All));
+        self.codes.retain(|(slot, ..)| kept(*slot, M::All));
         self.viewed.retain(|(slot, m, ..)| kept(*slot, *m));
         self.listings.get_mut().retain(|(slot, ..)| kept(*slot, M::All));
     }
@@ -291,6 +295,15 @@ impl<'a> Store<'a> {
         let masked = Leaf::masked(leaf, &mask);
         self.masked.push((r.slot, r.present, masked.clone()));
         masked
+    }
+
+    pub(super) fn codes(&mut self, slot: SlotId, code: bool, leaf: &Leaf<'a>) -> Hint {
+        if let Some((.., hint)) = self.codes.iter().find(|(s, c, _)| *s == slot && *c == code) {
+            return hint.clone();
+        }
+        let hint = Dedup::codes(&leaf.column(), self.rows);
+        self.codes.push((slot, code, hint.clone()));
+        hint
     }
 
     pub(super) fn viewed(&mut self, seg: &SegPlan, r: Ref, code: bool) -> (Leaf<'a>, Option<Rc<[u64]>>) {

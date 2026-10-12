@@ -571,12 +571,15 @@ async fn columnar_graph_throughput() {
             continue;
         }
         let mut best = [f64::MAX; 2];
-        for _ in 0..5 {
-            let start = std::time::Instant::now();
-            for c in contexts.iter().take(256) {
-                let _ = walker.evaluate(c.clone()).await;
+        let calls: usize = std::env::var("BENCH_CALLS").ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+        for call in 0..calls {
+            if call < 5 {
+                let start = std::time::Instant::now();
+                for c in contexts.iter().take(256) {
+                    let _ = walker.evaluate(c.clone()).await;
+                }
+                best[0] = best[0].min(start.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             }
-            best[0] = best[0].min(start.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             let start = std::time::Instant::now();
             let output = compiled.evaluate_columns(&columns, options).await;
             if read {

@@ -1,11 +1,12 @@
 use crate::compiled::graph::plan::view::{M, SlotId};
 use crate::compiled::graph::table::{First, Table};
-use crate::compiled::core::exec::{Hint, ListPart, Select, TypedCall};
+use crate::compiled::core::exec::{Choice, Dedup, Hint, ListPart, Select, TypedCall};
 use crate::compiled::core::retry::Take;
 use crate::compiled::core::switch::{Density, Path};
 use crate::compiled::graph::plan::typed::{Deferred, Grouping, Piece, Target, TypedOp};
 use crate::compiled::graph::plan::{Op, SegPlan, TableOp};
-use zen_expression::typed::{Data as Slotted, Slot};
+use zen_expression::lane::Values;
+use zen_expression::typed::{Data as Slotted, Outputs, Slot};
 use crate::compiled::shred::{Normalizer, Seen};
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::graph::{Body, Kind};
@@ -13,6 +14,8 @@ use std::rc::Rc;
 use std::time::Instant;
 use super::Run;
 use super::store::{Lowered, Prepared, Store};
+
+type Held<'a> = (Choice, Vec<Leaf<'a>>, Vec<Hint>);
 
 impl<'a> Run<'_, 'a> {
     pub(super) fn deferred(&mut self, seg: &SegPlan, op: &Deferred, units: &[Op], positions: Option<&Rc<[usize]>>) {
@@ -68,14 +71,17 @@ impl<'a> Run<'_, 'a> {
         }
         let path = op.cost.path();
         let start = Instant::now();
+        let mut held: Held<'a> = (Choice::default(), Vec::new(), Vec::new());
         let typed = match path.0 {
-            Path::Typed => self.lowered(seg, op, positions).map(|lowered| self.merged(seg, op, units, positions, lowered)).is_some(),
+            Path::Typed => self.lowered(seg, op, positions, &mut held).map(|lowered| self.merged(seg, op, units, positions, lowered)).is_some(),
             Path::Lane => false,
         };
         if !typed {
             self.laned(seg, units, positions);
         }
-        op.cost.record(path, start.elapsed(), local);
+        let (choice, leaves, hints) = held;
+        op.dedup.settle(&op.cost, path, choice, start.elapsed(), local);
+        op.dedup.probe(&op.cost, self, local, |run| run.coded(op, &leaves, &hints, positions));
     }
 
     fn laned(&mut self, seg: &SegPlan, units: &[Op], positions: Option<&Rc<[usize]>>) {
@@ -230,7 +236,7 @@ impl<'a> Run<'_, 'a> {
         }
     }
 
-    fn lowered(&mut self, seg: &SegPlan, op: &TypedOp, positions: Option<&Rc<[usize]>>) -> Option<Lowered> {
+    fn lowered(&mut self, seg: &SegPlan, op: &TypedOp, positions: Option<&Rc<[usize]>>, held: &mut Held<'a>) -> Option<Lowered> {
         let rows = self.store.rows;
         let mut hints: Vec<Hint> = op
             .columns
@@ -238,7 +244,8 @@ impl<'a> Run<'_, 'a> {
             .map(|read| self.store.hints.iter().find(|(slot, _, _)| *slot == read.slot).map(|(_, codes, size)| (codes.clone(), *size)))
             .collect();
         let raw: Vec<Leaf<'a>> = op.columns.iter().map(|read| self.store.leaf(read.slot)).collect();
-        let keyed = op.dedup.ready() && op.lists.is_empty() && op.dedup.eligible(&op.program, &raw, &hints);
+        let eligible = op.lists.is_empty() && op.dedup.eligible(&op.program, &raw, &hints);
+        let keyed = op.dedup.ready() && eligible;
         let mut prefault: Option<Vec<u64>> = None;
         let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(op.columns.len());
         for (at, read) in op.columns.iter().enumerate() {
@@ -263,36 +270,67 @@ impl<'a> Run<'_, 'a> {
             }
             None => {
                 let select: Option<Vec<u64>> = positions.map(|positions| Select::bits(rows, positions));
-                let mut listed: Vec<Prepared<'a>> = Vec::with_capacity(op.lists.len());
-                for (read, chain) in &op.lists {
-                    let chain: Vec<&str> = chain.iter().map(|field| field.as_ref()).collect();
-                    let listing = self.store.listing(read.slot, &chain)?;
-                    let (validity, faults) = match (chain.is_empty(), Store::implied(seg, *read)) {
-                        (true, false) => {
-                            let mask = self.store.mask(seg, read.present);
-                            let mut validity = listing.frame.validity.as_deref().map_or_else(|| Bits::ones(rows), <[u64]>::to_vec);
-                            let mut faults = listing.hosted.as_deref().map_or_else(|| vec![0u64; rows.div_ceil(64)], <[u64]>::to_vec);
-                            for row in (0..rows).filter(|&row| !Bits::get(&mask, row)) {
-                                match listing.frame.offsets[row] == listing.frame.offsets[row + 1] {
-                                    true => Bits::set(&mut validity, row, false),
-                                    false => Bits::set(&mut faults, row, true),
-                                }
-                            }
-                            (Some(validity), Some(faults))
-                        }
-                        _ => (None, None),
-                    };
-                    listed.push((listing, validity, faults));
-                }
-                let call = TypedCall {
-                    rows,
-                    columns: &leaves,
-                    lists: listed.iter().map(|(listing, validity, faults)| ListPart::Listing(listing, validity.as_deref(), faults.as_deref())).collect(),
-                    select: select.as_deref(),
+                let local = positions.map_or(rows, |p| p.len());
+                let (out, ids) = match op.lists.is_empty() && !eligible {
+                    true => {
+                        let (out, choice) = op.dedup.choose(self, local, |run| run.plain(seg, op, &leaves, select.as_deref()).map(|out| (out, None)), |run| run.coded(op, &leaves, &hints, positions));
+                        *held = (choice, leaves, hints);
+                        out?
+                    }
+                    false => (self.plain(seg, op, &leaves, select.as_deref())?, None),
                 };
-                let out = call.run(&op.program)?;
-                Some((out, None, select, prefault))
+                let select = match ids {
+                    Some(_) => None,
+                    None => select,
+                };
+                Some((out, ids, select, prefault))
             }
         }
+    }
+
+    fn plain(&mut self, seg: &SegPlan, op: &TypedOp, leaves: &[Leaf<'a>], select: Option<&[u64]>) -> Option<Outputs> {
+        let rows = self.store.rows;
+        let mut listed: Vec<Prepared<'a>> = Vec::with_capacity(op.lists.len());
+        for (read, chain) in &op.lists {
+            let chain: Vec<&str> = chain.iter().map(|field| field.as_ref()).collect();
+            let listing = self.store.listing(read.slot, &chain)?;
+            let (validity, faults) = match (chain.is_empty(), Store::implied(seg, *read)) {
+                (true, false) => {
+                    let mask = self.store.mask(seg, read.present);
+                    let mut validity = listing.frame.validity.as_deref().map_or_else(|| Bits::ones(rows), <[u64]>::to_vec);
+                    let mut faults = listing.hosted.as_deref().map_or_else(|| vec![0u64; rows.div_ceil(64)], <[u64]>::to_vec);
+                    for row in (0..rows).filter(|&row| !Bits::get(&mask, row)) {
+                        match listing.frame.offsets[row] == listing.frame.offsets[row + 1] {
+                            true => Bits::set(&mut validity, row, false),
+                            false => Bits::set(&mut faults, row, true),
+                        }
+                    }
+                    (Some(validity), Some(faults))
+                }
+                _ => (None, None),
+            };
+            listed.push((listing, validity, faults));
+        }
+        let call = TypedCall {
+            rows,
+            columns: leaves,
+            lists: listed.iter().map(|(listing, validity, faults)| ListPart::Listing(listing, validity.as_deref(), faults.as_deref())).collect(),
+            select,
+        };
+        call.run(&op.program)
+    }
+
+    fn coded(&mut self, op: &TypedOp, leaves: &[Leaf<'a>], hints: &[Hint], positions: Option<&Rc<[usize]>>) -> Option<(Outputs, Option<Vec<u32>>)> {
+        let rows = self.store.rows;
+        let mut codes: Vec<Hint> = Vec::with_capacity(leaves.len());
+        for (at, ((read, leaf), hint)) in op.columns.iter().zip(leaves).zip(hints).enumerate() {
+            let code = match (hint, leaf.column().values) {
+                (Some(hint), _) => Some(hint.clone()),
+                (None, Values::Dict { .. } | Values::Bool { .. }) => None,
+                (None, _) => Some(self.store.codes(read.slot, op.shared.get(at).copied().unwrap_or(false), leaf)?),
+            };
+            codes.push(code);
+        }
+        Dedup::reps(&op.program, leaves, &codes, positions, rows).map(|(out, ids)| (out, Some(ids)))
     }
 }

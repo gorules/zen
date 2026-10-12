@@ -166,6 +166,53 @@ impl Slot {
         }
     }
 
+    fn spread(&mut self, sources: &[u32]) {
+        let rows = sources.len();
+        let pick = |id: u32| (id != u32::MAX).then_some(id as usize);
+        let mut valid = vec![0u64; K::words(rows)];
+        for (row, &id) in sources.iter().enumerate() {
+            if pick(id).is_some_and(|at| K::get(&self.valid, at)) {
+                K::set(&mut valid, row, true);
+            }
+        }
+        self.data = match std::mem::replace(&mut self.data, Data::Bool(Vec::new())) {
+            Data::Num { mant, scale } => Data::Num {
+                mant: sources.iter().map(|&id| pick(id).and_then(|at| mant.get(at).copied()).unwrap_or(0)).collect(),
+                scale: sources.iter().map(|&id| pick(id).and_then(|at| scale.get(at).copied()).unwrap_or(0)).collect(),
+            },
+            Data::Bool(bits) => {
+                let mut out = vec![0u64; K::words(rows)];
+                for (row, &id) in sources.iter().enumerate() {
+                    if pick(id).is_some_and(|at| K::get(&bits, at)) {
+                        K::set(&mut out, row, true);
+                    }
+                }
+                Data::Bool(out)
+            }
+            Data::Code(codes) => Data::Code(sources.iter().map(|&id| pick(id).and_then(|at| codes.get(at).copied()).unwrap_or(0)).collect()),
+            Data::Text { span, data } => Data::Text {
+                span: sources.iter().map(|&id| pick(id).and_then(|at| span.get(at).copied()).unwrap_or((0, 0))).collect(),
+                data,
+            },
+            Data::Date(dates) => Data::Date(sources.iter().map(|&id| pick(id).and_then(|at| dates.get(at).copied().flatten())).collect()),
+        };
+        if !self.wide.is_empty() {
+            let wide = std::mem::take(&mut self.wide);
+            self.wide = sources
+                .iter()
+                .enumerate()
+                .filter_map(|(row, &id)| {
+                    let at = pick(id)?;
+                    let found = wide.binary_search_by_key(&at, |(at, _)| *at).ok()?;
+                    wide.get(found).map(|(_, d)| (row, *d))
+                })
+                .collect();
+        }
+        self.valid = valid;
+        self.fault = self.fault.spread(sources);
+        self.len = rows;
+    }
+
     fn reset(&mut self, len: usize) {
         self.len = len;
         self.wide.clear();
@@ -206,6 +253,20 @@ impl Slot {
 }
 
 impl Faults {
+    fn spread(&self, sources: &[u32]) -> Self {
+        let mut bits = vec![0u64; K::words(sources.len())];
+        let mut any = false;
+        if self.any {
+            for (row, &id) in sources.iter().enumerate() {
+                if id != u32::MAX && K::get(&self.bits, id as usize) {
+                    K::set(&mut bits, row, true);
+                    any = true;
+                }
+            }
+        }
+        Self { bits, rows: sources.len(), any }
+    }
+
     pub(crate) fn reset(&mut self, rows: usize) {
         self.bits.clear();
         self.bits.resize(K::words(rows), 0);
@@ -313,6 +374,29 @@ impl Outputs {
         &self.faults
     }
 
+    pub fn spread(&mut self, rows: usize, ids: &[u32], positions: Option<&[usize]>) -> bool {
+        let reps = self.rows;
+        if self.slots.iter().any(|slot| slot.offsets.is_some() || slot.len != reps) || positions.is_some_and(|p| p.len() != ids.len()) {
+            return false;
+        }
+        let mut sources = match positions {
+            None => ids.to_vec(),
+            Some(_) => vec![u32::MAX; rows],
+        };
+        if let Some(positions) = positions {
+            positions.iter().zip(ids).for_each(|(&row, &id)| sources[row] = id);
+        }
+        if sources.len() != rows || sources.iter().any(|&id| id != u32::MAX && id as usize >= reps) {
+            return false;
+        }
+        self.rows = rows;
+        self.faults = self.faults.spread(&sources);
+        for slot in &mut self.slots {
+            slot.spread(&sources);
+        }
+        true
+    }
+
     pub(crate) fn parts(&mut self) -> (&mut [Slot], &mut Faults) {
         (&mut self.slots, &mut self.faults)
     }
@@ -384,5 +468,79 @@ impl Slot {
             self.len = kept.len();
         }
         self.offsets = Some(out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Data, Faults, Outputs, Slot};
+    use crate::typed::hir::{Kind, Scope};
+    use crate::typed::kernel::K;
+    use rust_decimal::Decimal;
+
+    struct Build;
+
+    impl Build {
+        fn slot(kind: Kind, data: Data, valid: &[bool], faulted: &[usize], wide: Vec<(usize, Decimal)>) -> Slot {
+            let mut bits = vec![0u64; K::words(valid.len())];
+            valid.iter().enumerate().for_each(|(at, &on)| K::set(&mut bits, at, on));
+            let mut fault = Faults::default();
+            fault.reset(valid.len());
+            faulted.iter().for_each(|&at| fault.set(at));
+            Slot {
+                name: String::new(),
+                scope: Scope::Row,
+                kind,
+                len: valid.len(),
+                data,
+                valid: bits,
+                fault,
+                wide,
+                offsets: None,
+                keep: Vec::new(),
+            }
+        }
+
+        fn reps() -> Outputs {
+            let num = Self::slot(Kind::Num(None), Data::Num { mant: vec![15, 7, 0], scale: vec![1, 0, 0] }, &[true, true, false], &[2], vec![(1, Decimal::MAX)]);
+            let text = Self::slot(Kind::Text, Data::Text { span: vec![(0, 2), (2, 5), (5, 5)], data: b"abxyz".to_vec() }, &[true, true, false], &[], Vec::new());
+            let flag = Self::slot(Kind::Bool, Data::Bool(vec![0b101]), &[true, false, true], &[], Vec::new());
+            let mut faults = Faults::default();
+            faults.reset(3);
+            faults.set(2);
+            Outputs { rows: 3, slots: vec![num, text, flag], faults }
+        }
+    }
+
+    #[test]
+    fn spread_maps_every_row_to_its_representative() {
+        let mut out = Build::reps();
+        assert!(out.spread(5, &[1, 0, 2, 1, 0], None));
+        assert_eq!(out.rows(), 5);
+        let num = &out.slots()[0];
+        assert_eq!((0..5).map(|at| num.decimal(at)).collect::<Vec<_>>(), vec![Some(Decimal::MAX), Some(Decimal::new(15, 1)), None, Some(Decimal::MAX), Some(Decimal::new(15, 1))]);
+        assert_eq!(num.fault.iter().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(out.faults().iter().collect::<Vec<_>>(), vec![2]);
+        let text = &out.slots()[1];
+        assert_eq!((0..5).map(|at| text.text(at)).collect::<Vec<_>>(), vec![Some("xyz"), Some("ab"), None, Some("xyz"), Some("ab")]);
+        let flag = &out.slots()[2];
+        assert_eq!((0..5).map(|at| flag.boolean(at)).collect::<Vec<_>>(), vec![None, Some(true), Some(true), None, Some(true)]);
+    }
+
+    #[test]
+    fn spread_leaves_unselected_rows_invalid_and_unfaulted() {
+        let mut out = Build::reps();
+        assert!(out.spread(6, &[2, 0, 1], Some(&[1, 3, 4])));
+        let num = &out.slots()[0];
+        assert_eq!((0..6).map(|at| num.is_valid(at)).collect::<Vec<_>>(), vec![false, false, false, true, true, false]);
+        assert_eq!(num.fault.iter().collect::<Vec<_>>(), vec![1]);
+        assert_eq!(num.wide, vec![(4, Decimal::MAX)]);
+    }
+
+    #[test]
+    fn spread_rejects_mismatched_ids() {
+        let mut out = Build::reps();
+        assert!(!out.spread(2, &[0, 3], None));
+        assert!(!out.spread(4, &[0, 1], Some(&[0])));
     }
 }

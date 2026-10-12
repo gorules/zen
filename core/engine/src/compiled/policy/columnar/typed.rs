@@ -3,7 +3,7 @@ use crate::compiled::core::fuse::Fused;
 use super::{Bind, Member, Pass, Sheet};
 use crate::compiled::core::switch::{Cost, Density, Path};
 use crate::compiled::core::variants::Variants;
-use crate::compiled::core::exec::{ListPart, Select, TypedCall};
+use crate::compiled::core::exec::{Choice, Dedup, Hint, ListPart, Select, TypedCall};
 use crate::compiled::core::group::{Built, Prefix, Step};
 use crate::compiled::core::list::Frame;
 use crate::compiled::core::retry::Take;
@@ -14,6 +14,7 @@ use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
+use zen_expression::lane::Values;
 use zen_expression::typed::{Lowering, Outputs, Program, Resolve, Resolved};
 
 pub(crate) struct TypedGroup {
@@ -21,6 +22,7 @@ pub(crate) struct TypedGroup {
     sinks: Vec<Sink>,
     pub(super) units: usize,
     pub(super) cost: Cost,
+    dedup: Dedup,
     probe: Box<[Probed]>,
     columns: Vec<usize>,
     lists: Vec<Option<usize>>,
@@ -147,6 +149,7 @@ impl TypedGroup {
             sinks: Vec::new(),
             units: 0,
             cost: Cost::new(),
+            dedup: Dedup::new(),
             probe: record.into(),
             columns: Vec::new(),
             lists: Vec::new(),
@@ -184,6 +187,7 @@ impl TypedGroup {
             sinks,
             units,
             cost: Cost::new(),
+            dedup: Dedup::new(),
             probe: record.into(),
             columns,
             lists,
@@ -257,9 +261,18 @@ impl<'s, 'a> Pass<'s, 'a> {
         if path.0 == Path::Lane {
             return Typed::Lane(group, path);
         }
-        let (start, count) = (Instant::now(), rows.len());
+        let (start, count, asked, whole) = (Instant::now(), rows.len(), rows, full);
         let select = (!full).then(|| Select::bits(total, rows));
-        let Some(mut out) = self.execute(&group, program, &sources, entity, select.as_deref()) else {
+        let (out, choice) = match group.lists.is_empty() {
+            true => group.dedup.choose(
+                self,
+                count,
+                |pass| pass.execute(&group, program, &sources, entity, select.as_deref()),
+                |pass| pass.deduped(&group, program, &sources, asked, whole),
+            ),
+            false => (self.execute(&group, program, &sources, entity, select.as_deref()), Choice::default()),
+        };
+        let Some(mut out) = out else {
             return Typed::Skipped;
         };
         let (faulted, kept) = match out.faults().any() {
@@ -271,7 +284,8 @@ impl<'s, 'a> Pass<'s, 'a> {
             false => kept.as_slice(),
         };
         if rows.is_empty() {
-            group.cost.record(path, start.elapsed(), count);
+            group.dedup.settle(&group.cost, path, choice, start.elapsed(), count);
+            group.dedup.probe(&group.cost, self, count, |pass| pass.deduped(&group, program, &sources, asked, whole));
             return Typed::Ran(group.units, faulted);
         }
         let full = rows.len() == total;
@@ -299,8 +313,33 @@ impl<'s, 'a> Pass<'s, 'a> {
                 self.sink(&group.sinks, leaves, Some((at, &kids)), rows);
             }
         }
-        group.cost.record(path, start.elapsed(), count);
+        group.dedup.settle(&group.cost, path, choice, start.elapsed(), count);
+        group.dedup.probe(&group.cost, self, count, |pass| pass.deduped(&group, program, &sources, asked, whole));
         Typed::Ran(group.units, faulted)
+    }
+
+    fn deduped(&self, group: &TypedGroup, program: &Program, sources: &[Source], rows: &[usize], full: bool) -> Option<Outputs> {
+        let leaves: Vec<Leaf<'a>> = group
+            .columns
+            .iter()
+            .map(|&at| match sources.get(at)? {
+                Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let total = self.sheet.rows;
+        let codes: Vec<Hint> = leaves
+            .iter()
+            .map(|leaf| {
+                let column = leaf.column();
+                match column.values {
+                    Values::Dict { .. } | Values::Bool { .. } => Some(None),
+                    _ => Dedup::codes(&column, total).map(Some),
+                }
+            })
+            .collect::<Option<_>>()?;
+        let positions: Option<Rc<[usize]>> = (!full).then(|| rows.into());
+        Dedup::coded(program, &leaves, &codes, positions.as_ref(), total)
     }
 
     fn execute(&self, group: &TypedGroup, program: &Program, sources: &[Source], entity: Option<usize>, select: Option<&[u64]>) -> Option<Outputs> {

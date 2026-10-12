@@ -250,21 +250,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: artifacts
+          path: bindings/nodejs
 
       - name: Download typings
         uses: actions/download-artifact@v4
         with:
           name: typings
           path: bindings/nodejs
-
-      - name: Create dirs
-        run: yarn createNpmDirs
-        shell: bash
-
-      - name: Move artifacts
-        run: yarn artifacts
-        shell: bash
 
       - name: Test bindings (native)
         if: ${{ !matrix.settings.image }}
@@ -284,6 +276,44 @@ jobs:
             yarn install
             yarn link
             yarn test
+
+  test-wasm:
+    name: Test wasm32-wasip1 - node@22
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasip1
+          path: bindings/nodejs
+
+      - name: Download typings
+        uses: actions/download-artifact@v4
+        with:
+          name: typings
+          path: bindings/nodejs
+
+      - name: Test bindings (wasm)
+        run: yarn test:wasm
+
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -295,6 +325,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     needs:
       - test
+      - test-wasm
     steps:
       - uses: actions/checkout@v3
 

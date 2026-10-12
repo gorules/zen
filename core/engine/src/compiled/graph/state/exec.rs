@@ -1,4 +1,5 @@
 use crate::model::{DecisionNodeKind, GraphContent};
+use crate::nodes::function::v1::{Batch, FunctionV1NodeHandler};
 use crate::nodes::function::v2::FunctionV2NodeHandler;
 use crate::nodes::input::dates::DeclaredDates;
 use crate::nodes::NodeError;
@@ -100,10 +101,37 @@ impl CompiledGraph {
             let inputs = inputs.iter().enumerate().map(|(i, value)| (value.clone(), nodes.get(i).cloned().flatten())).collect();
             return FunctionV2NodeHandler::batch(&step.node.id, content, extensions, &config, iteration, inputs).await;
         }
+        if let DecisionNodeKind::FunctionNode { content: FunctionNodeContent::Version1(source) } = &step.node.kind {
+            if let Some(batch) = FunctionV1NodeHandler::batch(&step.node.id, source, inputs.len()) {
+                return Self::scripted(step, batch, inputs, nodes, extensions, max_depth, iteration, batched).await;
+            }
+        }
         let mut results = Vec::with_capacity(inputs.len());
         for (i, value) in inputs.iter().enumerate() {
             let nodes = nodes.get(i).cloned().flatten();
             results.push(Self::host(step, value.clone(), nodes, extensions, max_depth, iteration, batched).await);
+        }
+        results
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn scripted(
+        step: &Step,
+        mut batch: Batch,
+        inputs: &[Variable],
+        nodes: &[Option<Variable>],
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+        batched: bool,
+    ) -> Vec<Result<Variable, NodeError>> {
+        let mut results = Vec::with_capacity(inputs.len());
+        for (i, value) in inputs.iter().enumerate() {
+            let nodes = nodes.get(i).cloned().flatten();
+            match batch.call(value, nodes.as_ref()) {
+                Some(result) => results.push(result),
+                None => results.push(Self::host(step, value.clone(), nodes, extensions, max_depth, iteration, batched).await),
+            }
         }
         results
     }

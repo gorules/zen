@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use swc_common::input::StringInput;
 use swc_common::source_map::SmallPos;
@@ -11,7 +13,15 @@ use swc_ecma_ast::{
 };
 use swc_ecma_parser::{lexer::Lexer, EsSyntax, Parser, Syntax};
 
+use super::v1::script::Session;
+
 pub(crate) struct Purity;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Dialect {
+    Script,
+    Module,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Lib {
@@ -45,6 +55,7 @@ enum Use {
 }
 
 struct Walk {
+    dialect: Dialect,
     collect: bool,
     sites: HashMap<String, Vec<Site>>,
     classes: HashMap<String, Class>,
@@ -52,6 +63,8 @@ struct Walk {
 }
 
 impl Purity {
+    const LIMIT: usize = 256;
+    const RESERVED: &'static [&'static str] = &["main", "now", "log", "console", "dayjs", "Big", "handler"];
     const BANNED: &'static [&'static str] = &[
         "__proto__", "prototype", "constructor", "caller", "callee", "arguments", "__defineGetter__", "__defineSetter__",
         "__lookupGetter__", "__lookupSetter__",
@@ -79,8 +92,8 @@ impl Purity {
         ("Array", &["isArray", "from", "of"]),
         ("String", &["fromCharCode", "fromCodePoint"]),
         ("Date", &["now", "parse", "UTC"]),
-        ("console", &["log"]),
     ];
+    const MODULE_STATICS: &'static [(&'static str, &'static [&'static str])] = &[("console", &["log"])];
     const CONSTANTS: &'static [(&'static str, &'static [&'static str])] = &[
         ("Math", &["PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT1_2", "SQRT2"]),
         (
@@ -90,8 +103,9 @@ impl Purity {
                 "NEGATIVE_INFINITY", "NaN",
             ],
         ),
-        ("config", &["iteration", "maxDepth", "trace"]),
     ];
+    const MODULE_CONSTANTS: &'static [(&'static str, &'static [&'static str])] =
+        &[("config", &["iteration", "maxDepth", "trace"])];
     const METHODS: &'static [&'static str] = &[
         "at", "concat", "entries", "every", "filter", "find", "findIndex", "findLast", "findLastIndex", "flat", "flatMap",
         "forEach", "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "reduce", "reduceRight", "slice", "some",
@@ -135,6 +149,48 @@ impl Purity {
 
     const ZEN: &'static [&'static str] = &["evaluateExpression", "evaluateUnaryExpression"];
 
+    thread_local! {
+        static LAYOUTS: RefCell<HashMap<Rc<str>, Option<Rc<str>>>> = RefCell::new(HashMap::new());
+    }
+
+    pub(crate) fn layout(source: &str) -> Option<Rc<str>> {
+        if let Some(cached) = Self::LAYOUTS.with_borrow(|layouts| layouts.get(source).cloned()) {
+            return cached;
+        }
+        let layout = Self::analyze(source).then(|| Self::blank(source));
+        Self::LAYOUTS.with_borrow_mut(|layouts| {
+            if layouts.len() >= Self::LIMIT {
+                layouts.clear();
+            }
+            layouts.insert(Rc::from(source), layout.clone());
+        });
+        layout
+    }
+
+    fn blank(source: &str) -> Rc<str> {
+        let blank: String = source.bytes().map(|byte| if byte == b'\n' { '\n' } else { ' ' }).collect();
+        Rc::from(blank)
+    }
+
+    fn analyze(source: &str) -> bool {
+        if source.contains(['\r', '\u{2028}', '\u{2029}']) || source.contains("\\\n") || source.contains(Session::ROW) {
+            return false;
+        }
+        GLOBALS.set(&Default::default(), || {
+            let lexer = Lexer::new(
+                Syntax::Es(EsSyntax::default()),
+                Default::default(),
+                StringInput::new(source, BytePos::from_usize(0), BytePos::from_usize(source.len())),
+                None,
+            );
+            let mut parser = Parser::new_from(lexer);
+            match parser.parse_script() {
+                Ok(script) if parser.take_errors().is_empty() => Walk::script(&script.body),
+                _ => false,
+            }
+        })
+    }
+
     pub(crate) fn module(source: &str) -> bool {
         GLOBALS.set(&Default::default(), || {
             let lexer = Lexer::new(
@@ -149,6 +205,10 @@ impl Purity {
                 _ => false,
             }
         })
+    }
+
+    fn listed(table: &[(&str, &[&str])], owner: &str, name: &str) -> bool {
+        table.iter().any(|(listed, names)| *listed == owner && names.contains(&name))
     }
 
     fn library(source: &str, specifier: &ImportSpecifier) -> Lib {
@@ -171,13 +231,30 @@ impl Purity {
 }
 
 impl Walk {
-    fn module(items: &[ModuleItem]) -> bool {
-        let mut walk = Walk {
+    fn new(dialect: Dialect) -> Self {
+        Walk {
+            dialect,
             collect: true,
             sites: HashMap::new(),
             classes: HashMap::new(),
             pure: true,
-        };
+        }
+    }
+
+    fn script(body: &[Stmt]) -> bool {
+        let mut decls = Vec::new();
+        for stmt in body {
+            match stmt {
+                Stmt::Decl(decl) => decls.push(decl),
+                Stmt::Empty(_) => {}
+                _ => return false,
+            }
+        }
+        Walk::new(Dialect::Script).walk(&decls)
+    }
+
+    fn module(items: &[ModuleItem]) -> bool {
+        let mut walk = Walk::new(Dialect::Module);
         let mut decls = Vec::new();
         for item in items {
             match item {
@@ -189,16 +266,20 @@ impl Walk {
                 _ => return false,
             }
         }
-        if !Self::top(&decls) {
+        walk.walk(&decls)
+    }
+
+    fn walk(mut self, decls: &[&Decl]) -> bool {
+        if !self.top(decls) {
             return false;
         }
-        walk.top_level(&decls);
-        if !walk.classify() {
+        self.top_level(decls);
+        if !self.classify() {
             return false;
         }
-        walk.collect = false;
-        walk.top_level(&decls);
-        walk.pure
+        self.collect = false;
+        self.top_level(decls);
+        self.pure
     }
 
     fn import(&mut self, import: &ImportDecl) {
@@ -213,14 +294,41 @@ impl Walk {
         }
     }
 
-    fn top(decls: &[&Decl]) -> bool {
-        decls.iter().all(|decl| match decl {
-            Decl::Fn(_) => true,
-            Decl::Var(var) if var.kind == VarDeclKind::Const => var.decls.iter().all(|declarator| {
-                matches!((&declarator.name, &declarator.init), (Pat::Ident(_), Some(init)) if Self::inert(init))
-            }),
-            _ => false,
-        })
+    fn top(&self, decls: &[&Decl]) -> bool {
+        let mut handlers = 0;
+        for decl in decls {
+            match decl {
+                Decl::Fn(declared) => {
+                    let name = declared.ident.sym.as_ref();
+                    handlers += usize::from(name == "handler");
+                    if !self.declarable(name) {
+                        return false;
+                    }
+                }
+                Decl::Var(var) if var.kind == VarDeclKind::Const => {
+                    for declarator in &var.decls {
+                        let (Pat::Ident(binding), Some(init)) = (&declarator.name, &declarator.init) else {
+                            return false;
+                        };
+                        let name = binding.id.sym.as_ref();
+                        if name == "handler" {
+                            if !matches!(&**init, Expr::Arrow(_) | Expr::Fn(_)) {
+                                return false;
+                            }
+                            handlers += 1;
+                        } else if !self.declarable(name) || !Self::inert(init) {
+                            return false;
+                        }
+                    }
+                }
+                _ => return false,
+            }
+        }
+        self.dialect == Dialect::Module || handlers == 1
+    }
+
+    fn declarable(&self, name: &str) -> bool {
+        self.dialect == Dialect::Module || name == "handler" || !Purity::RESERVED.contains(&name)
     }
 
     fn inert(expr: &Expr) -> bool {
@@ -255,7 +363,12 @@ impl Walk {
     }
 
     fn class(&self, name: &str) -> Class {
-        self.classes.get(name).copied().unwrap_or(Class::Global)
+        match (self.classes.get(name), self.dialect, name) {
+            (Some(class), _, _) => *class,
+            (None, Dialect::Script, "dayjs") => Class::Lib(Lib::Dayjs),
+            (None, Dialect::Script, "Big") => Class::Lib(Lib::Big),
+            (None, _, _) => Class::Global,
+        }
     }
 
     fn site(&mut self, name: &str, site: Site) {
@@ -278,8 +391,9 @@ impl Walk {
         for decl in decls {
             match decl {
                 Decl::Fn(declared) => {
+                    let handler = declared.ident.sym.as_ref() == "handler";
                     self.site(declared.ident.sym.as_ref(), Site::TopFn);
-                    self.function(&declared.function);
+                    self.function(&declared.function, handler);
                 }
                 Decl::Var(var) => {
                     for declarator in &var.decls {
@@ -287,17 +401,18 @@ impl Walk {
                             continue;
                         };
                         let name = binding.id.sym.as_ref();
+                        let handler = name == "handler";
                         match &**init {
                             Expr::Arrow(arrow) => {
                                 self.site(name, Site::TopFn);
-                                self.arrow(arrow);
+                                self.arrow(arrow, handler);
                             }
                             Expr::Fn(function) => {
                                 self.site(name, Site::TopFn);
                                 if let Some(ident) = &function.ident {
                                     self.site(ident.sym.as_ref(), Site::Local);
                                 }
-                                self.function(&function.function);
+                                self.function(&function.function, handler);
                             }
                             _ => self.site(name, Site::TopConst),
                         }
@@ -308,30 +423,65 @@ impl Walk {
         }
     }
 
-    fn function(&mut self, function: &Function) {
-        if function.is_generator || !function.decorators.is_empty() {
+    fn function(&mut self, function: &Function, handler: bool) {
+        if function.is_generator || !function.decorators.is_empty() || !self.awaits(function.is_async) {
             return self.reject();
         }
-        for param in &function.params {
-            self.check(param.decorators.is_empty());
-            self.pat(&param.pat);
-        }
+        let params: Vec<&Pat> = function.params.iter().map(|param| &param.pat).collect();
+        self.check(function.params.iter().all(|param| param.decorators.is_empty()));
+        self.params(&params, handler);
         match &function.body {
             Some(body) => self.block(body),
             None => self.reject(),
         }
     }
 
-    fn arrow(&mut self, arrow: &ArrowExpr) {
-        if arrow.is_generator {
+    fn arrow(&mut self, arrow: &ArrowExpr, handler: bool) {
+        if arrow.is_generator || !self.awaits(arrow.is_async) {
             return self.reject();
         }
-        for param in &arrow.params {
-            self.pat(param);
-        }
+        let params: Vec<&Pat> = arrow.params.iter().collect();
+        self.params(&params, handler);
         match &*arrow.body {
             BlockStmtOrExpr::BlockStmt(body) => self.block(body),
             BlockStmtOrExpr::Expr(expr) => self.expr(expr, Use::Value),
+        }
+    }
+
+    fn awaits(&self, asynchronous: bool) -> bool {
+        !asynchronous || self.dialect == Dialect::Module
+    }
+
+    fn params(&mut self, params: &[&Pat], handler: bool) {
+        for (index, param) in params.iter().enumerate() {
+            if handler && index == 1 && self.dialect == Dialect::Script {
+                self.helpers(param);
+            } else {
+                self.pat(param);
+            }
+        }
+    }
+
+    fn helpers(&mut self, pat: &Pat) {
+        let Pat::Object(object) = pat else {
+            return self.reject();
+        };
+        for prop in &object.props {
+            let (key, binding) = match prop {
+                ObjectPatProp::Assign(assign) if assign.value.is_none() => (assign.key.id.sym.as_ref(), assign.key.id.sym.as_ref()),
+                ObjectPatProp::KeyValue(pair) => match (&pair.key, &*pair.value) {
+                    (PropName::Ident(key), Pat::Ident(binding)) => (key.sym.as_ref(), binding.id.sym.as_ref()),
+                    _ => return self.reject(),
+                },
+                _ => return self.reject(),
+            };
+            let site = match key {
+                "moment" | "dayjs" => Site::Lib(Lib::Dayjs),
+                "Big" => Site::Lib(Lib::Big),
+                "env" => Site::Local,
+                _ => return self.reject(),
+            };
+            self.site(binding, site);
         }
     }
 
@@ -489,7 +639,7 @@ impl Walk {
                     return self.reject();
                 }
                 self.site(decl.ident.sym.as_ref(), Site::Local);
-                self.function(&decl.function);
+                self.function(&decl.function, false);
             }
             Stmt::Expr(expr) => self.expr(&expr.expr, Use::Value),
             Stmt::With(_) | Stmt::Decl(_) => self.reject(),
@@ -535,9 +685,8 @@ impl Walk {
             match class {
                 Class::Global | Class::Lib(_) | Class::TopFn => {
                     let constant = class == Class::Global
-                        && Purity::CONSTANTS
-                            .iter()
-                            .any(|(owner, names)| *owner == object && names.contains(&name.as_str()));
+                        && (Purity::listed(Purity::CONSTANTS, &object, &name)
+                            || (self.dialect == Dialect::Module && Purity::listed(Purity::MODULE_CONSTANTS, &object, &name)));
                     return self.check(constant);
                 }
                 Class::TopConst | Class::Local => {}
@@ -558,12 +707,12 @@ impl Walk {
     fn call(&mut self, callee: &Expr, args: &[ExprOrSpread]) {
         match callee {
             Expr::Paren(inner) => return self.call(&inner.expr, args),
-            Expr::Arrow(arrow) => self.arrow(arrow),
+            Expr::Arrow(arrow) => self.arrow(arrow, false),
             Expr::Fn(function) => {
                 if let Some(ident) = &function.ident {
                     self.site(ident.sym.as_ref(), Site::Local);
                 }
-                self.function(&function.function);
+                self.function(&function.function, false);
             }
             Expr::Ident(ident) => {
                 let name = ident.sym.as_ref();
@@ -604,9 +753,8 @@ impl Walk {
         if let Some((class, object)) = self.global(&member.obj) {
             match class {
                 Class::Global => {
-                    let allowed = Purity::STATICS
-                        .iter()
-                        .any(|(owner, names)| *owner == object && names.contains(&name.as_str()));
+                    let allowed = Purity::listed(Purity::STATICS, &object, &name)
+                        || (self.dialect == Dialect::Module && Purity::listed(Purity::MODULE_STATICS, &object, &name));
                     return self.check(allowed);
                 }
                 Class::Lib(Lib::Dayjs) => return self.check(matches!(name.as_str(), "unix" | "isDayjs")),
@@ -706,8 +854,8 @@ impl Walk {
             Class::Local | Class::TopConst => true,
             Class::TopFn | Class::Lib(_) => usage == Use::Consumed,
             Class::Global => {
-                Purity::VALUES.contains(&name)
-                    || (usage == Use::Consumed && name != "arguments")
+                let reserved = self.dialect == Dialect::Script && Purity::RESERVED.contains(&name);
+                Purity::VALUES.contains(&name) || (usage == Use::Consumed && name != "arguments" && !reserved)
             }
         };
         self.check(allowed);
@@ -756,7 +904,7 @@ impl Walk {
                             }
                             Prop::Method(method) => {
                                 self.key(&method.key, false);
-                                self.function(&method.function);
+                                self.function(&method.function, false);
                             }
                             Prop::Assign(_) => self.reject(),
                         },
@@ -767,9 +915,9 @@ impl Walk {
                 if let Some(ident) = &function.ident {
                     self.site(ident.sym.as_ref(), Site::Local);
                 }
-                self.function(&function.function);
+                self.function(&function.function, false);
             }
-            Expr::Arrow(arrow) => self.arrow(arrow),
+            Expr::Arrow(arrow) => self.arrow(arrow, false),
             Expr::Unary(unary) => match unary.op {
                 UnaryOp::Delete => match &*unary.arg {
                     Expr::Member(member) => self.written(member),
@@ -857,7 +1005,7 @@ impl Walk {
                     self.expr(expr, Use::Consumed);
                 }
             }
-            Expr::Await(awaited) => self.expr(&awaited.arg, Use::Value),
+            Expr::Await(awaited) if self.dialect == Dialect::Module => self.expr(&awaited.arg, Use::Value),
             Expr::OptChain(chain) => match &*chain.base {
                 OptChainBase::Member(member) => self.member(member, usage),
                 OptChainBase::Call(call) => self.call(&call.callee, &call.args),
@@ -987,5 +1135,171 @@ mod tests {
             .filter(|name| !Purity::MEMBERS.contains(name) && !Purity::BANNED.contains(name))
             .collect();
         assert!(missing.is_empty(), "{missing:?}");
+    }
+
+    #[test]
+    fn plain_handlers_share_a_context() {
+        let sources = [
+            "const handler = (input, { moment, env }) => {\n  return { output: input.input * 2 };\n}",
+            "const handler = (input, { moment, env }) => {\n  const count = (flag) => Object.values(input?.flag || {}).reduce((acc, curr) => {\n    if (curr === flag) return acc + 1;\n    return acc;\n  }, 0);\n  return { critical: count('critical'), red: count('red') };\n}",
+            "const handler = (input, { dayjs, Big }) => {\n  const flags = input.flags || {};\n  let overall = 'green';\n  if (Object.values(flags).some((f) => f === 'red')) {\n    overall = 'red';\n  }\n  return { ...input, overall };\n}",
+            "const handler = (input, { dayjs, Big }) => {\n  const round = (val) => val?.toFixed !== undefined ? val.round(2).toNumber() : val;\n  const base = Big(input.base.pi).times(Big(input.tax.gst).div(100));\n  return { breakdown: [{ key: 'premium', value: round(base) }] };\n}",
+            "const RATE = 0.2;\nfunction helper(a) { return a * RATE }\nconst handler = (input) => {\n  const out = [];\n  for (const item of input.items) { out.push({ ...item, v: helper(item.v) }); }\n  out.sort((a, b) => a.v - b.v);\n  const total = { sum: 0 };\n  out.forEach((item) => { total.sum += item.v; });\n  return { out, total, at: dayjs(input.when).add(1, 'day').format('YYYY-MM-DD') };\n}",
+            "function handler(input, { dayjs: d }) {\n  const map = new Map();\n  map.set('a', 1);\n  try { return { v: map.has('a'), when: d(input.when).isValid(), n: Math.max(1, Number(input.n)) } } catch (e) { return { e: e.message } }\n}",
+        ];
+        for source in sources {
+            assert!(Purity::layout(source).is_some(), "{source}");
+        }
+    }
+
+    #[test]
+    fn shared_state_keeps_a_fresh_context() {
+        let sources = [
+            "let count = 0;\nconst handler = () => ({ n: ++count });",
+            "const cache = {};\nconst handler = (input) => { cache.x = 1; return {}; };",
+            "const handler = () => { globalThis.flag = 1; return {}; };",
+            "var hits = 0\nconst handler = () => ({ hits: hits++ })",
+            "const handler = (input, { Big }) => { Big.DP = 2; return {} }",
+            "const handler = (input, { dayjs }) => { dayjs.locale('de'); return {} }",
+            "const handler = (input, { dayjs }) => { const d = dayjs; d.x = 1; return {} }",
+            "const handler = (input, { dayjs }) => ({ d: dayjs(input.at, { locale: { name: 'x' } }) })",
+            "const handler = (input, { dayjs }) => { const d = dayjs(); d.$L = { name: 'x' }; return { v: d.add(1, 'day') } }",
+            "const handler = (input, { dayjs }) => ({ u: dayjs().get(input.unit) })",
+            "const handler = (input) => { const o = { map: dayjs().add }; return o.map(1) }",
+            "const handler = (input) => { const f = [].push; return {} }",
+            "const handler = (input) => ({ v: input[input.key] })",
+            "const handler = (input) => { input[input.key] = 1; return input }",
+            "const handler = (input) => { const p = input.constructor; return {} }",
+            "const handler = (input) => { console.log(input); return {} }",
+            "const handler = (input) => { log.push(1); return {} }",
+            "function helper() { helper.calls = (helper.calls || 0) + 1; return helper.calls }\nconst handler = () => ({ n: helper() })",
+            "const handler = () => { Math.seen = 1; return {} }",
+            "const handler = () => { const m = Math; return {} }",
+            "const handler = (input, { Big }) => ({ v: Big(input.a).mod(3) })",
+            "const handler = async (input) => ({ v: await input })",
+            "const handler = (input) => ({ v: this })",
+            "const handler = (input) => ({ v: eval('1') })",
+            "const handler = (input) => ({ v: Function('return 1')() })",
+            "const handler = (input) => ({ v: [1].map.call(input, (x) => x) })",
+            "const handler = (input) => ({ v: input.list.map((x) => x)() })",
+            "const handler = (input) => ({ __proto__: input })",
+            "const handler = (input) => { const { constructor } = input; return {} }",
+            "const handler = (input) => ({ v: `a\\\nb` })",
+            "const handler = (input) => ({ v: 1 })\r\n",
+            "const handler = (input) => ({ v: typeof __zenRow })",
+            "const handler = (input) => ({ v: input.at > now })",
+            "const handler = (input) => ({ v: typeof main })",
+            "console.log('loaded');\nconst handler = () => ({})",
+            "const pattern = /a/g;\nconst handler = (input) => ({ ok: pattern.test(input.s) })",
+            "const handler = (input, helpers) => ({ v: helpers.dayjs() })",
+            "const handler = (input) => ({})\nconst handler2 = handler;",
+            "const main = 1;\nconst handler = (input) => ({})",
+            "const handler = (input) => { handler.x = 1; return {} }",
+            "const handler = (input) => ({ f: handler })",
+            "class A {}\nconst handler = (input) => ({})",
+            "const handler = (input) => { x = 1; return {} }",
+            "const handler = (input) => { const count = 1; return {} }\nconst count = () => 1;",
+            "const handler = (input) => ({ v: Object.assign(input, {}) })",
+            "const handler = (input) => { Reflect.set(input, 'a', 1); return {} }",
+            "const handler = (input) => { const f = () => Math; f().seen = (f().seen || 0) + 1; return { n: f().seen } }",
+            "const handler = (input) => { const o = { m: Math }; o.m.seen = (o.m.seen || 0) + 1; return { n: o.m.seen } }",
+            "const handler = (input) => { const bump = (t) => { t.seen = (t.seen || 0) + 1; return t.seen }; return { n: bump(JSON) } }",
+        ];
+        for source in sources {
+            assert!(Purity::layout(source).is_none(), "{source}");
+        }
+    }
+
+    #[test]
+    fn fixture_handlers_share_a_context() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-data/");
+        let files = ["function.json", "credit-analysis.json", "graphs/aml.json", "graphs/company-analysis.json", "graphs/insurance-breakdown.json"];
+        for file in files {
+            let text = std::fs::read_to_string(format!("{root}{file}")).unwrap();
+            let graph: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let sources: Vec<&str> = graph["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|node| node["type"] == "functionNode")
+                .filter_map(|node| node["content"].as_str())
+                .collect();
+            assert!(!sources.is_empty(), "{file}");
+            for source in sources {
+                assert!(Purity::layout(source).is_some(), "{file}");
+            }
+        }
+    }
+
+    #[test]
+    fn throwing_handlers_share_a_context() {
+        let sources = [
+            "/**\n * é ünïcödé — 日本\n */\nconst handler = (input, { moment, env }) => {\n  const label = `row\n${input.n} é`;\n  if (input.n % 3 === 0) {\n    throw new Error('boom ' + input.n + label);\n  }\n  return { label };\n}",
+            "const handler = (input, { Big }) => ({ v: Big(input.n % 4 === 0 ? 'x' : input.n).plus(1).toString() })",
+            "const handler = (input) => ({ v: input.n % 5 === 0 ? 10n : 1 })",
+            "const handler = (input) => {\n  const o = input.n > 5 ? input.items : null;\n  return { v: o.length };\n}",
+            "const handler = (input) => input.n % 2 ? undefined : { a: 1 }",
+            "const deep = (n) => deep(n + 1);\nconst handler = (input) => {\n  if (input.n === 7) {\n    deep(0);\n  }\n  return { ok: true };\n}",
+            "const handler = (input) => {\n  if (input.n === 4) throw { code: input.n, items: input.items };\n  if (input.n === 8) throw 'plain ' + input.n;\n  return { list: input.items.map((x) => x * 1.5), s: input.s.toUpperCase() };\n}",
+            "const handler = (input, { moment, env }) => {\n  while (true) {}\n  return input;\n}",
+        ];
+        for source in sources {
+            assert!(Purity::layout(source).is_some(), "{source}");
+        }
+    }
+
+    #[test]
+    fn denied_members_cover_the_script_realm() {
+        let runtime = crate::nodes::function::v1::runtime::create_runtime().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        let names: String = context.with(|ctx| {
+            rquickjs::Module::evaluate(ctx.clone(), "main", "import 'internals';").unwrap().finish::<()>().unwrap();
+            ctx.eval(
+                r#"
+                const iterators = [[].values(), ''[Symbol.iterator](), new Map().values(), new Set().values(), 'a'.matchAll(/a/g)];
+                const protos = [Object.prototype, Function.prototype, Array.prototype, String.prototype, Number.prototype,
+                    Boolean.prototype, Symbol.prototype, BigInt.prototype, Date.prototype, RegExp.prototype, Error.prototype,
+                    Map.prototype, Set.prototype, WeakMap.prototype, WeakSet.prototype, Promise.prototype,
+                    Object.getPrototypeOf(Big(1)), Object.getPrototypeOf(dayjs())];
+                for (const iterator of iterators) {
+                    for (let proto = Object.getPrototypeOf(iterator); proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+                        protos.push(proto);
+                    }
+                }
+                const names = new Set();
+                for (const proto of protos) {
+                    for (const key of Object.getOwnPropertyNames(proto)) {
+                        const value = Object.getOwnPropertyDescriptor(proto, key).value;
+                        if (typeof value === 'function' || (typeof value === 'object' && value !== null)) {
+                            names.add(key);
+                        }
+                    }
+                }
+                for (const instance of [Big(1), dayjs(), new Date(), /a/, [], {}, new Map(), new Set(), new Error('x')]) {
+                    for (const key of Object.getOwnPropertyNames(instance)) {
+                        if (typeof instance[key] === 'function') {
+                            names.add(key);
+                        }
+                    }
+                }
+                [...names].join(',')
+                "#,
+            )
+            .unwrap()
+        });
+        let missing: Vec<&str> = names
+            .split(',')
+            .filter(|name| !Purity::MEMBERS.contains(name) && !Purity::BANNED.contains(name))
+            .collect();
+        assert!(missing.is_empty(), "{missing:?}");
+    }
+
+    #[test]
+    fn layout_keeps_lines_and_columns() {
+        let source = "const handler = (input) => {\n  // é ünïcödé\n  return { v: `a\nb` };\n}";
+        let layout = Purity::layout(source).unwrap();
+        assert_eq!(layout.len(), source.len());
+        assert_eq!(layout.matches('\n').count(), source.matches('\n').count());
+        assert!(layout.chars().all(|c| c == ' ' || c == '\n'));
     }
 }

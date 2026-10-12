@@ -55,7 +55,7 @@ impl NodeHandler for FunctionV2NodeHandler {
         let function_context = FunctionContext {
             start,
             context: &ctx,
-            function: &function,
+            function,
         };
 
         self.attach_globals(function, &ctx)

@@ -41,16 +41,7 @@ where
     TraceData: TraceDataType,
 {
     pub fn input_with_nodes(&self) -> Variable {
-        let Some(nodes) = &self.nodes else {
-            return self.input.shallow_clone();
-        };
-        let Variable::Object(object) = &self.input else {
-            return self.input.shallow_clone();
-        };
-
-        let mut map = object.borrow().clone();
-        map.insert(Variable::nodes_key(), nodes.clone());
-        Variable::from_object(map)
+        NodeContextBase::joined(&self.input, self.nodes.as_ref())
     }
 
     pub fn from_base(base: NodeContextBase, data: NodeData) -> Self {
@@ -61,7 +52,7 @@ where
             nodes: base.nodes,
             extensions: base.extensions,
             iteration: base.iteration,
-            trace: base.config.trace.then(|| Default::default()),
+            trace: base.config.trace.then(Default::default),
             node: data,
             config: base.config,
         }
@@ -360,6 +351,19 @@ pub struct NodeContextBase {
 }
 
 impl NodeContextBase {
+    pub(crate) fn joined(input: &Variable, nodes: Option<&Variable>) -> Variable {
+        let Some(nodes) = nodes else {
+            return input.shallow_clone();
+        };
+        let Variable::Object(object) = input else {
+            return input.shallow_clone();
+        };
+
+        let mut map = object.borrow().clone();
+        map.insert(Variable::nodes_key(), nodes.clone());
+        Variable::from_object(map)
+    }
+
     pub fn error<Error>(&self, error: Error) -> NodeResult
     where
         Error: Into<Box<dyn std::error::Error>>,
@@ -390,7 +394,7 @@ impl NodeContextBase {
         Function: FnOnce(&mut Variable),
     {
         if let Some(trace) = &self.trace {
-            mutator(&mut *trace.borrow_mut());
+            mutator(&mut trace.borrow_mut());
         }
     }
 }

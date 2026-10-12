@@ -410,6 +410,21 @@ impl FunctionNode {
         "export const handler = async (input) => { const bump = (t) => { t.seen = (t.seen || 0) + 1; return t.seen }; return { n: bump(JSON), row: input.n } }",
     ];
 
+    const V1: &'static [&'static str] = &[
+        "const handler = (input, { dayjs, Big }) => {\n  const flags = input.flags || {};\n  const countFlags = (flag) => Object.values(flags).reduce((acc, curr) => {\n    return curr == flag ? acc + 1 : acc;\n  }, 0);\n  let overallFlag = 'green';\n  if (countFlags('red') > 0) {\n    overallFlag = 'red';\n  }\n  return { ...input, overallFlag };\n}",
+        "const handler = (input, { dayjs, Big }) => {\n  const round = (val) => val?.toFixed !== undefined ? val.round(2).toNumber() : val;\n  return { a: round(Big(input.a).times(3)), b: Big(input.a).div(7).toFixed(5), c: input.n / 3, d: 0.1 + 0.2, e: 1e21 * input.n, f: -0, g: 2 ** 60 + input.n };\n}",
+        "/**\n * é ünïcödé — 日本\n */\nconst handler = (input, { moment, env }) => {\n  const label = `row\n${input.n} é`;\n  if (input.n % 3 === 0) {\n    throw new Error('boom ' + input.n + label);\n  }\n  return { label };\n}",
+        "const handler = (input, { Big }) => ({ v: Big(input.n % 4 === 0 ? 'x' : input.n).plus(1).toString() })",
+        "const handler = (input) => ({ v: input.n % 5 === 0 ? 10n : 1 })",
+        "const handler = (input, { dayjs }) => ({ d: dayjs('2024-01-0' + (input.n % 9 + 1)).add(input.n, 'day').format('YYYY-MM-DD'), valid: dayjs(input.s).isValid() })",
+        "let c = 0;\nconst handler = (input) => ({ c: ++c, n: input.n })",
+        "const handler = (input) => {\n  const o = input.n > 5 ? input.items : null;\n  return { v: o.length };\n}",
+        "const handler = (input) => input.n % 2 ? undefined : { a: 1 }",
+        "const deep = (n) => deep(n + 1);\nconst handler = (input) => {\n  if (input.n === 7) {\n    deep(0);\n  }\n  return { ok: true };\n}",
+        "const handler = (input) => {\n  if (input.n === 4) throw { code: input.n, items: input.items };\n  if (input.n === 8) throw 'plain ' + input.n;\n  return { list: input.items.map((x) => x * 1.5), s: input.s.toUpperCase() };\n}",
+        "const handler = (input) => {\n  const out = [];\n  for (const item of input.items) { out.push({ v: item }); }\n  out.sort((a, b) => b.v - a.v);\n  try { if (input.n % 2) { throw new Error('caught'); } } catch (e) { out.push({ e: e.message }); }\n  return { out };\n}",
+    ];
+
     fn graph(content: Value) -> Arc<zen_engine::model::GraphContent> {
         let graph = serde_json::json!({
             "nodes": [
@@ -426,6 +441,20 @@ impl FunctionNode {
             Ok(zen_engine::model::DecisionContent::Graph(graph)) => graph,
             _ => panic!("graph"),
         }
+    }
+
+    fn rows(count: i64) -> Vec<Value> {
+        (0..count)
+            .map(|n| {
+                serde_json::json!({
+                    "n": n,
+                    "a": format!("{n}.{n}5"),
+                    "s": format!("2024-0{}-1{} é", n % 9 + 1, n % 9),
+                    "items": [n, n * 2, 3],
+                    "flags": { "x": if n % 2 == 0 { "red" } else { "green" }, "y": "amber" }
+                })
+            })
+            .collect()
     }
 
     async fn compare(contents: &[Value], rows: &[Value]) -> Vec<String> {
@@ -458,6 +487,34 @@ impl FunctionNode {
 async fn columnar_function_v2_shared_state_matches_rows() {
     let rows: Vec<Value> = (0..6).map(|n| serde_json::json!({ "n": n })).collect();
     let contents: Vec<Value> = FunctionNode::LEAKS.iter().map(|source| serde_json::json!({ "source": source })).collect();
+    let failures = FunctionNode::compare(&contents, &rows).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[tokio::test]
+async fn columnar_function_v1_inputs_match_literals() {
+    let rows: Vec<Value> = (0..6)
+        .map(|n| {
+            let mut deep = serde_json::json!(n);
+            for _ in 0..(n * 10) {
+                deep = serde_json::json!([deep]);
+            }
+            match n % 2 {
+                0 => serde_json::json!({ "n": n, "deep": deep, "meta": { "__proto__": { "x": n }, "y": 1 } }),
+                _ => serde_json::json!({ "n": n, "deep": deep, "meta": { "y": 1.25e-7, "z": 12345678901234567890u64 } }),
+            }
+        })
+        .collect();
+    let contents = [serde_json::json!("const handler = (input) => ({ x: input.meta.x, keys: Object.keys(input.meta), d: JSON.stringify(input.deep).length, y: input.meta.y, z: input.meta.z })")];
+    let failures = FunctionNode::compare(&contents, &rows).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+#[tokio::test]
+async fn columnar_function_v1_batches_match_rows() {
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    let rows = FunctionNode::rows(12);
+    let contents: Vec<Value> = FunctionNode::V1.iter().map(|source| serde_json::json!(source)).collect();
     let failures = FunctionNode::compare(&contents, &rows).await;
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }

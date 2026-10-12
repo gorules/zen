@@ -124,6 +124,8 @@
 
 mod analysis;
 mod config;
+#[cfg(feature = "data")]
+pub mod data;
 mod decision;
 mod decision_graph;
 mod engine;

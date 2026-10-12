@@ -76,6 +76,7 @@ pub mod vm;
 pub use dates::DateValue;
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
+    expression_root_references,
 };
 pub use expression::{Expression, ExpressionKind, OpcodeCache};
 pub use isolate::{Isolate, IsolateError};

@@ -39,7 +39,7 @@ pub async fn evaluate_expression(
     expression: String,
     context: Option<Value>,
 ) -> napi::Result<Value> {
-    napi::tokio::spawn(async move { evaluate_expression_sync(expression, context) })
+    crate::mt::run_task(move || evaluate_expression_sync(expression, context))
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
 }
@@ -47,7 +47,7 @@ pub async fn evaluate_expression(
 #[allow(dead_code)]
 #[napi]
 pub async fn evaluate_unary_expression(expression: String, context: Value) -> napi::Result<bool> {
-    napi::tokio::spawn(async move { evaluate_unary_expression_sync(expression, context) })
+    crate::mt::run_task(move || evaluate_unary_expression_sync(expression, context))
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
 }
@@ -55,7 +55,7 @@ pub async fn evaluate_unary_expression(expression: String, context: Value) -> na
 #[allow(dead_code)]
 #[napi]
 pub async fn render_template(template: String, context: Value) -> napi::Result<Value> {
-    napi::tokio::spawn(async move { render_template_sync(template, context) })
+    crate::mt::run_task(move || render_template_sync(template, context))
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
 }

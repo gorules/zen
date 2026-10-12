@@ -26,7 +26,7 @@
       "aarch64-unknown-linux-gnu",
       "aarch64-unknown-linux-musl",
       "aarch64-apple-darwin",
-      "wasm32-wasi-preview1-threads"
+      "wasm32-wasip1"
     ],
     "dtsHeaderFile": "./dts-header.d.ts",
     "npmClient": "yarn",
@@ -36,7 +36,8 @@
       "browser": {
         "fs": false,
         "asyncInit": true
-      }
+      },
+      "asyncRuntime": true
     }
   },
   "keywords": [
@@ -62,14 +63,17 @@
     "node": ">= 14"
   },
   "devDependencies": {
+    "@emnapi/core": "2.0.0-alpha.6",
+    "@emnapi/runtime": "2.0.0-alpha.6",
     "@jest/globals": "^30.2.0",
-    "@napi-rs/cli": "^3.4.1",
-    "@napi-rs/wasm-runtime": "^1.0.7",
+    "@napi-rs/async-runtime": "^0.2.0",
+    "@napi-rs/cli": "^3.10.8",
+    "@napi-rs/wasm-runtime": "^1.2.5",
     "@types/express": "^5.0.5",
     "@types/node": "^24.10.0",
     "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
-    "emnapi": "^1.7.0",
+    "emnapi": "2.0.0-alpha.6",
     "express": "^5.1.0",
     "jest": "^30.2.0",
     "lerna": "6.6.2",

@@ -93,17 +93,20 @@ jobs:
               yarn build -- --target aarch64-unknown-linux-musl --cross-compile -- --locked
 
           - host: ubuntu-latest
-            target: 'wasm32-wasip1-threads'
+            target: 'wasm32-wasip1'
             setup: |
               wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
             build: |
               set -e
-              export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
+              WASI_SDK="$(pwd)/wasi-sdk-27.0-x86_64-linux"
               export CMAKE_BUILD_PARALLEL_LEVEL=2
-              export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
-              export TARGET_CFLAGS="$TARGET_CXXFLAGS"
-              yarn build -- --target wasm32-wasip1-threads -- --locked
+              export CC_wasm32_wasip1="$WASI_SDK/bin/clang"
+              export AR_wasm32_wasip1="$WASI_SDK/bin/llvm-ar"
+              export CFLAGS_wasm32_wasip1="--target=wasm32-wasip1 --sysroot=$WASI_SDK/share/wasi-sysroot -mllvm -wasm-enable-sjlj"
+              export CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS="-C link-arg=$WASI_SDK/share/wasi-sysroot/lib/wasm32-wasip1/libsetjmp.a"
+              cargo clean -p napi-async-runtime --target wasm32-wasip1 --release
+              yarn build -- --target wasm32-wasip1 -- --locked
 
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
@@ -163,7 +166,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}
+        if: ${{ matrix.settings.target != 'wasm32-wasip1' }}
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
@@ -171,15 +174,14 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target == 'wasm32-wasip1-threads' }}
+        if: ${{ matrix.settings.target == 'wasm32-wasip1' }}
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-wasm32-wasi
+          name: bindings-wasm32-wasip1
           if-no-files-found: error
           path: |
-            bindings/nodejs/*.wasm
-            bindings/nodejs/zen-engine.wasi*
-            bindings/nodejs/wasi-worker*
+            bindings/nodejs/zen-engine.wasm32-wasip1*
+            bindings/nodejs/zen-engine.wasip1*
 
   test:
     name: Test ${{ matrix.settings.target }} - node@${{ matrix.node }}

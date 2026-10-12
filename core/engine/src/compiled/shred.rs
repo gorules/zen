@@ -731,69 +731,64 @@ impl FieldBuilder {
         self.len += 1;
     }
 
-    fn fill<'v>(&mut self, values: impl Iterator<Item = &'v Variable> + Clone, count: usize, capacity: usize) {
-        match self.typed(values.clone(), count) {
-            Some(cells) => {
-                self.cells = cells;
-                self.len = count;
-            }
-            None => values.for_each(|value| self.push(value, capacity)),
+    fn run<'v>(&mut self, mut values: impl Iterator<Item = &'v Variable>, capacity: usize) {
+        while let Some(value) = self.quick(&mut values) {
+            self.push(value, capacity);
         }
     }
 
-    fn typed<'v>(&self, mut values: impl Iterator<Item = &'v Variable> + Clone, count: usize) -> Option<Cells> {
-        if self.len != 0 || !matches!(self.cells, Cells::Empty) {
-            return None;
+    #[inline]
+    fn quick<'v>(&mut self, values: &mut impl Iterator<Item = &'v Variable>) -> Option<&'v Variable> {
+        if self.gaps.is_some() {
+            return values.next();
         }
-        match values.clone().next()? {
-            Variable::Number(_) => {
-                let (mut mant, mut scale) = (Vec::with_capacity(count), Vec::with_capacity(count));
-                for value in values {
-                    let Variable::Number(n) = value else {
-                        return None;
-                    };
-                    let (m, s) = Store::part(n)?;
+        let len = self.len;
+        let mut taken = 0;
+        let stray = match &mut self.cells {
+            Cells::Scaled { mant, scale } => values.find(|value| {
+                let part = match value {
+                    Variable::Number(n) => Store::part(n),
+                    _ => None,
+                };
+                part.inspect(|&(m, s)| {
                     mant.push(m);
                     scale.push(s);
+                    taken += 1;
+                })
+                .is_none()
+            }),
+            Cells::Bool(bits) => values.find(|value| {
+                let Variable::Bool(on) = value else {
+                    return true;
+                };
+                let at = len + taken;
+                let words = (at + 1).div_ceil(64);
+                if bits.len() < words {
+                    bits.resize(words, 0);
                 }
-                (mant.len() == count).then_some(Cells::Scaled { mant, scale })
-            }
-            Variable::Bool(_) => {
-                let mut bits = Vec::with_capacity(count.div_ceil(64));
-                let (mut word, mut len) = (0u64, 0usize);
-                for value in values {
-                    let Variable::Bool(on) = value else {
-                        return None;
-                    };
-                    word |= u64::from(*on) << (len & 63);
-                    len += 1;
-                    if len & 63 == 0 {
-                        bits.push(word);
-                        word = 0;
+                Bits::set(bits, at, *on);
+                taken += 1;
+                false
+            }),
+            Cells::Coded { codes, words, bytes } => values.find(|value| {
+                let Variable::String(text) = value else {
+                    return true;
+                };
+                let end = bytes.checked_add(text.len()).filter(|&end| i32::try_from(end).is_ok());
+                match end.zip(words.found(text)).filter(|_| codes.len() != Coder::SAMPLE) {
+                    Some((end, code)) => {
+                        codes.push(code);
+                        *bytes = end;
+                        taken += 1;
+                        false
                     }
+                    None => true,
                 }
-                if len & 63 != 0 {
-                    bits.push(word);
-                }
-                (len == count).then_some(Cells::Bool(bits))
-            }
-            Variable::String(_) if self.coded => {
-                let (mut codes, mut words, mut bytes) = (Vec::with_capacity(count), Interner::new(), 0usize);
-                values.try_for_each(|value| {
-                    let Variable::String(text) = value else {
-                        return None;
-                    };
-                    if codes.len() == Coder::SAMPLE && words.keys.len() > Coder::SAMPLED {
-                        return None;
-                    }
-                    bytes = bytes.checked_add(text.len()).filter(|&end| i32::try_from(end).is_ok())?;
-                    codes.push(words.found(text).or_else(|| words.code(text))?);
-                    Some(())
-                })?;
-                (codes.len() == count).then_some(Cells::Coded { codes, words, bytes })
-            }
-            _ => None,
-        }
+            }),
+            _ => values.next(),
+        };
+        self.len += taken;
+        stray
     }
 
     fn truncate(&mut self, len: usize) {
@@ -842,6 +837,8 @@ struct ListBuilder {
 }
 
 impl ListBuilder {
+    const CHUNK: usize = 64;
+
     fn new(rows: usize, capacity: usize) -> Self {
         let mut offsets = Vec::with_capacity(rows + 1);
         offsets.push(0);
@@ -997,47 +994,52 @@ impl ListBuilder {
         }
         self.capacity = self.children;
         self.children = 0;
-        let mut items = Vec::with_capacity(self.capacity);
+        let mut items = Vec::with_capacity(self.capacity.min(Self::CHUNK));
         let mut last = (0, 0, 0);
-        for item in lists.iter().flat_map(|list| list.iter()) {
-            let Variable::Object(map) = item else {
-                return None;
-            };
-            let map = map.borrow();
-            let (shape, values) = map.slots()?;
-            if shape.id() != last.0 || items.is_empty() {
-                let known = self.shapes.len();
-                let layout = self.layout(shape)?;
-                let slots = &self.shapes[layout].1;
-                if layout >= known && slots.iter().enumerate().any(|(at, slot)| slots[..at].contains(slot)) {
+        let mut all = lists.iter().flat_map(|list| list.iter()).peekable();
+        while all.peek().is_some() {
+            for item in all.by_ref().take(Self::CHUNK) {
+                let Variable::Object(map) = item else {
+                    return None;
+                };
+                let map = map.borrow();
+                let (shape, values) = map.slots()?;
+                if shape.id() != last.0 || self.children == 0 {
+                    let known = self.shapes.len();
+                    let layout = self.layout(shape)?;
+                    let slots = &self.shapes[layout].1;
+                    if layout >= known && slots.iter().enumerate().any(|(at, slot)| slots[..at].contains(slot)) {
+                        return None;
+                    }
+                    last = (shape.id(), layout, slots.len());
+                }
+                if last.2 != values.len() {
                     return None;
                 }
-                last = (shape.id(), layout, slots.len());
+                items.push((last.1, Ref::map(map, |map| map.slots().map_or(&[][..], |(_, values)| values))));
+                self.children += 1;
             }
-            if last.2 != values.len() {
-                return None;
-            }
-            items.push((last.1, Ref::map(map, |map| map.slots().map_or(&[][..], |(_, values)| values))));
-            self.children += 1;
+            self.spread(&items);
+            items.clear();
         }
-        let capacity = self.capacity;
+        Some(Some(self.finish()))
+    }
+
+    fn spread(&mut self, items: &[(usize, Ref<'_, [Variable]>)]) {
+        let (capacity, start) = (self.capacity, self.children - items.len());
         let shapes = &self.shapes;
         for (index, field) in self.fields.iter_mut().enumerate() {
             let slot = |layout: usize| shapes.get(layout).and_then(|(_, slots)| slots.iter().position(|&at| at == index));
-            let slots: Vec<Option<usize>> = (0..shapes.len()).map(slot).collect();
-            let from = field.len;
-            match (from, slots.first().copied().flatten()) {
-                (0, Some(at)) if slots.iter().all(|slot| *slot == Some(at)) => field.fill(items.iter().filter_map(|(_, values)| values.get(at)), items.len(), capacity),
-                _ => {
-                    let cells = items.get(from..).unwrap_or_default().iter().map(|(layout, values)| slots.get(*layout).copied().flatten().and_then(|at| values.get(at)));
-                    cells.for_each(|cell| match cell {
-                        Some(value) => field.push(value, capacity),
-                        None => field.missing(),
-                    })
-                }
+            let fixed = (0..shapes.len()).map(slot).reduce(|a, b| a.filter(|&a| Some(a) == b)).flatten();
+            let items = items.get(field.len.saturating_sub(start)..).unwrap_or_default();
+            match fixed {
+                Some(at) => field.run(items.iter().filter_map(|(_, values)| values.get(at)), capacity),
+                None => items.iter().for_each(|(layout, values)| match slot(*layout).and_then(|at| values.get(at)) {
+                    Some(value) => field.push(value, capacity),
+                    None => field.missing(),
+                }),
             }
         }
-        Some(Some(self.finish()))
     }
 
     fn finish(self) -> Shred {

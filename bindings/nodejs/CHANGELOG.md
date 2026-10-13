@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.7](https://github.com/gorules/zen/compare/nodejs-v2.1.6...nodejs-v2.1.7) (2026-10-13)
+
+
+### Bug Fixes
+
+* **nodejs:** accept ZenDecisionContent returned from the loader ([#547](https://github.com/gorules/zen/issues/547)) ([96af373](https://github.com/gorules/zen/commit/96af373b626a779aacd43f7ed75e56f44ba469e4))
+
 ## [2.1.6](https://github.com/gorules/zen/compare/nodejs-v2.1.5...nodejs-v2.1.6) (2026-10-13)
 
 

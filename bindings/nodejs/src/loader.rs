@@ -4,27 +4,19 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use napi::anyhow::anyhow;
-use napi::bindgen_prelude::{Buffer, Promise};
+use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::ThreadsafeFunction;
-use napi::{Either, Status};
+use napi::Status;
 
 use zen_engine::loader::{
     DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResponse, LoaderResult,
 };
 use zen_engine::model::DecisionContent;
 
-use crate::content::ZenDecisionContent;
+use crate::content::LoadedDecision;
 
-pub(crate) type LoaderTsfn = Arc<
-    ThreadsafeFunction<
-        String,
-        Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>,
-        String,
-        Status,
-        false,
-        true,
-    >,
->;
+pub(crate) type LoaderTsfn =
+    Arc<ThreadsafeFunction<String, Promise<Option<LoadedDecision>>, String, Status, false, true>>;
 
 #[derive(Default)]
 pub(crate) struct DecisionLoader {
@@ -53,7 +45,7 @@ impl DecisionLoader {
             .into());
         };
 
-        let promise: Promise<Option<Either<Buffer, &ZenDecisionContent>>> = function
+        let promise: Promise<Option<LoadedDecision>> = function
             .clone()
             .call_async(key.to_string())
             .await
@@ -72,13 +64,15 @@ impl DecisionLoader {
         };
 
         let decision_content = match buffer {
-            Either::A(buf) => Arc::new(serde_json::from_slice(buf.as_ref()).map_err(|e| {
-                LoaderError::Internal {
-                    key: key.to_string(),
-                    source: e.into(),
-                }
-            })?),
-            Either::B(dc) => dc.inner.clone(),
+            LoadedDecision::Bytes(buf) => {
+                Arc::new(serde_json::from_slice(buf.as_ref()).map_err(|e| {
+                    LoaderError::Internal {
+                        key: key.to_string(),
+                        source: e.into(),
+                    }
+                })?)
+            }
+            LoadedDecision::Content(content) => content,
         };
 
         Ok(decision_content)

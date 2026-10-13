@@ -10,7 +10,7 @@ use napi::{Env, JsValue, Unknown, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
 
-use crate::content::ZenDecisionContent;
+use crate::content::{LoadedDecision, ZenDecisionContent};
 use crate::convert::NodeEvalResponse;
 use crate::custom_node::{CustomNode, CustomNodeTsfn};
 use crate::decision::ZenDecision;
@@ -135,12 +135,8 @@ pub struct ZenEngineOptions {
     #[napi(
         ts_type = "((key: string) => Promise<Buffer | ZenDecisionContent>) | { type: 'static'; content: Record<string, object> } | { type: 'fs'; path: string } | { type: 'zip'; bytes: Buffer }"
     )]
-    pub loader: Option<
-        Either<
-            Function<'static, String, Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>>,
-            Object<'static>,
-        >,
-    >,
+    pub loader:
+        Option<Either<Function<'static, String, Promise<Option<LoadedDecision>>>, Object<'static>>>,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
     pub custom_handler:

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use napi::bindgen_prelude::{Buffer, Object};
-use napi::{Either, Env};
+use napi::bindgen_prelude::{
+    sys, Buffer, ClassInstance, FromNapiValue, Object, TypeName, ValidateNapiValue,
+};
+use napi::{Either, Env, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
 
@@ -36,5 +38,36 @@ impl ZenDecisionContent {
     pub fn to_buffer(&self) -> napi::Result<Buffer> {
         let content_vec = serde_json::to_vec(&self.inner.as_ref())?;
         Ok(Buffer::from(content_vec))
+    }
+}
+
+pub enum LoadedDecision {
+    Content(Arc<DecisionContent>),
+    Bytes(Buffer),
+}
+
+impl TypeName for LoadedDecision {
+    fn type_name() -> &'static str {
+        "Buffer | ZenDecisionContent"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl ValidateNapiValue for LoadedDecision {}
+
+impl FromNapiValue for LoadedDecision {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        if let Ok(instance) =
+            unsafe { ClassInstance::<ZenDecisionContent>::from_napi_value(env, napi_val) }
+        {
+            return Ok(Self::Content(instance.inner.clone()));
+        }
+
+        Ok(Self::Bytes(unsafe {
+            Buffer::from_napi_value(env, napi_val)
+        }?))
     }
 }

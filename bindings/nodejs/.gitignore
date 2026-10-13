@@ -4,3 +4,4 @@
 index.d.ts
 *.wasm
 npm/
+zen-engine.wasip1*

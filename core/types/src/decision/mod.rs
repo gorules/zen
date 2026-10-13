@@ -73,6 +73,15 @@ pub enum DecisionNodeKind {
 pub struct InputNodeContent {
     #[serde(default, deserialize_with = "empty_value_string_is_none_safe")]
     pub schema: Option<Arc<Value>>,
+    /// The request is this entity (a data model visible through the graph's
+    /// imports) instead of a schema: flat, its fields at the root, and each
+    /// reference holding the record it names (not its id).
+    #[serde(
+        default,
+        deserialize_with = "empty_string_is_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub target: Option<Arc<str>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]

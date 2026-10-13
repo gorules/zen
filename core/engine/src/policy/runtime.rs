@@ -114,12 +114,16 @@ pub(crate) enum CompiledEntry {
 pub(crate) struct CompiledSet {
     entries: HashMap<Arc<str>, CompiledEntry>,
     failures: Vec<CompileFailure>,
+    /// What each compiled document reads from its request (None: unknown).
+    reads: HashMap<Arc<str>, Option<std::collections::BTreeSet<String>>>,
 }
 
 impl CompiledSet {
     pub(crate) fn build_sync(loader: &DynamicLoader, keys: &[Arc<str>]) -> CompiledSet {
         let mut workspace = Workspace::new();
         let mut policy_keys: Vec<Arc<str>> = Vec::new();
+        let mut graph_keys: Vec<Arc<str>> = Vec::new();
+        let mut outcomes = false;
         let mut failures: Vec<CompileFailure> = Vec::new();
         let mut entries: HashMap<Arc<str>, CompiledEntry> = HashMap::default();
 
@@ -141,6 +145,7 @@ impl CompiledSet {
             };
             match content.as_ref() {
                 DecisionContent::Policy(policy) => {
+                    outcomes |= Self::declares_outcomes(&policy.0);
                     workspace.set_policy_arc(key.clone(), policy.0.clone());
                     policy_keys.push(key.clone());
                 }
@@ -152,9 +157,11 @@ impl CompiledSet {
                         error: Some(error.to_string()),
                     }),
                     Ok(()) => {
+                        workspace.set_document_arc(key.clone(), content.clone());
                         let mut compiled = graph.clone();
                         Arc::make_mut(&mut compiled).compile();
                         entries.insert(key.clone(), CompiledEntry::Graph(compiled));
+                        graph_keys.push(key.clone());
                     }
                 },
             }
@@ -189,7 +196,63 @@ impl CompiledSet {
             });
         }
 
-        CompiledSet { entries, failures }
+        // A graph node reading an outcome (known only after the decision)
+        // fails its graph, as it fails a policy.
+        if outcomes {
+            for key in &graph_keys {
+                let diagnostics: Vec<Diagnostic> = workspace
+                    .diagnostics(key)
+                    .into_iter()
+                    .filter(|d| {
+                        d.severity == Severity::Error
+                            && d.code == crate::workspace::types::DiagnosticCode::OutcomeRead
+                    })
+                    .collect();
+                if diagnostics.is_empty() {
+                    continue;
+                }
+                entries.remove(key);
+                failures.push(CompileFailure {
+                    key: key.clone(),
+                    kind: "graph",
+                    diagnostics,
+                    error: None,
+                });
+            }
+        }
+
+        let reads = entries.keys().map(|key| (key.clone(), workspace.reads(key))).collect();
+        CompiledSet { entries, failures, reads }
+    }
+
+    pub(crate) fn reads(&self, key: &str) -> Option<std::collections::BTreeSet<String>> {
+        let key = self.key_of(key)?;
+        self.reads.get(&key).cloned().flatten()
+    }
+
+    /// The key a document is compiled under: as given, or with/without
+    /// `.json` (loaders find documents either way).
+    pub(crate) fn key_of(&self, key: &str) -> Option<Arc<str>> {
+        let candidates = [
+            Some(key.to_string()),
+            key.strip_suffix(".json").map(str::to_string),
+            (!key.ends_with(".json")).then(|| format!("{key}.json")),
+        ];
+        candidates.into_iter().flatten().find_map(|candidate| {
+            self.entries
+                .get_key_value(candidate.as_str())
+                .map(|(k, _)| k.clone())
+        })
+    }
+
+    /// Whether a policy declares an outcome on a data model property.
+    fn declares_outcomes(policy: &PolicyDocument) -> bool {
+        policy.blocks.iter().any(|block| match block {
+            crate::policy::raw::BlockDoc::DataModel { data, .. } => {
+                data.properties.iter().any(|p| p.outcome.is_some())
+            }
+            _ => false,
+        })
     }
 
     fn error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {

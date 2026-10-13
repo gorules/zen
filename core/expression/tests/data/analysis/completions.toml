@@ -201,3 +201,39 @@ expression = "'hello"
 pos = 6
 input = '{"price": 10, "qty": 5}'
 includes = ["price", "qty", "sum"]
+
+[[test]]
+name = "feature aggregates complete"
+expression = "co"
+pos = 2
+input = '{"items": []}'
+includes = ["count", "countDistinct"]
+
+[[test]]
+name = "first and last complete"
+expression = "f"
+pos = 1
+input = '{"items": []}'
+includes = ["first", "filter", "flatMap"]
+
+[[test]]
+name = "sketch aggregates complete"
+expression = "countD"
+pos = 6
+input = '{"items": []}'
+includes = ["countDistinct", "countDistinctApprox"]
+
+[[test]]
+name = "argMax, argMin, skew, kurtosis and percentileApprox complete"
+expression = "a"
+pos = 1
+input = '{"items": []}'
+includes = ["argMax", "argMin"]
+
+[[test]]
+name = "join completes next to split"
+expression = "jo"
+pos = 2
+input = '{"tags": []}'
+includes = ["join"]
+excludes = ["split"]

@@ -1,11 +1,11 @@
 
-mod columnar;
+pub(crate) mod columnar;
 mod entity;
 mod host;
 mod schedule;
 mod traced;
 
-pub use columnar::PolicyColumnarOutput;
+pub use columnar::{ColumnStore, PolicyColumnarOutput};
 pub(crate) use host::Host;
 
 use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};

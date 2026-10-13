@@ -46,6 +46,9 @@ pub(crate) struct Shredder {
     rows: usize,
     nodes: Vec<Trie>,
     columns: Vec<(Arc<str>, Vec<Variable>, Vec<u64>)>,
+    /// A row's value as given, when its columns can't say it all (a
+    /// property that is null, an empty object): a row reads it whole.
+    exact: Vec<Option<Variable>>,
 }
 
 pub(crate) struct Listing<'a> {
@@ -70,7 +73,37 @@ impl Shredder {
                 column: None,
             }],
             columns: Vec::new(),
+            exact: Vec::new(),
         }
+    }
+
+    /// A row's whole value: its columns, and the value itself when they
+    /// would drop part of it.
+    pub(crate) fn row(&mut self, value: &Variable, row: usize) {
+        if Self::lossy(value) {
+            if self.exact.is_empty() {
+                self.exact = vec![None; self.rows];
+            }
+            self.exact[row] = Some(value.clone());
+        }
+        self.visit(value, 0, row);
+    }
+
+    /// Whether an object holds a null or an empty object (columns keep
+    /// neither); lists are kept whole, so what they hold is kept.
+    pub(crate) fn lossy(value: &Variable) -> bool {
+        match value {
+            Variable::Object(map) => {
+                let map = map.borrow();
+                map.is_empty() || map.iter().any(|(_, child)| matches!(child, Variable::Null) || Self::lossy(child))
+            }
+            _ => false,
+        }
+    }
+
+    /// The rows' values kept whole (empty when none was).
+    pub(crate) fn exact(&mut self) -> Vec<Option<Variable>> {
+        std::mem::take(&mut self.exact)
     }
 
     fn child(&mut self, node: usize, key: &str) -> usize {

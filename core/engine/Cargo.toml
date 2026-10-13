@@ -29,6 +29,7 @@ tokio = { workspace = true, features = ["sync", "time"] }
 rquickjs = { version = "0.10", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 zen-types = { path = "../types", version = "2.1.2" }
 zen-expression = { path = "../expression", version = "2.1.2" }
+bumpalo = { workspace = true }
 zen-tmpl = { path = "../template", version = "2.1.2" }
 nohash-hasher = { workspace = true }
 downcast-rs = { version = "2.0", features = ["std", "sync"] }
@@ -69,6 +70,7 @@ name = "engine"
 [features]
 default = []
 driver = []
+data = []
 bindgen = ["rquickjs/bindgen"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]
 

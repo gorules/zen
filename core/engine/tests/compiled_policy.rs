@@ -171,7 +171,8 @@ impl Columnar {
     }
 
     fn compare(reference: &Reference, label: &str, ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) {
-        let Ok(output) = ws.evaluate_columns(&Arc::from(Generated::PATH), &[], columns) else {
+        let store = zen_engine::ColumnStore::new();
+        let Ok(output) = ws.evaluate_columns(&Arc::from(Generated::PATH), &[], columns, &store) else {
             return;
         };
         for row in 0..columns.rows {
@@ -223,7 +224,8 @@ fn compiled_policy_throughput() {
                     Ok("single") => requests.iter().for_each(|r| drop(ws.evaluate(r))),
                     Ok("columns") => {
                         if let Some(columns) = Built::new(&requests.iter().map(|r| r.input.to_value()).collect::<Vec<_>>()).as_ref().map(Built::columns) {
-                            drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns));
+                            let store = zen_engine::ColumnStore::new();
+                            drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns, &store));
                         }
                     }
                     _ => drop(ws.evaluate_batch(&requests)),
@@ -258,7 +260,8 @@ fn compiled_policy_throughput() {
             best[2] = best[2].min(time(start.elapsed()));
             if let Some(columns) = built.as_ref().map(Built::columns) {
                 let start = std::time::Instant::now();
-                drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns));
+                let store = zen_engine::ColumnStore::new();
+                drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns, &store));
                 best[3] = best[3].min(time(start.elapsed()));
             }
         }
@@ -313,6 +316,144 @@ async fn engine_batch_matches_single_evaluations() {
                 assert_eq!(shape(batched), shape(single), "{key} compiled={compiled} {context:?}");
             }
         }
+    }
+}
+
+#[tokio::test]
+async fn engine_columns_match_single_evaluations() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{DecisionEngine, EvaluationOptions};
+
+    let loader = Arc::new(MemoryLoader::default());
+    let mut rng = Rng(13);
+    let document = serde_json::from_value(Gen::document(3)).expect("policy document");
+    loader.add("policy", DecisionContent::Policy(PolicyContent(Arc::new(document))));
+    let graph: DecisionContent = serde_json::from_str(
+        &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-data/graphs/loan-approval.json"))
+            .or_else(|_| std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-data/loan-approval.json")))
+            .expect("graph fixture"),
+    )
+    .expect("graph content");
+    loader.add("graph", graph);
+    let values: Vec<Value> = (0..40).map(|_| Gen::valid_input(&mut rng)).collect();
+    let built = Built::new(&values).expect("flat columns");
+    let columns = built.columns();
+    let engine = DecisionEngine::default().with_loader(loader);
+    for compiled in [false, true] {
+        if compiled {
+            engine.compile();
+        }
+        for key in ["policy", "graph", "policy.json"] {
+            let store = zen_engine::ColumnStore::new();
+            let output = engine.evaluate_columns(key, &columns, &store, EvaluationOptions::default()).await;
+            assert_eq!(output.rows, values.len());
+            for row in 0..values.len() {
+                // The row as the columns hold it, decided alone: the same
+                // value exactly (nulls and empty objects included).
+                let single = engine
+                    .evaluate_with_opts(key, columns.row(row), EvaluationOptions::default())
+                    .await
+                    .map(|r| r.result.to_value())
+                    .map_err(|e| e.to_string());
+                let columnar = match &output.errors[row] {
+                    Some(error) => Err(error.to_string()),
+                    None => Ok(output.row(row).to_value()),
+                };
+                assert_eq!(columnar.is_ok(), single.is_ok(), "{key} compiled={compiled} row {row}: {columnar:?} vs {single:?}");
+                if let (Ok(columnar), Ok(single)) = (columnar, single) {
+                    assert_eq!(columnar, single, "{key} compiled={compiled} row {row}");
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn engine_columns_keep_nulls_and_empty_objects() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{DecisionEngine, EvaluationOptions};
+
+    let literal = conformance::literal::Parser::document(
+        r#"{models: {a: {x: "number?", y: "number"}}, blocks: [{expression: "a.n", value: "a.x == null ? null : a.x * 2"}, {expression: "a.o", value: "a.y > 1 ? {} : {k: a.y}"}, {expression: "a.z", value: "a.y + 1"}]}"#,
+    )
+    .expect("policy literal");
+    let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("nulls", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+    let engine = DecisionEngine::default().with_loader(loader);
+    engine.compile();
+    let values: Vec<Value> = (0..64)
+        .map(|i| match i % 3 {
+            0 => serde_json::json!({ "a": { "y": i } }),
+            1 => serde_json::json!({ "a": { "x": i, "y": 1 } }),
+            _ => serde_json::json!({ "a": { "x": i, "y": i } }),
+        })
+        .collect();
+    let built = Built::new(&values).expect("flat columns");
+    let columns = built.columns();
+    let store = zen_engine::ColumnStore::new();
+    let output = engine.evaluate_columns("nulls", &columns, &store, EvaluationOptions::default()).await;
+    for row in 0..values.len() {
+        let single = engine
+            .evaluate_with_opts("nulls", columns.row(row), EvaluationOptions::default())
+            .await
+            .expect("decides")
+            .result
+            .to_value();
+        assert!(output.errors[row].is_none(), "row {row}: {:?}", output.errors[row]);
+        assert_eq!(output.row(row).to_value(), single, "row {row} (typed {}, laned {})", output.typed, output.laned);
+    }
+}
+
+#[tokio::test]
+async fn engine_graph_columns_keep_nulls_and_empty_objects() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::DecisionContent;
+    use zen_engine::{DecisionEngine, EvaluationOptions};
+
+    let graph: DecisionContent = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "type": "inputNode", "name": "request", "position": { "x": 0, "y": 0 } },
+            { "id": "ex", "type": "expressionNode", "name": "e", "position": { "x": 200, "y": 0 },
+              "content": { "expressions": [
+                  { "id": "1", "key": "n", "value": "x == null ? null : x * 2" },
+                  { "id": "2", "key": "o", "value": "y > 1 ? {} : {k: y}" },
+                  { "id": "3", "key": "z", "value": "y + 1" }
+              ] } },
+            { "id": "out", "type": "outputNode", "name": "response", "position": { "x": 400, "y": 0 } }
+        ],
+        "edges": [
+            { "id": "a", "sourceId": "in", "targetId": "ex", "type": "edge" },
+            { "id": "b", "sourceId": "ex", "targetId": "out", "type": "edge" }
+        ]
+    }))
+    .expect("graph");
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("g", graph);
+    let engine = DecisionEngine::default().with_loader(loader);
+    engine.compile();
+    let values: Vec<Value> = (0..64)
+        .map(|i| match i % 3 {
+            0 => json!({ "y": i }),
+            1 => json!({ "x": i, "y": 1 }),
+            _ => json!({ "x": i, "y": i }),
+        })
+        .collect();
+    let built = Built::new(&values).expect("flat columns");
+    let columns = built.columns();
+    let store = zen_engine::ColumnStore::new();
+    let output = engine.evaluate_columns("g", &columns, &store, EvaluationOptions::default()).await;
+    for row in 0..values.len() {
+        let single = engine
+            .evaluate_with_opts("g", columns.row(row), EvaluationOptions::default())
+            .await
+            .expect("decides")
+            .result
+            .to_value();
+        assert!(output.errors[row].is_none(), "row {row}: {:?}", output.errors[row]);
+        assert_eq!(output.row(row).to_value(), single, "row {row} (typed {}, laned {})", output.typed, output.laned);
     }
 }
 
@@ -426,7 +567,8 @@ impl Anchor {
     }
 
     fn check(reference: &Reference, suite: &str, ws: &PolicyWorkspace, columns: &zen_expression::lane::Columns, failures: &mut Vec<String>) -> (usize, usize, usize) {
-        let output = ws.evaluate_columns(&Arc::from(Anchor::PATH), &[], columns).expect("columnar");
+        let store = zen_engine::ColumnStore::new();
+        let output = ws.evaluate_columns(&Arc::from(Anchor::PATH), &[], columns, &store).expect("columnar");
         for row in 0..columns.rows {
             let input = columns.row(row);
             let request = EvaluateRequest {
@@ -624,7 +766,8 @@ fn policy_columnar_shredded_irregular_lists() {
     }
     let mut failures = Vec::new();
     for columns in [&columns, &nulled] {
-        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], columns).expect("columnar");
+        let store = zen_engine::ColumnStore::new();
+        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], columns, &store).expect("columnar");
         for row in 0..columns.rows {
             let request = EvaluateRequest {
                 policy_path: Arc::from("anchor"),
@@ -675,7 +818,8 @@ fn policy_column_order_is_path_independent() {
         let built = Built::new(&values).expect("flat columns");
         let columns = built.columns();
         for call in 0..8 {
-            let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns).expect("columnar");
+            let store = zen_engine::ColumnStore::new();
+            let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns, &store).expect("columnar");
             let got: Vec<&str> = output.columns.iter().map(|(path, _)| path.as_ref()).collect();
             assert_eq!(got, order, "call {call}: typed {}, laned {}", output.typed, output.laned);
             assert!((0..output.rows).all(|row| output.errors[row].is_some() == (row % 2 == 1)), "call {call}: errors");
@@ -695,7 +839,8 @@ fn policy_tables_match_coded_nulls_against_null_cells() {
     let columns = Columns::new(keys.len()).column("a.k", column);
     let want = ["other", "null", "other", "null", "other"];
     for call in 0..4 {
-        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns).expect("columnar");
+        let store = zen_engine::ColumnStore::new();
+        let output = ws.evaluate_columns(&Arc::from("anchor"), &[], &columns, &store).expect("columnar");
         for (row, want) in want.iter().enumerate() {
             assert!(output.errors[row].is_none(), "call {call} row {row}: {:?}", output.errors[row]);
             let cls = output.row(row).dot("a.cls").map(|v| v.to_value());
@@ -930,7 +1075,8 @@ fn policy_anchor_throughput() {
         let columns = built.columns_with(&structs);
         let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds.parse().unwrap_or(4));
         while std::time::Instant::now() < until {
-            drop(ws.evaluate_columns(&path, &[], &columns));
+            let store = zen_engine::ColumnStore::new();
+            drop(ws.evaluate_columns(&path, &[], &columns, &store));
         }
         return;
     }
@@ -945,29 +1091,34 @@ fn policy_anchor_throughput() {
     })));
     let built = Built::new(&values).expect("flat columns");
     let columns = built.columns();
-    let flat = ws.evaluate_columns(&path, &[], &columns).expect("columnar flat");
+    let store = zen_engine::ColumnStore::new();
+    let flat = ws.evaluate_columns(&path, &[], &columns, &store).expect("columnar flat");
     let flat_wrong = (0..count)
         .filter(|&r| flat.errors[r].is_some() || Built::normalized(flat.row(r).to_value()) != reference[r])
         .count();
     let flat_hosted = flat.hosted;
     drop(flat);
-    results.push(("columnar flat", Anchor::time(count, || Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns))))));
+    let store = zen_engine::ColumnStore::new();
+    results.push(("columnar flat", Anchor::time(count, || Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns, &store))))));
     let built = Built::nested(&values).expect("nested columns");
     let fields = built.fields();
     let structs = built.structs(&fields);
     let columns = built.columns_with(&structs);
-    let output = ws.evaluate_columns(&path, &[], &columns).expect("columnar");
+    let store = zen_engine::ColumnStore::new();
+    let output = ws.evaluate_columns(&path, &[], &columns, &store).expect("columnar");
     let wrong = (0..count)
         .filter(|&r| output.errors[r].is_some() || Built::normalized(output.row(r).to_value()) != reference[r])
         .count();
     if let Ok(seconds) = std::env::var("ANCHOR_PROFILE_COLUMNAR") {
         let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds.parse().unwrap_or(4));
         while std::time::Instant::now() < until {
-            drop(ws.evaluate_columns(&path, &[], &columns));
+            let store = zen_engine::ColumnStore::new();
+            drop(ws.evaluate_columns(&path, &[], &columns, &store));
         }
         return;
     }
-    results.push(("columnar struct lists", Anchor::time(count, || Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns))))));
+    let store = zen_engine::ColumnStore::new();
+    results.push(("columnar struct lists", Anchor::time(count, || Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns, &store))))));
     if std::env::var("ZEN_CENSUS").is_ok() {
         for (key, calls, rows, ns) in zen_engine::Decision::census() {
             println!("CENSUS\tanchor\t{key}\t{calls}\t{rows}\t{ns}");
@@ -1033,4 +1184,183 @@ fn policy_anchor_throughput() {
     assert_eq!(fused_wrong, 0, "fused floor differs from the driver");
     assert_eq!(flat_wrong, 0, "flat columnar output differs from the driver");
     assert_eq!(wrong, 0, "struct-list columnar output differs from the driver");
+}
+
+/// Text values and validity for a column of optional strings.
+fn texts(values: &[Option<&str>]) -> (Vec<i32>, String, Vec<u64>) {
+    let (mut offsets, mut data, mut bits) = (vec![0i32], String::new(), vec![0u64; values.len().div_ceil(64).max(1)]);
+    for (row, value) in values.iter().enumerate() {
+        if let Some(value) = value {
+            data.push_str(value);
+            bits[row / 64] |= 1 << (row % 64);
+        }
+        offsets.push(data.len() as i32);
+    }
+    (offsets, data, bits)
+}
+
+#[tokio::test]
+async fn engine_prepared_columns_match_single_evaluations() {
+    use rust_decimal::Decimal;
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+    use zen_expression::lane::{Column, Columns, Dictionary, Values};
+
+    // A transaction referencing its customer, dates on both, a default on
+    // the customer: what a screening policy over pools reads.
+    let property = |model: &str, name: &str, kind: &str, extra: Value| {
+        let mut out = serde_json::json!({"id": format!("{model}.{name}"), "name": name, "type": kind, "array": false, "optional": true});
+        if let (Some(out), Some(extra)) = (out.as_object_mut(), extra.as_object()) {
+            out.extend(extra.clone());
+        }
+        out
+    };
+    let document = serde_json::json!({"imports": [], "blocks": [
+        {"id": "model:transaction", "type": "dataModel", "props": {"data": {"name": "transaction", "scope": "entity", "properties": [
+            property("transaction", "amount", "number", serde_json::json!({})),
+            property("transaction", "booked_at", "date", serde_json::json!({})),
+            property("transaction", "customer", "reference", serde_json::json!({"target": "customer"})),
+        ]}}},
+        {"id": "model:customer", "type": "dataModel", "props": {"data": {"name": "customer", "scope": "entity", "properties": [
+            property("customer", "id", "string", serde_json::json!({})),
+            property("customer", "risk_rating", "string", serde_json::json!({"default": "unknown"})),
+            property("customer", "score", "number", serde_json::json!({})),
+            property("customer", "valid_from", "date", serde_json::json!({})),
+        ]}}},
+        {"id": "b0", "type": "expression", "props": {"data": {"key": "transaction.flag", "value": "(transaction.customer.score ?? 0) > 5 or transaction.customer.risk_rating == 'high'"}}},
+        {"id": "b1", "type": "expression", "props": {"data": {"key": "transaction.rating", "value": "transaction.customer.risk_rating"}}},
+        {"id": "b2", "type": "expression", "props": {"data": {"key": "transaction.big", "value": "(transaction.amount ?? 0) > 100"}}},
+        {"id": "b3", "type": "expression", "props": {"data": {"key": "transaction.since", "value": "transaction.customer.valid_from"}}},
+    ]});
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("screen.json", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+
+    // Rows: found; default filled; key not in pool; no key; a date that
+    // does not parse; duplicate ids (the last wins); an empty date; a pool
+    // item without its date.
+    let keys = texts(&[Some("c1"), Some("c2"), Some("c9"), None, Some("c1"), Some("c5"), Some("c1"), Some("c6")]);
+    let booked = texts(&[
+        Some("2026-01-02T10:00:00Z"),
+        Some("2026-01-03T10:00:00Z"),
+        Some("2026-01-03T11:00:00Z"),
+        Some("2026-01-04T10:00:00Z"),
+        Some("nope"),
+        Some("2026-01-05T10:00:00Z"),
+        Some(""),
+        None,
+    ]);
+    let amounts: Vec<Decimal> = [50, 150, 10, 500, 20, 101, 99, 7].into_iter().map(Decimal::from).collect();
+    // Pool items, per row: [c1] [c2] [c1] [] [c1] [c5, c5] [c1] [c6].
+    let pool_rows: [&[usize]; 8] = [&[0], &[1], &[0], &[], &[0], &[2, 3], &[0], &[4]];
+    let items: [(&str, Option<&str>, i64, Option<&str>); 5] = [
+        ("c1", Some("high"), 2, Some("2020-01-01")),
+        ("c2", None, 9, Some("2021-05-05")),
+        ("c5", Some("low"), 1, Some("2022-02-02")),
+        ("c5", Some("medium"), 8, Some("2023-03-03")),
+        ("c6", Some("low"), 3, None),
+    ];
+    let mut offsets = vec![0i32];
+    let mut flat: Vec<usize> = Vec::new();
+    for row in pool_rows {
+        flat.extend_from_slice(row);
+        offsets.push(flat.len() as i32);
+    }
+    let ids = texts(&flat.iter().map(|&i| Some(items[i].0)).collect::<Vec<_>>());
+    let ratings = texts(&flat.iter().map(|&i| items[i].1).collect::<Vec<_>>());
+    let froms = texts(&flat.iter().map(|&i| items[i].3).collect::<Vec<_>>());
+    let scores: Vec<Decimal> = flat.iter().map(|&i| Decimal::from(items[i].2)).collect();
+    fn text(t: &(Vec<i32>, String, Vec<u64>)) -> Values<'_> {
+        Values::Text { offsets: &t.0, data: &t.1 }
+    }
+    let fields = [
+        ("id", Column::new(text(&ids))),
+        ("risk_rating", Column::with_validity(text(&ratings), &ratings.2, 0)),
+        ("score", Column::new(Values::Dec(&scores))),
+        ("valid_from", Column::with_validity(text(&froms), &froms.2, 0)),
+    ];
+    let item = Column::new(Values::Struct { fields: &fields, len: flat.len() });
+    let columns = Columns::new(8)
+        .column("transaction.amount", Column::new(Values::Dec(&amounts)))
+        .column("transaction.booked_at", Column::with_validity(text(&booked), &booked.2, 0))
+        .column("transaction.customer", Column::with_validity(text(&keys), &keys.2, 0))
+        .column("customer", Column::new(Values::List { offsets: &offsets, child: Dictionary::Column(&item) }));
+
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+    let store = ColumnStore::new();
+    let output = engine.evaluate_columns("screen.json", &columns, &store, EvaluationOptions::default()).await;
+    assert_eq!(output.rows, 8);
+    for row in 0..8 {
+        let single = engine
+            .evaluate_with_opts("screen.json", columns.row(row), EvaluationOptions::default())
+            .await
+            .map(|r| r.result.to_value())
+            .map_err(|e| e.to_string());
+        let columnar = match &output.errors[row] {
+            Some(error) => Err(error.to_string()),
+            None => Ok(output.row(row).to_value()),
+        };
+        assert_eq!(columnar, single, "row {row}");
+    }
+    // Only the rows the row path must see (a key not in its pool, a date
+    // that does not parse) are decided one by one.
+    assert_eq!(output.hosted, 2, "rows decided one by one");
+}
+
+/// A member match's arm chosen as columns, then its entity handed to the
+/// host before the match commits (a later block it can't run per member):
+/// the rows go to the row path, never committed without their arm.
+#[tokio::test]
+async fn engine_columns_keep_member_arms_when_retired() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{DecisionEngine, EvaluationOptions};
+
+    let literal = conformance::literal::Parser::document(r#"{models: {customer: {qty: "number", days: "number?", members: "member[]"}, member: {balance: "number?", kind: "string(retail|corporate)", employees: "employee[]"}, employee: {score: "number", years: "number", flagged: "boolean?"}},
+    globals: {settings: {threshold: "number"}},
+    blocks: [
+      {match: "member.rank", arms: [["not (member.balance == null)", "'DE'"], ["", "string(threshold)"]]},
+      {expression: "summary", value: "{a: customer.qty == (customer.days ?? 0), ok: customer.qty}"},
+      {match: "member.bucket", arms: [["(summary.ok) / (abs((customer.days ?? 0)) + 1) != threshold", "count(member.employees, not ((#.flagged ?? false)))"], ["", "0"]]},
+      {expression: "member.capped", value: "member.bucket + 1"},
+      {expression: "member.adjusted", value: "string(count(member.employees, not ((#.flagged ?? false))))"},
+      {match: "member.calc.bonus", arms: [["some(member.employees, #.flagged == null)", "(member.adjusted + '-' + 'x')"], ["member.balance == null", "member.rank"], ["member.kind in ['retail', 'corporate']", "trim((split(member.adjusted, '-')[1] ?? 'none'))"], ["", "member.adjusted"]]},
+    ]}"#).expect("policy literal");
+    let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("spec.json", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+    let engine = DecisionEngine::default().with_loader(loader);
+    assert!(engine.compile().is_empty());
+    let input = conformance::literal::Parser::document(r#"[{threshold: 0, customer: {qty: -500, priority: true, openedAt: "2024-01-01", days: 0, flagged: null, members: [{balance: null, kind: "retail", employees: [{score: 0.5, years: 0.000001, flagged: false}]}]}}, {threshold: 100, customer: {qty: 0, priority: false, openedAt: "2000-01-01", members: [{balance: -0.5, kind: "corporate", employees: []}, {kind: "retail", employees: [{score: 1, years: 123456789.123, flagged: false}, {score: 100, years: 10, flagged: null}, {score: 100, years: 18, flagged: true}]}, {balance: null, kind: "retail", employees: [{score: 99.99, years: 100}, {score: 18, years: 100, flagged: true}]}, {balance: null, kind: "retail", employees: [{score: 65, years: 10, flagged: null}]}, {balance: 123456789.123, kind: "corporate", employees: [{score: 1, years: 1000000, flagged: true}, {score: 1e3, years: 99999999999999999999, flagged: false}]}]}}, {threshold: -2, customer: {qty: 100, priority: true, openedAt: "1990-06-15", days: 0.5, flagged: false, members: [{balance: -0.01, kind: "corporate", employees: [{score: 65, years: 1000, flagged: false}]}, {balance: -500, kind: "retail", employees: [{score: -0.5, years: 18, flagged: false}, {score: 0.000001, years: -0.01, flagged: false}]}, {balance: -500, kind: "corporate", employees: [{score: 100, years: 2, flagged: true}, {score: -1, years: 1, flagged: false}]}, {balance: 1000000, kind: "retail", employees: [{score: 65, years: 133, flagged: true}]}, {balance: 1.5, kind: "corporate", employees: [{score: -1, years: 0, flagged: false}]}], extraField: "x"}}, {threshold: 1, customer: {qty: 0.5, priority: true, openedAt: "2025-03-20", days: 99.99, flagged: false, members: [{balance: 5, kind: "corporate", employees: [{score: 0.1, years: 250, flagged: true}]}, {balance: 0.5, kind: "retail", employees: [{score: -0.01, years: 18, flagged: false}]}, {balance: 99.99, kind: "corporate", employees: [{score: 0.5, years: 100, flagged: true}, {score: 100, years: 100, flagged: false}, {score: 0.5, years: 1000000, flagged: true}]}, {balance: 100, kind: "corporate", employees: [{score: 2.50, years: 100, flagged: true}]}, {balance: 0.5, kind: "retail", employees: [{score: 7.25, years: -500, flagged: true}, {score: -0, years: 250, flagged: true}, {score: 96, years: 1.5, flagged: false}]}]}}, {threshold: 0, customer: {qty: 0.1, priority: true, openedAt: "1990-06-15", days: 18, flagged: true, members: [{balance: 1, kind: "retail", employees: [{score: 100, years: 100, flagged: false}, {score: 100, years: 32, flagged: true}]}], extraField: {nested: true}}}, {threshold: 10, customer: {qty: -500, priority: true, openedAt: "2024-02-29", days: 100, flagged: true, members: [{balance: 1, kind: "corporate", employees: []}, {balance: 2, kind: "corporate", employees: [{score: 1.5, years: 5, flagged: false}, {score: 100, years: 2.50, flagged: false}, {score: -0.01, years: 100, flagged: false}]}, {balance: 0.5, kind: "retail", employees: [{score: 1000000, years: 1.5, flagged: true}, {score: -0.5, years: 2, flagged: true}]}]}}, {threshold: 0, customer: {qty: 1.5, priority: true, openedAt: "1990-06-15", days: "12", flagged: true, members: [{balance: 1.5, kind: "retail", employees: [{score: 1000, years: -0.5, flagged: true}, {score: -0, years: 100, flagged: false}, {score: 250, years: 123456789.123, flagged: true}]}, {balance: 0.5, kind: "retail", employees: []}, {balance: 116, kind: "retail", employees: []}, {balance: 2.50, kind: "corporate", employees: []}, {balance: -1, kind: "retail", employees: [{score: 1000, years: 65, flagged: true}, {score: 1.5, years: 2.50, flagged: false}, {score: -0.5, years: 65, flagged: false}]}, {balance: 2, kind: "corporate", employees: [{score: 2, years: 99.99, flagged: true}]}, {balance: 10, kind: "retail", employees: [{score: -0.01, years: 111, flagged: false}, {score: 65, years: 2.50, flagged: false}]}, {balance: 2, kind: "retail", employees: [{score: 10, years: 10, flagged: true}, {score: 1.5, years: 0.5, flagged: true}, {score: 451, years: -0, flagged: true}]}, {balance: 10, kind: "retail", employees: []}]}}, {threshold: 10, customer: {qty: -0.01, priority: false, openedAt: "2030-12-31", days: 2, flagged: true, members: [{balance: null, kind: "corporate", employees: [{score: 1000000, years: 7.25, flagged: true}, {score: 2, years: 2, flagged: null}, {score: 0.000001, years: 99999999999999999999, flagged: true}]}, {balance: null, kind: "retail", employees: [{score: 7.25, years: 1.5, flagged: false}, {score: 99.99, years: 0.000001}]}, {kind: "corporate", employees: [{score: 100, years: 1000000, flagged: null}, {score: 18, years: -1, flagged: false}]}]}}, {threshold: 1, customer: {qty: 2, priority: true, openedAt: "2024-01-01", days: null, flagged: false, members: [{balance: -1, kind: "retail", employees: [{score: 2.50, years: 99999999999999999999}, {score: 10, years: 0.5, flagged: false}]}]}}, {threshold: -2, customer: {qty: 2, priority: true, openedAt: "2000-01-01", days: null, flagged: null, members: [{kind: "corporate", employees: [{score: -0, years: 1, flagged: true}, {score: 1000000, years: 7.25, flagged: false}]}]}}, {threshold: 0, customer: {qty: 100, priority: true, openedAt: "2024-01-01", flagged: true, members: [{kind: "retail", employees: [{score: 65, years: 100}, {score: 250, years: 0, flagged: null}]}, {kind: "retail", employees: [{score: 1000, years: 99.99, flagged: true}, {score: 100, years: 2.50}]}]}}, {threshold: 1, customer: {qty: 99.99, priority: false, openedAt: "2024-02-29", days: 0.1, flagged: false, members: [{balance: 1000000, kind: "retail", employees: [{score: 10, years: 100, flagged: true}, {score: 1000000, years: 100, flagged: true}]}, {balance: 2, kind: "corporate", employees: [{score: 18, years: 1e3, flagged: true}, {score: 18, years: 0, flagged: false}]}], extraField: "x"}}, {threshold: 0, customer: {qty: 1.5, priority: false, openedAt: "1990-06-15", days: 0.5, flagged: true, members: [{balance: 0, kind: "corporate", employees: [{score: -500, years: 99999999999999999999}]}, {balance: 1000000, kind: "retail", employees: [{score: 0.000001, years: 100, flagged: false}, {score: -0.01, years: 7.25, flagged: true}, {score: -0, years: 0.000001}]}, {kind: "retail", employees: []}, {balance: 0.5, kind: "corporate", employees: [{score: 0, years: -0}]}, {balance: null, kind: "retail", employees: [{score: 7.25, years: 99999999999999999999, flagged: false}, {score: -0.5, years: 1, flagged: true}]}]}}, {threshold: 100, customer: {qty: 99.99, priority: true, openedAt: "2025-03-20T10:15:30Z", days: 1000000, flagged: true, members: [{balance: 10, kind: "retail", employees: []}, {balance: 1, kind: "retail", employees: []}, {balance: -0.01, kind: "retail", employees: [{score: 100, years: 250, flagged: false}]}]}}, {threshold: -2, customer: {qty: 100, priority: false, openedAt: "2025-03-20", days: 99999999999999999999, flagged: false, members: [{balance: 5, kind: "retail", employees: [{score: 1000, years: 1000000, flagged: false}]}, {balance: 0.1, kind: "retail", employees: [{score: 250, years: 1000, flagged: true}, {score: 1e3, years: 10, flagged: false}, {score: 1, years: -0, flagged: false}]}]}}]"#).expect("input literal");
+    let values: Vec<Value> = input[0].json().as_array().cloned().expect("inputs");
+    let check = |name: &str, columns: &zen_expression::lane::Columns, output: &zen_engine::ColumnarOutput, singles: &[Result<Value, String>]| {
+        for row in 0..columns.rows {
+            let columnar = match &output.errors[row] { Some(e) => Err(e.to_string()), None => Ok(output.row(row).to_value()) };
+            assert_eq!(&columnar, &singles[row], "{name} row {row}");
+        }
+    };
+    for built in Built::new(&values).into_iter().chain(Built::lists(&values)) {
+        let columns = built.columns();
+        let mut singles = Vec::new();
+        for row in 0..columns.rows {
+            singles.push(engine.evaluate_with_opts("spec.json", columns.row(row), EvaluationOptions::default()).await.map(|r| r.result.to_value()).map_err(|e| e.to_string()));
+        }
+        let store = zen_engine::ColumnStore::new();
+        let output = engine.evaluate_columns("spec.json", &columns, &store, EvaluationOptions::default()).await;
+        check("flat", &columns, &output, &singles);
+    }
+    for built in Built::nested(&values) {
+        let fields = built.fields();
+        let structs = built.structs(&fields);
+        let columns = built.columns_with(&structs);
+        let mut singles = Vec::new();
+        for row in 0..columns.rows {
+            singles.push(engine.evaluate_with_opts("spec.json", columns.row(row), EvaluationOptions::default()).await.map(|r| r.result.to_value()).map_err(|e| e.to_string()));
+        }
+        let store = zen_engine::ColumnStore::new();
+        let output = engine.evaluate_columns("spec.json", &columns, &store, EvaluationOptions::default()).await;
+        check("nested", &columns, &output, &singles);
+    }
 }

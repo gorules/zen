@@ -104,17 +104,22 @@ impl PolicyPlan {
         })
     }
 
+    /// The policy over `original`, as given or `prepared` (see
+    /// [`super::prepare`]): the prepared columns evaluated, the rows forced
+    /// (and any row hosted) evaluated as `original`'s rows.
     pub(crate) fn evaluate_columns<'a>(
         &self,
         artifact: &EvalArtifact,
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
-        columns: &'a Columns<'a>,
+        original: &'a Columns<'a>,
+        prepared: Option<&'a super::prepare::Prepared<'a>>,
     ) -> PolicyColumnarOutput<'a> {
+        let columns = prepared.map_or(original, |prepared| &prepared.hydrated);
         let rows = columns.rows;
         let request = |row: usize| EvaluateRequest {
             policy_path: policy_path.clone(),
-            input: columns.row(row),
+            input: original.row(row),
             goals: goals.to_vec(),
             trace: false,
         };
@@ -126,25 +131,33 @@ impl PolicyPlan {
         let mut errors: Vec<Option<EvaluationError>> = (0..rows).map(|_| None).collect();
         let stores: Vec<OnceCell<Variable>> = (0..rows).map(|_| OnceCell::new()).collect();
         sheet.entities = self.entities(artifact, &sheet);
-        sheet.refs = artifact.reference_fields.iter().map(|field| field.path.clone()).collect();
-        let shared = !artifact.reference_fields.is_empty()
+        // Prepared references are resolved: read as any other column.
+        if prepared.is_none() {
+            sheet.refs = artifact.reference_fields.iter().map(|field| field.path.clone()).collect();
+        }
+        let shared = (!artifact.reference_fields.is_empty() && prepared.is_none())
             || self.iterations.iter().enumerate().any(|(block, iteration)| match iteration {
                 Some((_, path, _)) => !sheet.entities.iter().any(|e| e.path == *path),
                 None => self.natives[block].is_none() && self.tables[block].is_none(),
             });
         let mut fallback = vec![false; rows];
         let mut erred = false;
-        let sure = match shared {
-            true => None,
-            false => Entity::sure(artifact, columns, &sheet.entities, goals),
+        let sure = match (shared, prepared) {
+            (true, _) => None,
+            (false, Some(prepared)) => artifact.sure_prepared(&prepared.converted, columns, goals),
+            (false, None) => Entity::sure(artifact, columns, &sheet.entities, goals),
         };
         sheet.entities.iter().filter_map(|entity| entity.hosted.as_deref()).flatten().for_each(|&row| fallback[row] = true);
+        if let Some(prepared) = prepared {
+            prepared.forced.iter().enumerate().filter(|(_, forced)| **forced).for_each(|(row, _)| fallback[row] = true);
+        }
         for row in 0..rows {
-            if sure.as_ref().is_some_and(|sure| sure[row]) {
+            if sure.as_ref().is_some_and(|sure| sure[row]) || (prepared.is_some() && fallback[row]) {
                 continue;
             }
             let req = request(row);
-            if artifact.input_schema.convert_dates(&req.input).is_some() {
+            // Prepared columns hold the row converted: checked here only.
+            if prepared.is_none() && artifact.input_schema.convert_dates(&req.input).is_some() {
                 fallback[row] = true;
                 continue;
             }
@@ -226,6 +239,7 @@ impl PolicyPlan {
         };
         if hosted.is_empty() && owned.iter().all(Option::is_none) {
             let columns = sheet.output(&finished);
+            let exact = sheet.exact(&finished);
             return PolicyColumnarOutput {
                 rows,
                 columns,
@@ -233,22 +247,25 @@ impl PolicyPlan {
                 hosted: 0,
                 typed: counts.0,
                 laned: counts.1,
+                exact,
             };
         }
         let requests: Vec<EvaluateRequest> = hosted.iter().map(|&row| request(row)).collect();
         let mut shredder = Shredder::new(rows);
         for &row in &finished {
             match owned.get(row) {
-                Some(Some(store)) => shredder.visit(store, 0, row),
-                _ => shredder.visit(&sheet.object(row), 0, row),
+                Some(Some(store)) => shredder.row(store, row),
+                // As a row: a written null (which columns drop) kept whole.
+                _ => shredder.row(&sheet.object(row), row),
             }
         }
         for (&row, result) in hosted.iter().zip(self.evaluate(artifact, &requests)) {
             match result {
-                Ok(result) => shredder.visit(&result.output, 0, row),
+                Ok(result) => shredder.row(&result.output, row),
                 Err(error) => errors[row] = Some(error),
             }
         }
+        let exact = shredder.exact();
         PolicyColumnarOutput {
             rows,
             columns: Sheet::columns(shredder.finish()),
@@ -256,6 +273,7 @@ impl PolicyPlan {
             hosted: hosted.len(),
             typed: counts.0,
             laned: counts.1,
+            exact,
         }
     }
 }

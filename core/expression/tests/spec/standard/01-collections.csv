@@ -151,8 +151,8 @@ keys({[k]: 1});{k: ''};['']
 {a: 1, b: 2,};;{a: 1, b: 2};bug: objects reject a trailing comma while arrays accept it
 {,};;!error
 {a: 1,, b: 2};;!error
-{a};{a: 1};!error
-{a, b};{a: 1, b: 2};!error
+{a};{a: 1};{a: 1}
+{a, b};{a: 1, b: 2};{a: 1, b: 2}
 {a: 1 b: 2};;!error
 {a 1};;!error
 {:1};;!error

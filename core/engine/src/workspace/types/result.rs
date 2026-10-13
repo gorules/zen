@@ -113,6 +113,91 @@ pub struct WriteConflict {
 pub struct InputProperty {
     pub path: Arc<str>,
     pub resolved_type: VariableType,
+    /// The caller may leave it out: it is optional or has a default.
+    pub optional: bool,
+    /// Who supplies it: the request, or the host (a feature, a call, a
+    /// value computed per event, an entity read from the store or a source).
+    pub supplied_by: SuppliedBy,
+    /// Filled in when the caller leaves it out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+    /// A reference: the entity it names. The engine reads the record; a
+    /// host that fills records in from ids can take the id instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<Arc<str>>,
+    /// A relationship: the reference fields of its records, each with the
+    /// entity it names (one level: the records' own fields).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub record_references: std::collections::BTreeMap<Arc<str>, Arc<str>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SuppliedBy {
+    Request,
+    Host,
+}
+
+impl InputProperty {
+    /// A value the request carries, required unless its type is nullable.
+    pub fn request(path: Arc<str>, resolved_type: VariableType) -> Self {
+        let optional = matches!(resolved_type, VariableType::Nullable(_) | VariableType::Any);
+        Self {
+            path,
+            resolved_type,
+            optional,
+            supplied_by: SuppliedBy::Request,
+            default: None,
+            reference: None,
+            record_references: Default::default(),
+        }
+    }
+
+    /// A data model property at `path`: optional when declared so or when
+    /// it has a default; the host's when something supplies it.
+    pub(crate) fn of_property<S: std::hash::BuildHasher>(
+        path: Arc<str>,
+        property: &crate::policy::ir::Property,
+        resolved_type: VariableType,
+        entities: &std::collections::HashMap<Arc<str>, Arc<crate::policy::ir::DataModelIr>, S>,
+    ) -> Self {
+        use crate::policy::ir::PropertyTypeIr;
+        let reference = match &property.kind {
+            PropertyTypeIr::Reference { target } => Some(target.clone()),
+            _ => None,
+        };
+        let record_references = match &property.kind {
+            PropertyTypeIr::Relationship { target } => entities
+                .get(target)
+                .map(|records| {
+                    records
+                        .properties
+                        .iter()
+                        .filter_map(|field| match &field.kind {
+                            PropertyTypeIr::Reference { target } => {
+                                Some((field.name.clone(), target.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Default::default(),
+        };
+        Self {
+            reference,
+            record_references,
+            path,
+            resolved_type,
+            optional: property.optional || property.default.is_some(),
+            supplied_by: if property.supply.is_some() {
+                SuppliedBy::Host
+            } else {
+                SuppliedBy::Request
+            },
+            default: property.default.as_deref().cloned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +345,13 @@ pub enum FieldOrigin {
         source: Arc<str>,
         #[serde(rename = "fieldKind")]
         kind: SchemaFieldKind,
+        /// The type as written when checked as another (`integer`, `timestamp`).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exact_type: Option<Arc<str>>,
+        /// Supplied by the host: a feature (one field per window), a value
+        /// computed per event, or a model's output.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        supply: Option<Arc<crate::policy::ir::Supply>>,
     },
     Computed {
         written_by: BlockRef,

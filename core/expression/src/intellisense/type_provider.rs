@@ -65,9 +65,28 @@ pub struct TypesProvider {
     types: HashMap<usize, TypeInfo>,
     codes: HashMap<usize, ErrorCode>,
     strict: bool,
+    /// Paths known not to be null here (`x` in `x != null and x`, in the
+    /// `else` of `x == null ? … : x`).
+    narrowed: Vec<String>,
 }
 
 pub(crate) type ErrorCode = (&'static str, DiagnosticArgs);
+
+/// A `bool?` where a bool is required: a null condition fails at run time.
+pub(crate) const NULLABLE_CONDITION: &str = "type.nullable-condition";
+
+/// The message for a `bool?` condition, naming the operand (its source
+/// text, else its path) when known.
+pub(crate) fn nullable_condition_message(operand: Option<&str>, ty: &str) -> String {
+    match operand {
+        Some(x) => format!(
+            "`{x}` may be null (`{ty}`): a null condition fails; write `{x} == true`, `{x} ?? false`, or `{x} == null ? … : …`."
+        ),
+        None => format!(
+            "Condition may be null (`{ty}`): a null condition fails; compare with `== true` or add `?? false`."
+        ),
+    }
+}
 
 impl TypesProvider {
     pub fn generate(root: &Node, scope: IntelliSenseScope, strict: bool) -> Self {
@@ -75,6 +94,7 @@ impl TypesProvider {
             types: HashMap::new(),
             codes: HashMap::new(),
             strict,
+            narrowed: Vec::new(),
         };
 
         s.determine(root, scope);
@@ -135,6 +155,104 @@ impl TypesProvider {
         )
     }
 
+    /// A `bool?` where a bool is required (a condition, an operand of
+    /// `and`/`or`/`not`, a callback's condition): a null fails at run time.
+    fn nullable_condition(&mut self, operand: &Node, ty: &VariableType) -> bool {
+        let VariableType::Nullable(inner) = ty else {
+            return false;
+        };
+        if !matches!(inner.as_ref(), VariableType::Bool) {
+            return false;
+        }
+        let target = match operand {
+            Node::Closure { body, .. } => *body,
+            other => other,
+        };
+        let path = Self::path_of(target);
+        let ty = ty.to_string();
+        let message = nullable_condition_message(path.as_deref(), &ty);
+        let mut args = DiagnosticArgs::from([("type", ty)]);
+        if let Some(path) = path {
+            args.insert("operand", path);
+        }
+        self.set_coded_error(target, message, (NULLABLE_CONDITION, args));
+        true
+    }
+
+    /// The data path a node reads (`a.b`, `#.c`, `$root.d`), if it is one.
+    fn path_of(node: &Node) -> Option<String> {
+        match node {
+            Node::Parenthesized(inner) => Self::path_of(inner),
+            Node::Identifier(name) => Some(name.to_string()),
+            Node::Pointer => Some("#".to_string()),
+            Node::Root => Some("$root".to_string()),
+            Node::Member {
+                node,
+                property: Node::String(key),
+            } => Some(format!("{}.{key}", Self::path_of(node)?)),
+            _ => None,
+        }
+    }
+
+    /// The paths not null when `node` is `truthy`: `x != null`,
+    /// `x == true`, through `and` (when true), `or` (when false) and `not`.
+    fn non_null_when(node: &Node, truthy: bool, out: &mut Vec<String>) {
+        match node {
+            Node::Parenthesized(inner) => Self::non_null_when(inner, truthy, out),
+            Node::Unary {
+                node,
+                operator: Operator::Logical(LogicalOperator::Not),
+            } => Self::non_null_when(node, !truthy, out),
+            Node::Binary {
+                left,
+                operator: Operator::Logical(logical),
+                right,
+            } => match (logical, truthy) {
+                (LogicalOperator::And, true) | (LogicalOperator::Or, false) => {
+                    Self::non_null_when(left, truthy, out);
+                    Self::non_null_when(right, truthy, out);
+                }
+                _ => {}
+            },
+            Node::Binary {
+                left,
+                operator: Operator::Comparison(comparison),
+                right,
+            } => {
+                let (value, other) = match (left, right) {
+                    (value, other @ (Node::Null | Node::Bool(_))) => (value, other),
+                    (other @ (Node::Null | Node::Bool(_)), value) => (value, other),
+                    _ => return,
+                };
+                let holds = match (comparison, other) {
+                    (ComparisonOperator::NotEqual, Node::Null) => truthy,
+                    (ComparisonOperator::Equal, Node::Null) => !truthy,
+                    (ComparisonOperator::Equal, Node::Bool(_)) => truthy,
+                    _ => false,
+                };
+                if let Some(path) = holds.then(|| Self::path_of(value)).flatten() {
+                    out.push(path);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `determine` with the paths `condition` proves not null when `truthy`.
+    fn determine_narrowed(
+        &mut self,
+        node: &Node,
+        scope: IntelliSenseScope,
+        condition: &Node,
+        truthy: bool,
+    ) -> TypeInfo {
+        let depth = self.narrowed.len();
+        Self::non_null_when(condition, truthy, &mut self.narrowed);
+        let ty = self.determine(node, scope);
+        self.narrowed.truncate(depth);
+        ty
+    }
+
     fn maybe_nullable(kind: VariableType, nullable: bool) -> TypeInfo {
         if nullable
             && !matches!(
@@ -176,7 +294,16 @@ impl TypesProvider {
             }
 
             Node::Pointer => V(scope.pointer_data.clone()),
-            Node::Root => V(scope.root_data.clone()),
+            // A host may give `$root` its own type: a `$root` key in the data
+            // (no expression can name such a key, `$root` being its own token).
+            Node::Root => V(match &scope.root_data {
+                VariableType::Object(fields) => fields
+                    .borrow()
+                    .get("$root")
+                    .cloned()
+                    .unwrap_or_else(|| scope.root_data.clone()),
+                _ => scope.root_data.clone(),
+            }),
 
             Node::Slice { node, from, to } => {
                 let node_type = self.determine(node, scope.clone());
@@ -340,7 +467,15 @@ impl TypesProvider {
                 operator,
             } => {
                 let left_type = self.determine(left, scope.clone());
-                let right_type = self.determine(right, scope.clone());
+                let right_type = match operator {
+                    Operator::Logical(LogicalOperator::And) => {
+                        self.determine_narrowed(right, scope.clone(), left, true)
+                    }
+                    Operator::Logical(LogicalOperator::Or) => {
+                        self.determine_narrowed(right, scope.clone(), left, false)
+                    }
+                    _ => self.determine(right, scope.clone()),
+                };
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
@@ -367,7 +502,16 @@ impl TypesProvider {
                     },
                     Operator::Logical(l) => match l {
                         LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not => {
-                            match (left_type.deref(), right_type.deref()) {
+                            let left_null = self.nullable_condition(left, &left_type);
+                            let right_null = self.nullable_condition(right, &right_type);
+                            // Reported above: checked as the bool it holds.
+                            let held = |ty: &TypeInfo, null: bool| match (&ty.kind, null) {
+                                (VariableType::Nullable(inner), true) => inner.as_ref().clone(),
+                                (kind, _) => kind.clone(),
+                            };
+                            let left_held = held(&left_type, left_null);
+                            let right_held = held(&right_type, right_null);
+                            match (left_held, right_held) {
                                 (VariableType::Bool | VariableType::Any, VariableType::Bool | VariableType::Any) => V(VariableType::Bool),
                                 _ => Error(format!(
                                     "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
@@ -484,15 +628,17 @@ impl TypesProvider {
                 on_false,
             } => {
                 let condition_type = self.determine(condition, scope.clone());
-                if !condition_type.satisfies(&VariableType::Bool) {
+                if !self.nullable_condition(condition, &condition_type)
+                    && !condition_type.satisfies(&VariableType::Bool)
+                {
                     self.set_error(
                         condition,
                         format!("Ternary operator cannot be applied to type `{condition_type}`."),
                     );
                 }
 
-                let true_type = self.determine(on_true, scope.clone());
-                let false_type = self.determine(on_false, scope.clone());
+                let true_type = self.determine_narrowed(on_true, scope.clone(), condition, true);
+                let false_type = self.determine_narrowed(on_false, scope.clone(), condition, false);
 
                 V(true_type.kind.merge(&false_type.kind))
             }
@@ -515,7 +661,9 @@ impl TypesProvider {
                     },
                     Operator::Logical(logical) => match logical {
                         LogicalOperator::Not => {
-                            if !node_type.satisfies(&VariableType::Bool) {
+                            if !self.nullable_condition(node, &node_type)
+                                && !node_type.satisfies(&VariableType::Bool)
+                            {
                                 self.set_error(node, format!("Operator `{operator}` cannot be applied to type `{node_type}`."))
                             }
 
@@ -565,7 +713,7 @@ impl TypesProvider {
                 let mut type_list: Vec<VariableType> = arguments
                     .iter()
                     .enumerate()
-                    .map(|(i, n)| match is_closure_kind && i == 1 {
+                    .map(|(i, n)| match is_closure_kind && i >= 1 {
                         true => VariableType::Any,
                         false => self.determine(n, scope.clone()).kind,
                     })
@@ -577,26 +725,41 @@ impl TypesProvider {
                         .unwrap_or_else(|| Rc::new(VariableType::Any));
                     let ptr_type_inner = ptr_type.deref().clone();
 
-                    let alias = match arguments[1] {
-                        Node::Closure { alias, .. } => *alias,
-                        _ => None,
-                    };
+                    for i in 1..arguments.len() {
+                        // A parameter (`topK`'s count) is no callback: it
+                        // reads the outer scope.
+                        let alias = match arguments[i] {
+                            Node::Closure { alias, .. } => *alias,
+                            _ => {
+                                type_list[i] = self.determine(arguments[i], scope.clone()).kind;
+                                continue;
+                            }
+                        };
 
-                    let mut closure_scope = IntelliSenseScope {
-                        pointer_data: ptr_type_inner.clone(),
-                        current_data: scope.current_data.clone(),
-                        root_data: scope.root_data.clone(),
-                        aliases: scope.aliases.clone(),
-                    };
+                        let mut closure_scope = IntelliSenseScope {
+                            pointer_data: ptr_type_inner.clone(),
+                            current_data: scope.current_data.clone(),
+                            root_data: scope.root_data.clone(),
+                            aliases: scope.aliases.clone(),
+                        };
 
-                    if let Some(alias_name) = alias {
-                        closure_scope
-                            .aliases
-                            .insert(Rc::from(alias_name), ptr_type_inner);
+                        if let Some(alias_name) = alias {
+                            closure_scope
+                                .aliases
+                                .insert(Rc::from(alias_name), ptr_type_inner.clone());
+                        }
+
+                        // `#` and the alias are the item here, not what
+                        // they were outside.
+                        let outer = self.narrowed.clone();
+                        self.narrowed.retain(|path| {
+                            let root = path.split('.').next().unwrap_or_default();
+                            root != "#" && alias.is_none_or(|alias| root != alias)
+                        });
+                        let new_type = self.determine(arguments[i], closure_scope);
+                        self.narrowed = outer;
+                        type_list[i] = new_type.kind;
                     }
-
-                    let new_type = self.determine(arguments[1], closure_scope);
-                    type_list[1] = new_type.kind;
                 }
 
                 match kind {
@@ -623,8 +786,23 @@ impl TypesProvider {
                             self.set_coded_error(arguments[i], arg_error, code);
                         }
 
+                        // These return null on too little input (`stddev([5])`,
+                        // `percentile([], q)`): nullable in strict mode.
+                        let may_be_null = matches!(
+                            kind,
+                            FunctionKind::Internal(
+                                InternalFunction::Stddev
+                                    | InternalFunction::Variance
+                                    | InternalFunction::Percentile
+                                    | InternalFunction::PercentileApprox
+                            )
+                        );
                         TypeInfo {
-                            kind: typecheck.return_type,
+                            kind: if may_be_null {
+                                Self::maybe_nullable(typecheck.return_type, self.strict).kind
+                            } else {
+                                typecheck.return_type
+                            },
                             error: typecheck.general,
                         }
                     }
@@ -644,25 +822,130 @@ impl TypesProvider {
                             );
                         }
 
-                        if matches!(
-                            c,
-                            ClosureFunction::All
-                                | ClosureFunction::None
-                                | ClosureFunction::Some
-                                | ClosureFunction::One
-                                | ClosureFunction::Filter
-                                | ClosureFunction::Count
-                        ) {
-                            if !type_list[1].satisfies(&VariableType::Bool) {
+                        for i in 1..arguments.len() {
+                            if c.is_predicate(i)
+                                && !self.nullable_condition(arguments[i], &type_list[i])
+                                && !type_list[i].satisfies(&VariableType::Bool)
+                            {
                                 self.set_error(
-                                    arguments[1],
+                                    arguments[i],
                                     format!(
                                         "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
+                                        type_list[i]
                                     ),
                                 );
                             }
                         }
+
+                        if let Some(at) = c.parameter().filter(|&at| at < arguments.len()) {
+                            let parameter = &type_list[at];
+                            if !parameter
+                                .satisfies(&VariableType::Nullable(Rc::new(VariableType::Number)))
+                            {
+                                self.set_error(
+                                    arguments[at],
+                                    format!("Argument of type `{parameter}` is not a `number`."),
+                                );
+                            }
+                        }
+
+                        // What an aggregate reads: the projection, else the
+                        // items. Nulls are skipped, so never null. Selectors
+                        // return the item itself with one callback that is a
+                        // condition (`first(items, #.active)`) or ranks
+                        // (`argMax(items, #.amount)`), as the VM decides.
+                        let item_type = || {
+                            type_list[0]
+                                .iterator()
+                                .map(|t| t.unwrap_nullable().0.clone())
+                                .unwrap_or(VariableType::Any)
+                        };
+                        let selects_item = arguments.len() == 2
+                            && match c {
+                                ClosureFunction::First | ClosureFunction::Last => {
+                                    matches!(type_list[1].unwrap_nullable().0, VariableType::Bool)
+                                }
+                                ClosureFunction::ArgMax | ClosureFunction::ArgMin => true,
+                                _ => false,
+                            };
+                        let value_type = match type_list.get(1) {
+                            Some(projection) if !selects_item => {
+                                projection.unwrap_nullable().0.clone()
+                            }
+                            _ => item_type(),
+                        };
+
+                        // Numeric aggregates need numbers (`min`, `max` also dates).
+                        let numeric = match c {
+                            ClosureFunction::Sum
+                            | ClosureFunction::Avg
+                            | ClosureFunction::Median
+                            | ClosureFunction::Stddev
+                            | ClosureFunction::Variance
+                            | ClosureFunction::Percentile
+                            | ClosureFunction::Skew
+                            | ClosureFunction::Kurtosis
+                            | ClosureFunction::PercentileApprox => Some(false),
+                            ClosureFunction::Min | ClosureFunction::Max => Some(true),
+                            _ => None,
+                        };
+                        if let Some(dates) = numeric {
+                            let accepted = match &value_type {
+                                VariableType::Any | VariableType::Number => true,
+                                VariableType::Date => dates,
+                                _ => false,
+                            };
+                            if !accepted {
+                                let expected = if dates {
+                                    "`number` or `date`"
+                                } else {
+                                    "`number`"
+                                };
+                                self.set_error(
+                                    arguments.get(1).copied().unwrap_or(arguments[0]),
+                                    format!(
+                                        "Aggregate must read a {expected}, but its type is `{value_type}`."
+                                    ),
+                                );
+                            }
+                        }
+
+                        // `argMax` and `argMin` rank by numbers or dates.
+                        if c.projections() == 2 {
+                            let by_at = arguments.len().min(3) - 1;
+                            if let Some(by) = type_list.get(by_at).filter(|_| by_at > 0) {
+                                let by = by.unwrap_nullable().0;
+                                if !matches!(
+                                    by,
+                                    VariableType::Any | VariableType::Number | VariableType::Date
+                                ) {
+                                    self.set_error(
+                                        arguments[by_at],
+                                        format!(
+                                            "Aggregate must rank by a `number` or `date`, but its type is `{by}`."
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+
+                        // `countDistinctApprox` hashes scalars, and a record
+                        // (a reference, `t.merchant`) as its id: not lists.
+                        if c == &ClosureFunction::CountDistinctApprox
+                            && matches!(value_type, VariableType::Array(_))
+                        {
+                            self.set_error(
+                                arguments.get(1).copied().unwrap_or(arguments[0]),
+                                format!(
+                                    "Aggregate must read a scalar, but its type is `{value_type}`."
+                                ),
+                            );
+                        }
+
+                        // Empty (or filtered-out) items: `sum` is 0, `count`,
+                        // `countDistinct` and `countDistinctApprox` count, the
+                        // others are null.
+                        let nullable = |kind| Self::maybe_nullable(kind, self.strict);
 
                         match c {
                             ClosureFunction::All => V(VariableType::Bool),
@@ -682,6 +965,28 @@ impl TypesProvider {
                                 };
                                 V(VariableType::Array(Rc::new(element)))
                             }
+                            ClosureFunction::Sum
+                            | ClosureFunction::CountDistinct
+                            | ClosureFunction::CountDistinctApprox => V(VariableType::Number),
+                            ClosureFunction::Avg
+                            | ClosureFunction::Median
+                            | ClosureFunction::Stddev
+                            | ClosureFunction::Variance
+                            | ClosureFunction::Percentile
+                            | ClosureFunction::Skew
+                            | ClosureFunction::Kurtosis
+                            | ClosureFunction::PercentileApprox => nullable(VariableType::Number),
+                            ClosureFunction::TopK | ClosureFunction::LastN => {
+                                V(VariableType::Array(Rc::new(value_type)))
+                            }
+                            ClosureFunction::Mode
+                            | ClosureFunction::Min
+                            | ClosureFunction::Max
+                            | ClosureFunction::First
+                            | ClosureFunction::Last
+                            | ClosureFunction::ArgMax
+                            | ClosureFunction::ArgMin => nullable(value_type),
+                            ClosureFunction::Unique => V(VariableType::Array(Rc::new(value_type))),
                         }
                     }
                 }
@@ -746,6 +1051,15 @@ impl TypesProvider {
 
         if let Some(error) = on_fly_error {
             node_type.error.replace(error);
+        }
+
+        // Proven not null (`x != null and x`): `x` is its inner type here.
+        if !self.narrowed.is_empty() && matches!(node, Node::Identifier(_) | Node::Member { .. }) {
+            if let VariableType::Nullable(inner) = &node_type.kind {
+                if Self::path_of(node).is_some_and(|path| self.narrowed.contains(&path)) {
+                    node_type.kind = inner.as_ref().clone();
+                }
+            }
         }
 
         self.set_type(node, node_type.clone());

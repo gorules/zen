@@ -274,7 +274,8 @@ impl Policies {
         let targets: Vec<Arc<str>> = goals.iter().map(|g| Arc::from(g.as_str())).collect();
         for (built, structs) in builds {
             Rows::with(built, *structs, |columns| {
-                let output = ws.evaluate_columns(&Arc::from(path), &targets, columns);
+                let store = zen_engine::ColumnStore::new();
+                let output = ws.evaluate_columns(&Arc::from(path), &targets, columns, &store);
                 for row in 0..columns.rows {
                     let input = columns.row(row);
                     let key = Canon::key(id, goals, &input);

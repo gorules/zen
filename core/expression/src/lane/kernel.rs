@@ -188,10 +188,10 @@ impl Load {
             Origin::Out(index) => Self::walk(cx.env.outs.get(*index)?, &self.rest, f),
             Origin::Pointer(depth) => Self::walk(cx.pointer(*depth)?, &self.rest, f),
             Origin::Root => {
-                let root = match cx.env.roots {
+                let root = Ops::root_of(match cx.env.roots {
                     Some(cell) => cell.borrow().materialize(),
                     None => cx.scope.materialize(),
-                };
+                });
                 Self::walk(&root, &self.rest, f)
             }
             Origin::Env(..) => None,
@@ -653,10 +653,10 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         }
         match node {
             Node::Root => Some(Code::Val(Box::new(|s| {
-                Some(match s.env.current {
+                Some(Ops::root_of(match s.env.current {
                     Some(cell) => cell.borrow().materialize(),
                     None => s.scope.materialize(),
-                })
+                }))
             }))),
             Node::Assignments { list, output } => self.assignments(list, *output),
             Node::Identifier(_) | Node::Member { .. } | Node::Pointer if self.path(node).is_some() => {
@@ -924,6 +924,9 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
     }
 
     fn closure(&mut self, kind: ClosureFunction, arguments: &'a [&'a Node<'a>]) -> Option<Code> {
+        if kind.is_aggregate() || (kind == ClosureFunction::Count && arguments.len() == 1) {
+            return self.aggregate(kind, arguments);
+        }
         let [list, body] = arguments else {
             return None;
         };
@@ -1000,7 +1003,174 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     }
                 }))
             }
+            // The callback aggregates (`sum(items, #.v)`, `first(items, cb)` …)
+            // are not modelled here: the register program runs them.
+            ClosureFunction::Sum
+            | ClosureFunction::Avg
+            | ClosureFunction::Min
+            | ClosureFunction::Max
+            | ClosureFunction::Median
+            | ClosureFunction::Mode
+            | ClosureFunction::Stddev
+            | ClosureFunction::Variance
+            | ClosureFunction::TopK
+            | ClosureFunction::LastN
+            | ClosureFunction::Percentile
+            | ClosureFunction::CountDistinct
+            | ClosureFunction::Unique
+            | ClosureFunction::First
+            | ClosureFunction::Last
+            | ClosureFunction::ArgMax
+            | ClosureFunction::ArgMin
+            | ClosureFunction::Skew
+            | ClosureFunction::Kurtosis
+            | ClosureFunction::CountDistinctApprox
+            | ClosureFunction::PercentileApprox => return None,
         })
+    }
+
+    /// A callback aggregate on one row, as the register program runs it
+    /// (`LaneCompiler::aggregate`): the items collected (the filter, then
+    /// each projection, skipping nulls), then the parameter, then the
+    /// aggregate. Anything unusual (a non-bool filter, a failing callback, a
+    /// failing aggregate) returns `None`: the register program reruns the row
+    /// and produces the exact result or error.
+    fn aggregate(&mut self, kind: ClosureFunction, arguments: &'a [&'a Node<'a>]) -> Option<Code> {
+        let each: fn(&Variable, &mut dyn FnMut(&Variable) -> Option<bool>) -> Option<()> = match self.owned {
+            true => Self::each_owned,
+            false => Self::each,
+        };
+        let (list, rest) = arguments.split_first()?;
+        let list = self.node(list)?;
+        // `count(items)`: the length, nulls included.
+        if kind == ClosureFunction::Count {
+            return Some(Code::Num(list.view(move |_, v| {
+                let mut n = 0i64;
+                each(v, &mut |_| {
+                    n += 1;
+                    Some(true)
+                })?;
+                Some((n, 0))
+            })));
+        }
+        let builtin = Builtins::of(&FunctionKind::Closure(kind))?;
+        let callback = |node: &'a Node<'a>| match node {
+            Node::Closure { body, alias } => (*body, *alias),
+            other => (other, None),
+        };
+
+        // `first(items, cb)` / `last(items, cb)`: a bool is a condition, any
+        // other value the projection.
+        if matches!(kind, ClosureFunction::First | ClosureFunction::Last) && rest.len() == 1 {
+            let (body, alias) = callback(rest[0]);
+            self.aliases.push(alias);
+            let body = self.node(body);
+            self.aliases.pop();
+            let body = body?.val();
+            return Some(Code::Val(list.view(move |s, v| {
+                let mut collected = Vec::new();
+                each(v, &mut |item| {
+                    match body(&s.child(item))? {
+                        Variable::Bool(true) if !matches!(item, Variable::Null) => {
+                            collected.push(item.clone())
+                        }
+                        Variable::Bool(_) | Variable::Null => {}
+                        other => collected.push(other),
+                    }
+                    Some(true)
+                })?;
+                Self::aggregated(builtin, collected, None)
+            })));
+        }
+
+        let (_, maximum) = kind.callbacks();
+        if arguments.len() > maximum + 1 {
+            return None;
+        }
+        let projections = kind.projections();
+        let filter_at = kind.filter_position();
+        let missing = projections - (arguments.len() - 1).min(projections);
+        let filter = arguments.get(filter_at).copied().map(callback);
+        let mut alias = filter.and_then(|(_, a)| a);
+        let mut bodies = Vec::with_capacity(projections);
+        for at in 1..=projections {
+            bodies.push(match at > missing {
+                true => {
+                    let (body, a) = callback(arguments.get(at - missing).copied()?);
+                    alias = alias.or(a);
+                    Some(body)
+                }
+                false => None,
+            });
+        }
+        self.aliases.push(alias);
+        let compiled = (|| {
+            let filter = match filter {
+                Some((filter, _)) => Some(self.node(filter)?.boolean()),
+                None => None,
+            };
+            let mut projected = Vec::with_capacity(bodies.len());
+            for body in &bodies {
+                projected.push(match body {
+                    Some(body) => Some(self.node(body)?.val()),
+                    None => None,
+                });
+            }
+            Some((filter, projected))
+        })();
+        self.aliases.pop();
+        let (filter, projected) = compiled?;
+        let parameter = match kind.parameter() {
+            Some(at) => Some(self.node(arguments.get(at).copied()?)?.val()),
+            None => None,
+        };
+        Some(Code::Val(list.view(move |s, v| {
+            let mut collected = Vec::new();
+            each(v, &mut |item| {
+                let cx = s.child(item);
+                if let Some(filter) = &filter {
+                    if !filter(&cx)? {
+                        return Some(true);
+                    }
+                }
+                let mut values = SmallVec::<[Variable; 2]>::new();
+                for projection in &projected {
+                    let value = match projection {
+                        Some(p) => p(&cx)?,
+                        None => item.clone(),
+                    };
+                    if matches!(value, Variable::Null) {
+                        return Some(true);
+                    }
+                    values.push(value);
+                }
+                collected.push(match values.len() {
+                    1 => values.pop()?,
+                    _ => Variable::from_array(values.into_vec()),
+                });
+                Some(true)
+            })?;
+            let parameter = match &parameter {
+                Some(p) => Some(p(s)?),
+                None => None,
+            };
+            Self::aggregated(builtin, collected, parameter)
+        })))
+    }
+
+    /// The aggregate over the collected values; a failure is left to the
+    /// register program (`None`).
+    fn aggregated(
+        builtin: &'static crate::lane::builtins::Builtin,
+        collected: Vec<Variable>,
+        parameter: Option<Variable>,
+    ) -> Option<Variable> {
+        let collected = Variable::from_array(collected);
+        let mut args = vec![Arg::Var(&collected)];
+        if let Some(parameter) = &parameter {
+            args.push(Arg::Var(parameter));
+        }
+        Builtins::raw(builtin, &args).ok().map(Out::variable)
     }
 
     fn resolve_dollar(&mut self, node: &'a Node<'a>) -> Option<Code> {

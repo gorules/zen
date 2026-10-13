@@ -127,6 +127,8 @@
 mod analysis;
 mod compiled;
 mod config;
+#[cfg(feature = "data")]
+pub mod data;
 mod decision;
 mod decision_graph;
 mod engine;
@@ -139,7 +141,7 @@ pub mod workspace;
 
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use compiled::policy::PolicyColumnarOutput;
+pub use compiled::policy::{ColumnStore, PolicyColumnarOutput};
 pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;

@@ -682,3 +682,70 @@ fn analysis_disjoint_enum_equality_hint_fires() {
         }
     }
 }
+
+#[test]
+fn aggregate_completions_are_listed_once_and_boosted() {
+    let mut is = IntelliSense::new();
+    let data = VariableType::from(serde_json::json!({ "items": [] }));
+    let completions = is.completions("", 0, &data);
+
+    for name in [
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "median",
+        "mode",
+        "topK",
+        "lastN",
+        "percentile",
+    ] {
+        let found: Vec<_> = completions.iter().filter(|c| c.label == name).collect();
+        assert_eq!(found.len(), 1, "`{name}` listed {} times", found.len());
+        assert_eq!(found[0].boost, Some(10), "`{name}` boost");
+    }
+}
+
+#[test]
+fn join_and_selector_completions_show_their_forms() {
+    let mut is = IntelliSense::new();
+    let data = VariableType::from(serde_json::json!({ "items": [] }));
+    let completions = is.completions("", 0, &data);
+    let find = |name: &str| {
+        completions
+            .iter()
+            .find(|c| c.label == name)
+            .unwrap_or_else(|| panic!("`{name}` is listed"))
+    };
+
+    let join = find("join");
+    assert!(join.info.contains("separator"), "{}", join.info);
+    assert!(join.detail.starts_with("(arr: "), "{}", join.detail);
+    assert!(join.detail.contains("separator?:"), "{}", join.detail);
+    assert!(join.detail.ends_with("-> string"), "{}", join.detail);
+
+    let first = find("first");
+    assert!(first.info.contains("first(items, cond)"), "{}", first.info);
+    assert!(
+        first.info.contains("first(items, value, cond)"),
+        "{}",
+        first.info
+    );
+    assert!(find("last").info.contains("last(items, cond)"));
+    assert!(find("argMax").info.contains("argMax(items, by)"));
+    assert!(find("argMin").info.contains("argMin(items, by)"));
+    assert!(find("percentileApprox").detail.contains("number[] | T[]"));
+}
+
+#[test]
+fn root_key_is_no_variable_completion() {
+    let mut is = IntelliSense::new();
+    let data: VariableType = serde_json::from_str(
+        r#"{"Object": {"amount": "Number", "$root": {"Object": {"tier": "String"}}}}"#,
+    )
+    .unwrap();
+    let completions = is.completions("", 0, &data);
+    let roots = completions.iter().filter(|c| c.label == "$root").count();
+    assert_eq!(roots, 1, "only the built-in `$root` completion");
+    assert!(completions.iter().any(|c| c.label == "amount"));
+}

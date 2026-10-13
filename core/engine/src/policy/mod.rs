@@ -23,11 +23,13 @@ pub use crate::workspace::{
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionFacts, ExpressionKind, FieldOrigin, FunctionResolutionRequest, FunctionTypeResolver,
     GraphAnalysis, GraphNodeAnalysis, GraphSignature, GraphTraceMap, GuardedProperty,
-    InputProperty, InputValidationError, InspectResult, OutputProperty, PrepareRename,
+    InputProperty, InputValidationError, InspectResult, OutputProperty, PrepareRename, SuppliedBy,
     PropertyKind, ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup,
     ScopeRequest, Severity, SlotResponse, SlotRole, Span, Trace, Workspace, WriteConflict,
     WriteTrace,
 };
+pub use crate::workspace::{EndpointKind, SchemaAudience};
+pub use ir::Supply;
 pub use raw::{BlockDoc, PolicyDocument};
 
 pub type PolicyWorkspace = Workspace;

@@ -161,7 +161,7 @@ $root[k];{a: 1, k: 'a'};1
 $root[k];{a: 1, k: 'zz'};null
 $root[0];[1, 2];1
 $root[1];[1, 2];2
-$root.$root;{'$root': 1};1
+$root.$root;{'$root': 1};null
 ($root).a;{a: 4};4
 len($root);[1, 2, 3];3
 keys($root);{a: 1};['a']

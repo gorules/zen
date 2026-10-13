@@ -273,7 +273,8 @@ impl Engines {
     }
 
     fn policy_columns(&mut self, suite: &Suite, run: &PolicyRun, cases: &[&Case], goals: &[String], targets: &[Arc<str>], columns: &zen_expression::lane::Columns) {
-        let Ok(output) = run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), targets, columns) else {
+        let store = zen_engine::ColumnStore::new();
+        let Ok(output) = run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), targets, columns, &store) else {
             return;
         };
         self.hosted += output.hosted;
@@ -531,7 +532,8 @@ impl Snapshot {
                     false => built.columns(),
                 };
                 for call in 1..=Self::CALLS {
-                    let line = match run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), &targets, &columns) {
+                    let store = zen_engine::ColumnStore::new();
+                    let line = match run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), &targets, &columns, &store) {
                         Ok(output) => format!(
                             "rows={}\ttyped={}\tlaned={}\thosted={}\terrors=[{}]\tpaths={:016x}\torder={:016x}",
                             output.rows,

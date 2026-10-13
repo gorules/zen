@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::policy::ir::DictionaryIr;
 use crate::workspace::db::Db;
-use crate::workspace::graph::SignatureResolution;
+use crate::workspace::graph::{EntityUnitEntry, SignatureResolution};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum ReadView {
@@ -21,10 +21,17 @@ pub(crate) enum ImportKind {
 pub(crate) struct DictionaryView {
     imports: Vec<(Arc<str>, ImportKind)>,
     entries: Vec<(Arc<str>, Arc<str>, Arc<DictionaryIr>)>,
+    /// The entities seen through the same imports, when the graph's Request
+    /// node is typed by one (else a data model edit leaves the graph be).
+    entities: Option<Vec<EntityUnitEntry>>,
 }
 
 impl Db {
-    pub(crate) fn dictionary_view(&self, imports: &[Arc<str>]) -> DictionaryView {
+    pub(crate) fn dictionary_view(
+        &self,
+        imports: &[Arc<str>],
+        with_entities: bool,
+    ) -> DictionaryView {
         let snap = self.snapshot();
         DictionaryView {
             imports: imports
@@ -46,6 +53,7 @@ impl Db {
                 .into_iter()
                 .map(|entry| (entry.policy_path, entry.block_id, entry.ir))
                 .collect(),
+            entities: with_entities.then(|| self.graph_entity_blocks(imports)),
         }
     }
 
@@ -57,7 +65,7 @@ impl Db {
                     .iter()
                     .map(|(import, _)| import.clone())
                     .collect();
-                self.dictionary_view(&imports) == *recorded
+                self.dictionary_view(&imports, recorded.entities.is_some()) == *recorded
             }
             ReadView::Signature(recorded) => {
                 self.graph_dep_frame_push(path);

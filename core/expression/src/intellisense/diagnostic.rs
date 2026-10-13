@@ -1,5 +1,7 @@
 use crate::compiler::CompilerError;
-use crate::intellisense::type_provider::TypesProvider;
+use crate::intellisense::type_provider::{
+    nullable_condition_message, TypesProvider, NULLABLE_CONDITION,
+};
 use crate::lexer::{LexerError, Operator};
 use crate::parser::AstNodeError;
 use crate::parser::Node;
@@ -239,6 +241,7 @@ pub(crate) fn collect_parser_diagnostics(ast: &Node, diagnostics: &mut Vec<Diagn
 }
 
 pub(crate) fn collect_type_diagnostics(
+    source: &str,
     ast: &Node,
     type_data: &TypesProvider,
     metadata: &HashMap<usize, NodeMetadata, BuildNoHashHasher<usize>>,
@@ -272,6 +275,17 @@ pub(crate) fn collect_type_diagnostics(
         if let Some((code, args)) = type_data.code_of(node) {
             diagnostic.code = Some(code);
             diagnostic.args = args.clone();
+        }
+        // Named as written (`(a or b)`, `x["k"]`), not only as a path.
+        if diagnostic.code == Some(NULLABLE_CONDITION) {
+            let written = source
+                .get(span.0 as usize..span.1 as usize)
+                .map(str::trim)
+                .filter(|text| !text.is_empty());
+            if let (Some(written), Some(ty)) = (written, diagnostic.args.get("type")) {
+                diagnostic.message = nullable_condition_message(Some(written), ty);
+                diagnostic.args.insert("operand", written.to_string());
+            }
         }
         collected.borrow_mut().push(diagnostic);
     });

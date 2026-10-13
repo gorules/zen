@@ -1,14 +1,30 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use zen_expression::variable::VariableType;
 
-use crate::policy::blocks::BlockKind;
-use crate::policy::ir::PropertyTypeIr;
+use crate::analysis::nullable::NullableOperand;
+
+use crate::policy::blocks::{
+    AnalysisContext, BlockKind, IntelliSenseSource, PropertyRead, ReadFlattener, SharedIntelliSense,
+};
+use crate::policy::ir::{
+    is_duration, outcome_read_message, DataModelIr, OutcomeReader, PropertyTypeIr,
+};
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
-use crate::workspace::db::{Db, Unit};
-use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::policy::raw::{call_inputs, BlockDoc, PropertyDoc};
+use crate::workspace::db::{AnalysisPass, Db, Unit};
+use crate::workspace::types::{
+    BlockRef, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind,
+};
+
+/// The expression crate's code for a member no object has.
+const UNKNOWN_MEMBER: &str = "type.unknown-member";
+/// The path an unknown member is read at, aliases resolved.
+const READ_PATH: &str = "readPath";
 
 type Seen = (Arc<str>, Arc<str>, PropertyTypeIr, bool, bool);
 
@@ -65,12 +81,964 @@ impl Db {
 
         out.extend(self.unreachable_reads_diagnostics(path));
 
+        out.extend(self.outcome_reads_in(&unit, path));
+
         out.extend(self.nested_iteration_diagnostics(path));
 
         out.extend(Linter::standard().run(self, path));
 
         self.locate_nullable_sources(path, &mut out);
 
+        out.extend(self.data_model_expression_diagnostics(path));
+
+        Self::drop_refused_unknowns(&mut out);
+        Self::explain_unknown_members(&mut out, &unit.entities, |d| {
+            let block_id = d.location.block_id.as_deref()?;
+            let policy = self.raw_policy(&d.location.policy_path)?;
+            policy.blocks.iter().find_map(|block| match block {
+                BlockDoc::DataModel { id, data } if id.as_ref() == block_id => {
+                    Some(data.name.clone())
+                }
+                _ => None,
+            })
+        });
+        out
+    }
+
+    /// A read refused as an outcome (a maturity flag, `fraud_mature`, is
+    /// no field of the entity) is not also an unknown name within it.
+    pub(crate) fn drop_refused_unknowns(out: &mut Vec<Diagnostic>) {
+        let refused: Vec<DiagnosticLocation> = out
+            .iter()
+            .filter(|d| {
+                d.location.span.is_some()
+                    && matches!(
+                        d.code,
+                        DiagnosticCode::OutcomeRead | DiagnosticCode::InvalidOutcome
+                    )
+            })
+            .map(|d| d.location.clone())
+            .collect();
+        if refused.is_empty() {
+            return;
+        }
+        out.retain(|d| {
+            let (DiagnosticCode::UndefinedVariable, Some((start, end))) = (d.code, d.location.span)
+            else {
+                return true;
+            };
+            !refused.iter().any(|at| {
+                at.policy_path == d.location.policy_path
+                    && at.block_id == d.location.block_id
+                    && at.expression_id == d.location.expression_id
+                    && at.span.is_some_and(|(s, e)| s <= start && end <= e)
+            })
+        });
+    }
+
+    /// Names what an unknown member is read from: the path read (aliases
+    /// resolved: `t.card.txn_count` in `sum(transaction as t, …)` is
+    /// `transaction.card.txn_count`), for [`Db::explain_unknown_members`].
+    pub(crate) fn locate_unknown_members(diagnostics: &mut [Diagnostic], reads: &[PropertyRead]) {
+        for d in diagnostics.iter_mut() {
+            if d.expr_code != Some(UNKNOWN_MEMBER) || d.args.contains_key(READ_PATH) {
+                continue;
+            }
+            let (Some(name), Some((start, end))) = (d.args.get("name"), d.location.span) else {
+                continue;
+            };
+            // At the object read (`transaction.card`), by the read through it.
+            let found = reads.iter().find_map(|read| {
+                let (s, e) = read.span?;
+                if read.expression_id != d.location.expression_id || s != start || e <= end {
+                    return None;
+                }
+                let segments: Vec<&str> = read.path.split('.').collect();
+                let at = segments.iter().skip(1).position(|s| s == name)? + 1;
+                Some((
+                    segments[..=at].join("."),
+                    (at + 1 == segments.len()).then_some(e),
+                ))
+            });
+            let Some((path, whole)) = found else {
+                continue;
+            };
+            d.args.insert(READ_PATH, path);
+            // The whole read when it ends at the member: `transaction.card.txn_count`.
+            if let Some(e) = whole {
+                d.location.span = Some((start, e));
+            }
+        }
+    }
+
+    /// An unknown member of an entity, named for it: a windowed feature's
+    /// name as written lists its windows (`txn_count` → `txn_count_7d` or
+    /// `txn_count_30d`), any other "`card` has no `foo`". `entity_of` is the
+    /// entity a diagnostic's paths start from (a feature's own, a graph's
+    /// request), if any. Other objects keep the generic message.
+    pub(crate) fn explain_unknown_members<S: std::hash::BuildHasher>(
+        out: &mut [Diagnostic],
+        entities: &std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity_of: impl Fn(&Diagnostic) -> Option<Arc<str>>,
+    ) {
+        for d in out.iter_mut() {
+            if d.code != DiagnosticCode::UndefinedVariable || d.expr_code != Some(UNKNOWN_MEMBER) {
+                continue;
+            }
+            let (Some(name), Some(path)) = (d.args.get("name"), d.args.get(READ_PATH)) else {
+                continue;
+            };
+            let Some(parent) = path
+                .strip_suffix(name.as_str())
+                .and_then(|p| p.strip_suffix('.'))
+            else {
+                continue;
+            };
+            let entity = entity_of(d);
+            let Some(dm) = DataModelIr::entity_at(entities, entity.as_deref(), parent) else {
+                continue;
+            };
+            let Some(message) = dm.unknown_member_message(name) else {
+                continue;
+            };
+            let generic = d
+                .args
+                .get("of")
+                .map(|of| format!("'{name}' is not a valid member of `{of}`."));
+            d.message = match generic.filter(|g| d.message.contains(g.as_str())) {
+                Some(generic) => d.message.replace(&generic, &message),
+                None => message,
+            };
+            d.args.insert("entity", dm.name.to_string());
+        }
+    }
+
+    /// Expressions on data model properties (features, per-event computes,
+    /// model inputs and `when`), checked against what each can read.
+    fn data_model_expression_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let Some(policy) = self.raw_policy(path) else {
+            return Vec::new();
+        };
+        let intellisense = self.intellisense();
+        let unit = self.unit(path);
+        let dictionary_types = Rc::new(unit.dictionary_types());
+        let declared_paths = Rc::new(unit.data_model_paths.clone());
+        let mut out = Vec::new();
+        // What each derived field and call reads, across the unit's entities
+        // (`transaction.risk_score` → `card.card_score`).
+        let mut depends: Vec<Depend> = Vec::new();
+        for block in &policy.blocks {
+            let BlockDoc::DataModel { id, data } = block else {
+                continue;
+            };
+            let own_names: HashSet<&str> =
+                data.properties.iter().map(|p| p.name.as_ref()).collect();
+            for prop in &data.properties {
+                for target in Self::host_targets(prop) {
+                    let Some(source) = data.expression(&target).filter(|s| !s.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    let cursor = Cursor {
+                        policy_path: path.clone(),
+                        block_id: id.clone(),
+                        pos: 0,
+                        target,
+                    };
+                    let Some(scope) = self.data_model_cursor_scope(&cursor) else {
+                        continue;
+                    };
+                    let scope_type = scope.scope.shallow_clone();
+                    // As a rule block's expression: type errors and unknown names.
+                    let mut cx = AnalysisContext::new(
+                        scope.scope,
+                        path.clone(),
+                        id.clone(),
+                        intellisense.clone(),
+                        AnalysisPass::Enriched,
+                        dictionary_types.clone(),
+                        Rc::default(),
+                        declared_paths.clone(),
+                    );
+                    cx.with_target(Some(cursor.target.clone()), |cx| {
+                        cx.analyze_standard(&source, Some(prop.id.clone()));
+                    });
+                    // Derived features and computes: null in, null out.
+                    let propagates = Self::propagates_null(prop, &cursor.target);
+                    let summary = cx.finish();
+                    if Self::orders(prop, &cursor.target) {
+                        for read in summary.reads.iter().filter(|read| !read.via_alias) {
+                            let mut reads = Self::derivation_reads(&unit, &data.name, &read.path);
+                            let first = read.path.split('.').next().unwrap_or_default();
+                            if reads.is_empty() && own_names.contains(first) {
+                                reads.push(Arc::from(format!("{}.{first}", data.name)));
+                            }
+                            depends.extend(reads.into_iter().map(|to| Depend {
+                                from: Arc::from(format!("{}.{}", data.name, prop.name)),
+                                to,
+                                at: Some(DependSite {
+                                    block_id: id.clone(),
+                                    target: cursor.target.clone(),
+                                    prop_id: prop.id.clone(),
+                                    span: read.span,
+                                }),
+                            }));
+                        }
+                    }
+                    if matches!(
+                        cursor.target,
+                        CursorTarget::FeatureExpr { .. } | CursorTarget::OutcomeExpr { .. }
+                    ) {
+                        out.extend(Self::feature_shape(
+                            path,
+                            id,
+                            prop,
+                            &cursor.target,
+                            &source,
+                            &scope_type,
+                            &intellisense,
+                        ));
+                    }
+                    if matches!(cursor.target, CursorTarget::OutcomeExpr { .. }) {
+                        out.extend(Self::outcome_type(
+                            path,
+                            id,
+                            prop,
+                            &source,
+                            &scope_type,
+                            &intellisense,
+                        ));
+                        // `x_mature` of an outcome `x` that declares no maturity.
+                        let entity = unit.entities.get(&data.name);
+                        for read in summary.reads.iter().filter(|read| !read.unresolved) {
+                            let Some(outcome) = entity
+                                .and_then(|dm| dm.flagged_outcome(&read.path))
+                                .filter(|outcome| outcome.outcome_maturity().is_none())
+                            else {
+                                continue;
+                            };
+                            out.push(Diagnostic::error(
+                                DiagnosticCode::InvalidOutcome,
+                                DiagnosticLocation::expression(
+                                    path.clone(),
+                                    id.clone(),
+                                    prop.id.clone(),
+                                    read.span,
+                                )
+                                .with_target(cursor.target.clone()),
+                                format!("`{}` declares no maturity", outcome.name),
+                            ));
+                        }
+                    } else {
+                        // Known only after the decision: nothing that runs at
+                        // it (a feature, a compute, a call) reads an outcome.
+                        let reader = match cursor.target {
+                            CursorTarget::FeatureExpr { .. } | CursorTarget::ComputeExpr { .. } => {
+                                OutcomeReader::Features
+                            }
+                            _ => OutcomeReader::Calls,
+                        };
+                        let mut flagged: HashSet<(String, Option<(u32, u32)>)> = HashSet::default();
+                        for read in summary.reads.iter().filter(|read| !read.unresolved) {
+                            let Some(field) = DataModelIr::outcome_at(
+                                &unit.entities,
+                                Some(&data.name),
+                                &read.path,
+                            ) else {
+                                continue;
+                            };
+                            if !flagged.insert((field.clone(), read.span)) {
+                                continue;
+                            }
+                            out.push(Diagnostic::error(
+                                DiagnosticCode::OutcomeRead,
+                                DiagnosticLocation::expression(
+                                    path.clone(),
+                                    id.clone(),
+                                    prop.id.clone(),
+                                    read.span,
+                                )
+                                .with_target(cursor.target.clone()),
+                                outcome_read_message(&field, reader),
+                            ));
+                        }
+                    }
+                    let diagnostics = summary
+                        .diagnostics
+                        .into_iter()
+                        .filter(|d| !(propagates && NullableOperand::null_propagates(d)));
+                    out.extend(diagnostics.map(|mut d| {
+                        d.location
+                            .target
+                            .get_or_insert_with(|| cursor.target.clone());
+                        d
+                    }));
+                }
+            }
+            out.extend(self.stored_relationship_diagnostics(path, id, data, &unit));
+            out.extend(Self::data_model_attribute_diagnostics(path, id, data));
+        }
+        // The data models of the unit's other policies: what they read, so
+        // a loop through them is found here too.
+        for entry in unit.data_models.iter().filter(|e| e.policy_path != *path) {
+            let Some(other) = self.raw_policy(&entry.policy_path) else {
+                continue;
+            };
+            let Some(BlockDoc::DataModel { data, .. }) = other
+                .blocks
+                .iter()
+                .find(|b| b.id() == Some(entry.block_id.as_ref()))
+            else {
+                continue;
+            };
+            for prop in &data.properties {
+                for target in Self::host_targets(prop)
+                    .into_iter()
+                    .filter(|t| Self::orders(prop, t))
+                {
+                    let Some(source) = data.expression(&target).filter(|s| !s.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    let mut reads = Vec::new();
+                    let deps = intellisense.borrow_mut().reads(&source);
+                    ReadFlattener::extend_from_deps(&deps, &None, &mut reads);
+                    for read in reads.iter().filter(|read| !read.via_alias) {
+                        depends.extend(
+                            Self::derivation_reads(&unit, &data.name, &read.path)
+                                .into_iter()
+                                .map(|to| Depend {
+                                    from: Arc::from(format!("{}.{}", data.name, prop.name)),
+                                    to,
+                                    at: None,
+                                }),
+                        );
+                    }
+                }
+            }
+        }
+        out.extend(Self::derivation_cycles(path, &depends));
+        out
+    }
+
+    /// The expressions on a property: a feature's, a compute's and a call's.
+    fn host_targets(prop: &PropertyDoc) -> Vec<CursorTarget> {
+        let mut targets = Vec::new();
+        if prop.feature.is_some() {
+            targets.push(CursorTarget::FeatureExpr {
+                id: prop.id.clone(),
+            });
+        }
+        // A column outcome (no `expr`) has no expression: typed by `type`.
+        if prop.outcome.as_ref().is_some_and(|o| o.expr.is_some()) {
+            targets.push(CursorTarget::OutcomeExpr {
+                id: prop.id.clone(),
+            });
+        }
+        if prop.compute.is_some() {
+            targets.push(CursorTarget::ComputeExpr {
+                id: prop.id.clone(),
+            });
+        }
+        if let Some(model) = &prop.model {
+            let inputs = call_inputs(model);
+            if let Some(inputs) = inputs.and_then(serde_json::Value::as_object) {
+                targets.extend(inputs.keys().map(|input| CursorTarget::ModelInput {
+                    id: prop.id.clone(),
+                    input: Arc::from(input.as_str()),
+                }));
+            }
+            if model.get("when").is_some() {
+                targets.push(CursorTarget::ModelWhen {
+                    id: prop.id.clone(),
+                });
+            }
+            if model.get("request").is_some() && inputs.is_none() {
+                targets.push(CursorTarget::ModelRequest {
+                    id: prop.id.clone(),
+                });
+            }
+            if model.get("response").is_some() {
+                targets.push(CursorTarget::ModelResponse {
+                    id: prop.id.clone(),
+                });
+            }
+        }
+        targets
+    }
+
+    /// Derived features, outcomes and computes: null in, null out.
+    fn propagates_null(prop: &PropertyDoc, target: &CursorTarget) -> bool {
+        match target {
+            CursorTarget::ComputeExpr { .. } | CursorTarget::OutcomeExpr { .. } => true,
+            CursorTarget::FeatureExpr { .. } => prop
+                .feature
+                .as_ref()
+                .is_some_and(|f| f.window.as_ref().is_none_or(|w| w.list().is_empty())),
+            _ => false,
+        }
+    }
+
+    /// Whether what an expression reads must be there before the property:
+    /// derived features, outcomes, computes and calls (their request, `when` and
+    /// response; a call with named inputs reads the request, not the entity).
+    fn orders(prop: &PropertyDoc, target: &CursorTarget) -> bool {
+        Self::propagates_null(prop, target)
+            || match target {
+                CursorTarget::ModelRequest { .. } | CursorTarget::ModelResponse { .. } => true,
+                CursorTarget::ModelWhen { .. } => prop
+                    .model
+                    .as_ref()
+                    .is_some_and(|m| call_inputs(m).is_none()),
+                _ => false,
+            }
+    }
+
+    /// The fields a read from `entity` needs, as `entity.field`: each step
+    /// through a reference or relationship (`card.txn_count` needs
+    /// `transaction.card` and `card.txn_count`), and `$root.<entity>.…` from
+    /// that entity.
+    fn derivation_reads(unit: &Unit, entity: &str, path: &str) -> Vec<Arc<str>> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (mut entity, mut rest) = match segments.split_first() {
+            Some((&"$root", rest)) => match rest.split_first() {
+                Some((root, rest)) => (*root, rest),
+                None => return Vec::new(),
+            },
+            _ => (entity, segments.as_slice()),
+        };
+        let mut out = Vec::new();
+        while let Some((field, tail)) = rest.split_first() {
+            let dm = unit.entities.get(entity);
+            let Some(prop) =
+                dm.and_then(|dm| dm.properties.iter().find(|p| p.name.as_ref() == *field))
+            else {
+                // A maturity flag reads its outcome (`fraud_mature`: `fraud`).
+                if let Some(outcome) = dm.and_then(|dm| dm.flagged_outcome(field)) {
+                    out.push(Arc::from(format!("{entity}.{}", outcome.name)));
+                }
+                break;
+            };
+            out.push(Arc::from(format!("{entity}.{field}")));
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target }
+                    if !tail.is_empty() && !prop.is_stored() =>
+                {
+                    entity = target.as_ref();
+                    rest = tail;
+                }
+                _ => break,
+            }
+        }
+        out
+    }
+
+    /// A feature's (or an outcome's) shape against its property: a list
+    /// (`topK`, `lastN`, `unique`) needs `array: true`, a single value can't
+    /// have it. A grouped feature (a map, on an `object` property) is either.
+    #[allow(clippy::too_many_arguments)]
+    fn feature_shape(
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        prop: &PropertyDoc,
+        target: &CursorTarget,
+        source: &Arc<str>,
+        scope: &VariableType,
+        intellisense: &SharedIntelliSense,
+    ) -> Option<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        use zen_expression::parser::Node;
+        const LISTS: [&str; 3] = ["topK", "lastN", "unique"];
+        const SINGLES: [&str; 19] = [
+            "sum",
+            "count",
+            "avg",
+            "min",
+            "max",
+            "median",
+            "mode",
+            "stddev",
+            "variance",
+            "percentile",
+            "countDistinct",
+            "first",
+            "last",
+            "argMax",
+            "argMin",
+            "skew",
+            "kurtosis",
+            "countDistinctApprox",
+            "percentileApprox",
+        ];
+        // A selector that gives the whole event (`argMax(t, t.amount)`,
+        // `first(t, cond)`) is no feature: a feature is a value. Same rule
+        // and wording as the feature store's (an outcome is a value too).
+        let what = match target {
+            CursorTarget::OutcomeExpr { .. } => "an outcome",
+            _ => "a feature",
+        };
+        let whole_event = intellisense
+            .borrow_mut()
+            .with_ast(source, false, |root, _| {
+                let mut node = root;
+                while let Node::Parenthesized(inner) = node {
+                    node = inner;
+                }
+                let Node::FunctionCall { kind, arguments } = node else {
+                    return None;
+                };
+                let name = kind.to_string();
+                // A plain column of the event: `t.merchant`, `#.amount`.
+                let column = |node: &Node| {
+                    let Node::Closure { body, .. } = node else {
+                        return false;
+                    };
+                    let mut node = *body;
+                    let mut steps = 0;
+                    while let Node::Member { node: inner, .. } = node {
+                        node = inner;
+                        steps += 1;
+                    }
+                    steps > 0 && matches!(node, Node::Identifier(_) | Node::Pointer)
+                };
+                match (name.as_str(), arguments.len()) {
+                    ("argMax" | "argMin", 2) => Some(format!(
+                        "`{name}(events, by)` gives the whole event; {what} is a value: name what to return before the column to rank by: `{name}(transactions as t, t.merchant, t.amount [, cond])`"
+                    )),
+                    ("first" | "last", 1) => Some(name),
+                    ("first" | "last", 2) if !column(arguments[1]) => Some(name),
+                    _ => None,
+                }
+            })
+            .flatten();
+        if let Some(found) = whole_event {
+            let message = if found.starts_with('`') {
+                found
+            } else {
+                format!(
+                    "`{found}` here gives the whole event; {what} is a value: name what to return, e.g. `{found}(transaction as t, t.merchant [, <condition>])`"
+                )
+            };
+            return Some(Diagnostic::error(
+                DiagnosticCode::FeatureShape,
+                DiagnosticLocation::expression(
+                    path.clone(),
+                    block_id.clone(),
+                    prop.id.clone(),
+                    None,
+                )
+                .with_target(target.clone()),
+                message,
+            ));
+        }
+        if matches!(prop.property_type, PropertyTypeDoc::Object) {
+            return None;
+        }
+        let aggregate = intellisense
+            .borrow_mut()
+            .with_ast(source, false, |root, _| {
+                let mut node = root;
+                while let Node::Parenthesized(inner) = node {
+                    node = inner;
+                }
+                match node {
+                    Node::FunctionCall { kind, .. } => Some(kind.to_string()),
+                    _ => None,
+                }
+            })
+            .flatten();
+        let (list, shown) = match aggregate.as_deref() {
+            Some(name) if LISTS.contains(&name) => (true, format!(" (`{name}`)")),
+            Some(name) if SINGLES.contains(&name) => (false, format!(" (`{name}`)")),
+            // Derived: by its type, when known.
+            _ => {
+                let returns = IntelliSenseSource::analyze(
+                    &mut intellisense.borrow_mut(),
+                    source,
+                    ExpressionKind::Standard,
+                    scope,
+                )
+                .return_type
+                .shallow_clone();
+                let returns = match returns {
+                    VariableType::Nullable(inner) => inner.as_ref().shallow_clone(),
+                    other => other,
+                };
+                match returns {
+                    VariableType::Array(_) => (true, String::new()),
+                    VariableType::Number
+                    | VariableType::String
+                    | VariableType::Bool
+                    | VariableType::Date
+                    | VariableType::Enum(..) => (false, String::new()),
+                    _ => return None,
+                }
+            }
+        };
+        let message = match (list, prop.array) {
+            (true, false) => format!(
+                "`{}` is a list{shown}: set `array: true` on the property (its `type` is the items')",
+                prop.name
+            ),
+            (false, true) => format!(
+                "`{}` is a single value{shown}: remove `array: true` from the property",
+                prop.name
+            ),
+            _ => return None,
+        };
+        Some(Diagnostic::error(
+            DiagnosticCode::FeatureShape,
+            DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
+                .with_target(target.clone()),
+            message,
+        ))
+    }
+
+    /// An outcome's value against its property's `type`: `count(..) > 0` is
+    /// a boolean, `count(..)` a number. Unknown types (and `object`/`any`
+    /// properties) aren't checked; a list is its items (its shape is
+    /// [`Self::feature_shape`]'s).
+    fn outcome_type(
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        prop: &PropertyDoc,
+        source: &Arc<str>,
+        scope: &VariableType,
+        intellisense: &SharedIntelliSense,
+    ) -> Option<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        let returns = IntelliSenseSource::analyze(
+            &mut intellisense.borrow_mut(),
+            source,
+            ExpressionKind::Standard,
+            scope,
+        )
+        .return_type
+        .shallow_clone();
+        let unwrap = |kind: VariableType| match kind {
+            VariableType::Nullable(inner) => inner.as_ref().shallow_clone(),
+            other => other,
+        };
+        let returns = match unwrap(returns) {
+            VariableType::Array(item) => unwrap(item.as_ref().shallow_clone()),
+            other => other,
+        };
+        let found = match returns {
+            VariableType::Number => "number",
+            VariableType::Bool => "boolean",
+            VariableType::String | VariableType::Const(_) | VariableType::Enum(..) => "string",
+            VariableType::Date => "date",
+            _ => return None,
+        };
+        let declared = match &prop.property_type {
+            PropertyTypeDoc::Number | PropertyTypeDoc::Decimal | PropertyTypeDoc::Integer => {
+                "number"
+            }
+            PropertyTypeDoc::Boolean => "boolean",
+            PropertyTypeDoc::String { .. } => "string",
+            PropertyTypeDoc::Date | PropertyTypeDoc::Timestamp => "date",
+            // A reference holds the id of what it names.
+            PropertyTypeDoc::Reference { .. } => "string",
+            PropertyTypeDoc::Object
+            | PropertyTypeDoc::Any
+            | PropertyTypeDoc::Relationship { .. } => return None,
+        };
+        // A date may be written as its text.
+        if found == declared || (declared == "date" && found == "string") {
+            return None;
+        }
+        Some(Diagnostic::error(
+            DiagnosticCode::TypeMismatch,
+            DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None)
+                .with_target(CursorTarget::OutcomeExpr {
+                    id: prop.id.clone(),
+                }),
+            format!(
+                "outcome `{}` gives a {found}, but its `type` is {declared}",
+                prop.name
+            ),
+        ))
+    }
+
+    /// Attributes on a data model checked as written: old type names, the
+    /// durations of calls, and attributes that another one overrides.
+    fn data_model_attribute_diagnostics(
+        path: &Arc<str>,
+        id: &Arc<str>,
+        data: &crate::policy::raw::DataModelDoc,
+    ) -> Vec<Diagnostic> {
+        use crate::policy::raw::PropertyTypeDoc;
+        let mut out = Vec::new();
+        let at = |prop: &PropertyDoc| {
+            DiagnosticLocation::expression(path.clone(), id.clone(), prop.id.clone(), None)
+        };
+        let present =
+            |value: &Option<serde_json::Value>| value.as_ref().is_some_and(|v| !v.is_null());
+        if present(&data.events) && present(&data.reference) {
+            out.push(Diagnostic::warning(
+                DiagnosticCode::IgnoredAttribute,
+                DiagnosticLocation::block(path.clone(), id.clone()),
+                format!("`{}` has both `events` and `reference`: its records are events, `reference` is ignored", data.name),
+            ));
+        }
+        // Old type names, still read: `decimal`/`integer` are numbers,
+        // `timestamp` a date.
+        for prop in &data.properties {
+            let (old, new) = match &prop.property_type {
+                PropertyTypeDoc::Decimal => ("decimal", "number"),
+                PropertyTypeDoc::Integer => ("integer", "number"),
+                PropertyTypeDoc::Timestamp => ("timestamp", "date"),
+                _ => continue,
+            };
+            out.push(Diagnostic::warning(
+                DiagnosticCode::DeprecatedType,
+                at(prop),
+                format!("`{}`: `{old}` is an old type name; use `{new}`", prop.name),
+            ));
+        }
+        // How long a call's reply may be reused (`maxStaleness`: 5m) and
+        // how long the call may take (`timeout`: 500ms).
+        const STALENESS: (&str, &[&str], &str) =
+            ("maxStaleness", &["s", "m", "h", "d"], "30s, 5m or 1h");
+        const TIMEOUT: (&str, &[&str], &str) =
+            ("timeout", &["ms", "s", "m", "h", "d"], "500ms, 2s or 1m");
+        for prop in &data.properties {
+            let Some(model) = prop.model.as_ref() else {
+                continue;
+            };
+            if call_inputs(model).is_some() && model.get("request").is_some_and(|r| !r.is_null()) {
+                out.push(Diagnostic::warning(
+                    DiagnosticCode::IgnoredAttribute,
+                    at(prop),
+                    format!(
+                        "call '{}' has both `inputs` and `request`: it sends the named `inputs`, `request` is ignored",
+                        prop.name
+                    ),
+                ));
+            }
+            for (key, units, like) in [STALENESS, TIMEOUT] {
+                let Some(duration) = model.get(key) else {
+                    continue;
+                };
+                let text = duration.as_str().unwrap_or_default();
+                // Empty means not set; anything but a duration string is wrong.
+                if duration.is_null()
+                    || (duration.is_string() && (text.is_empty() || is_duration(text, units)))
+                {
+                    continue;
+                }
+                out.push(Diagnostic::error(
+                    DiagnosticCode::InvalidDuration,
+                    at(prop),
+                    format!(
+                        "`{key}` of call '{}' is a duration like {like}, not `{}`",
+                        prop.name,
+                        if duration.is_string() {
+                            text.to_string()
+                        } else {
+                            duration.to_string()
+                        }
+                    ),
+                ));
+            }
+        }
+        out
+    }
+
+    /// A stored relationship (`on`: members by key; `through`: counterparties
+    /// in events), checked against the entities it names.
+    fn stored_relationship_diagnostics(
+        &self,
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        data: &crate::policy::raw::DataModelDoc,
+        unit: &Unit,
+    ) -> Vec<Diagnostic> {
+        use crate::policy::ir::{PropertyTypeIr, Records};
+        use crate::policy::raw::PropertyTypeDoc;
+        let mut out = Vec::new();
+        let key_parts: Vec<String> = match &data.key {
+            Some(serde_json::Value::String(key)) => vec![key.clone()],
+            Some(serde_json::Value::Array(parts)) => {
+                parts.iter().filter_map(|p| p.as_str().map(str::to_string)).collect()
+            }
+            _ => vec!["id".to_string()],
+        };
+        for prop in &data.properties {
+            let PropertyTypeDoc::Relationship { target } = &prop.property_type else {
+                continue;
+            };
+            let (on, through) = (prop.rest.get("on"), prop.rest.get("through"));
+            if on.is_none() && through.is_none() {
+                continue;
+            }
+            let mut problem = |message: String| {
+                out.push(Diagnostic::error(
+                    DiagnosticCode::InvalidRelationship,
+                    DiagnosticLocation::expression(path.clone(), block_id.clone(), prop.id.clone(), None),
+                    format!("`{}`: {message}", prop.name),
+                ));
+            };
+            if on.is_some() && through.is_some() {
+                problem("a stored relationship is found by key (`on`) or through events (`through`), not both".into());
+                continue;
+            }
+            let Some(target_ir) = unit.entities.get(target) else {
+                problem(match target.is_empty() {
+                    true => "`target` is missing".to_string(),
+                    false => format!("`{target}` isn't an entity"),
+                });
+                continue;
+            };
+            if let Some(on) = on {
+                let Some(pairs) = on.as_object() else {
+                    problem("`on` maps the target's properties to this entity's key parts".into());
+                    continue;
+                };
+                let mut used: Vec<&str> = Vec::new();
+                for (member, part) in pairs {
+                    let member_prop = target_ir.properties.iter().find(|p| p.name.as_ref() == member);
+                    if member_prop.is_none_or(|p| p.supply.is_some() || p.is_stored()) {
+                        problem(format!("`{member}` isn't a data property of `{target}`"));
+                    }
+                    match part.as_str() {
+                        Some(part) if key_parts.iter().any(|k| k == part) => {
+                            if used.contains(&part) {
+                                problem(format!("key part `{part}` is matched twice"));
+                            }
+                            used.push(part);
+                        }
+                        Some(part) => problem(format!("`{part}` isn't a key part of `{}` ({})", data.name, key_parts.join(", "))),
+                        None => problem(format!("`{member}` maps to a key part's name")),
+                    }
+                }
+                for part in &key_parts {
+                    if !used.contains(&part.as_str()) {
+                        problem(format!("key part `{part}` has no member property matched to it"));
+                    }
+                }
+            }
+            if let Some(through) = through {
+                let text = |key: &str| through.get(key).and_then(serde_json::Value::as_str);
+                let events = text("events").unwrap_or_default();
+                let events_ir = unit.entities.get(events);
+                if events.is_empty() {
+                    problem("`through.events` is missing".into());
+                } else if events_ir.is_none_or(|e| e.records != Records::Events) {
+                    problem(format!("`{events}` isn't an events entity"));
+                }
+                let reference_to = |field: &str| {
+                    events_ir.and_then(|e| e.properties.iter().find(|p| p.name.as_ref() == field)).and_then(|p| {
+                        match &p.kind {
+                            PropertyTypeIr::Reference { target } => Some(target.clone()),
+                            _ => None,
+                        }
+                    })
+                };
+                if let Some(events_ir) = events_ir.filter(|e| e.records == Records::Events) {
+                    for (role, expected) in [("self", data.name.as_ref()), ("member", target.as_ref())] {
+                        let field = text(role).unwrap_or_default();
+                        if field.is_empty() {
+                            problem(format!("`through.{role}` is missing: it names a reference of `{}` to `{expected}`", events_ir.name));
+                        } else if reference_to(field).as_deref() != Some(expected) {
+                            problem(format!(
+                                "`{role}` is `{field}`: it names a reference of `{}` to `{expected}`",
+                                events_ir.name
+                            ));
+                        }
+                    }
+                }
+                if text("window").is_none_or(str::is_empty) {
+                    problem("`through.window` is missing: a duration like 10m, 1h or 30d".into());
+                } else if !text("window").is_some_and(|w| is_duration(w, &["m", "h", "d"])) {
+                    problem(format!(
+                        "`window` is a duration like 10m, 1h or 30d, not `{}`",
+                        text("window").unwrap_or_default()
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// A derived field that needs its own value, directly (`x = x + 5`) or
+    /// through others (`a = b`, `b = a`), in its entity or through another
+    /// (`transaction.risk_score` → `card.card_score` → back): no order
+    /// computes it. Reported on each read in this policy that closes the loop.
+    fn derivation_cycles(path: &Arc<str>, depends: &[Depend]) -> Vec<Diagnostic> {
+        let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+        for depend in depends {
+            edges
+                .entry(depend.from.as_ref())
+                .or_default()
+                .push(depend.to.as_ref());
+        }
+        // The way from `start` back to `goal`, if any.
+        let way_back = |start: &str, goal: &str| -> Option<Vec<String>> {
+            let mut seen: HashSet<&str> = HashSet::default();
+            let mut stack: Vec<(&str, Vec<String>)> = vec![(start, vec![start.to_string()])];
+            while let Some((at, trail)) = stack.pop() {
+                if at == goal {
+                    return Some(trail);
+                }
+                if !seen.insert(at) {
+                    continue;
+                }
+                for next in edges.get(at).into_iter().flatten() {
+                    let mut trail = trail.clone();
+                    trail.push(next.to_string());
+                    stack.push((next, trail));
+                }
+            }
+            None
+        };
+        let split = |node: &str| -> (String, String) {
+            let (entity, field) = node.split_once('.').unwrap_or(("", node));
+            (entity.to_string(), field.to_string())
+        };
+        let mut out = Vec::new();
+        for Depend { from, to, at } in depends {
+            let Some(at) = at else {
+                continue;
+            };
+            let (entity, field) = split(from);
+            let message = if from == to {
+                format!("`{field}` reads itself: it can't be computed from its own value")
+            } else if let Some(trail) = way_back(to, from) {
+                // Within one entity by field name; across entities qualified.
+                let within = trail.iter().all(|node| split(node).0 == entity);
+                let show = |node: &str| {
+                    if within {
+                        split(node).1
+                    } else {
+                        node.to_string()
+                    }
+                };
+                format!(
+                    "`{}` depends on itself: {} → {}",
+                    show(from),
+                    show(from),
+                    trail
+                        .iter()
+                        .map(|node| show(node))
+                        .collect::<Vec<_>>()
+                        .join(" → ")
+                )
+            } else {
+                continue;
+            };
+            out.push(Diagnostic::error(
+                DiagnosticCode::CyclicDependency,
+                DiagnosticLocation::expression(
+                    path.clone(),
+                    at.block_id.clone(),
+                    at.prop_id.clone(),
+                    at.span,
+                )
+                .with_target(at.target.clone()),
+                message,
+            ));
+        }
         out
     }
 
@@ -159,6 +1127,7 @@ impl Db {
     }
 
     pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {
+        use crate::workspace::types::Severity;
         let unit = self.unit(entry);
         let enriched = self.enriched(entry);
 
@@ -172,6 +1141,14 @@ impl Db {
             }
             candidates.extend(self.unit_scoped_diagnostics(&unit, member));
             candidates.extend(self.import_diagnostics(member));
+            // Data model errors (a derivation cycle, a bad `maxStaleness`, a
+            // stored relationship that can't be found) stop a compile too, so
+            // hosts don't repeat these checks.
+            candidates.extend(
+                self.data_model_expression_diagnostics(member)
+                    .into_iter()
+                    .filter(|d| d.severity == Severity::Error),
+            );
         }
         candidates.extend(self.scope_diagnostics(entry));
         candidates.extend(enriched.diagnostics.iter().cloned());
@@ -232,6 +1209,42 @@ impl Db {
         out.extend(self.nested_iteration_in(unit, target));
         out.extend(self.unreachable_reads_in(unit, target));
         out.extend(self.self_referencing_writes_in(unit, target));
+        out.extend(self.outcome_reads_in(unit, target));
+        out
+    }
+
+    /// A rule reading an outcome (`transaction.fraud`, through a reference
+    /// `claim.customer.claims_after`, or iterating `customer.claims` and
+    /// reading each one's): known only after the decision, so never there
+    /// when rules run. An error, so a compile fails too.
+    fn outcome_reads_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        let shallow = self.shallow();
+        for rule in shallow.rules_for(target) {
+            let mut flagged: HashSet<(Option<Arc<str>>, Option<(u32, u32)>)> = HashSet::default();
+            for read in rule.reads.iter().filter(|read| !read.unresolved) {
+                let field = match unit.entity_graph.global_property(&read.path) {
+                    Some(global) if global.is_outcome() => Some(global.name.to_string()),
+                    _ => DataModelIr::outcome_at(&unit.entities, None, &read.path),
+                };
+                let Some(field) = field else {
+                    continue;
+                };
+                if !flagged.insert((read.expression_id.clone(), read.span)) {
+                    continue;
+                }
+                out.push(Diagnostic::error(
+                    DiagnosticCode::OutcomeRead,
+                    DiagnosticLocation::expression(
+                        rule.policy_path.clone(),
+                        rule.block_id.clone(),
+                        read.expression_id.clone().unwrap_or_else(|| Arc::from("")),
+                        read.span,
+                    ),
+                    outcome_read_message(&field, OutcomeReader::Rules),
+                ));
+            }
+        }
         out
     }
 
@@ -776,6 +1789,21 @@ impl Db {
 
         out
     }
+}
+
+/// A derived field or call (`from`) needing another field (`to`), both
+/// `entity.field`; `at` where this policy reads it (else another's).
+struct Depend {
+    from: Arc<str>,
+    to: Arc<str>,
+    at: Option<DependSite>,
+}
+
+struct DependSite {
+    block_id: Arc<str>,
+    target: CursorTarget,
+    prop_id: Arc<str>,
+    span: Option<(u32, u32)>,
 }
 
 #[cfg(test)]

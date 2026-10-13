@@ -1589,6 +1589,226 @@ impl<'a> LaneCompiler<'a> {
         }
     }
 
+    /// A callback aggregate (`sum(items, #.v)`, `argMax(items as t, t.id,
+    /// t.amount, t.ok)`, `count(items)` …), compiled as the stack VM runs it:
+    /// a collecting closure over the items (per item: the filter, then each
+    /// projection; an item counts when the filter holds and no projection is
+    /// null), then the parameter in the outer scope, then the aggregate
+    /// called on the collection (`CallFunction`). Same values, same errors,
+    /// same order.
+    fn aggregate(
+        &mut self,
+        kind: &FunctionKind,
+        closure: ClosureFunction,
+        arguments: &'a [&'a Node<'a>],
+    ) -> Result<Reg> {
+        let argument = |index: usize| {
+            arguments
+                .get(index)
+                .copied()
+                .ok_or_else(|| CompilerError::ArgumentNotFound {
+                    index,
+                    function: kind.to_string(),
+                })
+        };
+        let callback = |index: usize| -> Result<(&'a Node<'a>, Option<&'a str>)> {
+            Ok(match argument(index)? {
+                Node::Closure { body, alias } => (*body, *alias),
+                other => (other, None),
+            })
+        };
+        let list = argument(0)?;
+
+        // `count(items)`: the length, nulls included (`Begin, GetLen, End`).
+        if closure == ClosureFunction::Count {
+            return self.collect(ClosureFunction::Count, list, None, false, Kind::Num, |c| {
+                Ok(c.constant(Const::Bool(true)))
+            });
+        }
+
+        // `first(items, cb)` / `last(items, cb)`: per item a `bool` is a
+        // condition (true keeps the item), any other value the projection.
+        if matches!(closure, ClosureFunction::First | ClosureFunction::Last) && arguments.len() == 2 {
+            let (body, alias) = callback(1)?;
+            let sequential = Self::assigns(body);
+            let collected = self.collect(closure, list, alias, sequential, Kind::Dyn, |c| {
+                // `value` is read again in both branches: kept alive.
+                let value = c.node(body)?;
+                let kind = c.call_keeping(FunctionKind::Internal(InternalFunction::Type), value);
+                let boolean = c.constant(Const::String(Arc::from("bool")));
+                let is_bool = c.binary(Binary::Equal, kind, boolean);
+                let (condition, projection) = c.branch(is_bool, "JumpIfNotBool");
+                c.release(is_bool);
+                let kept = c.under(condition, |c| {
+                    let (keep, drop) = c.branch(value, "JumpIfFalse");
+                    let item = c.under(keep, |c| Ok(c.pointer(0)))?;
+                    let none = c.under(drop, |c| Ok(c.constant(Const::Null)))?;
+                    Ok(c.merge(keep, item, none))
+                })?;
+                let projected = c.under(projection, |_| Ok(value))?;
+                Ok(c.merge(condition, kept, projected))
+            })?;
+            return Ok(self.call(kind.clone(), vec![Input::Reg(collected)]));
+        }
+
+        let (_, maximum) = closure.callbacks();
+        if arguments.len() > maximum + 1 {
+            return Err(CompilerError::InvalidFunctionCall {
+                name: kind.to_string(),
+                message: "Invalid number of arguments".to_string(),
+            });
+        }
+        let parameter = closure.parameter();
+        let filter_at = closure.filter_position();
+        let projections = closure.projections();
+        // Missing leading projections are the item itself (`argMax(items,
+        // #.amount)`: the value is the item).
+        let missing = projections - (arguments.len() - 1).min(projections);
+        let filter = (arguments.len() > filter_at)
+            .then(|| callback(filter_at))
+            .transpose()?;
+        let mut bodies = Vec::with_capacity(projections);
+        let mut alias = filter.and_then(|(_, a)| a);
+        for at in 1..=projections {
+            bodies.push(match at > missing {
+                true => {
+                    let (body, a) = callback(at - missing)?;
+                    alias = alias.or(a);
+                    Some(body)
+                }
+                false => None,
+            });
+        }
+        let sequential = filter.is_some_and(|(f, _)| Self::assigns(f))
+            || bodies.iter().flatten().any(|b| Self::assigns(b));
+
+        let collected = self.collect(closure, list, alias, sequential, Kind::Dyn, |c| {
+            match filter {
+                Some((filter, _)) => {
+                    let held = c.node(filter)?;
+                    let (keep, drop) = c.branch(held, "JumpIfFalse");
+                    c.release(held);
+                    let kept = c.under(keep, |c| c.projected(&bodies, Vec::new()))?;
+                    let none = c.under(drop, |c| Ok(c.constant(Const::Null)))?;
+                    Ok(c.merge(keep, kept, none))
+                }
+                None => c.projected(&bodies, Vec::new()),
+            }
+        })?;
+        let mut args = vec![Input::Reg(collected)];
+        if let Some(at) = parameter {
+            args.push(self.arg(argument(at)?)?);
+        }
+        Ok(self.call(kind.clone(), args))
+    }
+
+    /// The projections of an aggregate's item, in order, each skipping the
+    /// item when null (`IfNotNull`): the value, or the `[value, by]` pair,
+    /// or null when skipped.
+    fn projected(&mut self, bodies: &[Option<&'a Node<'a>>], mut taken: Vec<Reg>) -> Result<Reg> {
+        let Some((first, rest)) = bodies.split_first() else {
+            return Ok(match taken.as_slice() {
+                [one] => *one,
+                _ => {
+                    self.release_all(&taken);
+                    let dst = self.alloc();
+                    self.emit(Op::Array {
+                        dst,
+                        items: std::mem::take(&mut taken).into(),
+                    });
+                    dst
+                }
+            });
+        };
+        let value = match first {
+            Some(body) => self.node(body)?,
+            None => self.pointer(0),
+        };
+        // `value` joins the result later: compared without being released.
+        let null = self.constant(Const::Null);
+        let is_null = self.binary_keeping(Binary::Equal, value, null);
+        let (skip, keep) = self.branch(is_null, "JumpIfNotNull");
+        self.release(is_null);
+        let none = self.under(skip, |c| Ok(c.constant(Const::Null)))?;
+        taken.push(value);
+        let kept = self.under(keep, |c| c.projected(rest, taken))?;
+        Ok(self.merge(skip, none, kept))
+    }
+
+    /// `kind(value)` for a `value` read again afterwards: the result never
+    /// takes `value`'s register.
+    fn call_keeping(&mut self, kind: FunctionKind, value: Reg) -> Reg {
+        let returns = FunctionRegistry::get_definition(&kind)
+            .map(|f| Self::returns(&f.return_type()))
+            .unwrap_or(Kind::Dyn);
+        let dst = self.alloc_kind(returns);
+        self.emit(Op::Call {
+            dst,
+            kind,
+            args: vec![Input::Reg(value)].into(),
+        });
+        dst
+    }
+
+    /// `a op b` for an `a` read again afterwards (`b` is released).
+    fn binary_keeping(&mut self, op: Binary, a: Reg, b: Reg) -> Reg {
+        let dst = self.alloc_kind(Self::result_kind(op));
+        self.emit(Op::Binary { dst, op, a, b });
+        self.release(b);
+        dst
+    }
+
+    /// A closure op over `list` whose element program is `body` (the
+    /// element pinned, `alias` naming it): the shared shape of every
+    /// callback function.
+    fn collect(
+        &mut self,
+        closure: ClosureFunction,
+        list_node: &'a Node<'a>,
+        alias: Option<&'a str>,
+        sequential: bool,
+        kind: Kind,
+        body: impl FnOnce(&mut Self) -> Result<Reg>,
+    ) -> Result<Reg> {
+        let element_key = self.node_key(list_node).map(|k| format!("{k}[]"));
+        let source = self
+            .load_of(list_node)
+            .map(|(load, key)| (load, self.site(key)));
+        let list = match source {
+            Some(_) => self.alloc(),
+            None => self.node(list_node)?,
+        };
+        let hinted = match element_key.clone() {
+            Some(key) => self.hint_key(key),
+            None => Kind::Dyn,
+        };
+        let element_kind = self.element_kind(list_node).unwrap_or(hinted);
+        let mut child = Builder::default();
+        child.program.element = Some(child.pin(element_kind));
+        child.element_key = element_key;
+        self.stack.push(child);
+        self.aliases.push(alias);
+        let out = body(self);
+        self.aliases.pop();
+        let mut child = self.stack.pop().unwrap_or_default();
+        child.program.out = out?;
+        let imports: Box<[(Reg, Reg)]> = std::mem::take(&mut child.imports).into();
+        let body = child.seal();
+        self.release(list);
+        let dst = self.alloc_kind(kind);
+        self.emit(Op::Closure(Box::new(ClosureOp {
+            kind: closure,
+            dst,
+            list,
+            source,
+            body,
+            imports,
+            sequential,
+            select: false,
+        })));
+        Ok(dst)
+    }
+
     pub(crate) fn assigns(node: &Node) -> bool {
         let found = std::cell::Cell::new(false);
         let found_ref = &found;
@@ -1960,6 +2180,12 @@ impl<'a> LaneCompiler<'a> {
                         .map(|a| self.arg(a))
                         .collect::<Result<Vec<_>>>()?;
                     self.call(kind.clone(), args)
+                }
+                FunctionKind::Closure(closure)
+                    if closure.is_aggregate()
+                        || (*closure == ClosureFunction::Count && arguments.len() == 1) =>
+                {
+                    self.aggregate(kind, *closure, arguments)?
                 }
                 FunctionKind::Closure(closure) => {
                     let argument = |index: usize| {

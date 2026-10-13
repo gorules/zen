@@ -18,15 +18,13 @@ impl Db {
         let visible_dms = self.visible_data_models(policy_path);
         let (roots, ref_targets) =
             DataModelIr::classify_roots(visible_dms.iter().map(|dm| dm.as_ref()));
-        let dated = InputSchema::dated(&entities);
-        InputSchema {
+        InputSchema::new(
             entities,
             globals,
             roots,
             ref_targets,
-            dated,
-            dictionaries: self.unit(policy_path).dictionaries.clone(),
-        }
+            self.unit(policy_path).dictionaries.clone(),
+        )
     }
 
     fn visible_globals(&self, policy_path: &str) -> HashMap<Arc<str>, Property> {
@@ -77,9 +75,73 @@ pub(crate) struct InputSchema {
     ref_targets: HashSet<Arc<str>>,
     dated: HashSet<Arc<str>>,
     dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    /// The properties with a `default`, per entity and global (by name):
+    /// found once, not on every evaluation. Kept as JSON (a `Variable` isn't
+    /// `Send`), made a value only when filled in.
+    defaults: Defaults,
+}
+
+#[derive(Default)]
+struct Defaults {
+    entities: HashMap<Arc<str>, Vec<Property>>,
+    globals: Vec<Property>,
+}
+
+impl Defaults {
+    fn is_empty(&self) -> bool {
+        self.entities.is_empty() && self.globals.is_empty()
+    }
 }
 
 impl InputSchema {
+    fn new(
+        entities: Arc<HashMap<Arc<str>, Arc<DataModelIr>>>,
+        globals: HashMap<Arc<str>, Property>,
+        roots: HashSet<Arc<str>>,
+        ref_targets: HashSet<Arc<str>>,
+        dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    ) -> Self {
+        let with_default = |props: &mut dyn Iterator<Item = &Property>| -> Vec<Property> {
+            props.filter(|p| p.default.is_some()).cloned().collect()
+        };
+        let mut global_defaults = with_default(&mut globals.values());
+        global_defaults.sort_by(|a, b| a.name.cmp(&b.name));
+        let defaults = Defaults {
+            entities: entities
+                .iter()
+                .map(|(name, model)| (name.clone(), with_default(&mut model.properties.iter())))
+                .filter(|(_, props)| !props.is_empty())
+                .collect(),
+            globals: global_defaults,
+        };
+        InputSchema {
+            dated: Self::dated(&entities, &defaults),
+            entities,
+            globals,
+            roots,
+            ref_targets,
+            dictionaries,
+            defaults,
+        }
+    }
+
+    /// The schema of a graph's request typed by an entity: `target` at the
+    /// root, the entities it references as pools beside it.
+    pub(crate) fn for_request(
+        entities: Arc<HashMap<Arc<str>, Arc<DataModelIr>>>,
+        target: Arc<str>,
+        pools: impl IntoIterator<Item = Arc<str>>,
+        dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    ) -> Self {
+        InputSchema::new(
+            entities,
+            HashMap::new(),
+            std::iter::once(target).collect(),
+            pools.into_iter().collect(),
+            dictionaries,
+        )
+    }
+
     pub(crate) fn validate(&self, input: &Variable) -> Vec<InputValidationError> {
         let ref_pools = RefPoolIndex::from_input(input, self.ref_targets.iter().cloned());
         let mut validator = InputValidator {
@@ -123,8 +185,14 @@ impl InputSchema {
 }
 
 impl InputSchema {
-    fn dated(entities: &HashMap<Arc<str>, Arc<DataModelIr>>) -> HashSet<Arc<str>> {
-        let mut dated: HashSet<Arc<str>> = HashSet::default();
+    /// The entities whose instances a request may change: a `Date`
+    /// property or a property with a `default`, directly or through a
+    /// relationship. Any other entity is passed through untouched.
+    fn dated(
+        entities: &HashMap<Arc<str>, Arc<DataModelIr>>,
+        defaults: &Defaults,
+    ) -> HashSet<Arc<str>> {
+        let mut dated: HashSet<Arc<str>> = defaults.entities.keys().cloned().collect();
         loop {
             let before = dated.len();
             for (name, model) in entities.iter() {
@@ -146,8 +214,12 @@ impl InputSchema {
         }
     }
 
+    /// The input with declared dates converted and missing (or null)
+    /// properties given their `default`, on every entity instance: roots,
+    /// pool items and nested objects. `None` when nothing changes; the
+    /// input itself is never modified.
     pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
-        DeclaredDates::rewrite_fields(input, |key, value| {
+        let converted = DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
                 DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0))
             } else if self.roots.contains(key) {
@@ -155,7 +227,11 @@ impl InputSchema {
             } else {
                 self.convert_property(value, self.globals.get(key)?, 0)
             }
-        })
+        });
+        if input.as_object().is_none() || self.defaults.is_empty() {
+            return converted;
+        }
+        self.fill_defaults(converted, input, &self.defaults.globals, 0)
     }
 
     fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
@@ -163,10 +239,55 @@ impl InputSchema {
             return None;
         }
         let model = self.entities.get(entity)?;
-        DeclaredDates::rewrite_fields(value, |key, child| {
+        let converted = DeclaredDates::rewrite_fields(value, |key, child| {
             let property = model.properties.iter().find(|p| *p.name == *key)?;
             self.convert_property(child, property, depth + 1)
-        })
+        });
+        match self.defaults.entities.get(entity) {
+            Some(defaults) => self.fill_defaults(converted, value, defaults, depth + 1),
+            None => converted,
+        }
+    }
+
+    /// Sets each missing or null property that has a `default` (converted
+    /// like a supplied value), on a copy.
+    fn fill_defaults(
+        &self,
+        converted: Option<Variable>,
+        value: &Variable,
+        properties: &[Property],
+        depth: usize,
+    ) -> Option<Variable> {
+        if properties.is_empty() {
+            return converted;
+        }
+        let current = converted.as_ref().unwrap_or(value);
+        let object = current.as_object()?;
+        let missing: Vec<(Arc<str>, Variable)> = {
+            let fields = object.borrow();
+            properties
+                .iter()
+                .filter_map(|p| {
+                    let default = p.default.as_ref()?;
+                    let absent = fields
+                        .get(&zen_types::symbol::Symbol::from(p.name.as_ref()))
+                        .is_none_or(|v| matches!(v, Variable::Null));
+                    absent.then(|| {
+                        let filled = Variable::from(default.as_ref().clone());
+                        let filled = self.convert_property(&filled, p, depth).unwrap_or(filled);
+                        (p.name.clone(), filled)
+                    })
+                })
+                .collect()
+        };
+        if missing.is_empty() {
+            return converted;
+        }
+        let mut next = object.borrow().clone();
+        for (name, filled) in missing {
+            next.insert_str(&name, filled);
+        }
+        Some(Variable::from_object(next))
     }
 
     fn convert_property(
@@ -259,10 +380,11 @@ impl InputValidator<'_> {
             if matches!(val, Variable::Null) {
                 continue;
             }
+            // A stored relationship's members are the host's, never checked as input.
             let Some(prop) = dm_props
                 .properties
                 .iter()
-                .find(|p| *p.name == *key.as_str())
+                .find(|p| *p.name == *key.as_str() && !p.is_stored())
             else {
                 continue;
             };
@@ -324,6 +446,7 @@ impl InputValidator<'_> {
             }
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
+            PropertyTypeIr::Any => true,
             PropertyTypeIr::Date => match value {
                 Variable::String(text) => {
                     text.is_empty() || zen_expression::DateValue::is_text(text)
@@ -402,6 +525,9 @@ struct Sureness<'s> {
     schema: &'s InputSchema,
     rows: usize,
     sure: Vec<bool>,
+    /// Columns already prepared (dates converted, defaults filled, pools
+    /// given as lists): dates and references there were checked then.
+    prepared: bool,
 }
 
 impl Sureness<'_> {
@@ -440,6 +566,13 @@ impl Sureness<'_> {
                 _ => false,
             },
             PropertyTypeIr::Relationship { target } => self.objects(target, column, at),
+            PropertyTypeIr::Any => true,
+            PropertyTypeIr::Date if self.prepared => match column.variable(at) {
+                Variable::String(text) => text.is_empty(),
+                other => zen_expression::DateValue::is(&other),
+            },
+            // Each prepared row's reference was found in its pool.
+            PropertyTypeIr::Reference { .. } if self.prepared => true,
             PropertyTypeIr::Date | PropertyTypeIr::Reference { .. } => false,
         }
     }
@@ -534,7 +667,23 @@ impl Sureness<'_> {
         let segments: Vec<&str> = path.split('.').collect();
         let (first, rest) = segments.split_first()?;
         if self.schema.ref_targets.contains(*first) {
-            return None;
+            // A prepared pool: each row's items checked as entities.
+            return match (self.prepared, rest.is_empty(), column.values) {
+                (true, true, zen_expression::lane::Values::List { child, .. }) => {
+                    let child = child.column();
+                    let zen_expression::lane::Values::Struct { fields, .. } = child.values else {
+                        return None;
+                    };
+                    let target: Arc<str> = Arc::from(*first);
+                    self.mark(column, |s, row| {
+                        column.range(row).is_none_or(|(a, b)| {
+                            (a..b).all(|item| !child.valid(item) || s.structs(&target, fields, item))
+                        })
+                    });
+                    Some(())
+                }
+                _ => None,
+            };
         }
         if self.schema.roots.contains(*first) {
             let mut entity: Arc<str> = Arc::from(*first);
@@ -579,17 +728,79 @@ impl InputSchema {
             PropertyTypeIr::Relationship { target } => self.dated.contains(target),
             _ => false,
         });
-        if !self.dated.is_empty() || !self.ref_targets.is_empty() || dated_global {
+        if !self.dated.is_empty() || !self.ref_targets.is_empty() || dated_global || !self.defaults.globals.is_empty() {
             return None;
         }
         let mut sureness = Sureness {
             schema: self,
             rows: columns.rows,
             sure: vec![true; columns.rows],
+            prepared: false,
         };
         for (path, column) in &columns.columns {
             sureness.path(path, column)?;
         }
         Some(sureness.sure)
+    }
+
+    /// [`Self::sure`] of prepared columns (see
+    /// `compiled::policy::columnar::prepare`): the rows certain to pass
+    /// validation as their row's prepared input would.
+    pub(crate) fn sure_prepared(&self, columns: &zen_expression::lane::Columns) -> Option<Vec<bool>> {
+        if self.converts_globals() {
+            return None;
+        }
+        let mut sureness = Sureness {
+            schema: self,
+            rows: columns.rows,
+            sure: vec![true; columns.rows],
+            prepared: true,
+        };
+        for (path, column) in &columns.columns {
+            sureness.path(path, column)?;
+        }
+        Some(sureness.sure)
+    }
+
+    /// Whether a global (outside any entity) is converted: a date, a
+    /// dated relationship, or a default.
+    pub(crate) fn converts_globals(&self) -> bool {
+        self.globals.values().any(|p| match &p.kind {
+            PropertyTypeIr::Date => true,
+            PropertyTypeIr::Relationship { target } => self.dated.contains(target),
+            _ => false,
+        }) || !self.defaults.globals.is_empty()
+    }
+
+    /// Whether any input is converted before evaluation (dates, defaults).
+    pub(crate) fn converts(&self) -> bool {
+        !self.dated.is_empty() || self.converts_globals()
+    }
+
+    pub(crate) fn is_root(&self, name: &str) -> bool {
+        self.roots.contains(name)
+    }
+
+    pub(crate) fn is_pool(&self, name: &str) -> bool {
+        self.ref_targets.contains(name)
+    }
+
+    pub(crate) fn is_dated(&self, entity: &str) -> bool {
+        self.dated.contains(entity)
+    }
+
+    pub(crate) fn model(&self, entity: &str) -> Option<&Arc<DataModelIr>> {
+        self.entities.get(entity)
+    }
+
+    /// The properties of `entity` with a default.
+    pub(crate) fn defaults_of(&self, entity: &str) -> &[Property] {
+        self.defaults.entities.get(entity).map_or(&[], Vec::as_slice)
+    }
+
+    /// A property's default as its value (converted like a given one).
+    pub(crate) fn default_value(&self, property: &Property) -> Option<Variable> {
+        let filled = Variable::from(property.default.as_ref()?.as_ref().clone());
+        Some(self.convert_property(&filled, property, 0).unwrap_or(filled))
     }
 }

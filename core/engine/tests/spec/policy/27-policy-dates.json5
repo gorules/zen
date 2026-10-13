@@ -445,14 +445,14 @@
 }
 
 {
-  name: "a null check does not narrow an optional date inside `or`",
-  diagnostics: ["TYPE_MISMATCH"],
+  name: "a null check narrows an optional date inside `or`",
+  diagnostics: [],
   policy: {
     models: {contract: {start: "date", end: "date?"}},
     blocks: [{expression: "contract.active", value: "contract.start <= d() and (contract.end == null or contract.end >= d())"}],
   },
   cases: [
-    {input: {contract: {start: "2025-01-01"}}, output: {contract: {start: "2025-01-01", active: true}}, note: "question: the type checker reports TYPE_MISMATCH for `end >= d()` although `end == null or` guards it, so DecisionEngine refuses the policy"},
+    {input: {contract: {start: "2025-01-01"}}, output: {contract: {start: "2025-01-01", active: true}}},
     [{contract: {start: "2025-01-01", end: "2025-02-01"}}, {contract: {start: "2025-01-01", end: "2025-02-01", active: false}}],
     [{contract: {start: "2025-01-01", end: "2025-12-31"}}, {contract: {start: "2025-01-01", end: "2025-12-31", active: true}}],
   ],

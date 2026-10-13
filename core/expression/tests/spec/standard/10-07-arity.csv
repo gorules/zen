@@ -271,9 +271,9 @@ rand(x, x);{};!error
 # sum: arity
 sum([1, 2]);;3
 sum();;!error
-sum([1, 2], 1);;!error
+sum([1, 2], 1);;2
 sum([1, 2], 1, 1);;!error
-true ? 1 : sum([1, 2], 1);;!error
+true ? 1 : sum([1, 2], 1);;1
 true ? 1 : sum();;!error
 true ? 1 : sum('a');;1
 sum('a');;!error
@@ -284,9 +284,9 @@ sum(x, x);{};!error
 # avg: arity
 avg([1, 2]);;1.5
 avg();;!error
-avg([1, 2], 1);;!error
+avg([1, 2], 1);;1
 avg([1, 2], 1, 1);;!error
-true ? 1 : avg([1, 2], 1);;!error
+true ? 1 : avg([1, 2], 1);;1
 true ? 1 : avg();;!error
 true ? 1 : avg('a');;1
 avg('a');;!error
@@ -297,9 +297,9 @@ avg(x, x);{};!error
 # min: arity
 min([1, 2]);;1
 min();;!error
-min([1, 2], 1);;!error
+min([1, 2], 1);;1
 min([1, 2], 1, 1);;!error
-true ? 1 : min([1, 2], 1);;!error
+true ? 1 : min([1, 2], 1);;1
 true ? 1 : min();;!error
 true ? 1 : min('a');;1
 min('a');;!error
@@ -310,9 +310,9 @@ min(x, x);{};!error
 # max: arity
 max([1, 2]);;2
 max();;!error
-max([1, 2], 1);;!error
+max([1, 2], 1);;1
 max([1, 2], 1, 1);;!error
-true ? 1 : max([1, 2], 1);;!error
+true ? 1 : max([1, 2], 1);;1
 true ? 1 : max();;!error
 true ? 1 : max('a');;1
 max('a');;!error
@@ -323,9 +323,9 @@ max(x, x);{};!error
 # median: arity
 median([1, 2]);;1.5
 median();;!error
-median([1, 2], 1);;!error
+median([1, 2], 1);;1
 median([1, 2], 1, 1);;!error
-true ? 1 : median([1, 2], 1);;!error
+true ? 1 : median([1, 2], 1);;1
 true ? 1 : median();;!error
 true ? 1 : median('a');;1
 median('a');;!error
@@ -336,9 +336,9 @@ median(x, x);{};!error
 # mode: arity
 mode([1, 1, 2]);;1
 mode();;!error
-mode([1, 1, 2], 1);;!error
+mode([1, 1, 2], 1);;1
 mode([1, 1, 2], 1, 1);;!error
-true ? 1 : mode([1, 1, 2], 1);;!error
+true ? 1 : mode([1, 1, 2], 1);;1
 true ? 1 : mode();;!error
 true ? 1 : mode('a');;1
 mode('a');;!error
@@ -481,9 +481,9 @@ one([1], true, 1);;!error
 true ? 1 : one([1]);;!error
 true ? 1 : one(5, true);;1
 count();;!error
-count([1]);;!error
+count([1]);;1
 count([1], true, 1);;!error
-true ? 1 : count([1]);;!error
+true ? 1 : count([1]);;1
 true ? 1 : count(5, true);;1
 # unknown functions are compile errors
 foo(1);;!error

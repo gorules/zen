@@ -558,7 +558,7 @@ mode('12.5');;!error
 mode('żółw');;!error
 mode([]);;!error;"question: mode of an empty list fails; could be null"
 mode([1, 2]);;2;question: ties resolve to the largest value
-mode(['a']);;!error
+mode(['a']);;'a'
 mode([[1]]);;!error
 mode({});;!error
 mode({a: 1});;!error
@@ -578,7 +578,7 @@ mode(x);{x: '12.5'};!error
 mode(x);{x: 'żółw'};!error
 mode(x);{x: []};!error;"question: mode of an empty list fails; could be null"
 mode(x);{x: [1, 2]};2;question: ties resolve to the largest value
-mode(x);{x: ['a']};!error
+mode(x);{x: ['a']};'a'
 mode(x);{x: [[1]]};!error
 mode(x);{x: {}};!error
 mode(x);{x: {a: 1}};!error

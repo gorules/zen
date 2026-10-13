@@ -13,7 +13,7 @@ use crate::analysis::table::{HitMode, VerifyInput, VerifyOutput, VerifyTable};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::db::AnalysisPass;
+use crate::workspace::db::{AnalysisPass, Db};
 use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
     Severity,
@@ -162,8 +162,9 @@ impl AnalysisContext {
                 &self.scope,
             ),
         };
+        let reads_from = self.reads.len();
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id, source, kind);
+        self.absorb_diagnostics(&analysis, &expression_id, source, kind, reads_from);
         analysis
     }
 
@@ -198,8 +199,15 @@ impl AnalysisContext {
                 scope,
             ),
         };
+        let reads_from = self.reads.len();
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id, source, ExpressionKind::Unary);
+        self.absorb_diagnostics(
+            &analysis,
+            &expression_id,
+            source,
+            ExpressionKind::Unary,
+            reads_from,
+        );
         analysis
     }
 
@@ -427,7 +435,8 @@ impl AnalysisContext {
             }
             let resolved = self.scope.resolve_at(&read.path);
             let unknown = match resolved {
-                VariableType::Any => true,
+                // Under a value declared open (`any`), every path may exist.
+                VariableType::Any => !Self::under_open(&self.scope, &read.path),
                 VariableType::Null => !Self::path_declared(&self.scope, &read.path),
                 _ => false,
             };
@@ -446,6 +455,19 @@ impl AnalysisContext {
         for (expr_id, span, msg) in problems {
             self.error(DiagnosticCode::UndefinedVariable, expr_id, span, msg);
         }
+    }
+
+    /// Whether `path` is below a declared value typed `any` (a call's
+    /// `response`, an open field): nothing more is known of its shape.
+    fn under_open(scope: &VariableType, path: &str) -> bool {
+        let mut parent = path;
+        while let Some((head, _)) = parent.rsplit_once('.') {
+            if matches!(scope.resolve_at(head), VariableType::Any) && Self::path_declared(scope, head) {
+                return true;
+            }
+            parent = head;
+        }
+        false
     }
 
     fn path_declared(scope: &VariableType, path: &str) -> bool {
@@ -486,6 +508,7 @@ impl AnalysisContext {
         expression_id: &Option<Arc<str>>,
         source: &str,
         kind: ExpressionKind,
+        reads_from: usize,
     ) {
         let first = self.diagnostics.len();
         for diag in &analysis.diagnostics {
@@ -506,6 +529,7 @@ impl AnalysisContext {
             matches!(kind, ExpressionKind::Unary),
             OnError::Raise,
         );
+        Db::locate_unknown_members(&mut self.diagnostics[first..], &self.reads[reads_from..]);
     }
 }
 

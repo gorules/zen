@@ -165,7 +165,12 @@ impl Executor {
         rest: &mut [Frame<M>],
         ctx: &mut Context,
     ) -> bool {
-        if c.sequential || matches!(c.kind, ClosureFunction::FlatMap) || active.is_empty() {
+        // Aggregates collect their element values (`finish`): never truth bits.
+        if c.sequential
+            || matches!(c.kind, ClosureFunction::FlatMap)
+            || c.kind.is_aggregate()
+            || active.is_empty()
+        {
             return false;
         }
         let source = match Self::selection(c, f, ctx) {
@@ -720,7 +725,10 @@ impl Executor {
             Some(_) => slots.len(),
             None => items.len(),
         };
-        let predicate = !matches!(c.kind, ClosureFunction::Map | ClosureFunction::FlatMap);
+        // Map-like closures (and the aggregates' collections) keep each
+        // element's value; the others keep truth bits.
+        let predicate = !matches!(c.kind, ClosureFunction::Map | ClosureFunction::FlatMap)
+            && !c.kind.is_aggregate();
         let words = total.div_ceil(64);
         for bits in [&mut *truths, &mut *settled] {
             bits.clear();
@@ -1253,6 +1261,43 @@ impl Executor {
                     }
                 }
                 Ok(Variable::Bool(!matches!(kind, ClosureFunction::Some)))
+            }
+            // A callback aggregate's collection: each element's value is the
+            // item (or its projection, or the `[value, by]` pair) when it
+            // counts, null when the filter or a null projection drops it. The
+            // first element that failed fails the row, as in the VM. The
+            // aggregate itself is the `Call` that follows.
+            ClosureFunction::Sum
+            | ClosureFunction::Avg
+            | ClosureFunction::Min
+            | ClosureFunction::Max
+            | ClosureFunction::Median
+            | ClosureFunction::Mode
+            | ClosureFunction::Stddev
+            | ClosureFunction::Variance
+            | ClosureFunction::TopK
+            | ClosureFunction::LastN
+            | ClosureFunction::Percentile
+            | ClosureFunction::CountDistinct
+            | ClosureFunction::Unique
+            | ClosureFunction::First
+            | ClosureFunction::Last
+            | ClosureFunction::ArgMax
+            | ClosureFunction::ArgMin
+            | ClosureFunction::Skew
+            | ClosureFunction::Kurtosis
+            | ClosureFunction::CountDistinctApprox
+            | ClosureFunction::PercentileApprox => {
+                if let Some((_, e)) = out.failures.first() {
+                    return Err(e.clone());
+                }
+                let values: Vec<Variable> = out
+                    .values
+                    .iter_mut()
+                    .map(|v| std::mem::replace(v, Variable::Null))
+                    .filter(|v| !matches!(v, Variable::Null))
+                    .collect();
+                Ok(Variable::from_array(values))
             }
         }
     }

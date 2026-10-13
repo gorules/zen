@@ -154,10 +154,12 @@ impl FunctionDefinition for CompositeFunction {
         }
 
         for signature in &self.signatures {
-            let all_match = args
-                .iter()
-                .zip(signature.parameters.iter())
-                .all(|(arg, param)| arg.satisfies(param));
+            // A signature shorter than the call can't take its extra arguments.
+            let all_match = signature.parameters.len() >= args.len()
+                && args
+                    .iter()
+                    .zip(signature.parameters.iter())
+                    .all(|(arg, param)| arg.satisfies(param));
             if all_match {
                 typecheck.return_type = signature.return_type.clone();
                 return typecheck;

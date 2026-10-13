@@ -4,7 +4,6 @@ use crate::lane::date::DynamicVariableExt;
 use crate::variable::Variable;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::collections::BTreeMap;
 
 pub(crate) struct Math;
 
@@ -140,23 +139,6 @@ impl Math {
                         Ok(total / Decimal::TWO)
                     }
                 }
-            })
-        }],
-        fail: |args| Params::fail(args, Self::ARRAY),
-    };
-
-    pub(crate) const MODE: Builtin = Builtin {
-        overloads: &[|args| {
-            Apply::one(args, |a: Array| {
-                let mut counts = BTreeMap::new();
-                for n in Self::numbers(&a)? {
-                    *counts.entry(n).or_insert(0usize) += 1;
-                }
-                counts
-                    .into_iter()
-                    .max_by_key(|&(_, count)| count)
-                    .map(|(n, _)| n)
-                    .ok_or_else(|| "Empty array".to_string())
             })
         }],
         fail: |args| Params::fail(args, Self::ARRAY),

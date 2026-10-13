@@ -240,6 +240,7 @@ impl Db {
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
         columns: &'a zen_expression::lane::Columns<'a>,
+        store: &'a crate::compiled::policy::ColumnStore<'a>,
     ) -> Result<crate::compiled::policy::PolicyColumnarOutput<'a>, EvaluationError> {
         let probe = EvaluateRequest {
             policy_path: policy_path.clone(),
@@ -248,8 +249,7 @@ impl Db {
             trace: false,
         };
         self.check_evaluable(&probe)?;
-        let artifact = self.eval_artifact(policy_path);
-        Ok(artifact.plan(goals).evaluate_columns(&artifact, policy_path, goals, columns))
+        Ok(self.eval_artifact(policy_path).evaluate_columns(policy_path, goals, columns, store))
     }
 
     pub fn evaluate_batch(
@@ -370,6 +370,26 @@ impl EvalArtifact {
         plan
     }
 
+    /// The policy's `goals` (every goal when none) over columnar input, on
+    /// its compiled plan: the input first prepared as columns (dates,
+    /// defaults, references) in `store` when the policy converts it and its
+    /// shape allows; else each row prepared as it is evaluated.
+    pub(crate) fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+        store: &'a crate::compiled::policy::ColumnStore<'a>,
+    ) -> crate::compiled::policy::PolicyColumnarOutput<'a> {
+        use crate::compiled::policy::columnar::prepare;
+        let converts = !self.reference_fields.is_empty() || self.input_schema.converts();
+        let prepared = converts
+            .then(|| prepare::prepare(self, columns, store))
+            .flatten()
+            .map(|prepared| store.keep(prepared));
+        self.plan(goals).evaluate_columns(self, policy_path, goals, columns, prepared)
+    }
+
     pub(crate) fn evaluate_batch(
         &self,
         requests: &[EvaluateRequest],
@@ -441,7 +461,26 @@ impl EvalArtifact {
         if !goals.is_empty() || !self.reference_fields.is_empty() {
             return None;
         }
-        let mut sure = self.input_schema.sure(columns)?;
+        let sure = self.input_schema.sure(columns)?;
+        Some(self.required(columns, sure))
+    }
+
+    /// The prepared rows certain to pass: validated as `converted`, their
+    /// requirements met in `hydrated` (as the row path checks each).
+    pub(crate) fn sure_prepared(
+        &self,
+        converted: &zen_expression::lane::Columns,
+        hydrated: &zen_expression::lane::Columns,
+        goals: &[Arc<str>],
+    ) -> Option<Vec<bool>> {
+        if !goals.is_empty() {
+            return None;
+        }
+        let sure = self.input_schema.sure_prepared(converted)?;
+        Some(self.required(hydrated, sure))
+    }
+
+    fn required(&self, columns: &zen_expression::lane::Columns, mut sure: Vec<bool>) -> Vec<bool> {
         for check in &self.requirements().checks {
             let primary = Steps::new(&check.primary, columns);
             if primary.always(columns) {
@@ -457,7 +496,7 @@ impl EvalArtifact {
                 }
             }
         }
-        Some(sure)
+        sure
     }
 
     fn requirements(&self) -> &Requirements {

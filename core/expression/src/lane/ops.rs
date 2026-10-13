@@ -50,6 +50,18 @@ impl Ops {
         }
     }
 
+    /// `$root`: the environment's `$root` when it has one (a host
+    /// evaluating in a sub-scope names the whole request so), else the
+    /// environment itself, as the VM's `root_of`.
+    pub(crate) fn root_of(env: Variable) -> Variable {
+        if let Object(obj) = &env {
+            if let Some(root) = obj.borrow().get_str("$root") {
+                return root.clone();
+            }
+        }
+        env
+    }
+
     pub(crate) fn step(
         v: Variable,
         target: &FetchFastTarget,
@@ -57,7 +69,7 @@ impl Ops {
         env: &Scope,
     ) -> Variable {
         match target {
-            FetchFastTarget::Root => root.materialize(),
+            FetchFastTarget::Root => Self::root_of(root.materialize()),
             FetchFastTarget::Begin => env.materialize(),
             FetchFastTarget::String(key) => match v {
                 Object(obj) => obj.borrow().get_str(key).cloned().unwrap_or(Null),
@@ -79,7 +91,7 @@ impl Ops {
     pub(crate) fn fetch_fast(path: &[FetchFastTarget], root: &Scope, env: &Scope) -> Variable {
         let mut steps = path.iter();
         let first = match steps.next() {
-            Some(FetchFastTarget::Root) => root.materialize(),
+            Some(FetchFastTarget::Root) => Self::root_of(root.materialize()),
             Some(FetchFastTarget::Begin) => match steps.clone().next() {
                 Some(FetchFastTarget::String(key)) => {
                     steps.next();

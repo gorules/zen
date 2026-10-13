@@ -2,6 +2,7 @@ pub(crate) mod affected;
 pub(crate) mod db;
 pub mod document_dependencies;
 pub(crate) mod editor;
+pub(crate) mod endpoint;
 pub(crate) mod graph;
 pub(crate) mod reads;
 pub(crate) mod search;
@@ -26,11 +27,13 @@ pub use types::{
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
-    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
+    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError, SuppliedBy,
     InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
     RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
     SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
+
+pub use endpoint::{EndpointKind, SchemaAudience};
 
 use types::Global;
 
@@ -102,8 +105,9 @@ impl Workspace {
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
         columns: &'a zen_expression::lane::Columns<'a>,
+        store: &'a crate::compiled::policy::ColumnStore<'a>,
     ) -> Result<crate::compiled::policy::PolicyColumnarOutput<'a>, EvaluationError> {
-        self.db.evaluate_columns(policy_path, goals, columns)
+        self.db.evaluate_columns(policy_path, goals, columns, store)
     }
 
     #[cfg(feature = "driver")]
@@ -130,6 +134,11 @@ impl Workspace {
         trace: &GraphTraceMap,
     ) -> Result<Trace, EvaluationError> {
         self.db.enhance_graph_trace(document, trace)
+    }
+
+    /// What a document reads from its request; None when it can't be known.
+    pub fn reads(&self, path: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.db.document_reads(&Arc::from(path))
     }
 
     pub(crate) fn eval_artifact(&self, policy: &str) -> Arc<EvalArtifact> {
@@ -160,6 +169,25 @@ impl Workspace {
 
     pub fn outputs(&self, req: &ScopeRequest) -> Vec<OutputProperty> {
         self.db.outputs(req)
+    }
+
+    /// What `path` serves: a graph, a policy with rules, or nothing.
+    pub fn endpoint(&self, path: &str) -> Option<EndpointKind> {
+        self.db.endpoint(path)
+    }
+
+    /// The request's JSON Schema for `audience`, without `$id`.
+    pub fn request_schema(
+        &self,
+        req: &ScopeRequest,
+        audience: SchemaAudience,
+    ) -> serde_json::Value {
+        self.db.request_schema(req, audience)
+    }
+
+    /// The response's JSON Schema, without `$id`.
+    pub fn response_schema(&self, req: &ScopeRequest) -> serde_json::Value {
+        self.db.response_schema(req)
     }
 
     pub fn conditional_schema(&self, req: &ScopeRequest) -> ConditionalSchema {

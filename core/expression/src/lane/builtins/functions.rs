@@ -6,6 +6,7 @@ use crate::lane::builtins::convert::Convert;
 use crate::lane::builtins::dates::Dates;
 use crate::lane::builtins::legacy::Legacy;
 use crate::lane::builtins::math::Math;
+use crate::lane::builtins::registered::Registered;
 use crate::lane::builtins::text::Text;
 use crate::lane::builtins::{Arg, Builtin, Fail, Out};
 use crate::lane::exec::{CallFault, Fault};
@@ -38,7 +39,8 @@ impl Builtins {
                     D::EndOf => &Legacy::END_OF,
                 })
             }
-            FunctionKind::Closure(_) => return None,
+            // A callback aggregate's final step (the collected values in).
+            FunctionKind::Closure(closure) => return Registered::aggregate(*closure),
         };
         Some(match function {
             F::Len => &Text::LEN,
@@ -59,7 +61,7 @@ impl Builtins {
             F::Max => &Math::MAX,
             F::Rand => &Math::RAND,
             F::Median => &Math::MEDIAN,
-            F::Mode => &Math::MODE,
+            F::Mode => &Registered::MODE,
             F::Floor => &Math::FLOOR,
             F::Ceil => &Math::CEIL,
             F::Round => &Math::ROUND,
@@ -75,6 +77,13 @@ impl Builtins {
             F::Bool => &Convert::BOOL,
             F::Type => &Convert::TYPE,
             F::Date => &Convert::DATE,
+            F::Join => &Registered::JOIN,
+            F::Stddev => &Registered::STDDEV,
+            F::Variance => &Registered::VARIANCE,
+            F::Percentile => &Registered::PERCENTILE,
+            F::PercentileApprox => &Registered::PERCENTILE_APPROX,
+            F::TopK => &Registered::TOP_K,
+            F::LastN => &Registered::LAST_N,
         })
     }
 

@@ -109,6 +109,14 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         let _ = std::mem::replace(&mut self.bytecode[at - 1], op);
     }
 
+    /// Points the jump emitted at `at` to the next instruction.
+    fn land(&mut self, at: usize) {
+        if let Opcode::Jump(kind, _) = self.bytecode[at - 1] {
+            let to = self.bytecode.len();
+            self.replace(at, Opcode::Jump(kind, (to - at) as u32));
+        }
+    }
+
     fn calc_backward_jump(&self, to: usize) -> usize {
         self.bytecode.len() + 1 - to
     }
@@ -553,6 +561,150 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                         self.emit(Opcode::End);
                         self.emit(Opcode::Array);
                         Ok(self.emit(Opcode::Flatten))
+                    }
+                    ClosureFunction::Count if arguments.len() == 1 => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit(Opcode::GetLen);
+                        Ok(self.emit(Opcode::End))
+                    }
+                    // `first(items, cb)`: per item, a `bool` is a condition
+                    // (`true` keeps the item), any other value the
+                    // projection; null is skipped (see `ClosureFunction::First`).
+                    ClosureFunction::First | ClosureFunction::Last if arguments.len() == 2 => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            let projected = c.emit(Opcode::Jump(Jump::IfNotBool, 0));
+                            let rejected = c.emit(Opcode::Jump(Jump::IfFalse, 0));
+                            c.emit(Opcode::Pop);
+                            c.emit(Opcode::Pointer(0));
+                            let matched = c.emit(Opcode::Jump(Jump::Forward, 0));
+                            c.land(rejected);
+                            c.emit(Opcode::Pop);
+                            let skipped = c.emit(Opcode::Jump(Jump::Forward, 0));
+                            c.land(projected);
+                            c.land(matched);
+                            let keep = c.emit(Opcode::Jump(Jump::IfNotNull, 0));
+                            c.emit(Opcode::Pop);
+                            let null = c.emit(Opcode::Jump(Jump::Forward, 0));
+                            c.land(keep);
+                            c.emit(Opcode::IncrementCount);
+                            c.land(skipped);
+                            c.land(null);
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        self.emit(Opcode::End);
+                        self.emit(Opcode::Array);
+                        Ok(self.emit(Opcode::CallFunction {
+                            kind: kind.clone(),
+                            arg_count: 1,
+                        }))
+                    }
+                    ClosureFunction::Sum
+                    | ClosureFunction::Avg
+                    | ClosureFunction::Min
+                    | ClosureFunction::Max
+                    | ClosureFunction::Median
+                    | ClosureFunction::Mode
+                    | ClosureFunction::Stddev
+                    | ClosureFunction::Variance
+                    | ClosureFunction::TopK
+                    | ClosureFunction::LastN
+                    | ClosureFunction::Percentile
+                    | ClosureFunction::CountDistinct
+                    | ClosureFunction::Unique
+                    | ClosureFunction::First
+                    | ClosureFunction::Last
+                    | ClosureFunction::ArgMax
+                    | ClosureFunction::ArgMin
+                    | ClosureFunction::Skew
+                    | ClosureFunction::Kurtosis
+                    | ClosureFunction::CountDistinctApprox
+                    | ClosureFunction::PercentileApprox => {
+                        let (_, maximum) = c.callbacks();
+                        if arguments.len() > maximum + 1 {
+                            return Err(CompilerError::InvalidFunctionCall {
+                                name: kind.to_string(),
+                                message: "Invalid number of arguments".to_string(),
+                            });
+                        }
+
+                        // A parameter (`topK`'s count) sits between the
+                        // projections and the filter.
+                        let parameter = c.parameter();
+                        let filter_at = c.filter_position();
+                        let projections = c.projections();
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            let filtered = arguments.len() > filter_at;
+                            let mut noop = 0;
+                            if filtered {
+                                c.compile_argument(kind, arguments, filter_at)?;
+                                noop = c.emit(Opcode::Jump(Jump::IfFalse, 0));
+                                c.emit(Opcode::Pop);
+                            }
+
+                            // The item (or its projection) joins the result
+                            // unless it is null. With two projections
+                            // (`argMax`), the pair `[value, by]` joins unless
+                            // either is null; with one callback
+                            // (`argMax(items, #.amount)`) the value is the item.
+                            let missing = projections - (arguments.len() - 1).min(projections);
+                            let mut skips = Vec::with_capacity(projections);
+                            for at in 1..=projections {
+                                if at > missing {
+                                    c.compile_argument(kind, arguments, at - missing)?;
+                                } else {
+                                    c.emit(Opcode::Pointer(0));
+                                }
+                                let keep = c.emit(Opcode::Jump(Jump::IfNotNull, 0));
+                                for _ in 0..at {
+                                    c.emit(Opcode::Pop);
+                                }
+                                skips.push(c.emit(Opcode::Jump(Jump::Forward, 0)));
+                                let kept = c.bytecode.len();
+                                c.replace(
+                                    keep,
+                                    Opcode::Jump(Jump::IfNotNull, (kept - keep) as u32),
+                                );
+                            }
+                            if projections > 1 {
+                                c.emit(Opcode::PushNumber(projections.into()));
+                                c.emit(Opcode::Array);
+                            }
+                            c.emit(Opcode::IncrementCount);
+                            let skipped = c.bytecode.len();
+                            for skip in skips {
+                                c.replace(
+                                    skip,
+                                    Opcode::Jump(Jump::Forward, (skipped - skip) as u32),
+                                );
+                            }
+
+                            if filtered {
+                                let jmp = c.emit(Opcode::Jump(Jump::Forward, 0));
+                                c.replace(noop, Opcode::Jump(Jump::IfFalse, (jmp - noop) as u32));
+                                let e = c.emit(Opcode::Pop);
+                                c.replace(jmp, Opcode::Jump(Jump::Forward, (e - jmp) as u32));
+                            }
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        self.emit(Opcode::End);
+                        self.emit(Opcode::Array);
+                        let mut arg_count = 1;
+                        if let Some(at) = parameter {
+                            self.compile_argument(kind, arguments, at)?;
+                            arg_count = 2;
+                        }
+                        Ok(self.emit(Opcode::CallFunction {
+                            kind: kind.clone(),
+                            arg_count,
+                        }))
                     }
                     ClosureFunction::Count => {
                         self.compile_argument(kind, arguments, 0)?;

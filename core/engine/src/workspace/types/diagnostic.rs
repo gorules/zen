@@ -156,6 +156,10 @@ pub enum DiagnosticCode {
 
     UndefinedVariable,
     TypeMismatch,
+    /// A value that may be null (`bool?`) where a bool is required: a
+    /// condition, an operand of `and`/`or`/`not`, a callback's condition.
+    /// A null fails at run time: an error in outcomes, else a warning.
+    NullableCondition,
     InvalidExpression,
 
     EmptyBlock,
@@ -177,6 +181,16 @@ pub enum DiagnosticCode {
     DuplicateProperty,
     DuplicateEnumValue,
     InvalidName,
+    InvalidRelationship,
+    InvalidDuration,
+    DeprecatedType,
+    FeatureShape,
+    IgnoredAttribute,
+    /// A property with an outcome written wrong (no `expr`, also a feature).
+    InvalidOutcome,
+    /// A rule, graph node, feature, compute or call reading an outcome:
+    /// known only after the decision.
+    OutcomeRead,
 
     ImportNotFound,
     CircularImport,
@@ -213,6 +227,9 @@ impl DiagnosticCode {
         match diag.source {
             DiagnosticSource::Lexer | DiagnosticSource::Parser => DiagnosticCode::ParseError,
             DiagnosticSource::Compiler => DiagnosticCode::InvalidExpression,
+            DiagnosticSource::TypeCheck if diag.code == Some("type.nullable-condition") => {
+                DiagnosticCode::NullableCondition
+            }
             DiagnosticSource::TypeCheck => {
                 let msg = diag.message.to_lowercase();
                 if msg.contains("left-hand side of `??`") {
@@ -293,8 +310,26 @@ impl Diagnostic {
             zen_expression::intellisense::diagnostic::Severity::Warning => Severity::Warning,
             zen_expression::intellisense::diagnostic::Severity::Hint => Severity::Hint,
         };
+        let code = DiagnosticCode::from_expression_diagnostic(diag);
+        // A nullable condition fails when null, wherever it is (a rule at the
+        // decision, an outcome offline): an error, as its type mismatch was.
+        let mut args = diag.args.clone();
+        if code == DiagnosticCode::NullableCondition {
+            if let Some(path) = args
+                .get("operand")
+                .filter(|p| {
+                    !p.starts_with(['$', '#'])
+                        && p.split('.').all(|s| {
+                            !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_')
+                        })
+                })
+                .cloned()
+            {
+                args.insert("nullablePath", path);
+            }
+        }
         Self {
-            code: DiagnosticCode::from_expression_diagnostic(diag),
+            code,
             message: diag.message.clone(),
             severity,
             location: DiagnosticLocation {
@@ -302,7 +337,7 @@ impl Diagnostic {
                 ..location
             },
             expr_code: diag.code,
-            args: diag.args.clone(),
+            args,
         }
     }
 

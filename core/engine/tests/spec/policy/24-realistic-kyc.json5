@@ -103,7 +103,7 @@
 // still evaluates it correctly.
 {
   name: "null-guarded optional expiry",
-  diagnostics: ["TYPE_MISMATCH"],
+  diagnostics: [],
   policy: {
     models: {customer: {documents: "document[]"}, document: {expires: "date?"}},
     blocks: [
@@ -114,8 +114,7 @@
   cases: [
     {
       input: {customer: {documents: [{expires: "2020-01-01"}, {expires: null}, {}]}},
-      output: {customer: {anyExpired: true, documents: [{expires: "2020-01-01", expired: true}, {expires: null, expired: false}, {expired: false}]}},
-      note: "question: `x != null and x < d()` is a TYPE_MISMATCH error, so DecisionEngine refuses the policy; the left operand guards the right one, so narrowing looks intended",
+      output: {customer: {anyExpired: true, documents: [{expires: "2020-01-01", expired: true}, {expires: null, expired: false}, {expired: false}]}}
     },
     [{customer: {documents: [{expires: "2030-01-01"}]}}, {customer: {anyExpired: false, documents: [{expires: "2030-01-01", expired: false}]}}],
     [{customer: {documents: []}}, {customer: {anyExpired: false, documents: []}}],

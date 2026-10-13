@@ -219,6 +219,74 @@ pub struct DataModelDoc {
     pub scope: ScopeDoc,
     #[serde(default)]
     pub properties: Vec<PropertyDoc>,
+    /// An entity whose records are events (`{ "id": .., "time": .. }`):
+    /// read by the feature store, kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<serde_json::Value>,
+    /// An entity whose records are reference data, optionally versioned
+    /// (`{ "validFrom": .., "validTo": .. }`): read by the feature store,
+    /// kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<serde_json::Value>,
+    /// The key property (`id` when absent), or a list for a composite key:
+    /// read by the feature store, kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<serde_json::Value>,
+    /// Has-many reference rows: the property identifying a row, when it is
+    /// not the key. Kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_key: Option<Arc<str>>,
+    /// Where the entity's data comes from (`history`, `stream`, `changes`,
+    /// `live`), by datasource name: read by the feature store, kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<serde_json::Value>,
+    /// The daily rebuild of its features from the history: kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebuild: Option<serde_json::Value>,
+    /// An events entity that may have no events on a day: kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sparse: Option<bool>,
+    /// Attributes the engine doesn't read, kept as is.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+impl DataModelDoc {
+    /// The source of a property's expression: `feature.expr`, `compute`, a
+    /// model input's request path or `model.when` (empty when not written).
+    pub fn expression(&self, target: &crate::workspace::types::CursorTarget) -> Option<Arc<str>> {
+        use crate::workspace::types::CursorTarget;
+        let (CursorTarget::FeatureExpr { id }
+        | CursorTarget::OutcomeExpr { id }
+        | CursorTarget::ComputeExpr { id }
+        | CursorTarget::ModelInput { id, .. }
+        | CursorTarget::ModelWhen { id }
+        | CursorTarget::ModelRequest { id }
+        | CursorTarget::ModelResponse { id }) = target
+        else {
+            return None;
+        };
+        let prop = self.properties.iter().find(|p| p.id == *id)?;
+        let model_str = |value: Option<&serde_json::Value>| {
+            Arc::from(value.and_then(serde_json::Value::as_str).unwrap_or(""))
+        };
+        Some(match target {
+            CursorTarget::FeatureExpr { .. } => prop.feature.as_ref()?.expr.clone(),
+            CursorTarget::OutcomeExpr { .. } => prop
+                .outcome
+                .as_ref()?
+                .expr
+                .clone()
+                .unwrap_or_else(|| Arc::from("")),
+            CursorTarget::ComputeExpr { .. } => prop.compute.clone().unwrap_or_else(|| Arc::from("")),
+            CursorTarget::ModelInput { input, .. } => {
+                model_str(prop.model.as_ref()?.get("inputs")?.get(input.as_ref()))
+            }
+            CursorTarget::ModelRequest { .. } => model_str(prop.model.as_ref()?.get("request")),
+            CursorTarget::ModelResponse { .. } => model_str(prop.model.as_ref()?.get("response")),
+            _ => model_str(prop.model.as_ref()?.get("when")),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -230,7 +298,7 @@ pub enum ScopeDoc {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "PropertyDocWire")]
 pub struct PropertyDoc {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -240,6 +308,170 @@ pub struct PropertyDoc {
     pub array: bool,
     #[serde(default)]
     pub optional: bool,
+    /// A feature: a value the host computes and supplies (e.g. a windowed
+    /// aggregate over an events entity). Each window becomes an optional
+    /// input property `<name>_<window>`; see [`FeatureDoc`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<FeatureDoc>,
+    /// An outcome: what happened after the decision (a chargeback, how a
+    /// claim ended), computed offline by the host; see [`OutcomeDoc`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<OutcomeDoc>,
+    /// Computed per event by the host from the event's other properties
+    /// (an events entity's `amount_gbp = amount * fx_rate`): always supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compute: Option<Arc<str>>,
+    /// The column in the source data when it differs from the name: read by
+    /// the feature store, kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<Arc<str>>,
+    /// A model's output: the host calls the model with the property's
+    /// inputs and supplies it. Kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<serde_json::Value>,
+    /// The host always supplies it, or rejects the request: never null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// Attributes the engine doesn't read, kept as is.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// [`PropertyDoc`] as read. Two flattened fields both see every key: the
+/// tagged type takes `type`/`enum`/`scale`/`target`, and `rest` collects
+/// them again. Left there they would be written twice (a JSON string with
+/// duplicate keys, which doesn't read back) and override edits to the type.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PropertyDocWire {
+    id: Arc<str>,
+    name: Arc<str>,
+    #[serde(flatten)]
+    property_type: PropertyTypeDoc,
+    #[serde(default)]
+    array: bool,
+    #[serde(default)]
+    optional: bool,
+    #[serde(default)]
+    feature: Option<FeatureDoc>,
+    #[serde(default)]
+    outcome: Option<OutcomeDoc>,
+    #[serde(default)]
+    compute: Option<Arc<str>>,
+    #[serde(default)]
+    column: Option<Arc<str>>,
+    #[serde(default)]
+    model: Option<serde_json::Value>,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(flatten)]
+    rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The keys [`PropertyTypeDoc`] reads (its tag and its variants' fields).
+const PROPERTY_TYPE_KEYS: [&str; 4] = ["type", "enum", "scale", "target"];
+
+impl From<PropertyDocWire> for PropertyDoc {
+    fn from(wire: PropertyDocWire) -> Self {
+        let mut rest = wire.rest;
+        for key in PROPERTY_TYPE_KEYS {
+            rest.remove(key);
+        }
+        Self {
+            id: wire.id,
+            name: wire.name,
+            property_type: wire.property_type,
+            array: wire.array,
+            optional: wire.optional,
+            feature: wire.feature,
+            outcome: wire.outcome,
+            compute: wire.compute,
+            column: wire.column,
+            model: wire.model,
+            required: wire.required,
+            rest,
+        }
+    }
+}
+
+/// A property computed by the host's feature store. The engine only needs
+/// its windows (which properties exist); everything else is kept as is.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureDoc {
+    #[serde(default)]
+    pub expr: Arc<str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowsDoc>,
+    /// The value when the feature is unknown (not covered): never null then.
+    /// `Some(null)` when written as `null`, kept as written.
+    #[serde(
+        default,
+        deserialize_with = "written",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<serde_json::Value>,
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// An outcome on a property: what is known about the entity after the
+/// decision, read offline (training labels, impact analysis), never by
+/// rules. `expr` is a feature expression that also reads `decidedAt`;
+/// without one (absent, or blank: read as absent and written back without
+/// it) the outcome is the entity's own column, named like the property (or
+/// its `column`), read by the host. The answer is always the value as known
+/// (never hidden); `maturity` (days, `30d`) says when a decision is old
+/// enough to trust a negative answer. Kept as written (`maturity` as any
+/// value, checked by the parser).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeDoc {
+    #[serde(
+        default,
+        deserialize_with = "non_blank",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expr: Option<Arc<str>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maturity: Option<serde_json::Value>,
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A string, `None` when absent, `null` or blank.
+fn non_blank<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Arc<str>>, D::Error> {
+    Ok(Option::<Arc<str>>::deserialize(deserializer)?.filter(|text| !text.trim().is_empty()))
+}
+
+/// A value as written, `null` included (`Some(null)`, not `None`).
+fn written<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(deserializer).map(Some)
+}
+
+/// A call's named `inputs` (the earlier format, which wins over `request`):
+/// `None` when absent or `null`.
+pub(crate) fn call_inputs(model: &serde_json::Value) -> Option<&serde_json::Value> {
+    model.get("inputs").filter(|inputs| !inputs.is_null())
+}
+
+/// One window (`"7d"`) or several (`["1h", "7d"]`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum WindowsDoc {
+    One(Arc<str>),
+    Many(Vec<Arc<str>>),
+}
+
+impl WindowsDoc {
+    pub fn list(&self) -> Vec<Arc<str>> {
+        match self {
+            WindowsDoc::One(w) => vec![w.clone()],
+            WindowsDoc::Many(ws) => ws.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -270,6 +502,18 @@ pub enum PropertyTypeDoc {
     Number,
     Boolean,
     Date,
+    /// An old name for `number` (a `scale` with it is dropped): still read,
+    /// with a warning to use `number`.
+    Decimal,
+    /// An old name for `number`: still read, with a warning.
+    Integer,
+    /// An old name for `date`: still read, with a warning.
+    Timestamp,
+    /// A structured value (a map, such as a feature grouped by a column):
+    /// any value here.
+    Object,
+    /// Any value.
+    Any,
     Relationship {
         target: Arc<str>,
     },
@@ -281,6 +525,66 @@ pub enum PropertyTypeDoc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_data_model_attributes_round_trip() {
+        let doc_json = serde_json::json!({
+            "blocks": [{ "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "card",
+                "owner": "risk",
+                "properties": [
+                    { "id": "p1", "name": "limit", "type": "decimal", "scale": 2, "description": "credit limit", "unit": "GBP" },
+                    { "id": "p2", "name": "holder", "type": "reference", "target": "customer", "ui": { "pinned": true } },
+                    { "id": "p3", "name": "status", "type": "string", "enum": ["a", "b"], "column": "status_cd" },
+                    { "id": "p4", "name": "txn_count", "type": "integer",
+                      "feature": { "expr": "count(transaction)", "window": ["1h"], "bucket": "5m" } }
+                ]
+            } } }]
+        });
+        let doc: PolicyDocument = serde_json::from_value(doc_json).unwrap();
+        let out = serde_json::to_value(&doc).unwrap();
+        let data = &out["blocks"][0]["props"]["data"];
+        assert_eq!(data["owner"], "risk");
+        let props = &data["properties"];
+        assert_eq!(props[0]["description"], "credit limit");
+        assert_eq!(props[0]["unit"], "GBP");
+        // `decimal` is an old name for `number`; its `scale` is dropped.
+        assert_eq!(props[0]["type"], "decimal");
+        assert!(props[0].get("scale").is_none());
+        assert_eq!(props[1]["ui"], serde_json::json!({ "pinned": true }));
+        assert_eq!(props[1]["target"], "customer");
+        assert_eq!(props[2]["column"], "status_cd");
+        assert_eq!(props[3]["feature"]["bucket"], "5m");
+        // Read back the same.
+        let again: PolicyDocument = serde_json::from_value(out.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&again).unwrap(), out);
+    }
+
+    #[test]
+    fn property_type_keys_are_written_once() {
+        let doc_json = serde_json::json!({
+            "blocks": [{ "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "card",
+                "properties": [
+                    { "id": "p1", "name": "limit", "type": "decimal", "scale": 2, "unit": "GBP" },
+                    { "id": "p2", "name": "holder", "type": "reference", "target": "customer" },
+                    { "id": "p3", "name": "status", "type": "string", "enum": ["a", "b"] }
+                ]
+            } } }]
+        });
+        let doc: PolicyDocument = serde_json::from_value(doc_json).unwrap();
+        // As text: no key twice, so it reads back.
+        let text = serde_json::to_string(&doc).unwrap();
+        assert_eq!(text.matches("\"type\":\"reference\"").count(), 1, "{text}");
+        assert_eq!(text.matches("\"target\"").count(), 1, "{text}");
+        let again: PolicyDocument = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            serde_json::to_value(&again).unwrap(),
+            serde_json::to_value(&doc).unwrap()
+        );
+        // Unknown attributes are still kept.
+        assert!(text.contains("\"unit\":\"GBP\""), "{text}");
+    }
 
     #[test]
     fn unknown_block_round_trips_losslessly() {

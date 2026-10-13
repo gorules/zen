@@ -219,7 +219,7 @@ impl IntelliSense {
             .map(|t| t.kind.clone())
             .unwrap_or(VariableType::Any);
 
-        collect_type_diagnostics(ast, &type_data, &metadata, &mut diagnostics);
+        collect_type_diagnostics(source, ast, &type_data, &metadata, &mut diagnostics);
 
         let dep_result = DependencyResolutionWalker::walk(ast, &metadata);
 
@@ -466,7 +466,7 @@ impl IntelliSense {
         };
 
         let type_data = TypesProvider::generate(ast, scope, self.strict);
-        collect_type_diagnostics(ast, &type_data, &metadata, &mut diagnostics);
+        collect_type_diagnostics(source, ast, &type_data, &metadata, &mut diagnostics);
 
         let dep_result = DependencyResolutionWalker::walk_with_locals(ast, &metadata, &["$"]);
 

@@ -692,13 +692,13 @@
 
 {
   name: "an and-guard before an ordering comparison",
-  diagnostics: ["TYPE_MISMATCH"],
+  diagnostics: [],
   policy: {
     models: {customer: {score: "number?"}},
     blocks: [{expression: "customer.high", value: "customer.score != null and customer.score > 700"}],
   },
   cases: [
-    {input: {customer: {score: 800}}, output: {customer: {score: 800, high: true}}, note: "question: `score != null and score > 700` is reported as TYPE_MISMATCH although the guard makes the comparison safe, so DecisionEngine refuses the policy"},
+    {input: {customer: {score: 800}}, output: {customer: {score: 800, high: true}}},
     [{customer: {score: 600}}, {customer: {score: 600, high: false}}],
     [{customer: {}}, {customer: {high: false}}],
     [{customer: {score: null}}, {customer: {score: null, high: false}}],
@@ -707,7 +707,7 @@
 
 {
   name: "a guard through an optional relationship",
-  diagnostics: ["TYPE_MISMATCH"],
+  diagnostics: [],
   policy: {
     models: {customer: {report: "creditReport?"}, creditReport: {score: "number"}},
     blocks: [{expression: "customer.band", value: "customer.report == null ? 'none' : customer.report.score >= 700 ? 'good' : 'poor'"}],

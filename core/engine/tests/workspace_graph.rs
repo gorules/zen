@@ -693,6 +693,8 @@ fn inputs_inferred_from_reads_without_schema() {
     let inputs = ws.inputs(&ScopeRequest::for_policy("g"));
     let paths: Vec<&str> = inputs.iter().map(|i| i.path.as_ref()).collect();
     assert_eq!(paths, vec!["customer.age", "factor"]);
+    // Nothing says the request may leave them out.
+    assert!(inputs.iter().all(|i| !i.optional), "{inputs:?}");
 }
 
 #[test]

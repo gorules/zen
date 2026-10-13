@@ -226,6 +226,20 @@ impl DecisionGraph {
             let mut base_ctx = self.build_node_context(node.deref(), input, walker.nodes_context());
 
             let node_execution = match &node.kind {
+                DecisionNodeKind::InputNode { content } if content.target.is_some() => {
+                    match self
+                        .config
+                        .content
+                        .request_input(self.config.extensions.loader(), content, &context)
+                        .await
+                    {
+                        Err(message) => base_ctx.error(message),
+                        Ok(prepared) => {
+                            base_ctx.input = prepared;
+                            Self::handle_node(base_ctx, content.clone(), InputNodeHandler).await
+                        }
+                    }
+                }
                 DecisionNodeKind::InputNode { content } => {
                     base_ctx.input = context.clone();
                     match self
@@ -244,6 +258,7 @@ impl DecisionGraph {
                             base_ctx.config.validation_salt = salt;
                             let resolved = InputNodeContent {
                                 schema: Some(schema),
+                                target: content.target.clone(),
                             };
                             Self::handle_node(base_ctx, resolved, InputNodeHandler).await
                         }

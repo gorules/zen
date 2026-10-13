@@ -48,17 +48,28 @@ pub struct ColumnarOutput<'a> {
     pub errors: Vec<Option<Rc<EvaluationError>>>,
     pub typed: usize,
     pub laned: usize,
+    /// Rows decided one at a time (the rest as columns).
+    pub hosted: usize,
+    /// Rows read whole: their value as decided, where columns drop part.
+    pub(crate) exact: Vec<Option<Variable>>,
 }
 
-impl ColumnarOutput<'_> {
+impl<'a> ColumnarOutput<'a> {
     pub(crate) fn from_results(results: Vec<Result<crate::DecisionGraphResponse, Box<EvaluationError>>>) -> Self {
         let rows = results.len();
         let mut paths: Vec<Arc<str>> = Vec::new();
         let mut values: Vec<Vec<Variable>> = Vec::new();
         let mut errors = Vec::with_capacity(rows);
+        let mut exact: Vec<Option<Variable>> = Vec::new();
         for (row, result) in results.into_iter().enumerate() {
             match result {
                 Ok(response) => {
+                    if crate::compiled::shred::Shredder::lossy(&response.result) {
+                        if exact.is_empty() {
+                            exact = vec![None; rows];
+                        }
+                        exact[row] = Some(response.result.clone());
+                    }
                     let mut entries = Vec::new();
                     CompiledGraph::flatten(&response.result, "", &mut entries);
                     for (path, value) in entries {
@@ -87,10 +98,39 @@ impl ColumnarOutput<'_> {
             errors,
             typed: 0,
             laned: 0,
+            hosted: rows,
+            exact,
         }
     }
 
+    /// A policy's columnar output as a document's: the same columns, each
+    /// failure as the engine's error.
+    pub(crate) fn from_policy(output: crate::compiled::policy::PolicyColumnarOutput<'a>) -> Self {
+        ColumnarOutput {
+            rows: output.rows,
+            columns: output.columns,
+            errors: output
+                .errors
+                .into_iter()
+                .map(|error| error.map(|error| Rc::new(EvaluationError::Policy(error))))
+                .collect(),
+            typed: output.typed,
+            laned: output.laned,
+            hosted: output.hosted,
+            exact: output.exact,
+        }
+    }
+
+    /// The row's value kept whole, where its columns can't say it (a
+    /// property written as null, an empty object): read it, not them.
+    pub fn whole(&self, row: usize) -> Option<&Variable> {
+        self.exact.get(row).and_then(Option::as_ref)
+    }
+
     pub fn row(&self, row: usize) -> Variable {
+        if let Some(Some(value)) = self.exact.get(row) {
+            return value.clone();
+        }
         let object = Variable::empty_object();
         for (path, column) in &self.columns {
             let value = column.get(row);

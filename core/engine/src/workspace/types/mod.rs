@@ -22,6 +22,7 @@ pub use result::{
     DecisionTableExtras, DependencyNode, Dictionary, DictionaryEntryInfo, DiscriminantVariant,
     DiscriminatedUnion, Entity, EntityField, EvaluationResult, FieldOrigin, Global,
     GuardedProperty, InputProperty, InstanceTarget, OutputProperty, PropertyKind, SchemaFieldKind,
+    SuppliedBy,
     SchemaGroup, Trace, WriteConflict, WriteTrace,
 };
 pub use search::{SearchHit, SearchHitKind};

@@ -78,7 +78,7 @@
 
 {
   name: "optional dates",
-  diagnostics: ["INVALID_EXPRESSION"],
+  diagnostics: [],
   policy: {
     models: {customer: {joined: "date?"}},
     blocks: [

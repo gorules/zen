@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 type ResolvedSchemas = HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>;
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
+use crate::decision_graph::request_entity::RequestPreparation;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
@@ -119,6 +120,10 @@ pub struct GraphContent {
     #[serde(skip)]
     pub resolved_schemas: Option<Arc<ResolvedSchemas>>,
 
+    /// The Request node's entity preparation (`target`), loaded once.
+    #[serde(skip)]
+    pub(crate) request_preparation: RequestPreparationCache,
+
     #[serde(skip)]
     pub(crate) validator_cache: ValidatorCache,
 
@@ -207,7 +212,21 @@ impl GraphContent {
         self.dt_indexes = Some(Arc::new(indexes));
     }
 
+    /// The entity a Request node names (`target`): the host passes a flat
+    /// body under this name.
+    pub fn request_target(&self) -> Option<Arc<str>> {
+        self.nodes.iter().find_map(|node| match &node.kind {
+            DecisionNodeKind::InputNode { content } => content.target.clone(),
+            _ => None,
+        })
+    }
+
     pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
+        if let Some(target) = self.request_target() {
+            self.request_preparation
+                .get_or_load(loader, &self.imports, &target)
+                .await?;
+        }
         if self.resolved_schemas.is_some() {
             return Ok(());
         }
@@ -240,6 +259,32 @@ impl GraphContent {
 
         self.resolved_schemas = Some(Arc::new(resolved));
         Ok(())
+    }
+
+    /// A request typed by an entity (`target`), prepared as a policy's
+    /// request is: by the graph's preparation, loaded through its imports
+    /// once. Not with a schema too.
+    #[cfg(feature = "driver")]
+    pub(crate) async fn request_input(
+        &self,
+        loader: &DynamicLoader,
+        content: &zen_types::decision::InputNodeContent,
+        context: &zen_expression::Variable,
+    ) -> Result<zen_expression::Variable, String> {
+        let Some(target) = &content.target else {
+            return Ok(context.clone());
+        };
+        if content.schema.is_some() {
+            return Err(
+                "the request is typed twice: by a schema and by an entity (`target`); keep one"
+                    .to_string(),
+            );
+        }
+        let prepared = self
+            .request_preparation
+            .get_or_load(loader, &self.imports, target)
+            .await?;
+        prepared.prepare(context)
     }
 
     pub(crate) async fn validation_schema(
@@ -325,5 +370,48 @@ mod tests {
     fn valid_policy_routes_to_policy_variant() {
         let content: DecisionContent = serde_json::from_str(r#"{"blocks":[]}"#).unwrap();
         assert!(content.as_policy().is_some());
+    }
+}
+
+/// A graph's Request entity preparation, loaded once: by `resolve_schemas`,
+/// or by the first evaluation that needs it (so content made without a
+/// caching loader doesn't load its imports on every request). Shared by the
+/// clones of a graph (a decision evaluates prepared and hosted copies of its
+/// content), and kept per (target, imports), so a clone that changes either
+/// loads its own. Equal whatever it holds, as the other caches of a graph are.
+#[derive(Default, Debug, Clone)]
+pub(crate) struct RequestPreparationCache(Arc<std::sync::Mutex<Option<LoadedRequest>>>);
+
+type LoadedRequest = (Arc<str>, Vec<Arc<str>>, Arc<RequestPreparation>);
+
+impl RequestPreparationCache {
+    /// The preparation for `target`, loaded through `imports` the first time.
+    /// A failure isn't kept: the next call loads again.
+    pub(crate) async fn get_or_load(
+        &self,
+        loader: &DynamicLoader,
+        imports: &[Arc<str>],
+        target: &Arc<str>,
+    ) -> Result<Arc<RequestPreparation>, String> {
+        if let Some(prepared) = self.get(imports, target) {
+            return Ok(prepared);
+        }
+        let loaded = Arc::new(RequestPreparation::load(loader, imports, target).await?);
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some((target.clone(), imports.to_vec(), loaded.clone()));
+        }
+        Ok(loaded)
+    }
+
+    fn get(&self, imports: &[Arc<str>], target: &Arc<str>) -> Option<Arc<RequestPreparation>> {
+        let slot = self.0.lock().ok()?;
+        let (loaded_target, loaded_imports, prepared) = slot.as_ref()?;
+        (loaded_target == target && loaded_imports.as_slice() == imports).then(|| prepared.clone())
+    }
+}
+
+impl PartialEq for RequestPreparationCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }

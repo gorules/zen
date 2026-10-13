@@ -25,6 +25,7 @@ use crate::policy::linter::{AstOps, RedundantParentheses};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::Db;
 use crate::workspace::graph::function::FunctionTypeOutcome;
+use crate::workspace::graph::request::{RequestTarget, RequestTypes};
 use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
     Severity,
@@ -107,6 +108,8 @@ pub(crate) struct GraphAnalyzer<'a> {
     unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
+    /// The Request node's entity, when it names one (`target`).
+    request: RequestTarget,
     constraints: PathConstraints,
     rewritten: Option<Vec<Arc<str>>>,
 }
@@ -152,7 +155,8 @@ impl GraphTopology {
 
 impl<'a> GraphAnalyzer<'a> {
     pub(crate) fn new(db: &'a Db, path: Arc<str>, content: &'a GraphContent) -> Self {
-        let dictionary_types = db.graph_dictionary_types(&content.imports);
+        let dictionary_types = db.graph_dictionary_types(content);
+        let request = Self::request_target(db, content);
         Self {
             db,
             path,
@@ -162,9 +166,38 @@ impl<'a> GraphAnalyzer<'a> {
             unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
+            request,
             constraints: PathConstraints::default(),
             rewritten: None,
         }
+    }
+
+    /// The Request node's entity, resolved through the graph's imports (as
+    /// an entity property's `target` is). The imports are recorded as read by
+    /// `graph_dictionary_types`, entities with them.
+    fn request_target(db: &Db, content: &GraphContent) -> RequestTarget {
+        let Some(target) = content.nodes.iter().find_map(|node| match &node.kind {
+            DecisionNodeKind::InputNode { content } => content.target.clone(),
+            _ => None,
+        }) else {
+            return RequestTarget::None;
+        };
+        let entities = db.graph_entities(&content.imports);
+        if !entities.contains_key(&target) {
+            return RequestTarget::Missing(target);
+        }
+        let dictionaries: HashMap<Arc<str>, Arc<crate::policy::ir::DictionaryIr>> = db
+            .graph_dictionary_blocks(&content.imports)
+            .into_iter()
+            .map(|b| (b.ir.name.clone(), b.ir))
+            .collect();
+        let types = RequestTypes {
+            entities: &entities,
+            dictionaries: &dictionaries,
+            outcomes: true,
+        };
+        let (input, roots) = types.input(&target);
+        RequestTarget::Entity { input, roots }
     }
 
     pub(crate) fn analyze(mut self) -> GraphAnalysis {
@@ -227,7 +260,13 @@ impl<'a> GraphAnalyzer<'a> {
         let inferred_inputs = self.inferred_inputs(&topology, &nodes, &graph_input);
         self.lint_output_any(&topology, &nodes, &graph_input);
         self.lint_unreachable(&topology);
+        self.check_outcome_reads();
         self.lint_expressions();
+        Db::drop_refused_unknowns(&mut self.diagnostics);
+        if let Some(target) = self.content.request_target() {
+            let entities = self.db.graph_entities(&self.content.imports);
+            Db::explain_unknown_members(&mut self.diagnostics, &entities, |_| Some(target.clone()));
+        }
         self.locate_nullable_sources(&topology);
         self.sort_diagnostics(&topology);
 
@@ -237,6 +276,83 @@ impl<'a> GraphAnalyzer<'a> {
             signature: GraphSignature { input, output },
             nodes,
             inferred_inputs,
+        }
+    }
+
+    /// A node reading an outcome of the Request node's entity (`fraud`,
+    /// through a reference `customer.claims_after`): known only after the
+    /// decision, so never in the request. An error, so a compile fails too.
+    fn check_outcome_reads(&mut self) {
+        use crate::policy::ir::{outcome_read_message, DataModelIr, OutcomeReader};
+        use crate::workspace::graph::editor::{NodePaths, ReadBase};
+        let Some(target) = self.content.request_target() else {
+            return;
+        };
+        let entities = self.db.graph_entities(&self.content.imports);
+        let Some(entity) = entities.get(&target) else {
+            return;
+        };
+        if !entities
+            .values()
+            .any(|dm| dm.properties.iter().any(|p| p.is_outcome()))
+        {
+            return;
+        }
+        let intellisense = self.db.graph_intellisense();
+        for node in &self.content.nodes {
+            if !matches!(
+                node.kind,
+                DecisionNodeKind::ExpressionNode { .. }
+                    | DecisionNodeKind::DecisionTableNode { .. }
+                    | DecisionNodeKind::SwitchNode { .. }
+            ) {
+                continue;
+            }
+            let paths = NodePaths::new(node);
+            for site in Self::node_sites(node) {
+                let deps = match site.kind {
+                    ExpressionKind::Standard => intellisense.borrow_mut().reads(&site.source),
+                    ExpressionKind::Unary => intellisense.borrow_mut().reads_unary(&site.source),
+                };
+                let mut reads = Vec::new();
+                ReadFlattener::extend_from_deps(&deps, &site.expression_id, &mut reads);
+                for read in reads.iter().filter(|read| !read.unresolved) {
+                    let path = read.path.as_ref();
+                    if path.starts_with('$') {
+                        continue;
+                    }
+                    // What the node reads from the request: its input, or
+                    // under its `inputField`.
+                    let global = match (&paths.read_base, &site.target) {
+                        (_, CursorTarget::TransformInput) | (ReadBase::NodeInput, _) => {
+                            path.to_string()
+                        }
+                        (ReadBase::Prefixed(prefix), _) => format!("{}.{path}", prefix.join(".")),
+                        (ReadBase::Opaque, _) => continue,
+                    };
+                    let first = global.split('.').next().unwrap_or_default();
+                    if !entity.properties.iter().any(|p| *p.name == *first)
+                        && !entity.is_maturity_flag(first)
+                    {
+                        continue;
+                    }
+                    let Some(field) = DataModelIr::outcome_at(&entities, Some(&target), &global)
+                    else {
+                        continue;
+                    };
+                    self.diagnostics.push(Diagnostic::error(
+                        DiagnosticCode::OutcomeRead,
+                        DiagnosticLocation {
+                            policy_path: self.path.clone(),
+                            block_id: Some(node.id.clone()),
+                            expression_id: site.expression_id.clone(),
+                            span: read.span,
+                            target: Some(site.target.clone()),
+                        },
+                        outcome_read_message(&field, OutcomeReader::Rules),
+                    ));
+                }
+            }
         }
     }
 
@@ -627,6 +743,9 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn graph_input_type(&self) -> VariableType {
+        if let Some(input) = self.request.input() {
+            return input.shallow_clone();
+        }
         self.content
             .nodes
             .iter()
@@ -639,6 +758,9 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn graph_input_signature(&self) -> VariableType {
+        if let Some(input) = self.request.input() {
+            return input.shallow_clone();
+        }
         self.content
             .nodes
             .iter()
@@ -648,6 +770,25 @@ impl<'a> GraphAnalyzer<'a> {
             })
             .map(|schema| super::SchemaType::variable_type_with(schema, &self.dictionary_types))
             .unwrap_or(VariableType::Any)
+    }
+
+    /// A Request node typed by an entity: not with a schema too, and the
+    /// entity visible through the graph's imports.
+    fn check_request_target(&mut self, node: &DecisionNode, with_schema: bool) {
+        let location = || DiagnosticLocation::block(self.path.clone(), node.id.clone());
+        if with_schema {
+            self.diagnostics.push(Diagnostic::error(
+                DiagnosticCode::InvalidGraphStructure,
+                location(),
+                "the request is typed twice: by a schema and by an entity (`target`); keep one",
+            ));
+        }
+        if let RequestTarget::Missing(target) = &self.request {
+            let message = format!(
+                "no entity `{target}` visible from this document; import the policy that defines it"
+            );
+            self.diagnostics.push(Diagnostic::error(DiagnosticCode::UnknownDataModelTarget, location(), message));
+        }
     }
 
     fn check_schema_dictionaries(&mut self, node: &DecisionNode, schema: &serde_json::Value) {
@@ -711,6 +852,14 @@ impl<'a> GraphAnalyzer<'a> {
         };
 
         match &node.kind {
+            DecisionNodeKind::InputNode { content } if content.target.is_some() => {
+                self.check_request_target(node, content.schema.is_some());
+                analysis.output = graph_input.shallow_clone();
+                if matches!(graph_input, VariableType::Any) {
+                    analysis.opaque = true;
+                    analysis.open = true;
+                }
+            }
             DecisionNodeKind::InputNode { content } => {
                 if let Some(schema) = content.schema.as_ref() {
                     self.check_schema_dictionaries(node, schema);
@@ -2378,6 +2527,14 @@ impl<'a> GraphAnalyzer<'a> {
             matches!(kind, ExpressionKind::Unary),
             on_error,
         );
+        if self.diagnostics[first..]
+            .iter()
+            .any(|d| d.code == DiagnosticCode::UndefinedVariable)
+        {
+            let mut reads = Vec::new();
+            ReadFlattener::extend_from_deps(&analysis.reads, &expression_id, &mut reads);
+            Db::locate_unknown_members(&mut self.diagnostics[first..], &reads);
+        }
         if self.validate {
             self.validate_read_paths(node_id, &expression_id, &target, &analysis.reads, scope);
         }
@@ -2643,6 +2800,10 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn locate_nullable_sources(&mut self, topology: &GraphTopology) {
+        let request_roots: Vec<Arc<str>> = match &self.request {
+            RequestTarget::Entity { roots, .. } => roots.clone(),
+            _ => Vec::new(),
+        };
         let covers = |written: &str, field: &str| {
             field == written
                 || field
@@ -2667,6 +2828,10 @@ impl<'a> GraphAnalyzer<'a> {
                         !written.is_empty()
                             && covers(&prefixed(&content.transform_attributes, written), field)
                     })
+                }
+                DecisionNodeKind::InputNode { content } if content.target.is_some() => {
+                    let root = field.split('.').next().unwrap_or_default();
+                    request_roots.iter().any(|r| r.as_ref() == root)
                 }
                 DecisionNodeKind::InputNode { content } => {
                     let mut schema = content.schema.as_deref();

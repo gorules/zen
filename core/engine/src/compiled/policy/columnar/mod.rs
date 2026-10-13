@@ -5,12 +5,14 @@ mod host;
 mod lane;
 mod member;
 mod output;
+pub(crate) mod prepare;
 mod sheet;
 mod table;
 mod typed;
 
 pub(super) use fuse::Fusions;
 pub use output::PolicyColumnarOutput;
+pub use prepare::ColumnStore;
 use member::Member;
 use sheet::{Bind, Sheet, Slot, Units};
 use super::schedule::{Demand, End, Event, Segment};
@@ -136,7 +138,11 @@ impl<'s, 'a> Pass<'s, 'a> {
                 if self.supported(at, block, positions) {
                     return self.member(at, block, event, positions);
                 }
-                if selected || self.sheet.entities[at].cached() {
+                // An arm of this entity's members chosen here and not yet
+                // committed: the host, given the entity, would not know it.
+                let owned = |b: usize| b != block && self.owners[b].is_some() && self.entity_of(b) == Some(at);
+                let pending = self.members.iter().map(|(b, _)| *b).chain(self.chosen.iter().map(|(b, _)| *b)).any(owned);
+                if selected || pending || self.sheet.entities[at].cached() {
                     positions.iter().for_each(|&row| self.fall(row));
                     return;
                 }

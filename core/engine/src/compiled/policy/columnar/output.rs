@@ -12,10 +12,15 @@ pub struct PolicyColumnarOutput<'a> {
     pub hosted: usize,
     pub typed: usize,
     pub laned: usize,
+    /// Rows read whole: their value as decided, where columns drop part.
+    pub(crate) exact: Vec<Option<Variable>>,
 }
 
 impl PolicyColumnarOutput<'_> {
     pub fn row(&self, row: usize) -> Variable {
+        if let Some(Some(value)) = self.exact.get(row) {
+            return value.clone();
+        }
         let object = Variable::empty_object();
         for (path, column) in &self.columns {
             let value = column.get(row);
@@ -32,12 +37,13 @@ impl PolicyColumnarOutput<'_> {
         for (row, result) in results.into_iter().enumerate() {
             match result {
                 Ok(result) => {
-                    shredder.visit(&result.output, 0, row);
+                    shredder.row(&result.output, row);
                     errors.push(None);
                 }
                 Err(error) => errors.push(Some(error)),
             }
         }
+        let exact = shredder.exact();
         PolicyColumnarOutput {
             rows,
             columns: Sheet::columns(shredder.finish()),
@@ -45,6 +51,7 @@ impl PolicyColumnarOutput<'_> {
             hosted: rows,
             typed: 0,
             laned: 0,
+            exact,
         }
     }
 }

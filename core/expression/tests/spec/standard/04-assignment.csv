@@ -146,7 +146,7 @@ expression (string);input (json 5);output (json 5);note
 "$root = 1";{};{'$root': 1};question: $root is accepted as an assignment target and creates a literal '$root' key
 "$root.x = 1";{};{'$root': {x: 1}};question: $root.x = 1 writes a nested '$root' key instead of assigning x at the root
 "$root.x = 1; x";{};null;question: $root.x = 1 does not make x visible
-"$root.x = 1; $root";{};{'$root': {x: 1}};question: $root.x = 1 writes a literal '$root' key into the environment
+"$root.x = 1; $root";{};{x: 1}
 "$x = 1; $x";{};1
 "$ = 1; $";{};1
 "_x = 1; _x";{};1

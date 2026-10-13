@@ -714,7 +714,7 @@ impl Executor {
             }
             Op::RootEnv { dst } => {
                 for lane in Lanes::of(active) {
-                    let v = ctx.envs.get(f.rows[lane]).materialize();
+                    let v = Ops::root_of(ctx.envs.get(f.rows[lane]).materialize());
                     f.set(*dst, lane, v);
                 }
             }

@@ -142,6 +142,19 @@ pub struct PolicyInputProperty {
     pub path: String,
     #[napi(ts_type = "PolicyVariableType")]
     pub resolved_type: Value,
+    /// The caller may leave it out: it is optional or has a default.
+    pub optional: bool,
+    /// Who supplies it: the request, or the host (features, calls, entities read from the store).
+    #[napi(ts_type = "'request' | 'host'")]
+    pub supplied_by: String,
+    /// Filled in when the caller leaves it out.
+    pub default: Option<Value>,
+    /// A reference: the entity it names (the engine reads the record; a host
+    /// that fills records in from ids can take the id).
+    pub reference: Option<String>,
+    /// A relationship: its records' reference fields, each with the entity it names.
+    #[napi(ts_type = "Record<string, string>")]
+    pub record_references: Option<Value>,
 }
 
 #[napi(object)]
@@ -612,6 +625,14 @@ impl Workspace {
         self.inner.is_graph(&path)
     }
 
+    #[napi(ts_return_type = "'graph' | 'policy' | null")]
+    pub fn endpoint(&self, path: String) -> Option<String> {
+        self.inner.endpoint(&path).map(|kind| match kind {
+            workspace::EndpointKind::Graph => "graph".to_string(),
+            workspace::EndpointKind::Policy => "policy".to_string(),
+        })
+    }
+
     #[napi]
     pub fn unchecked_nodes(&self, env: Env, path: String) -> napi::Result<Vec<String>> {
         self.ensure_function_types(&env)?;
@@ -780,6 +801,16 @@ impl Workspace {
             .map(|p| PolicyInputProperty {
                 path: p.path.to_string(),
                 resolved_type: variable_type_to_json(&p.resolved_type),
+                optional: p.optional,
+                supplied_by: match p.supplied_by {
+                    zen_engine::policy::SuppliedBy::Host => "host".to_string(),
+                    zen_engine::policy::SuppliedBy::Request => "request".to_string(),
+                },
+                default: p.default,
+                reference: p.reference.map(|target| target.to_string()),
+                record_references: (!p.record_references.is_empty()).then(|| {
+                    serde_json::to_value(&p.record_references).unwrap_or_default()
+                }),
             })
             .collect())
     }
@@ -924,6 +955,28 @@ impl Workspace {
             goals: goals_to_arc(req.goals),
         };
         Ok(self.inner.input_skeleton(&inner))
+    }
+
+    #[napi(
+        ts_args_type = "req: PolicyScopeRequest, audience: 'contract' | 'evaluated'",
+        ts_return_type = "Record<string, unknown>"
+    )]
+    pub fn request_schema(
+        &self,
+        env: Env,
+        req: PolicyScopeRequest,
+        audience: String,
+    ) -> napi::Result<Value> {
+        self.ensure_function_types(&env)?;
+        let audience: workspace::SchemaAudience = serde_json::from_value(Value::String(audience))
+            .map_err(|e| anyhow!("Invalid audience: {e}"))?;
+        Ok(self.inner.request_schema(&req.into(), audience))
+    }
+
+    #[napi(ts_return_type = "Record<string, unknown>")]
+    pub fn response_schema(&self, env: Env, req: PolicyScopeRequest) -> napi::Result<Value> {
+        self.ensure_function_types(&env)?;
+        Ok(self.inner.response_schema(&req.into()))
     }
 
     #[napi(ts_return_type = "PolicyDependencyNode")]

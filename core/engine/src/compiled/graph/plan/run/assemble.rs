@@ -126,6 +126,8 @@ impl<'a> Run<'_, 'a> {
             errors: std::mem::take(&mut store.errors),
             typed: store.counts.0,
             laned: store.counts.1,
+            hosted: 0,
+            exact: Vec::new(),
         }
     }
 }

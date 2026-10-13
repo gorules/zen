@@ -542,7 +542,7 @@
 
 {
   name: "a computed null flows into the next block",
-  diagnostics: ["INVALID_EXPRESSION"],
+  diagnostics: [],
   policy: {
     models: {customer: {email: "string?"}},
     blocks: [

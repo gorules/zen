@@ -31,7 +31,21 @@ impl CompiledGraph {
             return;
         };
         let data = match step.kind {
-            Kind::Input => Data::plain(rows.clone(), rows.iter().map(|&r| inputs[r].clone()).collect()),
+            Kind::Input => {
+                let mut values: Vec<Variable> = rows.iter().map(|&r| inputs[r].clone()).collect();
+                if let Some(request) = Self::request(step, content, extensions).await {
+                    for (i, value) in values.iter_mut().enumerate() {
+                        match request.clone().and_then(|prepared| prepared.prepare(value)) {
+                            Ok(prepared) => *value = prepared,
+                            Err(message) => {
+                                Self::fail(state, rows[i], &step.node, message);
+                                *value = Variable::Null;
+                            }
+                        }
+                    }
+                }
+                Data::plain(rows.clone(), values.into())
+            }
             _ => Self::input_of(state, &event.parents, rows),
         };
         let (nodes, extra) = self.node_inputs(step, state, &event.visible, rows, with_nodes, step.column_path(rows.len()));

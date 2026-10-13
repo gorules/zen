@@ -192,6 +192,31 @@ impl<'a> Sheet<'a> {
         object
     }
 
+    /// The rows a column can't say whole: a property written as null
+    /// (columns read null as absent), each then read as its object.
+    pub(super) fn exact(&self, finished: &[usize]) -> Vec<Option<Variable>> {
+        let written_null = |row: usize| {
+            self.order.iter().any(|&index| {
+                let entry = &self.entries[index];
+                !entry.dead
+                    && !entry.input
+                    && self.active(index).is_none()
+                    && Self::present(entry, row)
+                    && matches!(entry.leaf.get(row), Variable::Null)
+            })
+        };
+        let mut exact: Vec<Option<Variable>> = Vec::new();
+        for &row in finished {
+            if written_null(row) {
+                if exact.is_empty() {
+                    exact = vec![None; self.rows];
+                }
+                exact[row] = Some(self.object(row));
+            }
+        }
+        exact
+    }
+
     pub(super) fn write(&mut self, path: Arc<str>, leaf: Leaf<'a>, positions: &[usize]) {
         let present: Option<Rc<[u64]>> = match positions.len() == self.rows {
             true => None,

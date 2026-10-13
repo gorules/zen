@@ -1,3 +1,4 @@
+use crate::compiled::ColumnarOutput;
 use crate::decision::Decision;
 use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
 use crate::error::ContentKindError;
@@ -155,6 +156,13 @@ impl DecisionEngine {
         failures
     }
 
+    /// The paths a compiled document reads from its request (`transaction.amount`,
+    /// `card.txn_count_7d`); None when unknown (a dynamic read, an opaque node)
+    /// or when the document isn't compiled. Available after `compile()`.
+    pub fn reads(&self, key: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.compiled.load_full()?.reads(key)
+    }
+
     pub fn compile_failures(&self) -> Vec<CompileFailure> {
         self.compiled
             .load_full()
@@ -187,10 +195,15 @@ impl DecisionEngine {
     {
         let key_str = key.as_ref();
         if let Some(set) = self.compiled.load_full() {
-            if let Some(entry) = set.get(key_str) {
+            // Compiled under its path with or without `.json`, as loaders
+            // find documents either way; evaluated under that path.
+            let compiled = set
+                .key_of(key_str)
+                .and_then(|key| Some((set.get(&key)?, key)));
+            if let Some((entry, compiled_key)) = compiled {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace)
+                        .evaluate_entry(&compiled_key, context, options.trace)
                         .map(|r| DecisionGraphResponse {
                             performance: format!("{:.1?}", r.duration),
                             result: r.output,
@@ -282,6 +295,57 @@ impl DecisionEngine {
             results.push(self.evaluate_with_opts(key_str, context.clone(), options).await);
         }
         results
+    }
+
+    /// Evaluates `key` over columnar input: Arrow-shaped buffers borrowed by
+    /// [`zen_expression::lane::Columns`], one column per dotted input path,
+    /// with no value built per row. The result is columns by dotted path
+    /// (`""` is a whole result) and a failure per row. A document compiled
+    /// by [`Self::compile`] runs its compiled plan (a policy decides all its
+    /// goals, its input prepared as columns in `store`, which holds them as
+    /// long as the output is read); anything else is evaluated row by row
+    /// and given as columns.
+    pub async fn evaluate_columns<'a, K>(
+        &self,
+        key: K,
+        columns: &'a zen_expression::lane::Columns<'a>,
+        store: &'a crate::ColumnStore<'a>,
+        options: EvaluationOptions,
+    ) -> ColumnarOutput<'a>
+    where
+        K: AsRef<str>,
+    {
+        let key_str = key.as_ref();
+        if let Some(set) = self.compiled.load_full() {
+            let compiled = set
+                .key_of(key_str)
+                .and_then(|key| Some((set.get(&key)?.clone(), key)));
+            if let Some((entry, compiled_key)) = compiled {
+                return match entry {
+                    CompiledEntry::Policy(artifact) => ColumnarOutput::from_policy(
+                        artifact.evaluate_columns(&compiled_key, &[], columns, store),
+                    ),
+                    CompiledEntry::Graph(graph) => {
+                        self.decision_from_graph(graph)
+                            .evaluate_columns(columns, options)
+                            .await
+                    }
+                };
+            }
+        }
+        if let Ok(content) = self.loader.load(key_str).await {
+            if let DecisionContent::Graph(_) = content.as_ref() {
+                return self
+                    .decision_from_graph_arc(content)
+                    .evaluate_columns(columns, options)
+                    .await;
+            }
+        }
+        let mut results = Vec::with_capacity(columns.rows);
+        for row in 0..columns.rows {
+            results.push(self.evaluate_with_opts(key_str, columns.row(row), options).await);
+        }
+        ColumnarOutput::from_results(results)
     }
 
     pub async fn evaluate_serialized<K>(

@@ -12,9 +12,7 @@ use crate::policy::blocks::{
     SharedIntelliSense,
 };
 use crate::policy::evaluator::EvalArtifact;
-use crate::policy::ir::{
-    DataModelIr, DictionaryIr, ParsedPolicy, Policy, Property, PropertyPath, Scope,
-};
+use crate::policy::ir::{DataModelIr, DictionaryIr, ParsedPolicy, Policy, PropertyPath};
 use crate::policy::queries::dependency::{
     DataModelPaths, DependencyGraph, EnrichedState, EvalGraph, RuleShallowAnalysis, ShallowAnalyses,
 };
@@ -1058,28 +1056,11 @@ impl Snapshot {
     ) -> HashMap<Arc<str>, Arc<DataModelIr>> {
         let mut sorted: Vec<&Arc<str>> = subset.keys().collect();
         sorted.sort();
-        let mut props_by_entity: HashMap<Arc<str>, Vec<Property>> = HashMap::new();
-        for pp in sorted {
-            for (_, dm) in subset[pp].policy.entity_data_models() {
-                let bucket = props_by_entity.entry(dm.name.clone()).or_default();
-                for prop in &dm.properties {
-                    if !bucket.iter().any(|p| p.name == prop.name) {
-                        bucket.push(prop.clone());
-                    }
-                }
-            }
-        }
-        props_by_entity
-            .into_iter()
-            .map(|(name, properties)| {
-                let dm = Arc::new(DataModelIr {
-                    name: name.clone(),
-                    scope: Scope::Entity,
-                    properties,
-                });
-                (name, dm)
-            })
-            .collect()
+        crate::workspace::graph::merge_entities(
+            sorted
+                .into_iter()
+                .flat_map(|pp| subset[pp].policy.entity_data_models().map(|(_, dm)| dm)),
+        )
     }
 
     fn parse_all(

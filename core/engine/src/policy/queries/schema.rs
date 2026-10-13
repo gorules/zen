@@ -3,13 +3,14 @@ use std::sync::Arc;
 use ahash::{HashMap, HashSet};
 use zen_expression::variable::VariableType;
 
-use crate::policy::ir::DataModelIr;
+use crate::policy::ir::{DataModelIr, Records};
 use crate::policy::queries::dependency::{DependencyGraph, PathPrefix};
 use crate::policy::queries::scope::PropertyScope;
 use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::types::{
     Dictionary, DictionaryEntryInfo, Entity, EntityField, FieldOrigin, Global, InputProperty,
     OutputProperty, PropertyKind, ScopeRequest,
+    SuppliedBy,
 };
 
 impl Db {
@@ -71,6 +72,8 @@ impl Db {
                 origin: FieldOrigin::Schema {
                     source: vp.policy_path,
                     kind: vp.property.kind.to_schema_field_kind(vp.property.array),
+                    exact_type: vp.property.exact.clone(),
+                    supply: vp.property.supply.clone(),
                 },
             });
         }
@@ -147,25 +150,54 @@ impl Db {
         let visible = &unit.members;
         let entities = &unit.entities;
         let (root_entities, ref_targets) = self.classify_root_entities(visible);
+        // Only the root entities its rules (and its imports') read or write: an
+        // imported model may declare entities this policy never touches. All of
+        // them when a read can't be followed (`$`, unresolved) or there are no
+        // rules (a document of data models: its request is all of them).
+        let touched: Option<HashSet<Arc<str>>> = {
+            let shallow = self.shallow();
+            let mut touched = HashSet::default();
+            let mut known = true;
+            let mut rules = 0;
+            for rule in shallow.per_rule.iter().filter(|r| visible.contains(&r.policy_path)) {
+                rules += 1;
+                for read in &rule.reads {
+                    let path = read.path.as_ref();
+                    if path.starts_with('$') || read.unresolved {
+                        known = false;
+                    }
+                    touched.insert(Arc::from(path.split('.').next().unwrap_or(path)));
+                }
+                for write in &rule.writes {
+                    let path = write.path.as_ref();
+                    touched.insert(Arc::from(path.split('.').next().unwrap_or(path)));
+                }
+            }
+            (known && rules > 0).then_some(touched)
+        };
 
         let mut result: Vec<InputProperty> = self
             .walk_visible_properties(&req.policy_path)
             .into_iter()
+            // An outcome is known only after the decision: never an input.
+            .filter(|vp| !vp.property.is_outcome())
             .filter(|vp| match &vp.scope {
-                PropertyScope::Entity(entity) => root_entities.contains(entity),
+                PropertyScope::Entity(entity) => {
+                    root_entities.contains(entity)
+                        && touched.as_ref().is_none_or(|t| t.contains(entity))
+                }
                 PropertyScope::Global => true,
             })
             .map(|vp| {
                 let mut visited: HashSet<Arc<str>> = HashSet::default();
-                InputProperty {
-                    path: vp.dotted_path(),
-                    resolved_type: DataModelIr::wire_property_type(
-                        &vp.property,
-                        entities,
-                        &unit.dictionaries,
-                        &mut visited,
-                    ),
-                }
+                let property = &vp.property;
+                let resolved_type = DataModelIr::wire_property_type(
+                    property,
+                    entities,
+                    &unit.dictionaries,
+                    &mut visited,
+                );
+                InputProperty::of_property(vp.dotted_path(), property, resolved_type, entities)
             })
             .collect();
 
@@ -177,9 +209,24 @@ impl Db {
             let entity_type =
                 DataModelIr::wire_object(target, entities, &unit.dictionaries, &mut visited);
             if !matches!(entity_type, VariableType::Any) {
+                // A referenced entity's records: sent by the caller, unless it
+                // comes from the store or a source (events, reference data,
+                // features).
+                let hosted = entities.get(target).is_some_and(|dm| {
+                    dm.records != Records::Plain
+                        || dm
+                            .properties
+                            .iter()
+                            .any(|p| p.supply.is_some() && !p.is_outcome())
+                });
                 result.push(InputProperty {
                     path: target.clone(),
                     resolved_type: entity_type.array(),
+                    optional: hosted,
+                    supplied_by: if hosted { SuppliedBy::Host } else { SuppliedBy::Request },
+                    default: None,
+                    reference: None,
+                    record_references: Default::default(),
                 });
             }
         }
@@ -241,6 +288,8 @@ impl Db {
                 let origin = FieldOrigin::Schema {
                     source: vp.policy_path,
                     kind: vp.property.kind.to_schema_field_kind(vp.property.array),
+                    exact_type: vp.property.exact.clone(),
+                    supply: vp.property.supply.clone(),
                 };
                 Some((
                     entity,

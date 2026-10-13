@@ -350,7 +350,7 @@
 
 {
   name: "null-safe guard inside one condition",
-  diagnostics: ["TYPE_MISMATCH"],
+  diagnostics: [],
   policy: {
     models: {x: {n: "number?"}},
     blocks: [{assertion: "x.ok", conditions: ["x.n != null and x.n > 1"]}],

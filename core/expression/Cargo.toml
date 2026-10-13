@@ -30,6 +30,7 @@ rust_decimal_macros = { workspace = true }
 nohash-hasher = { workspace = true }
 strsim = "0.11"
 iana-time-zone = "0.1"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 zen-macros = { path = "../macros", version = "2.1.2" }
 zen-types = { path = "../types", version = "2.1.2" }

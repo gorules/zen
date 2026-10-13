@@ -1,4 +1,5 @@
 use crate::decision_graph::graph::DecisionGraph;
+use crate::decision_graph::request_entity::RequestPreparation;
 use crate::loader::DynamicLoader;
 use crate::model::{DecisionNodeKind, GraphContent};
 use ahash::HashMap;
@@ -354,10 +355,43 @@ impl CompiledGraph {
     }
 
     pub(in crate::compiled::graph) fn columnar_input(step: &Step, content: &GraphContent, extensions: &NodeHandlerExtensions) -> bool {
+        if Self::entity(step).is_some() {
+            return false;
+        }
         match Self::validator(step, content, extensions) {
             None => !step.schema && Self::unresolved(content, &step.node),
             Some((_, schema)) => !DeclaredDates::mentions(&schema),
         }
+    }
+
+    fn entity(step: &Step) -> Option<&InputNodeContent> {
+        match &step.node.kind {
+            DecisionNodeKind::InputNode { content } if content.target.is_some() => Some(content),
+            _ => None,
+        }
+    }
+
+    /// A request typed by an entity (`target`), prepared as a policy's
+    /// request is: by the graph's preparation, loaded through its imports
+    /// once. `None` for any other step. Not with a schema too.
+    pub(in crate::compiled::graph) async fn request(
+        step: &Step,
+        content: &GraphContent,
+        extensions: &NodeHandlerExtensions,
+    ) -> Option<Result<Arc<RequestPreparation>, String>> {
+        let input = Self::entity(step)?;
+        if input.schema.is_some() {
+            return Some(Err(
+                "the request is typed twice: by a schema and by an entity (`target`); keep one".to_string(),
+            ));
+        }
+        let target = input.target.as_ref()?;
+        Some(
+            content
+                .request_preparation
+                .get_or_load(extensions.loader(), &content.imports, target)
+                .await,
+        )
     }
 
     pub(in crate::compiled::graph) fn unresolved(content: &GraphContent, node: &DecisionNode) -> bool {
@@ -404,10 +438,19 @@ impl CompiledGraph {
         if let Some((_, salt)) = &resolved {
             base.config.validation_salt = *salt;
         }
+        if let Some(request) = Self::request(step, content, &base.extensions).await {
+            match request.and_then(|prepared| prepared.prepare(&base.input)) {
+                Ok(prepared) => base.input = prepared,
+                Err(message) => return base.error(message),
+            }
+        }
         match &node.kind {
             DecisionNodeKind::InputNode { content } => {
                 let content = match resolved {
-                    Some((schema, _)) => InputNodeContent { schema: Some(schema) },
+                    Some((schema, _)) => InputNodeContent {
+                        schema: Some(schema),
+                        target: content.target.clone(),
+                    },
                     None => content.clone(),
                 };
                 DecisionGraph::handle(base, content, InputNodeHandler).await

@@ -129,6 +129,18 @@ pub struct DataModelIr {
     pub name: Arc<str>,
     pub scope: Scope,
     pub properties: Vec<Property>,
+    /// What the entity's records are, for the feature store.
+    pub records: Records,
+}
+
+/// What an entity's records are: plain request data, events (`events`) or
+/// reference data (`reference`). Windowed features aggregate the latter two.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Records {
+    #[default]
+    Plain,
+    Events,
+    Reference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +171,134 @@ pub struct Property {
     pub kind: PropertyTypeIr,
     pub array: bool,
     pub optional: bool,
+    /// The type as written when it is checked as another (`integer` as
+    /// `number`, `timestamp` as `date`).
+    pub exact: Option<Arc<str>>,
+    /// Supplied by the host rather than the request: a feature, a value
+    /// computed per event, or a model's output.
+    pub supply: Option<Arc<Supply>>,
+    /// Filled in when the value is missing or null (a property's or a
+    /// feature's `default`), so never null.
+    pub default: Option<Arc<serde_json::Value>>,
+}
+
+/// How the host supplies a property.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum Supply {
+    /// A feature: `base` is the property as written, `window` the one this
+    /// property is (`txn_count` over `1h` is `txn_count_1h`).
+    Feature {
+        base: Arc<str>,
+        expr: Arc<str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        window: Option<Arc<str>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default: Option<serde_json::Value>,
+    },
+    /// An outcome: what happened after the decision, computed offline by
+    /// the host (training labels, impact analysis). Never in the request
+    /// and never read by rules; `maturity` (days, `30d`) as written: when a
+    /// "no" can be trusted (the answer itself is never hidden).
+    /// Without `expr`, the entity's own column (a column outcome).
+    Outcome {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expr: Option<Arc<str>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        maturity: Option<Arc<str>>,
+    },
+    /// Computed per event from the event's other properties.
+    Compute { expr: Arc<str> },
+    /// A model's output.
+    Model {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        datasource: Option<Arc<str>>,
+    },
+    /// A stored relationship's members, found by the host: the instances of
+    /// the target sharing this entity's key (`on`), or its counterparties in
+    /// an events entity (`through`). Never in the request; features on this
+    /// entity aggregate them.
+    Members { by: MembersBy },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MembersBy {
+    Key,
+    Events,
+}
+
+impl Supply {
+    /// Shown after the type: `count(transaction) · 1h`.
+    pub fn summary(&self) -> String {
+        match self {
+            Supply::Feature { expr, window, .. } => match window {
+                Some(window) => format!("{expr} · {window}"),
+                None => expr.to_string(),
+            },
+            Supply::Outcome { expr, maturity } => {
+                let outcome = match expr {
+                    Some(expr) => format!("outcome {expr}"),
+                    None => "outcome from its column".to_string(),
+                };
+                match maturity {
+                    Some(days) => format!("{outcome} · mature after {days}"),
+                    None => outcome,
+                }
+            }
+            Supply::Compute { expr } => expr.to_string(),
+            Supply::Model { datasource } => match datasource {
+                Some(datasource) => format!("model {datasource}"),
+                None => "model".to_string(),
+            },
+            Supply::Members { by: MembersBy::Key } => "members by key".to_string(),
+            Supply::Members { by: MembersBy::Events } => "counterparties in events".to_string(),
+        }
+    }
+}
+
+impl Property {
+    /// A stored relationship: members the host finds (`on` / `through`).
+    pub fn is_stored(&self) -> bool {
+        matches!(self.supply.as_deref(), Some(Supply::Members { .. }))
+    }
+
+    /// An outcome: known only after the decision, so never in a request
+    /// and never read by rules, features or calls.
+    pub fn is_outcome(&self) -> bool {
+        matches!(self.supply.as_deref(), Some(Supply::Outcome { .. }))
+    }
+
+    /// An outcome's `maturity` (`30d`), when it declares one.
+    pub fn outcome_maturity(&self) -> Option<&Arc<str>> {
+        match self.supply.as_deref() {
+            Some(Supply::Outcome { maturity, .. }) => maturity.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The type as written, with `[]` and `?`: `integer?`.
+    pub fn type_label(&self) -> String {
+        let base = match &self.exact {
+            Some(exact) => exact.to_string(),
+            None => match &self.kind {
+                PropertyTypeIr::Relationship { target } | PropertyTypeIr::Reference { target } => {
+                    target.to_string()
+                }
+                PropertyTypeIr::Enum(_) => "enum".to_string(),
+                kind => kind.to_string(),
+            },
+        };
+        let array = if self.array { "[]" } else { "" };
+        let optional = if self.optional { "?" } else { "" };
+        format!("{base}{array}{optional}")
+    }
+
+    /// `integer? · count(transaction) · 1h` for a host-supplied property.
+    pub fn supply_detail(&self) -> Option<String> {
+        let supply = self.supply.as_ref()?;
+        Some(format!("{} · {}", self.type_label(), supply.summary()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +310,8 @@ pub enum PropertyTypeIr {
     Date,
     Relationship { target: Arc<str> },
     Reference { target: Arc<str> },
+    /// Any value (`object`, `any`): not checked.
+    Any,
 }
 
 impl DataModelIr {
@@ -186,6 +328,8 @@ impl DataModelIr {
             }
             for prop in &dm.properties {
                 match &prop.kind {
+                    // A stored relationship's target stays a root: its members are found, not nested.
+                    PropertyTypeIr::Relationship { .. } if prop.is_stored() => {}
                     PropertyTypeIr::Relationship { target } => {
                         if dm.scope.is_global() {
                             global_relationship_targets.insert(target.clone());
@@ -226,6 +370,7 @@ impl DataModelIr {
             PropertyTypeIr::Enum(values) => VariableType::Enum(None, enum_values_to_rc(values)),
             PropertyTypeIr::Number => VariableType::Number,
             PropertyTypeIr::Boolean => VariableType::Bool,
+            PropertyTypeIr::Any => VariableType::Any,
             PropertyTypeIr::Reference { .. } => VariableType::String,
             PropertyTypeIr::Relationship { target } => match dictionaries.get(target.as_ref()) {
                 Some(dict) if !entities.contains_key(target.as_ref()) => dict.enum_type(),
@@ -250,7 +395,13 @@ impl DataModelIr {
         }
         let mut fields: HashMap<Rc<str>, VariableType> = HashMap::new();
         if let Some(dm) = entities.get(name) {
-            for prop in &dm.properties {
+            // A stored relationship is never on the wire: the host finds its
+            // members. Nor is an outcome: it is known only after the decision.
+            for prop in dm
+                .properties
+                .iter()
+                .filter(|p| !p.is_stored() && !p.is_outcome())
+            {
                 fields.insert(
                     Rc::from(prop.name.as_ref()),
                     Self::wire_property_type(prop, entities, dictionaries, visited),
@@ -394,9 +545,12 @@ impl DataModelIr {
                         PropertyTypeIr::Enum(trimmed)
                     }
                 }
-                PropertyTypeDoc::Number => PropertyTypeIr::Number,
+                PropertyTypeDoc::Number | PropertyTypeDoc::Decimal | PropertyTypeDoc::Integer => {
+                    PropertyTypeIr::Number
+                }
                 PropertyTypeDoc::Boolean => PropertyTypeIr::Boolean,
-                PropertyTypeDoc::Date => PropertyTypeIr::Date,
+                PropertyTypeDoc::Date | PropertyTypeDoc::Timestamp => PropertyTypeIr::Date,
+                PropertyTypeDoc::Object | PropertyTypeDoc::Any => PropertyTypeIr::Any,
                 PropertyTypeDoc::Relationship { target } => PropertyTypeIr::Relationship {
                     target: target.trimmed(),
                 },
@@ -405,20 +559,529 @@ impl DataModelIr {
                 },
             };
 
+            // The type as written when it says more than the engine's type:
+            // `object` and `any` are both any here. (`decimal`, `integer` and
+            // `timestamp` are old names for number and date.)
+            let exact: Option<Arc<str>> = match &prop.property_type {
+                PropertyTypeDoc::Object => Some(Arc::from("object")),
+                PropertyTypeDoc::Any => Some(Arc::from("any")),
+                _ => None,
+            };
+
+            let at = || {
+                DiagnosticLocation::expression(
+                    policy_path.clone(),
+                    id.clone(),
+                    prop.id.clone(),
+                    None,
+                )
+            };
+            if prop.feature.is_some() && prop.outcome.is_some() {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::InvalidOutcome,
+                    at(),
+                    format!(
+                        "`{prop_name}` in entity '{name}' has both `feature` and `outcome`: a property is a feature (known at the decision) or an outcome (known after it), not both"
+                    ),
+                ));
+            }
+
+            // An outcome: known only after the decision, computed offline by
+            // the host. Never in the request, so null to anything that reads
+            // the entity (rules can't: see the diagnostics).
+            // Without `expr`, the entity's own column (typed by `type`).
+            if let (None, Some(outcome)) = (&prop.feature, &prop.outcome) {
+                if outcome.rest.contains_key("unknownFor") {
+                    diagnostics.push(Diagnostic::warning(
+                        DiagnosticCode::InvalidOutcome,
+                        at(),
+                        format!(
+                            "`unknownFor` is now `maturity` in outcome '{prop_name}' in entity '{name}'"
+                        ),
+                    ));
+                }
+                let maturity = match &outcome.maturity {
+                    None => None,
+                    Some(serde_json::Value::String(days)) if is_duration(days, &["d"]) => {
+                        Some(Arc::from(days.as_str()))
+                    }
+                    Some(other) => {
+                        let shown = match other {
+                            serde_json::Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        };
+                        diagnostics.push(Diagnostic::error(
+                            DiagnosticCode::InvalidDuration,
+                            at(),
+                            format!(
+                                "`maturity` of outcome '{prop_name}' in entity '{name}' is a number of days such as 30d, 120d or 365d, not `{shown}`"
+                            ),
+                        ));
+                        None
+                    }
+                };
+                properties.push(Property {
+                    id: prop.id.clone(),
+                    name: prop_name,
+                    kind,
+                    array: prop.array,
+                    optional: true,
+                    exact,
+                    default: None,
+                    supply: Some(Arc::new(Supply::Outcome {
+                        expr: outcome.expr.clone(),
+                        maturity,
+                    })),
+                });
+                continue;
+            }
+
+            // A feature: the host supplies it, one property per window
+            // (`txn_count` over 1h, 7d: `txn_count_1h`, `txn_count_7d`).
+            // Without a `default` (or `required`) it is absent when unknown
+            // (not covered), so optional: rules handle null. With one, the
+            // host always supplies a value (or rejects the request).
+            if let Some(feature) = &prop.feature {
+                let optional = feature
+                    .default
+                    .as_ref()
+                    .is_none_or(serde_json::Value::is_null)
+                    && prop.required != Some(true);
+                let windows = feature.window.as_ref().map(|w| w.list()).unwrap_or_default();
+                let names: Vec<(Arc<str>, Option<Arc<str>>)> = if windows.is_empty() {
+                    vec![(prop_name.clone(), None)]
+                } else {
+                    let listed = windows.len() > 1;
+                    windows
+                        .iter()
+                        .filter_map(|window| {
+                            if !is_window(window) {
+                                diagnostics.push(Diagnostic::error(
+                                    DiagnosticCode::InvalidDuration,
+                                    DiagnosticLocation::expression(
+                                        policy_path.clone(),
+                                        id.clone(),
+                                        prop.id.clone(),
+                                        None,
+                                    ),
+                                    format!(
+                                        "window '{window}' of feature '{prop_name}' in entity '{name}' is not a duration such as 10m, 1h or 7d"
+                                    ),
+                                ));
+                                return None;
+                            }
+                            Some((window_name(&prop_name, window, listed), Some(window.clone())))
+                        })
+                        .collect()
+                };
+                let default = feature.default.clone();
+                for (feature_name, window) in names {
+                    if feature_name != prop_name {
+                        if let Some(prev_id) = seen.get(&feature_name) {
+                            diagnostics.push(Diagnostic::error(
+                                DiagnosticCode::DuplicateProperty,
+                                DiagnosticLocation::expression(
+                                    policy_path.clone(),
+                                    id.clone(),
+                                    prev_id.clone(),
+                                    None,
+                                ),
+                                format!("duplicate property '{feature_name}' in entity '{name}'"),
+                            ));
+                            continue;
+                        }
+                        seen.insert(feature_name.clone(), prop.id.clone());
+                    }
+                    properties.push(Property {
+                        id: prop.id.clone(),
+                        name: feature_name,
+                        kind: kind.clone(),
+                        array: prop.array,
+                        optional,
+                        exact: exact.clone(),
+                        default: default.clone().filter(|d| !d.is_null()).map(Arc::new),
+                        supply: Some(Arc::new(Supply::Feature {
+                            base: prop_name.clone(),
+                            expr: feature.expr.clone(),
+                            window,
+                            default: default.clone(),
+                        })),
+                    });
+                }
+                continue;
+            }
+
+            // A model's output: supplied by the host; null when the model was
+            // not called (`when`) or fell back without a value, unless
+            // `required` or a fallback value makes it always there.
+            let host_optional = prop.model.as_ref().is_some_and(|m| {
+                prop.required != Some(true) && m.get("fallback").is_none_or(serde_json::Value::is_null)
+            });
             properties.push(Property {
                 id: prop.id.clone(),
                 name: prop_name,
                 kind,
                 array: prop.array,
-                optional: prop.optional,
+                // Filled with its `default` when missing: always there. (A
+                // compute is null when what it reads may be: see below.)
+                optional: (prop.optional || host_optional)
+                    && prop.required != Some(true)
+                    && prop.rest.get("default").is_none_or(serde_json::Value::is_null),
+                exact,
+                default: prop
+                    .rest
+                    .get("default")
+                    .filter(|d| !d.is_null())
+                    .map(|d| Arc::new(d.clone())),
+                supply: match (&prop.compute, &prop.model) {
+                    (Some(expr), _) => Some(Arc::new(Supply::Compute { expr: expr.clone() })),
+                    (None, Some(model)) => Some(Arc::new(Supply::Model {
+                        datasource: model
+                            .get("datasource")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|d| !d.is_empty())
+                            .map(Arc::from),
+                    })),
+                    (None, None) => match (&prop.property_type, prop.rest.get("on"), prop.rest.get("through")) {
+                        (PropertyTypeDoc::Relationship { .. }, Some(_), _) => {
+                            Some(Arc::new(Supply::Members { by: MembersBy::Key }))
+                        }
+                        (PropertyTypeDoc::Relationship { .. }, None, Some(_)) => {
+                            Some(Arc::new(Supply::Members { by: MembersBy::Events }))
+                        }
+                        _ => None,
+                    },
+                },
             });
         }
 
+        Self::computes_propagate_null(doc, &mut properties);
+
+        // An outcome with `maturity` gives its outcome expressions a flag,
+        // `<name>_mature`: a real property of that name would hide it.
+        for prop in &properties {
+            let Some(base) = prop.name.strip_suffix(MATURE_SUFFIX) else {
+                continue;
+            };
+            if properties
+                .iter()
+                .any(|p| *p.name == *base && p.outcome_maturity().is_some())
+            {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::InvalidOutcome,
+                    DiagnosticLocation::expression(
+                        policy_path.clone(),
+                        id.clone(),
+                        prop.id.clone(),
+                        None,
+                    ),
+                    format!(
+                        "`{}` clashes with the maturity flag of outcome `{base}`; rename one",
+                        prop.name
+                    ),
+                ));
+            }
+        }
+
+        let records = if doc.events.is_some() {
+            Records::Events
+        } else if doc.reference.is_some() {
+            Records::Reference
+        } else {
+            Records::Plain
+        };
         Some(DataModelIr {
             name,
             scope,
             properties,
+            records,
         })
+    }
+}
+
+impl DataModelIr {
+    /// A compute is null when anything it reads may be (null in, null out)
+    /// or when it can give null itself (`x > 0 ? y : null`), unless
+    /// `required` or a `default` says it is always there. What it reads
+    /// through a relationship, a reference or `$root` counts as nullable.
+    fn computes_propagate_null(doc: &DataModelDoc, properties: &mut [Property]) {
+        use zen_expression::intellisense::{IntelliSense, ReadDependency};
+        let decides = |prop: &Property| {
+            matches!(prop.supply.as_deref(), Some(Supply::Compute { .. }))
+                && prop.default.is_none()
+                && doc
+                    .properties
+                    .iter()
+                    .find(|p| p.id == prop.id)
+                    .is_none_or(|p| p.required != Some(true))
+        };
+        let computes: Vec<usize> = (0..properties.len())
+            .filter(|&i| decides(&properties[i]))
+            .collect();
+        if computes.is_empty() {
+            return;
+        }
+        let mut intellisense = IntelliSense::new();
+        // Each compute's own-field reads, or `None` when it may be null whatever they are.
+        let reads: Vec<Option<Vec<Arc<str>>>> = computes
+            .iter()
+            .map(|&i| {
+                let Some(Supply::Compute { expr }) = properties[i].supply.as_deref() else {
+                    return None;
+                };
+                let own = |path: &[Rc<str>]| -> Option<Arc<str>> {
+                    let [name] = path else { return None };
+                    let prop = properties.iter().find(|p| *p.name == **name)?;
+                    (!matches!(prop.kind, PropertyTypeIr::Relationship { .. }))
+                        .then(|| prop.name.clone())
+                };
+                let mut names = Vec::new();
+                for read in intellisense.reads(expr) {
+                    match read {
+                        ReadDependency::Direct { path, .. } => names.push(own(&path)?),
+                        ReadDependency::Iteration { collection, .. } => {
+                            names.push(own(&collection)?)
+                        }
+                        ReadDependency::Unresolved { .. } => return None,
+                    }
+                }
+                let fields: HashMap<Rc<str>, VariableType> = properties
+                    .iter()
+                    .map(|p| {
+                        let kind = match &p.kind {
+                            PropertyTypeIr::String | PropertyTypeIr::Reference { .. } => {
+                                VariableType::String
+                            }
+                            PropertyTypeIr::Enum(values) => {
+                                VariableType::Enum(None, enum_values_to_rc(values))
+                            }
+                            PropertyTypeIr::Number => VariableType::Number,
+                            PropertyTypeIr::Boolean => VariableType::Bool,
+                            PropertyTypeIr::Date => VariableType::Date,
+                            PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Any => {
+                                VariableType::Any
+                            }
+                        };
+                        let kind = if p.array { kind.array() } else { kind };
+                        (Rc::from(p.name.as_ref()), kind)
+                    })
+                    .collect();
+                let data = VariableType::Object(Rc::new(RefCell::new(fields)));
+                let returns = intellisense.analyze(expr, &data).return_type.clone();
+                (!matches!(returns, VariableType::Null | VariableType::Nullable(_)))
+                    .then_some(names)
+            })
+            .collect();
+        // Until nothing changes: a compute may read another.
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (&i, reads) in computes.iter().zip(&reads) {
+                if properties[i].optional {
+                    continue;
+                }
+                let nullable = reads.as_ref().is_none_or(|names| {
+                    names
+                        .iter()
+                        .any(|name| properties.iter().any(|p| p.name == *name && p.optional))
+                });
+                if nullable {
+                    properties[i].optional = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+
+/// What names an outcome's maturity flag: `fraud_mature` for `fraud`.
+pub(crate) const MATURE_SUFFIX: &str = "_mature";
+
+/// The detail of a maturity flag in completions and hover.
+pub(crate) fn maturity_flag_detail(outcome: &str, maturity: &str) -> String {
+    format!("bool · whether `{outcome}` is mature (after {maturity})")
+}
+
+/// Who reads an outcome too early, for [`outcome_read_message`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutcomeReader {
+    /// A rule block or a graph node.
+    Rules,
+    /// A feature's expression or a compute.
+    Features,
+    /// A call's request, response or `when`.
+    Calls,
+}
+
+/// A read of an outcome before it is known: `transaction.fraud` is
+/// known only after the decision.
+pub(crate) fn outcome_read_message(field: &str, reader: OutcomeReader) -> String {
+    let who = match reader {
+        OutcomeReader::Rules => "rules",
+        OutcomeReader::Features => "features",
+        OutcomeReader::Calls => "calls",
+    };
+    format!("`{field}` is an outcome: known only after the decision; {who} cannot read it")
+}
+
+impl DataModelIr {
+    /// The outcome a maturity flag names (`fraud_mature` → `fraud`), with
+    /// or without `maturity`; none when `name` is a real property (it
+    /// hides the flag) or names no outcome.
+    pub(crate) fn flagged_outcome(&self, name: &str) -> Option<&Property> {
+        let base = name.strip_suffix(MATURE_SUFFIX)?;
+        if self.properties.iter().any(|p| *p.name == *name) {
+            return None;
+        }
+        self.properties
+            .iter()
+            .find(|p| *p.name == *base && p.is_outcome())
+    }
+
+    /// A maturity flag: `fraud_mature` of `fraud`, an outcome with `maturity`.
+    pub(crate) fn is_maturity_flag(&self, name: &str) -> bool {
+        self.flagged_outcome(name)
+            .is_some_and(|p| p.outcome_maturity().is_some())
+    }
+
+    /// The outcome a read reaches, as `entity.field`: on the way through
+    /// references and relationships (`claim.customer.claims_after`), from
+    /// `entity`'s own fields when the path starts with one, else from the
+    /// entity it names (`transaction.fraud`, `$root.transaction.fraud`).
+    pub(crate) fn outcome_at<S: std::hash::BuildHasher>(
+        entities: &std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity: Option<&str>,
+        path: &str,
+    ) -> Option<String> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (rooted, segments) = match segments.split_first() {
+            Some((&"$root", rest)) => (true, rest),
+            _ => (false, segments.as_slice()),
+        };
+        let first = *segments.first()?;
+        let has = |dm: &DataModelIr, field: &str| {
+            dm.properties.iter().any(|p| *p.name == *field) || dm.is_maturity_flag(field)
+        };
+        let (mut current, mut rest) = match entity.and_then(|e| entities.get(e)) {
+            Some(dm) if !rooted && has(dm, first) => (dm.clone(), segments),
+            _ => (entities.get(first)?.clone(), &segments[1..]),
+        };
+        while let Some((field, tail)) = rest.split_first() {
+            // A maturity flag is as much an outcome as its outcome.
+            if tail.is_empty() && current.is_maturity_flag(field) {
+                return Some(format!("{}.{field}", current.name));
+            }
+            let prop = current.properties.iter().find(|p| *p.name == **field)?;
+            if prop.is_outcome() {
+                return Some(format!("{}.{field}", current.name));
+            }
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target }
+                    if !tail.is_empty() =>
+                {
+                    current = entities.get(target)?.clone();
+                    rest = tail;
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    /// The entity a path's value is, through references and relationships
+    /// (`transaction.card` → `card`): from `entity`'s own fields when the
+    /// path starts with one, else from the entity it names (`$root.card`).
+    pub(crate) fn entity_at<'a, S: std::hash::BuildHasher>(
+        entities: &'a std::collections::HashMap<Arc<str>, Arc<DataModelIr>, S>,
+        entity: Option<&str>,
+        path: &str,
+    ) -> Option<&'a Arc<DataModelIr>> {
+        let segments: Vec<&str> = path.split('.').collect();
+        let (rooted, segments) = match segments.split_first() {
+            Some((&"$root", rest)) => (true, rest),
+            _ => (false, segments.as_slice()),
+        };
+        let first = *segments.first()?;
+        let own = entity
+            .and_then(|e| entities.get(e))
+            .filter(|dm| dm.properties.iter().any(|p| *p.name == *first));
+        let named = entities.get(first).map(|dm| (dm, &segments[1..]));
+        let (mut current, rest) = match (rooted, own, named) {
+            (true, _, Some(named)) | (false, None, Some(named)) => named,
+            (_, Some(own), _) => (own, segments),
+            _ => return None,
+        };
+        for field in rest {
+            let prop = current.properties.iter().find(|p| *p.name == **field)?;
+            match &prop.kind {
+                PropertyTypeIr::Reference { target } | PropertyTypeIr::Relationship { target } => {
+                    current = entities.get(target)?;
+                }
+                _ => return None,
+            }
+        }
+        Some(current)
+    }
+
+    /// What reading `name`, no field of this entity, means: a windowed
+    /// feature's name as written lists its windows (`txn_count` →
+    /// `txn_count_7d` or `txn_count_30d`), else the entity has no `name`.
+    /// None when `name` is a field (or a maturity flag) after all.
+    pub(crate) fn unknown_member_message(&self, name: &str) -> Option<String> {
+        if self.properties.iter().any(|p| *p.name == *name) || self.is_maturity_flag(name) {
+            return None;
+        }
+        let windows: Vec<String> = self
+            .properties
+            .iter()
+            .filter(|p| match p.supply.as_deref() {
+                Some(Supply::Feature {
+                    base,
+                    window: Some(_),
+                    ..
+                }) => **base == *name,
+                _ => false,
+            })
+            .map(|p| format!("`{}`", p.name))
+            .collect();
+        Some(match windows.split_last() {
+            None => format!("`{}` has no `{name}`", self.name),
+            Some((last, [])) => format!("`{name}` has windows: read {last}"),
+            Some((last, rest)) => {
+                format!("`{name}` has windows: read {} or {last}", rest.join(", "))
+            }
+        })
+    }
+}
+
+/// A feature window as written: a positive whole number (no leading zero)
+/// of minutes, hours or days (`10m`, `1h`, `7d`), or `all` (all time).
+fn is_window(window: &str) -> bool {
+    // `all`: every day there is data for.
+    window == "all" || is_duration(window, &["m", "h", "d"])
+}
+
+/// A positive whole number (no leading zero, no spaces) followed by one of
+/// `units`: `30s`, `10m`, `250ms`.
+pub(crate) fn is_duration(text: &str, units: &[&str]) -> bool {
+    units.iter().any(|unit| {
+        text.strip_suffix(unit).is_some_and(|digits| {
+            !digits.is_empty()
+                && !digits.starts_with('0')
+                && digits.bytes().all(|b| b.is_ascii_digit())
+        })
+    })
+}
+
+/// The property a feature window becomes: `<name>_<window>`; a single
+/// window already at the end of the name (`txn_count_7d`) is not doubled.
+/// The feature store names its features the same way.
+pub fn window_name(name: &Arc<str>, window: &str, listed: bool) -> Arc<str> {
+    let suffix = format!("_{window}");
+    if !listed && name.ends_with(&suffix) {
+        name.clone()
+    } else {
+        Arc::from(format!("{name}{suffix}"))
     }
 }
 
@@ -551,6 +1214,7 @@ impl std::fmt::Display for PropertyTypeIr {
             }
             PropertyTypeIr::Number => f.write_str("number"),
             PropertyTypeIr::Boolean => f.write_str("bool"),
+            PropertyTypeIr::Any => f.write_str("any"),
             PropertyTypeIr::Date => f.write_str("date"),
             PropertyTypeIr::Reference { target } => {
                 write!(f, "reference id (string → {target})")

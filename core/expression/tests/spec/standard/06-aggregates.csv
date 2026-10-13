@@ -183,7 +183,7 @@ string(mode([1, 1.0, 2]));;'1';question: equal values with different scales coun
 mode([]);;!error;question: mode of an empty list fails; could be null
 mode(null);;!error
 mode([1, null]);;!error
-mode(['a', 'a']);;!error
+mode(['a', 'a']);;'a'
 mode([true]);;!error
 mode(1);;!error
 # aggregates over literal arrays built from computed values

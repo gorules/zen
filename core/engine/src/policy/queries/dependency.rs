@@ -75,6 +75,11 @@ impl Drop for EnrichedState {
 }
 
 impl EnrichedState {
+    /// The request as declared by the data models, before any rule writes.
+    pub(crate) fn declared_scope(&self) -> VariableType {
+        VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone())))
+    }
+
     pub(crate) fn declared_at(&self, path: &str) -> VariableType {
         let (root, rest) = path.split_once('.').unwrap_or((path, ""));
         match self.base_fields.get(root) {

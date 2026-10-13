@@ -36,6 +36,65 @@ impl DepWalk {
 }
 
 impl Db {
+    /// The paths a document reads from its request (`transaction.amount`,
+    /// `card.txn_count_7d`), or None when that can't be known: a read of
+    /// `$`/`$root` or of something unresolved, or a node whose reads aren't
+    /// followed (a function, a custom node, a sub-decision, an input field
+    /// that isn't a plain path). A policy includes the rules of what it
+    /// imports; a graph typed by an entity reads under the entity's name.
+    pub(crate) fn document_reads(&self, document: &Arc<str>) -> Option<std::collections::BTreeSet<String>> {
+        let mut out = std::collections::BTreeSet::new();
+        if !self.is_graph(document) {
+            if !self.snapshot().all_parsed.contains_key(document) {
+                return None;
+            }
+            let unit = self.unit(document);
+            let shallow = self.shallow();
+            for rule in shallow.per_rule.iter().filter(|r| unit.members.contains(&r.policy_path)) {
+                for read in &rule.reads {
+                    let path = read.path.as_ref();
+                    // `$`, `$root`, `$root.x`, `$.x`: not a field of an entity. Unknown.
+                    if path.starts_with('$') || read.unresolved {
+                        return None;
+                    }
+                    if !read.via_alias {
+                        out.insert(path.to_string());
+                    }
+                }
+            }
+            return Some(out);
+        }
+        let snap = self.snapshot();
+        let content = snap.graphs.get(document).cloned()?;
+        let content = content.as_graph()?;
+        let root = content.request_target();
+        for node in &content.nodes {
+            match &node.kind {
+                DecisionNodeKind::InputNode { .. } | DecisionNodeKind::OutputNode { .. } => continue,
+                DecisionNodeKind::ExpressionNode { .. }
+                | DecisionNodeKind::DecisionTableNode { .. }
+                | DecisionNodeKind::SwitchNode { .. } => {}
+                _ => return None,
+            }
+            let paths = NodePaths::new(node);
+            if matches!(paths.read_base, ReadBase::Opaque) {
+                return None;
+            }
+            let mut whole = false;
+            let reads = self.node_global_reads_checked(node, &paths, None, &mut whole);
+            if whole {
+                return None;
+            }
+            for read in reads {
+                out.insert(match &root {
+                    Some(target) => format!("{target}.{read}"),
+                    None => read.to_string(),
+                });
+            }
+        }
+        Some(out)
+    }
+
     pub(crate) fn graph_dependencies(&self, document: &Arc<str>, target: &str) -> DependencyNode {
         self.graph_dep_node(document, target, &mut DepWalk::new())
     }
@@ -367,6 +426,21 @@ impl Db {
         paths: &NodePaths,
         expression_filter: Option<&[Arc<str>]>,
     ) -> Vec<Arc<str>> {
+        self.node_global_reads_checked(node, paths, expression_filter, &mut false)
+    }
+
+    /// The node's reads, as [`Self::node_global_reads`]; `whole` set when it
+    /// also reads something they can't follow: its whole input (`$`,
+    /// `$root`), the request through `$root.x`, another node's output
+    /// (`$nodes.x`), or something unresolved. (`$.x`, the node's own output
+    /// so far, is followed.)
+    fn node_global_reads_checked(
+        &self,
+        node: &DecisionNode,
+        paths: &NodePaths,
+        expression_filter: Option<&[Arc<str>]>,
+        whole: &mut bool,
+    ) -> Vec<Arc<str>> {
         let intellisense = self.graph_intellisense();
         let mut is = intellisense.borrow_mut();
         let mut out: Vec<Arc<str>> = Vec::new();
@@ -415,10 +489,13 @@ impl Db {
             let mut flat: Vec<PropertyRead> = Vec::new();
             ReadFlattener::extend_from_deps(&deps, &None, &mut flat);
             for read in flat {
+                let path = read.path.as_ref();
+                if read.unresolved || (path.starts_with('$') && !path.starts_with("$.")) {
+                    *whole = true;
+                }
                 if read.via_alias || read.unresolved {
                     continue;
                 }
-                let path = read.path.as_ref();
                 if path == "$" || path == "$root" {
                     continue;
                 }

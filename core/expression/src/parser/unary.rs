@@ -356,6 +356,12 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Rand => CompareWithReference(Equal),
                     InternalFunction::Median => CompareWithReference(Equal),
                     InternalFunction::Mode => CompareWithReference(Equal),
+                    InternalFunction::Stddev => CompareWithReference(Equal),
+                    InternalFunction::Variance => CompareWithReference(Equal),
+                    InternalFunction::Percentile => CompareWithReference(Equal),
+                    InternalFunction::PercentileApprox => CompareWithReference(Equal),
+                    InternalFunction::TopK => CompareWithReference(In),
+                    InternalFunction::LastN => CompareWithReference(In),
                     InternalFunction::Floor => CompareWithReference(Equal),
                     InternalFunction::Ceil => CompareWithReference(Equal),
                     InternalFunction::Round => CompareWithReference(Equal),
@@ -373,6 +379,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Matches => AsBoolean,
                     InternalFunction::FuzzyMatch => CompareWithReference(Equal),
                     InternalFunction::Split => CompareWithReference(In),
+                    InternalFunction::Join => CompareWithReference(Equal),
                     InternalFunction::IsNumeric => AsBoolean,
                     InternalFunction::Keys => CompareWithReference(In),
                     InternalFunction::Values => CompareWithReference(In),
@@ -404,6 +411,26 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     ClosureFunction::Map => CompareWithReference(In),
                     ClosureFunction::FlatMap => CompareWithReference(In),
                     ClosureFunction::Count => CompareWithReference(Equal),
+                    ClosureFunction::Unique => CompareWithReference(In),
+                    ClosureFunction::TopK | ClosureFunction::LastN => CompareWithReference(In),
+                    ClosureFunction::Sum
+                    | ClosureFunction::Avg
+                    | ClosureFunction::Min
+                    | ClosureFunction::Max
+                    | ClosureFunction::Median
+                    | ClosureFunction::Mode
+                    | ClosureFunction::Stddev
+                    | ClosureFunction::Variance
+                    | ClosureFunction::Percentile
+                    | ClosureFunction::CountDistinct
+                    | ClosureFunction::First
+                    | ClosureFunction::Last
+                    | ClosureFunction::ArgMax
+                    | ClosureFunction::ArgMin
+                    | ClosureFunction::Skew
+                    | ClosureFunction::Kurtosis
+                    | ClosureFunction::CountDistinctApprox
+                    | ClosureFunction::PercentileApprox => CompareWithReference(Equal),
                 },
             },
             Node::MethodCall { kind, .. } => match kind {

@@ -19,7 +19,7 @@ darwinArm:
 
 prepareLocalPublish:
 	rm -f zen-engine.wasm32-wasip1.*.mjs zen-engine.wasm32-wasip1.*.mts
-	yarn napi prepublish --skip-optional-publish
+	node prepublish.mjs --skip-optional-publish
 	yarn createNpmDirs
 
 publish:

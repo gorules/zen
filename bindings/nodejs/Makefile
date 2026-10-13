@@ -18,6 +18,7 @@ darwinArm:
 	cp zen-engine.darwin-arm64.node npm/darwin-arm64/
 
 prepareLocalPublish:
+	rm -f zen-engine.wasm32-wasip1.*.mjs zen-engine.wasm32-wasip1.*.mts
 	yarn napi prepublish --skip-optional-publish
 	yarn createNpmDirs
 

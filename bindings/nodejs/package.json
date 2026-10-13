@@ -37,7 +37,8 @@
         "fs": false,
         "asyncInit": true
       },
-      "asyncRuntime": true
+      "asyncRuntime": true,
+      "optionalDependency": true
     }
   },
   "keywords": [

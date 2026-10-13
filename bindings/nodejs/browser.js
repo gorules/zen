@@ -1,1 +1,1 @@
-export * from '@gorules/zen-engine-wasm32-wasi'
+export * from '@gorules/zen-engine-wasm32-wasip1'

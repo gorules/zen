@@ -1,9 +1,16 @@
 REGISTRY := "http://localhost:4873"
+WASI_SDK ?= $(HOME)/.cache/wasi/wasi-sdk-27.0-arm64-macos
 
 wasm:
-	yarn build -- --target wasm32-wasip1-threads
-	mkdir -p npm/wasm32-wasi
-	cp zen-engine.wasm32-wasi.wasm zen-engine.wasi.cjs zen-engine.wasi-browser.js wasi-worker.mjs wasi-worker-browser.mjs npm/wasm32-wasi/
+	cargo clean -p napi-async-runtime --target wasm32-wasip1 --release
+	RUSTC=$$(rustup which rustc) \
+	CC_wasm32_wasip1=$(WASI_SDK)/bin/clang \
+	AR_wasm32_wasip1=$(WASI_SDK)/bin/llvm-ar \
+	CFLAGS_wasm32_wasip1="--target=wasm32-wasip1 --sysroot=$(WASI_SDK)/share/wasi-sysroot -mllvm -wasm-enable-sjlj" \
+	CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS="-C link-arg=$(WASI_SDK)/share/wasi-sysroot/lib/wasm32-wasip1/libsetjmp.a" \
+	npx napi build --platform --release --target wasm32-wasip1
+	mkdir -p npm/wasm32-wasip1
+	cp zen-engine.wasm32-wasip1.wasm zen-engine.wasip1* npm/wasm32-wasip1/
 
 darwinArm:
 	yarn build -- --target aarch64-apple-darwin
@@ -15,7 +22,7 @@ prepareLocalPublish:
 	yarn createNpmDirs
 
 publish:
-	cd npm/wasm32-wasi && npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
+	cd npm/wasm32-wasip1 && npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
 	cd npm/darwin-arm64 && npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
 	npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
 

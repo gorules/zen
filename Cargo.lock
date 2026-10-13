@@ -238,6 +238,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -836,9 +842,9 @@ dependencies = [
 
 [[package]]
 name = "convert_case"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "affbf0190ed2caf063e3def54ff444b449371d55c58e513a95ab98eca50adb49"
+checksum = "1af709f1f33454bf52eadfc8c78b3b9ef9cb26fb54d16dc9cd9a7299f899fd1b"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -2376,14 +2382,15 @@ dependencies = [
 
 [[package]]
 name = "napi"
-version = "3.9.1"
+version = "3.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad513ff22558f1830b595ea6eb4091da48145d09a222ce157e781896f78be0b9"
+checksum = "a4e2cf85c02d9b057898c485b824c3c416b65193689e2b7f517efc94b86ed24c"
 dependencies = [
  "anyhow",
  "bitflags 2.13.0",
  "ctor",
  "futures",
+ "libc",
  "napi-build",
  "napi-sys",
  "nohash-hasher",
@@ -2394,43 +2401,60 @@ dependencies = [
 ]
 
 [[package]]
-name = "napi-build"
-version = "2.3.2"
+name = "napi-async-runtime"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9c366d2c8c60b86fa632df75f745509b52f9128f91a6bad4c796e44abb505e1"
+checksum = "6744d7a72c59a794399790ea2028b18395be558710656521cdf440feece9370c"
+dependencies = [
+ "arc-swap",
+ "async-task",
+ "crossbeam-deque",
+ "futures",
+ "napi",
+ "napi-derive",
+ "napi-sys",
+ "rayon",
+ "rustc-hash",
+]
+
+[[package]]
+name = "napi-build"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b899b545d3aa6dca985939059f258c5488d34e4ecf39c274e20009748f4b846d"
 
 [[package]]
 name = "napi-derive"
-version = "3.5.6"
+version = "3.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89b3f766e04667e6da0e181e2da4f85475d5a6513b7cf6a80bea184e224a5b42"
+checksum = "92cec6048ac04041ac8055bdce1ec4f353416cd443ba9222bf73af790c3d4495"
 dependencies = [
- "convert_case 0.11.0",
+ "convert_case 0.12.0",
  "ctor",
  "napi-derive-backend",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.8",
 ]
 
 [[package]]
 name = "napi-derive-backend"
-version = "5.0.4"
+version = "6.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d5af30503edf933ce7377cf6d4c877a62b0f1107ea05585f1b5e430e88d5baf"
+checksum = "fae2444f4ba7333754bb73414ff8059dec2cb23b83a95bd1a0bf08169eed1be0"
 dependencies = [
- "convert_case 0.11.0",
+ "convert_case 0.12.0",
  "proc-macro2",
  "quote",
  "semver",
- "syn 2.0.117",
+ "syn 3.0.8",
 ]
 
 [[package]]
 name = "napi-sys"
-version = "3.2.2"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f5bcdf71abd3a50d00b49c1c2c75251cb3c913777d6139cd37dabc093a5e400"
+checksum = "e22a4f25c16a5c5411d987cd6fbd48313522ae1789ade2d6dd3efdc6d40a0fc8"
 dependencies = [
  "libloading 0.9.0",
 ]
@@ -4769,6 +4793,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "3.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01016da373cd8f7ef12624f796309f5c31ba8d646dd08856c02cd741d823c622"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "sync_wrapper"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6115,6 +6150,7 @@ dependencies = [
  "iana-time-zone",
  "json_dotpath",
  "napi",
+ "napi-async-runtime",
  "napi-build",
  "napi-derive",
  "napi-sys",

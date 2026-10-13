@@ -99,7 +99,7 @@ impl Console {
     }
 
     pub async fn sleep(&self, duration_ms: u64) -> rquickjs::Result<()> {
-        tokio::time::sleep(Duration::from_millis(duration_ms)).await;
+        crate::nodes::function::sleep::sleep(Duration::from_millis(duration_ms)).await;
         Ok(())
     }
 }

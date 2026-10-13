@@ -58,10 +58,8 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
-              mkdir -p ../../target
-              ln -sfn x86_64-unknown-linux-gnu ../../target/x86_64-unknown-linux-gnu.$GLIBC_VERSION
-              yarn build -- --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- --locked
-              mv -f zen-engine.linux-x64-gnu.$GLIBC_VERSION.node zen-engine.linux-x64-gnu.node
+              cargo zigbuild --release --locked -p zen-nodejs --target x86_64-unknown-linux-gnu.$GLIBC_VERSION
+              cp ../../target/x86_64-unknown-linux-gnu/release/libzen_nodejs.so zen-engine.linux-x64-gnu.node
               strip zen-engine.linux-x64-gnu.node
 
           - host: ubuntu-latest
@@ -70,10 +68,8 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
-              mkdir -p ../../target
-              ln -sfn aarch64-unknown-linux-gnu ../../target/aarch64-unknown-linux-gnu.$GLIBC_VERSION
-              yarn build -- --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- --locked
-              mv -f zen-engine.linux-arm64-gnu.$GLIBC_VERSION.node zen-engine.linux-arm64-gnu.node
+              cargo zigbuild --release --locked -p zen-nodejs --target aarch64-unknown-linux-gnu.$GLIBC_VERSION
+              cp ../../target/aarch64-unknown-linux-gnu/release/libzen_nodejs.so zen-engine.linux-arm64-gnu.node
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'
@@ -93,17 +89,20 @@ jobs:
               yarn build -- --target aarch64-unknown-linux-musl --cross-compile -- --locked
 
           - host: ubuntu-latest
-            target: 'wasm32-wasip1-threads'
+            target: 'wasm32-wasip1'
             setup: |
               wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
             build: |
               set -e
-              export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
+              WASI_SDK="$(pwd)/wasi-sdk-27.0-x86_64-linux"
               export CMAKE_BUILD_PARALLEL_LEVEL=2
-              export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
-              export TARGET_CFLAGS="$TARGET_CXXFLAGS"
-              yarn build -- --target wasm32-wasip1-threads -- --locked
+              export CC_wasm32_wasip1="$WASI_SDK/bin/clang"
+              export AR_wasm32_wasip1="$WASI_SDK/bin/llvm-ar"
+              export CFLAGS_wasm32_wasip1="--target=wasm32-wasip1 --sysroot=$WASI_SDK/share/wasi-sysroot -mllvm -wasm-enable-sjlj"
+              export CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS="-C link-arg=$WASI_SDK/share/wasi-sysroot/lib/wasm32-wasip1/libsetjmp.a"
+              cargo clean -p napi-async-runtime --target wasm32-wasip1 --release
+              yarn build -- --target wasm32-wasip1 -- --locked
 
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
@@ -163,7 +162,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}
+        if: ${{ matrix.settings.target != 'wasm32-wasip1' }}
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
@@ -171,15 +170,14 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target == 'wasm32-wasip1-threads' }}
+        if: ${{ matrix.settings.target == 'wasm32-wasip1' }}
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-wasm32-wasi
+          name: bindings-wasm32-wasip1
           if-no-files-found: error
           path: |
-            bindings/nodejs/*.wasm
-            bindings/nodejs/zen-engine.wasi*
-            bindings/nodejs/wasi-worker*
+            bindings/nodejs/zen-engine.wasm32-wasip1*
+            bindings/nodejs/zen-engine.wasip1*
 
   test:
     name: Test ${{ matrix.settings.target }} - node@${{ matrix.node }}
@@ -248,21 +246,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: artifacts
+          path: bindings/nodejs
 
       - name: Download typings
         uses: actions/download-artifact@v4
         with:
           name: typings
           path: bindings/nodejs
-
-      - name: Create dirs
-        run: yarn createNpmDirs
-        shell: bash
-
-      - name: Move artifacts
-        run: yarn artifacts
-        shell: bash
 
       - name: Test bindings (native)
         if: ${{ !matrix.settings.image }}
@@ -282,6 +272,44 @@ jobs:
             yarn install
             yarn link
             yarn test
+
+  test-wasm:
+    name: Test wasm32-wasip1 - node@22
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasip1
+          path: bindings/nodejs
+
+      - name: Download typings
+        uses: actions/download-artifact@v4
+        with:
+          name: typings
+          path: bindings/nodejs
+
+      - name: Test bindings (wasm)
+        run: yarn test:wasm
+
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -293,6 +321,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     needs:
       - test
+      - test-wasm
     steps:
       - uses: actions/checkout@v3
 

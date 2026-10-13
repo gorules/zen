@@ -37,7 +37,8 @@
         "fs": false,
         "asyncInit": true
       },
-      "asyncRuntime": true
+      "asyncRuntime": true,
+      "optionalDependency": true
     }
   },
   "keywords": [
@@ -101,7 +102,7 @@
     "test:wasm": "cross-env NAPI_RS_FORCE_WASI=error NAPI_RS_WASI_FLAVOR=wasm32-wasip1 __ZEN_MOCK_UTC_TIME=2025-08-19T16:55:02.078Z jest -c jest.wasm.config.js",
     "artifacts": "napi artifacts -d ../../artifacts",
     "createNpmDirs": "napi create-npm-dirs && node enrich-npm-dirs.mjs",
-    "prepublishOnly": "napi prepublish --no-gh-release",
+    "prepublishOnly": "node prepublish.mjs --no-gh-release",
     "version": "napi version"
   },
   "resolutions": {

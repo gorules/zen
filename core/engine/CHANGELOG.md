@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.1.4](https://github.com/gorules/zen/compare/zen-engine-v2.1.3...zen-engine-v2.1.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* threadless wasm ([#543](https://github.com/gorules/zen/issues/543)) ([c8692c4](https://github.com/gorules/zen/commit/c8692c401dd8adf01e2bad44f889349b22a351ec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.1.3 to 2.1.4
+    * zen-expression bumped from 2.1.3 to 2.1.4
+    * zen-tmpl bumped from 2.1.3 to 2.1.4
+
 ## [2.1.3](https://github.com/gorules/zen/compare/zen-engine-v2.1.2...zen-engine-v2.1.3) (2026-10-09)
 
 

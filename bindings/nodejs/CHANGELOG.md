@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.5](https://github.com/gorules/zen/compare/nodejs-v2.1.4...nodejs-v2.1.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* threadless wasm ([#543](https://github.com/gorules/zen/issues/543)) ([c8692c4](https://github.com/gorules/zen/commit/c8692c401dd8adf01e2bad44f889349b22a351ec))
+
 ## [2.1.4](https://github.com/gorules/zen/compare/nodejs-v2.1.3...nodejs-v2.1.4) (2026-10-09)
 
 

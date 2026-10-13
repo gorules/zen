@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.6](https://github.com/gorules/zen/compare/nodejs-v2.1.5...nodejs-v2.1.6) (2026-10-13)
+
+
+### Bug Fixes
+
+* nodejs wasm root package ([#545](https://github.com/gorules/zen/issues/545)) ([73c8fda](https://github.com/gorules/zen/commit/73c8fda788dd20eb2f9f914b98e71e1d11510303))
+
 ## [2.1.5](https://github.com/gorules/zen/compare/nodejs-v2.1.4...nodejs-v2.1.5) (2026-10-13)
 
 

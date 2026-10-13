@@ -51,6 +51,26 @@ describe('ZenEngine', () => {
 
   }, 10000);
 
+  it('Evaluates decisions returned as ZenDecisionContent from the loader', async () => {
+    const contents = new Map<string, ZenDecisionContent>();
+    const engine = new ZenEngine({
+      loader: async (key) => {
+        if (!contents.has(key)) {
+          contents.set(key, new ZenDecisionContent(await fs.readFile(path.join(testDataRoot, key))));
+        }
+        return contents.get(key)!;
+      },
+    });
+
+    const r1 = await engine.evaluate('table.json', { input: 12 });
+    const r2 = await engine.evaluate('function.json', { input: 5 });
+    const r3 = await new ZenEngine({ loader: async (key) => contents.get(key)! }).evaluate('table.json', { input: 2 });
+
+    expect(r1.result.output).toEqual(10);
+    expect(r2.result.output).toEqual(10);
+    expect(r3.result.output).toEqual(0);
+  }, 10000);
+
   it('Creates a decision from contents', async () => {
     const engine = new ZenEngine();
     const functionContent = await fs.readFile(path.join(testDataRoot, 'function.json'));

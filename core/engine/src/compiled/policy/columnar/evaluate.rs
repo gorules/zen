@@ -114,6 +114,7 @@ impl PolicyPlan {
         goals: &[Arc<str>],
         original: &'a Columns<'a>,
         prepared: Option<&'a super::prepare::Prepared<'a>>,
+        reasons: bool,
     ) -> PolicyColumnarOutput<'a> {
         let columns = prepared.map_or(original, |prepared| &prepared.hydrated);
         let rows = columns.rows;
@@ -147,9 +148,20 @@ impl PolicyPlan {
             (false, Some(prepared)) => artifact.sure_prepared(&prepared.converted, columns, goals),
             (false, None) => Entity::sure(artifact, columns, &sheet.entities, goals),
         };
-        sheet.entities.iter().filter_map(|entity| entity.hosted.as_deref()).flatten().for_each(|&row| fallback[row] = true);
+        let mut why = super::Fallbacks::default();
+        for &row in sheet.entities.iter().filter_map(|entity| entity.hosted.as_deref()).flatten() {
+            if !fallback[row] {
+                fallback[row] = true;
+                why.add(super::FallbackReason::Entity);
+            }
+        }
         if let Some(prepared) = prepared {
-            prepared.forced.iter().enumerate().filter(|(_, forced)| **forced).for_each(|(row, _)| fallback[row] = true);
+            for (row, reason) in prepared.forced.iter().enumerate() {
+                if let (Some(reason), false) = (reason, fallback[row]) {
+                    fallback[row] = true;
+                    why.add(reason.clone());
+                }
+            }
         }
         for row in 0..rows {
             if sure.as_ref().is_some_and(|sure| sure[row]) || (prepared.is_some() && fallback[row]) {
@@ -159,6 +171,7 @@ impl PolicyPlan {
             // Prepared columns hold the row converted: checked here only.
             if prepared.is_none() && artifact.input_schema.convert_dates(&req.input).is_some() {
                 fallback[row] = true;
+                why.add(super::FallbackReason::Converted);
                 continue;
             }
             match artifact.prepare(&req) {
@@ -180,7 +193,7 @@ impl PolicyPlan {
             (false, false) => (0..rows).filter(|&row| !fallback[row]).collect(),
         };
         let mut runner = Self::RUNNER.with_borrow_mut(std::mem::take);
-        let (sheet, fallback, errors, owned, fell, counts) = {
+        let (sheet, fallback, errors, owned, fell, counts, why, reasons) = {
             let runner = &mut runner;
             let mut pass = Pass {
                 plan: self,
@@ -205,6 +218,9 @@ impl PolicyPlan {
                 kin: Vec::new(),
                 delegated: false,
                 fell: 0,
+                why,
+                at: None,
+                reasons,
                 counts: (0, 0),
                 listed: RefCell::new(Vec::new()),
                 owners: self.iterations.iter().map(|iteration| iteration.as_ref().map(|(_, path, _)| path.clone())).collect(),
@@ -225,7 +241,11 @@ impl PolicyPlan {
                     .collect(),
             };
             erred |= pass.delegated;
-            (pass.sheet, pass.fallback, pass.state.failures, owned, pass.fell, pass.counts)
+            let reasons = match reasons {
+                true => pass.reasons(),
+                false => Vec::new(),
+            };
+            (pass.sheet, pass.fallback, pass.state.failures, owned, pass.fell, pass.counts, pass.why, reasons)
         };
         Self::RUNNER.with_borrow_mut(|slot| *slot = runner);
         let mut errors = errors;
@@ -245,6 +265,8 @@ impl PolicyPlan {
                 columns,
                 errors,
                 hosted: 0,
+                fallbacks: Vec::new(),
+                reasons,
                 typed: counts.0,
                 laned: counts.1,
                 exact,
@@ -271,6 +293,8 @@ impl PolicyPlan {
             columns: Sheet::columns(shredder.finish()),
             errors,
             hosted: hosted.len(),
+            fallbacks: why.0,
+            reasons,
             typed: counts.0,
             laned: counts.1,
             exact,

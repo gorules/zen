@@ -5,7 +5,6 @@ use crate::model::{DecisionNodeKind, GraphContent};
 use ahash::HashMap;
 use crate::nodes::custom::CustomNodeHandler;
 use crate::nodes::function::FunctionNodeHandler;
-use crate::nodes::input::dates::DeclaredDates;
 use crate::nodes::{NodeError, NodeResult};
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::variable_json::{Guards, VariableJson, VariableNode};
@@ -360,11 +359,12 @@ impl CompiledGraph {
         }
         match Self::validator(step, content, extensions) {
             None => !step.schema && Self::unresolved(content, &step.node),
-            Some((_, schema)) => !DeclaredDates::mentions(&schema),
+            // Declared dates: converted as columns (see `dated_input`).
+            Some(_) => true,
         }
     }
 
-    fn entity(step: &Step) -> Option<&InputNodeContent> {
+    pub(in crate::compiled::graph) fn entity(step: &Step) -> Option<&InputNodeContent> {
         match &step.node.kind {
             DecisionNodeKind::InputNode { content } if content.target.is_some() => Some(content),
             _ => None,
@@ -439,10 +439,12 @@ impl CompiledGraph {
             base.config.validation_salt = *salt;
         }
         if let Some(request) = Self::request(step, content, &base.extensions).await {
-            match request.and_then(|prepared| prepared.prepare(&base.input)) {
-                Ok(prepared) => base.input = prepared,
-                Err(message) => return base.error(message),
-            }
+            // The entity as policies read it (its dates dates): given on as
+            // prepared.
+            return match request.and_then(|prepared| prepared.prepare(&base.input)) {
+                Ok(prepared) => base.success(prepared),
+                Err(message) => base.error(message),
+            };
         }
         match &node.kind {
             DecisionNodeKind::InputNode { content } => {

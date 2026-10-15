@@ -178,6 +178,12 @@ impl Shredder {
 impl Normalizer {
     const SAMPLE: usize = 64;
 
+    /// An input column already prepared as the input node gives it on
+    /// (dates converted): its values as they are.
+    pub(crate) fn prepared<'a>(column: Column<'a>, rows: usize) -> Leaf<'a> {
+        Leaf::input(Self::validated(column, rows), rows)
+    }
+
     pub(crate) fn input<'a>(column: Column<'a>, rows: usize) -> Leaf<'a> {
         let dated = DeclaredDates::dated;
         let nested = match column.values {

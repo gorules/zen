@@ -217,7 +217,8 @@ async fn columnar_graphs_match_the_walker() {
             let fields = built.fields();
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
-            let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
                 let want = reference
@@ -317,7 +318,8 @@ async fn struct_inputs_match_the_walker() {
             columns = columns.column(path, *column);
         }
         columns = columns.column(&key, Column::with_validity(Values::Struct { fields: &fields, len: rows.len() }, &valid, 0));
-        let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         for row in 0..rows.len() {
             let input = columns.row(row);
             let want = match walker.evaluate(input.clone()).await {
@@ -379,7 +381,8 @@ async fn columnar_tables_match_coded_nulls_against_null_cells() {
     let columns = Columns::new(keys.len()).column("k", column);
     let want = ["other", "null", "other", "null", "other"];
     for (label, decision) in [("dispatched", &dispatched), ("generic", &generic)] {
-        let output = decision.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let output = decision.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         for (row, want) in want.iter().enumerate() {
             assert!(output.errors[row].is_none(), "{label} row {row}: {:?}", output.errors[row]);
             assert_eq!(output.row(row).to_value(), serde_json::json!({ "cls": want }), "{label} row {row}");
@@ -396,7 +399,8 @@ async fn columnar_function_rows_time_out_independently() {
     let built = Built::new(&rows).expect("columns");
     let columns = built.columns();
     let started = std::time::Instant::now();
-    let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+    let store = zen_engine::ColumnStore::new();
+    let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
     let elapsed = started.elapsed();
     let messages: Vec<String> = output
         .errors
@@ -470,7 +474,8 @@ impl FunctionNode {
         for content in contents {
             let mut compiled = Decision::from(FunctionNode::graph(content.clone()));
             compiled.compile();
-            let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
             for row in 0..rows.len() {
                 let want = match compiled.evaluate(columns.row(row)).await {
                     Ok(r) => Ok(Built::normalized(r.result.to_value())),
@@ -572,7 +577,8 @@ async fn columnar_graph_throughput() {
         if let Ok(seconds) = std::env::var("BENCH_PROFILE") {
             let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds.parse().unwrap_or(5));
             while std::time::Instant::now() < until {
-                let _ = compiled.evaluate_columns(&columns, options).await;
+                let store = zen_engine::ColumnStore::new();
+                let _ = compiled.evaluate_columns(&columns, &store, options).await;
             }
             continue;
         }
@@ -587,7 +593,8 @@ async fn columnar_graph_throughput() {
                 best[0] = best[0].min(start.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             }
             let start = std::time::Instant::now();
-            let output = compiled.evaluate_columns(&columns, options).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = compiled.evaluate_columns(&columns, &store, options).await;
             if read {
                 output.columns.iter().for_each(|(_, column)| {
                     std::hint::black_box(column.column());
@@ -927,7 +934,8 @@ async fn wide_inputs_match_the_walker() {
             let fields = built.fields();
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
-            let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
             for row in 0..built.rows {
                 let input = columns.row(row);
                 let want = match walker.evaluate(input.clone()).await {
@@ -996,10 +1004,12 @@ async fn plan_census() {
             continue;
         };
         let columns = built.columns();
-        let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let _ = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         let _ = Decision::census();
         let start = std::time::Instant::now();
-        let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let _ = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         println!("CENSUS\t{}\ttotal\t1\t{}\t{}", fixture.name, built.rows, start.elapsed().as_nanos());
         for (key, calls, rows, ns) in Decision::census() {
             println!("CENSUS\t{}\t{key}\t{calls}\t{rows}\t{ns}", fixture.name);
@@ -1081,7 +1091,8 @@ impl Chain {
         let walker = compiled.interpreted();
         let built = Built::new(rows).expect("columns");
         let columns = built.columns();
-        let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let output = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         for row in 0..built.rows {
             let input = columns.row(row);
             let want = match walker.evaluate(input.clone()).await {

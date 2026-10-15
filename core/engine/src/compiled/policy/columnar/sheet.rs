@@ -192,15 +192,16 @@ impl<'a> Sheet<'a> {
         object
     }
 
-    /// The rows a column can't say whole: a property written as null
-    /// (columns read null as absent), each then read as its object.
+    /// The rows a column can't say whole: a property written as null, or
+    /// given as null (a request's, a referenced record's field), as the row
+    /// path keeps it (columns read null as absent); each then read as its
+    /// object.
     pub(super) fn exact(&self, finished: &[usize]) -> Vec<Option<Variable>> {
         let written_null = |row: usize| {
             self.order.iter().any(|&index| {
                 let entry = &self.entries[index];
                 !entry.dead
-                    && !entry.input
-                    && self.active(index).is_none()
+                    && (entry.input || self.active(index).is_none())
                     && Self::present(entry, row)
                     && matches!(entry.leaf.get(row), Variable::Null)
             })

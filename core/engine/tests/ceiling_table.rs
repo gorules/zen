@@ -726,7 +726,8 @@ impl Ceiling {
         let mut staged = Staged::default();
         folded.run(&inputs, rows, &mut codes);
         staged.run(&folded, &inputs, rows);
-        let output = compiled.evaluate_columns(&columns, options).await;
+        let store = zen_engine::ColumnStore::new();
+        let output = compiled.evaluate_columns(&columns, &store, options).await;
         let mut mismatches = Vec::new();
         for row in 0..rows {
             let input = columns.row(row);
@@ -757,7 +758,8 @@ impl Ceiling {
             }
             best[0] = best[0].min(per(start, rows.min(256)));
             let start = std::time::Instant::now();
-            let out = compiled.evaluate_columns(&columns, options).await;
+            let store = zen_engine::ColumnStore::new();
+            let out = compiled.evaluate_columns(&columns, &store, options).await;
             best[1] = best[1].min(per(start, rows));
             drop(std::hint::black_box(out));
             let start = std::time::Instant::now();
@@ -839,7 +841,8 @@ async fn traffic_profile_engine() {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
     let mut calls = 0usize;
     while std::time::Instant::now() < until {
-        let _ = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        let store = zen_engine::ColumnStore::new();
+        let _ = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
         calls += 1;
     }
     println!("calls {calls}");

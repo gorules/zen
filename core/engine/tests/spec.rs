@@ -182,7 +182,8 @@ impl Engines {
             let fields = built.fields();
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
-            let output = run.compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = run.compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
             self.typed += output.typed;
             self.laned += output.laned;
             for row in 0..built.rows {
@@ -494,7 +495,8 @@ impl Snapshot {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             for call in 1..=Self::CALLS {
-                let output = run.compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+                let store = zen_engine::ColumnStore::new();
+                let output = run.compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
                 let errors = output.errors.iter().flatten().map(|e| format!("{e:?}"));
                 self.lines.push(format!(
                     "graph\t{}\t{label}\tcall{call}\trows={}\ttyped={}\tlaned={}\terrors=[{}]\tpaths={:016x}",

@@ -89,7 +89,7 @@ impl DeclaredDates {
         }
     }
 
-    fn structure<'s>(schema: &'s Map<String, Value>, key: &str) -> Option<&'s Value> {
+    pub(crate) fn structure<'s>(schema: &'s Map<String, Value>, key: &str) -> Option<&'s Value> {
         schema.get(key).or_else(|| {
             ["anyOf", "oneOf", "allOf"]
                 .iter()

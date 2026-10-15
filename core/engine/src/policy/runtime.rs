@@ -143,6 +143,9 @@ impl CompiledSet {
                     continue;
                 }
             };
+            // Imports name documents as the loader does (with or without
+            // `.json`): each is read as the key it names here.
+            let content = Self::imports_as_keys(content, keys);
             match content.as_ref() {
                 DecisionContent::Policy(policy) => {
                     outcomes |= Self::declares_outcomes(&policy.0);
@@ -232,6 +235,42 @@ impl CompiledSet {
 
     /// The key a document is compiled under: as given, or with/without
     /// `.json` (loaders find documents either way).
+    /// The document with its imports named as the keys they load (an
+    /// import written `models/cards.json` of a key `models/cards`); as it
+    /// is when they already are.
+    fn imports_as_keys(content: Arc<DecisionContent>, keys: &[Arc<str>]) -> Arc<DecisionContent> {
+        let key_of = |import: &Arc<str>| -> Option<Arc<str>> {
+            if keys.contains(import) {
+                return None;
+            }
+            let other = match import.strip_suffix(".json") {
+                Some(bare) => bare.to_string(),
+                None => format!("{import}.json"),
+            };
+            keys.iter().find(|key| key.as_ref() == other).cloned()
+        };
+        let imports = match content.as_ref() {
+            DecisionContent::Policy(policy) => &policy.0.imports,
+            DecisionContent::Graph(graph) => &graph.imports,
+        };
+        if !imports.iter().any(|import| key_of(import).is_some()) {
+            return content;
+        }
+        let rename = |imports: &mut Vec<Arc<str>>| {
+            for import in imports.iter_mut() {
+                if let Some(key) = key_of(import) {
+                    *import = key;
+                }
+            }
+        };
+        let mut content = Arc::unwrap_or_clone(content);
+        match &mut content {
+            DecisionContent::Policy(policy) => rename(&mut Arc::make_mut(&mut policy.0).imports),
+            DecisionContent::Graph(graph) => rename(&mut Arc::make_mut(graph).imports),
+        }
+        Arc::new(content)
+    }
+
     pub(crate) fn key_of(&self, key: &str) -> Option<Arc<str>> {
         let candidates = [
             Some(key.to_string()),

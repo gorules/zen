@@ -50,12 +50,20 @@ pub struct ColumnarOutput<'a> {
     pub laned: usize,
     /// Rows decided one at a time (the rest as columns).
     pub hosted: usize,
+    /// Why (a policy's; a document not compiled says so).
+    pub fallbacks: Vec<crate::compiled::policy::Fallback>,
+    /// Why each row decided as it did: a policy's root matches and tables
+    /// (asked for with `trace`; rows decided one by one have none).
+    pub reasons: Vec<crate::compiled::policy::Reasons>,
     /// Rows read whole: their value as decided, where columns drop part.
     pub(crate) exact: Vec<Option<Variable>>,
 }
 
 impl<'a> ColumnarOutput<'a> {
-    pub(crate) fn from_results(results: Vec<Result<crate::DecisionGraphResponse, Box<EvaluationError>>>) -> Self {
+    pub(crate) fn from_results(
+        results: Vec<Result<crate::DecisionGraphResponse, Box<EvaluationError>>>,
+        reason: crate::compiled::policy::FallbackReason,
+    ) -> Self {
         let rows = results.len();
         let mut paths: Vec<Arc<str>> = Vec::new();
         let mut values: Vec<Vec<Variable>> = Vec::new();
@@ -99,6 +107,8 @@ impl<'a> ColumnarOutput<'a> {
             typed: 0,
             laned: 0,
             hosted: rows,
+            fallbacks: vec![crate::compiled::policy::Fallback { reason, rows }],
+            reasons: Vec::new(),
             exact,
         }
     }
@@ -117,6 +127,8 @@ impl<'a> ColumnarOutput<'a> {
             typed: output.typed,
             laned: output.laned,
             hosted: output.hosted,
+            fallbacks: output.fallbacks,
+            reasons: output.reasons,
             exact: output.exact,
         }
     }
@@ -204,6 +216,151 @@ impl CompiledGraph {
         )
     }
 
+    /// The input as the input node gives it on: each column at a date its
+    /// schema declares converted (a text that parses becomes the date, any
+    /// other value stays). The columns as given when the schema declares
+    /// none; `None` when a declared date is not a column's own (inside a
+    /// list or a record) or an input holds a date already (the node turns
+    /// those back into text): decided by rows.
+    fn dated_input<'a>(
+        &self,
+        content: &Arc<GraphContent>,
+        extensions: &NodeHandlerExtensions,
+        columns: &'a Columns<'a>,
+        store: &'a crate::ColumnStore<'a>,
+    ) -> Option<(&'a Columns<'a>, bool)> {
+        use crate::nodes::input::dates::DeclaredDates;
+        let step = self.steps.iter().flatten().find(|step| matches!(step.kind, crate::compiled::graph::Kind::Input))?;
+        let Some((_, schema)) = Self::validator(step, content, extensions) else {
+            return Some((columns, false));
+        };
+        if !DeclaredDates::mentions(&schema) {
+            return Some((columns, false));
+        }
+        let rows = columns.rows;
+        let mut converted = Columns::new(rows);
+        for (path, column) in &columns.columns {
+            if path.is_empty() {
+                return None;
+            }
+            // The schema at the column's path, through `properties`.
+            let mut at: Option<&serde_json::Value> = Some(&schema);
+            for segment in path.split('.') {
+                at = at
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|o| DeclaredDates::structure(o, "properties"))
+                    .and_then(serde_json::Value::as_object)
+                    .and_then(|p| p.get(segment));
+            }
+            let declared = at.is_some_and(DeclaredDates::declared);
+            let scalar = !matches!(column.values, Values::List { .. } | Values::Struct { .. } | Values::Any(_));
+            let holds_dates = matches!(column.values, Values::Any(values) if values.iter().any(DeclaredDates::dated));
+            if holds_dates || (!scalar && at.is_some_and(DeclaredDates::mentions)) {
+                return None;
+            }
+            let column = match declared {
+                false => *column,
+                true => {
+                    let values: Vec<Variable> = (0..rows)
+                        .map(|row| match column.variable(row) {
+                            Variable::String(text) => zen_expression::DateValue::from_text(&text).unwrap_or(Variable::String(text)),
+                            other => other,
+                        })
+                        .collect();
+                    Column {
+                        values: Values::Any(store.kept(values)),
+                        validity: column.validity,
+                    }
+                }
+            };
+            converted = converted.column(path, column);
+        }
+        Some((store.keep_columns(converted), true))
+    }
+
+    /// A request typed by an entity (`target`), prepared as columns as each
+    /// row's is (dates converted, defaults filled, under the entity's name):
+    /// the columns nodes read, and the rows that do not fit (their error,
+    /// from their own preparation). `None` when the request is not typed by
+    /// an entity; `Some(None)` when its columns can't be prepared (decided
+    /// by rows).
+    #[allow(clippy::type_complexity)]
+    async fn entity_input<'a>(
+        &self,
+        content: &Arc<GraphContent>,
+        extensions: &NodeHandlerExtensions,
+        columns: &'a Columns<'a>,
+        store: &'a crate::ColumnStore<'a>,
+    ) -> Option<Option<(&'a Columns<'a>, Vec<(usize, Rc<EvaluationError>)>)>> {
+        use crate::compiled::policy::FallbackReason;
+        let step = self.steps.iter().flatten().find(|step| matches!(step.kind, crate::compiled::graph::Kind::Input))?;
+        let prepared = match Self::request(step, content, extensions).await? {
+            Ok(prepared) => prepared,
+            Err(_) => return Some(None),
+        };
+        let target = prepared.target();
+        let rows = columns.rows;
+        let mut under = Columns::new(rows);
+        for (path, column) in &columns.columns {
+            if path.is_empty() {
+                return Some(None);
+            }
+            under = under.column(store.text(&format!("{target}.{path}")), *column);
+        }
+        let Some((converted, mut forced)) = crate::compiled::policy::columnar::prepare::convert(prepared.schema(), &under, store) else {
+            return Some(None);
+        };
+
+        // A reference sent as its id (not its record): the row says so.
+        for (field, _) in prepared.references() {
+            let Some(at) = converted.find(&format!("{target}.{field}")) else {
+                continue;
+            };
+            let column = converted.columns[at].1;
+            for (row, forced) in forced.iter_mut().enumerate() {
+                let id = match column.variable(row) {
+                    Variable::String(_) => true,
+                    Variable::Array(items) => items.borrow().iter().any(|item| matches!(item, Variable::String(_))),
+                    _ => false,
+                };
+                if id {
+                    forced.get_or_insert(FallbackReason::Reference);
+                }
+            }
+        }
+        // Rows the columns can't vouch for: prepared alone, their error kept.
+        let sure = prepared.schema().sure_prepared(&converted);
+        let mut failures = Vec::new();
+        for row in 0..rows {
+            if forced[row].is_none() && sure.as_ref().is_some_and(|sure| sure[row]) {
+                continue;
+            }
+            match prepared.prepare(&columns.row(row)) {
+                Err(message) => failures.push((
+                    row,
+                    Rc::new(EvaluationError::NodeError {
+                        node_id: step.node.id.clone(),
+                        source: message.into(),
+                        trace: None,
+                    }),
+                )),
+                // Fits, though its columns could not say it: by rows.
+                Ok(_) if forced[row].is_some() => return Some(None),
+                Ok(_) => {}
+            }
+        }
+        // The request as nodes read it: the entity's columns, unwrapped.
+        let prefix = format!("{target}.");
+        let mut input = Columns::new(rows);
+        for (path, column) in &converted.columns {
+            let Some(rest) = path.strip_prefix(prefix.as_str()) else {
+                return Some(None);
+            };
+            input = input.column(rest, *column);
+        }
+        Some(Some((store.keep_columns(input), failures)))
+    }
+
     fn reserved_inside(value: &Variable) -> bool {
         match value {
             Variable::Object(map) => {
@@ -270,15 +427,38 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &'a Columns<'a>,
+        store: &'a crate::ColumnStore<'a>,
     ) -> ColumnarOutput<'a> {
+        use crate::compiled::policy::FallbackReason;
+        // Why the rows go by row: the request not prepared as columns, or
+        // the nodes not planned so.
+        let mut why = FallbackReason::Unplanned;
         if max_depth > 0 {
-            if let Some(failures) = self.planned_input(content, extensions, columns).await {
-                if let Some(output) = self.plan().evaluate(self, content, extensions, max_depth, columns, failures).await {
-                    return output;
+            // A request typed by an entity: prepared as columns.
+            if let Some(prepared) = self.entity_input(content, extensions, columns, store).await {
+                match prepared {
+                    // Given on as prepared: the entity as policies read it.
+                    Some((input, failures)) => {
+                        if let Some(output) = self.plan().evaluate(self, content, extensions, max_depth, input, true, failures).await {
+                            return output;
+                        }
+                    }
+                    None => why = FallbackReason::Converted,
+                }
+            } else if let Some(failures) = self.planned_input(content, extensions, columns).await {
+                // Validated as given; the dates the schema declares
+                // converted, as the input node converts each row's.
+                match self.dated_input(content, extensions, columns, store) {
+                    Some((input, prepared)) => {
+                        if let Some(output) = self.plan().evaluate(self, content, extensions, max_depth, input, prepared, failures).await {
+                            return output;
+                        }
+                    }
+                    None => why = FallbackReason::Converted,
                 }
             }
         }
         let inputs = Self::input_data(columns).materialized();
-        ColumnarOutput::from_results(self.evaluate(content, extensions, max_depth, &inputs).await)
+        ColumnarOutput::from_results(self.evaluate(content, extensions, max_depth, &inputs).await, why)
     }
 }

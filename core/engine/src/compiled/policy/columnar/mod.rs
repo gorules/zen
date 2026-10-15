@@ -11,7 +11,8 @@ mod table;
 mod typed;
 
 pub(super) use fuse::Fusions;
-pub use output::PolicyColumnarOutput;
+pub use output::{Fallback, FallbackReason, PolicyColumnarOutput, Reasons};
+use output::Fallbacks;
 pub use prepare::ColumnStore;
 use member::Member;
 use sheet::{Bind, Sheet, Slot, Units};
@@ -54,6 +55,11 @@ struct Pass<'s, 'a> {
     kin: Vec<Kin>,
     delegated: bool,
     fell: usize,
+    /// Why rows fell back, and the block running (what a failure names).
+    why: Fallbacks,
+    at: Option<usize>,
+    /// Reasons asked for: each block run alone (a fused run says no arm).
+    reasons: bool,
     counts: (usize, usize),
     listed: RefCell<Vec<Listed<'a>>>,
 }
@@ -80,10 +86,72 @@ impl<'s, 'a> Pass<'s, 'a> {
         scopes
     }
 
+    /// Why rows decided as they did: each root match's arm, each root
+    /// table's matched rules (rows left to the row path have none).
+    fn reasons(&self) -> Vec<output::Reasons> {
+        let rows = self.sheet.rows;
+        let mut out = Vec::new();
+        for (block, arms) in &self.arms {
+            let Some(Native::Match { ir, .. }) = &self.plan.natives[*block] else {
+                continue;
+            };
+            if self.owners[*block].is_some() || arms.len() != rows {
+                continue;
+            }
+            out.push(output::Reasons::Match {
+                block: self.plan.blocks.refs[*block].block_id.clone(),
+                arms: (0..rows)
+                    .map(|row| match self.fallback[row] {
+                        true => None,
+                        false => arms[row].and_then(|arm| ir.arms.get(arm).map(|a| a.id.clone())),
+                    })
+                    .collect(),
+            });
+        }
+        for (block, firsts) in &self.chosen {
+            if self.owners[*block].is_some() || rows == 0 || firsts.len() % rows != 0 {
+                continue;
+            }
+            let outputs = firsts.len() / rows;
+            out.push(output::Reasons::Table {
+                block: self.plan.blocks.refs[*block].block_id.clone(),
+                rules: (0..rows)
+                    .map(|row| {
+                        if self.fallback[row] {
+                            return Vec::new();
+                        }
+                        let mut rules: Vec<u32> =
+                            firsts[row * outputs..(row + 1) * outputs].iter().copied().filter(|f| *f != u32::MAX).collect();
+                        rules.sort_unstable();
+                        rules.dedup();
+                        rules
+                    })
+                    .collect(),
+            });
+        }
+        out
+    }
+
+    /// The row left to the row path: a block failed on its columns.
     fn fall(&mut self, row: usize) {
+        let block = self.at.map(|at| self.plan.blocks.refs[at].block_id.clone());
+        self.fall_for(row, output::FallbackReason::Failed { block });
+    }
+
+    /// The row left to the row path, for `reason`.
+    fn fall_for(&mut self, row: usize, reason: output::FallbackReason) {
         if !self.fallback[row] {
             self.fallback[row] = true;
             self.fell += 1;
+            self.why.add(reason);
+        }
+    }
+
+    /// The row left to the row path: the running block runs by row for it.
+    fn fall_hosted(&mut self, row: usize) {
+        match self.at.map(|at| self.plan.blocks.refs[at].block_id.clone()) {
+            Some(block) => self.fall_for(row, output::FallbackReason::Hosted { block }),
+            None => self.fall(row),
         }
     }
 
@@ -132,6 +200,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let block = match event {
             Event::Select(block) | Event::Commit(block) => block,
         };
+        self.at = Some(block);
         if self.owners[block].is_some() {
             let selected = self.members.iter().any(|(b, _)| *b == block) || self.chosen.iter().any(|(b, _)| *b == block);
             if let Some(at) = self.entity_of(block) {
@@ -143,7 +212,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 let owned = |b: usize| b != block && self.owners[b].is_some() && self.entity_of(b) == Some(at);
                 let pending = self.members.iter().map(|(b, _)| *b).chain(self.chosen.iter().map(|(b, _)| *b)).any(owned);
                 if selected || pending || self.sheet.entities[at].cached() {
-                    positions.iter().for_each(|&row| self.fall(row));
+                    positions.iter().for_each(|&row| self.fall_hosted(row));
                     return;
                 }
                 self.sheet.retire(at);

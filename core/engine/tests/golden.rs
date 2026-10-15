@@ -166,7 +166,8 @@ impl Graphs {
             let fields = built.fields();
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
-            let output = decision.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            let store = zen_engine::ColumnStore::new();
+            let output = decision.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
             for row in 0..columns.rows {
                 let input = columns.row(row);
                 let key = Canon::key(id, &[], &input);

@@ -131,16 +131,20 @@ impl Decision {
         }
     }
 
+    /// The graph over columnar input; `store` holds what its input is
+    /// converted to (declared dates, an entity request's dates and
+    /// defaults) for as long as the output is read.
     pub async fn evaluate_columns<'a>(
         &self,
         columns: &'a zen_expression::lane::Columns<'a>,
+        store: &'a crate::ColumnStore<'a>,
         options: EvaluationOptions,
     ) -> crate::compiled::ColumnarOutput<'a> {
         match (self.walked(), Self::compiled(self.prepared())) {
             (false, Ok((compiled, content))) => {
                 let content = compiled.schemas(content, &self.loader).await;
                 compiled
-                    .evaluate_columns(&content, &self.extensions(&content), options.max_depth, columns)
+                    .evaluate_columns(&content, &self.extensions(&content), options.max_depth, columns, store)
                     .await
             }
             _ => {
@@ -150,7 +154,7 @@ impl Decision {
                     ..options
                 };
                 let results = self.evaluate_batch(&contexts, options).await;
-                crate::compiled::ColumnarOutput::from_results(results)
+                crate::compiled::ColumnarOutput::from_results(results, crate::compiled::policy::FallbackReason::Uncompiled)
             }
         }
     }

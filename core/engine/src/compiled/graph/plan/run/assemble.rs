@@ -127,6 +127,8 @@ impl<'a> Run<'_, 'a> {
             typed: store.counts.0,
             laned: store.counts.1,
             hosted: 0,
+            fallbacks: Vec::new(),
+            reasons: Vec::new(),
             exact: Vec::new(),
         }
     }
@@ -141,6 +143,7 @@ impl Plan {
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &'a Columns<'a>,
+        prepared: bool,
         failures: Vec<(usize, Rc<EvaluationError>)>,
     ) -> Option<ColumnarOutput<'a>> {
         if let Some(resolved) = &content.resolved_schemas {
@@ -155,7 +158,7 @@ impl Plan {
         }
         let (layout, root) = self.root(graph, columns)?;
         let root = root.as_ref().as_ref().ok()?;
-        let mut store = Store::new(root, columns);
+        let mut store = Store::new(root, columns, prepared);
         for (row, error) in failures {
             if let Some(slot) = store.errors.get_mut(row) {
                 if slot.is_none() {

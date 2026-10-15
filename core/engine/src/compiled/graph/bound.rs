@@ -67,9 +67,14 @@ pub(crate) type Many = Result<Vec<Variable>, (usize, IsolateError)>;
 
 type Programs = Specialized<(u64, Vec<Option<Kind>>), Option<Rc<LaneProgram>>>;
 
+/// Specialized programs a thread keeps (per program and input kinds).
+const SPECIALIZED_CAP: usize = 4096;
+
 impl<'a> Bound<'a> {
     thread_local! {
-        static SPECIALIZED: RefCell<Programs> = RefCell::new(Specialized::new(usize::MAX));
+        // Bounded: a long-lived worker evaluating many releases' programs
+        // starts over past the cap instead of keeping every one.
+        static SPECIALIZED: RefCell<Programs> = RefCell::new(Specialized::new(SPECIALIZED_CAP));
         static BLANK: RefCell<Rc<[Scope]>> = RefCell::new(Rc::from([]));
     }
 

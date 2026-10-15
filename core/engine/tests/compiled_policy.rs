@@ -1307,6 +1307,10 @@ async fn engine_prepared_columns_match_single_evaluations() {
     // Only the rows the row path must see (a key not in its pool, a date
     // that does not parse) are decided one by one.
     assert_eq!(output.hosted, 2, "rows decided one by one");
+    // And why: a key not in its pool, a date that does not parse.
+    let mut why: Vec<(String, usize)> = output.fallbacks.iter().map(|f| (format!("{:?}", f.reason), f.rows)).collect();
+    why.sort();
+    assert_eq!(why, vec![("Date".to_string(), 1), ("Reference".to_string(), 1)]);
 }
 
 /// A member match's arm chosen as columns, then its entity handed to the
@@ -1363,4 +1367,429 @@ async fn engine_columns_keep_member_arms_when_retired() {
         let output = engine.evaluate_columns("spec.json", &columns, &store, EvaluationOptions::default()).await;
         check("nested", &columns, &output, &singles);
     }
+}
+
+/// Reasons as columns (asked for with `trace`): each row's matched arm and
+/// matched table rules, as its own trace says them.
+#[tokio::test]
+async fn engine_columns_give_reasons() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{DecisionEngine, EvaluationOptions, Reasons};
+    use zen_expression::lane::{Column, Columns, Values};
+
+    let literal = conformance::literal::Parser::document(
+        r#"{models: {a: {x: "number"}}, blocks: [
+            {match: "a.size", arms: [["a.x > 50", "'big'"], ["a.x > 10", "'mid'"], ["", "'small'"]]},
+            {table: "bands", inputs: ["a.x"], outputs: ["a.band"], rules: [["> 40", "'high'"], ["> 5", "'mid'"], ["", "'low'"]]}
+        ]}"#,
+    )
+    .expect("policy literal");
+    let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("why.json", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+    let xs: Vec<rust_decimal::Decimal> = [1, 7, 20, 45, 99].into_iter().map(rust_decimal::Decimal::from).collect();
+    let columns = Columns::new(xs.len()).column("a.x", Column::new(Values::Dec(&xs)));
+    let store = zen_engine::ColumnStore::new();
+    let traced = EvaluationOptions { trace: true, max_depth: 10 };
+    let output = engine.evaluate_columns("why.json", &columns, &store, traced).await;
+    let (mut arms, mut rules) = (None, None);
+    for reasons in &output.reasons {
+        match reasons {
+            Reasons::Match { arms: a, .. } => arms = Some(a.clone()),
+            Reasons::Table { rules: r, .. } => rules = Some(r.clone()),
+        }
+    }
+    let (arms, rules) = (arms.expect("the match's arms"), rules.expect("the table's rules"));
+    for row in 0..xs.len() {
+        let single = engine.evaluate_with_opts("why.json", columns.row(row), traced).await.expect("decided");
+        let trace = serde_json::to_value(single.trace.expect("a trace")).expect("trace json");
+        let executions = trace["executions"].as_array().expect("executions");
+        let of = |kind: &str| executions.iter().find(|e| e["trace"]["kind"] == kind).map(|e| e["trace"].clone()).expect("traced");
+        let arm = of("match")["matchedArm"].as_str().map(str::to_string);
+        assert_eq!(arms[row].as_deref().map(str::to_string), arm, "row {row}: arm");
+        let matched: Vec<u32> = of("decisionTable")["matchedRows"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.as_u64().map(|r| r as u32))
+            .collect();
+        assert_eq!(rules[row], matched, "row {row}: rules");
+    }
+}
+
+/// Impact as columns: two engines' columnar outputs compared by row, and an
+/// aggregate recorded from contexts holding only the paths it reads, say
+/// what the row-by-row comparison says.
+#[cfg(all(feature = "driver", feature = "data"))]
+#[tokio::test]
+async fn impact_as_columns_matches_rows() {
+    use zen_engine::data::aggregate::{AggregateSpec, Aggregator};
+    use zen_engine::data::impact::{ColumnDiff, ImpactAnalysis};
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::DecisionContent;
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+
+    let graph = |threshold: i64| -> DecisionContent {
+        serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "type": "inputNode", "name": "request", "position": { "x": 0, "y": 0 } },
+                { "id": "ex", "type": "expressionNode", "name": "e", "position": { "x": 200, "y": 0 },
+                  "content": { "expressions": [
+                      { "id": "1", "key": "flag", "value": format!("x > {threshold}") },
+                      { "id": "2", "key": "twice", "value": "y == null ? null : y * 2" }
+                  ] } },
+                { "id": "out", "type": "outputNode", "name": "response", "position": { "x": 400, "y": 0 } }
+            ],
+            "edges": [
+                { "id": "a", "sourceId": "in", "targetId": "ex", "type": "edge" },
+                { "id": "b", "sourceId": "ex", "targetId": "out", "type": "edge" }
+            ]
+        }))
+        .expect("graph")
+    };
+    let engine = |threshold: i64| {
+        let loader = Arc::new(MemoryLoader::default());
+        loader.add("g", graph(threshold));
+        let engine = DecisionEngine::default().with_loader(loader);
+        engine.compile();
+        Arc::new(engine)
+    };
+    let (baseline, candidate) = (engine(5), engine(3));
+    let values: Vec<Value> = (0..40).map(|i| if i % 4 == 0 { json!({ "x": i % 10 }) } else { json!({ "x": i % 10, "y": i }) }).collect();
+    let built = Built::new(&values).expect("flat columns");
+    let columns = built.columns();
+    let spec: AggregateSpec = serde_json::from_value(json!({
+        "metrics": {
+            "changed": { "count": "changed" },
+            "flips": { "count": "after.flag and not before.flag" },
+            "byX": { "by": "string(input.x % 3)", "metrics": { "n": { "count": true }, "sumY": { "sum": "input.y ?? 0" } } }
+        }
+    }))
+    .expect("spec");
+    let options = EvaluationOptions::default();
+
+    // By rows.
+    let comparison = ImpactAnalysis::new(candidate.clone(), baseline.clone()).compare("g", "g").await.expect("compare");
+    let inputs: Vec<Variable> = (0..columns.rows).map(|row| columns.row(row)).collect();
+    let batch = comparison.run_batch_carrying(inputs.clone(), options).await;
+    let mut by_rows = Aggregator::compile(&spec).expect("aggregator");
+    for (row, input) in batch.rows.into_iter().zip(inputs) {
+        by_rows.record(row.into_aggregate_context(input));
+    }
+
+    // As columns.
+    let (store_b, store_a) = (ColumnStore::new(), ColumnStore::new());
+    let before = baseline.evaluate_columns("g", &columns, &store_b, options).await;
+    let after = candidate.evaluate_columns("g", &columns, &store_a, options).await;
+    let diff = ColumnDiff::of(&before, &after);
+    assert_eq!(serde_json::to_value(diff.summary()).unwrap(), serde_json::to_value(&batch.summary).unwrap(), "summary");
+    let mut as_columns = Aggregator::compile(&spec).expect("aggregator");
+    let paths = as_columns.reads().expect("reads by path");
+    assert!(paths.iter().all(|p| ["changed", "input.x", "input.y", "before.flag", "after.flag"].contains(&p.as_str())), "{paths:?}");
+    for row in 0..columns.rows {
+        as_columns.record(diff.context(&paths, &columns, &before, &after, row));
+    }
+    assert_eq!(as_columns.finalize(), by_rows.finalize());
+    assert!(diff.summary().changed > 0, "the thresholds differ for some rows");
+}
+
+/// A graph whose request is an entity (imported from a policy) decided as
+/// columns: each row prepared as the row path prepares it (dates, defaults),
+/// a row that does not fit failing as it fails alone.
+#[cfg(feature = "driver")]
+#[tokio::test]
+async fn engine_entity_requests_as_columns() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+    use zen_expression::lane::{Column, Columns, Values};
+
+    let prop = |name: &str, ty: &str, extra: Value| {
+        let mut out = json!({ "id": name, "name": name, "type": ty, "array": false, "optional": true });
+        if let (Some(out), Some(extra)) = (out.as_object_mut(), extra.as_object()) {
+            out.extend(extra.clone());
+        }
+        out
+    };
+    let models = json!({ "imports": [], "blocks": [
+        { "id": "b-txn", "type": "dataModel", "props": { "data": { "name": "transaction", "properties": [
+            prop("txn_id", "string", json!({})),
+            prop("amount", "number", json!({})),
+            prop("booked_at", "date", json!({})),
+            prop("level", "string", json!({ "default": "normal" })),
+            prop("customer", "reference", json!({ "target": "customer" }))
+        ] } } },
+        { "id": "b-cust", "type": "dataModel", "props": { "data": { "name": "customer", "properties": [
+            prop("id", "string", json!({})),
+            prop("risk_rating", "string", json!({})),
+            // Dated, with a default: a record sent with the request is
+            // converted and filled as the row path converts it.
+            prop("since", "date", json!({})),
+            prop("tier", "string", json!({ "default": "basic" }))
+        ] } } }
+    ] });
+    let graph = json!({
+        "imports": ["models/aml"],
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": { "target": "transaction" } },
+            { "id": "ex", "name": "ex", "type": "expressionNode", "content": { "expressions": [
+                { "id": "x0", "key": "big", "value": "(amount ?? 0) > 9000" },
+                { "id": "x1", "key": "risky", "value": "customer.risk_rating == 'high'" },
+                { "id": "x2", "key": "level", "value": "level" },
+                { "id": "x3", "key": "when", "value": "booked_at == null ? 'none' : booked_at.add(1, 'd')" },
+                { "id": "x4", "key": "whenKind", "value": "type(booked_at)" },
+                { "id": "x5", "key": "since", "value": "customer.since" },
+                { "id": "x6", "key": "sinceKind", "value": "type(customer.since)" },
+                { "id": "x7", "key": "tier", "value": "customer.tier" }
+            ] } },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "e1", "sourceId": "in", "targetId": "ex", "sourceHandle": null },
+            { "id": "e2", "sourceId": "ex", "targetId": "out", "sourceHandle": null }
+        ]
+    });
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("models/aml", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(models).expect("models")))));
+    loader.add("g.json", serde_json::from_value::<DecisionContent>(graph).expect("graph"));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+
+    // Rows: fine; a default to fill; a date that does not parse; an empty
+    // date; a customer sent as its id; fine again.
+    let booked = texts(&[Some("2026-01-02T10:00:00Z"), Some("2026-01-03"), Some("nope"), Some(""), Some("2026-01-05T00:00:00Z"), Some("2026-01-06T00:00:00Z")]);
+    let ids = texts(&[Some("t1"), Some("t2"), Some("t3"), Some("t4"), Some("t5"), Some("t6")]);
+    let amounts: Vec<rust_decimal::Decimal> = [100, 9500, 50, 10000, 7, 9001].into_iter().map(rust_decimal::Decimal::from).collect();
+    let levels = texts(&[Some("vip"), None, Some("normal"), None, None, Some("low")]);
+    let customer_ids = texts(&[Some("c1"), Some("c2"), Some("c3"), Some("c4"), None, Some("c6")]);
+    let risks = texts(&[Some("high"), Some("low"), Some("high"), Some("low"), None, Some("high")]);
+    let bare = texts(&[None, None, None, None, Some("c5"), None]);
+    let since = texts(&[Some("2020-01-01"), None, Some("2021-06-30"), Some("2022-02-02"), None, Some("nope")]);
+    fn text(t: &(Vec<i32>, String, Vec<u64>)) -> Values<'_> {
+        Values::Text { offsets: &t.0, data: &t.1 }
+    }
+    let records = Columns::new(6)
+        .column("txn_id", Column::new(text(&ids)))
+        .column("amount", Column::new(Values::Dec(&amounts)))
+        .column("booked_at", Column::new(text(&booked)))
+        .column("level", Column::with_validity(text(&levels), &levels.2, 0))
+        .column("customer.id", Column::with_validity(text(&customer_ids), &customer_ids.2, 0))
+        .column("customer.risk_rating", Column::with_validity(text(&risks), &risks.2, 0))
+        .column("customer.since", Column::with_validity(text(&since), &since.2, 0));
+    let with_id = Columns::new(6)
+        .column("txn_id", Column::new(text(&ids)))
+        .column("amount", Column::new(Values::Dec(&amounts)))
+        .column("booked_at", Column::new(text(&booked)))
+        .column("level", Column::with_validity(text(&levels), &levels.2, 0))
+        .column("customer", Column::with_validity(text(&bare), &bare.2, 0));
+    for columns in [&records, &with_id] {
+        let store = ColumnStore::new();
+        let output = engine.evaluate_columns("g.json", columns, &store, EvaluationOptions::default()).await;
+        for row in 0..columns.rows {
+            let single = engine
+                .evaluate_with_opts("g.json", columns.row(row), EvaluationOptions::default())
+                .await
+                .map(|r| r.result.to_value())
+                .map_err(|e| e.to_string());
+            let columnar = match &output.errors[row] {
+                Some(error) => Err(error.to_string()),
+                None => Ok(output.row(row).to_value()),
+            };
+            assert_eq!(columnar.is_ok(), single.is_ok(), "row {row}: {columnar:?} vs {single:?}");
+            if let (Ok(columnar), Ok(single)) = (columnar, single) {
+                assert_eq!(columnar, single, "row {row}");
+            }
+        }
+        assert_eq!(output.hosted, 0, "decided as columns: {:?}", output.fallbacks);
+        let decided = (0..columns.rows).filter(|&row| output.errors[row].is_none()).count();
+        assert!(decided >= 3, "most rows decide: {decided}");
+        // An entity's dates are dates, as in policies.
+        assert_eq!(output.row(0).to_value()["whenKind"], json!("date"), "{:?}", output.row(0).to_value());
+    }
+    // A record sent with the request: its dates are dates, its defaults
+    // filled.
+    let store = ColumnStore::new();
+    let output = engine.evaluate_columns("g.json", &records, &store, EvaluationOptions::default()).await;
+    assert_eq!(output.row(0).to_value()["sinceKind"], json!("date"), "{:?}", output.row(0).to_value());
+    assert_eq!(output.row(0).to_value()["tier"], json!("basic"), "{:?}", output.row(0).to_value());
+}
+
+/// A graph whose input schema declares dates, decided as columns: each
+/// declared date converted as the input node converts a row's, and its
+/// date methods read as the row path reads them.
+#[cfg(feature = "driver")]
+#[tokio::test]
+async fn engine_schema_dates_as_columns() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::DecisionContent;
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+    use zen_expression::lane::{Column, Columns, Values};
+
+    let graph = json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": json!({
+                "type": "object",
+                "properties": {
+                    "amount": { "type": "number" },
+                    "at": { "type": "string", "format": "date-time" },
+                    "due": { "anyOf": [{ "type": "null" }, { "type": "string", "format": "date" }] }
+                }
+            }).to_string() } },
+            { "id": "ex", "name": "ex", "type": "expressionNode", "content": { "expressions": [
+                { "id": "x0", "key": "year", "value": "year(at)" },
+                { "id": "x1", "key": "plusDay", "value": "at.add(1, 'd')" },
+                { "id": "x2", "key": "same", "value": "at" },
+                { "id": "x3", "key": "kind", "value": "type(at)" },
+                { "id": "x4", "key": "due", "value": "due" },
+                { "id": "x5", "key": "big", "value": "amount > 100" }
+            ] } },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "e1", "sourceId": "in", "targetId": "ex", "sourceHandle": null },
+            { "id": "e2", "sourceId": "ex", "targetId": "out", "sourceHandle": null }
+        ]
+    });
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("d.json", serde_json::from_value::<DecisionContent>(graph).expect("graph"));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+    let amounts: Vec<rust_decimal::Decimal> = [50, 150, 7, 300].into_iter().map(rust_decimal::Decimal::from).collect();
+    let at = texts(&[Some("2024-02-28T12:00:00Z"), Some("2025-03-20T10:15:30Z"), Some("2026-01-04T08:30:00Z"), Some("2026-01-05T00:00:00Z")]);
+    let due = texts(&[Some("2026-02-01"), None, Some("not a date"), Some("2026-03-01")]);
+    fn text(t: &(Vec<i32>, String, Vec<u64>)) -> Values<'_> {
+        Values::Text { offsets: &t.0, data: &t.1 }
+    }
+    let columns = Columns::new(4)
+        .column("amount", Column::new(Values::Dec(&amounts)))
+        .column("at", Column::new(text(&at)))
+        .column("due", Column::with_validity(text(&due), &due.2, 0));
+    let store = ColumnStore::new();
+    let output = engine.evaluate_columns("d.json", &columns, &store, EvaluationOptions::default()).await;
+    for row in 0..columns.rows {
+        let single = engine
+            .evaluate_with_opts("d.json", columns.row(row), EvaluationOptions::default())
+            .await
+            .map(|r| r.result.to_value())
+            .map_err(|e| e.to_string());
+        let columnar = match &output.errors[row] {
+            Some(error) => Err(error.to_string()),
+            None => Ok(output.row(row).to_value()),
+        };
+        assert_eq!(columnar, single, "row {row}");
+    }
+    assert_eq!(output.hosted, 0, "decided as columns: {:?}", output.fallbacks);
+}
+
+/// An import names its document as the loader does, with or without
+/// `.json`: the policy compiles either way (and decides on columns).
+#[cfg(feature = "driver")]
+#[tokio::test]
+async fn imports_name_documents_with_or_without_json() {
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+    use rust_decimal::Decimal;
+    use zen_expression::lane::{Column, Columns, Values};
+
+    let models = json!({ "imports": [], "blocks": [
+        { "id": "m", "type": "dataModel", "props": { "data": { "name": "card", "properties": [
+            { "id": "n", "name": "n", "type": "number", "array": false, "optional": true }
+        ] } } }
+    ] });
+    let policy = |import: &str| {
+        json!({ "imports": [import], "blocks": [
+            { "id": "busy", "type": "expression", "props": { "data": { "key": "card.busy", "value": "(card.n ?? 0) >= 5" } } }
+        ] })
+    };
+    let loader = Arc::new(MemoryLoader::default());
+    let add = |key: &str, document: Value| {
+        loader.add(key, DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+    };
+    add("models/cards", models);
+    add("bare", policy("models/cards"));
+    add("suffixed", policy("models/cards.json"));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+
+    let n = [Decimal::from(3), Decimal::from(7)];
+    let columns = Columns::new(2).column("card.n", Column::new(Values::Dec(&n)));
+    for key in ["bare", "suffixed"] {
+        let store = ColumnStore::new();
+        let output = engine.evaluate_columns(key, &columns, &store, EvaluationOptions::default()).await;
+        assert_eq!(output.hosted, 0, "{key}: {:?}", output.fallbacks);
+        assert_eq!(output.row(1).to_value()["card"]["busy"], json!(true), "{key}");
+    }
+}
+
+/// A referenced record's field given as null is kept as the row path keeps
+/// it (columns read null as absent; the row is then read whole).
+#[cfg(feature = "driver")]
+#[tokio::test]
+async fn engine_columns_keep_a_referenced_records_nulls() {
+    use rust_decimal::Decimal;
+    use zen_engine::loader::MemoryLoader;
+    use zen_engine::model::{DecisionContent, PolicyContent};
+    use zen_engine::{ColumnStore, DecisionEngine, EvaluationOptions};
+    use zen_expression::lane::{Column, Columns, Dictionary, Values};
+
+    let property = |name: &str, kind: &str, extra: Value| {
+        let mut out = json!({"id": name, "name": name, "type": kind, "array": false, "optional": true});
+        if let (Some(out), Some(extra)) = (out.as_object_mut(), extra.as_object()) {
+            out.extend(extra.clone());
+        }
+        out
+    };
+    let document = json!({"imports": [], "blocks": [
+        {"id": "model:transaction", "type": "dataModel", "props": {"data": {"name": "transaction", "scope": "entity", "properties": [
+            property("amount", "number", json!({})),
+            property("customer", "reference", json!({"target": "customer"})),
+        ]}}},
+        {"id": "model:customer", "type": "dataModel", "props": {"data": {"name": "customer", "scope": "entity", "properties": [
+            property("id", "string", json!({})),
+            property("score", "number", json!({})),
+        ]}}},
+        {"id": "b0", "type": "expression", "props": {"data": {"key": "transaction.big", "value": "(transaction.amount ?? 0) > 1"}}},
+    ]});
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("p.json", DecisionContent::Policy(PolicyContent(Arc::new(serde_json::from_value(document).expect("policy json")))));
+    let engine = DecisionEngine::default().with_loader(loader);
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:?}");
+
+    // Two rows, each with its customer: the first one's score given as null.
+    let amounts = [Decimal::from(5), Decimal::from(0)];
+    let keys = (vec![0i32, 2, 4], "c1c2".to_string());
+    let ids = (vec![0i32, 2, 4], "c1c2".to_string());
+    let scores = [Variable::Null, Variable::Number(Decimal::from(7))];
+    let fields = [
+        ("id", Column::new(Values::Text { offsets: &ids.0, data: &ids.1 })),
+        ("score", Column::new(Values::Any(&scores))),
+    ];
+    let item = Column::new(Values::Struct { fields: &fields, len: 2 });
+    let offsets = [0i32, 1, 2];
+    let columns = Columns::new(2)
+        .column("transaction.amount", Column::new(Values::Dec(&amounts)))
+        .column("transaction.customer", Column::new(Values::Text { offsets: &keys.0, data: &keys.1 }))
+        .column("customer", Column::new(Values::List { offsets: &offsets, child: Dictionary::Column(&item) }));
+    let store = ColumnStore::new();
+    let output = engine.evaluate_columns("p.json", &columns, &store, EvaluationOptions::default()).await;
+    assert_eq!(output.hosted, 0, "decided as columns: {:?}", output.fallbacks);
+    for row in 0..2 {
+        let single = engine
+            .evaluate_with_opts("p.json", columns.row(row), EvaluationOptions::default())
+            .await
+            .map(|r| r.result.to_value())
+            .expect("decides");
+        assert_eq!(output.row(row).to_value(), single, "row {row}");
+    }
+    assert_eq!(output.row(0).to_value()["transaction"]["customer"]["score"], Value::Null);
+    assert!(output.row(0).to_value()["transaction"]["customer"].as_object().is_some_and(|c| c.contains_key("score")), "{:?}", output.row(0).to_value());
 }

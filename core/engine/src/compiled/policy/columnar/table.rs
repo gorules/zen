@@ -41,7 +41,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             return;
         }
         if units.member.is_some() {
-            hosted.into_iter().for_each(|row| self.fall(row));
+            hosted.into_iter().for_each(|row| self.fall_hosted(row));
             return;
         }
         let at = match self.hosting.iter().position(|(b, _)| *b == block) {

@@ -249,7 +249,7 @@ impl Db {
             trace: false,
         };
         self.check_evaluable(&probe)?;
-        Ok(self.eval_artifact(policy_path).evaluate_columns(policy_path, goals, columns, store))
+        Ok(self.eval_artifact(policy_path).evaluate_columns(policy_path, goals, columns, store, false))
     }
 
     pub fn evaluate_batch(
@@ -380,6 +380,7 @@ impl EvalArtifact {
         goals: &[Arc<str>],
         columns: &'a zen_expression::lane::Columns<'a>,
         store: &'a crate::compiled::policy::ColumnStore<'a>,
+        reasons: bool,
     ) -> crate::compiled::policy::PolicyColumnarOutput<'a> {
         use crate::compiled::policy::columnar::prepare;
         let converts = !self.reference_fields.is_empty() || self.input_schema.converts();
@@ -387,7 +388,7 @@ impl EvalArtifact {
             .then(|| prepare::prepare(self, columns, store))
             .flatten()
             .map(|prepared| store.keep(prepared));
-        self.plan(goals).evaluate_columns(self, policy_path, goals, columns, prepared)
+        self.plan(goals).evaluate_columns(self, policy_path, goals, columns, prepared, reasons)
     }
 
     pub(crate) fn evaluate_batch(

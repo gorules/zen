@@ -70,6 +70,8 @@ impl CompiledGraph {
         let (output, failures): (Data<'a>, Vec<(usize, String)>) = match &step.kind {
             Kind::Switch { .. } | Kind::Host => (data, Vec::new()),
             Kind::Output if !step.schema => (data, Vec::new()),
+            // An entity's request: prepared already (its dates dates).
+            Kind::Input if Self::entity(step).is_some() => (data, Vec::new()),
             Kind::Input if !step.schema && Self::unresolved(content, &step.node) => {
                 let values: Col = data
                     .materialized()

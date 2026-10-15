@@ -141,7 +141,7 @@ pub mod workspace;
 
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use compiled::policy::{ColumnStore, PolicyColumnarOutput};
+pub use compiled::policy::{ColumnStore, Fallback, FallbackReason, PolicyColumnarOutput, Reasons};
 pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;

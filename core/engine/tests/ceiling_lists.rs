@@ -612,7 +612,8 @@ async fn ceiling_product_listing_scoring() {
         let ins = Inputs::new(&built);
         let hand = ins.run(true);
         let alt = ins.rows();
-        let engine = compiled.evaluate_columns(&columns, options).await;
+        let store = zen_engine::ColumnStore::new();
+        let engine = compiled.evaluate_columns(&columns, &store, options).await;
         let mut mismatches = 0;
         for r in 0..rows {
             let want = match walker.evaluate(columns.row(r)).await {
@@ -675,7 +676,8 @@ async fn ceiling_product_listing_scoring() {
             }
             best[0] = best[0].min(t.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             let t = Instant::now();
-            let out = compiled.evaluate_columns(&columns, options).await;
+            let store = zen_engine::ColumnStore::new();
+            let out = compiled.evaluate_columns(&columns, &store, options).await;
             std::hint::black_box(&out);
             drop(out);
             best[1] = best[1].min(t.elapsed().as_nanos() as f64 / rows as f64);
@@ -706,7 +708,8 @@ async fn ceiling_product_listing_scoring() {
         let columns = built.columns();
         let until = Instant::now() + std::time::Duration::from_secs(seconds.parse().unwrap_or(5));
         while Instant::now() < until {
-            let _ = compiled.evaluate_columns(&columns, options).await;
+            let store = zen_engine::ColumnStore::new();
+            let _ = compiled.evaluate_columns(&columns, &store, options).await;
         }
     }
 }

@@ -323,11 +323,11 @@ impl DecisionEngine {
             if let Some((entry, compiled_key)) = compiled {
                 return match entry {
                     CompiledEntry::Policy(artifact) => ColumnarOutput::from_policy(
-                        artifact.evaluate_columns(&compiled_key, &[], columns, store),
+                        artifact.evaluate_columns(&compiled_key, &[], columns, store, options.trace),
                     ),
                     CompiledEntry::Graph(graph) => {
                         self.decision_from_graph(graph)
-                            .evaluate_columns(columns, options)
+                            .evaluate_columns(columns, store, options)
                             .await
                     }
                 };
@@ -337,7 +337,7 @@ impl DecisionEngine {
             if let DecisionContent::Graph(_) = content.as_ref() {
                 return self
                     .decision_from_graph_arc(content)
-                    .evaluate_columns(columns, options)
+                    .evaluate_columns(columns, store, options)
                     .await;
             }
         }
@@ -345,7 +345,7 @@ impl DecisionEngine {
         for row in 0..columns.rows {
             results.push(self.evaluate_with_opts(key_str, columns.row(row), options).await);
         }
-        ColumnarOutput::from_results(results)
+        ColumnarOutput::from_results(results, crate::compiled::policy::FallbackReason::Uncompiled)
     }
 
     pub async fn evaluate_serialized<K>(

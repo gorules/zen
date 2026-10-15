@@ -481,6 +481,45 @@ impl Aggregator {
         })
     }
 
+    /// The paths of a record's context its expressions read (`input.…`,
+    /// `before.…`, `after.…`, `changed`, `errors.…`), facts' own names left
+    /// out (they are computed); `None` when one reads the context in a way
+    /// no path says (then give the whole context).
+    pub fn reads(&self) -> Option<Vec<String>> {
+        let mut programs: Vec<&LaneProgram> = self.facts.iter().map(|(_, p)| p).collect();
+        fn metric<'m>(of: &'m CompiledMetric, into: &mut Vec<&'m LaneProgram>) {
+            into.extend(of.when.iter());
+            match &of.kind {
+                CompiledKind::Count(program) => into.extend(program.iter()),
+                CompiledKind::Sum(p) | CompiledKind::Min(p) | CompiledKind::Max(p) => into.push(p),
+                CompiledKind::Group { by, metrics } => {
+                    into.push(by);
+                    metrics.iter().for_each(|m| metric(m, into));
+                }
+                CompiledKind::Sample { value, rank_by, .. } => {
+                    into.push(value);
+                    into.extend(rank_by.iter());
+                }
+            }
+        }
+        self.metrics.iter().for_each(|m| metric(m, &mut programs));
+        let facts: Vec<&str> = self.facts.iter().map(|(name, _)| name.as_str()).collect();
+        let mut paths: Vec<String> = Vec::new();
+        for program in programs {
+            if program.program().opaque() {
+                return None;
+            }
+            for key in &program.program().keys {
+                let root = key.split('.').next().unwrap_or(key);
+                if !facts.contains(&root) && !paths.contains(key) {
+                    paths.push(key.clone());
+                }
+            }
+        }
+        paths.sort();
+        Some(paths)
+    }
+
     /// Records one impact context — `{input, before, after, errors?}` — after
     /// augmenting it with the computed facts at top level (facts win on name
     /// clashes, mirroring how the canonical filter context shadows).

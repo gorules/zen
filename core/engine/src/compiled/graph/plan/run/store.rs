@@ -58,6 +58,8 @@ pub(crate) struct Store<'a> {
     pub(super) rows: usize,
     pub(super) words: usize,
     input: &'a Columns<'a>,
+    /// The input already prepared (dates converted): read as it is.
+    prepared: bool,
     pub(super) slots: Vec<Option<Leaf<'a>>>,
     inputs: Vec<Option<(Column<'a>, std::cell::OnceCell<Leaf<'a>>)>>,
     arena: Vec<u64>,
@@ -93,7 +95,7 @@ impl<'a> Store<'a> {
         static POOL: std::cell::RefCell<(Vec<u64>, Vec<u32>)> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
     }
 
-    pub(super) fn new(seg: &SegPlan, input: &'a Columns<'a>) -> Self {
+    pub(super) fn new(seg: &SegPlan, input: &'a Columns<'a>, prepared: bool) -> Self {
         let rows = input.rows;
         let words = rows.div_ceil(64);
         let slots = vec![None; seg.slots.len()];
@@ -116,6 +118,7 @@ impl<'a> Store<'a> {
             rows,
             words,
             input,
+            prepared,
             slots,
             inputs,
             arena,
@@ -177,7 +180,12 @@ impl<'a> Store<'a> {
             return leaf.clone();
         }
         match self.inputs.get(slot as usize) {
-            Some(Some((column, leaf))) => leaf.get_or_init(|| Normalizer::input(*column, self.rows)).clone(),
+            Some(Some((column, leaf))) => leaf
+                .get_or_init(|| match self.prepared {
+                    true => Normalizer::prepared(*column, self.rows),
+                    false => Normalizer::input(*column, self.rows),
+                })
+                .clone(),
             _ => Leaf::nulls(self.rows),
         }
     }

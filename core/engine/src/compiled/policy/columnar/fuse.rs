@@ -307,7 +307,8 @@ impl<'s, 'a> Pass<'s, 'a> {
             }
         };
         fresh(self, rows);
-        let typed = Exports::enabled();
+        // Reasons asked for: no group run as one (each block says its own).
+        let typed = Exports::enabled() && !self.reasons;
         for item in self.schedule(&events, rows) {
             fresh(self, rows);
             if rows.is_empty() {
@@ -400,6 +401,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             self.counts.1 += item.units.len();
             let census = Census::on().then(|| (Instant::now(), rows.len(), item.domain.is_some()));
             let group = match (item.domain, blocks.len() > 1) {
+                _ if self.reasons => None,
                 (Some(domain), true) => self.regroup(&item, rows).and_then(|entity| {
                     let fused = self.plan.fusions.get(self.plan, &blocks, domain.is_some())?;
                     Some((fused, entity))
@@ -579,6 +581,8 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn fused(&mut self, fused: &Fused<Sink>, entity: Option<usize>, rows: &[usize]) {
+        // Several blocks run as one: a failure names none.
+        self.at = None;
         match entity {
             None => {
                 let (leaves, failed) = self.run_outs(&fused.program, rows);

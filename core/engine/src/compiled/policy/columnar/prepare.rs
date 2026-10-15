@@ -7,6 +7,8 @@
 //! is null or not a string) is forced onto the row path, which reports or
 //! keeps it as it always has.
 
+use std::sync::Arc;
+
 use bumpalo::Bump;
 use typed_arena::Arena;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};
@@ -16,12 +18,15 @@ use crate::policy::evaluator::EvalArtifact;
 use crate::policy::ir::{Property, PropertyTypeIr};
 use crate::policy::validator::InputSchema;
 
+use super::FallbackReason;
+
 /// What prepared columns are made of, held for as long as they (and the
 /// output read from them) are.
 pub struct ColumnStore<'a> {
     bump: Bump,
     values: Arena<Vec<Variable>>,
     prepared: Arena<Prepared<'a>>,
+    columns: Arena<Columns<'a>>,
 }
 
 impl Default for ColumnStore<'_> {
@@ -30,6 +35,7 @@ impl Default for ColumnStore<'_> {
             bump: Bump::new(),
             values: Arena::new(),
             prepared: Arena::new(),
+            columns: Arena::new(),
         }
     }
 }
@@ -56,6 +62,18 @@ impl<'a> ColumnStore<'a> {
     pub(crate) fn keep(&'a self, prepared: Prepared<'a>) -> &'a Prepared<'a> {
         self.prepared.alloc(prepared)
     }
+
+    pub(crate) fn keep_columns(&'a self, columns: Columns<'a>) -> &'a Columns<'a> {
+        self.columns.alloc(columns)
+    }
+
+    pub(crate) fn text(&'a self, text: &str) -> &'a str {
+        self.bump.alloc_str(text)
+    }
+
+    pub(crate) fn kept(&'a self, values: Vec<Variable>) -> &'a [Variable] {
+        self.values(values)
+    }
 }
 
 pub(crate) struct Prepared<'a> {
@@ -63,39 +81,14 @@ pub(crate) struct Prepared<'a> {
     pub converted: Columns<'a>,
     /// And references replaced by their items: what a row is evaluated as.
     pub hydrated: Columns<'a>,
-    /// Rows left to the row path.
-    pub forced: Vec<bool>,
+    /// Rows left to the row path, and why.
+    pub forced: Vec<Option<FallbackReason>>,
 }
 
 /// The prepared columns of `columns`, or `None` when their shape is one
 /// this does not prepare (the row path then prepares every row).
 pub(crate) fn prepare<'a>(artifact: &EvalArtifact, columns: &'a Columns<'a>, store: &'a ColumnStore<'a>) -> Option<Prepared<'a>> {
-    let schema = &artifact.input_schema;
-    if schema.converts_globals() {
-        return None;
-    }
-    let rows = columns.rows;
-    let mut forced = vec![false; rows];
-    let mut converted = Columns::new(rows);
-    for (path, column) in &columns.columns {
-        let column = match path.split_once('.') {
-            None if schema.is_pool(path) => pool(schema, path, column, store, &mut forced)?,
-            None if schema.is_root(path) && schema.is_dated(path) => return None,
-            None => *column,
-            Some((root, rest)) if schema.is_root(root) => match schema.is_dated(root) {
-                false => *column,
-                true if rest.contains('.') => return None,
-                true => match schema.model(root)?.properties.iter().find(|p| p.name.as_ref() == rest) {
-                    None => *column,
-                    Some(property) => property_column(schema, property, column, store, &mut forced, |row| row)?,
-                },
-            },
-            Some((root, _)) if schema.is_pool(root) => return None,
-            Some(_) => *column,
-        };
-        converted = converted.column(path, column);
-    }
-    defaults(schema, &mut converted, store);
+    let (converted, mut forced) = convert(&artifact.input_schema, columns, store)?;
     let mut hydrated = converted.clone();
     for field in &artifact.reference_fields {
         if field.array {
@@ -110,6 +103,78 @@ pub(crate) fn prepare<'a>(artifact: &EvalArtifact, columns: &'a Columns<'a>, sto
     })
 }
 
+/// `columns` with `schema`'s conversions (declared dates, defaults) done as
+/// columns, and the rows left to the row path (and why); `None` when their
+/// shape is not one this converts.
+pub(crate) fn convert<'a>(
+    schema: &InputSchema,
+    columns: &Columns<'a>,
+    store: &'a ColumnStore<'a>,
+) -> Option<(Columns<'a>, Vec<Option<FallbackReason>>)> {
+    if schema.converts_globals() {
+        return None;
+    }
+    let rows = columns.rows;
+    let mut forced: Vec<Option<FallbackReason>> = vec![None; rows];
+    let mut converted = Columns::new(rows);
+    for (path, column) in &columns.columns {
+        let column = match path.split_once('.') {
+            None if schema.is_pool(path) => pool(schema, path, column, store, &mut forced)?,
+            None if schema.is_root(path) && schema.is_dated(path) => return None,
+            None => *column,
+            Some((root, rest)) if schema.is_root(root) => match schema.is_dated(root) {
+                false => *column,
+                true => {
+                    let (name, deeper) = rest.split_once('.').map_or((rest, false), |(name, _)| (name, true));
+                    match (schema.model(root)?.properties.iter().find(|p| p.name.as_ref() == name), deeper) {
+                        (None, _) => *column,
+                        (Some(property), false) => property_column(schema, property, column, store, &mut forced, |row| row)?,
+                        (Some(property), true) => {
+                            let under = rest.split_once('.').map_or("", |(_, under)| under);
+                            nested(schema, property, under, column, store, &mut forced)?
+                        }
+                    }
+                }
+            },
+            Some((root, _)) if schema.is_pool(root) => return None,
+            Some(_) => *column,
+        };
+        converted = converted.column(path, column);
+    }
+    defaults(schema, &mut converted, store);
+    Some((converted, forced))
+}
+
+/// A column under a root's property (`path` under it): a record's field
+/// converted as the row path converts it (a record of an entity converted
+/// as that entity, its dates parsed; its defaults are filled with the
+/// roots'), a reference's kept as sent; `None` where the columns can't (a
+/// list of records).
+fn nested<'a>(
+    schema: &InputSchema,
+    property: &Property,
+    path: &str,
+    column: &Column<'a>,
+    store: &'a ColumnStore<'a>,
+    forced: &mut [Option<FallbackReason>],
+) -> Option<Column<'a>> {
+    match &property.kind {
+        PropertyTypeIr::Reference { .. } if !property.array => Some(*column),
+        PropertyTypeIr::Relationship { target } if !property.array => {
+            if !schema.is_dated(target) {
+                return Some(*column);
+            }
+            let (name, under) = path.split_once('.').map_or((path, None), |(name, under)| (name, Some(under)));
+            match (schema.model(target)?.properties.iter().find(|p| p.name.as_ref() == name), under) {
+                (None, _) => Some(*column),
+                (Some(field), None) => property_column(schema, field, column, store, forced, |row| row),
+                (Some(field), Some(under)) => nested(schema, field, under, column, store, forced),
+            }
+        }
+        _ => None,
+    }
+}
+
 /// A root's property column as converted: dates parsed (a row whose date
 /// does not parse forced), other kinds as given. `row_of` maps a value's
 /// index to its row (an item's to the row of its pool).
@@ -118,7 +183,7 @@ fn property_column<'a>(
     property: &Property,
     column: &Column<'a>,
     store: &'a ColumnStore<'a>,
-    forced: &mut [bool],
+    forced: &mut [Option<FallbackReason>],
     row_of: impl Fn(usize) -> usize,
 ) -> Option<Column<'a>> {
     match (&property.kind, property.array) {
@@ -130,12 +195,12 @@ fn property_column<'a>(
                     // a valid date left as is; any other fails there).
                     Variable::String(text) => DateValue::from_text(&text).unwrap_or_else(|| {
                         if !text.is_empty() {
-                            forced[row_of(at)] = true;
+                            forced[row_of(at)].get_or_insert(FallbackReason::Date);
                         }
                         Variable::String(text)
                     }),
                     other => {
-                        forced[row_of(at)] = true;
+                        forced[row_of(at)].get_or_insert(FallbackReason::Date);
                         other
                     }
                 })
@@ -146,14 +211,19 @@ fn property_column<'a>(
             })
         }
         (PropertyTypeIr::Date, true) => None,
-        (PropertyTypeIr::Relationship { target }, _) if schema.is_dated(target) => None,
+        // A record converts as its entity; text (an id, as sent) is kept,
+        // as the row path keeps it.
+        (PropertyTypeIr::Relationship { target }, _) if schema.is_dated(target) => match column.values {
+            Values::Text { .. } => Some(*column),
+            _ => None,
+        },
         _ => Some(*column),
     }
 }
 
 /// A pool (a list of items per row) with its items converted and their
 /// defaults filled.
-fn pool<'a>(schema: &InputSchema, target: &str, column: &Column<'a>, store: &'a ColumnStore<'a>, forced: &mut [bool]) -> Option<Column<'a>> {
+fn pool<'a>(schema: &InputSchema, target: &str, column: &Column<'a>, store: &'a ColumnStore<'a>, forced: &mut [Option<FallbackReason>]) -> Option<Column<'a>> {
     if !schema.is_dated(target) {
         return Some(*column);
     }
@@ -227,24 +297,16 @@ fn filled<'a>(column: &Column<'a>, len: usize, default: &Variable, present: Opti
 /// the entity and the property is missing or null.
 fn defaults<'a>(schema: &InputSchema, columns: &mut Columns<'a>, store: &'a ColumnStore<'a>) {
     let rows = columns.rows;
-    let mut roots: Vec<&'a str> = columns
-        .columns
-        .iter()
-        .map(|(path, _)| path.split_once('.').map_or(*path, |(root, _)| root))
-        .filter(|root| schema.is_root(root))
-        .collect();
-    roots.sort_unstable();
-    roots.dedup();
-    for root in roots {
-        let properties = schema.defaults_of(root);
+    for (record, entity) in records(schema, columns) {
+        let properties = schema.defaults_of(&entity);
         if properties.is_empty() {
             continue;
         }
-        // A row has the entity when a column under it is given there.
+        // A row has the record when a column under it is given there.
         let present: Vec<bool> = (0..rows)
             .map(|row| {
                 columns.columns.iter().any(|(path, column)| {
-                    path.strip_prefix(root).is_some_and(|rest| rest.is_empty() || rest.starts_with('.')) && column.valid(row)
+                    path.strip_prefix(record.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with('.')) && column.valid(row)
                 })
             })
             .collect();
@@ -252,7 +314,7 @@ fn defaults<'a>(schema: &InputSchema, columns: &mut Columns<'a>, store: &'a Colu
             let Some(default) = schema.default_value(property) else {
                 continue;
             };
-            let path = store.bump.alloc_str(&format!("{root}.{}", property.name));
+            let path = store.bump.alloc_str(&format!("{record}.{}", property.name));
             let given = columns.find(path).map(|at| columns.columns[at].1);
             let column = match given {
                 Some(column) => filled(&column, rows, &default, Some(&present), store),
@@ -266,11 +328,48 @@ fn defaults<'a>(schema: &InputSchema, columns: &mut Columns<'a>, store: &'a Colu
     }
 }
 
+/// The records the columns hold, by path, with their entity: each root,
+/// and each record of an entity to convert under one (a relationship's, as
+/// the row path converts it).
+fn records(schema: &InputSchema, columns: &Columns<'_>) -> Vec<(String, Arc<str>)> {
+    let mut records: Vec<(String, Arc<str>)> = Vec::new();
+    for (path, _) in &columns.columns {
+        let mut segments = path.split('.');
+        let Some(root) = segments.next().filter(|root| schema.is_root(root)) else {
+            continue;
+        };
+        let mut record = root.to_string();
+        let mut entity: Arc<str> = Arc::from(root);
+        records.push((record.clone(), entity.clone()));
+        let mut segments = segments.peekable();
+        while let Some(name) = segments.next() {
+            // The last segment is a field, not a record.
+            if segments.peek().is_none() {
+                break;
+            }
+            let Some(property) = schema.model(&entity).and_then(|model| model.properties.iter().find(|p| p.name.as_ref() == name)) else {
+                break;
+            };
+            match &property.kind {
+                PropertyTypeIr::Relationship { target } if !property.array && schema.is_dated(target) => {
+                    record = format!("{record}.{name}");
+                    entity = target.clone();
+                    records.push((record.clone(), entity.clone()));
+                }
+                _ => break,
+            }
+        }
+    }
+    records.sort_unstable();
+    records.dedup();
+    records
+}
+
 /// The columns with the reference at `path` replaced by the fields of the
 /// `target` pool's item it names (its `id`; the last such item, as the row
 /// path indexes them). A row whose reference is given but not found, not
 /// a string, or null is forced.
-fn hydrate<'a>(columns: &Columns<'a>, path: &str, target: &str, store: &'a ColumnStore<'a>, forced: &mut [bool]) -> Option<Columns<'a>> {
+fn hydrate<'a>(columns: &Columns<'a>, path: &str, target: &str, store: &'a ColumnStore<'a>, forced: &mut [Option<FallbackReason>]) -> Option<Columns<'a>> {
     let under = |p: &str| p.strip_prefix(path).is_some_and(|rest| rest.starts_with('.'));
     if columns.columns.iter().any(|(p, _)| under(p)) {
         return None;
@@ -312,7 +411,9 @@ fn hydrate<'a>(columns: &Columns<'a>, path: &str, target: &str, store: &'a Colum
         };
         match found.and_then(|i| i32::try_from(i).ok()) {
             Some(code) => codes[row] = code,
-            None => forced[row] = true,
+            None => {
+                forced[row].get_or_insert(FallbackReason::Reference);
+            }
         }
     }
     let mut out = Columns::new(rows);

@@ -521,7 +521,8 @@ async fn ceiling_multi_switch() {
         object
     };
 
-    let engine_out = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+    let store = zen_engine::ColumnStore::new();
+    let engine_out = compiled.evaluate_columns(&columns, &store, EvaluationOptions::default()).await;
     let mut mismatches = 0usize;
     let mut order_mismatches = 0usize;
     for row in 0..built.rows {
@@ -578,7 +579,8 @@ async fn ceiling_multi_switch() {
         best[2] = best[2].min(start.elapsed().as_nanos() as f64 / (n * reps as f64));
         let start = Instant::now();
         for _ in 0..50 {
-            black_box(compiled.evaluate_columns(black_box(&columns), options).await);
+            let store = zen_engine::ColumnStore::new();
+            black_box(compiled.evaluate_columns(black_box(&columns), &store, options).await);
         }
         best[3] = best[3].min(start.elapsed().as_nanos() as f64 / (n * 50.0));
     }
@@ -605,7 +607,8 @@ async fn ceiling_multi_switch() {
     if let Ok(seconds) = std::env::var("BENCH_PROFILE") {
         let until = Instant::now() + std::time::Duration::from_secs(seconds.parse().unwrap_or(5));
         while Instant::now() < until {
-            black_box(compiled.evaluate_columns(&columns, options).await);
+            let store = zen_engine::ColumnStore::new();
+            black_box(compiled.evaluate_columns(&columns, &store, options).await);
         }
     }
 }

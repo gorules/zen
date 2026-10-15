@@ -5,11 +5,70 @@ use std::sync::Arc;
 use zen_expression::Variable;
 use super::Sheet;
 
+/// Why rows left the columns for the row path (each row counted once, by
+/// the first reason it met).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FallbackReason {
+    /// Its reference names no item of its pool (or is not a string).
+    Reference,
+    /// Its date does not parse.
+    Date,
+    /// Its dates converted row by row (the input's shape is not one the
+    /// columns prepare).
+    Converted,
+    /// An entity it iterates is read row by row.
+    Entity,
+    /// A block failed on its columns (decided again by row, to say why).
+    Failed { block: Option<Arc<str>> },
+    /// A block runs by row for it (a member's table, an entity handed over).
+    Hosted { block: Arc<str> },
+    /// The graph's nodes are not planned as columns: every row decided one
+    /// by one.
+    Unplanned,
+    /// The document is not compiled: every row decided one by one.
+    Uncompiled,
+}
+
+/// Why rows decided as they did, per block (asked for with `trace`): what a
+/// row's trace would say of its root blocks. Rows left to the row path have
+/// none here (trace them).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reasons {
+    /// A match: each row's arm (its id), `None` where no arm matched.
+    Match { block: Arc<str>, arms: Vec<Option<Arc<str>>> },
+    /// A decision table: each row's matched rules (indices, from 0).
+    Table { block: Arc<str>, rules: Vec<Vec<u32>> },
+}
+
+/// Rows that left the columns for one reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fallback {
+    pub reason: FallbackReason,
+    pub rows: usize,
+}
+
+/// Counts fallbacks by reason, in the order reasons first come.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Fallbacks(pub(crate) Vec<Fallback>);
+
+impl Fallbacks {
+    pub(crate) fn add(&mut self, reason: FallbackReason) {
+        match self.0.iter_mut().find(|f| f.reason == reason) {
+            Some(found) => found.rows += 1,
+            None => self.0.push(Fallback { reason, rows: 1 }),
+        }
+    }
+}
+
 pub struct PolicyColumnarOutput<'a> {
     pub rows: usize,
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<EvaluationError>>,
     pub hosted: usize,
+    /// Why the hosted rows were (see [`FallbackReason`]).
+    pub fallbacks: Vec<Fallback>,
+    /// Why each row decided as it did (asked for; else empty).
+    pub reasons: Vec<Reasons>,
     pub typed: usize,
     pub laned: usize,
     /// Rows read whole: their value as decided, where columns drop part.
@@ -49,6 +108,8 @@ impl PolicyColumnarOutput<'_> {
             columns: Sheet::columns(shredder.finish()),
             errors,
             hosted: rows,
+            fallbacks: vec![Fallback { reason: FallbackReason::Uncompiled, rows }],
+            reasons: Vec::new(),
             typed: 0,
             laned: 0,
             exact,

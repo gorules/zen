@@ -5,7 +5,7 @@ mod host;
 mod schedule;
 mod traced;
 
-pub use columnar::{ColumnStore, PolicyColumnarOutput};
+pub use columnar::{ColumnStore, Fallback, FallbackReason, PolicyColumnarOutput, Reasons};
 pub(crate) use host::Host;
 
 use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};

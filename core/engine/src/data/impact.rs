@@ -271,3 +271,164 @@ fn split(
         ),
     }
 }
+
+/// Two engines' columnar outputs over the same rows, compared by row: what
+/// [`ImpactComparison`] says of each row (`before.result != after.result`),
+/// read from the columns.
+#[derive(Debug, Clone, Default)]
+pub struct ColumnDiff {
+    /// Both decided, their results differ.
+    pub changed: Vec<bool>,
+    pub before_failed: Vec<bool>,
+    pub after_failed: Vec<bool>,
+}
+
+impl ColumnDiff {
+    pub fn of(before: &crate::ColumnarOutput<'_>, after: &crate::ColumnarOutput<'_>) -> Self {
+        let rows = before.rows.min(after.rows);
+        let failed = |output: &crate::ColumnarOutput<'_>| (0..rows).map(|row| output.errors.get(row).is_some_and(Option::is_some)).collect::<Vec<_>>();
+        let (before_failed, after_failed) = (failed(before), failed(after));
+        // The same paths on both sides: compared path by path (a null and
+        // no value alike, as a row's result holds neither); else whole.
+        let aligned = paths_of(before) == paths_of(after);
+        let changed = (0..rows)
+            .map(|row| {
+                if before_failed[row] || after_failed[row] {
+                    return false;
+                }
+                if !aligned || before.whole(row).is_some() || after.whole(row).is_some() {
+                    return before.row(row) != after.row(row);
+                }
+                before.columns.iter().any(|(path, b)| {
+                    let a = after
+                        .columns
+                        .iter()
+                        .find(|(p, _)| p == path)
+                        .map_or(Variable::Null, |(_, a)| a.get(row));
+                    b.get(row) != a
+                })
+            })
+            .collect();
+        Self {
+            changed,
+            before_failed,
+            after_failed,
+        }
+    }
+
+    /// The counts [`ImpactSummary::record`] keeps, of every row.
+    pub fn summary(&self) -> ImpactSummary {
+        let mut summary = ImpactSummary::default();
+        for row in 0..self.changed.len() {
+            summary.total += 1;
+            let (before, after) = (self.before_failed[row], self.after_failed[row]);
+            if before || after {
+                summary.failed += 1;
+                summary.before_errors += u64::from(before);
+                summary.after_errors += u64::from(after);
+            } else if self.changed[row] {
+                summary.changed += 1;
+            }
+        }
+        summary
+    }
+
+    /// A row's aggregation context (see [`ImpactRow::into_aggregate_context`])
+    /// holding only `paths` (from [`crate::data::aggregate::Aggregator::reads`]):
+    /// the input's from `input`, each arm's from its output, read from the
+    /// columns. A path into a failed arm's error reads it whole.
+    pub fn context<'o>(
+        &self,
+        paths: &[String],
+        input: &zen_expression::lane::Columns<'_>,
+        before: &crate::ColumnarOutput<'o>,
+        after: &crate::ColumnarOutput<'o>,
+        row: usize,
+    ) -> Variable {
+        let context = Variable::empty_object();
+        let failed = self.before_failed[row] || self.after_failed[row];
+        context.dot_insert("changed", Variable::Bool(failed || self.changed[row]));
+        for path in paths {
+            let (root, rest) = path.split_once('.').unwrap_or((path.as_str(), ""));
+            let value = match root {
+                "input" => input_value(input, rest, row),
+                "before" => arm_value(before, rest, row),
+                "after" => arm_value(after, rest, row),
+                "errors" if failed => {
+                    let errors = Variable::empty_object();
+                    for (arm, output) in [("before", before), ("after", after)] {
+                        if let Some(Some(error)) = output.errors.get(row) {
+                            let error = error
+                                .serialize_with_mode(serde_json::value::Serializer, crate::engine::EvaluationTraceKind::None)
+                                .unwrap_or_default();
+                            errors.dot_insert(arm, Variable::from(&error));
+                        }
+                    }
+                    context.dot_insert("errors", errors);
+                    continue;
+                }
+                _ => continue,
+            };
+            if !matches!(value, Variable::Null) {
+                context.dot_insert(path, value);
+            }
+        }
+        // An arm that failed has no result: null, as a row's context holds.
+        for (arm, output) in [("before", before), ("after", after)] {
+            if output.errors.get(row).is_some_and(Option::is_some) {
+                context.dot_insert(arm, Variable::Null);
+            }
+        }
+        context
+    }
+}
+
+/// An output's column paths, sorted.
+fn paths_of<'o>(output: &'o crate::ColumnarOutput<'_>) -> Vec<&'o str> {
+    let mut paths: Vec<&str> = output.columns.iter().map(|(p, _)| p.as_ref()).collect();
+    paths.sort_unstable();
+    paths
+}
+
+/// The value at `path` of a row of `columns` (a column at it, or under it,
+/// or holding it).
+fn input_value(columns: &zen_expression::lane::Columns<'_>, path: &str, row: usize) -> Variable {
+    if path.is_empty() {
+        return columns.row(row);
+    }
+    let related = |p: &str| p == path || p.strip_prefix(path).is_some_and(|r| r.starts_with('.')) || path.strip_prefix(p).is_some_and(|r| r.starts_with('.'));
+    let object = Variable::empty_object();
+    for (p, column) in &columns.columns {
+        if related(p) {
+            let value = column.variable(row);
+            if !matches!(value, Variable::Null) || column.valid(row) {
+                object.dot_insert(p, value);
+            }
+        }
+    }
+    object.dot(path).unwrap_or(Variable::Null)
+}
+
+/// The value at `path` of a row of an arm's output.
+fn arm_value(output: &crate::ColumnarOutput<'_>, path: &str, row: usize) -> Variable {
+    if output.errors.get(row).is_some_and(Option::is_some) {
+        return Variable::Null;
+    }
+    if let Some(whole) = output.whole(row) {
+        return if path.is_empty() { whole.clone() } else { whole.dot(path).unwrap_or(Variable::Null) };
+    }
+    if path.is_empty() {
+        return output.row(row);
+    }
+    let related = |p: &str| p == path || p.strip_prefix(path).is_some_and(|r| r.starts_with('.')) || path.strip_prefix(p).is_some_and(|r| r.starts_with('.'));
+    let object = Variable::empty_object();
+    for (p, column) in &output.columns {
+        if related(p) {
+            let value = column.get(row);
+            if !matches!(value, Variable::Null) {
+                object.dot_insert(p, value);
+            }
+        }
+    }
+    object.dot(path).unwrap_or(Variable::Null)
+}

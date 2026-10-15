@@ -96,6 +96,21 @@ impl RequestPreparation {
         })
     }
 
+    /// The entity a request is.
+    pub(crate) fn target(&self) -> &Arc<str> {
+        &self.target
+    }
+
+    /// The entity checked and converted under its name.
+    pub(crate) fn schema(&self) -> &InputSchema {
+        &self.schema
+    }
+
+    /// The target's references (field, entity): each carries its record.
+    pub(crate) fn references(&self) -> &[(Arc<str>, Arc<str>)] {
+        &self.references
+    }
+
     /// The request as nodes read it, or why it does not fit the entity.
     pub(crate) fn prepare(&self, input: &Variable) -> Result<Variable, String> {
         if !matches!(input, Variable::Object(_)) {

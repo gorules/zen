@@ -35,8 +35,6 @@ pub(crate) struct VerifyInput {
     pub(crate) prefer: Option<ValueKind>,
     pub(crate) label: Arc<str>,
     pub(crate) domain: Option<ValueSet>,
-    /// For a column of full expressions (no field), the one field all its cells test, so its
-    /// cells are analysed (and written back) as conditions on that field.
     pub(crate) subject: Option<Vec<Rc<str>>>,
 }
 
@@ -127,9 +125,6 @@ impl<'a> VerifyTable<'a> {
         }
     }
 
-    /// Columns without a field hold full expressions. When every filled cell of such a column is
-    /// a condition on the same single field (`age > 50`, `age > 30`), the column is analysed like
-    /// a field column on it; otherwise it stays opaque.
     fn with_expression_subjects(&self, is: &mut IntelliSense) -> Option<VerifyTable<'a>> {
         let mut inputs = self.inputs.clone();
         let mut changed = false;
@@ -179,7 +174,6 @@ impl<'a> VerifyTable<'a> {
         })
     }
 
-    /// Cell text for `set` in input column `col`, in that column's syntax.
     pub(super) fn cell_text(
         &self,
         col: usize,

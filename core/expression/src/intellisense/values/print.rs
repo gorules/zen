@@ -150,8 +150,6 @@ impl CellText {
         }
     }
 
-    /// `of` for a standard (non-unary) cell: the same values, written as a condition on
-    /// `subject` (`age > 30`, `tier in ["a", "b"]`, `age < 10 or age > 50`).
     pub fn standard(
         set: &ValueSet,
         domain: &ValueSet,

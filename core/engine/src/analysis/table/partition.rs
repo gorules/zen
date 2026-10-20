@@ -94,9 +94,6 @@ pub(super) struct Partition {
 }
 
 impl Partition {
-    /// How many (atom, set) pairs `groups` lists, counted without building them. Nested
-    /// intervals (`> 1`, `> 2`, …) make this quadratic in the number of sets, so callers
-    /// check it against their budget before asking for the groups.
     pub(super) fn touches(&self, sets: &[ValueSet]) -> usize {
         let mut present = Vec::with_capacity(self.pieces.len() + 1);
         present.push(0usize);
@@ -304,8 +301,6 @@ mod tests {
 
     #[test]
     fn touches_counts_what_groups_list() {
-        // Nested ranges (`> 0`, `> 1`, …) are the quadratic case; strings, exclusions,
-        // booleans and null cover the remaining atom kinds.
         let mut sets: Vec<ValueSet> = (0..40).map(above).collect();
         sets.extend((0..10).map(|i| ValueSet::string(&format!("s{i}"))));
         sets.push(ValueSet::string("s1").complement());

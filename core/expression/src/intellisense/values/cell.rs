@@ -56,8 +56,6 @@ impl CellConstraint {
         }
     }
 
-    /// The one field a standard (non-unary) cell constrains, when the whole expression is a
-    /// condition on that field: `age > 50`, `tier == "a" or tier == "b"`, `not (age < 18)`.
     pub fn subject_of(is: &mut IntelliSense, source: &str) -> Option<Vec<Rc<str>>> {
         let trimmed = source.trim();
         if trimmed.is_empty() {
@@ -76,7 +74,6 @@ impl CellConstraint {
         .flatten()
     }
 
-    /// A standard cell read as a condition on `subject`, the way a unary cell reads `$`.
     pub fn parse_subject(
         is: &mut IntelliSense,
         source: &str,

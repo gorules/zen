@@ -391,8 +391,6 @@ impl Gaps<'_> {
                 continue;
             }
             let partition = Partition::new(bounds, &sets);
-            // Building the groups costs as much as they hold; on large tables that alone can
-            // exhaust memory, so stop where the budget would have stopped after building them.
             if partition.touches(&sets) > self.work {
                 return None;
             }

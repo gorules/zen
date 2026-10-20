@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.5](https://github.com/gorules/zen/compare/zen-expression-v2.1.4...zen-expression-v2.1.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* **engine:** bound table gap analysis memory, analyse expression columns ([#549](https://github.com/gorules/zen/issues/549)) ([b764040](https://github.com/gorules/zen/commit/b764040ecfc50b2b1e0bc96c087a6f8532c67e56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 2.1.4 to 2.1.5
+    * zen-types bumped from 2.1.4 to 2.1.5
+
 ## [2.1.4](https://github.com/gorules/zen/compare/zen-expression-v2.1.3...zen-expression-v2.1.4) (2026-10-13)
 
 

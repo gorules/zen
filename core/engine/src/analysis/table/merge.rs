@@ -86,7 +86,7 @@ impl VerifyTable<'_> {
             .map(|mut row| {
                 for &col in &row.stale {
                     if let CellConstraint::Known(set) = &row.cells[col] {
-                        if let Some(text) = CellText::of(set, &ValueSet::all(), false) {
+                        if let Some(text) = self.cell_text(col, set, &ValueSet::all(), false) {
                             row.rule
                                 .insert(self.inputs[col].id.clone(), Arc::from(text.as_str()));
                         }
@@ -366,7 +366,8 @@ impl VerifyTable<'_> {
             return false;
         }
         let union = a.union(&b);
-        let Some(text) = CellText::of(&union, &ValueSet::all(), self.inputs[col].dated) else {
+        let Some(text) = self.cell_text(col, &union, &ValueSet::all(), self.inputs[col].dated)
+        else {
             return false;
         };
         let id = self.inputs[col].id.clone();

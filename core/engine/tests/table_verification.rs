@@ -686,12 +686,17 @@ fn opaque_cells_never_create_gaps() {
     }
     .assert_gaps(
         Severity::Hint,
-        "no row matches 1 input case: In 1 false",
-        json!([{
-            "cells": { "i1": "false" },
-            "description": "In 1 false",
-            "example": { "applicant": { "vip": false } }
-        }]),
+        "no row matches 2 input cases: In 0 <= 10; In 0 > 10 and In 1 false",
+        json!([
+            {
+                "cells": { "i0": "applicant.age <= 10" },
+                "description": "In 0 <= 10"
+            },
+            {
+                "cells": { "i0": "applicant.age > 10", "i1": "false" },
+                "description": "In 0 > 10 and In 1 false"
+            }
+        ]),
     );
 }
 
@@ -1830,4 +1835,73 @@ async fn collect_compression_keeps_the_order_of_results() {
             .into();
         assert_eq!(before, after, "{input}");
     }
+}
+
+#[test]
+fn expression_columns_on_one_field_compress_like_field_columns() {
+    Table {
+        hit: "first",
+        inputs: &[""],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["applicant.age > 50"], &["true"]),
+            ("r2", &["applicant.age > 30"], &["true"]),
+        ],
+    }
+    .assert_compressed(Some((2, &["i0=applicant.age > 30 o0=true"])));
+}
+
+#[test]
+fn expression_columns_on_one_field_report_rows_that_never_fire() {
+    let table = Table {
+        hit: "first",
+        inputs: &[""],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["applicant.age > 30"], &["1"]),
+            ("r2", &["applicant.age > 50 and applicant.age < 60"], &["2"]),
+        ],
+    };
+    let policy = table.policy_findings();
+    assert_eq!(policy, table.graph_findings());
+    assert_eq!(policy.len(), 1, "{policy:?}");
+    assert!(policy[0].contains("r2"), "{policy:?}");
+}
+
+#[test]
+fn expression_columns_write_missing_cases_as_expressions() {
+    let table = Table {
+        hit: "first",
+        inputs: &[""],
+        outputs: &["applicant.discount"],
+        rows: &[("r1", &["applicant.age > 30"], &["1"])],
+    };
+    for (kind, diagnostics) in [
+        ("policy", table.policy_diagnostics()),
+        ("graph", table.graph_diagnostics()),
+    ] {
+        let gaps = Table::gaps(diagnostics).unwrap_or_else(|| panic!("{kind}: no MissingCases"));
+        assert_eq!(
+            gaps.cases[0]["cells"]["i0"],
+            json!("applicant.age <= 30"),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn expression_columns_mixing_fields_stay_opaque() {
+    let table = Table {
+        hit: "first",
+        inputs: &[""],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["applicant.age > 30"], &["1"]),
+            ("r2", &["applicant.tier == \"gold\""], &["1"]),
+            ("r3", &["applicant.age > 50"], &["1"]),
+        ],
+    };
+    table.assert_compressed(None);
+    assert!(table.policy_findings().is_empty());
+    assert!(table.graph_findings().is_empty());
 }

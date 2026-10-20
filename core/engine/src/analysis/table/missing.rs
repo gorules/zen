@@ -258,9 +258,10 @@ impl VerifyTable<'_> {
                     if !dim.input {
                         example = None;
                     }
-                    if let Some(cells) = cells.as_mut() {
-                        if let Some(&first) = dim.columns.first() {
-                            cells.push((self.inputs[first].id.clone(), text.clone()));
+                    if let (Some(list), Some(&first)) = (cells.as_mut(), dim.columns.first()) {
+                        match self.cell_text(first, set, &dim.domain, dim.dated) {
+                            Some(cell) => list.push((self.inputs[first].id.clone(), cell)),
+                            None => cells = None,
                         }
                     }
                     parts.push((dim.label.clone(), text));
@@ -389,7 +390,13 @@ impl Gaps<'_> {
             if sets.iter().all(|set| set == bounds) {
                 continue;
             }
-            let groups = Partition::groups(bounds, &sets);
+            let partition = Partition::new(bounds, &sets);
+            // Building the groups costs as much as they hold; on large tables that alone can
+            // exhaust memory, so stop where the budget would have stopped after building them.
+            if partition.touches(&sets) > self.work {
+                return None;
+            }
+            let groups = partition.groups(&sets);
             if groups.len() < 2 {
                 continue;
             }

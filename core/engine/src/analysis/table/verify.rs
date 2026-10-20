@@ -7,7 +7,7 @@ use zen_expression::intellisense::IntelliSense;
 
 use super::cell::CellConstraint;
 use super::index::RowIndex;
-use super::print::DateDay;
+use super::print::{CellText, DateDay};
 use super::value_set::{ValueKind, ValueSet};
 
 pub(crate) const MAX_INPUTS: usize = 30;
@@ -35,6 +35,9 @@ pub(crate) struct VerifyInput {
     pub(crate) prefer: Option<ValueKind>,
     pub(crate) label: Arc<str>,
     pub(crate) domain: Option<ValueSet>,
+    /// For a column of full expressions (no field), the one field all its cells test, so its
+    /// cells are analysed (and written back) as conditions on that field.
+    pub(crate) subject: Option<Vec<Rc<str>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,8 +119,81 @@ impl Budget {
     }
 }
 
-impl VerifyTable<'_> {
+impl<'a> VerifyTable<'a> {
     pub(crate) fn verify(&self, is: &mut IntelliSense) -> Vec<Finding> {
+        match self.with_expression_subjects(is) {
+            Some(resolved) => resolved.verify_resolved(is),
+            None => self.verify_resolved(is),
+        }
+    }
+
+    /// Columns without a field hold full expressions. When every filled cell of such a column is
+    /// a condition on the same single field (`age > 50`, `age > 30`), the column is analysed like
+    /// a field column on it; otherwise it stays opaque.
+    fn with_expression_subjects(&self, is: &mut IntelliSense) -> Option<VerifyTable<'a>> {
+        let mut inputs = self.inputs.clone();
+        let mut changed = false;
+        for input in inputs.iter_mut().filter(|input| input.field.is_none()) {
+            let mut subject: Option<Vec<Rc<str>>> = None;
+            let mut consistent = true;
+            for rule in self.rules {
+                let source = rule.get(&input.id).map(|c| c.as_ref()).unwrap_or("");
+                if source.trim().is_empty() {
+                    continue;
+                }
+                match (CellConstraint::subject_of(is, source), &subject) {
+                    (Some(found), None) => subject = Some(found),
+                    (Some(found), Some(known)) if found == *known => {}
+                    _ => {
+                        consistent = false;
+                        break;
+                    }
+                }
+            }
+            let (true, Some(subject)) = (consistent, subject) else {
+                continue;
+            };
+            let field: Arc<str> = Arc::from(subject.join("."));
+            let plain = subject.iter().all(|segment| {
+                let mut chars = segment.chars();
+                chars
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+            });
+            input.analyzable = true;
+            input.path = plain.then(|| field.clone());
+            if input.label.trim().is_empty() {
+                input.label = field.clone();
+            }
+            input.field = Some(field);
+            input.subject = Some(subject);
+            changed = true;
+        }
+        changed.then(|| VerifyTable {
+            mode: self.mode,
+            inputs,
+            outputs: self.outputs.clone(),
+            rules: self.rules,
+            fallible: self.fallible.clone(),
+        })
+    }
+
+    /// Cell text for `set` in input column `col`, in that column's syntax.
+    pub(super) fn cell_text(
+        &self,
+        col: usize,
+        set: &ValueSet,
+        domain: &ValueSet,
+        dated: bool,
+    ) -> Option<String> {
+        match &self.inputs[col].subject {
+            Some(subject) => CellText::standard(set, domain, dated, &subject.join(".")),
+            None => CellText::of(set, domain, dated),
+        }
+    }
+
+    fn verify_resolved(&self, is: &mut IntelliSense) -> Vec<Finding> {
         let mut findings = Vec::new();
         if self.inputs.is_empty() {
             return findings;
@@ -130,7 +206,18 @@ impl VerifyTable<'_> {
                     .iter()
                     .map(|col| {
                         let source = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
-                        CellConstraint::parse(is, source, col.unary, col.analyzable, col.dated)
+                        match &col.subject {
+                            Some(subject) => {
+                                CellConstraint::parse_subject(is, source, subject, col.dated)
+                            }
+                            None => CellConstraint::parse(
+                                is,
+                                source,
+                                col.unary,
+                                col.analyzable,
+                                col.dated,
+                            ),
+                        }
                     })
                     .collect()
             })

@@ -78,6 +78,7 @@ impl TableColumn {
             prefer: resolved.and_then(Self::kind_of),
             label,
             domain: field_type.and_then(Self::domain_of),
+            subject: None,
         }
     }
 

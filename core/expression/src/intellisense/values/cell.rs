@@ -56,6 +56,53 @@ impl CellConstraint {
         }
     }
 
+    pub fn subject_of(is: &mut IntelliSense, source: &str) -> Option<Vec<Rc<str>>> {
+        let trimmed = source.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        is.with_ast(trimmed, false, |node, _| {
+            let node = Truth::unwrap(node);
+            let subject = Truth::subject(node)?;
+            let scope = Scope {
+                subject: &subject,
+                dated: false,
+            };
+            Truth::of(node, &scope)?;
+            Some(subject.into_iter().map(Rc::from).collect())
+        })
+        .flatten()
+    }
+
+    pub fn parse_subject(
+        is: &mut IntelliSense,
+        source: &str,
+        subject: &[Rc<str>],
+        dated: bool,
+    ) -> Self {
+        let trimmed = source.trim();
+        if trimmed.is_empty() {
+            return CellConstraint::Any;
+        }
+        let subject: Vec<&str> = subject.iter().map(|segment| segment.as_ref()).collect();
+        let parsed = is.with_ast(trimmed, false, |node, _| {
+            let node = Truth::unwrap(node);
+            let scope = Scope {
+                subject: &subject,
+                dated,
+            };
+            match Truth::of(node, &scope) {
+                Some(truth) => Ok(truth.t),
+                None => Err((Self::is_random(node), format!("{node:?}"))),
+            }
+        });
+        match parsed {
+            Some(Ok(set)) => CellConstraint::Known(set),
+            Some(Err((random, key))) => CellConstraint::Opaque(Self::atom_key(random, key)),
+            None => CellConstraint::Opaque(Self::atom_key(false, format!("src:{trimmed}"))),
+        }
+    }
+
     fn is_random(node: &Node) -> bool {
         let random = Cell::new(false);
         node.walk(|n| {

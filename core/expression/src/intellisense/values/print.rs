@@ -150,6 +150,173 @@ impl CellText {
         }
     }
 
+    pub fn standard(
+        set: &ValueSet,
+        domain: &ValueSet,
+        dated: bool,
+        subject: &str,
+    ) -> Option<String> {
+        let wanted = set.intersect(domain);
+        if domain.difference(&wanted).is_empty() {
+            return Some(String::new());
+        }
+        if wanted.is_empty() {
+            return None;
+        }
+        let positive = Self::positive_standard(&wanted, dated, subject);
+        let negative =
+            Self::negative_standard(&domain.difference(&wanted), wanted.other, dated, subject);
+        match (positive, negative) {
+            (Some(p), Some(n)) if n.len() < p.len() => Some(n),
+            (Some(p), _) => Some(p),
+            (None, n) => n,
+        }
+    }
+
+    fn positive_standard(set: &ValueSet, dated: bool, subject: &str) -> Option<String> {
+        if set.other || (dated && !set.strings.is_empty()) {
+            return None;
+        }
+        let mut points: Vec<String> = Vec::new();
+        let mut ranges: Vec<String> = Vec::new();
+        if !set.numbers.is_empty() {
+            if set.numbers.is_all() {
+                return None;
+            }
+            for interval in set.numbers.intervals() {
+                match (interval.lo, interval.hi) {
+                    (Bound::Inclusive(lo), Bound::Inclusive(hi)) if lo == hi => {
+                        points.push(Self::number(lo, dated)?)
+                    }
+                    _ => ranges.push(Self::interval_standard(interval, dated, subject)?),
+                }
+            }
+        }
+        match &set.strings {
+            StringSet::Finite(values) => {
+                for value in values {
+                    points.push(Self::string(value)?);
+                }
+            }
+            StringSet::CoFinite(_) => return None,
+        }
+        if set.bools & ValueSet::TRUE != 0 {
+            points.push("true".to_string());
+        }
+        if set.bools & ValueSet::FALSE != 0 {
+            points.push("false".to_string());
+        }
+        if set.null {
+            points.push("null".to_string());
+        }
+        let mut alternatives: Vec<String> = match points.as_slice() {
+            [] => Vec::new(),
+            [single] => vec![format!("{subject} == {single}")],
+            _ => vec![format!("{subject} in [{}]", points.join(", "))],
+        };
+        alternatives.extend(ranges);
+        match alternatives.len() {
+            0 => None,
+            1 => alternatives.pop(),
+            _ => Some(
+                alternatives
+                    .iter()
+                    .map(|alternative| match alternative.contains(" and ") {
+                        true => format!("({alternative})"),
+                        false => alternative.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" or "),
+            ),
+        }
+    }
+
+    fn interval_standard(interval: &Interval, dated: bool, subject: &str) -> Option<String> {
+        let n = |d: Decimal| Self::number(d, dated);
+        Some(match (interval.lo, interval.hi) {
+            (Bound::Unbounded, Bound::Inclusive(b)) => format!("{subject} <= {}", n(b)?),
+            (Bound::Unbounded, Bound::Exclusive(b)) => format!("{subject} < {}", n(b)?),
+            (Bound::Inclusive(a), Bound::Unbounded) => format!("{subject} >= {}", n(a)?),
+            (Bound::Exclusive(a), Bound::Unbounded) => format!("{subject} > {}", n(a)?),
+            (Bound::Unbounded, Bound::Unbounded) => return None,
+            (lo, hi) if dated => {
+                let lower = match lo {
+                    Bound::Inclusive(a) => format!("{subject} >= {}", n(a)?),
+                    Bound::Exclusive(a) => format!("{subject} > {}", n(a)?),
+                    Bound::Unbounded => return None,
+                };
+                let upper = match hi {
+                    Bound::Inclusive(b) => format!("{subject} <= {}", n(b)?),
+                    Bound::Exclusive(b) => format!("{subject} < {}", n(b)?),
+                    Bound::Unbounded => return None,
+                };
+                format!("{lower} and {upper}")
+            }
+            (lo, hi) => {
+                let (open, a) = match lo {
+                    Bound::Inclusive(a) => ('[', a),
+                    Bound::Exclusive(a) => ('(', a),
+                    Bound::Unbounded => return None,
+                };
+                let (close, b) = match hi {
+                    Bound::Inclusive(b) => (']', b),
+                    Bound::Exclusive(b) => (')', b),
+                    Bound::Unbounded => return None,
+                };
+                format!("{subject} in {open}{}..{}{close}", n(a)?, n(b)?)
+            }
+        })
+    }
+
+    fn negative_standard(
+        excluded: &ValueSet,
+        other: bool,
+        dated: bool,
+        subject: &str,
+    ) -> Option<String> {
+        if excluded.other || (dated && !excluded.strings.is_empty()) {
+            return None;
+        }
+        let mut points: Vec<String> = Vec::new();
+        for interval in excluded.numbers.intervals() {
+            match (interval.lo, interval.hi) {
+                (Bound::Inclusive(a), Bound::Inclusive(b)) if a == b => {
+                    points.push(Self::number(a, dated)?)
+                }
+                _ => return None,
+            }
+        }
+        match &excluded.strings {
+            StringSet::Finite(values) => {
+                for value in values {
+                    points.push(Self::string(value)?);
+                }
+            }
+            StringSet::CoFinite(_) => return None,
+        }
+        if excluded.bools & ValueSet::TRUE != 0 {
+            points.push("true".to_string());
+        }
+        if excluded.bools & ValueSet::FALSE != 0 {
+            points.push("false".to_string());
+        }
+        if excluded.null {
+            points.push("null".to_string());
+        }
+        match points.as_slice() {
+            [] => None,
+            [single] => Some(format!("{subject} != {single}")),
+            _ if other => Some(
+                points
+                    .iter()
+                    .map(|point| format!("{subject} != {point}"))
+                    .collect::<Vec<_>>()
+                    .join(" and "),
+            ),
+            _ => Some(format!("{subject} not in [{}]", points.join(", "))),
+        }
+    }
+
     fn positive(set: &ValueSet, dated: bool) -> Option<String> {
         if set.other || (dated && !set.strings.is_empty()) {
             return None;

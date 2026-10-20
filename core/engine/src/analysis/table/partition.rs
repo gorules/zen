@@ -94,8 +94,49 @@ pub(super) struct Partition {
 }
 
 impl Partition {
-    pub(super) fn groups(region: &ValueSet, sets: &[ValueSet]) -> Vec<(ValueSet, Vec<usize>)> {
-        let partition = Self::new(region, sets);
+    pub(super) fn touches(&self, sets: &[ValueSet]) -> usize {
+        let mut present = Vec::with_capacity(self.pieces.len() + 1);
+        present.push(0usize);
+        for piece in &self.pieces {
+            present.push(present[present.len() - 1] + usize::from(piece.is_some()));
+        }
+        sets.iter()
+            .map(|set| {
+                let strings = match &set.strings {
+                    StringSet::Finite(keys) => keys
+                        .iter()
+                        .filter(|k| self.strings.contains_key(*k))
+                        .count(),
+                    StringSet::CoFinite(excluded) => {
+                        let listed_excluded = excluded
+                            .iter()
+                            .filter(|k| self.strings.contains_key(*k))
+                            .count();
+                        self.strings.len() - listed_excluded
+                            + usize::from(self.string_rest.is_some())
+                    }
+                };
+                let numbers: usize = set
+                    .numbers
+                    .intervals()
+                    .iter()
+                    .filter_map(|interval| self.points.range(interval))
+                    .map(|(first, last)| present[last + 1] - present[first])
+                    .sum();
+                let bools = [ValueSet::FALSE, ValueSet::TRUE]
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(bit, slot)| set.bools & slot != 0 && self.bools[*bit].is_some())
+                    .count();
+                let null = usize::from(set.null && self.null.is_some());
+                let other = usize::from(set.other && self.other.is_some());
+                strings + numbers + bools + null + other
+            })
+            .sum()
+    }
+
+    pub(super) fn groups(&self, sets: &[ValueSet]) -> Vec<(ValueSet, Vec<usize>)> {
+        let partition = self;
         let mut touched: Vec<Vec<usize>> = vec![Vec::new(); partition.atoms.len()];
         for (id, set) in sets.iter().enumerate() {
             for atom in partition.touching(set) {
@@ -120,7 +161,7 @@ impl Partition {
             .collect()
     }
 
-    fn new(region: &ValueSet, sets: &[ValueSet]) -> Self {
+    pub(super) fn new(region: &ValueSet, sets: &[ValueSet]) -> Self {
         let mut partition = Self {
             atoms: Vec::new(),
             strings: HashMap::default(),
@@ -244,5 +285,36 @@ impl Partition {
         };
         out.numbers = NumberSet::from_intervals(intervals);
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn above(n: i64) -> ValueSet {
+        ValueSet::numbers(NumberSet::from_intervals(vec![Interval::new(
+            Bound::Exclusive(Decimal::from(n)),
+            Bound::Unbounded,
+        )]))
+    }
+
+    #[test]
+    fn touches_counts_what_groups_list() {
+        let mut sets: Vec<ValueSet> = (0..40).map(above).collect();
+        sets.extend((0..10).map(|i| ValueSet::string(&format!("s{i}"))));
+        sets.push(ValueSet::string("s1").complement());
+        sets.push(ValueSet::bool(true).union(&ValueSet::null()));
+        sets.push(above(5).union(&ValueSet::string("s2")));
+        let region = ValueSet::all();
+        let partition = Partition::new(&region, &sets);
+        let listed: usize = sets.iter().map(|set| partition.touching(set).len()).sum();
+        assert_eq!(partition.touches(&sets), listed);
+        let grouped: usize = partition
+            .groups(&sets)
+            .iter()
+            .map(|(_, ids)| ids.len())
+            .sum();
+        assert!(grouped <= partition.touches(&sets));
     }
 }

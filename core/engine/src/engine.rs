@@ -248,13 +248,16 @@ impl DecisionEngine {
     {
         let key_str = key.as_ref();
         if let Some(set) = self.compiled.load_full() {
-            if let Some(entry) = set.get(key_str) {
+            let compiled = set
+                .key_of(key_str)
+                .and_then(|key| Some((set.get(&key)?, key)));
+            if let Some((entry, compiled_key)) = compiled {
                 return match entry {
                     CompiledEntry::Policy(artifact) => {
                         let requests: Vec<EvaluateRequest> = contexts
                             .iter()
                             .map(|context| EvaluateRequest {
-                                policy_path: Arc::from(key_str),
+                                policy_path: compiled_key.clone(),
                                 input: context.clone(),
                                 goals: Vec::new(),
                                 trace: options.trace,
@@ -295,6 +298,21 @@ impl DecisionEngine {
             results.push(self.evaluate_with_opts(key_str, context.clone(), options).await);
         }
         results
+    }
+
+    pub async fn evaluate_many<K>(
+        &self,
+        key: K,
+        inputs: &[Variable],
+    ) -> Vec<Result<Variable, Box<EvaluationError>>>
+    where
+        K: AsRef<str>,
+    {
+        self.evaluate_batch(key, inputs, EvaluationOptions::default())
+            .await
+            .into_iter()
+            .map(|response| response.map(|r| r.result))
+            .collect()
     }
 
     /// Evaluates `key` over columnar input: Arrow-shaped buffers borrowed by

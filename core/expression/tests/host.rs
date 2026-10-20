@@ -129,3 +129,47 @@ fn host_functions_run_in_the_lane_vm() {
     let expected = Isolate::new().run_standard("double('x')").unwrap_err();
     assert_eq!(err.to_string(), expected.to_string());
 }
+
+#[test]
+fn variadic_host_functions_feed_aggregates() {
+    use zen_expression::functions::CompositeFunction;
+    register_host_function(HostFunction {
+        name: Arc::from("window_rows"),
+        description: "Rows sharing the keys within a window".to_string(),
+        definition: Arc::new(|| {
+            Rc::new(CompositeFunction {
+                signatures: (1..=4)
+                    .map(|n| FunctionSignature {
+                        parameters: vec![VariableType::Any; n],
+                        return_type: VariableType::Any.array(),
+                    })
+                    .collect(),
+                implementation: Rc::new(|args: Arguments| {
+                    let n = args.0.len();
+                    let window = args.str(n - 1)?;
+                    let size = if window == "7d" { 3 } else { 1 };
+                    Ok(Variable::from(serde_json::json!(
+                        (0..size).map(|i| serde_json::json!({ "amount": i * 10 + n, "kind": if i == 0 { serde_json::Value::Null } else { "in".into() } })).collect::<Vec<_>>()
+                    )))
+                }),
+            })
+        }),
+    })
+    .unwrap();
+
+    let source = "sum(window_rows(card, merchant, '7d') as t, t.amount) + count(window_rows(card, '1d') as t, t.kind == null) + count_distinct(window_rows(card, '7d') as t, t.kind)";
+    let expected = Isolate::with_environment(serde_json::json!({ "card": "c1", "merchant": "m1" }).into())
+        .run_standard(source)
+        .unwrap();
+    assert_eq!(expected.to_value(), serde_json::json!(3 + 13 + 23 + 1 + 1));
+
+    let analysis = IntelliSense::new().analyze(source, &VariableType::Any);
+    assert!(analysis.diagnostics.is_empty(), "{:?}", analysis.diagnostics);
+
+    let inputs: Vec<Variable> = (0..70)
+        .map(|_| serde_json::json!({ "card": "c1", "merchant": "m1" }).into())
+        .collect();
+    for result in zen_expression::BatchExpression::standard(source).unwrap().evaluate(&inputs) {
+        assert_eq!(result.unwrap(), expected);
+    }
+}

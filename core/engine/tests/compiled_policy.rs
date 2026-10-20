@@ -9,7 +9,6 @@ mod policies;
 
 use policies::{Anchor, Batch, Generated, PolicyCase};
 use policy_gen::{Gen, Rng};
-#[cfg(feature = "driver")]
 use serde_json::json;
 use serde_json::Value;
 use std::sync::Arc;

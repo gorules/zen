@@ -584,7 +584,7 @@ mode(x);{x: {}};!error
 mode(x);{x: {a: 1}};!error
 mode(x);{};!error
 # mode: element types
-mode(x);{x: [1, null]};!error
+mode(x);{x: [1, null]};1
 mode(x);{x: [1, '2']};!error
 mode(x);{x: [true]};!error
 mode(x);{x: [[1], 2]};!error

@@ -432,6 +432,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     | ClosureFunction::CountDistinctApprox
                     | ClosureFunction::PercentileApprox => CompareWithReference(Equal),
                 },
+                FunctionKind::Host(_) => CompareWithReference(Equal),
             },
             Node::MethodCall { kind, .. } => match kind {
                 MethodKind::DateMethod(dm) => match dm {

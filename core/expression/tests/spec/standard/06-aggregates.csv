@@ -182,7 +182,8 @@ string(mode([1.0, 1, 2]));;'1.0';question: equal values with different scales co
 string(mode([1, 1.0, 2]));;'1';question: equal values with different scales count together and the first spelling wins
 mode([]);;!error;question: mode of an empty list fails; could be null
 mode(null);;!error
-mode([1, null]);;!error
+mode([1, null]);;1
+mode([null, null]);;null
 mode(['a', 'a']);;'a'
 mode([true]);;!error
 mode(1);;!error

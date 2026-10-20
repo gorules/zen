@@ -775,7 +775,7 @@ impl TypesProvider {
                     FunctionKind::Internal(InternalFunction::Values) => {
                         self.values_typecheck(&type_list, arguments)
                     }
-                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
                         };

@@ -4,6 +4,7 @@ use nohash_hasher::{BuildNoHashHasher, IsEnabled};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::{Arc, OnceLock, RwLock};
 use strum::IntoEnumIterator;
 
 impl IsEnabled for InternalFunction {}
@@ -18,6 +19,7 @@ pub struct FunctionRegistry {
         BuildNoHashHasher<DeprecatedFunction>,
     >,
     closure_aggregates: HashMap<ClosureFunction, Rc<dyn FunctionDefinition>>,
+    host_functions: HashMap<Arc<str>, Rc<dyn FunctionDefinition>>,
 }
 
 impl FunctionRegistry {
@@ -36,7 +38,41 @@ impl FunctionRegistry {
             FunctionKind::Closure(closure) => {
                 Self::INSTANCE.with_borrow(|i| i.closure_aggregates.get(closure).cloned())
             }
+            FunctionKind::Host(name) => {
+                if let Some(found) =
+                    Self::INSTANCE.with_borrow(|i| i.host_functions.get(name).cloned())
+                {
+                    return Some(found);
+                }
+
+                let host = host_registry().read().ok()?.get(name).cloned()?;
+                let definition = (host.definition)();
+                Self::INSTANCE
+                    .with_borrow_mut(|i| i.host_functions.insert(name.clone(), definition.clone()));
+                Some(definition)
+            }
         }
+    }
+
+    pub fn host_functions() -> Vec<(Arc<str>, String)> {
+        let Ok(registry) = host_registry().read() else {
+            return Vec::new();
+        };
+
+        let mut list: Vec<(Arc<str>, String)> = registry
+            .iter()
+            .map(|(name, host)| (name.clone(), host.description.clone()))
+            .collect();
+        list.sort();
+        list
+    }
+
+    pub(crate) fn host_description(name: &str) -> Option<String> {
+        host_registry()
+            .read()
+            .ok()?
+            .get(name)
+            .map(|host| host.description.clone())
     }
 
     fn new_internal() -> Self {
@@ -56,8 +92,42 @@ impl FunctionRegistry {
             internal_functions,
             deprecated_functions,
             closure_aggregates,
+            host_functions: HashMap::new(),
         }
     }
+}
+
+#[derive(Clone)]
+pub struct HostFunction {
+    pub name: Arc<str>,
+    pub description: String,
+    pub definition: Arc<dyn Fn() -> Rc<dyn FunctionDefinition> + Send + Sync>,
+}
+
+fn host_registry() -> &'static RwLock<HashMap<Arc<str>, HostFunction>> {
+    static REGISTRY: OnceLock<RwLock<HashMap<Arc<str>, HostFunction>>> = OnceLock::new();
+    REGISTRY.get_or_init(Default::default)
+}
+
+pub fn register_host_function(function: HostFunction) -> anyhow::Result<()> {
+    let name = function.name.as_ref();
+    if InternalFunction::try_from(name).is_ok()
+        || DeprecatedFunction::try_from(name).is_ok()
+        || ClosureFunction::try_from(name).is_ok()
+    {
+        anyhow::bail!("`{name}` is a built-in function");
+    }
+
+    let mut registry = host_registry()
+        .write()
+        .map_err(|_| anyhow::anyhow!("host function registry is poisoned"))?;
+    registry.insert(function.name.clone(), function);
+    Ok(())
+}
+
+pub(crate) fn host_function_name(name: &str) -> Option<Arc<str>> {
+    let registry = host_registry().read().ok()?;
+    registry.get_key_value(name).map(|(key, _)| key.clone())
 }
 
 /// What the callback forms of the aggregates do with the values they

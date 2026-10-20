@@ -1,14 +1,18 @@
+pub use crate::functions::arguments::Arguments;
 pub use crate::functions::date_method::DateMethod;
-pub use crate::functions::defs::FunctionTypecheck;
+pub use crate::functions::defs::{
+    CompositeFunction, FunctionDefinition, FunctionSignature, FunctionTypecheck, StaticFunction,
+};
 pub use crate::functions::deprecated::DeprecatedFunction;
 pub use crate::functions::internal::InternalFunction;
 pub use crate::functions::method::{MethodKind, MethodRegistry};
-pub use crate::functions::registry::FunctionRegistry;
+pub use crate::functions::registry::{register_host_function, FunctionRegistry, HostFunction};
 
 use std::fmt::Display;
+use std::sync::Arc;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
-pub(crate) mod arguments;
+pub mod arguments;
 mod date_method;
 pub(crate) mod defs;
 mod deprecated;
@@ -23,6 +27,7 @@ pub enum FunctionKind {
     Internal(InternalFunction),
     Deprecated(DeprecatedFunction),
     Closure(ClosureFunction),
+    Host(Arc<str>),
 }
 
 impl TryFrom<&str> for FunctionKind {
@@ -33,6 +38,10 @@ impl TryFrom<&str> for FunctionKind {
             .map(FunctionKind::Internal)
             .or_else(|_| DeprecatedFunction::try_from(value).map(FunctionKind::Deprecated))
             .or_else(|_| ClosureFunction::try_from(value).map(FunctionKind::Closure))
+            .or_else(|err| match registry::host_function_name(value) {
+                Some(name) => Ok(FunctionKind::Host(name)),
+                None => Err(err),
+            })
     }
 }
 
@@ -42,6 +51,7 @@ impl Display for FunctionKind {
             FunctionKind::Internal(i) => write!(f, "{i}"),
             FunctionKind::Deprecated(d) => write!(f, "{d}"),
             FunctionKind::Closure(c) => write!(f, "{c}"),
+            FunctionKind::Host(name) => write!(f, "{name}"),
         }
     }
 }
@@ -72,6 +82,7 @@ pub enum ClosureFunction {
     TopK,
     LastN,
     Percentile,
+    #[strum(to_string = "countDistinct", serialize = "count_distinct")]
     CountDistinct,
     Unique,
     /// Selectors return an item, or a projection of it.

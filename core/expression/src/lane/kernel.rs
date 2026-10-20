@@ -1371,6 +1371,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         let function = match kind {
             FunctionKind::Internal(function) => function,
             FunctionKind::Closure(closure) => return self.closure(*closure, arguments),
+            FunctionKind::Host(_) => return None,
             FunctionKind::Deprecated(_) => {
                 let builtin = Builtins::of(kind)?;
                 let returns = FunctionRegistry::get_definition(kind)

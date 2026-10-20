@@ -41,6 +41,7 @@ impl Builtins {
             }
             // A callback aggregate's final step (the collected values in).
             FunctionKind::Closure(closure) => return Registered::aggregate(*closure),
+            FunctionKind::Host(_) => return Some(&Registered::HOST),
         };
         Some(match function {
             F::Len => &Text::LEN,
@@ -175,6 +176,9 @@ impl Builtins {
         hint: &mut usize,
     ) -> Result<Out, Fault> {
         let failed = |message: Fail| CallFault::message(kind, message);
+        if let FunctionKind::Host(_) = kind {
+            return Registered::host(kind, args).map_err(failed);
+        }
         if let Some(overload) = builtin.overloads.get(*hint) {
             if let Some(result) = overload(args) {
                 return result.map_err(failed);
@@ -201,7 +205,11 @@ impl Builtins {
         kind: &FunctionKind,
         args: &[Arg],
     ) -> Result<Out, VMError> {
-        Self::resolve(builtin, args).map_err(|message| {
+        let result = match kind {
+            FunctionKind::Host(_) => Registered::host(kind, args),
+            _ => Self::resolve(builtin, args),
+        };
+        result.map_err(|message| {
             Ops::error(
                 "CallFunction",
                 format!("Function `{kind}` failed: {message}"),

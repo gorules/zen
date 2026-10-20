@@ -773,6 +773,26 @@ abs(percentileApprox(items, #.v, 0.5) - 50) / 50 <= 0.01;{"items": [{"v": 10}, {
 abs(percentileApprox(map([1..100], #), #, 0.9) - 90) / 90 <= 0.01;;true
 abs(percentileApprox(items as t, t.v, 1, t.v < 1000) - 999) / 999 <= 0.01;{"items": [{"v": 999}, {"v": 5000}, {"v": -3}]};true
 map(groups, percentileApprox(#.items as t, t.v, #.q));{"groups": [{"q": 0, "items": [{"v": 1}, {"v": 2}]}, {"q": 0.5, "items": [{"v": 0}]}]};[0.99, 0]
+count_distinct([1, 1.0, 2, null]);;2
+count_distinct(items, #.c);{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}, {"c": null}]};2
+count_distinct(items as t, t.c, t.c != 'DE');{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "FR"}]};2
+mode([1, null, 1, 2]);;1
+mode(['a', null, 'b', 'b']);;'b'
+mode([null, null]);;null
+mode(items as t, t.c);{"items": [{"c": "GB"}, {"c": null}, {"c": null}, {"c": "DE"}, {"c": "GB"}]};'GB'
+mode(items, #.v, #.k == 'in');{"items": [{"v": 1, "k": "in"}, {"v": 2, "k": "out"}, {"v": 2, "k": "out"}, {"v": 1, "k": "in"}]};1
+first([null, 4, 5]);;4
+last([4, 5, null]);;5
+first([null, null]);;null
+last(items as t, t.c);{"items": [{"c": "DE"}, {"c": "GB"}, {"c": null}]};'GB'
+last(items, #.c, #.c != 'GB');{"items": [{"c": "DE"}, {"c": "GB"}]};'DE'
+stddev([1, null, 3, 5]);;2
+variance([1, null, 3, 5]);;4
+variance(items as t, t.v, t.k == 'in');{"items": [{"v": 1, "k": "in"}, {"v": 2, "k": "out"}, {"v": 3, "k": "in"}, {"v": 5, "k": "in"}]};4
+percentile([null, 1, 2, 3], 0.5);;2
+percentile(items as t, t.v, 0.5, t.v > 1);{"items": [{"v": 1}, {"v": 2}, {"v": 4}]};3
+topK(items as t, t.c, 1);{"items": [{"c": "GB"}, {"c": "DE"}, {"c": "GB"}, {"c": null}]};['GB']
+lastN(items as t, t.v, 2, t.v != 3);{"items": [{"v": 1}, {"v": 2}, {"v": 3}]};[2, 1]
 
 # join: the inverse of split; separator defaults to ','; null items skipped
 join(['a', 'b', 'c'], ', ');;'a, b, c'

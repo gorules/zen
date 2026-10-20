@@ -82,6 +82,15 @@ registered! {
 }
 
 impl Registered {
+    pub(crate) const HOST: Builtin = Builtin {
+        overloads: &[],
+        fail: |_| String::from("host function called without its name"),
+    };
+
+    pub(crate) fn host(kind: &FunctionKind, args: &[Arg]) -> Result<Out, String> {
+        drive(kind, args).unwrap_or_else(|| Err(format!("Function `{kind}` not found")))
+    }
+
     /// The final step of a callback aggregate (`sum(items, #.v)` …): the
     /// collected values (and the parameter) in, the aggregate out. `None`
     /// for the callbacks that are no aggregate (`map`, `filter`, `count`…).

@@ -249,7 +249,7 @@ mode(list);{list: [-0.10, -0.1, 3]};-0.1
 mode(list);{list: [9223372036854775807, 9223372036854775807, 1]};9223372036854775807
 mode(list);{list: [1, 2, 3]};3;question: ties resolve to the largest value
 mode(list);{list: []};!error
-mode(list);{list: [null]};!error
+mode(list);{list: [null]};null
 # number and isNumeric over input strings
 number(s);{s: '1.5'};1.5
 number(s);{s: ' 42 '};42

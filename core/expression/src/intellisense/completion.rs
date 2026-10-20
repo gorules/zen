@@ -225,6 +225,11 @@ impl Completions {
                 .filter(|f| f.closure_form().is_none() && f.parameterized_closure_form().is_none())
                 .map(FunctionKind::Internal)
                 .chain(ClosureFunction::iter().map(FunctionKind::Closure))
+                .chain(
+                    FunctionRegistry::host_functions()
+                        .into_iter()
+                        .map(|(name, _)| FunctionKind::Host(name)),
+                )
                 .map(|fk| Self::function(fk, None)),
         );
 
@@ -257,7 +262,7 @@ impl Completions {
             // Aggregates rank with the built-ins, most of which they extend.
             FunctionKind::Internal(_) => Some(10),
             FunctionKind::Closure(c) if c.is_aggregate() => Some(10),
-            FunctionKind::Closure(_) => None,
+            FunctionKind::Closure(_) | FunctionKind::Host(_) => None,
             FunctionKind::Deprecated(_) => Some(-20),
         });
 
@@ -329,6 +334,9 @@ impl Completions {
 
 fn function_info(fk: &FunctionKind) -> String {
     let s = match fk {
+        FunctionKind::Host(name) => {
+            return FunctionRegistry::host_description(name).unwrap_or_default();
+        }
         FunctionKind::Internal(i) => match i {
             InternalFunction::Len => "Returns the length of variable",
             InternalFunction::Contains => "Checks if variable contains a needle",
@@ -467,6 +475,7 @@ fn function_info(fk: &FunctionKind) -> String {
 
 fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
     match fk {
+        FunctionKind::Host(_) => vec![],
         FunctionKind::Internal(i) => match i {
             InternalFunction::Len => vec!["var"],
             InternalFunction::Contains => vec!["haystack", "needle"],
@@ -526,7 +535,7 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
 
 fn function_signature(fk: &FunctionKind) -> String {
     match fk {
-        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
             let param_names = function_param_names(fk);
             let Some(definition) = FunctionRegistry::get_definition(fk) else {
                 return String::new();

@@ -1585,7 +1585,7 @@ impl<'a> LaneCompiler<'a> {
                 _ => false,
             },
             FunctionKind::Internal(_) => true,
-            FunctionKind::Deprecated(_) | FunctionKind::Closure(_) => false,
+            FunctionKind::Deprecated(_) | FunctionKind::Closure(_) | FunctionKind::Host(_) => false,
         }
     }
 
@@ -2131,7 +2131,7 @@ impl<'a> LaneCompiler<'a> {
                 operator,
             } => self.binary_node(left, *operator, right)?,
             Node::FunctionCall { kind, arguments } => match kind {
-                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
                     let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
                         CompilerError::UnknownFunction {
                             name: kind.to_string(),

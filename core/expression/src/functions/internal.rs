@@ -422,6 +422,17 @@ pub(crate) mod imp {
             .context("Expected a number array")
     }
 
+    fn __internal_present_numbers(args: &Arguments, pos: usize) -> anyhow::Result<Vec<Decimal>> {
+        let a = args.array(pos)?;
+        let arr = a.borrow();
+
+        arr.iter()
+            .filter(|v| !matches!(v, V::Null))
+            .map(|v| v.as_number())
+            .collect::<Option<Vec<_>>>()
+            .context("Expected a number array")
+    }
+
     enum Either<A, B> {
         Left(A),
         Right(B),
@@ -805,7 +816,11 @@ pub(crate) mod imp {
     /// The most common value of numbers or strings; ties go to the largest.
     pub fn mode(args: Arguments) -> anyhow::Result<V> {
         let array = args.array(0)?;
-        let items = array.borrow();
+        let all = array.borrow();
+        if !all.is_empty() && all.iter().all(|item| matches!(item, V::Null)) {
+            return Ok(V::Null);
+        }
+        let items: Vec<&V> = all.iter().filter(|item| !matches!(item, V::Null)).collect();
         if items.iter().all(|item| matches!(item, V::Number(_))) {
             let mut counts = BTreeMap::new();
             for item in items.iter() {
@@ -872,12 +887,12 @@ pub(crate) mod imp {
     }
 
     pub fn variance(args: Arguments) -> anyhow::Result<V> {
-        let a = __internal_number_array(&args, 0)?;
+        let a = __internal_present_numbers(&args, 0)?;
         Ok(sample_variance(&a)?.map_or(V::Null, V::Number))
     }
 
     pub fn stddev(args: Arguments) -> anyhow::Result<V> {
-        let a = __internal_number_array(&args, 0)?;
+        let a = __internal_present_numbers(&args, 0)?;
         match sample_variance(&a)? {
             None => Ok(V::Null),
             Some(variance) => Ok(V::Number(sqrt_of(variance)?)),
@@ -962,7 +977,7 @@ pub(crate) mod imp {
     }
 
     pub fn percentile(args: Arguments) -> anyhow::Result<V> {
-        let mut a = __internal_number_array(&args, 0)?;
+        let mut a = __internal_present_numbers(&args, 0)?;
         let q = args.number(1)?;
         a.sort();
         Ok(percentile_of(&a, q)?.map_or(V::Null, V::Number))
@@ -971,7 +986,7 @@ pub(crate) mod imp {
     /// The DDSketch estimate (1% relative accuracy) of the value at a
     /// fraction `q` (0 to 1) of the numbers: no interpolation.
     pub fn percentile_approx(args: Arguments) -> anyhow::Result<V> {
-        let values = __internal_number_array(&args, 0)?;
+        let values = __internal_present_numbers(&args, 0)?;
         let q = args.number(1)?;
         if !(Decimal::ZERO..=Decimal::ONE).contains(&q) {
             anyhow::bail!("Percentile must be between 0 and 1, got {q}");

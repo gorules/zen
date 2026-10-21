@@ -1094,6 +1094,11 @@ fn catch_all_with_a_result_in_the_middle_is_named_as_the_cause() {
     );
     let redundant = find("r3");
     assert_eq!(redundant.severity, Severity::Hint);
+    assert!(
+        redundant.message.contains("same result"),
+        "{}",
+        redundant.message
+    );
     assert!(redundant.args.get("coverCatchAll").is_none());
 }
 

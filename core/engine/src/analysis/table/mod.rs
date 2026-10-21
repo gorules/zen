@@ -217,20 +217,20 @@ impl VerifyTable<'_> {
                     _ => None,
                 };
                 let mut message = match covered_by.len() {
-                    _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
-                        "row {} never fires: row {rows} is empty, so it matches every input first and returns nothing",
-                        row + 1
-                    ),
-                    _ if catch_all.is_some() => format!(
-                        "row {} never fires: row {rows} has no conditions, so it matches every input first",
-                        row + 1
-                    ),
                     1 if redundant => format!(
                         "row {} never fires: row {rows} already matches every input it matches with the same result",
                         row + 1
                     ),
                     _ if redundant => format!(
                         "row {} never fires: rows {rows} together already match every input it matches with the same result",
+                        row + 1
+                    ),
+                    _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
+                        "row {} never fires: row {rows} is empty, so it matches every input first and returns nothing",
+                        row + 1
+                    ),
+                    _ if catch_all.is_some() => format!(
+                        "row {} never fires: row {rows} has no conditions, so it matches every input first",
                         row + 1
                     ),
                     1 if same_conditions => format!(

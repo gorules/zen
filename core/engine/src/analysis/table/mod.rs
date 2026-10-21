@@ -212,13 +212,25 @@ impl VerifyTable<'_> {
                 redundant,
             } => {
                 let rows = Self::row_list(&covered_by);
+                let catch_all = match covered_by.as_slice() {
+                    [only] if self.catch_all_row(*only) => Some(*only),
+                    _ => None,
+                };
                 let mut message = match covered_by.len() {
+                    _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
+                        "row {} never fires: row {rows} is empty, so it matches every input first and returns nothing",
+                        row + 1
+                    ),
+                    _ if catch_all.is_some() => format!(
+                        "row {} never fires: row {rows} has no conditions, so it matches every input first",
+                        row + 1
+                    ),
                     1 if redundant => format!(
-                        "row {} is redundant: row {rows} already gives the same result for every input it matches",
+                        "row {} never fires: row {rows} already matches every input it matches with the same result",
                         row + 1
                     ),
                     _ if redundant => format!(
-                        "row {} is redundant: rows {rows} already give the same result for every input it matches",
+                        "row {} never fires: rows {rows} together already match every input it matches with the same result",
                         row + 1
                     ),
                     1 if same_conditions => format!(
@@ -250,6 +262,8 @@ impl VerifyTable<'_> {
                 }
                 if redundant {
                     args.insert("redundant", "true".to_string());
+                } else if catch_all.is_some() {
+                    args.insert("coverCatchAll", "true".to_string());
                 }
                 if let Some(example) = example {
                     message.push_str(&format!(", for example {example}"));
@@ -447,6 +461,20 @@ impl VerifyTable<'_> {
             .find(|input| input.id == *col)
             .map(|input| input.label.clone())
             .unwrap_or_else(|| col.clone())
+    }
+
+    fn catch_all_row(&self, row: usize) -> bool {
+        !self.inputs.is_empty()
+            && self
+                .inputs
+                .iter()
+                .all(|col| self.text(row, &col.id).is_empty())
+    }
+
+    fn blank_outputs(&self, row: usize) -> bool {
+        self.outputs
+            .iter()
+            .all(|col| self.text(row, &col.id).is_empty())
     }
 
     fn row_list(rows: &[usize]) -> String {

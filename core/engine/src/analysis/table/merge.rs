@@ -195,25 +195,21 @@ impl VerifyTable<'_> {
         work: &mut Work,
         index: &mut RowIndex,
     ) -> bool {
+        if self.mode != HitMode::RowFirst {
+            return false;
+        }
         let mut changed = false;
         for inner in 1..rows.len() {
             let shadowed = {
                 let Some(inner_row) = rows[inner].as_ref() else {
                     continue;
                 };
-                if inner_row.fixed || self.collects(inner_row) {
-                    continue;
-                }
-                let needs: Vec<Option<&Arc<str>>> = match self.mode {
-                    HitMode::RowFirst => vec![None],
-                    _ => self
+                if inner_row.fixed
+                    || self
                         .outputs
                         .iter()
-                        .filter(|col| !col.collect && Self::fills(inner_row, &col.id))
-                        .map(|col| Some(&col.id))
-                        .collect(),
-                };
-                if needs.is_empty() {
+                        .any(|col| Self::fills(inner_row, &col.id))
+                {
                     continue;
                 }
                 let region = Self::region(inner_row);
@@ -226,17 +222,13 @@ impl VerifyTable<'_> {
                 if !indexed {
                     earlier = (0..inner).collect();
                 }
-                if !work.spend(earlier.len() * needs.len()) {
+                if !work.spend(earlier.len()) {
                     return changed;
                 }
-                needs.iter().all(|need| {
-                    earlier.iter().any(|&e| {
-                        rows[e].as_ref().is_some_and(|outer| {
-                            !outer.fixed
-                                && need.is_none_or(|id| Self::fills(outer, id))
-                                && Self::within(inner_row, outer)
-                        })
-                    })
+                earlier.iter().any(|&e| {
+                    rows[e]
+                        .as_ref()
+                        .is_some_and(|outer| !outer.fixed && Self::within(inner_row, outer))
                 })
             };
             if shadowed {

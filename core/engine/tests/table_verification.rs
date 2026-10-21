@@ -922,7 +922,7 @@ fn compress_respects_order_and_collect() {
             ("r3", &["[18..30)"], &["1"]),
         ],
     }
-    .assert_compressed(Some((3, &["i0=< 18 o0=1", "i0=< 30 o0=2"])));
+    .assert_compressed(None);
 
     Table {
         hit: "collect",
@@ -950,23 +950,7 @@ fn compress_respects_order_and_collect() {
 }
 
 #[test]
-fn compress_drops_rows_shadowed_by_an_earlier_row() {
-    Table {
-        hit: "first",
-        inputs: &["applicant.age"],
-        outputs: &["applicant.discount"],
-        rows: &[("r1", &["< 30"], &["1"]), ("r2", &["< 18"], &["2"])],
-    }
-    .assert_compressed(Some((2, &["i0=< 30 o0=1"])));
-
-    Table {
-        hit: "first",
-        inputs: &["applicant.age"],
-        outputs: &["applicant.discount"],
-        rows: &[("r1", &["< 18"], &["1"]), ("r2", &["< 30"], &["2"])],
-    }
-    .assert_compressed(None);
-
+fn compress_drops_shadowed_rows_without_a_result() {
     let table = Table {
         hit: "first",
         inputs: &["applicant.age"],
@@ -1000,8 +984,16 @@ fn compress_drops_rows_shadowed_by_an_earlier_row() {
 }
 
 #[test]
-fn compress_keeps_rows_that_still_fill_another_column_per_column() {
-    let table = Table {
+fn compress_keeps_shadowed_rows_with_their_own_result() {
+    Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[("r1", &["< 30"], &["1"]), ("r2", &["< 18"], &["2"])],
+    }
+    .assert_compressed(None);
+
+    Table {
         hit: "first",
         inputs: &["applicant.age"],
         outputs: &["applicant.discount", "applicant.tier"],
@@ -1009,11 +1001,100 @@ fn compress_keeps_rows_that_still_fill_another_column_per_column() {
             ("r1", &["< 30"], &["1", ""]),
             ("r2", &["< 18"], &["2", "\"junior\""]),
         ],
+    }
+    .assert_compressed(None);
+}
+
+#[test]
+fn empty_row_in_the_middle_is_named_as_the_cause() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 200"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["> 150"], &["1"]),
+            ("r4", &["> 500"], &["0"]),
+            ("r5", &[""], &[""]),
+        ],
     };
-    let graph =
+    let diagnostics = table.graph_diagnostics();
+    let message = |id: &str| {
+        diagnostics
+            .iter()
+            .find(|d| {
+                d.code == DiagnosticCode::UnreachableRule
+                    && d.args.get("rowId").map(String::as_str) == Some(id)
+            })
+            .map(|d| {
+                (
+                    d.severity,
+                    d.message.clone(),
+                    d.args.get("coverCatchAll").map(String::as_str) == Some("true"),
+                )
+            })
+    };
+    let (severity, text, catch_all) = message("r3").expect("row 3");
+    assert_eq!(severity, Severity::Warning);
+    assert!(text.contains("row 2 is empty"), "{text}");
+    assert!(catch_all);
+    let (severity, text, catch_all) = message("r4").expect("row 4");
+    assert_eq!(severity, Severity::Warning);
+    assert!(!text.contains("is empty"), "{text}");
+    assert!(!catch_all);
+    let found =
         compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
-    assert_eq!(graph, Some((2, vec!["i0=< 30 o0=1 o1=".to_string()])));
-    assert!(compressed(table.policy_diagnostics()).is_none());
+    assert_eq!(
+        found,
+        Some((
+            5,
+            vec![
+                "i0=> 200 o0=1".to_string(),
+                "i0= o0=".to_string(),
+                "i0=> 150 o0=1".to_string(),
+                "i0=> 500 o0=0".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
+fn catch_all_with_a_result_in_the_middle_is_named_as_the_cause() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &[""], &["0"]),
+            ("r2", &["> 18"], &["1"]),
+            ("r3", &["< 5"], &["0"]),
+        ],
+    };
+    let diagnostics = table.graph_diagnostics();
+    let find = |id: &str| {
+        diagnostics
+            .iter()
+            .find(|d| {
+                d.code == DiagnosticCode::UnreachableRule
+                    && d.args.get("rowId").map(String::as_str) == Some(id)
+            })
+            .expect("unreachable")
+    };
+    let blocked = find("r2");
+    assert_eq!(blocked.severity, Severity::Warning);
+    assert!(
+        blocked.message.contains("row 1 has no conditions"),
+        "{}",
+        blocked.message
+    );
+    assert_eq!(
+        blocked.args.get("coverCatchAll").map(String::as_str),
+        Some("true")
+    );
+    let redundant = find("r3");
+    assert_eq!(redundant.severity, Severity::Hint);
+    assert!(redundant.args.get("coverCatchAll").is_none());
 }
 
 #[test]
@@ -1428,6 +1509,8 @@ async fn compression_preserves_results() {
                 ("r4", &["\"silver\"", "> 70"], &["0.4"]),
                 ("r5", &["", ""], &["0"]),
                 ("r6", &["\"bronze\"", ""], &["0.2"]),
+                ("r7", &["\"gold\"", "< 10"], &[""]),
+                ("r8", &["\"gold\"", "< 20"], &["0.1"]),
             ],
         },
     ] {
@@ -1682,7 +1765,8 @@ fn covered_rows_with_the_same_result_are_redundant_hints() {
         assert_eq!(d.severity, Severity::Hint);
         assert_eq!(d.args.get("redundant").map(String::as_str), Some("true"));
         assert_eq!(d.args.get("rowId").map(String::as_str), Some("r2"));
-        assert!(d.message.contains("redundant"), "{}", d.message);
+        assert!(d.message.contains("never fires"), "{}", d.message);
+        assert!(d.message.contains("same result"), "{}", d.message);
     }
 }
 

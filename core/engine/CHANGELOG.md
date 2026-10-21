@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.1.6](https://github.com/gorules/zen/compare/zen-engine-v2.1.5...zen-engine-v2.1.6) (2026-10-21)
+
+
+### Bug Fixes
+
+* **engine:** drop rows shadowed by an earlier row when compressing ([#551](https://github.com/gorules/zen/issues/551)) ([f2aa773](https://github.com/gorules/zen/commit/f2aa773c7266032cb02b479a3cdd8a4a8213d756))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.1.5 to 2.1.6
+    * zen-expression bumped from 2.1.5 to 2.1.6
+    * zen-tmpl bumped from 2.1.5 to 2.1.6
+
 ## [2.1.5](https://github.com/gorules/zen/compare/zen-engine-v2.1.4...zen-engine-v2.1.5) (2026-10-20)
 
 

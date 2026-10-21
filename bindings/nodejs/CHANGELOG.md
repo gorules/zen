@@ -1,5 +1,7 @@
 # Changelog
 
+## [2.1.9](https://github.com/gorules/zen/compare/nodejs-v2.1.8...nodejs-v2.1.9) (2026-10-21)
+
 ## [2.1.8](https://github.com/gorules/zen/compare/nodejs-v2.1.7...nodejs-v2.1.8) (2026-10-20)
 
 ## [2.1.7](https://github.com/gorules/zen/compare/nodejs-v2.1.6...nodejs-v2.1.7) (2026-10-13)

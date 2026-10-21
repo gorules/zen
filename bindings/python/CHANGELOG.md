@@ -1,5 +1,7 @@
 # Changelog
 
+## [2.1.6](https://github.com/gorules/zen/compare/python-v2.1.5...python-v2.1.6) (2026-10-21)
+
 ## [2.1.5](https://github.com/gorules/zen/compare/python-v2.1.4...python-v2.1.5) (2026-10-20)
 
 ## [2.1.4](https://github.com/gorules/zen/compare/python-v2.1.3...python-v2.1.4) (2026-10-13)

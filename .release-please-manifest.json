@@ -1,13 +1,13 @@
 {
-  "core/engine": "2.1.5",
-  "core/expression": "2.1.5",
-  "core/types": "2.1.5",
-  "core/template": "2.1.5",
-  "core/macros": "2.1.5",
-  "bindings/nodejs": "2.1.8",
-  "bindings/python": "2.1.5",
-  "bindings/uniffi": "2.1.5",
-  "bindings/c": "2.1.5",
-  "benchmark/rust": "0.0.22",
-  "core/expression_repl": "2.0.7"
+  "core/engine": "2.1.6",
+  "core/expression": "2.1.6",
+  "core/types": "2.1.6",
+  "core/template": "2.1.6",
+  "core/macros": "2.1.6",
+  "bindings/nodejs": "2.1.9",
+  "bindings/python": "2.1.6",
+  "bindings/uniffi": "2.1.6",
+  "bindings/c": "2.1.6",
+  "benchmark/rust": "0.0.23",
+  "core/expression_repl": "2.0.8"
 }

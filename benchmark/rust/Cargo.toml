@@ -1,6 +1,6 @@
 [package]
 name = "zen-benchmark"
-version = "0.0.22"
+version = "0.0.23"
 edition = "2021"
 publish = false
 

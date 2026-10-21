@@ -66,6 +66,7 @@ pub(crate) enum Finding {
         example: Option<Value>,
         same_conditions: bool,
         redundant: bool,
+        more: usize,
     },
     DuplicateRule {
         row: usize,
@@ -240,6 +241,7 @@ impl<'a> VerifyTable<'a> {
             (self.mode != HitMode::Collect).then(|| RowIndex::new(&cells, self.inputs.len()));
         let mut reported: Vec<bool> = satisfiable.iter().map(|s| !s).collect();
         let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
+        let mut blocked_by: HashMap<usize, usize> = HashMap::default();
         for row in 0..self.rules.len() {
             if let Some(index) = index.as_mut().filter(|_| row > 0) {
                 if satisfiable[row - 1] && !reported[row - 1] && !self.can_fail(row - 1) {
@@ -281,12 +283,28 @@ impl<'a> VerifyTable<'a> {
                         && covered_by.len() == 1
                         && self.row_signature(&cells[row], row).0
                             == self.row_signature(&cells[covered_by[0]], covered_by[0]).0;
+                    let blocker = match covered_by.as_slice() {
+                        [only] if !redundant && (!same_conditions || self.catch_all_row(*only)) => {
+                            Some(*only)
+                        }
+                        _ => None,
+                    };
+                    if let Some(at) = blocker.and_then(|b| blocked_by.get(&b)) {
+                        if let Some(Finding::UnreachableRule { more, .. }) = findings.get_mut(*at) {
+                            *more += 1;
+                        }
+                        continue;
+                    }
+                    if let Some(b) = blocker {
+                        blocked_by.insert(b, findings.len());
+                    }
                     findings.push(Finding::UnreachableRule {
                         row,
                         example: self.example(&cells[row]),
                         covered_by,
                         same_conditions,
                         redundant,
+                        more: 0,
                     });
                 }
                 Some(None) => {}

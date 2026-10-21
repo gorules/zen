@@ -210,8 +210,14 @@ impl VerifyTable<'_> {
                 example,
                 same_conditions,
                 redundant,
+                more,
             } => {
                 let rows = Self::row_list(&covered_by);
+                let subject = match more {
+                    0 => format!("row {} never fires", row + 1),
+                    1 => format!("row {} and 1 more row below never fire", row + 1),
+                    n => format!("row {} and {n} more rows below never fire", row + 1),
+                };
                 let catch_all = match covered_by.as_slice() {
                     [only] if self.catch_all_row(*only) => Some(*only),
                     _ => None,
@@ -226,16 +232,17 @@ impl VerifyTable<'_> {
                         row + 1
                     ),
                     _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
-                        "row {} never fires: row {rows} is empty, so it matches every input first and returns nothing",
-                        row + 1
+                        "row {rows} is empty and not the last row, so it matches every input first: {subject}"
                     ),
                     _ if catch_all.is_some() => format!(
-                        "row {} never fires: row {rows} has no conditions, so it matches every input first",
-                        row + 1
+                        "row {rows} has no conditions and is not the last row, so it matches every input first: {subject}"
                     ),
                     1 if same_conditions => format!(
                         "row {} has the same conditions as row {rows} but a different result; only row {rows} is used",
                         row + 1
+                    ),
+                    1 if more > 0 => format!(
+                        "{subject}: row {rows} already matches every input they match and returns a different result"
                     ),
                     1 => format!(
                         "row {} never fires: row {rows} already matches every input it matches and returns a different result",
@@ -264,6 +271,9 @@ impl VerifyTable<'_> {
                     args.insert("redundant", "true".to_string());
                 } else if catch_all.is_some() {
                     args.insert("coverCatchAll", "true".to_string());
+                }
+                if more > 0 {
+                    args.insert("moreBlocked", more.to_string());
                 }
                 if let Some(example) = example {
                     message.push_str(&format!(", for example {example}"));

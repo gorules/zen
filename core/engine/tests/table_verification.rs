@@ -390,20 +390,39 @@ fn policy_per_column_coverage_cites_each_column_writer() {
 
 #[test]
 fn not_equal_and_not_in_accept_null() {
-    Table {
-        hit: "first",
-        inputs: &["applicant.code"],
-        outputs: &["applicant.discount"],
-        rows: &[
-            ("r1", &["!= \"a\""], &["1"]),
-            ("r2", &["\"b\""], &["2"]),
-            ("r3", &["null"], &["3"]),
-        ],
+    for (cover, blocked, example) in [
+        ("!= \"a\"", "\"b\"", "\"b\""),
+        ("!= \"a\"", "null", "null"),
+        ("not in [\"a\", \"b\"]", "null", "null"),
+        ("not in [\"a\", \"b\"]", "\"c\"", "\"c\""),
+    ] {
+        let rows: &'static [(
+            &'static str,
+            &'static [&'static str],
+            &'static [&'static str],
+        )] = leak_rows(vec![
+            (
+                "r1".to_string(),
+                vec![cover.to_string()],
+                vec!["1".to_string()],
+            ),
+            (
+                "r2".to_string(),
+                vec![blocked.to_string()],
+                vec!["2".to_string()],
+            ),
+        ]);
+        let expected = format!(
+            "UnreachableRule r2 coveredByIds=r1 example={{\"applicant\":{{\"code\":{example}}}}}"
+        );
+        Table {
+            hit: "first",
+            inputs: &["applicant.code"],
+            outputs: &["applicant.discount"],
+            rows,
+        }
+        .assert_both(&[expected.as_str()]);
     }
-    .assert_both(&[
-        "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"code\":\"b\"}}",
-        "UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}",
-    ]);
 
     Table {
         hit: "first",
@@ -416,10 +435,7 @@ fn not_equal_and_not_in_accept_null() {
             ("r4", &["\"c\""], &["4"]),
         ],
     }
-    .assert_both(&[
-        "UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}",
-        "UnreachableRule r4 coveredByIds=r1 example={\"applicant\":{\"code\":\"c\"}}",
-    ]);
+    .assert_both(&["UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}"]);
 }
 
 #[test]
@@ -1129,6 +1145,81 @@ fn compress_drops_redundant_rows_before_merging_blocked_ones() {
             ]
         ))
     );
+}
+
+#[test]
+fn rows_blocked_by_one_catch_all_are_reported_once() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["0"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["> 200"], &["1"]),
+            ("r4", &["< 150"], &["1"]),
+            ("r5", &["[150..200]"], &["2"]),
+            ("r6", &[""], &[""]),
+        ],
+    };
+    let diagnostics = table.graph_diagnostics();
+    let unreachable: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::UnreachableRule)
+        .collect();
+    assert_eq!(unreachable.len(), 1, "{unreachable:?}");
+    let d = unreachable[0];
+    assert_eq!(d.args.get("rowId").map(String::as_str), Some("r3"));
+    assert_eq!(d.args.get("moreBlocked").map(String::as_str), Some("2"));
+    assert_eq!(
+        d.args.get("coverCatchAll").map(String::as_str),
+        Some("true")
+    );
+    assert!(
+        d.message.contains("row 3 and 2 more rows below never fire"),
+        "{}",
+        d.message
+    );
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == DiagnosticCode::DuplicateRule));
+    assert!(!table
+        .policy_diagnostics()
+        .iter()
+        .any(|d| d.code == DiagnosticCode::UnreachableRule));
+}
+
+#[test]
+fn rows_blocked_by_one_row_are_reported_once() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 100"], &["0"]),
+            ("r2", &["> 200"], &["1"]),
+            ("r3", &["> 300"], &["2"]),
+            ("r4", &["> 400"], &["3"]),
+            ("r5", &["< 10"], &["4"]),
+        ],
+    };
+    for diagnostics in [table.graph_diagnostics(), table.policy_diagnostics()] {
+        let unreachable: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::UnreachableRule)
+            .collect();
+        assert_eq!(unreachable.len(), 1, "{unreachable:?}");
+        let d = unreachable[0];
+        assert_eq!(d.severity, Severity::Warning);
+        assert_eq!(d.args.get("rowId").map(String::as_str), Some("r2"));
+        assert_eq!(d.args.get("moreBlocked").map(String::as_str), Some("2"));
+        assert!(d.args.get("coverCatchAll").is_none());
+        assert!(
+            d.message.contains("row 2 and 2 more rows below never fire: row 1 already matches every input they match"),
+            "{}",
+            d.message
+        );
+    }
 }
 
 #[test]

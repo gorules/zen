@@ -308,7 +308,7 @@ fn catch_all_covers_everything_after_it() {
         rows: &[("r1", &["", ""], &["0"]), ("r2", &["\"gold\"", ""], &["1"])],
     }
     .assert_both(&[
-        "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"tier\":\"gold\"}}",
+        "UnreachableRule r1 coveredByIds=r1 example={\"applicant\":{\"tier\":\"gold\"}}",
     ]);
 }
 
@@ -1100,7 +1100,7 @@ fn catch_all_with_a_result_in_the_middle_is_named_as_the_cause() {
     );
     assert!(
         d.message
-            .contains("row 2 and 1 more row below never fire: row 1 has no conditions"),
+            .contains("row 1 has no conditions and is not the last row, so it matches every input first: row 2 and 1 more row below never fire"),
         "{}",
         d.message
     );
@@ -1313,22 +1313,22 @@ fn unreachable_rows_matrix() {
         (
             "1 catch-all with result blocks rows with other results",
             Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 100"], &["1"]), ("r2", &[""], &["0"]), ("r3", &["< 10"], &["2"]), ("r4", &["[20..30]"], &["3"])] },
-            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 3 and 1 more row below never fire: row 2 has no conditions and is not the last row, so it matches every input first" }],
+            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 2 has no conditions and is not the last row, so it matches every input first: row 3 and 1 more row below never fire" }],
         ),
         (
             "2 catch-all with result blocks rows that lose nothing",
             Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &[""], &["0"]), ("r2", &["< 10"], &["0"]), ("r3", &["> 5"], &[""])] },
-            vec![Expect { row: "r2", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 2 and 1 more row below never fire: row 1 has no conditions and is not the last row, so it matches every input first" }],
+            vec![Expect { row: "r2", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 1 has no conditions and is not the last row, so it matches every input first: row 2 and 1 more row below never fire" }],
         ),
         (
             "3 empty catch-all blocks rows with results",
             Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 500"], &["0"]), ("r2", &[""], &[""]), ("r3", &["> 200"], &["1"]), ("r4", &["< 150"], &["1"])] },
-            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 3 and 1 more row below never fire: row 2 is empty and not the last row, so it matches every input first and returns nothing" }],
+            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 2 is empty and not the last row, so it matches every input first and returns nothing: row 3 and 1 more row below never fire" }],
         ),
         (
             "4 empty catch-all blocks a row without a result",
             Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 5"], &["1"]), ("r2", &[""], &[""]), ("r3", &["< 3"], &[""])] },
-            vec![Expect { row: "r3", severity: Severity::Hint, more: None, catch_all: false, text: "row 3 never fires: row 2 is empty and not the last row, so it matches every input first and returns nothing" }],
+            vec![Expect { row: "r3", severity: Severity::Hint, more: None, catch_all: false, text: "row 2 is empty and not the last row, so it matches every input first and returns nothing: row 3 never fires" }],
         ),
         (
             "5 normal row blocks rows with other results",
@@ -1368,7 +1368,7 @@ fn unreachable_rows_matrix() {
             Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 500"], &["false"]), ("r2", &["> 200"], &["true"]), ("r3", &["> 250"], &["true"]), ("r4", &[""], &["true"]), ("r5", &["< 300"], &["true"]), ("r6", &["< 300"], &["true"]), ("r7", &[""], &[""])] },
             vec![
                 Expect { row: "r3", severity: Severity::Hint, more: None, catch_all: false, text: "row 3 never fires: row 2 already matches every input it matches" },
-                Expect { row: "r5", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 5 and 1 more row below never fire: row 4 has no conditions and is not the last row, so it matches every input first" },
+                Expect { row: "r5", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 4 has no conditions and is not the last row, so it matches every input first: row 5 and 1 more row below never fire" },
             ],
         ),
     ];
@@ -1423,7 +1423,7 @@ fn unreachable_rows_matrix() {
         (
             "14 empty in every input is a catch-all",
             Table { hit: "first", inputs: tier_age, outputs: out, rows: &[("r1", &["\"gold\"", "> 10"], &["1"]), ("r2", &["", ""], &["0"]), ("r3", &["\"silver\"", "< 5"], &["2"])] },
-            vec![Expect { row: "r3", severity: Severity::Warning, more: None, catch_all: true, text: "row 3 never fires: row 2 has no conditions and is not the last row, so it matches every input first" }],
+            vec![Expect { row: "r3", severity: Severity::Warning, more: None, catch_all: true, text: "row 2 has no conditions and is not the last row, so it matches every input first: row 3 never fires" }],
         ),
         (
             "15 one of two outputs differs",
@@ -2716,5 +2716,64 @@ fn fuzz_flagged_rows_and_compression_never_change_results() {
     assert!(
         checked.0 > 50 && checked.1 > 50 && checked.2 > 5,
         "{checked:?}"
+    );
+}
+
+#[test]
+fn catch_all_findings_point_at_the_catch_all_row() {
+    let target_of = |table: Table| -> Vec<String> {
+        unreachable_of(&table.graph_diagnostics())
+            .iter()
+            .map(|d| match &d.location.target {
+                Some(CursorTarget::DecisionTableRow { row }) => row.to_string(),
+                other => panic!("unexpected target {other:?}"),
+            })
+            .collect()
+    };
+    let age = &["applicant.age"];
+    let out = &["applicant.discount"];
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 500"], &["false"]),
+                ("r2", &["> 200"], &["true"]),
+                ("r3", &["> 250"], &["false"]),
+                ("r4", &[""], &["false"]),
+                ("r5", &["< 300"], &["true"]),
+                ("r6", &["< 290"], &["true"]),
+                ("r7", &[""], &[""])
+            ]
+        }),
+        vec!["r3", "r4"]
+    );
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 5"], &["1"]),
+                ("r2", &[""], &[""]),
+                ("r3", &["< 3"], &["2"])
+            ]
+        }),
+        vec!["r2"]
+    );
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 100"], &["0"]),
+                ("r2", &["> 200"], &["1"]),
+                ("r3", &["> 300"], &["2"]),
+                ("r4", &["< 10"], &["3"])
+            ]
+        }),
+        vec!["r2"]
     );
 }

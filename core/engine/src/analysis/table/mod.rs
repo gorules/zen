@@ -229,10 +229,10 @@ impl VerifyTable<'_> {
                 };
                 let head = match covered_by.len() {
                     _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
-                        "{subject}: row {rows} is empty and not the last row, so it matches every input first and returns nothing"
+                        "row {rows} is empty and not the last row, so it matches every input first and returns nothing: {subject}"
                     ),
                     _ if catch_all.is_some() => format!(
-                        "{subject}: row {rows} has no conditions and is not the last row, so it matches every input first"
+                        "row {rows} has no conditions and is not the last row, so it matches every input first: {subject}"
                     ),
                     1 if same_conditions => format!(
                         "row {} has the same conditions as row {rows} but a different result; only row {rows} is used",
@@ -284,7 +284,7 @@ impl VerifyTable<'_> {
                     Diagnostic::warning
                 })(
                     DiagnosticCode::UnreachableRule,
-                    location(None).with_target(row_target(row)),
+                    location(None).with_target(row_target(catch_all.unwrap_or(row))),
                     message,
                 );
                 diagnostic.args = args;

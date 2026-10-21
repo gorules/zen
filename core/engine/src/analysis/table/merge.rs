@@ -18,6 +18,7 @@ struct Row {
     rule: HashMap<Arc<str>, Arc<str>>,
     cells: Vec<CellConstraint>,
     fixed: bool,
+    barrier: bool,
     stale: Vec<usize>,
 }
 
@@ -45,6 +46,7 @@ impl VerifyTable<'_> {
         &self,
         cells: &[Vec<CellConstraint>],
         satisfiable: &[bool],
+        warned: &[bool],
     ) -> Option<Finding> {
         if self.rules.len() < 2 {
             return None;
@@ -54,11 +56,13 @@ impl VerifyTable<'_> {
             .iter()
             .zip(cells)
             .zip(satisfiable)
-            .map(|((rule, cells), satisfiable)| {
+            .zip(warned)
+            .map(|(((rule, cells), satisfiable), warned)| {
                 Some(Row {
                     rule: rule.clone(),
                     cells: cells.clone(),
-                    fixed: !satisfiable,
+                    fixed: !satisfiable || *warned,
+                    barrier: *warned,
                     stale: Vec::new(),
                 })
             })
@@ -163,6 +167,15 @@ impl VerifyTable<'_> {
         work: &mut Work,
         index: &mut RowIndex,
     ) -> bool {
+        let (low, high) = (from.min(to), from.max(to));
+        if !work.spend(high - low)
+            || rows[low + 1..high]
+                .iter()
+                .flatten()
+                .any(|between| between.barrier)
+        {
+            return false;
+        }
         let mut visited = 0usize;
         let mut clear = true;
         let indexed = index.overlapping(region, to.saturating_sub(from), |e| {

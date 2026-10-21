@@ -240,6 +240,7 @@ impl<'a> VerifyTable<'a> {
         let mut index =
             (self.mode != HitMode::Collect).then(|| RowIndex::new(&cells, self.inputs.len()));
         let mut reported: Vec<bool> = satisfiable.iter().map(|s| !s).collect();
+        let mut warned: Vec<bool> = vec![false; self.rules.len()];
         let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
         let mut blocked_by: HashMap<(usize, bool), usize> = HashMap::default();
         for row in 0..self.rules.len() {
@@ -280,6 +281,7 @@ impl<'a> VerifyTable<'a> {
                         || covered_by
                             .iter()
                             .all(|&earlier| self.same_row_outputs(earlier, row));
+                    warned[row] = !redundant;
                     let same_conditions = !redundant
                         && covered_by.len() == 1
                         && self.row_signature(&cells[row], row).0
@@ -320,7 +322,7 @@ impl<'a> VerifyTable<'a> {
                 None => gaps_incomplete = true,
             }
         }
-        findings.extend(self.compress(&cells, &satisfiable));
+        findings.extend(self.compress(&cells, &satisfiable, &warned));
         findings.extend(self.covering_cells(&cells, &satisfiable));
         findings.extend(self.unproduced(is, &reported));
         if coverage_incomplete || gaps_incomplete {

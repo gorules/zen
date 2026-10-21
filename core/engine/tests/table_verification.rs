@@ -1496,6 +1496,38 @@ fn unreachable_rows_matrix() {
 }
 
 #[test]
+fn compress_leaves_rows_with_a_warning_and_their_surroundings_alone() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["0"]),
+            ("r2", &["> 200"], &["1"]),
+            ("r3", &["> 250"], &["0"]),
+            ("r4", &[""], &["1"]),
+            ("r5", &["< 300"], &["1"]),
+            ("r6", &["< 290"], &["1"]),
+            ("r7", &[""], &[""]),
+        ],
+    };
+    let found =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        found,
+        Some((
+            7,
+            vec![
+                "i0=> 500 o0=0".to_string(),
+                "i0=> 200 o0=1".to_string(),
+                "i0=> 250 o0=0".to_string(),
+                "i0= o0=1".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
 fn cells_covering_the_whole_domain() {
     Table {
         hit: "first",

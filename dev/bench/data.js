@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792517490137,
+  "lastUpdate": 1792598220010,
   "repoUrl": "https://github.com/gorules/zen",
   "entries": {
     "ZEN cross-language": [
@@ -7769,6 +7769,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "python · match (policy) +trace",
             "value": 146204.916,
+            "unit": "ns/op"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "127778503+bot-gorules@users.noreply.github.com",
+            "name": "GoRules Team",
+            "username": "bot-gorules"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e152f3f6ef8370edd9ed5179082299b07b819af",
+          "message": "chore(release): publish (#552)",
+          "timestamp": "2026-10-21T17:48:01+02:00",
+          "tree_id": "584f4126d6f5029cf3892f050ea790c96c3a88fa",
+          "url": "https://github.com/gorules/zen/commit/2e152f3f6ef8370edd9ed5179082299b07b819af"
+        },
+        "date": 1792598219526,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust · decision-table-discounts (graph)",
+            "value": 67918.044,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · decision-table-discounts (graph) +trace",
+            "value": 76366.906,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression-table-map (graph)",
+            "value": 1374142.578,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression-table-map (graph) +trace",
+            "value": 1848686.3,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · credit-limit-adjustment (graph)",
+            "value": 207936.854,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · credit-limit-adjustment (graph) +trace",
+            "value": 224355.524,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · dynamic-shipping-cost-calculator (graph)",
+            "value": 1886499.15,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · dynamic-shipping-cost-calculator (graph) +trace",
+            "value": 2457184.742,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · customer-eligibility-engine (graph)",
+            "value": 1266304.332,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · customer-eligibility-engine (graph) +trace",
+            "value": 1637901.876,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · simple-assertion (policy)",
+            "value": 72077.056,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · simple-assertion (policy) +trace",
+            "value": 73017.692,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression (policy)",
+            "value": 100037.656,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression (policy) +trace",
+            "value": 100813.684,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · multi-assertion (policy)",
+            "value": 732257.944,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · multi-assertion (policy) +trace",
+            "value": 757449.258,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression-chain (policy)",
+            "value": 578439.22,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · expression-chain (policy) +trace",
+            "value": 636274.75,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · match (policy)",
+            "value": 89632.046,
+            "unit": "ns/op"
+          },
+          {
+            "name": "rust · match (policy) +trace",
+            "value": 90181.63,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · decision-table-discounts (graph)",
+            "value": 518751.332,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · decision-table-discounts (graph) +trace",
+            "value": 531620.844,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression-table-map (graph)",
+            "value": 4182730.338,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression-table-map (graph) +trace",
+            "value": 5976340.072,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · credit-limit-adjustment (graph)",
+            "value": 605347.436,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · credit-limit-adjustment (graph) +trace",
+            "value": 745225.832,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · dynamic-shipping-cost-calculator (graph)",
+            "value": 5524076.766,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · dynamic-shipping-cost-calculator (graph) +trace",
+            "value": 7308571.182,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · customer-eligibility-engine (graph)",
+            "value": 3516119.96,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · customer-eligibility-engine (graph) +trace",
+            "value": 4999582.574,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · simple-assertion (policy)",
+            "value": 435614.594,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · simple-assertion (policy) +trace",
+            "value": 463536.532,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression (policy)",
+            "value": 484531.24,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression (policy) +trace",
+            "value": 506427.408,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · multi-assertion (policy)",
+            "value": 1393509.016,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · multi-assertion (policy) +trace",
+            "value": 1907238.834,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression-chain (policy)",
+            "value": 1549181.644,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · expression-chain (policy) +trace",
+            "value": 2805739.706,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · match (policy)",
+            "value": 471155.704,
+            "unit": "ns/op"
+          },
+          {
+            "name": "node · match (policy) +trace",
+            "value": 482112.272,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · decision-table-discounts (graph)",
+            "value": 72026.26,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · decision-table-discounts (graph) +trace",
+            "value": 91953.02,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression-table-map (graph)",
+            "value": 2007539.98,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression-table-map (graph) +trace",
+            "value": 2990912.574,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · credit-limit-adjustment (graph)",
+            "value": 195366.802,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · credit-limit-adjustment (graph) +trace",
+            "value": 246518.126,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · dynamic-shipping-cost-calculator (graph)",
+            "value": 2786474.02,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · dynamic-shipping-cost-calculator (graph) +trace",
+            "value": 4045992.94,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · customer-eligibility-engine (graph)",
+            "value": 1803898.344,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · customer-eligibility-engine (graph) +trace",
+            "value": 2642355.576,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · simple-assertion (policy)",
+            "value": 85948.08,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · simple-assertion (policy) +trace",
+            "value": 91081.48,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression (policy)",
+            "value": 112183.754,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression (policy) +trace",
+            "value": 121163.832,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · multi-assertion (policy)",
+            "value": 769594.546,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · multi-assertion (policy) +trace",
+            "value": 1072571.888,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression-chain (policy)",
+            "value": 730381.334,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · expression-chain (policy) +trace",
+            "value": 1543378.208,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · match (policy)",
+            "value": 105538.31,
+            "unit": "ns/op"
+          },
+          {
+            "name": "python · match (policy) +trace",
+            "value": 111249.878,
             "unit": "ns/op"
           }
         ]

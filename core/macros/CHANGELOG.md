@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.6](https://github.com/gorules/zen/compare/zen-macros-v2.1.5...zen-macros-v2.1.6) (2026-10-21)
+
+
+### Miscellaneous
+
+* **zen-macros:** Synchronize core versions
+
 ## [2.1.5](https://github.com/gorules/zen/compare/zen-macros-v2.1.4...zen-macros-v2.1.5) (2026-10-20)
 
 

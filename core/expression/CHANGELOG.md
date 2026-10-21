@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.6](https://github.com/gorules/zen/compare/zen-expression-v2.1.5...zen-expression-v2.1.6) (2026-10-21)
+
+
+### Miscellaneous
+
+* **zen-expression:** Synchronize core versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 2.1.5 to 2.1.6
+    * zen-types bumped from 2.1.5 to 2.1.6
+
 ## [2.1.5](https://github.com/gorules/zen/compare/zen-expression-v2.1.4...zen-expression-v2.1.5) (2026-10-20)
 
 

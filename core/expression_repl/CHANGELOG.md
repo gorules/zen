@@ -82,6 +82,10 @@
   * dependencies
     * zen-expression bumped from 2.1.4 to 2.1.5
 
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-expression bumped from 2.1.5 to 2.1.6
+
 ## [1.0.0-beta.0](https://github.com/gorules/zen/compare/expression_repl-v0.55.1...expression_repl-v1.0.0-beta.0) (2026-06-25)
 
 

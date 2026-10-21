@@ -222,17 +222,10 @@ impl VerifyTable<'_> {
                     [only] if self.catch_all_row(*only) => Some(*only),
                     _ => None,
                 };
-                let mut message = match covered_by.len() {
-                    1 if redundant => format!(
-                        "row {} never fires: row {rows} already matches every input it matches with the same result",
-                        row + 1
-                    ),
-                    _ if redundant => format!(
-                        "row {} never fires: rows {rows} together already match every input it matches with the same result",
-                        row + 1
-                    ),
+                let matches = if more > 0 { "they match" } else { "it matches" };
+                let head = match covered_by.len() {
                     _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
-                        "row {rows} is empty and not the last row, so it matches every input first: {subject}"
+                        "row {rows} is empty and not the last row, so it matches every input first and returns nothing: {subject}"
                     ),
                     _ if catch_all.is_some() => format!(
                         "row {rows} has no conditions and is not the last row, so it matches every input first: {subject}"
@@ -241,17 +234,21 @@ impl VerifyTable<'_> {
                         "row {} has the same conditions as row {rows} but a different result; only row {rows} is used",
                         row + 1
                     ),
-                    1 if more > 0 => format!(
-                        "{subject}: row {rows} already matches every input they match and returns a different result"
-                    ),
+                    1 if redundant => format!("{subject}: row {rows} already matches every input {matches}"),
                     1 => format!(
-                        "row {} never fires: row {rows} already matches every input it matches and returns a different result",
-                        row + 1
+                        "{subject}: row {rows} already matches every input {matches} and returns a different result"
                     ),
+                    _ if redundant => {
+                        format!("{subject}: rows {rows} together already match every input {matches}")
+                    }
                     _ => format!(
-                        "row {} never fires: rows {rows} together already match every input it matches, with a different result",
-                        row + 1
+                        "{subject}: rows {rows} together already match every input {matches}, with a different result"
                     ),
+                };
+                let tail = match (redundant, more) {
+                    (false, _) => "",
+                    (true, 0) => "; removing it changes nothing",
+                    (true, _) => "; removing them changes nothing",
                 };
                 let mut args = row_args(row);
                 args.insert("coveredBy", rows);
@@ -275,10 +272,14 @@ impl VerifyTable<'_> {
                 if more > 0 {
                     args.insert("moreBlocked", more.to_string());
                 }
+                let mut message = head;
                 if let Some(example) = example {
-                    message.push_str(&format!(", for example {example}"));
+                    if !redundant {
+                        message.push_str(&format!(", for example {example}"));
+                    }
                     args.insert("example", example.to_string());
                 }
+                message.push_str(tail);
                 let mut diagnostic = (if redundant {
                     Diagnostic::hint
                 } else {

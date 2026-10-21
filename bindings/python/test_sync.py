@@ -22,6 +22,37 @@ def custom_handler(request):
         "output": {"sum": p1}
     }
 
+def http_handler_decision_content():
+    source = (
+        "import http from 'http';\n"
+        "\n"
+        "export const handler = async (input) => {\n"
+        "  const response = await http.get('https://example.com/products/1', {\n"
+        "    headers: { 'x-request': 'ping' },\n"
+        "    params: { page: '1' },\n"
+        "  });\n"
+        "\n"
+        "  return {\n"
+        "    status: response.status,\n"
+        "    product: response.data.product,\n"
+        "    mockHeader: response.headers['x-mock'],\n"
+        "  };\n"
+        "};\n"
+    )
+    return json.dumps({
+        "contentType": "application/vnd.gorules.decision",
+        "nodes": [
+            {"type": "inputNode", "id": "input1", "name": "request", "position": {"x": 0, "y": 0}},
+            {"type": "functionNode", "id": "function1", "name": "function1",
+             "content": {"source": source}, "position": {"x": 100, "y": 0}},
+            {"type": "outputNode", "id": "output1", "name": "response", "position": {"x": 200, "y": 0}},
+        ],
+        "edges": [
+            {"id": "edge1", "type": "edge", "sourceId": "input1", "targetId": "function1"},
+            {"id": "edge2", "type": "edge", "sourceId": "function1", "targetId": "output1"},
+        ],
+    })
+
 
 # The test based on unittest module
 class ZenEngine(unittest.TestCase):
@@ -67,6 +98,43 @@ class ZenEngine(unittest.TestCase):
         self.assertEqual(r1["result"]["sum"], 20)
         self.assertEqual(r2["result"]["sum"], 30)
         self.assertEqual(r3["result"]["sum"], 40)
+
+    def test_engine_http_handler(self):
+        requests = []
+
+        def http_handler(request):
+            requests.append(request)
+            return {
+                "status": 200,
+                "headers": {"x-mock": "true"},
+                "data": {"product": "notebook"},
+            }
+
+        engine = zen.ZenEngine({"httpHandler": http_handler})
+        decision = engine.create_decision(http_handler_decision_content())
+        r = decision.evaluate({})
+
+        self.assertEqual(r["result"]["status"], 200)
+        self.assertEqual(r["result"]["product"], "notebook")
+        self.assertEqual(r["result"]["mockHeader"], "true")
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["method"], "GET")
+        self.assertEqual(requests[0]["url"], "https://example.com/products/1")
+        self.assertEqual(requests[0]["headers"]["x-request"], "ping")
+        self.assertEqual(requests[0]["params"]["page"], "1")
+
+    def test_engine_http_handler_error(self):
+        def http_handler(request):
+            raise PermissionError("domain not allowed")
+
+        engine = zen.ZenEngine({"httpHandler": http_handler})
+        decision = engine.create_decision(http_handler_decision_content())
+
+        with self.assertRaises(RuntimeError) as ctx:
+            decision.evaluate({})
+
+        self.assertIn("domain not allowed", str(ctx.exception))
 
     def test_static_loader_config(self):
         with open("../../test-data/table.json", "r") as f:

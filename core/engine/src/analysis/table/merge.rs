@@ -74,6 +74,7 @@ impl VerifyTable<'_> {
                 changed |= self.merge_column(&mut rows, col, &mut work, &mut index);
             }
             if self.mode != HitMode::Collect {
+                changed |= self.drop_shadowed(&mut rows, &mut work, &mut index);
                 changed |= self.absorb(&mut rows, &mut work, &mut index);
             }
             if !changed || work.remaining == 0 {
@@ -182,6 +183,68 @@ impl VerifyTable<'_> {
             .iter()
             .flatten()
             .all(|between| !Self::catches(between, region))
+    }
+
+    fn fills(row: &Row, id: &Arc<str>) -> bool {
+        row.rule.get(id).is_some_and(|c| !c.trim().is_empty())
+    }
+
+    fn drop_shadowed(
+        &self,
+        rows: &mut [Option<Row>],
+        work: &mut Work,
+        index: &mut RowIndex,
+    ) -> bool {
+        let mut changed = false;
+        for inner in 1..rows.len() {
+            let shadowed = {
+                let Some(inner_row) = rows[inner].as_ref() else {
+                    continue;
+                };
+                if inner_row.fixed || self.collects(inner_row) {
+                    continue;
+                }
+                let needs: Vec<Option<&Arc<str>>> = match self.mode {
+                    HitMode::RowFirst => vec![None],
+                    _ => self
+                        .outputs
+                        .iter()
+                        .filter(|col| !col.collect && Self::fills(inner_row, &col.id))
+                        .map(|col| Some(&col.id))
+                        .collect(),
+                };
+                if needs.is_empty() {
+                    continue;
+                }
+                let region = Self::region(inner_row);
+                let mut earlier: Vec<usize> = Vec::new();
+                let indexed = index.overlapping(&region, inner, |e| {
+                    if e < inner {
+                        earlier.push(e);
+                    }
+                });
+                if !indexed {
+                    earlier = (0..inner).collect();
+                }
+                if !work.spend(earlier.len() * needs.len()) {
+                    return changed;
+                }
+                needs.iter().all(|need| {
+                    earlier.iter().any(|&e| {
+                        rows[e].as_ref().is_some_and(|outer| {
+                            !outer.fixed
+                                && need.is_none_or(|id| Self::fills(outer, id))
+                                && Self::within(inner_row, outer)
+                        })
+                    })
+                })
+            };
+            if shadowed {
+                rows[inner] = None;
+                changed = true;
+            }
+        }
+        changed
     }
 
     fn absorb(&self, rows: &mut [Option<Row>], work: &mut Work, index: &mut RowIndex) -> bool {

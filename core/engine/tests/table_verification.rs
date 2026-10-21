@@ -922,7 +922,7 @@ fn compress_respects_order_and_collect() {
             ("r3", &["[18..30)"], &["1"]),
         ],
     }
-    .assert_compressed(None);
+    .assert_compressed(Some((3, &["i0=< 18 o0=1", "i0=< 30 o0=2"])));
 
     Table {
         hit: "collect",
@@ -947,6 +947,73 @@ fn compress_respects_order_and_collect() {
         rows: &[("r1", &[">= 18"], &["1"]), ("r2", &[">= 18"], &["1"])],
     }
     .assert_compressed(None);
+}
+
+#[test]
+fn compress_drops_rows_shadowed_by_an_earlier_row() {
+    Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[("r1", &["< 30"], &["1"]), ("r2", &["< 18"], &["2"])],
+    }
+    .assert_compressed(Some((2, &["i0=< 30 o0=1"])));
+
+    Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[("r1", &["< 18"], &["1"]), ("r2", &["< 30"], &["2"])],
+    }
+    .assert_compressed(None);
+
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["1"]),
+            ("r2", &["> 350"], &["1"]),
+            ("r3", &[""], &["0"]),
+            ("r4", &[""], &[""]),
+        ],
+    };
+    let graph =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        graph,
+        Some((4, vec!["i0=> 350 o0=1".to_string(), "i0= o0=0".to_string()]))
+    );
+    let policy =
+        compressed(table.policy_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        policy,
+        Some((
+            4,
+            vec![
+                "i0=> 350 o0=1".to_string(),
+                "i0= o0=0".to_string(),
+                "i0= o0=".to_string()
+            ]
+        ))
+    );
+}
+
+#[test]
+fn compress_keeps_rows_that_still_fill_another_column_per_column() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount", "applicant.tier"],
+        rows: &[
+            ("r1", &["< 30"], &["1", ""]),
+            ("r2", &["< 18"], &["2", "\"junior\""]),
+        ],
+    };
+    let graph =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(graph, Some((2, vec!["i0=< 30 o0=1 o1=".to_string()])));
+    assert!(compressed(table.policy_diagnostics()).is_none());
 }
 
 #[test]
@@ -1350,6 +1417,19 @@ async fn compression_preserves_results() {
                 ("r5", &["\"bronze\"", "< 18"], &["0.2"]),
             ],
         },
+        Table {
+            hit: "first",
+            inputs: TIER_AGE,
+            outputs: &["applicant.discount"],
+            rows: &[
+                ("r1", &["\"gold\"", "< 30"], &["0.1"]),
+                ("r2", &["\"gold\"", "< 18"], &["0.5"]),
+                ("r3", &["", "> 65"], &["0.3"]),
+                ("r4", &["\"silver\"", "> 70"], &["0.4"]),
+                ("r5", &["", ""], &["0"]),
+                ("r6", &["\"bronze\"", ""], &["0.2"]),
+            ],
+        },
     ] {
         let original = table.content();
         let (_, rules) = compressed(table.policy_diagnostics()).expect("compressible");
@@ -1365,10 +1445,15 @@ async fn compression_preserves_results() {
                     })
             })
             .collect();
+        let (_, graph_rules) = compressed(table.graph_diagnostics()).expect("compressible");
+        let mut graph_compact = original.clone();
+        graph_compact["rules"] = graph_rules;
         let before = outputs_for(original, &inputs).await;
         let after = outputs_for(compact, &inputs).await;
         assert_eq!(before.0, after.0, "policy");
         assert_eq!(before.1, after.1, "graph");
+        let graph_after = outputs_for(graph_compact, &inputs).await;
+        assert_eq!(before.1, graph_after.1, "graph compression");
     }
 }
 

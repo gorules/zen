@@ -66,6 +66,7 @@ pub(crate) enum Finding {
         example: Option<Value>,
         same_conditions: bool,
         redundant: bool,
+        others: Vec<usize>,
     },
     DuplicateRule {
         row: usize,
@@ -239,7 +240,9 @@ impl<'a> VerifyTable<'a> {
         let mut index =
             (self.mode != HitMode::Collect).then(|| RowIndex::new(&cells, self.inputs.len()));
         let mut reported: Vec<bool> = satisfiable.iter().map(|s| !s).collect();
+        let mut warned: Vec<bool> = vec![false; self.rules.len()];
         let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
+        let mut blocked_by: HashMap<usize, usize> = HashMap::default();
         for row in 0..self.rules.len() {
             if let Some(index) = index.as_mut().filter(|_| row > 0) {
                 if satisfiable[row - 1] && !reported[row - 1] && !self.can_fail(row - 1) {
@@ -274,19 +277,41 @@ impl<'a> VerifyTable<'a> {
             match self.dead(&cells, row, &requirements, &mut budget, index) {
                 Some(Some(covered_by)) => {
                     reported[row] = true;
-                    let redundant = covered_by
-                        .iter()
-                        .all(|&earlier| self.same_row_outputs(earlier, row));
+                    let redundant = self.blank_outputs(row)
+                        || covered_by
+                            .iter()
+                            .all(|&earlier| self.same_row_outputs(earlier, row));
+                    warned[row] = !redundant;
                     let same_conditions = !redundant
                         && covered_by.len() == 1
                         && self.row_signature(&cells[row], row).0
                             == self.row_signature(&cells[covered_by[0]], covered_by[0]).0;
+                    let blocker = match covered_by.as_slice() {
+                        [only] if !same_conditions || self.catch_all_row(*only) => Some(*only),
+                        _ => None,
+                    };
+                    if let Some(at) = blocker.and_then(|b| blocked_by.get(&b)) {
+                        if let Some(Finding::UnreachableRule {
+                            others,
+                            redundant: group_redundant,
+                            ..
+                        }) = findings.get_mut(*at)
+                        {
+                            others.push(row);
+                            *group_redundant &= redundant;
+                        }
+                        continue;
+                    }
+                    if let Some(b) = blocker {
+                        blocked_by.insert(b, findings.len());
+                    }
                     findings.push(Finding::UnreachableRule {
                         row,
                         example: self.example(&cells[row]),
                         covered_by,
                         same_conditions,
                         redundant,
+                        others: Vec::new(),
                     });
                 }
                 Some(None) => {}
@@ -301,7 +326,7 @@ impl<'a> VerifyTable<'a> {
                 None => gaps_incomplete = true,
             }
         }
-        findings.extend(self.compress(&cells, &satisfiable));
+        findings.extend(self.compress(&cells, &satisfiable, &warned));
         findings.extend(self.covering_cells(&cells, &satisfiable));
         findings.extend(self.unproduced(is, &reported));
         if coverage_incomplete || gaps_incomplete {

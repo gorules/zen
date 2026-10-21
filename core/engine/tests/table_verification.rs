@@ -308,7 +308,7 @@ fn catch_all_covers_everything_after_it() {
         rows: &[("r1", &["", ""], &["0"]), ("r2", &["\"gold\"", ""], &["1"])],
     }
     .assert_both(&[
-        "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"tier\":\"gold\"}}",
+        "UnreachableRule r1 coveredByIds=r1 example={\"applicant\":{\"tier\":\"gold\"}}",
     ]);
 }
 
@@ -390,20 +390,39 @@ fn policy_per_column_coverage_cites_each_column_writer() {
 
 #[test]
 fn not_equal_and_not_in_accept_null() {
-    Table {
-        hit: "first",
-        inputs: &["applicant.code"],
-        outputs: &["applicant.discount"],
-        rows: &[
-            ("r1", &["!= \"a\""], &["1"]),
-            ("r2", &["\"b\""], &["2"]),
-            ("r3", &["null"], &["3"]),
-        ],
+    for (cover, blocked, example) in [
+        ("!= \"a\"", "\"b\"", "\"b\""),
+        ("!= \"a\"", "null", "null"),
+        ("not in [\"a\", \"b\"]", "null", "null"),
+        ("not in [\"a\", \"b\"]", "\"c\"", "\"c\""),
+    ] {
+        let rows: &'static [(
+            &'static str,
+            &'static [&'static str],
+            &'static [&'static str],
+        )] = leak_rows(vec![
+            (
+                "r1".to_string(),
+                vec![cover.to_string()],
+                vec!["1".to_string()],
+            ),
+            (
+                "r2".to_string(),
+                vec![blocked.to_string()],
+                vec!["2".to_string()],
+            ),
+        ]);
+        let expected = format!(
+            "UnreachableRule r2 coveredByIds=r1 example={{\"applicant\":{{\"code\":{example}}}}}"
+        );
+        Table {
+            hit: "first",
+            inputs: &["applicant.code"],
+            outputs: &["applicant.discount"],
+            rows,
+        }
+        .assert_both(&[expected.as_str()]);
     }
-    .assert_both(&[
-        "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"code\":\"b\"}}",
-        "UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}",
-    ]);
 
     Table {
         hit: "first",
@@ -416,10 +435,7 @@ fn not_equal_and_not_in_accept_null() {
             ("r4", &["\"c\""], &["4"]),
         ],
     }
-    .assert_both(&[
-        "UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}",
-        "UnreachableRule r4 coveredByIds=r1 example={\"applicant\":{\"code\":\"c\"}}",
-    ]);
+    .assert_both(&["UnreachableRule r3 coveredByIds=r1 example={\"applicant\":{\"code\":null}}"]);
 }
 
 #[test]
@@ -950,6 +966,562 @@ fn compress_respects_order_and_collect() {
 }
 
 #[test]
+fn compress_drops_shadowed_rows_without_a_result() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["1"]),
+            ("r2", &["> 350"], &["1"]),
+            ("r3", &[""], &["0"]),
+            ("r4", &[""], &[""]),
+        ],
+    };
+    let graph =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        graph,
+        Some((4, vec!["i0=> 350 o0=1".to_string(), "i0= o0=0".to_string()]))
+    );
+    let policy =
+        compressed(table.policy_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        policy,
+        Some((
+            4,
+            vec![
+                "i0=> 350 o0=1".to_string(),
+                "i0= o0=0".to_string(),
+                "i0= o0=".to_string()
+            ]
+        ))
+    );
+}
+
+#[test]
+fn compress_keeps_shadowed_rows_with_their_own_result() {
+    Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[("r1", &["< 30"], &["1"]), ("r2", &["< 18"], &["2"])],
+    }
+    .assert_compressed(None);
+
+    Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount", "applicant.tier"],
+        rows: &[
+            ("r1", &["< 30"], &["1", ""]),
+            ("r2", &["< 18"], &["2", "\"junior\""]),
+        ],
+    }
+    .assert_compressed(None);
+}
+
+#[test]
+fn empty_row_in_the_middle_is_named_as_the_cause() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 200"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["> 150"], &["1"]),
+            ("r4", &["> 500"], &["0"]),
+            ("r5", &[""], &[""]),
+        ],
+    };
+    let diagnostics = table.graph_diagnostics();
+    let message = |id: &str| {
+        diagnostics
+            .iter()
+            .find(|d| {
+                d.code == DiagnosticCode::UnreachableRule
+                    && d.args.get("rowId").map(String::as_str) == Some(id)
+            })
+            .map(|d| {
+                (
+                    d.severity,
+                    d.message.clone(),
+                    d.args.get("coverCatchAll").map(String::as_str) == Some("true"),
+                )
+            })
+    };
+    let (severity, text, catch_all) = message("r3").expect("row 3");
+    assert_eq!(severity, Severity::Warning);
+    assert!(text.contains("row 2 is empty"), "{text}");
+    assert!(catch_all);
+    let (severity, text, catch_all) = message("r4").expect("row 4");
+    assert_eq!(severity, Severity::Warning);
+    assert!(!text.contains("is empty"), "{text}");
+    assert!(!catch_all);
+    let found =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        found,
+        Some((
+            5,
+            vec![
+                "i0=> 200 o0=1".to_string(),
+                "i0= o0=".to_string(),
+                "i0=> 150 o0=1".to_string(),
+                "i0=> 500 o0=0".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
+fn catch_all_with_a_result_in_the_middle_is_named_as_the_cause() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &[""], &["0"]),
+            ("r2", &["> 18"], &["1"]),
+            ("r3", &["< 5"], &["0"]),
+        ],
+    };
+    let diagnostics = table.graph_diagnostics();
+    let found = unreachable_of(&diagnostics);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    let d = found[0];
+    assert_eq!(d.severity, Severity::Warning);
+    assert_eq!(d.args.get("rowId").map(String::as_str), Some("r2"));
+    assert_eq!(d.args.get("blockedIds").map(String::as_str), Some("r2,r3"));
+    assert_eq!(
+        d.args.get("coverCatchAll").map(String::as_str),
+        Some("true")
+    );
+    assert!(
+        d.message
+            .contains("row 1 has no conditions and is not the last row, so it matches every input first: row 2 and 1 more row below never fire"),
+        "{}",
+        d.message
+    );
+}
+
+#[test]
+fn compress_drops_redundant_rows_before_merging_blocked_ones() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 200"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["< 150"], &["1"]),
+            ("r4", &["> 500"], &["1"]),
+            ("r5", &[""], &[""]),
+        ],
+    };
+    let found =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        found,
+        Some((
+            5,
+            vec![
+                "i0=> 200 o0=1".to_string(),
+                "i0= o0=".to_string(),
+                "i0=< 150 o0=1".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
+fn rows_blocked_by_one_catch_all_are_reported_once() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["0"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["> 200"], &["1"]),
+            ("r4", &["< 150"], &["1"]),
+            ("r5", &["[150..200]"], &["2"]),
+            ("r6", &[""], &[""]),
+        ],
+    };
+    let diagnostics = table.graph_diagnostics();
+    let unreachable: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::UnreachableRule)
+        .collect();
+    assert_eq!(unreachable.len(), 1, "{unreachable:?}");
+    let d = unreachable[0];
+    assert_eq!(d.args.get("rowId").map(String::as_str), Some("r3"));
+    assert_eq!(d.args.get("moreBlocked").map(String::as_str), Some("2"));
+    assert_eq!(
+        d.args.get("coverCatchAll").map(String::as_str),
+        Some("true")
+    );
+    assert!(
+        d.message.contains("row 3 and 2 more rows below never fire"),
+        "{}",
+        d.message
+    );
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.code == DiagnosticCode::DuplicateRule));
+    assert!(!table
+        .policy_diagnostics()
+        .iter()
+        .any(|d| d.code == DiagnosticCode::UnreachableRule));
+}
+
+#[test]
+fn rows_blocked_by_one_row_are_reported_once() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 100"], &["0"]),
+            ("r2", &["> 200"], &["1"]),
+            ("r3", &["> 300"], &["2"]),
+            ("r4", &["> 400"], &["3"]),
+            ("r5", &["< 10"], &["4"]),
+        ],
+    };
+    for diagnostics in [table.graph_diagnostics(), table.policy_diagnostics()] {
+        let unreachable: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::UnreachableRule)
+            .collect();
+        assert_eq!(unreachable.len(), 1, "{unreachable:?}");
+        let d = unreachable[0];
+        assert_eq!(d.severity, Severity::Warning);
+        assert_eq!(d.args.get("rowId").map(String::as_str), Some("r2"));
+        assert_eq!(d.args.get("moreBlocked").map(String::as_str), Some("2"));
+        assert!(d.args.get("coverCatchAll").is_none());
+        assert!(
+            d.message.contains("row 2 and 2 more rows below never fire: row 1 already matches every input they match"),
+            "{}",
+            d.message
+        );
+    }
+}
+
+struct Expect {
+    row: &'static str,
+    severity: Severity,
+    more: Option<&'static str>,
+    catch_all: bool,
+    text: &'static str,
+}
+
+fn unreachable_of(
+    diagnostics: &[zen_engine::policy::Diagnostic],
+) -> Vec<&zen_engine::policy::Diagnostic> {
+    diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::UnreachableRule)
+        .collect()
+}
+
+fn assert_unreachable(
+    name: &str,
+    diagnostics: Vec<zen_engine::policy::Diagnostic>,
+    expected: &[Expect],
+) {
+    let found = unreachable_of(&diagnostics);
+    assert_eq!(found.len(), expected.len(), "{name}: {found:#?}");
+    for e in expected {
+        let d = found
+            .iter()
+            .find(|d| d.args.get("rowId").map(String::as_str) == Some(e.row))
+            .unwrap_or_else(|| panic!("{name}: no finding for {} in {found:#?}", e.row));
+        assert_eq!(d.severity, e.severity, "{name} {}: {}", e.row, d.message);
+        assert_eq!(
+            d.args.get("moreBlocked").map(String::as_str),
+            e.more,
+            "{name} {}",
+            e.row
+        );
+        assert_eq!(
+            d.args.get("coverCatchAll").map(String::as_str) == Some("true"),
+            e.catch_all,
+            "{name} {}",
+            e.row
+        );
+        assert!(
+            d.message.contains(e.text),
+            "{name} {}: {}",
+            e.row,
+            d.message
+        );
+    }
+}
+
+#[test]
+fn rows_behind_one_row_form_one_finding_whatever_their_results() {
+    let mixed = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 0"], &["1"]),
+            ("r2", &["> 10"], &["1"]),
+            ("r3", &["> 20"], &["2"]),
+            ("r4", &["> 30"], &["1"]),
+            ("r5", &["< 0"], &["3"]),
+        ],
+    };
+    let same = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 0"], &["1"]),
+            ("r2", &["> 10"], &["1"]),
+            ("r3", &["> 20"], &[""]),
+            ("r4", &["< 0"], &["3"]),
+        ],
+    };
+    for (table, severity, ids) in [
+        (mixed, Severity::Warning, "r2,r3,r4"),
+        (same, Severity::Hint, "r2,r3"),
+    ] {
+        let diagnostics = table.graph_diagnostics();
+        let found = unreachable_of(&diagnostics);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        let d = found[0];
+        assert_eq!(d.severity, severity, "{}", d.message);
+        assert_eq!(d.args.get("blockedIds").map(String::as_str), Some(ids));
+        assert!(
+            d.message
+                .contains("row 1 already matches every input they match"),
+            "{}",
+            d.message
+        );
+    }
+}
+
+#[test]
+fn unreachable_rows_matrix() {
+    let age = &["applicant.age"];
+    let out = &["applicant.discount"];
+    let cases: Vec<(&str, Table, Vec<Expect>)> = vec![
+        (
+            "1 catch-all with result blocks rows with other results",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 100"], &["1"]), ("r2", &[""], &["0"]), ("r3", &["< 10"], &["2"]), ("r4", &["[20..30]"], &["3"])] },
+            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 2 has no conditions and is not the last row, so it matches every input first: row 3 and 1 more row below never fire" }],
+        ),
+        (
+            "2 catch-all with result blocks rows that lose nothing",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &[""], &["0"]), ("r2", &["< 10"], &["0"]), ("r3", &["> 5"], &[""])] },
+            vec![Expect { row: "r2", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 1 has no conditions and is not the last row, so it matches every input first: row 2 and 1 more row below never fire" }],
+        ),
+        (
+            "3 empty catch-all blocks rows with results",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 500"], &["0"]), ("r2", &[""], &[""]), ("r3", &["> 200"], &["1"]), ("r4", &["< 150"], &["1"])] },
+            vec![Expect { row: "r3", severity: Severity::Warning, more: Some("1"), catch_all: true, text: "row 2 is empty and not the last row, so it matches every input first and returns nothing: row 3 and 1 more row below never fire" }],
+        ),
+        (
+            "4 empty catch-all blocks a row without a result",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 5"], &["1"]), ("r2", &[""], &[""]), ("r3", &["< 3"], &[""])] },
+            vec![Expect { row: "r3", severity: Severity::Hint, more: None, catch_all: false, text: "row 2 is empty and not the last row, so it matches every input first and returns nothing: row 3 never fires" }],
+        ),
+        (
+            "5 normal row blocks rows with other results",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 100"], &["0"]), ("r2", &["> 200"], &["1"]), ("r3", &["> 300"], &["2"]), ("r4", &["< 10"], &["3"])] },
+            vec![Expect { row: "r2", severity: Severity::Warning, more: Some("1"), catch_all: false, text: "row 2 and 1 more row below never fire: row 1 already matches every input they match" }],
+        ),
+        (
+            "5b single row blocked by a normal row",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 100"], &["0"]), ("r2", &["> 200"], &["1"]), ("r3", &["< 10"], &["3"])] },
+            vec![Expect { row: "r2", severity: Severity::Warning, more: None, catch_all: false, text: "row 2 never fires: row 1 already matches every input it matches" }],
+        ),
+        (
+            "6 normal row blocks rows that lose nothing",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 0"], &["1"]), ("r2", &["> 10"], &["1"]), ("r3", &["> 20"], &[""]), ("r4", &["< 0"], &["2"])] },
+            vec![Expect { row: "r2", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 2 and 1 more row below never fire: row 1 already matches every input they match" }],
+        ),
+        (
+            "7 identical conditions with a different result stay per pair",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 10"], &["1"]), ("r2", &["> 10"], &["2"]), ("r3", &["> 10"], &["3"]), ("r4", &["<= 10"], &["4"])] },
+            vec![
+                Expect { row: "r2", severity: Severity::Warning, more: None, catch_all: false, text: "row 2 has the same conditions as row 1 but a different result" },
+                Expect { row: "r3", severity: Severity::Warning, more: None, catch_all: false, text: "row 3 has the same conditions as row 1 but a different result" },
+            ],
+        ),
+        (
+            "8 several rows together",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["< 50"], &["1"]), ("r2", &[">= 50"], &["2"]), ("r3", &["[40..60]"], &["3"])] },
+            vec![Expect { row: "r3", severity: Severity::Warning, more: None, catch_all: false, text: "row 3 never fires: rows 1, 2 together already match every input it matches" }],
+        ),
+        (
+            "10 catch-all as the last row",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 10"], &["1"]), ("r2", &["< 5"], &["2"]), ("r3", &[""], &["0"])] },
+            vec![],
+        ),
+        (
+            "image 73",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 500"], &["false"]), ("r2", &["> 200"], &["true"]), ("r3", &["> 250"], &["true"]), ("r4", &[""], &["true"]), ("r5", &["< 300"], &["true"]), ("r6", &["< 300"], &["true"]), ("r7", &[""], &[""])] },
+            vec![
+                Expect { row: "r3", severity: Severity::Hint, more: None, catch_all: false, text: "row 3 never fires: row 2 already matches every input it matches" },
+                Expect { row: "r5", severity: Severity::Hint, more: Some("1"), catch_all: false, text: "row 4 has no conditions and is not the last row, so it matches every input first: row 5 and 1 more row below never fire" },
+            ],
+        ),
+    ];
+    for (name, table, expected) in cases {
+        assert_unreachable(name, table.graph_diagnostics(), &expected);
+    }
+
+    let policy_empty = Table {
+        hit: "first",
+        inputs: age,
+        outputs: out,
+        rows: &[
+            ("r1", &["> 5"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["< 3"], &["2"]),
+        ],
+    };
+    assert_unreachable(
+        "11 empty catch-all blocks nothing per column",
+        policy_empty.policy_diagnostics(),
+        &[],
+    );
+    let policy_catch_all = Table {
+        hit: "first",
+        inputs: age,
+        outputs: out,
+        rows: &[
+            ("r1", &["> 5"], &["1"]),
+            ("r2", &[""], &["0"]),
+            ("r3", &["< 3"], &["2"]),
+        ],
+    };
+    assert_unreachable(
+        "11 catch-all with result per column",
+        policy_catch_all.policy_diagnostics(),
+        &[Expect {
+            row: "r3",
+            severity: Severity::Warning,
+            more: None,
+            catch_all: true,
+            text: "row 2 has no conditions and is not the last row",
+        }],
+    );
+    let tier_age = &["applicant.tier", "applicant.age"];
+    let two_out = &["applicant.discount", "applicant.label"];
+    let more_cases: Vec<(&str, Table, Vec<Expect>)> = vec![
+        (
+            "13 empty in one of two inputs is not a catch-all",
+            Table { hit: "first", inputs: tier_age, outputs: out, rows: &[("r1", &["\"gold\"", ""], &["1"]), ("r2", &["\"gold\"", "> 10"], &["2"]), ("r3", &["\"silver\"", ""], &["3"])] },
+            vec![Expect { row: "r2", severity: Severity::Warning, more: None, catch_all: false, text: "row 2 never fires: row 1 already matches every input it matches" }],
+        ),
+        (
+            "14 empty in every input is a catch-all",
+            Table { hit: "first", inputs: tier_age, outputs: out, rows: &[("r1", &["\"gold\"", "> 10"], &["1"]), ("r2", &["", ""], &["0"]), ("r3", &["\"silver\"", "< 5"], &["2"])] },
+            vec![Expect { row: "r3", severity: Severity::Warning, more: None, catch_all: true, text: "row 2 has no conditions and is not the last row, so it matches every input first: row 3 never fires" }],
+        ),
+        (
+            "15 one of two outputs differs",
+            Table { hit: "first", inputs: age, outputs: two_out, rows: &[("r1", &["> 10"], &["1", "\"a\""]), ("r2", &["> 20"], &["1", "\"b\""]), ("r3", &["<= 10"], &["0", "\"c\""])] },
+            vec![Expect { row: "r2", severity: Severity::Warning, more: None, catch_all: false, text: "row 1 already matches every input it matches" }],
+        ),
+        (
+            "16 both outputs equal",
+            Table { hit: "first", inputs: age, outputs: two_out, rows: &[("r1", &["> 10"], &["1", "\"a\""]), ("r2", &["> 20"], &["1", "\"a\""]), ("r3", &["<= 10"], &["0", "\"c\""])] },
+            vec![Expect { row: "r2", severity: Severity::Hint, more: None, catch_all: false, text: "row 2 never fires: row 1 already matches every input it matches" }],
+        ),
+        (
+            "17 partial overlap is not flagged",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 10"], &["1"]), ("r2", &["> 5"], &["2"]), ("r3", &["<= 5"], &["3"])] },
+            vec![],
+        ),
+        (
+            "18 blocked by a catch-all and an earlier normal row",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 100"], &["1"]), ("r2", &[""], &["0"]), ("r3", &["> 200"], &["1"]), ("r4", &["> 300"], &["5"])] },
+            vec![Expect {
+                row: "r3",
+                severity: Severity::Warning,
+                more: Some("1"),
+                catch_all: false,
+                text: "row 3 and 1 more row below never fire: row 1 already matches every input they match",
+            }],
+        ),
+        (
+            "19 duplicated empty rows in the middle",
+            Table { hit: "first", inputs: age, outputs: out, rows: &[("r1", &["> 5"], &["1"]), ("r2", &[""], &[""]), ("r3", &[""], &[""]), ("r4", &["< 3"], &["2"])] },
+            vec![Expect { row: "r4", severity: Severity::Warning, more: None, catch_all: true, text: "row 2 is empty and not the last row" }],
+        ),
+    ];
+    for (name, table, expected) in more_cases {
+        assert_unreachable(name, table.graph_diagnostics(), &expected);
+    }
+    let policy_one_column = Table {
+        hit: "first",
+        inputs: age,
+        outputs: two_out,
+        rows: &[
+            ("r1", &["> 5"], &["1", ""]),
+            ("r2", &[""], &["0", ""]),
+            ("r3", &["< 3"], &["", "\"x\""]),
+        ],
+    };
+    assert_unreachable(
+        "11b catch-all filling one column leaves the other",
+        policy_one_column.policy_diagnostics(),
+        &[],
+    );
+
+    let collect = Table {
+        hit: "collect",
+        inputs: age,
+        outputs: out,
+        rows: &[
+            ("r1", &["> 10"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["> 20"], &["2"]),
+        ],
+    };
+    assert_unreachable("12 collect", collect.graph_diagnostics(), &[]);
+}
+
+#[test]
+fn compress_leaves_rows_with_a_warning_and_their_surroundings_alone() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 500"], &["0"]),
+            ("r2", &["> 200"], &["1"]),
+            ("r3", &["> 250"], &["0"]),
+            ("r4", &[""], &["1"]),
+            ("r5", &["< 300"], &["1"]),
+            ("r6", &["< 290"], &["1"]),
+            ("r7", &[""], &[""]),
+        ],
+    };
+    let found =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        found,
+        Some((
+            7,
+            vec![
+                "i0=> 500 o0=0".to_string(),
+                "i0=> 200 o0=1".to_string(),
+                "i0=> 250 o0=0".to_string(),
+                "i0= o0=1".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
 fn cells_covering_the_whole_domain() {
     Table {
         hit: "first",
@@ -1350,6 +1922,21 @@ async fn compression_preserves_results() {
                 ("r5", &["\"bronze\"", "< 18"], &["0.2"]),
             ],
         },
+        Table {
+            hit: "first",
+            inputs: TIER_AGE,
+            outputs: &["applicant.discount"],
+            rows: &[
+                ("r1", &["\"gold\"", "< 30"], &["0.1"]),
+                ("r2", &["\"gold\"", "< 18"], &["0.5"]),
+                ("r3", &["", "> 65"], &["0.3"]),
+                ("r4", &["\"silver\"", "> 70"], &["0.4"]),
+                ("r5", &["", ""], &["0"]),
+                ("r6", &["\"bronze\"", ""], &["0.2"]),
+                ("r7", &["\"gold\"", "< 10"], &[""]),
+                ("r8", &["\"gold\"", "< 20"], &["0.1"]),
+            ],
+        },
     ] {
         let original = table.content();
         let (_, rules) = compressed(table.policy_diagnostics()).expect("compressible");
@@ -1365,10 +1952,15 @@ async fn compression_preserves_results() {
                     })
             })
             .collect();
+        let (_, graph_rules) = compressed(table.graph_diagnostics()).expect("compressible");
+        let mut graph_compact = original.clone();
+        graph_compact["rules"] = graph_rules;
         let before = outputs_for(original, &inputs).await;
         let after = outputs_for(compact, &inputs).await;
         assert_eq!(before.0, after.0, "policy");
         assert_eq!(before.1, after.1, "graph");
+        let graph_after = outputs_for(graph_compact, &inputs).await;
+        assert_eq!(before.1, graph_after.1, "graph compression");
     }
 }
 
@@ -1597,7 +2189,12 @@ fn covered_rows_with_the_same_result_are_redundant_hints() {
         assert_eq!(d.severity, Severity::Hint);
         assert_eq!(d.args.get("redundant").map(String::as_str), Some("true"));
         assert_eq!(d.args.get("rowId").map(String::as_str), Some("r2"));
-        assert!(d.message.contains("redundant"), "{}", d.message);
+        assert!(d.message.contains("never fires"), "{}", d.message);
+        assert!(
+            d.message.contains("already matches every input it matches"),
+            "{}",
+            d.message
+        );
     }
 }
 
@@ -1904,4 +2501,279 @@ fn expression_columns_mixing_fields_stay_opaque() {
     table.assert_compressed(None);
     assert!(table.policy_findings().is_empty());
     assert!(table.graph_findings().is_empty());
+}
+
+fn fuzz_run(base: &Table, content: &Value, inputs: &[Value]) -> (Vec<Value>, Vec<Value>) {
+    let mut doc = base.policy_doc();
+    for block in doc["blocks"].as_array_mut().expect("blocks") {
+        if block["id"] == "dt" {
+            block["props"]["data"] = content.clone();
+        }
+    }
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).expect("policy"));
+    let policy = inputs
+        .iter()
+        .map(|input| {
+            match ws.evaluate(&EvaluateRequest {
+                policy_path: Arc::from("p"),
+                input: input.clone().into(),
+                goals: Vec::new(),
+                trace: false,
+            }) {
+                Ok(result) => {
+                    let output: Value = result.output.into();
+                    output.get("applicant").cloned().unwrap_or(Value::Null)
+                }
+                Err(_) => Value::String("error".into()),
+            }
+        })
+        .collect();
+    let mut graph_json = base.graph_json();
+    for node in graph_json["nodes"].as_array_mut().expect("nodes") {
+        if node["id"] == "dt" {
+            node["content"] = content.clone();
+        }
+    }
+    let DecisionContent::Graph(graph) = serde_json::from_value(graph_json).expect("graph") else {
+        panic!("graph");
+    };
+    let decision = Decision::from(graph);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("runtime");
+    let graph = inputs
+        .iter()
+        .map(
+            |input| match runtime.block_on(decision.evaluate(input.clone().into())) {
+                Ok(response) => {
+                    let output: Value = response.result.into();
+                    output.get("applicant").cloned().unwrap_or(Value::Null)
+                }
+                Err(_) => Value::String("error".into()),
+            },
+        )
+        .collect();
+    (policy, graph)
+}
+
+#[test]
+fn fuzz_flagged_rows_and_compression_never_change_results() {
+    let mut seed: u64 = std::env::var("ZEN_FUZZ_SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(7);
+    let rounds: usize = std::env::var("ZEN_FUZZ_ROUNDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(120);
+    let mut next = move |n: usize| -> usize {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as usize) % n
+    };
+    let ages = [
+        "", "", "> 10", "< 10", ">= 50", "[10..50]", "50", "!= 50", "> 100",
+    ];
+    let tiers = [
+        "",
+        "",
+        "\"gold\"",
+        "\"silver\"",
+        "\"gold\", \"silver\"",
+        "!= \"gold\"",
+    ];
+    let exprs = [
+        "",
+        "",
+        "applicant.age > 10",
+        "applicant.age < 50",
+        "applicant.tier == \"gold\"",
+    ];
+    let discounts = ["", "", "1", "2", "3"];
+    let labels = ["", "\"a\"", "\"b\""];
+    let inputs: Vec<Value> = ["gold", "silver", "bronze"]
+        .iter()
+        .flat_map(|tier| {
+            [0, 5, 9, 10, 11, 49, 50, 51, 99, 100, 101, 500]
+                .iter()
+                .map(move |age| json!({ "applicant": { "tier": tier, "age": age, "scores": [], "vip": false } }))
+        })
+        .collect();
+    let mut checked = (0usize, 0usize, 0usize);
+    for _ in 0..rounds {
+        let hit = if next(6) == 0 { "collect" } else { "first" };
+        let kinds: &[&str] = match next(4) {
+            0 => &["age"],
+            1 => &["tier"],
+            2 => &["tier", "age"],
+            _ => &["expr", "age"],
+        };
+        let two_outputs = next(3) == 0;
+        let fields: Vec<&'static str> = kinds
+            .iter()
+            .map(|k| match *k {
+                "age" => "applicant.age",
+                "tier" => "applicant.tier",
+                _ => "",
+            })
+            .collect();
+        let outputs: &'static [&'static str] = if two_outputs {
+            &["applicant.discount", "applicant.label"]
+        } else {
+            &["applicant.discount"]
+        };
+        let rows: Vec<(String, Vec<String>, Vec<String>)> = (0..2 + next(7))
+            .map(|r| {
+                let blank = next(8) == 0;
+                let cells = kinds
+                    .iter()
+                    .map(|k| match (*k, blank) {
+                        (_, true) => String::new(),
+                        ("age", _) => ages[next(ages.len())].to_string(),
+                        ("tier", _) => tiers[next(tiers.len())].to_string(),
+                        _ => exprs[next(exprs.len())].to_string(),
+                    })
+                    .collect();
+                let mut outs = vec![if blank && next(2) == 0 {
+                    String::new()
+                } else {
+                    discounts[next(discounts.len())].to_string()
+                }];
+                if two_outputs {
+                    outs.push(labels[next(labels.len())].to_string());
+                }
+                (format!("r{r}"), cells, outs)
+            })
+            .collect();
+        let table = Table {
+            hit,
+            inputs: Box::leak(fields.into_boxed_slice()),
+            outputs,
+            rows: leak_rows(rows),
+        };
+        let content = table.content();
+        let base = fuzz_run(&table, &content, &inputs);
+        for (mode, diagnostics) in [
+            ("policy", table.policy_diagnostics()),
+            ("graph", table.graph_diagnostics()),
+        ] {
+            let pick = |outcome: &(Vec<Value>, Vec<Value>)| -> Vec<Value> {
+                if mode == "policy" {
+                    outcome.0.clone()
+                } else {
+                    outcome.1.clone()
+                }
+            };
+            let expected = pick(&base);
+            for d in &diagnostics {
+                let flagged = d.code == DiagnosticCode::UnreachableRule
+                    || (d.code == DiagnosticCode::DuplicateRule && hit != "collect");
+                if flagged {
+                    let ids: Vec<String> = d
+                        .args
+                        .get("blockedIds")
+                        .or_else(|| d.args.get("rowId"))
+                        .expect("rowId")
+                        .split(',')
+                        .map(str::to_string)
+                        .collect();
+                    let mut without = content.clone();
+                    without["rules"]
+                        .as_array_mut()
+                        .expect("rules")
+                        .retain(|rule| {
+                            !ids.iter()
+                                .any(|id| rule["_id"] == Value::String(id.clone()))
+                        });
+                    assert_eq!(
+                        pick(&fuzz_run(&table, &without, &inputs)),
+                        expected,
+                        "{mode}: removing flagged {ids:?} changed results ({}) in {content}",
+                        d.message
+                    );
+                    checked.0 += 1;
+                }
+                if d.code == DiagnosticCode::CompressibleTable {
+                    let mut compact = content.clone();
+                    compact["rules"] =
+                        serde_json::from_str(d.args.get("rules").expect("rules")).expect("json");
+                    assert_eq!(
+                        pick(&fuzz_run(&table, &compact, &inputs)),
+                        expected,
+                        "{mode}: compression changed results in {content} -> {}",
+                        compact["rules"]
+                    );
+                    checked.1 += 1;
+                }
+                if d.args.contains_key("moreBlocked") {
+                    checked.2 += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        checked.0 > 50 && checked.1 > 50 && checked.2 > 5,
+        "{checked:?}"
+    );
+}
+
+#[test]
+fn catch_all_findings_point_at_the_catch_all_row() {
+    let target_of = |table: Table| -> Vec<String> {
+        unreachable_of(&table.graph_diagnostics())
+            .iter()
+            .map(|d| match &d.location.target {
+                Some(CursorTarget::DecisionTableRow { row }) => row.to_string(),
+                other => panic!("unexpected target {other:?}"),
+            })
+            .collect()
+    };
+    let age = &["applicant.age"];
+    let out = &["applicant.discount"];
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 500"], &["false"]),
+                ("r2", &["> 200"], &["true"]),
+                ("r3", &["> 250"], &["false"]),
+                ("r4", &[""], &["false"]),
+                ("r5", &["< 300"], &["true"]),
+                ("r6", &["< 290"], &["true"]),
+                ("r7", &[""], &[""])
+            ]
+        }),
+        vec!["r3", "r4"]
+    );
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 5"], &["1"]),
+                ("r2", &[""], &[""]),
+                ("r3", &["< 3"], &["2"])
+            ]
+        }),
+        vec!["r2"]
+    );
+    assert_eq!(
+        target_of(Table {
+            hit: "first",
+            inputs: age,
+            outputs: out,
+            rows: &[
+                ("r1", &["> 100"], &["0"]),
+                ("r2", &["> 200"], &["1"]),
+                ("r3", &["> 300"], &["2"]),
+                ("r4", &["< 10"], &["3"])
+            ]
+        }),
+        vec!["r2"]
+    );
 }

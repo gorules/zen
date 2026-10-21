@@ -210,29 +210,36 @@ impl VerifyTable<'_> {
                 example,
                 same_conditions,
                 redundant,
+                others,
             } => {
                 let rows = Self::row_list(&covered_by);
-                let mut message = match covered_by.len() {
-                    1 if redundant => format!(
-                        "row {} is redundant: row {rows} already gives the same result for every input it matches",
-                        row + 1
+                let subject = match others.len() {
+                    0 => format!("row {} never fires", row + 1),
+                    1 => format!("row {} and 1 more row below never fire", row + 1),
+                    n => format!("row {} and {n} more rows below never fire", row + 1),
+                };
+                let catch_all = match covered_by.as_slice() {
+                    [only] if self.catch_all_row(*only) => Some(*only),
+                    _ => None,
+                };
+                let matches = if others.is_empty() {
+                    "it matches"
+                } else {
+                    "they match"
+                };
+                let head = match covered_by.len() {
+                    _ if catch_all.is_some_and(|only| self.blank_outputs(only)) => format!(
+                        "row {rows} is empty and not the last row, so it matches every input first and returns nothing: {subject}"
                     ),
-                    _ if redundant => format!(
-                        "row {} is redundant: rows {rows} already give the same result for every input it matches",
-                        row + 1
+                    _ if catch_all.is_some() => format!(
+                        "row {rows} has no conditions and is not the last row, so it matches every input first: {subject}"
                     ),
                     1 if same_conditions => format!(
                         "row {} has the same conditions as row {rows} but a different result; only row {rows} is used",
                         row + 1
                     ),
-                    1 => format!(
-                        "row {} never fires: row {rows} already matches every input it matches and returns a different result",
-                        row + 1
-                    ),
-                    _ => format!(
-                        "row {} never fires: rows {rows} together already match every input it matches, with a different result",
-                        row + 1
-                    ),
+                    1 => format!("{subject}: row {rows} already matches every input {matches}"),
+                    _ => format!("{subject}: rows {rows} together already match every input {matches}"),
                 };
                 let mut args = row_args(row);
                 args.insert("coveredBy", rows);
@@ -250,9 +257,25 @@ impl VerifyTable<'_> {
                 }
                 if redundant {
                     args.insert("redundant", "true".to_string());
+                } else if catch_all.is_some() {
+                    args.insert("coverCatchAll", "true".to_string());
                 }
+                if !others.is_empty() {
+                    args.insert("moreBlocked", others.len().to_string());
+                    args.insert(
+                        "blockedIds",
+                        std::iter::once(row)
+                            .chain(others.iter().copied())
+                            .map(|r| row_key(r).to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    );
+                }
+                let mut message = head;
                 if let Some(example) = example {
-                    message.push_str(&format!(", for example {example}"));
+                    if !redundant && others.is_empty() {
+                        message.push_str(&format!(", for example {example}"));
+                    }
                     args.insert("example", example.to_string());
                 }
                 let mut diagnostic = (if redundant {
@@ -261,7 +284,7 @@ impl VerifyTable<'_> {
                     Diagnostic::warning
                 })(
                     DiagnosticCode::UnreachableRule,
-                    location(None).with_target(row_target(row)),
+                    location(None).with_target(row_target(catch_all.unwrap_or(row))),
                     message,
                 );
                 diagnostic.args = args;
@@ -447,6 +470,20 @@ impl VerifyTable<'_> {
             .find(|input| input.id == *col)
             .map(|input| input.label.clone())
             .unwrap_or_else(|| col.clone())
+    }
+
+    fn catch_all_row(&self, row: usize) -> bool {
+        !self.inputs.is_empty()
+            && self
+                .inputs
+                .iter()
+                .all(|col| self.text(row, &col.id).is_empty())
+    }
+
+    fn blank_outputs(&self, row: usize) -> bool {
+        self.outputs
+            .iter()
+            .all(|col| self.text(row, &col.id).is_empty())
     }
 
     fn row_list(rows: &[usize]) -> String {

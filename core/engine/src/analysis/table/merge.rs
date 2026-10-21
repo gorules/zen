@@ -70,12 +70,12 @@ impl VerifyTable<'_> {
         let mut index = RowIndex::blocking(cells, self.inputs.len());
         for _ in 0..MAX_ROUNDS {
             let mut changed = false;
-            for col in 0..self.inputs.len() {
-                changed |= self.merge_column(&mut rows, col, &mut work, &mut index);
-            }
             if self.mode != HitMode::Collect {
                 changed |= self.drop_shadowed(&mut rows, &mut work, &mut index);
                 changed |= self.absorb(&mut rows, &mut work, &mut index);
+            }
+            for col in 0..self.inputs.len() {
+                changed |= self.merge_column(&mut rows, col, &mut work, &mut index);
             }
             if !changed || work.remaining == 0 {
                 break;

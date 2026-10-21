@@ -1098,6 +1098,35 @@ fn catch_all_with_a_result_in_the_middle_is_named_as_the_cause() {
 }
 
 #[test]
+fn compress_drops_redundant_rows_before_merging_blocked_ones() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["> 200"], &["1"]),
+            ("r2", &[""], &[""]),
+            ("r3", &["< 150"], &["1"]),
+            ("r4", &["> 500"], &["1"]),
+            ("r5", &[""], &[""]),
+        ],
+    };
+    let found =
+        compressed(table.graph_diagnostics()).map(|(before, rules)| (before, row_summary(&rules)));
+    assert_eq!(
+        found,
+        Some((
+            5,
+            vec![
+                "i0=> 200 o0=1".to_string(),
+                "i0= o0=".to_string(),
+                "i0=< 150 o0=1".to_string(),
+            ]
+        ))
+    );
+}
+
+#[test]
 fn cells_covering_the_whole_domain() {
     Table {
         hit: "first",

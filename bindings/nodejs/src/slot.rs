@@ -90,7 +90,7 @@ pub fn slot_batch(requests: Vec<SlotRequest>, strict: Option<bool>) -> napi::Res
     Ok(out)
 }
 
-fn parse_role(role: &str) -> napi::Result<SlotRole> {
+pub(crate) fn parse_role(role: &str) -> napi::Result<SlotRole> {
     match role {
         "unary" => Ok(SlotRole::Unary),
         "condition" => Ok(SlotRole::Condition),
@@ -102,7 +102,7 @@ fn parse_role(role: &str) -> napi::Result<SlotRole> {
     }
 }
 
-fn label_resolver(labels: Option<&Value>) -> Option<LabelResolver> {
+pub(crate) fn label_resolver(labels: Option<&Value>) -> Option<LabelResolver> {
     let map: HashMap<String, HashMap<String, String>> =
         serde_json::from_value(labels?.clone()).ok()?;
     if map.is_empty() {
@@ -113,7 +113,7 @@ fn label_resolver(labels: Option<&Value>) -> Option<LabelResolver> {
     }))
 }
 
-fn slot_response_json(response: SlotResponse) -> napi::Result<Value> {
+pub(crate) fn slot_response_json(response: SlotResponse) -> napi::Result<Value> {
     let mut value = to_json(&response)?;
     let obj = object_mut(&mut value)?;
     obj.insert("subjectType".into(), type_json(&response.subject_type));
@@ -134,16 +134,16 @@ fn slot_response_json(response: SlotResponse) -> napi::Result<Value> {
     Ok(value)
 }
 
-fn to_json<T: serde::Serialize>(value: &T) -> napi::Result<Value> {
+pub(crate) fn to_json<T: serde::Serialize>(value: &T) -> napi::Result<Value> {
     serde_json::to_value(value).map_err(|e| napi::Error::from_reason(e.to_string()))
 }
 
-fn object_mut(value: &mut Value) -> napi::Result<&mut serde_json::Map<String, Value>> {
+pub(crate) fn object_mut(value: &mut Value) -> napi::Result<&mut serde_json::Map<String, Value>> {
     value
         .as_object_mut()
         .ok_or_else(|| napi::Error::from_reason("expected a JSON object"))
 }
 
-fn type_json(t: &Option<VariableType>) -> Value {
+pub(crate) fn type_json(t: &Option<VariableType>) -> Value {
     t.as_ref().map(variable_type_to_json).unwrap_or(Value::Null)
 }

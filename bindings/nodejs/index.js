@@ -788,6 +788,7 @@ module.exports.registerCurrentThreadTaskHost = nativeBinding.registerCurrentThre
 module.exports.registerTimerHost = nativeBinding.registerTimerHost
 module.exports.reserveCurrentThreadHostRegistration = nativeBinding.reserveCurrentThreadHostRegistration
 module.exports.resetAsyncRuntimeMetrics = nativeBinding.resetAsyncRuntimeMetrics
+module.exports.StandaloneExpression = nativeBinding.StandaloneExpression
 module.exports.unregisterCurrentThreadTaskHost = nativeBinding.unregisterCurrentThreadTaskHost
 module.exports.unregisterTimerHost = nativeBinding.unregisterTimerHost
 module.exports.Workspace = nativeBinding.Workspace

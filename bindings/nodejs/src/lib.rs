@@ -12,4 +12,5 @@ mod mt;
 mod policy;
 mod safe_result;
 mod slot;
+mod standalone;
 mod types;

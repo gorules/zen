@@ -7,6 +7,7 @@ pub(crate) mod paths;
 pub(crate) mod reads;
 pub(crate) mod search;
 pub(crate) mod slot;
+pub(crate) mod standalone;
 pub(crate) mod types;
 
 use std::sync::Arc;
@@ -22,6 +23,7 @@ pub use graph::{
     GraphSignature, GraphTraceMap,
 };
 pub use slot::{CursorScope, ExpressionFacts, SlotResponse};
+pub use standalone::{StandaloneExpression, StandaloneFacts};
 pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,

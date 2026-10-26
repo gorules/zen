@@ -1,0 +1,634 @@
+expression (string);input (json 5);output (json 5);note
+# What a program returns: the final expression, or the assigned keys when it ends in an assignment
+"a = x * 2; b = a + 1";{x: 1};{a: 2, b: 3}
+"a = x * 2; b = a + 1";{x: 2.5};{a: 5.0, b: 6.0}
+"a = x * 2; b = a + 1";{x: null};!error
+"a = x * 2; b = a + 1";{};!error
+"a = x * 2; b = a + 1";{x: 'a'};!error
+"a = x * 2; b = a + 1; b";{x: 1};3
+"a = x * 2; b = a + 1; b";{x: 2.5};6.0
+"a = x * 2; b = a + 1; b";{x: null};!error
+"a = x * 2; b = a + 1; b";{};!error
+"a = x * 2; b = a + 1; b";{x: 'a'};!error
+"a = x * 2; b = a + 1; a";{x: 1};2
+"a = x * 2; b = a + 1; a";{x: 2.5};5.0
+"a = x * 2; b = a + 1; a";{x: null};!error
+"a = x * 2; b = a + 1; a";{};!error
+"a = x * 2; b = a + 1; a";{x: 'a'};!error
+"a = x * 2; b = a + 1; [a, b]";{x: 1};[2, 3]
+"a = x * 2; b = a + 1; [a, b]";{x: 2.5};[5.0, 6.0]
+"a = x * 2; b = a + 1; [a, b]";{x: null};!error
+"a = x * 2; b = a + 1; [a, b]";{};!error
+"a = x * 2; b = a + 1; [a, b]";{x: 'a'};!error
+"a = x * 2; b = a + 1; {a: a, b: b}";{x: 1};{a: 2, b: 3}
+"a = x * 2; b = a + 1; {a: a, b: b}";{x: 2.5};{a: 5.0, b: 6.0}
+"a = x * 2; b = a + 1; {a: a, b: b}";{x: null};!error
+"a = x * 2; b = a + 1; {a: a, b: b}";{};!error
+"a = x * 2; b = a + 1; {a: a, b: b}";{x: 'a'};!error
+"a = x * 2; b = a + 1; x";{x: 1};1
+"a = x * 2; b = a + 1; x";{x: 2.5};2.5
+"a = x * 2; b = a + 1; x";{x: null};!error
+"a = x * 2; b = a + 1; x";{};!error
+"a = x * 2; b = a + 1; x";{x: 'a'};!error
+"a = x * 2; b = a + 1; b - a";{x: 1};1
+"a = x * 2; b = a + 1; b - a";{x: 2.5};1.0
+"a = x * 2; b = a + 1; b - a";{x: null};!error
+"a = x * 2; b = a + 1; b - a";{};!error
+"a = x * 2; b = a + 1; b - a";{x: 'a'};!error
+"a = x * 2; b = a + 1; `${a},${b}`";{x: 1};'2,3'
+"a = x * 2; b = a + 1; `${a},${b}`";{x: 2.5};'5.0,6.0'
+"a = x * 2; b = a + 1; `${a},${b}`";{x: null};!error
+"a = x * 2; b = a + 1; `${a},${b}`";{};!error
+"a = x * 2; b = a + 1; `${a},${b}`";{x: 'a'};!error
+"x = x * 2; y = x + 1";{x: 1};{x: 2, y: 3}
+"x = x * 2; y = x + 1";{x: 2.5};{x: 5.0, y: 6.0}
+"x = x * 2; y = x + 1";{x: null};!error
+"x = x * 2; y = x + 1";{};!error
+"x = x * 2; y = x + 1";{x: 'a'};!error
+"x = x * 2; y = x + 1; x";{x: 1};2
+"x = x * 2; y = x + 1; x";{x: 2.5};5.0
+"x = x * 2; y = x + 1; x";{x: null};!error
+"x = x * 2; y = x + 1; x";{};!error
+"x = x * 2; y = x + 1; x";{x: 'a'};!error
+"x = x * 2; y = x + 1; y";{x: 1};3
+"x = x * 2; y = x + 1; y";{x: 2.5};6.0
+"x = x * 2; y = x + 1; y";{x: null};!error
+"x = x * 2; y = x + 1; y";{};!error
+"x = x * 2; y = x + 1; y";{x: 'a'};!error
+s = x + y;{x: 1, y: 2};{s: 3}
+s = x + y;{x: 0.5, y: 0.25};{s: 0.75}
+s = x + y;{x: null, y: 1};!error
+s = x + y;{y: 1};!error
+s = x + y;{x: 'a', y: 'b'};{s: 'ab'}
+"s = x + y; s";{x: 1, y: 2};3
+"s = x + y; s";{x: 0.5, y: 0.25};0.75
+"s = x + y; s";{x: null, y: 1};!error
+"s = x + y; s";{y: 1};!error
+"s = x + y; s";{x: 'a', y: 'b'};'ab'
+"s = x + y; p = x * y";{x: 1, y: 2};{s: 3, p: 2}
+"s = x + y; p = x * y";{x: 0.5, y: 0.25};{s: 0.75, p: 0.125}
+"s = x + y; p = x * y";{x: null, y: 1};!error
+"s = x + y; p = x * y";{y: 1};!error
+"s = x + y; p = x * y";{x: 'a', y: 'b'};!error
+"s = x + y; p = x * y; s > p";{x: 1, y: 2};true
+"s = x + y; p = x * y; s > p";{x: 0.5, y: 0.25};true
+"s = x + y; p = x * y; s > p";{x: null, y: 1};!error
+"s = x + y; p = x * y; s > p";{y: 1};!error
+"s = x + y; p = x * y; s > p";{x: 'a', y: 'b'};!error
+"s = x ?? y; t = y ?? x";{x: 1, y: 2};{s: 1, t: 2}
+"s = x ?? y; t = y ?? x";{x: 0.5, y: 0.25};{s: 0.5, t: 0.25}
+"s = x ?? y; t = y ?? x";{x: null, y: 1};{s: 1, t: 1}
+"s = x ?? y; t = y ?? x";{y: 1};{s: 1, t: 1}
+"s = x ?? y; t = y ?? x";{x: 'a', y: 'b'};{s: 'a', t: 'b'}
+"s = x ?? y; t = y ?? x; [s, t]";{x: 1, y: 2};[1, 2]
+"s = x ?? y; t = y ?? x; [s, t]";{x: 0.5, y: 0.25};[0.5, 0.25]
+"s = x ?? y; t = y ?? x; [s, t]";{x: null, y: 1};[1, 1]
+"s = x ?? y; t = y ?? x; [s, t]";{y: 1};[1, 1]
+"s = x ?? y; t = y ?? x; [s, t]";{x: 'a', y: 'b'};['a', 'b']
+# Returned object: only assigned keys, never untouched input keys
+r = x;{x: 1};{r: 1}
+r = x;{x: 2.5};{r: 2.5}
+r = x;{x: null};{r: null}
+r = x;{};{r: null}
+r = x;{x: 'a'};{r: 'a'}
+"r = x; r2 = r";{x: 1};{r: 1, r2: 1}
+"r = x; r2 = r";{x: 2.5};{r: 2.5, r2: 2.5}
+"r = x; r2 = r";{x: null};{r: null, r2: null}
+"r = x; r2 = r";{};{r: null, r2: null}
+"r = x; r2 = r";{x: 'a'};{r: 'a', r2: 'a'}
+x = x;{x: 1};{x: 1}
+x = x;{x: 2.5};{x: 2.5}
+x = x;{x: null};{x: null}
+x = x;{};{x: null}
+x = x;{x: 'a'};{x: 'a'}
+"x = x; y = y";{x: 1, y: 2};{x: 1, y: 2}
+"x = x; y = y";{x: 0.5, y: 0.25};{x: 0.5, y: 0.25}
+"x = x; y = y";{x: null, y: 1};{x: null, y: 1}
+"x = x; y = y";{y: 1};{x: null, y: 1}
+"x = x; y = y";{x: 'a', y: 'b'};{x: 'a', y: 'b'}
+"y = x; x = y";{x: 1, y: 2};{y: 1, x: 1}
+"y = x; x = y";{x: 0.5, y: 0.25};{y: 0.5, x: 0.5}
+"y = x; x = y";{x: null, y: 1};{y: null, x: null}
+"y = x; x = y";{y: 1};{y: null, x: null}
+"y = x; x = y";{x: 'a', y: 'b'};{y: 'a', x: 'a'}
+"t = x; x = y; y = t";{x: 1, y: 2};{t: 1, x: 2, y: 1}
+"t = x; x = y; y = t";{x: 0.5, y: 0.25};{t: 0.5, x: 0.25, y: 0.5}
+"t = x; x = y; y = t";{x: null, y: 1};{t: null, x: 1, y: null}
+"t = x; x = y; y = t";{y: 1};{t: null, x: 1, y: null}
+"t = x; x = y; y = t";{x: 'a', y: 'b'};{t: 'a', x: 'b', y: 'a'}
+"t = x; x = y; y = t; [x, y]";{x: 1, y: 2};[2, 1]
+"t = x; x = y; y = t; [x, y]";{x: 0.5, y: 0.25};[0.25, 0.5]
+"t = x; x = y; y = t; [x, y]";{x: null, y: 1};[1, null]
+"t = x; x = y; y = t; [x, y]";{y: 1};[1, null]
+"t = x; x = y; y = t; [x, y]";{x: 'a', y: 'b'};['b', 'a']
+"x = y; y = x; [x, y]";{x: 1, y: 2};[2, 2]
+"x = y; y = x; [x, y]";{x: 0.5, y: 0.25};[0.25, 0.25]
+"x = y; y = x; [x, y]";{x: null, y: 1};[1, 1]
+"x = y; y = x; [x, y]";{y: 1};[1, 1]
+"x = y; y = x; [x, y]";{x: 'a', y: 'b'};['b', 'b']
+"r = x; r = y";{x: 1, y: 2};{r: 2}
+"r = x; r = y";{x: 0.5, y: 0.25};{r: 0.25}
+"r = x; r = y";{x: null, y: 1};{r: 1}
+"r = x; r = y";{y: 1};{r: 1}
+"r = x; r = y";{x: 'a', y: 'b'};{r: 'b'}
+"r = null; r = x";{x: 1};{r: 1}
+"r = null; r = x";{x: 2.5};{r: 2.5}
+"r = null; r = x";{x: null};{r: null}
+"r = null; r = x";{};{r: null}
+"r = null; r = x";{x: 'a'};{r: 'a'}
+"r = x; r = null";{x: 1};{r: null}
+"r = x; r = null";{x: 2.5};{r: null}
+"r = x; r = null";{x: null};{r: null}
+"r = x; r = null";{};{r: null}
+"r = x; r = null";{x: 'a'};{r: null}
+# Returned object: dotted targets build nested results
+"r.a = x; r.b = y";{x: 1, y: 2};{r: {a: 1, b: 2}}
+"r.a = x; r.b = y";{x: 0.5, y: 0.25};{r: {a: 0.5, b: 0.25}}
+"r.a = x; r.b = y";{x: null, y: 1};{r: {a: null, b: 1}}
+"r.a = x; r.b = y";{y: 1};{r: {a: null, b: 1}}
+"r.a = x; r.b = y";{x: 'a', y: 'b'};{r: {a: 'a', b: 'b'}}
+"r.a = x; r.b = y; r";{x: 1, y: 2};{a: 1, b: 2}
+"r.a = x; r.b = y; r";{x: 0.5, y: 0.25};{a: 0.5, b: 0.25}
+"r.a = x; r.b = y; r";{x: null, y: 1};{a: null, b: 1}
+"r.a = x; r.b = y; r";{y: 1};{a: null, b: 1}
+"r.a = x; r.b = y; r";{x: 'a', y: 'b'};{a: 'a', b: 'b'}
+"r.a = x; r.b = y; r.a";{x: 1, y: 2};1
+"r.a = x; r.b = y; r.a";{x: 0.5, y: 0.25};0.5
+"r.a = x; r.b = y; r.a";{x: null, y: 1};null
+"r.a = x; r.b = y; r.a";{y: 1};null
+"r.a = x; r.b = y; r.a";{x: 'a', y: 'b'};'a'
+"r.sum = x + y; r.diff = x - y";{x: 1, y: 2};{r: {sum: 3, diff: -1}}
+"r.sum = x + y; r.diff = x - y";{x: 0.5, y: 0.25};{r: {sum: 0.75, diff: 0.25}}
+"r.sum = x + y; r.diff = x - y";{x: null, y: 1};!error
+"r.sum = x + y; r.diff = x - y";{y: 1};!error
+"r.sum = x + y; r.diff = x - y";{x: 'a', y: 'b'};!error
+"r.in.x = x; r.in.y = y; r.out = r.in.x * r.in.y";{x: 1, y: 2};{r: {in: {x: 1, y: 2}, out: 2}}
+"r.in.x = x; r.in.y = y; r.out = r.in.x * r.in.y";{x: 0.5, y: 0.25};{r: {in: {x: 0.5, y: 0.25}, out: 0.125}}
+"r.in.x = x; r.in.y = y; r.out = r.in.x * r.in.y";{x: null, y: 1};!error
+"r.in.x = x; r.in.y = y; r.out = r.in.x * r.in.y";{y: 1};!error
+"r.in.x = x; r.in.y = y; r.out = r.in.x * r.in.y";{x: 'a', y: 'b'};!error
+"r = {}; r.a = x";{x: 1};{r: {a: 1}}
+"r = {}; r.a = x";{x: 2.5};{r: {a: 2.5}}
+"r = {}; r.a = x";{x: null};{r: {a: null}}
+"r = {}; r.a = x";{};{r: {a: null}}
+"r = {}; r.a = x";{x: 'a'};{r: {a: 'a'}}
+"r = {k: 1}; r.a = x";{x: 1};{r: {k: 1, a: 1}}
+"r = {k: 1}; r.a = x";{x: 2.5};{r: {k: 1, a: 2.5}}
+"r = {k: 1}; r.a = x";{x: null};{r: {k: 1, a: null}}
+"r = {k: 1}; r.a = x";{};{r: {k: 1, a: null}}
+"r = {k: 1}; r.a = x";{x: 'a'};{r: {k: 1, a: 'a'}}
+"r = {k: 1}; r.a = x; r";{x: 1};{k: 1, a: 1}
+"r = {k: 1}; r.a = x; r";{x: 2.5};{k: 1, a: 2.5}
+"r = {k: 1}; r.a = x; r";{x: null};{k: 1, a: null}
+"r = {k: 1}; r.a = x; r";{};{k: 1, a: null}
+"r = {k: 1}; r.a = x; r";{x: 'a'};{k: 1, a: 'a'}
+"r.a = x; s = r.a";{x: 1};{r: {a: 1}, s: 1}
+"r.a = x; s = r.a";{x: 2.5};{r: {a: 2.5}, s: 2.5}
+"r.a = x; s = r.a";{x: null};{r: {a: null}, s: null}
+"r.a = x; s = r.a";{};{r: {a: null}, s: null}
+"r.a = x; s = r.a";{x: 'a'};{r: {a: 'a'}, s: 'a'}
+"r.a.b.c = x; r.a.b.c";{x: 1};1
+"r.a.b.c = x; r.a.b.c";{x: 2.5};2.5
+"r.a.b.c = x; r.a.b.c";{x: null};null
+"r.a.b.c = x; r.a.b.c";{};null
+"r.a.b.c = x; r.a.b.c";{x: 'a'};'a'
+r.a.b.c = x;{x: 1};{r: {a: {b: {c: 1}}}}
+r.a.b.c = x;{x: 2.5};{r: {a: {b: {c: 2.5}}}}
+r.a.b.c = x;{x: null};{r: {a: {b: {c: null}}}}
+r.a.b.c = x;{};{r: {a: {b: {c: null}}}}
+r.a.b.c = x;{x: 'a'};{r: {a: {b: {c: 'a'}}}}
+# Building an output object step by step, reading earlier steps
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{name: 'ann'};{name: 'ann', meta: {len: 3, upper: 'ANN'}, short: true}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{name: 'Bob Ray'};{name: 'Bob Ray', meta: {len: 7, upper: 'BOB RAY'}, short: false}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{name: ''};{name: '', meta: {len: 0, upper: ''}, short: true}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{name: null};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res";{name: 5};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{name: 'ann'};{res: {name: 'ann', meta: {len: 3, upper: 'ANN'}, short: true}}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{name: 'Bob Ray'};{res: {name: 'Bob Ray', meta: {len: 7, upper: 'BOB RAY'}, short: false}}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{name: ''};{res: {name: '', meta: {len: 0, upper: ''}, short: true}}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{name: null};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4";{name: 5};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{name: 'ann'};{len: 3, upper: 'ANN'}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{name: 'Bob Ray'};{len: 7, upper: 'BOB RAY'}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{name: ''};{len: 0, upper: ''}
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{name: null};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{};!error
+"res.name = name; res.meta.len = len(name); res.meta.upper = upper(name); res.short = res.meta.len < 4; res.meta";{name: 5};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: 1, b: 2};{flags: {a: true, b: true, both: true, any: true}}
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: 0, b: 5};{flags: {a: false, b: true, both: false, any: true}}
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: -1, b: -1};{flags: {a: false, b: false, both: false, any: false}}
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: 3, b: 0};{flags: {a: true, b: false, both: false, any: true}}
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: null, b: 1};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{b: 1};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res";{a: '1', b: 1};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: 1, b: 2};true
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: 0, b: 5};false
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: -1, b: -1};false
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: 3, b: 0};false
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: null, b: 1};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{b: 1};!error
+"res.flags.a = a > 0; res.flags.b = b > 0; res.flags.both = res.flags.a and res.flags.b; res.flags.any = res.flags.a or res.flags.b; res.flags.both";{a: '1', b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: 1, b: 2};3
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: 0, b: 5};5
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: -1, b: -1};-2
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: 3, b: 0};3
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: null, b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res.total";{a: '1', b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: 1, b: 2};{res: {total: 3}}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: 0, b: 5};{res: {total: 5}}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: -1, b: -1};{res: {total: -2}}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: 3, b: 0};{res: {total: 3}}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: null, b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b";{a: '1', b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: 1, b: 2};{total: 3}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: 0, b: 5};{total: 5}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: -1, b: -1};{total: -2}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: 3, b: 0};{total: 3}
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: null, b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{b: 1};!error
+"res.total = 0; res.total = res.total + a; res.total = res.total + b; res";{a: '1', b: 1};!error
+# Overwriting and extending nested results
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: 1, b: 2};{x: {z: 2, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: 0, b: 5};{x: {z: 5, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: -1, b: -1};{x: {z: -1, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: 3, b: 0};{x: {z: 0, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: null, b: 1};{x: {z: 1, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{b: 1};{x: {z: 1, w: 3}}
+"res.x.y = a; res.x = {z: b}; res.x.w = 3; res";{a: '1', b: 1};{x: {z: 1, w: 3}}
+"res.x = {z: b}; res.x.y = a; res";{a: 1, b: 2};{x: {z: 2, y: 1}}
+"res.x = {z: b}; res.x.y = a; res";{a: 0, b: 5};{x: {z: 5, y: 0}}
+"res.x = {z: b}; res.x.y = a; res";{a: -1, b: -1};{x: {z: -1, y: -1}}
+"res.x = {z: b}; res.x.y = a; res";{a: 3, b: 0};{x: {z: 0, y: 3}}
+"res.x = {z: b}; res.x.y = a; res";{a: null, b: 1};{x: {z: 1, y: null}}
+"res.x = {z: b}; res.x.y = a; res";{b: 1};{x: {z: 1, y: null}}
+"res.x = {z: b}; res.x.y = a; res";{a: '1', b: 1};{x: {z: 1, y: '1'}}
+"res.x = a; res.y = b; res.x = res.y; res";{a: 1, b: 2};{x: 2, y: 2}
+"res.x = a; res.y = b; res.x = res.y; res";{a: 0, b: 5};{x: 5, y: 5}
+"res.x = a; res.y = b; res.x = res.y; res";{a: -1, b: -1};{x: -1, y: -1}
+"res.x = a; res.y = b; res.x = res.y; res";{a: 3, b: 0};{x: 0, y: 0}
+"res.x = a; res.y = b; res.x = res.y; res";{a: null, b: 1};{x: 1, y: 1}
+"res.x = a; res.y = b; res.x = res.y; res";{b: 1};{x: 1, y: 1}
+"res.x = a; res.y = b; res.x = res.y; res";{a: '1', b: 1};{x: 1, y: 1}
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: 1, b: 2};[1, 2]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: 0, b: 5};[0, 5]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: -1, b: -1};[-1, -1]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: 3, b: 0};[3, 0]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: null, b: 1};[null, 1]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{b: 1};[null, 1]
+"res.list = [a]; res.list = flatten([res.list, [b]]); res.list";{a: '1', b: 1};['1', 1]
+"res.n = a; res.n = res.n ?? b; res.n";{a: 1, b: 2};1
+"res.n = a; res.n = res.n ?? b; res.n";{a: 0, b: 5};0
+"res.n = a; res.n = res.n ?? b; res.n";{a: -1, b: -1};-1
+"res.n = a; res.n = res.n ?? b; res.n";{a: 3, b: 0};3
+"res.n = a; res.n = res.n ?? b; res.n";{a: null, b: 1};1
+"res.n = a; res.n = res.n ?? b; res.n";{b: 1};1
+"res.n = a; res.n = res.n ?? b; res.n";{a: '1', b: 1};'1'
+"res.x.y = a; res.x.y = b; res";{a: 1, b: 2};{x: {y: 2}}
+"res.x.y = a; res.x.y = b; res";{a: 0, b: 5};{x: {y: 5}}
+"res.x.y = a; res.x.y = b; res";{a: -1, b: -1};{x: {y: -1}}
+"res.x.y = a; res.x.y = b; res";{a: 3, b: 0};{x: {y: 0}}
+"res.x.y = a; res.x.y = b; res";{a: null, b: 1};{x: {y: 1}}
+"res.x.y = a; res.x.y = b; res";{b: 1};{x: {y: 1}}
+"res.x.y = a; res.x.y = b; res";{a: '1', b: 1};{x: {y: 1}}
+"res.x.y = a; res.x.z = b; res.x";{a: 1, b: 2};{y: 1, z: 2}
+"res.x.y = a; res.x.z = b; res.x";{a: 0, b: 5};{y: 0, z: 5}
+"res.x.y = a; res.x.z = b; res.x";{a: -1, b: -1};{y: -1, z: -1}
+"res.x.y = a; res.x.z = b; res.x";{a: 3, b: 0};{y: 3, z: 0}
+"res.x.y = a; res.x.z = b; res.x";{a: null, b: 1};{y: null, z: 1}
+"res.x.y = a; res.x.z = b; res.x";{b: 1};{y: null, z: 1}
+"res.x.y = a; res.x.z = b; res.x";{a: '1', b: 1};{y: '1', z: 1}
+"res.x = a; res.x.y = b; res";{a: 1, b: 2};{x: {y: 2}}
+"res.x = a; res.x.y = b; res";{a: 0, b: 5};{x: {y: 5}}
+"res.x = a; res.x.y = b; res";{a: -1, b: -1};{x: {y: -1}}
+"res.x = a; res.x.y = b; res";{a: 3, b: 0};{x: {y: 0}}
+"res.x = a; res.x.y = b; res";{a: null, b: 1};{x: {y: 1}}
+"res.x = a; res.x.y = b; res";{b: 1};{x: {y: 1}}
+"res.x = a; res.x.y = b; res";{a: '1', b: 1};{x: {y: 1}}
+# Dotted assignment into an input object merges and returns only assigned paths
+"user.name = upper(user.name); user.age = user.age + 1; user";{user: {name: 'ann', age: 30}};{name: 'ANN', age: 31}
+"user.name = upper(user.name); user.age = user.age + 1; user";{user: {name: 'Bo', age: 0, tags: ['a']}};{name: 'BO', age: 1, tags: ['a']}
+"user.name = upper(user.name); user.age = user.age + 1; user";{user: {name: 'x'}};!error
+"user.name = upper(user.name); user.age = user.age + 1; user";{user: {age: 5}};!error
+"user.name = upper(user.name); user.age = user.age + 1; user";{user: null};!error
+"user.name = upper(user.name); user.age = user.age + 1; user";{};!error
+"user.name = upper(user.name); user.age = user.age + 1";{user: {name: 'ann', age: 30}};{user: {name: 'ANN', age: 31}}
+"user.name = upper(user.name); user.age = user.age + 1";{user: {name: 'Bo', age: 0, tags: ['a']}};{user: {name: 'BO', age: 1}}
+"user.name = upper(user.name); user.age = user.age + 1";{user: {name: 'x'}};!error
+"user.name = upper(user.name); user.age = user.age + 1";{user: {age: 5}};!error
+"user.name = upper(user.name); user.age = user.age + 1";{user: null};!error
+"user.name = upper(user.name); user.age = user.age + 1";{};!error
+"user.name = upper(user.name); user.age = user.age + 1; $root";{user: {name: 'ann', age: 30}};{user: {name: 'ANN', age: 31}}
+"user.name = upper(user.name); user.age = user.age + 1; $root";{user: {name: 'Bo', age: 0, tags: ['a']}};{user: {name: 'BO', age: 1, tags: ['a']}}
+"user.name = upper(user.name); user.age = user.age + 1; $root";{user: {name: 'x'}};!error
+"user.name = upper(user.name); user.age = user.age + 1; $root";{user: {age: 5}};!error
+"user.name = upper(user.name); user.age = user.age + 1; $root";{user: null};!error
+"user.name = upper(user.name); user.age = user.age + 1; $root";{};!error
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{user: {name: 'ann', age: 30}};'ann#30'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{user: {name: 'Bo', age: 0, tags: ['a']}};'Bo#0'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{user: {name: 'x'}};'x#0'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{user: {age: 5}};'?#5'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{user: null};'?#0'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user.label";{};'?#0'
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{user: {name: 'ann', age: 30}};{name: 'ann', age: 30, label: 'ann#30'}
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{user: {name: 'Bo', age: 0, tags: ['a']}};{name: 'Bo', age: 0, tags: ['a'], label: 'Bo#0'}
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{user: {name: 'x'}};{name: 'x', label: 'x#0'}
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{user: {age: 5}};{age: 5, label: '?#5'}
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{user: null};{label: '?#0'}
+"user.label = `${user.name ?? '?'}#${user.age ?? 0}`; user";{};{label: '?#0'}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{user: {name: 'ann', age: 30}};{user: {label: 'ann#30'}}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{user: {name: 'Bo', age: 0, tags: ['a']}};{user: {label: 'Bo#0'}}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{user: {name: 'x'}};{user: {label: 'x#0'}}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{user: {age: 5}};{user: {label: '?#5'}}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{user: null};{user: {label: '?#0'}}
+user.label = `${user.name ?? '?'}#${user.age ?? 0}`;{};{user: {label: '?#0'}}
+# Reassignment: accumulation over several statements
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 1, b: 2, c: 3};6
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 0.1, b: 0.2, c: 0.3};0.6
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: -1, b: 1, c: 0};0
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 1, b: null, c: 3};!error
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 1, b: 2};!error
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 1, b: 2, c: '3'};!error
+"t = 0; t = t + a; t = t + b; t = t + c; t";{a: 100, b: 200, c: 300};600
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 1, b: 2, c: 3};{t: 6}
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 0.1, b: 0.2, c: 0.3};{t: 0.6}
+"t = 0; t = t + a; t = t + b; t = t + c";{a: -1, b: 1, c: 0};{t: 0}
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 1, b: null, c: 3};!error
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 1, b: 2};!error
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 1, b: 2, c: '3'};!error
+"t = 0; t = t + a; t = t + b; t = t + c";{a: 100, b: 200, c: 300};{t: 600}
+"t = a; t = t * b; t = t - c; t";{a: 1, b: 2, c: 3};-1
+"t = a; t = t * b; t = t - c; t";{a: 0.1, b: 0.2, c: 0.3};-0.28
+"t = a; t = t * b; t = t - c; t";{a: -1, b: 1, c: 0};-1
+"t = a; t = t * b; t = t - c; t";{a: 1, b: null, c: 3};!error
+"t = a; t = t * b; t = t - c; t";{a: 1, b: 2};!error
+"t = a; t = t * b; t = t - c; t";{a: 1, b: 2, c: '3'};!error
+"t = a; t = t * b; t = t - c; t";{a: 100, b: 200, c: 300};19700
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 1, b: 2, c: 3};3
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 0.1, b: 0.2, c: 0.3};0.3
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: -1, b: 1, c: 0};1
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 1, b: null, c: 3};!error
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 1, b: 2};!error
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 1, b: 2, c: '3'};!error
+"m = a; m = max([m, b]); m = max([m, c]); m";{a: 100, b: 200, c: 300};300
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 1, b: 2, c: 3};3
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 0.1, b: 0.2, c: 0.3};0.3
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: -1, b: 1, c: 0};1
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 1, b: null, c: 3};!error
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 1, b: 2};!error
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 1, b: 2, c: '3'};!error
+"m = a; m = b > m ? b : m; m = c > m ? c : m; m";{a: 100, b: 200, c: 300};300
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 1, b: 2, c: 3};3
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 0.1, b: 0.2, c: 0.3};3
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: -1, b: 1, c: 0};1
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 1, b: null, c: 3};!error
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 1, b: 2};!error
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 1, b: 2, c: '3'};!error
+"cnt = 0; cnt = cnt + (a > 0 ? 1 : 0); cnt = cnt + (b > 0 ? 1 : 0); cnt = cnt + (c > 0 ? 1 : 0); cnt";{a: 100, b: 200, c: 300};3
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 1, b: 2, c: 3};[1, 2, 3]
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 0.1, b: 0.2, c: 0.3};[0.1, 0.2, 0.3]
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: -1, b: 1, c: 0};[-1, 1, 0]
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 1, b: null, c: 3};[1, null, 3]
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 1, b: 2};[1, 2, null]
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 1, b: 2, c: '3'};[1, 2, '3']
+"l = []; l = flatten([l, [a]]); l = flatten([l, [b]]); l = flatten([l, [c]]); l";{a: 100, b: 200, c: 300};[100, 200, 300]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 1, b: 2, c: 3};[4]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 0.1, b: 0.2, c: 0.3};[0.4]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: -1, b: 1, c: 0};[-1]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 1, b: null, c: 3};!error
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 1, b: 2};[4]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 1, b: 2, c: '3'};[4]
+"l = [a]; l = map(l, # * 2); l = map(l, # + b); l";{a: 100, b: 200, c: 300};[400]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 1, b: 2, c: 3};[2, 3, 1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 0.1, b: 0.2, c: 0.3};[0.2, 0.3, 0.1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: -1, b: 1, c: 0};[1, 0, -1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 1, b: null, c: 3};[null, 3, 1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 1, b: 2};[2, null, 1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 1, b: 2, c: '3'};[2, '3', 1]
+"prev = a; a = b; b = c; c = prev; [a, b, c]";{a: 100, b: 200, c: 300};[200, 300, 100]
+"prev = a; a = b; b = c; c = prev";{a: 1, b: 2, c: 3};{prev: 1, a: 2, b: 3, c: 1}
+"prev = a; a = b; b = c; c = prev";{a: 0.1, b: 0.2, c: 0.3};{prev: 0.1, a: 0.2, b: 0.3, c: 0.1}
+"prev = a; a = b; b = c; c = prev";{a: -1, b: 1, c: 0};{prev: -1, a: 1, b: 0, c: -1}
+"prev = a; a = b; b = c; c = prev";{a: 1, b: null, c: 3};{prev: 1, a: null, b: 3, c: 1}
+"prev = a; a = b; b = c; c = prev";{a: 1, b: 2};{prev: 1, a: 2, b: null, c: 1}
+"prev = a; a = b; b = c; c = prev";{a: 1, b: 2, c: '3'};{prev: 1, a: 2, b: '3', c: 1}
+"prev = a; a = b; b = c; c = prev";{a: 100, b: 200, c: 300};{prev: 100, a: 200, b: 300, c: 100}
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: 'x', b: 'y'};'x-y'
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: '', b: ''};'-'
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: 'A', b: 'b c'};'A-b c'
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: null, b: 'y'};!error
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: 'x'};!error
+"s = ''; s = s + a; s = s + '-'; s = s + b; s";{a: 1, b: 'y'};!error
+"s = a; s = upper(s); s = s + lower(b); s";{a: 'x', b: 'y'};'Xy'
+"s = a; s = upper(s); s = s + lower(b); s";{a: '', b: ''};''
+"s = a; s = upper(s); s = s + lower(b); s";{a: 'A', b: 'b c'};'Ab c'
+"s = a; s = upper(s); s = s + lower(b); s";{a: null, b: 'y'};!error
+"s = a; s = upper(s); s = s + lower(b); s";{a: 'x'};!error
+"s = a; s = upper(s); s = s + lower(b); s";{a: 1, b: 'y'};!error
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: 'x', b: 'y'};'[x/y]'
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: '', b: ''};'[/]'
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: 'A', b: 'b c'};'[A/b c]'
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: null, b: 'y'};'[null/y]'
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: 'x'};'[x/null]'
+"s = `${a}`; s = `${s}/${b}`; s = `[${s}]`; s";{a: 1, b: 'y'};'[1/y]'
+"s = a; s = len(s); s = s * 2; s";{a: 'x', b: 'y'};2
+"s = a; s = len(s); s = s * 2; s";{a: '', b: ''};0
+"s = a; s = len(s); s = s * 2; s";{a: 'A', b: 'b c'};2
+"s = a; s = len(s); s = s * 2; s";{a: null, b: 'y'};!error
+"s = a; s = len(s); s = s * 2; s";{a: 'x'};2
+"s = a; s = len(s); s = s * 2; s";{a: 1, b: 'y'};!error
+"s = a; s = [s, b]; s = len(s); s";{a: 'x', b: 'y'};2
+"s = a; s = [s, b]; s = len(s); s";{a: '', b: ''};2
+"s = a; s = [s, b]; s = len(s); s";{a: 'A', b: 'b c'};2
+"s = a; s = [s, b]; s = len(s); s";{a: null, b: 'y'};2
+"s = a; s = [s, b]; s = len(s); s";{a: 'x'};2
+"s = a; s = [s, b]; s = len(s); s";{a: 1, b: 'y'};2
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: 'x', b: 'y'};'x'
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: '', b: ''};'empty'
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: 'A', b: 'b c'};'A'
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: null, b: 'y'};'none'
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: 'x'};'x'
+"s = a ?? 'none'; s = s == '' ? 'empty' : s; s";{a: 1, b: 'y'};1
+# Reassignment: the type of a variable may change between statements
+"x = v; x = string(x); x = x + '!'; x";{v: 1};'1!'
+"x = v; x = string(x); x = x + '!'; x";{v: 'a'};'a!'
+"x = v; x = string(x); x = x + '!'; x";{v: null};'null!'
+"x = v; x = string(x); x = x + '!'; x";{v: [1, 2]};!error
+"x = v; x = string(x); x = x + '!'; x";{v: true};'true!'
+"x = v; x = string(x); x = x + '!'; x";{};'null!'
+"x = v; x = [x]; x = len(x); x";{v: 1};1
+"x = v; x = [x]; x = len(x); x";{v: 'a'};1
+"x = v; x = [x]; x = len(x); x";{v: null};1
+"x = v; x = [x]; x = len(x); x";{v: [1, 2]};1
+"x = v; x = [x]; x = len(x); x";{v: true};1
+"x = v; x = [x]; x = len(x); x";{};1
+"x = v; x = {inner: x}; x = x.inner; x";{v: 1};1
+"x = v; x = {inner: x}; x = x.inner; x";{v: 'a'};'a'
+"x = v; x = {inner: x}; x = x.inner; x";{v: null};null
+"x = v; x = {inner: x}; x = x.inner; x";{v: [1, 2]};[1, 2]
+"x = v; x = {inner: x}; x = x.inner; x";{v: true};true
+"x = v; x = {inner: x}; x = x.inner; x";{};null
+"x = v; x = type(x); x";{v: 1};'number'
+"x = v; x = type(x); x";{v: 'a'};'string'
+"x = v; x = type(x); x";{v: null};'null'
+"x = v; x = type(x); x";{v: [1, 2]};'array'
+"x = v; x = type(x); x";{v: true};'bool'
+"x = v; x = type(x); x";{};'null'
+"x = v; x = v == null; x = not x; x";{v: 1};true
+"x = v; x = v == null; x = not x; x";{v: 'a'};true
+"x = v; x = v == null; x = not x; x";{v: null};false
+"x = v; x = v == null; x = not x; x";{v: [1, 2]};true
+"x = v; x = v == null; x = not x; x";{v: true};true
+"x = v; x = v == null; x = not x; x";{};false
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{v: 1};2
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{v: 'a'};'a'
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{v: null};1
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{v: [1, 2]};[1, 2]
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{v: true};true
+"x = v; x = x ?? 0; x = type(x) == 'number' ? x + 1 : x; x";{};1
+# Shadowing: variables named like input fields replace them for later statements
+"price = price * 2; total = price * qty; [price, total]";{price: 10, qty: 3};[20, 60]
+"price = price * 2; total = price * qty; [price, total]";{price: 2.5, qty: 4};[5.0, 20.0]
+"price = price * 2; total = price * qty; [price, total]";{price: 0, qty: 9};[0, 0]
+"price = price * 2; total = price * qty; [price, total]";{price: null, qty: 1};!error
+"price = price * 2; total = price * qty; [price, total]";{qty: 1};!error
+"price = price * 2; total = price * qty; [price, total]";{price: 1, qty: null};!error
+"price = price * 2; total = price * qty; [price, total]";{price: '1', qty: 1};!error
+"price = price * 2; total = price * qty";{price: 10, qty: 3};{price: 20, total: 60}
+"price = price * 2; total = price * qty";{price: 2.5, qty: 4};{price: 5.0, total: 20.0}
+"price = price * 2; total = price * qty";{price: 0, qty: 9};{price: 0, total: 0}
+"price = price * 2; total = price * qty";{price: null, qty: 1};!error
+"price = price * 2; total = price * qty";{qty: 1};!error
+"price = price * 2; total = price * qty";{price: 1, qty: null};!error
+"price = price * 2; total = price * qty";{price: '1', qty: 1};!error
+"price = price * 2; total = price * qty; $root";{price: 10, qty: 3};{price: 20, qty: 3, total: 60}
+"price = price * 2; total = price * qty; $root";{price: 2.5, qty: 4};{price: 5.0, qty: 4, total: 20.0}
+"price = price * 2; total = price * qty; $root";{price: 0, qty: 9};{price: 0, qty: 9, total: 0}
+"price = price * 2; total = price * qty; $root";{price: null, qty: 1};!error
+"price = price * 2; total = price * qty; $root";{qty: 1};!error
+"price = price * 2; total = price * qty; $root";{price: 1, qty: null};!error
+"price = price * 2; total = price * qty; $root";{price: '1', qty: 1};!error
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: 10, qty: 3};30
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: 2.5, qty: 4};10.0
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: 0, qty: 9};0
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: null, qty: 1};0
+"price = price ?? 0; qty = qty ?? 1; price * qty";{qty: 1};0
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: 1, qty: null};1
+"price = price ?? 0; qty = qty ?? 1; price * qty";{price: '1', qty: 1};!error
+"qty = price; price = qty; price";{price: 10, qty: 3};10
+"qty = price; price = qty; price";{price: 2.5, qty: 4};2.5
+"qty = price; price = qty; price";{price: 0, qty: 9};0
+"qty = price; price = qty; price";{price: null, qty: 1};null
+"qty = price; price = qty; price";{qty: 1};null
+"qty = price; price = qty; price";{price: 1, qty: null};1
+"qty = price; price = qty; price";{price: '1', qty: 1};'1'
+"total = price * qty; price = 0; total";{price: 10, qty: 3};30
+"total = price * qty; price = 0; total";{price: 2.5, qty: 4};10.0
+"total = price * qty; price = 0; total";{price: 0, qty: 9};0
+"total = price * qty; price = 0; total";{price: null, qty: 1};!error
+"total = price * qty; price = 0; total";{qty: 1};!error
+"total = price * qty; price = 0; total";{price: 1, qty: null};!error
+"total = price * qty; price = 0; total";{price: '1', qty: 1};!error
+"total = price * qty; price = 0; [total, price, qty]";{price: 10, qty: 3};[30, 0, 3]
+"total = price * qty; price = 0; [total, price, qty]";{price: 2.5, qty: 4};[10.0, 0, 4]
+"total = price * qty; price = 0; [total, price, qty]";{price: 0, qty: 9};[0, 0, 9]
+"total = price * qty; price = 0; [total, price, qty]";{price: null, qty: 1};!error
+"total = price * qty; price = 0; [total, price, qty]";{qty: 1};!error
+"total = price * qty; price = 0; [total, price, qty]";{price: 1, qty: null};!error
+"total = price * qty; price = 0; [total, price, qty]";{price: '1', qty: 1};!error
+"age = age ?? 0; adult = age >= 18; adult";{age: 20};true
+"age = age ?? 0; adult = age >= 18; adult";{age: 17};false
+"age = age ?? 0; adult = age >= 18; adult";{age: null};false
+"age = age ?? 0; adult = age >= 18; adult";{};false
+"age = age ?? 0; adult = age >= 18; adult";{age: 18};true
+"age = age ?? 0; adult = age >= 18; adult";{age: '20'};!error
+"age = age ?? 0; adult = age >= 18";{age: 20};{age: 20, adult: true}
+"age = age ?? 0; adult = age >= 18";{age: 17};{age: 17, adult: false}
+"age = age ?? 0; adult = age >= 18";{age: null};{age: 0, adult: false}
+"age = age ?? 0; adult = age >= 18";{};{age: 0, adult: false}
+"age = age ?? 0; adult = age >= 18";{age: 18};{age: 18, adult: true}
+"age = age ?? 0; adult = age >= 18";{age: '20'};!error
+"age = age ?? 0; adult = age >= 18; age";{age: 20};20
+"age = age ?? 0; adult = age >= 18; age";{age: 17};17
+"age = age ?? 0; adult = age >= 18; age";{age: null};0
+"age = age ?? 0; adult = age >= 18; age";{};0
+"age = age ?? 0; adult = age >= 18; age";{age: 18};18
+"age = age ?? 0; adult = age >= 18; age";{age: '20'};!error
+"name = trim(name); name = upper(name); name";{name: '  Ann  '};'ANN'
+"name = trim(name); name = upper(name); name";{name: 'bob'};'BOB'
+"name = trim(name); name = upper(name); name";{name: ''};''
+"name = trim(name); name = upper(name); name";{name: null};!error
+"name = trim(name); name = upper(name); name";{};!error
+"name = trim(name); name = upper(name); name";{name: 3};!error
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{name: '  Ann  '};'Ann'
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{name: 'bob'};'bob'
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{name: ''};'blank'
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{name: null};'anon'
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{};'anon'
+"name = name ?? 'anon'; name = trim(name); len(name) == 0 ? 'blank' : name";{name: 3};!error
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{name: '  Ann  '};['Hi   Ann  ', 'X']
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{name: 'bob'};['Hi bob', 'X']
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{name: ''};['Hi ', 'X']
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{name: null};['Hi null', 'X']
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{};['Hi null', 'X']
+"greeting = `Hi ${name}`; name = 'X'; [greeting, name]";{name: 3};['Hi 3', 'X']
+"limit = limit * 2; filter(list, # > limit)";{list: [1, 2, 3], limit: 2};[]
+"limit = limit * 2; filter(list, # > limit)";{list: [], limit: 0};[]
+"limit = limit * 2; filter(list, # > limit)";{list: [5], limit: 10};[]
+"limit = limit * 2; filter(list, # > limit)";{list: [1, 2, 3], limit: null};!error
+"limit = limit * 2; filter(list, # > limit)";{list: [1, 2, 3]};!error
+"limit = limit * 2; filter(list, # > limit)";{list: null, limit: 1};!error
+"limit = limit * 2; filter(list, # > limit)";{list: [3, 1, 2], limit: 1.5};[]
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [1, 2, 3], limit: 2};1
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [], limit: 0};0
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [5], limit: 10};0
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [1, 2, 3], limit: null};3
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [1, 2, 3]};3
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: null, limit: 1};!error
+"limit = limit ?? 0; list = filter(list, # > limit); len(list)";{list: [3, 1, 2], limit: 1.5};2
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [1, 2, 3], limit: 2};[4, 6, 8]
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [], limit: 0};[]
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [5], limit: 10};[12]
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [1, 2, 3], limit: null};[4, 6, 8]
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [1, 2, 3]};[4, 6, 8]
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: null, limit: 1};!error
+"list = map(list, # + 1); list = map(list, # * 2); list";{list: [3, 1, 2], limit: 1.5};[8, 4, 6]
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [1, 2, 3], limit: 2};{list: [4, 6, 8]}
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [], limit: 0};{list: []}
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [5], limit: 10};{list: [12]}
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [1, 2, 3], limit: null};{list: [4, 6, 8]}
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [1, 2, 3]};{list: [4, 6, 8]}
+"list = map(list, # + 1); list = map(list, # * 2)";{list: null, limit: 1};!error
+"list = map(list, # + 1); list = map(list, # * 2)";{list: [3, 1, 2], limit: 1.5};{list: [8, 4, 6]}
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [1, 2, 3], limit: 2};[[1, 2, 3], [10, 20, 30]]
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [], limit: 0};[[], []]
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [5], limit: 10};[[5], [50]]
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [1, 2, 3], limit: null};[[1, 2, 3], [10, 20, 30]]
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [1, 2, 3]};[[1, 2, 3], [10, 20, 30]]
+"orig = list; list = map(list, # * 10); [orig, list]";{list: null, limit: 1};!error
+"orig = list; list = map(list, # * 10); [orig, list]";{list: [3, 1, 2], limit: 1.5};[[3, 1, 2], [30, 10, 20]]
+"limit = len(list); list = filter(list, # < limit); list";{list: [1, 2, 3], limit: 2};[1, 2]
+"limit = len(list); list = filter(list, # < limit); list";{list: [], limit: 0};[]
+"limit = len(list); list = filter(list, # < limit); list";{list: [5], limit: 10};[]
+"limit = len(list); list = filter(list, # < limit); list";{list: [1, 2, 3], limit: null};[1, 2]
+"limit = len(list); list = filter(list, # < limit); list";{list: [1, 2, 3]};[1, 2]
+"limit = len(list); list = filter(list, # < limit); list";{list: null, limit: 1};!error
+"limit = len(list); list = filter(list, # < limit); list";{list: [3, 1, 2], limit: 1.5};[1, 2]
+"qty = qty ?? 1; map(items, #.qty * qty)";{items: [{qty: 2}, {qty: 0}, {qty: 5}], qty: 10};[20, 0, 50]
+"qty = qty ?? 1; map(items, #.qty * qty)";{items: [], qty: 1};[]
+"qty = qty ?? 1; map(items, #.qty * qty)";{items: [{qty: 1}], qty: null};[1]
+"qty = qty ?? 1; map(items, #.qty * qty)";{items: [{qty: 1}]};[1]
+"qty = qty ?? 1; map(items, #.qty * qty)";{items: [{}], qty: 2};!error
+"items = filter(items, #.qty > 0); count = len(items); count";{items: [{qty: 2}, {qty: 0}, {qty: 5}], qty: 10};2
+"items = filter(items, #.qty > 0); count = len(items); count";{items: [], qty: 1};0
+"items = filter(items, #.qty > 0); count = len(items); count";{items: [{qty: 1}], qty: null};1
+"items = filter(items, #.qty > 0); count = len(items); count";{items: [{qty: 1}]};1
+"items = filter(items, #.qty > 0); count = len(items); count";{items: [{}], qty: 2};!error
+"items = filter(items, (#.qty ?? 0) > 0); qty = sum(map(items, #.qty))";{items: [{qty: 2}, {qty: 0}, {qty: 5}], qty: 10};{items: [{qty: 2}, {qty: 5}], qty: 7}
+"items = filter(items, (#.qty ?? 0) > 0); qty = sum(map(items, #.qty))";{items: [], qty: 1};{items: [], qty: 0}
+"items = filter(items, (#.qty ?? 0) > 0); qty = sum(map(items, #.qty))";{items: [{qty: 1}], qty: null};{items: [{qty: 1}], qty: 1}
+"items = filter(items, (#.qty ?? 0) > 0); qty = sum(map(items, #.qty))";{items: [{qty: 1}]};{items: [{qty: 1}], qty: 1}
+"items = filter(items, (#.qty ?? 0) > 0); qty = sum(map(items, #.qty))";{items: [{}], qty: 2};{items: [], qty: 0}

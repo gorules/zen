@@ -1,0 +1,301 @@
+expression (string);input (json 5);output (json 5);note
+# map: argument 1 is array | interval
+map([1..3], #);;[1, 2, 3]
+map(d('2024-01-01'), #);;!error
+map(x, #);{x: null};!error;question: a null list is an error rather than an empty list
+map(x, #);{x: true};!error
+map(x, #);{x: false};!error
+map(x, #);{x: 0};!error
+map(x, #);{x: -1};!error
+map(x, #);{x: 1.5};!error
+map(x, #);{x: 79228162514264337593543950335};!error
+map(x, #);{x: ''};!error
+map(x, #);{x: 'abc'};!error
+map(x, #);{x: '12.5'};!error
+map(x, #);{x: 'żółw'};!error
+map(x, #);{x: []};[]
+map(x, #);{x: [1, 2]};[1, 2]
+map(x, #);{x: ['a']};['a']
+map(x, #);{x: [[1]]};[[1]]
+map(x, #);{x: {}};!error
+map(x, #);{x: {a: 1}};!error
+map(x, #);{};!error;question: a null list is an error rather than an empty list
+# filter: argument 1 is array | interval
+filter([1..3], true);;[1, 2, 3]
+filter(d('2024-01-01'), true);;!error
+filter(x, true);{x: null};!error
+filter(x, true);{x: true};!error
+filter(x, true);{x: false};!error
+filter(x, true);{x: 0};!error
+filter(x, true);{x: -1};!error
+filter(x, true);{x: 1.5};!error
+filter(x, true);{x: 79228162514264337593543950335};!error
+filter(x, true);{x: ''};!error
+filter(x, true);{x: 'abc'};!error
+filter(x, true);{x: '12.5'};!error
+filter(x, true);{x: 'żółw'};!error
+filter(x, true);{x: []};[]
+filter(x, true);{x: [1, 2]};[1, 2]
+filter(x, true);{x: ['a']};['a']
+filter(x, true);{x: [[1]]};[[1]]
+filter(x, true);{x: {}};!error
+filter(x, true);{x: {a: 1}};!error
+filter(x, true);{};!error
+# flatMap: argument 1 is array | interval
+flatMap([1..3], #);;[1, 2, 3]
+flatMap(d('2024-01-01'), #);;!error
+flatMap(x, #);{x: null};!error
+flatMap(x, #);{x: true};!error
+flatMap(x, #);{x: false};!error
+flatMap(x, #);{x: 0};!error
+flatMap(x, #);{x: -1};!error
+flatMap(x, #);{x: 1.5};!error
+flatMap(x, #);{x: 79228162514264337593543950335};!error
+flatMap(x, #);{x: ''};!error
+flatMap(x, #);{x: 'abc'};!error
+flatMap(x, #);{x: '12.5'};!error
+flatMap(x, #);{x: 'żółw'};!error
+flatMap(x, #);{x: []};[]
+flatMap(x, #);{x: [1, 2]};[1, 2]
+flatMap(x, #);{x: ['a']};['a']
+flatMap(x, #);{x: [[1]]};[1]
+flatMap(x, #);{x: {}};!error
+flatMap(x, #);{x: {a: 1}};!error
+flatMap(x, #);{};!error
+# all: argument 1 is array | interval
+all([1..3], true);;true
+all(d('2024-01-01'), true);;!error
+all(x, true);{x: null};!error
+all(x, true);{x: true};!error
+all(x, true);{x: false};!error
+all(x, true);{x: 0};!error
+all(x, true);{x: -1};!error
+all(x, true);{x: 1.5};!error
+all(x, true);{x: 79228162514264337593543950335};!error
+all(x, true);{x: ''};!error
+all(x, true);{x: 'abc'};!error
+all(x, true);{x: '12.5'};!error
+all(x, true);{x: 'żółw'};!error
+all(x, true);{x: []};true
+all(x, true);{x: [1, 2]};true
+all(x, true);{x: ['a']};true
+all(x, true);{x: [[1]]};true
+all(x, true);{x: {}};!error
+all(x, true);{x: {a: 1}};!error
+all(x, true);{};!error
+# some: argument 1 is array | interval
+some([1..3], true);;true
+some(d('2024-01-01'), true);;!error
+some(x, true);{x: null};!error
+some(x, true);{x: true};!error
+some(x, true);{x: false};!error
+some(x, true);{x: 0};!error
+some(x, true);{x: -1};!error
+some(x, true);{x: 1.5};!error
+some(x, true);{x: 79228162514264337593543950335};!error
+some(x, true);{x: ''};!error
+some(x, true);{x: 'abc'};!error
+some(x, true);{x: '12.5'};!error
+some(x, true);{x: 'żółw'};!error
+some(x, true);{x: []};false
+some(x, true);{x: [1, 2]};true
+some(x, true);{x: ['a']};true
+some(x, true);{x: [[1]]};true
+some(x, true);{x: {}};!error
+some(x, true);{x: {a: 1}};!error
+some(x, true);{};!error
+# none: argument 1 is array | interval
+none([1..3], true);;false
+none(d('2024-01-01'), true);;!error
+none(x, true);{x: null};!error
+none(x, true);{x: true};!error
+none(x, true);{x: false};!error
+none(x, true);{x: 0};!error
+none(x, true);{x: -1};!error
+none(x, true);{x: 1.5};!error
+none(x, true);{x: 79228162514264337593543950335};!error
+none(x, true);{x: ''};!error
+none(x, true);{x: 'abc'};!error
+none(x, true);{x: '12.5'};!error
+none(x, true);{x: 'żółw'};!error
+none(x, true);{x: []};true
+none(x, true);{x: [1, 2]};false
+none(x, true);{x: ['a']};false
+none(x, true);{x: [[1]]};false
+none(x, true);{x: {}};!error
+none(x, true);{x: {a: 1}};!error
+none(x, true);{};!error
+# one: argument 1 is array | interval
+one([1..3], true);;false
+one(d('2024-01-01'), true);;!error
+one(x, true);{x: null};!error
+one(x, true);{x: true};!error
+one(x, true);{x: false};!error
+one(x, true);{x: 0};!error
+one(x, true);{x: -1};!error
+one(x, true);{x: 1.5};!error
+one(x, true);{x: 79228162514264337593543950335};!error
+one(x, true);{x: ''};!error
+one(x, true);{x: 'abc'};!error
+one(x, true);{x: '12.5'};!error
+one(x, true);{x: 'żółw'};!error
+one(x, true);{x: []};false
+one(x, true);{x: [1, 2]};false
+one(x, true);{x: ['a']};true
+one(x, true);{x: [[1]]};true
+one(x, true);{x: {}};!error
+one(x, true);{x: {a: 1}};!error
+one(x, true);{};!error
+# count: argument 1 is array | interval
+count([1..3], true);;3
+count(d('2024-01-01'), true);;!error
+count(x, true);{x: null};!error
+count(x, true);{x: true};!error
+count(x, true);{x: false};!error
+count(x, true);{x: 0};!error
+count(x, true);{x: -1};!error
+count(x, true);{x: 1.5};!error
+count(x, true);{x: 79228162514264337593543950335};!error
+count(x, true);{x: ''};!error
+count(x, true);{x: 'abc'};!error
+count(x, true);{x: '12.5'};!error
+count(x, true);{x: 'żółw'};!error
+count(x, true);{x: []};0
+count(x, true);{x: [1, 2]};2
+count(x, true);{x: ['a']};1
+count(x, true);{x: [[1]]};1
+count(x, true);{x: {}};!error
+count(x, true);{x: {a: 1}};!error
+count(x, true);{};!error
+# filter: predicate result must be bool
+filter([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+filter([1, 2], p);{p: true};[1, 2]
+filter([1, 2], p);{p: false};[]
+filter([1, 2], p);{p: 0};!error
+filter([1, 2], p);{p: -1};!error
+filter([1, 2], p);{p: 1.5};!error
+filter([1, 2], p);{p: 79228162514264337593543950335};!error
+filter([1, 2], p);{p: ''};!error
+filter([1, 2], p);{p: 'abc'};!error
+filter([1, 2], p);{p: '12.5'};!error
+filter([1, 2], p);{p: 'żółw'};!error
+filter([1, 2], p);{p: []};!error
+filter([1, 2], p);{p: [1, 2]};!error
+filter([1, 2], p);{p: ['a']};!error
+filter([1, 2], p);{p: [[1]]};!error
+filter([1, 2], p);{p: {}};!error
+filter([1, 2], p);{p: {a: 1}};!error
+filter([1, 2], d('2024-01-01'));;!error
+# all: predicate result must be bool
+all([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+all([1, 2], p);{p: true};true
+all([1, 2], p);{p: false};false
+all([1, 2], p);{p: 0};!error
+all([1, 2], p);{p: -1};!error
+all([1, 2], p);{p: 1.5};!error
+all([1, 2], p);{p: 79228162514264337593543950335};!error
+all([1, 2], p);{p: ''};!error
+all([1, 2], p);{p: 'abc'};!error
+all([1, 2], p);{p: '12.5'};!error
+all([1, 2], p);{p: 'żółw'};!error
+all([1, 2], p);{p: []};!error
+all([1, 2], p);{p: [1, 2]};!error
+all([1, 2], p);{p: ['a']};!error
+all([1, 2], p);{p: [[1]]};!error
+all([1, 2], p);{p: {}};!error
+all([1, 2], p);{p: {a: 1}};!error
+all([1, 2], d('2024-01-01'));;!error
+# some: predicate result must be bool
+some([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+some([1, 2], p);{p: true};true
+some([1, 2], p);{p: false};false
+some([1, 2], p);{p: 0};!error
+some([1, 2], p);{p: -1};!error
+some([1, 2], p);{p: 1.5};!error
+some([1, 2], p);{p: 79228162514264337593543950335};!error
+some([1, 2], p);{p: ''};!error
+some([1, 2], p);{p: 'abc'};!error
+some([1, 2], p);{p: '12.5'};!error
+some([1, 2], p);{p: 'żółw'};!error
+some([1, 2], p);{p: []};!error
+some([1, 2], p);{p: [1, 2]};!error
+some([1, 2], p);{p: ['a']};!error
+some([1, 2], p);{p: [[1]]};!error
+some([1, 2], p);{p: {}};!error
+some([1, 2], p);{p: {a: 1}};!error
+some([1, 2], d('2024-01-01'));;!error
+# none: predicate result must be bool
+none([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+none([1, 2], p);{p: true};false
+none([1, 2], p);{p: false};true
+none([1, 2], p);{p: 0};!error
+none([1, 2], p);{p: -1};!error
+none([1, 2], p);{p: 1.5};!error
+none([1, 2], p);{p: 79228162514264337593543950335};!error
+none([1, 2], p);{p: ''};!error
+none([1, 2], p);{p: 'abc'};!error
+none([1, 2], p);{p: '12.5'};!error
+none([1, 2], p);{p: 'żółw'};!error
+none([1, 2], p);{p: []};!error
+none([1, 2], p);{p: [1, 2]};!error
+none([1, 2], p);{p: ['a']};!error
+none([1, 2], p);{p: [[1]]};!error
+none([1, 2], p);{p: {}};!error
+none([1, 2], p);{p: {a: 1}};!error
+none([1, 2], d('2024-01-01'));;!error
+# one: predicate result must be bool
+one([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+one([1, 2], p);{p: true};false
+one([1, 2], p);{p: false};false
+one([1, 2], p);{p: 0};!error
+one([1, 2], p);{p: -1};!error
+one([1, 2], p);{p: 1.5};!error
+one([1, 2], p);{p: 79228162514264337593543950335};!error
+one([1, 2], p);{p: ''};!error
+one([1, 2], p);{p: 'abc'};!error
+one([1, 2], p);{p: '12.5'};!error
+one([1, 2], p);{p: 'żółw'};!error
+one([1, 2], p);{p: []};!error
+one([1, 2], p);{p: [1, 2]};!error
+one([1, 2], p);{p: ['a']};!error
+one([1, 2], p);{p: [[1]]};!error
+one([1, 2], p);{p: {}};!error
+one([1, 2], p);{p: {a: 1}};!error
+one([1, 2], d('2024-01-01'));;!error
+# count: predicate result must be bool
+count([1, 2], p);{p: null};!error;question: a null predicate result is an error, not falsy
+count([1, 2], p);{p: true};2
+count([1, 2], p);{p: false};0
+count([1, 2], p);{p: 0};!error
+count([1, 2], p);{p: -1};!error
+count([1, 2], p);{p: 1.5};!error
+count([1, 2], p);{p: 79228162514264337593543950335};!error
+count([1, 2], p);{p: ''};!error
+count([1, 2], p);{p: 'abc'};!error
+count([1, 2], p);{p: '12.5'};!error
+count([1, 2], p);{p: 'żółw'};!error
+count([1, 2], p);{p: []};!error
+count([1, 2], p);{p: [1, 2]};!error
+count([1, 2], p);{p: ['a']};!error
+count([1, 2], p);{p: [[1]]};!error
+count([1, 2], p);{p: {}};!error
+count([1, 2], p);{p: {a: 1}};!error
+count([1, 2], d('2024-01-01'));;!error
+# map and flatMap: body result is any
+map([1, 2], p);{p: null};[null, null]
+map([1, 2], p);{p: true};[true, true]
+map([1, 2], p);{p: false};[false, false]
+map([1, 2], p);{p: 0};[0, 0]
+map([1, 2], p);{p: -1};[-1, -1]
+map([1, 2], p);{p: 1.5};[1.5, 1.5]
+map([1, 2], p);{p: 79228162514264337593543950335};[79228162514264337593543950335, 79228162514264337593543950335]
+map([1, 2], p);{p: ''};['', '']
+map([1, 2], p);{p: 'abc'};['abc', 'abc']
+map([1, 2], p);{p: '12.5'};['12.5', '12.5']
+map([1, 2], p);{p: 'żółw'};['żółw', 'żółw']
+map([1, 2], p);{p: []};[[], []]
+map([1, 2], p);{p: [1, 2]};[[1, 2], [1, 2]]
+map([1, 2], p);{p: ['a']};[['a'], ['a']]
+map([1, 2], p);{p: [[1]]};[[[1]], [[1]]]
+map([1, 2], p);{p: {}};[{}, {}]
+map([1, 2], p);{p: {a: 1}};[{a: 1}, {a: 1}]

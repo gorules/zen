@@ -72,6 +72,7 @@ pub enum Node<'a> {
 }
 
 impl<'a> Node<'a> {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub fn walk<F>(&self, mut func: F)
     where
         F: FnMut(&Self) + Clone,

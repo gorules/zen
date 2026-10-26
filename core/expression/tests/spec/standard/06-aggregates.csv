@@ -1,0 +1,195 @@
+expression (string);input (json 5);output (json 5);note
+# sum
+sum([1, 2, 3, 4, 5]);;15
+sum([]);;0
+string(sum([]));;'0'
+sum([7]);;7
+string(sum([7.50]));;'7.50'
+sum([-1, -2, -3]);;-6
+sum([0.1, 0.2]);;0.3
+string(sum([0.1, 0.20]));;'0.30'
+string(sum([1, 2.50]));;'3.50'
+string(sum([0.5, -0.5]));;'0.0'
+sum([0.5, -0.5]) == 0;;true
+string(sum([1.25, -1.25, 0]));;'0.00';bug: adding an integer to a zero with scale drops the scale (0.00 + 0 prints '0')
+string(sum([0, 1.25, -1.25]));;'0.00'
+string(sum([0, 0.00]));;'0.00'
+string(sum([0.00]));;'0.00'
+string(sum([0.00, 1]));;'1.00';bug: a leading zero with scale is dropped from the running total (0.00 + 1 prints '1')
+string(sum([1, 0.00]));;'1.00';bug: adding a zero with scale is an identity that drops its scale, unlike sum([1, 0.01, -0.01])
+string(sum([1, 0.01, -0.01]));;'1.00'
+string(sum([0.00, 1.5]));;'1.50';bug: a leading zero with scale is dropped from the running total
+string(sum([-0.0, 2]));;'2.0';bug: a leading zero with scale is dropped from the running total
+string(sum([0.001, 1000]));;'1000.001'
+sum([0.1000000000000000000000000001, 1]);;1.1000000000000000000000000001
+sum([9223372036854775807, 1]);;9223372036854775808
+sum([9223372036854775807, 9223372036854775807]);;18446744073709551614
+sum([-9223372036854775808, -1]);;-9223372036854775809
+sum([79228162514264337593543950335, 0]);;79228162514264337593543950335
+sum([79228162514264337593543950335, 1]);;!error
+sum([79228162514264337593543950335, 1, -1]);;!error;question: overflow is detected in the running total even when the final sum is representable
+sum([79228162514264337593543950335, -1, 1]);;79228162514264337593543950335
+sum([-79228162514264337593543950335, -1]);;!error
+sum([1e3, 1e-3]);;1000.001
+sum([1, 2] + [3]);;!error
+sum(1);;!error
+sum(1, 2);;!error
+sum();;!error
+sum(null);;!error
+sum('123');;!error
+sum({a: 1});;!error
+sum([1, null]);;!error
+sum([null]);;!error
+sum([1, '2']);;!error
+sum([1, true]);;!error
+sum([[1, 2]]);;!error
+sum([1, [2]]);;!error
+sum([{a: 1}]);;!error
+sum([d('2024-01-01')]);;!error
+sum(1..3);;!error
+sum(map([1, 2, 3], # * 2));;12
+sum(map([0.1, 0.2, 0.3], # * 10));;6
+string(sum(map([1, 2], # * 1.5)));;'4.5'
+sum(filter([1, -2, 3], # > 0));;4
+sum(filter([1, 2], # > 5));;0
+sum(map([1, 2, 3], #)) / len([1, 2, 3]);;2
+# avg
+avg([10, 20, 30]);;20
+avg([1, 2]);;1.5
+avg([1, 1, 2]);;1.3333333333333333333333333333
+avg([2, 2, 2]);;2
+avg([5]);;5
+avg([-1, 1]);;0
+avg([0.1, 0.2]);;0.15
+avg([1, 2, 3, 4]);;2.5
+avg([2, 1]);;1.5
+avg([1, 2, 2]);;1.6666666666666666666666666667
+avg([-1, -2]);;-1.5
+avg([-1, -1, -2]);;-1.3333333333333333333333333333
+string(avg([1.5, 1.5]));;'1.5'
+string(avg([1.50, 2.50]));;'2.00'
+string(avg([10, 20, 30]));;'20'
+string(avg([1, 2]));;'1.50';question: the mean's scale follows Decimal division (3 / 2 prints '1.50'), not the inputs' scale
+string(avg([1, 1, 2]));;'1.3333333333333333333333333333'
+avg([9223372036854775807, 9223372036854775807]);;9223372036854775807
+avg([9223372036854775807, 9223372036854775806]);;9223372036854775806.5
+avg([79228162514264337593543950335]);;79228162514264337593543950335
+avg([79228162514264337593543950335, 79228162514264337593543950335]);;79228162514264337593543950335;bug: the mean is representable but the intermediate sum overflows
+avg([0.0000000000000000000000000001, 0]);;0.0000000000000000000000000000;question: the exact mean 0.00000000000000000000000000005 has too many digits and is rounded
+avg([]);;!error;question: average of an empty list fails; could be null
+avg(null);;!error
+avg([1, null]);;!error
+avg([1, '2']);;!error
+avg([true]);;!error
+avg([[1]]);;!error
+avg([d('2024-01-01')]);;!error
+avg(1);;!error
+avg();;!error
+avg(map([1, 2, 3], # * 0.5));;1
+avg(filter([1, 2, 3, 4], # % 2 == 0));;3
+# min and max
+min([5, 2, 8, 1]);;1
+max([5, 2, 8, 1]);;8
+min([5]);;5
+max([5]);;5
+min([-1, -5, 0]);;-5
+max([-1, -5, 0]);;0
+min([-1, -5]);;-5
+max([-1, -5]);;-1
+min([0.1, 0.01, 0.001]);;0.001
+max([0.1, 0.01, 0.001]);;0.1
+min([9223372036854775807, 9223372036854775808]);;9223372036854775807
+max([9223372036854775807, 9223372036854775808]);;9223372036854775808
+min([-9223372036854775808, -9223372036854775809]);;-9223372036854775809
+max([79228162514264337593543950335, -79228162514264337593543950335]);;79228162514264337593543950335
+min([79228162514264337593543950335, -79228162514264337593543950335]);;-79228162514264337593543950335
+min([0.0000000000000000000000000001, 0]);;0
+max([0.0000000000000000000000000001, 0]);;0.0000000000000000000000000001
+min([1e3, 999.999]);;999.999
+string(max([1, 1.0, 1.00]));;'1.00';question: among equal values max returns the last one, so the result scale depends on order
+string(min([1, 1.0, 1.00]));;'1';question: among equal values min returns the first one, so the result scale depends on order
+string(max([1.00, 1.0, 1]));;'1';question: among equal values max returns the last one, so the result scale depends on order
+string(min([1.00, 1.0, 1]));;'1.00';question: among equal values min returns the first one, so the result scale depends on order
+string(max([2.50, 1, 2.5]));;'2.5';question: among equal values max returns the last one, so the result scale depends on order
+string(min([0.10, 5, 0.1]));;'0.10'
+string(max([1.50, -1]));;'1.50'
+min([]);;!error;question: minimum of an empty list fails; could be null
+max([]);;!error;question: maximum of an empty list fails; could be null
+min(null);;!error
+max(null);;!error
+min(1);;!error
+max(1, 2);;!error
+min();;!error
+min([1, null]);;!error
+max([null, 1]);;!error
+max([1, '2']);;!error
+min(['a', 'b']);;!error
+max([true, false]);;!error
+max([[1], [2]]);;!error
+max([1, [2]]);;!error
+min([{a: 1}]);;!error
+max(1..3);;!error
+# min and max over dates
+min([d('2024-01-01'), d('2023-06-15')]);;'2023-06-15T00:00:00Z'
+max([d('2024-01-01'), d('2023-06-15')]);;'2024-01-01T00:00:00Z'
+max([d('2024-01-01')]);;'2024-01-01T00:00:00Z'
+min([d('2024-01-01T10:00:00Z'), d('2024-01-01T09:59:59Z'), d('2024-01-02')]);;'2024-01-01T09:59:59Z'
+max([d('2024-01-01T10:00:00Z'), d('2024-01-01T09:59:59Z'), d('2024-01-02')]);;'2024-01-02T00:00:00Z'
+max([d('2024-01-01'), 1]);;!error
+max([1, d('2024-01-01')]);;!error
+min([d('2024-01-01'), null]);;!error
+min(['2024-01-01', '2023-01-01']);;!error;question: date strings are not accepted by min/max while d() values are
+max(map([1, 2, 3], d('2024-01-01').add(#, 'd')));;'2024-01-04T00:00:00Z'
+# median
+median([1, 2, 3, 4, 5]);;3
+median([4, 2, 7, 5, 3]);;4
+median([5, 1]);;3
+median([1, 2]);;1.5
+median([1, 2, 3, 4]);;2.5
+median([4, 1, 3, 2]);;2.5
+median([7]);;7
+median([-3, -1, -2]);;-2
+median([-1, 2]);;0.5
+median([1, 1, 1, 100]);;1
+median([0.1, 0.2]);;0.15
+median([1, 2, 4, 3, 100, -50]);;2.5
+string(median([1.0, 2.0]));;'1.5'
+string(median([1, 2]));;'1.50';question: the median's scale follows Decimal division (3 / 2 prints '1.50'), not the inputs' scale
+string(median([1.50, 2.50]));;'2.00'
+string(median([3, 1.00, 2]));;'2'
+median([9223372036854775807, 9223372036854775806]);;9223372036854775806.5
+median([79228162514264337593543950335, 79228162514264337593543950335]);;79228162514264337593543950335;bug: the median is representable but the midpoint sum overflows
+median([]);;!error;question: median of an empty list fails; could be null
+median(null);;!error
+median([1, null]);;!error
+median([1, '2']);;!error
+median([d('2024-01-01')]);;!error
+median(1);;!error
+median(map([3, 1, 2], # * 2));;4
+# mode
+mode([1, 2, 2, 3, 3, 3]);;3
+mode([1, 2, 2, 3, 3, 3, 4, 4, 4, 4]);;4
+mode([5]);;5
+mode([4, 4, 1]);;4
+mode([-1, -1, 2]);;-1
+mode([0.5, 0.5, 1]);;0.5
+mode([1, 2]);;2;question: ties resolve to the largest value
+mode([2, 1]);;2;question: ties resolve to the largest value
+mode([3, 3, 1, 1, 2]);;3;question: ties resolve to the largest value
+mode([-5, -5, -7, -7]);;-5;question: ties resolve to the largest value
+mode([1, 1.0, 2]);;1
+string(mode([1.0, 1, 2]));;'1.0';question: equal values with different scales count together and the first spelling wins
+string(mode([1, 1.0, 2]));;'1';question: equal values with different scales count together and the first spelling wins
+mode([]);;!error;question: mode of an empty list fails; could be null
+mode(null);;!error
+mode([1, null]);;!error
+mode(['a', 'a']);;!error
+mode([true]);;!error
+mode(1);;!error
+# aggregates over literal arrays built from computed values
+max([1 + 1, 2 * 2, 3]);;4
+min([abs(-3), round(2.5), floor(1.9)]);;1
+sum([round(1.25, 1), trunc(1.25, 1)]);;2.5
+avg([min([1, 2]), max([3, 4])]);;2.5
+median([sum([1, 2]), avg([4, 6]), 1]);;3
+max([len('abc'), 2]);;3

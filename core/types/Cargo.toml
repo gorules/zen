@@ -3,6 +3,7 @@ name = "zen-types"
 description = "Zen Core Types"
 version = "2.1.6"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/gorules/zen.git"
 homepage = "https://gorules.io"
@@ -21,3 +22,6 @@ nohash-hasher = { workspace = true }
 [features]
 default = []
 arbitrary_precision = ["serde_json/arbitrary_precision"]
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+recursive = { workspace = true }

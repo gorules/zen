@@ -1,0 +1,143 @@
+expression (string);input (json 5);output (json 5);note
+# Cutoff from another field
+d($) <= d(cutoff);{$: '2024-06-30', cutoff: '2024-06-30'};true
+d($) <= d(cutoff);{$: '2024-06-30T00:00:01Z', cutoff: '2024-06-30'};false
+d($) <= d(cutoff);{$: '2024-01-01', cutoff: '2024-06-30'};true
+d($) <= d(cutoff);{$: '2024-07-01', cutoff: '2024-06-30'};false
+d($) <= d(cutoff);{$: '2024-06-29T23:59:59Z', cutoff: '2024-06-30'};true
+d($) <= d(cutoff);{$: '2024-06-30', cutoff: '2024-06-29'};false
+d($) <= d(cutoff);{$: '2024-06-30'};false;question: d(null) is an invalid date, so ordering against a missing cutoff is false instead of an error
+d($).isBefore(d(cutoff));{$: '2024-06-29', cutoff: '2024-06-30'};true
+d($).isBefore(d(cutoff));{$: '2024-06-30', cutoff: '2024-06-30'};false
+d($).isBefore(d(cutoff));{$: '2024-07-01', cutoff: '2024-06-30'};false
+d($).isBefore(d(cutoff));{$: '1970-01-01', cutoff: '2024-06-30'};true
+d($).isBefore(d(cutoff));{$: '2024-06-29T23:59:59.999Z', cutoff: '2024-06-30'};true
+d($).isBefore(d(cutoff));{$: '2024-06-30T00:00:00+02:00', cutoff: '2024-06-30'};true
+d($).isBefore(d(cutoff));{$: '2024-06-30T00:00:00-02:00', cutoff: '2024-06-30'};false
+d($).isSameOrAfter(d(cutoff));{$: '2024-06-30', cutoff: '2024-06-30'};true
+d($).isSameOrAfter(d(cutoff));{$: '2024-06-29', cutoff: '2024-06-30'};false
+d($).isSameOrAfter(d(cutoff));{$: '2025-01-01', cutoff: '2024-06-30'};true
+d($).isSameOrAfter(d(cutoff));{$: '2024-06-30T00:00:00+01:00', cutoff: '2024-06-30'};false
+d($) >= d(start) and d($) < d(end);{$: '2024-01-01', start: '2024-01-01', end: '2024-04-01'};true
+d($) >= d(start) and d($) < d(end);{$: '2024-03-31T23:59:59Z', start: '2024-01-01', end: '2024-04-01'};true
+d($) >= d(start) and d($) < d(end);{$: '2024-04-01', start: '2024-01-01', end: '2024-04-01'};false
+d($) >= d(start) and d($) < d(end);{$: '2023-12-31', start: '2024-01-01', end: '2024-04-01'};false
+d($) >= d(start) and d($) < d(end);{$: '2024-02-29', start: '2024-01-01', end: '2024-04-01'};true
+d($) >= d(start) and d($) < d(end);{$: '2024-05-01', start: '2024-04-01', end: '2024-07-01'};true
+d($) in [d(start)..d(end)];{$: '2024-01-01', start: '2024-01-01', end: '2024-03-31'};true
+d($) in [d(start)..d(end)];{$: '2024-03-31', start: '2024-01-01', end: '2024-03-31'};true
+d($) in [d(start)..d(end)];{$: '2024-03-31T00:00:01Z', start: '2024-01-01', end: '2024-03-31'};false
+d($) in [d(start)..d(end)];{$: '2024-04-01', start: '2024-01-01', end: '2024-03-31'};false
+d($) in [d(start)..d(end)];{$: '2024-02-10', start: '2024-01-01', end: '2024-03-31'};true
+# Calendar parts
+d($).year() == 2024;{$: '2024-01-01'};true
+d($).year() == 2024;{$: '2024-12-31'};true
+d($).year() == 2024;{$: '2023-12-31T23:59:59Z'};false
+d($).year() == 2024;{$: '2025-01-01'};false
+d($).year() == 2024;{$: '2024-12-31T23:00:00-02:00'};false
+d($).month() == 2 and d($).day() == 29;{$: '2024-02-29'};true
+d($).month() == 2 and d($).day() == 29;{$: '2028-02-29'};true
+d($).month() == 2 and d($).day() == 29;{$: '2024-02-28'};false
+d($).month() == 2 and d($).day() == 29;{$: '2024-03-01'};false
+d($).month() == 2 and d($).day() == 29;{$: '2023-03-01'};false
+d($).quarter() == 2;{$: '2024-04-01'};true
+d($).quarter() == 2;{$: '2024-06-30'};true
+d($).quarter() == 2;{$: '2024-03-31'};false
+d($).quarter() == 2;{$: '2024-07-01'};false
+d($).quarter() == 2;{$: '2024-05-15T12:00:00Z'};true
+d($).weekday() >= 6;{$: '2024-06-01'};true
+d($).weekday() >= 6;{$: '2024-06-02'};true
+d($).weekday() >= 6;{$: '2024-06-03'};false
+d($).weekday() >= 6;{$: '2024-05-31'};false
+d($).weekday() >= 6;{$: '2024-06-05'};false
+d($).weekday() in [1, 2, 3, 4, 5];{$: '2024-06-01'};false
+d($).weekday() in [1, 2, 3, 4, 5];{$: '2024-06-02'};false
+d($).weekday() in [1, 2, 3, 4, 5];{$: '2024-06-03'};true
+d($).weekday() in [1, 2, 3, 4, 5];{$: '2024-05-31'};true
+d($).hour() < 9 or d($).hour() >= 17;{$: '2024-06-03T08:59:59Z'};true
+d($).hour() < 9 or d($).hour() >= 17;{$: '2024-06-03T09:00:00Z'};false
+d($).hour() < 9 or d($).hour() >= 17;{$: '2024-06-03T16:59:59Z'};false
+d($).hour() < 9 or d($).hour() >= 17;{$: '2024-06-03T17:00:00Z'};true
+d($).hour() < 9 or d($).hour() >= 17;{$: '2024-06-03'};true
+d($).isLeapYear();{$: '2024-06-01'};true
+d($).isLeapYear();{$: '2023-06-01'};false
+d($).isLeapYear();{$: '2000-01-01'};true
+d($).isLeapYear();{$: '1900-01-01'};false
+d($).isLeapYear();{$: '2100-12-31'};false
+d($).dayOfYear() <= 31;{$: '2024-01-01'};true
+d($).dayOfYear() <= 31;{$: '2024-01-31'};true
+d($).dayOfYear() <= 31;{$: '2024-02-01'};false
+d($).dayOfYear() <= 31;{$: '2024-12-31'};false
+# Age and tenure from a birth or start date
+d().diff(d($), 'year') >= 18;{$: '2007-03-20'};true
+d().diff(d($), 'year') >= 18;{$: '2007-03-21'};false
+d().diff(d($), 'year') >= 18;{$: '2007-03-19'};true
+d().diff(d($), 'year') >= 18;{$: '1960-01-01'};true
+d().diff(d($), 'year') >= 18;{$: '2010-01-01'};false
+d().diff(d($), 'year') >= 18;{$: '2025-03-20'};false
+d($).diff(d('2024-01-01'), 'day') > 30;{$: '2024-02-01'};true
+d($).diff(d('2024-01-01'), 'day') > 30;{$: '2024-01-31'};false
+d($).diff(d('2024-01-01'), 'day') > 30;{$: '2024-01-31T23:59:59Z'};false
+d($).diff(d('2024-01-01'), 'day') > 30;{$: '2023-12-01'};false
+d($).diff(d('2024-01-01'), 'day') > 30;{$: '2025-01-01'};true
+d($).add(30, 'd') < d();{$: '2025-02-17'};true
+d($).add(30, 'd') < d();{$: '2025-02-18T10:15:30Z'};false
+d($).add(30, 'd') < d();{$: '2025-02-18T10:15:29Z'};true
+d($).add(30, 'd') < d();{$: '2025-03-01'};false
+d($).add(30, 'd') < d();{$: '2020-01-01'};true
+d($).add(1, 'y').isAfter(d('2025-03-20'));{$: '2024-03-21'};true
+d($).add(1, 'y').isAfter(d('2025-03-20'));{$: '2024-03-20'};false
+d($).add(1, 'y').isAfter(d('2025-03-20'));{$: '2024-03-19'};false
+d($).add(1, 'y').isAfter(d('2025-03-20'));{$: '2025-01-01'};true
+d($).isSame(d('2024-06-15'), 'month');{$: '2024-06-01'};true
+d($).isSame(d('2024-06-15'), 'month');{$: '2024-06-30T23:59:59Z'};true
+d($).isSame(d('2024-06-15'), 'month');{$: '2024-07-01'};false
+d($).isSame(d('2024-06-15'), 'month');{$: '2023-06-15'};false
+d($).isSame(d('2024-06-15'), 'month');{$: '2024-05-31'};false
+d($).startOf('month') == d('2024-06-01');{$: '2024-06-15'};true
+d($).startOf('month') == d('2024-06-01');{$: '2024-06-01'};true
+d($).startOf('month') == d('2024-06-01');{$: '2024-07-01'};false
+d($).startOf('month') == d('2024-06-01');{$: '2024-05-31T23:59:59Z'};false
+# Relative to the evaluation time (2025-03-20T10:15:30Z)
+d($).isToday();{$: '2025-03-20T00:00:00Z'};true
+d($).isToday();{$: '2025-03-20T23:59:59Z'};true
+d($).isToday();{$: '2025-03-19T23:59:59Z'};false
+d($).isToday();{$: '2025-03-21'};false
+d($).isYesterday();{$: '2025-03-19'};true
+d($).isYesterday();{$: '2025-03-19T23:59:59Z'};true
+d($).isYesterday();{$: '2025-03-20'};false
+d($).isYesterday();{$: '2025-03-18'};false
+d($).isTomorrow();{$: '2025-03-21'};true
+d($).isTomorrow();{$: '2025-03-20'};false
+d($).isTomorrow();{$: '2025-03-22'};false
+d($) > d().sub(7, 'd');{$: '2025-03-14'};true
+d($) > d().sub(7, 'd');{$: '2025-03-13T10:15:30Z'};false
+d($) > d().sub(7, 'd');{$: '2025-03-13T10:15:31Z'};true
+d($) > d().sub(7, 'd');{$: '2025-03-01'};false
+d($) > d().sub(7, 'd');{$: '2025-04-01'};true
+# Timestamps, offsets and bad values in the same column
+d($) >= d('2024-01-01');{$: '2024-01-01'};true
+d($) >= d('2024-01-01');{$: '2023-12-31T23:59:59Z'};false
+d($) >= d('2024-01-01');{$: '2024-01-01T01:00:00+02:00'};false
+d($) >= d('2024-01-01');{$: '2024-01-01T00:00:00-01:00'};true
+d($) >= d('2024-01-01');{$: 1704067200000};true
+d($) >= d('2024-01-01');{$: 1704067199999};false
+d($) >= d('2024-01-01');{$: '2024-01-01 00:00'};true
+d($) >= d('2024-01-01');{$: 'bad'};false
+d($) >= d('2024-01-01');{$: ''};false
+d($) >= d('2024-01-01');{$: null};false
+d($) >= d('2024-01-01');{};false
+d($).isValid();{$: '2024-01-01'};true
+d($).isValid();{$: '2024-13-01'};false
+d($).isValid();{$: '2024-02-30'};false
+d($).isValid();{$: '24-01-01'};true
+d($).isValid();{$: 1704067200000};true
+d($).isValid();{$: ''};false
+d($).isValid();{$: null};false
+d($).isValid();{};false
+d($).isValid();{$: true};false
+d($).year() == 2024;{$: 1704067200000};true
+d($).year() == 2024;{$: 0};false
+d($).year() == 2024;{$: 'bad'};false
+d($).year() == 2024;{$: null};false
+d($).year() == 2024;{};false

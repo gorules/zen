@@ -1,0 +1,241 @@
+expression (string);input (json 5);output (json 5);note
+# Operand types: addition a + b
+a + b;{a: 6, b: 3};9
+a + b;{a: null, b: 1};!error
+a + b;{a: 1, b: null};!error
+a + b;{a: null, b: null};!error
+a + b;{b: 1};!error
+a + b;{a: 1};!error
+a + b;{};!error
+a + b;{a: true, b: 1};!error
+a + b;{a: 1, b: false};!error
+a + b;{a: true, b: false};!error
+a + b;{a: 'a', b: 1};!error
+a + b;{a: 1, b: 'a'};!error
+a + b;{a: '1', b: 1};!error
+a + b;{a: 1, b: '1'};!error
+a + b;{a: '6', b: '3'};'63'
+a + b;{a: [1], b: 1};!error
+a + b;{a: 1, b: [1]};!error
+a + b;{a: [1], b: [2]};!error
+a + b;{a: {x: 1}, b: 1};!error
+a + b;{a: 1, b: {x: 1}};!error
+a + b;{a: {}, b: {}};!error
+a + b;{a: 0.5, b: 2};2.5
+# Operand types: subtraction a - b
+a - b;{a: 6, b: 3};3
+a - b;{a: null, b: 1};!error
+a - b;{a: 1, b: null};!error
+a - b;{a: null, b: null};!error
+a - b;{b: 1};!error
+a - b;{a: 1};!error
+a - b;{};!error
+a - b;{a: true, b: 1};!error
+a - b;{a: 1, b: false};!error
+a - b;{a: true, b: false};!error
+a - b;{a: 'a', b: 1};!error
+a - b;{a: 1, b: 'a'};!error
+a - b;{a: '1', b: 1};!error
+a - b;{a: 1, b: '1'};!error
+a - b;{a: '6', b: '3'};!error
+a - b;{a: [1], b: 1};!error
+a - b;{a: 1, b: [1]};!error
+a - b;{a: [1], b: [2]};!error
+a - b;{a: {x: 1}, b: 1};!error
+a - b;{a: 1, b: {x: 1}};!error
+a - b;{a: {}, b: {}};!error
+a - b;{a: 0.5, b: 2};-1.5
+# Operand types: multiplication a * b
+a * b;{a: 6, b: 3};18
+a * b;{a: null, b: 1};!error
+a * b;{a: 1, b: null};!error
+a * b;{a: null, b: null};!error
+a * b;{b: 1};!error
+a * b;{a: 1};!error
+a * b;{};!error
+a * b;{a: true, b: 1};!error
+a * b;{a: 1, b: false};!error
+a * b;{a: true, b: false};!error
+a * b;{a: 'a', b: 1};!error
+a * b;{a: 1, b: 'a'};!error
+a * b;{a: '1', b: 1};!error
+a * b;{a: 1, b: '1'};!error
+a * b;{a: '6', b: '3'};!error
+a * b;{a: [1], b: 1};!error
+a * b;{a: 1, b: [1]};!error
+a * b;{a: [1], b: [2]};!error
+a * b;{a: {x: 1}, b: 1};!error
+a * b;{a: 1, b: {x: 1}};!error
+a * b;{a: {}, b: {}};!error
+a * b;{a: 0.5, b: 2};1
+# Operand types: division a / b
+a / b;{a: 6, b: 3};2
+a / b;{a: null, b: 1};!error
+a / b;{a: 1, b: null};!error
+a / b;{a: null, b: null};!error
+a / b;{b: 1};!error
+a / b;{a: 1};!error
+a / b;{};!error
+a / b;{a: true, b: 1};!error
+a / b;{a: 1, b: false};!error
+a / b;{a: true, b: false};!error
+a / b;{a: 'a', b: 1};!error
+a / b;{a: 1, b: 'a'};!error
+a / b;{a: '1', b: 1};!error
+a / b;{a: 1, b: '1'};!error
+a / b;{a: '6', b: '3'};!error
+a / b;{a: [1], b: 1};!error
+a / b;{a: 1, b: [1]};!error
+a / b;{a: [1], b: [2]};!error
+a / b;{a: {x: 1}, b: 1};!error
+a / b;{a: 1, b: {x: 1}};!error
+a / b;{a: {}, b: {}};!error
+a / b;{a: 0.5, b: 2};0.25
+# Operand types: modulo a % b
+a % b;{a: 6, b: 3};0
+a % b;{a: null, b: 1};!error
+a % b;{a: 1, b: null};!error
+a % b;{a: null, b: null};!error
+a % b;{b: 1};!error
+a % b;{a: 1};!error
+a % b;{};!error
+a % b;{a: true, b: 1};!error
+a % b;{a: 1, b: false};!error
+a % b;{a: true, b: false};!error
+a % b;{a: 'a', b: 1};!error
+a % b;{a: 1, b: 'a'};!error
+a % b;{a: '1', b: 1};!error
+a % b;{a: 1, b: '1'};!error
+a % b;{a: '6', b: '3'};!error
+a % b;{a: [1], b: 1};!error
+a % b;{a: 1, b: [1]};!error
+a % b;{a: [1], b: [2]};!error
+a % b;{a: {x: 1}, b: 1};!error
+a % b;{a: 1, b: {x: 1}};!error
+a % b;{a: {}, b: {}};!error
+a % b;{a: 0.5, b: 2};0.5
+# Operand types: power a ^ b
+a ^ b;{a: 6, b: 3};216
+a ^ b;{a: null, b: 1};!error
+a ^ b;{a: 1, b: null};!error
+a ^ b;{a: null, b: null};!error
+a ^ b;{b: 1};!error
+a ^ b;{a: 1};!error
+a ^ b;{};!error
+a ^ b;{a: true, b: 1};!error
+a ^ b;{a: 1, b: false};!error
+a ^ b;{a: true, b: false};!error
+a ^ b;{a: 'a', b: 1};!error
+a ^ b;{a: 1, b: 'a'};!error
+a ^ b;{a: '1', b: 1};!error
+a ^ b;{a: 1, b: '1'};!error
+a ^ b;{a: '6', b: '3'};!error
+a ^ b;{a: [1], b: 1};!error
+a ^ b;{a: 1, b: [1]};!error
+a ^ b;{a: [1], b: [2]};!error
+a ^ b;{a: {x: 1}, b: 1};!error
+a ^ b;{a: 1, b: {x: 1}};!error
+a ^ b;{a: {}, b: {}};!error
+a ^ b;{a: 0.5, b: 2};0.25
+# Operand types with literals: addition
+2 + null;;!error
+null + 2;;!error
+2 + true;;!error
+true + 2;;!error
+2 + 'x';;!error
+'x' + 2;;!error
+2 + '2';;!error
+'2' + 2;;!error
+2 + [2];;!error
+[2] + 2;;!error
+2 + {x: 2};;!error
+{x: 2} + 2;;!error
+2 + d('2024-01-01');;!error
+d('2024-01-01') + 2;;!error
+2 + (1..3);;!error
+(1..3) + 2;;!error
+# Operand types with literals: subtraction
+2 - null;;!error
+null - 2;;!error
+2 - true;;!error
+true - 2;;!error
+2 - 'x';;!error
+'x' - 2;;!error
+2 - '2';;!error
+'2' - 2;;!error
+2 - [2];;!error
+[2] - 2;;!error
+2 - {x: 2};;!error
+{x: 2} - 2;;!error
+2 - d('2024-01-01');;!error
+d('2024-01-01') - 2;;!error
+2 - (1..3);;!error
+(1..3) - 2;;!error
+# Operand types with literals: multiplication
+2 * null;;!error
+null * 2;;!error
+2 * true;;!error
+true * 2;;!error
+2 * 'x';;!error
+'x' * 2;;!error
+2 * '2';;!error
+'2' * 2;;!error
+2 * [2];;!error
+[2] * 2;;!error
+2 * {x: 2};;!error
+{x: 2} * 2;;!error
+2 * d('2024-01-01');;!error
+d('2024-01-01') * 2;;!error
+2 * (1..3);;!error
+(1..3) * 2;;!error
+# Operand types with literals: division
+2 / null;;!error
+null / 2;;!error
+2 / true;;!error
+true / 2;;!error
+2 / 'x';;!error
+'x' / 2;;!error
+2 / '2';;!error
+'2' / 2;;!error
+2 / [2];;!error
+[2] / 2;;!error
+2 / {x: 2};;!error
+{x: 2} / 2;;!error
+2 / d('2024-01-01');;!error
+d('2024-01-01') / 2;;!error
+2 / (1..3);;!error
+(1..3) / 2;;!error
+# Operand types with literals: modulo
+2 % null;;!error
+null % 2;;!error
+2 % true;;!error
+true % 2;;!error
+2 % 'x';;!error
+'x' % 2;;!error
+2 % '2';;!error
+'2' % 2;;!error
+2 % [2];;!error
+[2] % 2;;!error
+2 % {x: 2};;!error
+{x: 2} % 2;;!error
+2 % d('2024-01-01');;!error
+d('2024-01-01') % 2;;!error
+2 % (1..3);;!error
+(1..3) % 2;;!error
+# Operand types with literals: power
+2 ^ null;;!error
+null ^ 2;;!error
+2 ^ true;;!error
+true ^ 2;;!error
+2 ^ 'x';;!error
+'x' ^ 2;;!error
+2 ^ '2';;!error
+'2' ^ 2;;!error
+2 ^ [2];;!error
+[2] ^ 2;;!error
+2 ^ {x: 2};;!error
+{x: 2} ^ 2;;!error
+2 ^ d('2024-01-01');;!error
+d('2024-01-01') ^ 2;;!error
+2 ^ (1..3);;!error
+(1..3) ^ 2;;!error

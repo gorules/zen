@@ -1,0 +1,111 @@
+expression (string);input (json 5);output (json 5);note
+# instants around the transitions
+d('2025-03-30T00:59:59Z').tz('Europe/Berlin');;'2025-03-30T01:59:59+01:00'
+d('2025-03-30T01:00:00Z').tz('Europe/Berlin');;'2025-03-30T03:00:00+02:00'
+d('2025-10-26T00:30:00Z').tz('Europe/Berlin');;'2025-10-26T02:30:00+02:00'
+d('2025-10-26T01:30:00Z').tz('Europe/Berlin');;'2025-10-26T02:30:00+01:00'
+d('2025-03-09T07:00:00Z').tz('America/New_York');;'2025-03-09T03:00:00-04:00'
+d('2025-11-02T05:30:00Z').tz('America/New_York');;'2025-11-02T01:30:00-04:00'
+d('2025-11-02T06:30:00Z').tz('America/New_York');;'2025-11-02T01:30:00-05:00'
+d('2025-10-04T15:30:00Z').tz('Australia/Lord_Howe');;'2025-10-05T02:30:00+11:00'
+d('2025-10-04T15:29:59Z').tz('Australia/Lord_Howe');;'2025-10-05T01:59:59+10:30'
+# exact units (seconds to hours) are elapsed time
+d('2025-03-30 01:30', 'Europe/Berlin').add(1, 'h');;'2025-03-30T03:30:00+02:00'
+d('2025-03-30 03:30', 'Europe/Berlin').sub(1, 'h');;'2025-03-30T01:30:00+01:00'
+d('2025-10-26 02:30', 'Europe/Berlin').add(1, 'h');;'2025-10-26T02:30:00+01:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-10-26 01:30', 'Europe/Berlin').add(2, 'h');;'2025-10-26T02:30:00+01:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-03-29 12:00', 'Europe/Berlin').add(24, 'h');;'2025-03-30T13:00:00+02:00'
+d('2025-03-09 01:59', 'America/New_York').add(1, 'm');;'2025-03-09T03:00:00-04:00'
+d('2025-11-02 01:30', 'America/New_York').add(1, 'h');;'2025-11-02T01:30:00-05:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-11-02 01:30', 'America/New_York').add('90m');;'2025-11-02T02:00:00-05:00'
+d('2025-10-26 02:30', 'Europe/Berlin').add(0, 'h');;'2025-10-26T02:30:00+02:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(1761442200000, 'Europe/Berlin').sub(0, 's');;'2025-10-26T02:30:00+01:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-10-26 03:30', 'Europe/Berlin').sub(1, 'h');;'2025-10-26T02:30:00+01:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-10-26 02:30', 'Europe/Berlin').add(1, 'M');;'2025-11-26T02:30:00+01:00'
+d('2025-10-26 02:30', 'Europe/Berlin').add(1, 'h').isValid();;true;bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d('2025-10-05 01:45', 'Australia/Lord_Howe').add(15, 'm');;'2025-10-05T02:30:00+11:00'
+# days and weeks across a transition
+d('2025-03-29 12:00', 'Europe/Berlin').add(1, 'd');;'2025-03-30T13:00:00+02:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-03-31 00:00', 'Europe/Berlin').sub(1, 'd');;'2025-03-29T23:00:00+01:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-10-25 12:00', 'Europe/Berlin').add(1, 'd');;'2025-10-26T11:00:00+01:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-03-27 12:00', 'Europe/Berlin').add(1, 'w');;'2025-04-03T13:00:00+02:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-03-08 12:00', 'America/New_York').add(1, 'd');;'2025-03-09T13:00:00-04:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-11-01 12:00', 'America/New_York').add('1d');;'2025-11-02T11:00:00-05:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-10-04 12:00', 'Australia/Lord_Howe').add(1, 'd');;'2025-10-05T12:30:00+11:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d('2025-06-01 12:00', 'Europe/Berlin').add(1, 'd');;'2025-06-02T12:00:00+02:00'
+# months and years keep the wall clock
+d('2025-03-15 12:00', 'Europe/Berlin').add(1, 'M');;'2025-04-15T12:00:00+02:00'
+d('2025-10-15 12:00', 'Europe/Berlin').add(1, 'M');;'2025-11-15T12:00:00+01:00'
+d('2025-11-15 12:00', 'America/New_York').sub(1, 'M');;'2025-10-15T12:00:00-04:00'
+d('2024-03-30 12:00', 'Europe/Berlin').add(1, 'y');;'2025-03-30T12:00:00+02:00'
+d('2025-01-30 02:30', 'Europe/Berlin').add(2, 'M');;'2025-03-30T03:30:00+02:00';bug: a month step landing in the spring-forward gap gives an invalid date
+d('2025-02-09 02:30', 'America/New_York').add(1, 'M');;'2025-03-09T03:30:00-04:00';bug: a month step landing in the spring-forward gap gives an invalid date
+d('2025-09-26 02:30', 'Europe/Berlin').add(1, 'M');;'2025-10-26T02:30:00+02:00';bug: a month step landing in the fall-back overlap gives an invalid date instead of the earlier offset that d() picks
+d('2024-11-02 01:30', 'America/New_York').add(1, 'y');;'2025-11-02T01:30:00-04:00';bug: a year step landing in the fall-back overlap gives an invalid date
+d('2025-09-05 02:15', 'Australia/Lord_Howe').add(1, 'M');;'2025-10-05T02:45:00+11:00';bug: a month step landing in the 30-minute gap gives an invalid date
+# startOf / endOf on transition days
+d('2025-03-30 12:00', 'Europe/Berlin').startOf('day');;'2025-03-30T00:00:00+01:00'
+d('2025-03-30 12:00', 'Europe/Berlin').endOf('day');;'2025-03-30T23:59:59+02:00'
+d('2025-10-26 12:00', 'Europe/Berlin').startOf('day');;'2025-10-26T00:00:00+02:00'
+d('2025-10-26 12:00', 'Europe/Berlin').endOf('day');;'2025-10-26T23:59:59+01:00'
+d('2025-03-30 12:00', 'Europe/Berlin').endOf('day').diff(d('2025-03-30 12:00', 'Europe/Berlin').startOf('day'), 'h');;22
+d('2025-03-09 12:00', 'America/New_York').startOf('day');;'2025-03-09T00:00:00-05:00'
+d('2025-11-02 12:00', 'America/New_York').startOf('day');;'2025-11-02T00:00:00-04:00'
+d('2025-11-02 12:00', 'America/New_York').endOf('day');;'2025-11-02T23:59:59-05:00'
+d('2025-03-30 03:30', 'Europe/Berlin').startOf('hour');;'2025-03-30T03:00:00+02:00'
+d('2025-03-31', 'Europe/Berlin').startOf('month');;'2025-03-01T00:00:00+01:00'
+d('2025-03-01', 'Europe/Berlin').endOf('month');;'2025-03-31T23:59:59+02:00'
+d('2025-10-01', 'Europe/Berlin').endOf('month');;'2025-10-31T23:59:59+01:00'
+d('2025-03-27', 'Europe/Berlin').endOf('week');;'2025-03-30T23:59:59+02:00'
+d('2025-04-06 01:45', 'Australia/Lord_Howe').startOf('hour');;'2025-04-06T01:00:00+11:00'
+d('2025-10-26 02:30', 'Europe/Berlin').startOf('hour');;'2025-10-26T02:00:00+02:00';bug: startOf on an ambiguous wall time gives an invalid date
+d(1761442200000, 'Europe/Berlin').startOf('hour');;'2025-10-26T02:00:00+01:00';bug: startOf on the second 02:30 of the fall-back night gives an invalid date
+d('2025-10-26 02:30', 'Europe/Berlin').startOf('second');;'2025-10-26T02:30:00+02:00';bug: startOf('second') on an ambiguous wall time gives an invalid date
+d('2025-10-26 02:30', 'Europe/Berlin').startOf('day');;'2025-10-26T00:00:00+02:00'
+d('2025-10-26 02:30', 'Europe/Berlin').endOf('day');;'2025-10-26T23:59:59+01:00';bug: endOf from an ambiguous wall time gives an invalid date
+d('2025-11-02 01:30', 'America/New_York').endOf('day');;'2025-11-02T23:59:59-05:00';bug: endOf from an ambiguous wall time gives an invalid date
+d('2025-11-02 01:30', 'America/New_York').endOf('month');;'2025-11-30T23:59:59-05:00';bug: endOf from an ambiguous wall time gives an invalid date
+d('2025-04-06 01:45', 'Australia/Lord_Howe').startOf('minute');;'2025-04-06T01:45:00+11:00';bug: startOf on an ambiguous wall time gives an invalid date
+d('2025-03-05 02:30', 'America/New_York').endOf('week');;'2025-03-09T23:59:59-04:00';bug: endOf('week') steps through the gap day at 02:30 and gives an invalid date
+d('2025-03-09 12:00', 'America/Havana').startOf('day');;'2025-03-09T01:00:00-04:00';bug: midnight does not exist in Havana that day, the start of the day is 01:00, not an invalid date
+d('2025-10-26 02:30', 'Europe/Berlin').isSame(d('2025-10-26 12:00', 'Europe/Berlin'), 'day');;true;bug: isSame with a unit is false for an ambiguous wall time because startOf fails
+d('2025-10-26 02:30', 'Europe/Berlin').isBefore(d('2025-10-27', 'Europe/Berlin'), 'day');;true;bug: isBefore with a unit is false for an ambiguous wall time because endOf fails
+d('2025-10-26 02:30', 'Europe/Berlin').isToday();;false
+# rows: add a day, read the hour
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-03-15 12:00'};12
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-03-15 12:00'};12
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-03-29 12:00'};13;question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-03-30 01:30'};2;question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-10-25 12:00'};11;question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-10-26 02:30'};1;question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: '2025-03-30 02:30'};3
+d(s, 'Europe/Berlin').add(1, 'day').hour();{s: 'x'};null
+d(s, 'Europe/Berlin').add(1, 'day').hour();{};null
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-02-28 12:00'};'2025-03-28T12:00:00+01:00'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-03-28 12:00'};'2025-04-28T12:00:00+02:00'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-03-31 23:00'};'2025-04-30T23:00:00+02:00'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-03-31 23:00'};'2025-04-30T23:00:00+02:00'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-02-28 02:30'};'2025-03-28T02:30:00+01:00'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-02-30 02:30'};'Invalid date'
+d(s, 'Europe/Berlin').add(1, 'M');{s: '2025-09-26 02:30'};'2025-10-26T02:30:00+02:00';bug: a month step landing in the fall-back overlap gives an invalid date
+d(s, 'Europe/Berlin').startOf('day');{s: '2025-03-30 12:00'};'2025-03-30T00:00:00+01:00'
+d(s, 'Europe/Berlin').startOf('day');{s: '2025-03-30 12:00'};'2025-03-30T00:00:00+01:00'
+d(s, 'Europe/Berlin').startOf('day');{s: '2025-03-30 03:00'};'2025-03-30T00:00:00+01:00'
+d(s, 'Europe/Berlin').startOf('day');{s: '2025-10-26 23:59'};'2025-10-26T00:00:00+02:00'
+d(s, 'Europe/Berlin').startOf('day');{s: '2025-06-15 10:00'};'2025-06-15T00:00:00+02:00'
+d(s, 'Europe/Berlin').startOf('day');{s: null};'Invalid date'
+d(s, 'Europe/Berlin').endOf('day');{s: '2025-03-30 00:30'};'2025-03-30T23:59:59+02:00'
+d(s, 'Europe/Berlin').endOf('day');{s: '2025-10-26 00:30'};'2025-10-26T23:59:59+01:00'
+d(s, 'Europe/Berlin').endOf('day');{s: '2025-10-26 02:30'};'2025-10-26T23:59:59+01:00';bug: endOf from an ambiguous wall time gives an invalid date
+d(s, 'Europe/Berlin').endOf('day');{s: '2025-12-31 12:00'};'2025-12-31T23:59:59+01:00'
+d(s, 'America/New_York').add(n, 'h');{s: '2025-03-09 00:30', n: 2};'2025-03-09T03:30:00-04:00'
+d(s, 'America/New_York').add(n, 'h');{s: '2025-03-09 00:30', n: 2};'2025-03-09T03:30:00-04:00'
+d(s, 'America/New_York').add(n, 'h');{s: '2025-11-02 00:30', n: 1};'2025-11-02T01:30:00-04:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(s, 'America/New_York').add(n, 'h');{s: '2025-11-02 00:30', n: 2};'2025-11-02T01:30:00-05:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(s, 'America/New_York').add(n, 'h');{s: '2025-11-02 00:30', n: 3};'2025-11-02T02:30:00-05:00'
+d(s, 'America/New_York').add(n, 'h');{s: '2025-11-02 00:30', n: -1};'2025-11-01T23:30:00-04:00'
+d(s, 'Europe/Berlin').add(1, 'd');{s: '2025-10-25 02:30'};'2025-10-26T02:30:00+02:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(s, 'Europe/Berlin').add(1, 'd');{s: '2025-10-25 02:30'};'2025-10-26T02:30:00+02:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(s, 'Europe/Berlin').add(1, 'd');{s: '2025-10-25 03:30'};'2025-10-26T02:30:00+01:00';bug: any add/sub whose result is an ambiguous wall time gives an invalid date (the zero-month calendar step re-resolves the local time)
+d(s, 'Europe/Berlin').add(1, 'd');{s: '2025-10-25 04:30'};'2025-10-26T03:30:00+01:00';question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it
+d(s, 'Europe/Berlin').add(1, 'd');{s: '2025-10-24 02:30'};'2025-10-25T02:30:00+02:00'

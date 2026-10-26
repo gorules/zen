@@ -1,0 +1,135 @@
+expression (string);input (json 5);output (json 5);note
+# Overtime pay
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 38, rate: 22.50};855.00
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 40, rate: 22.50};900.00
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 40.25, rate: 22.50};908.44
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 52.5, rate: 18.75};1101.56
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 0, rate: 30};0.0
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 80, rate: 15.333};1533.30
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: null, rate: 20};!error
+round(min([hours, 40]) * rate + max([0, hours - 40]) * rate * 1.5, 2);{hours: 45, rate: '20'};!error
+round(sum(map(shifts, min([#.hours, 8]) + max([0, #.hours - 8]) * 1.5)) * rate, 2);{rate: 20, shifts: [{date: '2025-03-01', hours: 8, night: true}, {date: '2025-03-02', hours: 9.5, night: false}, {date: '2025-03-03', hours: 10, night: false}, {date: '2025-03-04', hours: 7.25, night: false}, {date: '2025-03-05', hours: 12, night: true}]};1010.00
+round(sum(map(shifts, min([#.hours, 8]) + max([0, #.hours - 8]) * 1.5)) * rate, 2);{rate: 17.35, shifts: [{date: '2025-03-01', hours: 8, night: true}, {date: '2025-03-02', hours: 9.5, night: false}, {date: '2025-03-03', hours: 10, night: false}, {date: '2025-03-04', hours: 7.25, night: false}, {date: '2025-03-05', hours: 12, night: true}, {date: '2025-03-06', hours: 8, night: false}, {date: '2025-03-07', hours: 9.5, night: false}, {date: '2025-03-08', hours: 10, night: false}, {date: '2025-03-09', hours: 7.25, night: true}, {date: '2025-03-10', hours: 12, night: false}, {date: '2025-03-11', hours: 8, night: false}, {date: '2025-03-12', hours: 9.5, night: false}, {date: '2025-03-13', hours: 10, night: true}, {date: '2025-03-14', hours: 7.25, night: false}, {date: '2025-03-15', hours: 12, night: false}, {date: '2025-03-16', hours: 8, night: false}, {date: '2025-03-17', hours: 9.5, night: true}, {date: '2025-03-18', hours: 10, night: false}, {date: '2025-03-19', hours: 7.25, night: false}, {date: '2025-03-20', hours: 12, night: false}, {date: '2025-03-21', hours: 8, night: true}, {date: '2025-03-22', hours: 9.5, night: false}]};3821.34
+round(sum(map(shifts, min([#.hours, 8]) + max([0, #.hours - 8]) * 1.5)) * rate, 2);{rate: 20, shifts: []};0
+round(sum(map(shifts, min([#.hours, 8]) + max([0, #.hours - 8]) * 1.5)) * rate, 2);{rate: 20, shifts: [{hours: 8}, {hours: 8.01}]};320.30
+round(sum(map(shifts, min([#.hours, 8]) + max([0, #.hours - 8]) * 1.5)) * rate, 2);{rate: 20, shifts: [{hours: null}]};!error
+sum(map(filter(shifts, #.night), #.hours)) * nightPremium;{nightPremium: 2.25, shifts: [{date: '2025-03-01', hours: 8, night: true}, {date: '2025-03-02', hours: 9.5, night: false}, {date: '2025-03-03', hours: 10, night: false}, {date: '2025-03-04', hours: 7.25, night: false}, {date: '2025-03-05', hours: 12, night: true}, {date: '2025-03-06', hours: 8, night: false}, {date: '2025-03-07', hours: 9.5, night: false}, {date: '2025-03-08', hours: 10, night: false}, {date: '2025-03-09', hours: 7.25, night: true}, {date: '2025-03-10', hours: 12, night: false}, {date: '2025-03-11', hours: 8, night: false}, {date: '2025-03-12', hours: 9.5, night: false}, {date: '2025-03-13', hours: 10, night: true}, {date: '2025-03-14', hours: 7.25, night: false}, {date: '2025-03-15', hours: 12, night: false}, {date: '2025-03-16', hours: 8, night: false}, {date: '2025-03-17', hours: 9.5, night: true}, {date: '2025-03-18', hours: 10, night: false}, {date: '2025-03-19', hours: 7.25, night: false}, {date: '2025-03-20', hours: 12, night: false}, {date: '2025-03-21', hours: 8, night: true}, {date: '2025-03-22', hours: 9.5, night: false}]};123.1875
+sum(map(filter(shifts, #.night), #.hours)) * nightPremium;{nightPremium: 1, shifts: []};0
+sum(map(filter(shifts, #.night), #.hours)) * nightPremium;{nightPremium: 3, shifts: [{hours: 8, night: false}]};0
+sum(map(filter(shifts, #.night), #.hours)) * nightPremium;{nightPremium: 3, shifts: [{hours: 8}]};!error
+sum(map(filter(shifts, #.night), #.hours)) * nightPremium;{nightPremium: null, shifts: [{hours: 8, night: true}]};!error
+# Progressive income tax brackets
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 0};0.00
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 11600};1160.00
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 11601};1160.12
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 47150};5426.00
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 75000};11553.00
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 100525};17168.50
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 250000};53042.50
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: 58432.17};7908.08
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: null};!error
+round(min([income, 11600]) * 0.10 + max([0, min([income, 47150]) - 11600]) * 0.12 + max([0, min([income, 100525]) - 47150]) * 0.22 + max([0, income - 100525]) * 0.24, 2);{income: '50000'};!error
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 64600};6000.00
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 64601};11000.22
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 114600, deductions: 14600};22000.00
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 114601};24000.24
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 10000};0.00
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 80000, deductions: 29200, credits: 2000};9176.00
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 80000, deductions: null, credits: null};14388.00
+"taxable = max([0, gross - (deductions ?? 14600)]); round(taxable * (taxable > 100000 ? 0.24 : taxable > 50000 ? 0.22 : 0.12) - (credits ?? 0), 2)";{gross: 12345.67, deductions: 0};1481.48
+# Payroll deductions with caps
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 5000, ytd: 0};{ss: 310.00, medicare: 72.50}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 5000, ytd: 174000};{ss: 130.20, medicare: 72.50}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 5000, ytd: 176100};{ss: 0.00, medicare: 72.50}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 10000, ytd: 195000};{ss: 0.00, medicare: 190.00}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 10000, ytd: 250000};{ss: 0.00, medicare: 685.00}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 3846.15, ytd: 50000};{ss: 238.46, medicare: 55.77}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 0, ytd: 0};{ss: 0.00, medicare: 0.00}
+{ss: round(min([gross, max([0, 176100 - ytd])]) * 0.062, 2), medicare: round(gross * 0.0145 + max([0, ytd + gross - 200000]) * 0.009, 2)};{gross: 5000};!error
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 4, matchEligible: true};240.0
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 6, matchEligible: true};360.0
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 10, matchEligible: true};520.00
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 10, matchEligible: false};400
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 0, matchEligible: true};0.0
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 3333.33, contributionPct: 7.5, matchEligible: true};350.00
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 150, matchEligible: false};4000
+round(gross * min([contributionPct, 100]) / 100 + (matchEligible ? min([gross * contributionPct / 100, gross * 0.06]) * 0.5 : 0), 2);{gross: 4000, contributionPct: 5};!error
+# Net pay statement
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [{amount: 3000}, {amount: 250.50}], deductions: [{type: 'pct', value: 5}, {type: 'flat', value: 125}]};{gross: 3250.50, deductions: 287.53, net: 2962.97}
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [], deductions: []};{gross: 0, deductions: 0, net: 0}
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [{amount: 100}], deductions: [{type: 'flat', value: 150}]};{gross: 100, deductions: 150, net: 0}
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [{amount: 1234.56}], deductions: [{type: 'pct', value: 12.5}, {type: 'pct', value: 1.45}, {type: 'flat', value: 0}]};{gross: 1234.56, deductions: 172.22, net: 1062.34}
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [{amount: 1000}], deductions: [{type: 'PCT', value: 5}]};{gross: 1000, deductions: 5, net: 995}
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: [{amount: 1000}], deductions: [{type: 'pct'}]};!error
+"gross = sum(map(earnings, #.amount)); ded = sum(map(deductions, #.type == 'pct' ? round(gross * #.value / 100, 2) : #.value)); {gross: gross, deductions: ded, net: max([0, gross - ded])}";{earnings: null, deductions: []};!error
+# Tenure, leave accrual and anniversaries
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2024-03-21', asOf: '2025-03-20'};10
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2024-03-20', asOf: '2025-03-20'};15
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2020-03-21', asOf: '2025-03-20'};15
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2020-03-20', asOf: '2025-03-20'};20
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2015-03-20', asOf: '2025-03-20'};25
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2016-02-29', asOf: '2025-02-28'};20
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '2030-01-01', asOf: '2025-03-20'};10
+"years = d(asOf).diff(d(hireDate), 'year'); years < 1 ? 10 : years < 5 ? 15 : years < 10 ? 20 : 25";{hireDate: '', asOf: '2025-03-20'};!error
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 40, hoursWorked: 80, accrualPerWeek: 3.08, maxBalance: 240};46.16
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 238, hoursWorked: 80, accrualPerWeek: 3.08, maxBalance: 240};240
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 0, hoursWorked: 37.5, accrualPerWeek: 3.08, maxBalance: 240};2.89
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 0, hoursWorked: 0, accrualPerWeek: 3.08, maxBalance: 240};0.00
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 100, hoursWorked: 13, accrualPerWeek: 4.615, maxBalance: 120};101.50
+round(min([maxBalance, balance + hoursWorked / 40 * accrualPerWeek]), 2);{balance: 10, hoursWorked: 40, maxBalance: 240};!error
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2019-06-01', asOf: '2025-03-20'};'2025-06-01'
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2019-03-20', asOf: '2025-03-20'};'2025-03-20'
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2019-03-19', asOf: '2025-03-20'};'2026-03-19'
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2019-12-31', asOf: '2025-12-31'};'2025-12-31'
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2019-01-01', asOf: '2025-12-31'};'2026-01-01'
+d(hireDate).set('year', d(asOf).year()).isSameOrAfter(d(asOf)) ? d(hireDate).set('year', d(asOf).year()).format('%Y-%m-%d') : d(hireDate).set('year', d(asOf).year() + 1).format('%Y-%m-%d');{hireDate: '2020-02-29', asOf: '2025-03-20'};'Invalid date';question: moving Feb 29 to a non-leap year gives an invalid date instead of clamping
+map(employees, {name: #.name, anniversary: d(#.hireDate).month() == d(asOf).month()});{asOf: '2025-03-20', employees: [{name: 'Ann', hireDate: '2019-03-01'}, {name: 'Bob', hireDate: '2021-04-01'}, {name: 'Çağla', hireDate: '2024-03-31'}]};[{name: 'Ann', anniversary: true}, {name: 'Bob', anniversary: false}, {name: 'Çağla', anniversary: true}]
+map(employees, {name: #.name, anniversary: d(#.hireDate).month() == d(asOf).month()});{asOf: '2025-12-31', employees: []};[]
+map(employees, {name: #.name, anniversary: d(#.hireDate).month() == d(asOf).month()});{asOf: '2025-01-01', employees: [{name: 'X', hireDate: '2020-12-31'}]};[{name: 'X', anniversary: false}]
+map(employees, {name: #.name, anniversary: d(#.hireDate).month() == d(asOf).month()});{asOf: '2025-03-20', employees: [{name: 'Y', hireDate: null}]};[{name: 'Y', anniversary: false}]
+# Pay periods and pay dates
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{frequency: 'weekly'};52
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{frequency: 'biweekly'};26
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{frequency: 'semimonthly'};24
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{frequency: 'monthly'};12
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{frequency: 'daily'};null
+frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : frequency == 'monthly' ? 12 : null;{};null
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 78000, frequency: 'weekly'};1500
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 78000, frequency: 'biweekly'};3000
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 78000, frequency: 'semimonthly'};3250
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 78000, frequency: 'monthly'};6500
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 100000, frequency: 'biweekly'};3846.15
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 55555.55, frequency: 'weekly'};1068.38
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: 78000};6500
+round(salary / (frequency == 'weekly' ? 52 : frequency == 'biweekly' ? 26 : frequency == 'semimonthly' ? 24 : 12), 2);{salary: null, frequency: 'monthly'};!error
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2025-03-31'};'2025-03-31'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2025-05-31'};'2025-05-30'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2025-08-31'};'2025-08-29'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2025-03-01'};'2025-02-28'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2025-02-28'};'2025-02-28'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: '2026-01-31'};'2026-01-30'
+"p = d(periodEnd); p.add(p.weekday() == 6 ? -1 : p.weekday() == 7 ? -2 : 0, 'day').format('%Y-%m-%d')";{periodEnd: 'eom'};'Invalid date'
+d(month + '-01').endOf('month').day();{month: '2025-02'};28
+d(month + '-01').endOf('month').day();{month: '2024-02'};29
+d(month + '-01').endOf('month').day();{month: '2025-04'};30
+d(month + '-01').endOf('month').day();{month: '2025-12'};31
+d(month + '-01').endOf('month').day();{month: '1900-02'};28
+d(month + '-01').endOf('month').day();{month: '2000-02'};29
+d(month + '-01').endOf('month').day();{month: 202502};!error
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 60000, termDate: '2025-03-15'};2419.35
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 60000, termDate: '2025-02-14'};2500.0
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 60000, termDate: '2024-02-14'};2413.79
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 60000, termDate: '2025-04-30'};5000
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 72500, termDate: '2025-06-01'};201.39
+round(salary / 12 * (d(termDate).day() / d(termDate).endOf('month').day()), 2);{salary: 60000, termDate: null};!error
+# Commission-style bonus and headcount
+{eligible: count(employees, #.rating >= 4), pool: round(sum(map(filter(employees, #.rating >= 4), #.salary * (#.rating == 5 ? 0.1 : 0.05))), 2)};{employees: [{salary: 80000, rating: 5}, {salary: 60000, rating: 4}, {salary: 90000, rating: 3}]};{eligible: 2, pool: 11000.00}
+{eligible: count(employees, #.rating >= 4), pool: round(sum(map(filter(employees, #.rating >= 4), #.salary * (#.rating == 5 ? 0.1 : 0.05))), 2)};{employees: []};{eligible: 0, pool: 0}
+{eligible: count(employees, #.rating >= 4), pool: round(sum(map(filter(employees, #.rating >= 4), #.salary * (#.rating == 5 ? 0.1 : 0.05))), 2)};{employees: [{salary: 55555.55, rating: 4.5}]};{eligible: 1, pool: 2777.78}
+{eligible: count(employees, #.rating >= 4), pool: round(sum(map(filter(employees, #.rating >= 4), #.salary * (#.rating == 5 ? 0.1 : 0.05))), 2)};{employees: [{salary: 50000, rating: null}]};!error
+{eligible: count(employees, #.rating >= 4), pool: round(sum(map(filter(employees, #.rating >= 4), #.salary * (#.rating == 5 ? 0.1 : 0.05))), 2)};{employees: [{salary: 40000, rating: 1}, {salary: 41250, rating: 2}, {salary: 42500, rating: 3}, {salary: 43750, rating: 4}, {salary: 45000, rating: 5}, {salary: 46250, rating: 1}, {salary: 47500, rating: 2}, {salary: 48750, rating: 3}, {salary: 50000, rating: 4}, {salary: 51250, rating: 5}, {salary: 52500, rating: 1}, {salary: 53750, rating: 2}, {salary: 55000, rating: 3}, {salary: 56250, rating: 4}, {salary: 57500, rating: 5}, {salary: 58750, rating: 1}, {salary: 60000, rating: 2}, {salary: 61250, rating: 3}, {salary: 62500, rating: 4}, {salary: 63750, rating: 5}, {salary: 65000, rating: 1}, {salary: 66250, rating: 2}, {salary: 67500, rating: 3}, {salary: 68750, rating: 4}, {salary: 70000, rating: 5}, {salary: 71250, rating: 1}, {salary: 72500, rating: 2}, {salary: 73750, rating: 3}, {salary: 75000, rating: 4}, {salary: 76250, rating: 5}]};{eligible: 12, pool: 54187.50}
+`${lastName}, ${firstName} - ${department ?? 'Unassigned'} - ${string(round(salary / 12, 2))}/mo`;{firstName: 'José', lastName: 'García', department: 'Finance', salary: 60000};'García, José - Finance - 5000/mo'
+`${lastName}, ${firstName} - ${department ?? 'Unassigned'} - ${string(round(salary / 12, 2))}/mo`;{firstName: 'Mia', lastName: 'Ng', salary: 50000};'Ng, Mia - Unassigned - 4166.67/mo'
+`${lastName}, ${firstName} - ${department ?? 'Unassigned'} - ${string(round(salary / 12, 2))}/mo`;{firstName: 'Lee', lastName: 'Park', department: null, salary: 100000.10};'Park, Lee - Unassigned - 8333.34/mo'
+`${lastName}, ${firstName} - ${department ?? 'Unassigned'} - ${string(round(salary / 12, 2))}/mo`;{firstName: 'A', lastName: 'B', department: 'Ops', salary: 12};'B, A - Ops - 1/mo'
+`${lastName}, ${firstName} - ${department ?? 'Unassigned'} - ${string(round(salary / 12, 2))}/mo`;{firstName: 'A', lastName: 'B', department: 'Ops'};!error

@@ -1,6 +1,7 @@
 use ahash::HashMap;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -11,7 +12,7 @@ use crate::parser::{Parser, ParserError};
 use crate::scope::Scope;
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
-use crate::{Expression, ExpressionKind};
+use crate::{Expression, ExpressionKind, ZEN_EXPRESSION_CONFIG};
 use bumpalo::Bump;
 use zen_types::symbol::Symbol;
 
@@ -31,6 +32,7 @@ pub struct Isolate {
     scope: Scope,
     references: HashMap<String, Variable>,
     cache: Option<Arc<OpcodeCache>>,
+    lane: crate::lane::Backend,
 }
 
 impl Isolate {
@@ -45,6 +47,7 @@ impl Isolate {
             scope: Scope::default(),
             references: Default::default(),
             cache: None,
+            lane: Default::default(),
         }
     }
 
@@ -142,6 +145,10 @@ impl Isolate {
     }
 
     pub fn run_standard(&mut self, source: &str) -> Result<Variable, IsolateError> {
+        if ZEN_EXPRESSION_CONFIG.lane.load(Ordering::Relaxed) {
+            return self.lane.run(source, ExpressionKind::Standard, &self.scope);
+        }
+
         let cached = self
             .cache
             .as_ref()
@@ -171,6 +178,14 @@ impl Isolate {
     }
 
     pub fn run_unary(&mut self, source: &str) -> Result<bool, IsolateError> {
+        if ZEN_EXPRESSION_CONFIG.lane.load(Ordering::Relaxed) {
+            return self
+                .lane
+                .run(source, ExpressionKind::Unary, &self.scope)?
+                .as_bool()
+                .ok_or(IsolateError::ValueCastError);
+        }
+
         let cached = self
             .cache
             .as_ref()

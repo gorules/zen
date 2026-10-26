@@ -57,6 +57,7 @@
 
 #![forbid(unsafe_code)]
 
+mod config;
 mod isolate;
 
 pub mod compiler;
@@ -65,14 +66,18 @@ mod exports;
 pub mod expression;
 pub mod functions;
 pub mod intellisense;
+pub mod lane;
 pub mod lexer;
 pub mod parser;
 pub mod scope;
 pub mod slot;
+#[doc(hidden)]
+pub mod typed;
 pub mod validate;
 pub mod variable;
 pub mod vm;
 
+pub use config::{ZenExpressionConfig, ZEN_EXPRESSION_CONFIG};
 pub use dates::DateValue;
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,

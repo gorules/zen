@@ -1,0 +1,149 @@
+expression (string);input (json 5);output (json 5);note
+# Debt-to-income ratio
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 1800, annualIncome: 96000, debts: [{monthly: 350}, {monthly: 120.50}]};28.38
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 0, annualIncome: 60000, debts: []};0
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 2150.75, annualIncome: 120000, debts: [{monthly: 499.25}]};26.50
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 1500, annualIncome: 0, debts: []};!error
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 1500, annualIncome: 72000, debts: [{monthly: null}]};!error
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 1500, annualIncome: 72000, debts: null};!error
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: null, annualIncome: 72000, debts: []};!error
+round((mortgage + sum(map(debts, #.monthly))) / (annualIncome / 12) * 100, 2);{mortgage: 1000, annualIncome: 36000, debts: [{monthly: 100}, {monthly: 100}, {monthly: 100}, {monthly: 100}, {monthly: 100}, {monthly: 100}, {monthly: 100}, {monthly: 100}]};60.0
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 120000, housing: 2500, debts: [{monthly: 800}]};{eligible: true, dti: 0.33}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 120000, housing: 3000, debts: [{monthly: 1300}]};{eligible: true, dti: 0.43}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 120000, housing: 3000, debts: [{monthly: 1300.01}]};{eligible: false, dti: 0.4300}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 0, housing: 1000, debts: []};{eligible: false, dti: null}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 50000, debts: [{monthly: 400}, {}]};{eligible: true, dti: 0.0960}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 85000, housing: 1999.99, debts: [{monthly: 250}, {monthly: 75.5}]};{eligible: true, dti: 0.3283}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: 85000, housing: 0, debts: []};{eligible: true, dti: 0}
+"income = annualIncome / 12; debt = (housing ?? 0) + sum(map(debts, #.monthly ?? 0)); dti = debt / income; dti == null ? {eligible: false, dti: null} : {eligible: dti <= 0.43, dti: round(dti, 4)}";{annualIncome: null, housing: 0, debts: []};!error
+# Credit tier and pricing
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 850};'A+'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 760};'A+'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 759};'A'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 700};'A'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 699};'B'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 640};'B'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 580};'C'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 579};'D'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: 300};'D'
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: null};!error
+fico >= 760 ? 'A+' : fico >= 700 ? 'A' : fico >= 640 ? 'B' : fico >= 580 ? 'C' : 'D';{fico: '720'};!error
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'A+', ltv: 60, term: 360};5.99
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'A', ltv: 80, term: 360};6.49
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'A', ltv: 80.01, term: 360};6.99
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'B', ltv: 95, term: 480};8.74
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'D', ltv: 50, term: 120};14.99
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'E', ltv: 50, term: 120};!error
+({'A+': 5.99, A: 6.49, B: 7.99, C: 10.49, D: 14.99})[tier] + (ltv > 80 ? 0.5 : 0) + (term > 360 ? 0.25 : 0);{tier: 'C', ltv: 90, term: 361};11.24
+# Amortized monthly payment with integer powers
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 200000, rate: 6, months: 360};1199.10
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 10000, rate: 12, months: 12};888.49
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 25000, rate: 7.2, months: 60};497.39
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 1000, rate: 24, months: 1};1020.00
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 350000, rate: 4.5, months: 180};2677.48
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 5000, rate: 0, months: 12};!error
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: 5000, rate: 12, months: null};!error
+"r = rate / 100 / 12; f = (1 + r) ^ months; round(principal * r * f / (f - 1), 2)";{principal: '5000', rate: 12, months: 12};!error
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 5000, rate: 0, months: 12};416.67
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 1200, rate: 0, months: 12};100
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 10000, rate: 12, months: 12};888.49
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 18500, rate: 3.9, months: 72};288.59
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 1000, rate: 0, months: 0};!error
+"r = rate / 100 / 12; rate == 0 ? round(principal / months, 2) : round(principal * r * (1 + r) ^ months / ((1 + r) ^ months - 1), 2)";{principal: 100, rate: 6, months: 3};33.67
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 1000, rate: 12, months: 1};1010.00
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 1000, rate: 12, months: 2};1020.10
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 1000, rate: 12, months: 12};1126.83
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 1000, rate: 6, months: 0};1000
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 2500.50, rate: 4.8, months: 24};2751.92
+round(principal * (1 + rate / 100 / 12) ^ months, 2);{principal: 1000, rate: 12, months: 'x'};!error
+# Loan-to-value and PMI
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 320000, appraised: 400000, price: 410000};{ltv: 80.0, pmi: 0}
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 320001, appraised: 400000, price: 400000};{ltv: 80.00, pmi: 146.67}
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 380000, appraised: 400000, price: 395000};{ltv: 96.20, pmi: 174.17}
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 100000, appraised: 0, price: 150000};!error
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 250000, appraised: null, price: 300000};!error
+"ltv = loan / min([appraised, price]) * 100; {ltv: round(ltv, 2), pmi: ltv > 80 ? round(loan * 0.0055 / 12, 2) : 0}";{loan: 0, appraised: 300000, price: 300000};{ltv: 0, pmi: 0}
+# Eligibility gates over applicant lists
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 34, income: 55000}, {age: 33, income: 0}]};true
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 17, income: 10000}]};false
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 75, income: 1, bankrupt: false}]};true
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 76, income: 1}]};false
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 40, income: 0}, {age: 41, income: 0}]};false
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 40, income: 90000, bankrupt: true}]};false
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: []};false
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: 40, income: 1000, bankrupt: null}]};true
+all(applicants, #.age >= 18 and #.age <= 75) and some(applicants, #.income > 0) and none(applicants, #.bankrupt ?? false);{applicants: [{age: '40', income: 1000}]};!error
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 200000, applicants: [{income: 30000, fico: 600}, {income: 20000, fico: 620}]};true
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 200000, applicants: [{income: 49999.99, fico: 800}]};false
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 200000, applicants: [{fico: 800}, {income: 50000, fico: 500}]};true
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 0, applicants: []};!error
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 100000, applicants: []};false
+sum(map(applicants, #.income ?? 0)) >= loanAmount / 4 and max(map(applicants, #.fico)) >= 620;{loanAmount: 100000, applicants: [{income: 25000, fico: null}]};!error
+# Employment and residency checks with dates
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2023-03-20'};true
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2023-03-21'};false
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2024-09-01', priorEmploymentMonths: 18};true
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2024-09-01', priorEmploymentMonths: 17};false
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2025-03-01'};false
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2010-01-31'};true
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: 'last year'};!error
+d().diff(d(employedSince), 'month') >= 24 or (priorEmploymentMonths ?? 0) + d().diff(d(employedSince), 'month') >= 24;{employedSince: '2024-09-01', priorEmploymentMonths: '18'};!error
+d(maturity).diff(d(origination), 'month');{origination: '2025-01-31', maturity: '2025-02-28'};1
+d(maturity).diff(d(origination), 'month');{origination: '2025-01-31', maturity: '2025-03-30'};1
+d(maturity).diff(d(origination), 'month');{origination: '2025-01-31', maturity: '2025-03-31'};2
+d(maturity).diff(d(origination), 'month');{origination: '2024-02-29', maturity: '2054-02-28'};360
+d(maturity).diff(d(origination), 'month');{origination: '2025-03-20', maturity: '2030-03-19'};59
+d(maturity).diff(d(origination), 'month');{origination: '2025-03-20', maturity: '2030-03-20'};60
+d(maturity).diff(d(origination), 'month');{origination: '2025-03-20', maturity: '2025-03-20'};0
+d(maturity).diff(d(origination), 'month');{origination: '2025-03-20', maturity: null};null
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-01-31', n: 1};'2025-01-31'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-01-31', n: 2};'2025-02-28'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-01-31', n: 14};'2026-02-28'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2024-01-31', n: 2};'2024-02-29'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-03-15', n: 360};'2055-02-15'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-12-31', n: 3};'2026-02-28'
+d(firstPayment).add(n - 1, 'month').format('%Y-%m-%d');{firstPayment: '2025-01-31', n: null};!error
+# Late fees and delinquency buckets
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 1250, dueOn: '2025-03-01', paidOn: '2025-03-01'};0
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 1250, dueOn: '2025-03-01', paidOn: '2025-03-16'};0
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 1250, dueOn: '2025-03-01', paidOn: '2025-03-17'};62.50
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 199.99, dueOn: '2025-03-01', paidOn: '2025-04-01'};15
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 1250, dueOn: '2025-02-28', paidOn: '2025-02-01'};0
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 2345.67, dueOn: '2024-12-20', paidOn: '2025-01-10'};117.28
+"days = d(paidOn).diff(d(dueOn), 'day'); days <= 15 ? 0 : round(max([15, installment * 0.05]), 2)";{installment: 1250, dueOn: '2025-03-01'};!error
+map(loans, #.dpd <= 0 ? 'current' : #.dpd <= 30 ? '1-30' : #.dpd <= 60 ? '31-60' : #.dpd <= 90 ? '61-90' : 'default');{loans: [{dpd: 0}, {dpd: 1}, {dpd: 30}, {dpd: 31}, {dpd: 60}, {dpd: 61}, {dpd: 90}, {dpd: 91}, {dpd: -5}]};['current', '1-30', '1-30', '31-60', '31-60', '61-90', '61-90', 'default', 'current']
+map(loans, #.dpd <= 0 ? 'current' : #.dpd <= 30 ? '1-30' : #.dpd <= 60 ? '31-60' : #.dpd <= 90 ? '61-90' : 'default');{loans: []};[]
+map(loans, #.dpd <= 0 ? 'current' : #.dpd <= 30 ? '1-30' : #.dpd <= 60 ? '31-60' : #.dpd <= 90 ? '61-90' : 'default');{loans: [{dpd: 400}]};['default']
+map(loans, #.dpd <= 0 ? 'current' : #.dpd <= 30 ? '1-30' : #.dpd <= 60 ? '31-60' : #.dpd <= 90 ? '61-90' : 'default');{loans: [{dpd: 15}, {}]};!error
+map(loans, #.dpd <= 0 ? 'current' : #.dpd <= 30 ? '1-30' : #.dpd <= 60 ? '31-60' : #.dpd <= 90 ? '61-90' : 'default');{loans: 'none'};!error
+count(loans, #.dpd > 90) / len(loans) > 0.05 ? 'watchlist' : 'ok';{loans: [{dpd: 91}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}]};'watchlist'
+count(loans, #.dpd > 90) / len(loans) > 0.05 ? 'watchlist' : 'ok';{loans: [{dpd: 91}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}, {dpd: 0}]};'ok'
+count(loans, #.dpd > 90) / len(loans) > 0.05 ? 'watchlist' : 'ok';{loans: [{dpd: 91}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}, {dpd: 5}]};'ok'
+count(loans, #.dpd > 90) / len(loans) > 0.05 ? 'watchlist' : 'ok';{loans: []};!error
+count(loans, #.dpd > 90) / len(loans) > 0.05 ? 'watchlist' : 'ok';{loans: [{dpd: 100}]};'watchlist'
+# Credit card minimum payment and interest
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 5000, interest: 82.19, fees: 0};132.19
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 5000, interest: 82.19, fees: 39};171.19
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 1000, interest: 5};25
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 20, interest: 0.3};20
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 0, interest: 0};0
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: -15.50, interest: 0};0
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 2500, interest: 41.095};66.10
+balance <= 0 ? 0 : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2) > balance ? balance : round(max([25, balance * 0.01 + interest + (fees ?? 0)]), 2);{balance: 2500, interest: null};!error
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 3650, apr: 20, statementStart: '2025-01-15', statementEnd: '2025-02-14'};60
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 1000, apr: 24.99, statementStart: '2025-02-01', statementEnd: '2025-03-01'};19.17
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 1000, apr: 24.99, statementStart: '2024-02-01', statementEnd: '2024-03-01'};19.86
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 0, apr: 29.99, statementStart: '2025-01-01', statementEnd: '2025-01-31'};0.00
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 1000, apr: 18, statementStart: '2025-01-31', statementEnd: '2025-01-01'};-14.79
+round(balance * apr / 100 / 365 * d(statementEnd).diff(d(statementStart), 'day'), 2);{balance: 1000, apr: 18, statementStart: '2025-01-01'};!error
+# Decision summaries as templates and objects
+`${applicant.lastName}, ${applicant.firstName}: ${fico >= 640 ? 'approved' : 'declined'} at ${string(rate)}% APR`;{applicant: {firstName: 'María', lastName: 'Núñez'}, fico: 700, rate: 6.490};'Núñez, María: approved at 6.490% APR'
+`${applicant.lastName}, ${applicant.firstName}: ${fico >= 640 ? 'approved' : 'declined'} at ${string(rate)}% APR`;{applicant: {firstName: 'Bo', lastName: 'Li'}, fico: 639, rate: 14.99};'Li, Bo: declined at 14.99% APR'
+`${applicant.lastName}, ${applicant.firstName}: ${fico >= 640 ? 'approved' : 'declined'} at ${string(rate)}% APR`;{applicant: {firstName: 'Zoë'}, fico: 640, rate: 7};'null, Zoë: approved at 7% APR'
+`${applicant.lastName}, ${applicant.firstName}: ${fico >= 640 ? 'approved' : 'declined'} at ${string(rate)}% APR`;{applicant: null, fico: 800, rate: 5.25};'null, null: approved at 5.25% APR'
+`${applicant.lastName}, ${applicant.firstName}: ${fico >= 640 ? 'approved' : 'declined'} at ${string(rate)}% APR`;{applicant: {firstName: 'A', lastName: 'B'}, fico: null, rate: 5};!error
+{approved: fico >= 620 and dti <= 0.45, maxLoan: floor(min([income * 4.5, (collateral ?? 0) * 0.8]) / 1000) * 1000, reasons: filter(['fico', 'dti'], # == 'fico' ? fico < 620 : dti > 0.45)};{fico: 700, dti: 0.30, income: 80000, collateral: 500000};{approved: true, maxLoan: 360000, reasons: []}
+{approved: fico >= 620 and dti <= 0.45, maxLoan: floor(min([income * 4.5, (collateral ?? 0) * 0.8]) / 1000) * 1000, reasons: filter(['fico', 'dti'], # == 'fico' ? fico < 620 : dti > 0.45)};{fico: 610, dti: 0.46, income: 80000, collateral: 300000};{approved: false, maxLoan: 240000, reasons: ['fico', 'dti']}
+{approved: fico >= 620 and dti <= 0.45, maxLoan: floor(min([income * 4.5, (collateral ?? 0) * 0.8]) / 1000) * 1000, reasons: filter(['fico', 'dti'], # == 'fico' ? fico < 620 : dti > 0.45)};{fico: 620, dti: 0.45, income: 55555, collateral: 1000000};{approved: true, maxLoan: 249000, reasons: []}
+{approved: fico >= 620 and dti <= 0.45, maxLoan: floor(min([income * 4.5, (collateral ?? 0) * 0.8]) / 1000) * 1000, reasons: filter(['fico', 'dti'], # == 'fico' ? fico < 620 : dti > 0.45)};{fico: 700, dti: 0.2, income: 80000};{approved: true, maxLoan: 0, reasons: []}
+{approved: fico >= 620 and dti <= 0.45, maxLoan: floor(min([income * 4.5, (collateral ?? 0) * 0.8]) / 1000) * 1000, reasons: filter(['fico', 'dti'], # == 'fico' ? fico < 620 : dti > 0.45)};{fico: 700, dti: 0.2, income: 123456.78, collateral: 400000};{approved: true, maxLoan: 320000, reasons: []}

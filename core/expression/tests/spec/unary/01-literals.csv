@@ -1,0 +1,192 @@
+expression (string);input (json 5);output (json 5);note
+# Bare number literal: equality with $
+5;{$: 5};true
+5;{$: 5.0};true
+5;{$: 5.00000};true
+5;{$: 6};false
+5;{$: -5};false
+5;{$: '5'};false
+5;{$: null};false
+5;{};false
+5;;false
+5;{$: true};false
+5;{$: [5]};false
+5;{$: {a: 5}};false
+0;{$: 0};true
+0;{$: -0};true
+0;{$: 0.0};true
+0;{$: false};false
+0;{$: null};false
+0;{$: ''};false
+1.5;{$: 1.5};true
+1.5;{$: 1.50};true
+1.5;{$: 1.49999999999999999999};false
+1.5;{$: 1};false
+1.5;{$: '1.5'};false
+-3;{$: -3};true
+-3;{$: 3};false
+-3;{$: -3.0};true
+-3;{$: '-3'};false
+-3;{$: null};false
+1e3;{$: 1000};true
+1e3;{$: 1000.0};true
+1e3;{$: 100};false
+1e3;{$: '1e3'};false
+1_000;{$: 1000};true
+1_000;{$: 1};false
+1_000;{$: '1_000'};false
+1_000;{};false
+0.1;{$: 0.1};true
+0.1;{$: 0.1000000000000000000000000001};false
+0.1;{$: 0.1000};true
+0.1;{$: 0.2};false
+# Bare string literal: case-sensitive equality with $
+'gold';{$: 'gold'};true
+'gold';{$: 'Gold'};false
+'gold';{$: 'GOLD'};false
+'gold';{$: 'gold '};false
+'gold';{$: ' gold'};false
+'gold';{$: null};false
+'gold';{};false
+'gold';{$: ['gold']};false
+'gold';{$: {gold: true}};false
+"""gold""";{$: 'gold'};true
+"""gold""";{$: 'silver'};false
+"""gold""";{$: null};false
+"""gold""";{$: 1};false
+'';{$: ''};true
+'';{$: ' '};false
+'';{$: null};false
+'';{};false
+'';{$: 0};false
+'';{$: false};false
+'5';{$: '5'};true
+'5';{$: 5};false
+'5';{$: 5.0};false
+'5';{$: '5.0'};false
+'5';{$: null};false
+'true';{$: 'true'};true
+'true';{$: true};false
+'true';{$: 'True'};false
+'true';{$: null};false
+'null';{$: 'null'};true
+'null';{$: null};false
+'null';{};false
+'null';{$: ''};false
+'Straße';{$: 'Straße'};true
+'Straße';{$: 'STRASSE'};false
+'Straße';{$: 'strasse'};false
+'Straße';{$: null};false
+# Bare boolean literal: equality with $, no truthiness
+true;{$: true};true
+true;{$: false};false
+true;{$: 1};false
+true;{$: 'true'};false
+true;{$: null};false
+true;{};false
+true;{$: [true]};false
+false;{$: false};true
+false;{$: true};false
+false;{$: 0};false
+false;{$: ''};false
+false;{$: null};false
+false;{};false
+false;{$: 'false'};false
+# Bare null literal: equality with $, missing $ reads as null
+null;{$: null};true
+null;{};true
+null;;true
+null;{x: 1};true
+null;{$: 0};false
+null;{$: ''};false
+null;{$: false};false
+null;{$: 'null'};false
+null;{$: []};false
+null;{$: {}};false
+# Negated and signed literals
+-5;{$: -5};true
+-5;{$: 5};false
+-5;{$: '-5'};false
+-5;{$: null};false
++5;{$: 5};true
++5;{$: -5};false
++5;{$: '+5'};false
++5;{$: null};false
+-0.5;{$: -0.5};true
+-0.5;{$: 0.5};false
+-0.5;{$: -0.50};true
+-0.5;{$: null};false
+# Literal arithmetic is folded, then compared with $
+2 + 3;{$: 5};true
+2 + 3;{$: 23};false
+2 + 3;{$: '5'};false
+2 + 3;{$: null};false
+0.1 + 0.2;{$: 0.3};true
+0.1 + 0.2;{$: 0.30000000000000004};false
+0.1 + 0.2;{$: 0.30};true
+0.1 + 0.2;{$: null};false
+10 / 4;{$: 2.5};true
+10 / 4;{$: 2};false
+10 / 4;{$: 3};false
+10 / 4;{$: '2.5'};false
+2 ^ 3;{$: 8};true
+2 ^ 3;{$: 6};false
+2 ^ 3;{$: 9};false
+2 ^ 3;{$: null};false
+7 % 3;{$: 1};true
+7 % 3;{$: 2};false
+7 % 3;{$: 1.0};true
+7 % 3;{$: true};false
+'a' + 'b';{$: 'ab'};true
+'a' + 'b';{$: 'a'};false
+'a' + 'b';{$: 'AB'};false
+'a' + 'b';{$: null};false
+(2 + 3) * 2;{$: 10};true
+(2 + 3) * 2;{$: 8};false
+(2 + 3) * 2;{$: '10'};false
+(2 + 3) * 2;{};false
+# Template strings are compared with $
+`gold`;{$: 'gold'};true
+`gold`;{$: 'GOLD'};false
+`gold`;{$: null};false
+`gold`;{};false
+`tier-${1 + 1}`;{$: 'tier-2'};true
+`tier-${1 + 1}`;{$: 'tier-1 + 1'};false
+`tier-${1 + 1}`;{$: 'tier-'};false
+`tier-${1 + 1}`;{$: null};false
+`${x}-${y}`;{$: 'a-1', x: 'a', y: 1};true
+`${x}-${y}`;{$: 'a-2', x: 'a', y: 1};false
+`${x}-${y}`;{$: 'a-1', x: 'b', y: 1};false
+`${x}-${y}`;{$: null, x: 'a', y: 1};false
+# A bare identifier compares $ with that field
+limit;{$: 3, limit: 3};true
+limit;{$: 3, limit: 3.0};true
+limit;{$: 3, limit: 4};false
+limit;{$: 3, limit: '3'};false
+limit;{$: 3};false
+limit;{$: null};true
+limit;{$: null, limit: null};true
+limit;{};true
+flag;{$: true, flag: true};true
+flag;{$: 1, flag: true};false
+flag;{$: false, flag: true};false
+flag;{$: false};false
+tier;{$: 'gold', tier: 'gold'};true
+tier;{$: 'gold', tier: 'Gold'};false
+tier;{$: 'gold'};false
+tier;{$: 'gold', tier: ['gold']};false
+user.tier;{$: 'gold', user: {tier: 'gold'}};true
+user.tier;{$: 'gold', user: {tier: 'silver'}};false
+user.tier;{$: 'gold', user: null};false
+user.tier;{$: null, user: {}};true
+user.tier;{$: null};true
+user.tier;{$: 'gold', user: 5};false
+# $ alone compares $ with itself
+$;{$: 1};true
+$;{$: 'a'};true
+$;{$: true};true
+$;{$: false};true
+$;{$: null};true
+$;{};true
+$;{$: [1]};true;bug: $ == $ is false for arrays, == on arrays is always false
+$;{$: {a: 1}};true;bug: $ == $ is false for objects, == on objects is always false

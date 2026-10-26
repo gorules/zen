@@ -1,0 +1,166 @@
+expression (string);input (json 5);output (json 5);note
+# Threshold from another field
+$ > limit;{$: 5, limit: 3};true
+$ > limit;{$: 3, limit: 3};false
+$ > limit;{$: 2, limit: 3};false
+$ > limit;{$: 3.01, limit: 3.00};true
+$ > limit;{$: 5, limit: -10};true
+$ > limit;{$: 5};!error
+$ > limit;{$: 5, limit: null};!error
+$ > limit;{$: 5, limit: '3'};!error
+$ > limit;{$: null, limit: 3};!error
+$ > limit;{$: '5', limit: 3};!error
+$ <= limit;{$: 5, limit: 3};false
+$ <= limit;{$: 3, limit: 3};true
+$ <= limit;{$: 2, limit: 3};true
+$ <= limit;{$: 3.01, limit: 3.00};false
+$ <= limit;{$: 5, limit: -10};false
+$ <= limit;{$: 5};!error
+$ <= limit;{$: 5, limit: null};!error
+$ <= limit;{$: 5, limit: '3'};!error
+$ <= limit;{$: null, limit: 3};!error
+$ <= limit;{$: '5', limit: 3};!error
+limit < $;{$: 5, limit: 3};true
+limit < $;{$: 3, limit: 3};false
+limit < $;{$: 2, limit: 3};false
+limit < $;{$: 3.01, limit: 3.00};true
+limit < $;{$: 5, limit: -10};true
+limit < $;{$: 5};!error
+limit < $;{$: 5, limit: null};!error
+limit < $;{$: 5, limit: '3'};!error
+limit < $;{$: null, limit: 3};!error
+limit < $;{$: '5', limit: 3};!error
+$ > limit * 1.1;{$: 3.31, limit: 3};true
+$ > limit * 1.1;{$: 3.3, limit: 3};false
+$ > limit * 1.1;{$: 100, limit: 90};true
+$ > limit * 1.1;{$: 99, limit: 90};false
+$ > limit * 1.1;{$: 5};!error
+$ > limit * 1.1;{$: null, limit: 3};!error
+$ <= (limit ?? 100);{$: 100};true
+$ <= (limit ?? 100);{$: 101};false
+$ <= (limit ?? 100);{$: 50, limit: 40};false
+$ <= (limit ?? 100);{$: 40, limit: 40};true
+$ <= (limit ?? 100);{$: 5, limit: null};true
+$ <= (limit ?? 100);{$: null, limit: 40};!error
+# Range bounds from fields
+$ >= min and $ <= max;{$: 5, min: 1, max: 10};true
+$ >= min and $ <= max;{$: 1, min: 1, max: 10};true
+$ >= min and $ <= max;{$: 10, min: 1, max: 10};true
+$ >= min and $ <= max;{$: 0.99, min: 1, max: 10};false
+$ >= min and $ <= max;{$: 10.01, min: 1, max: 10};false
+$ >= min and $ <= max;{$: 5, min: 10, max: 1};false
+$ >= min and $ <= max;{$: 5, min: 1};!error
+$ >= min and $ <= max;{$: 5, max: 10};!error
+$ >= min and $ <= max;{$: null, min: 1, max: 10};!error
+$ >= min and $ <= max;{$: 5, min: 5, max: 5};true
+>= min and <= max;{$: 5, min: 1, max: 10};true
+>= min and <= max;{$: 1, min: 1, max: 10};true
+>= min and <= max;{$: 10, min: 1, max: 10};true
+>= min and <= max;{$: 0.99, min: 1, max: 10};false
+>= min and <= max;{$: 10.01, min: 1, max: 10};false
+>= min and <= max;{$: 5, min: 10, max: 1};false
+>= min and <= max;{$: 5, min: 1};!error
+>= min and <= max;{$: 5, max: 10};!error
+>= min and <= max;{$: null, min: 1, max: 10};!error
+>= min and <= max;{$: 5, min: 5, max: 5};true
+[min..max];{$: 5, min: 1, max: 10};true
+[min..max];{$: 1, min: 1, max: 10};true
+[min..max];{$: 10, min: 1, max: 10};true
+[min..max];{$: 0.99, min: 1, max: 10};false
+[min..max];{$: 10.01, min: 1, max: 10};false
+[min..max];{$: 5, min: 10, max: 1};false
+[min..max];{$: 5, min: 1};!error
+[min..max];{$: 5, max: 10};!error
+[min..max];{$: null, min: 1, max: 10};!error
+[min..max];{$: 5, min: 5, max: 5};true
+$ in [min..max];{$: 5, min: 1, max: 10};true
+$ in [min..max];{$: 1, min: 1, max: 10};true
+$ in [min..max];{$: 10, min: 1, max: 10};true
+$ in [min..max];{$: 0.99, min: 1, max: 10};false
+$ in [min..max];{$: 10.01, min: 1, max: 10};false
+$ in [min..max];{$: 5, min: 10, max: 1};false
+$ in [min..max];{$: 5, min: 1};!error
+$ in [min..max];{$: 5, max: 10};!error
+$ in [min..max];{$: null, min: 1, max: 10};!error
+$ in [min..max];{$: 5, min: 5, max: 5};true
+(min..max);{$: 5, min: 1, max: 10};true
+(min..max);{$: 1, min: 1, max: 10};false
+(min..max);{$: 10, min: 1, max: 10};false
+(min..max);{$: 0.99, min: 1, max: 10};false
+(min..max);{$: 10.01, min: 1, max: 10};false
+(min..max);{$: 5, min: 10, max: 1};false
+(min..max);{$: 5, min: 1};!error
+(min..max);{$: 5, max: 10};!error
+(min..max);{$: null, min: 1, max: 10};!error
+(min..max);{$: 5, min: 5, max: 5};false
+# Allowed values from a field
+$ in allowed;{$: 'a', allowed: ['a', 'b']};true
+$ in allowed;{$: 'c', allowed: ['a', 'b']};false
+$ in allowed;{$: 'a', allowed: []};false
+$ in allowed;{$: 1, allowed: [1, 2]};true
+$ in allowed;{$: 1.0, allowed: [1, 2]};true
+$ in allowed;{$: '1', allowed: [1, 2]};false
+$ in allowed;{$: null, allowed: ['a', null]};true
+$ in allowed;{$: null, allowed: ['a']};false
+$ in allowed;{$: 'a'};!error
+$ in allowed;{$: 'a', allowed: null};!error
+$ in allowed;{$: 'a', allowed: 'abc'};!error
+in allowed;{$: 'a', allowed: ['a', 'b']};true
+in allowed;{$: 'c', allowed: ['a', 'b']};false
+in allowed;{$: 'a', allowed: []};false
+in allowed;{$: 1, allowed: [1, 2]};true
+in allowed;{$: 1.0, allowed: [1, 2]};true
+in allowed;{$: '1', allowed: [1, 2]};false
+in allowed;{$: null, allowed: ['a', null]};true
+in allowed;{$: null, allowed: ['a']};false
+in allowed;{$: 'a'};!error
+in allowed;{$: 'a', allowed: null};!error
+in allowed;{$: 'a', allowed: 'abc'};!error
+$ not in allowed;{$: 'a', allowed: ['a', 'b']};false
+$ not in allowed;{$: 'c', allowed: ['a', 'b']};true
+$ not in allowed;{$: 'a', allowed: []};true
+$ not in allowed;{$: 1, allowed: [1, 2]};false
+$ not in allowed;{$: 1.0, allowed: [1, 2]};false
+$ not in allowed;{$: '1', allowed: [1, 2]};true
+$ not in allowed;{$: null, allowed: ['a', null]};false
+$ not in allowed;{$: null, allowed: ['a']};true
+$ not in allowed;{$: 'a'};!error
+$ not in allowed;{$: 'a', allowed: null};!error
+$ not in allowed;{$: 'a', allowed: 'abc'};!error
+$ in [first, second];{$: 'a', first: 'a', second: 'b'};true
+$ in [first, second];{$: 'b', first: 'a', second: 'b'};true
+$ in [first, second];{$: 'c', first: 'a', second: 'b'};false
+$ in [first, second];{$: null, first: 'a'};true
+$ in [first, second];{$: 'a'};false
+$ in [first, second];{$: null};true
+first, second;{$: 'a', first: 'a', second: 'b'};true
+first, second;{$: 'b', first: 'a', second: 'b'};true
+first, second;{$: 'c', first: 'a', second: 'b'};false
+first, second;{$: null, first: 'a'};true
+first, second;{$: 'a'};false
+first, second;{$: 5, first: 5};true
+# Nested and computed field references
+== customer.tier;{$: 'gold', customer: {tier: 'gold'}};true
+== customer.tier;{$: 'gold', customer: {tier: 'silver'}};false
+== customer.tier;{$: 'gold', customer: {}};false
+== customer.tier;{$: 'gold', customer: null};false
+== customer.tier;{$: null, customer: {}};true
+== customer.tier;{$: null};true
+$ <= limits[tier];{$: 500, limits: {gold: 1000, silver: 500}, tier: 'gold'};true
+$ <= limits[tier];{$: 1000, limits: {gold: 1000, silver: 500}, tier: 'gold'};true
+$ <= limits[tier];{$: 501, limits: {gold: 1000, silver: 500}, tier: 'silver'};false
+$ <= limits[tier];{$: 500, limits: {gold: 1000, silver: 500}, tier: 'silver'};true
+$ <= limits[tier];{$: 1, limits: {gold: 1000}, tier: 'bronze'};!error
+$ == other;{$: 1, other: 1};true
+$ == other;{$: 1, other: 1.00};true
+$ == other;{$: 1, other: '1'};false
+$ == other;{$: true, other: true};true
+$ == other;{$: null, other: null};true
+$ == other;{$: null};true
+$ == other;{$: 'a', other: 'A'};false
+$ == other;{$: [1], other: [1]};true;bug: == on arrays is always false, even for equal arrays
+$ >= sum(parts);{$: 6, parts: [1, 2, 3]};true
+$ >= sum(parts);{$: 5, parts: [1, 2, 3]};false
+$ >= sum(parts);{$: 0, parts: []};true
+$ >= sum(parts);{$: 1};!error
+$ >= sum(parts);{$: null, parts: [1]};!error

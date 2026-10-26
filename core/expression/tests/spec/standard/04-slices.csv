@@ -1,0 +1,97 @@
+expression (string);input (json 5);output (json 5);note
+# Array slices: both bounds are inclusive in the VM and in the repo tests
+a[1:3];{a: [0, 1, 2, 3, 4]};[1, 2, 3];question: docs (syntax page) describe string[0:5] as the first 5 characters (end exclusive) but the VM and repo tests treat the end as inclusive
+a[:2];{a: [0, 1, 2, 3, 4]};[0, 1, 2];question: docs describe [:5] as the first 5 elements (end exclusive) but the VM includes index 2
+a[2:];{a: [0, 1, 2, 3, 4]};[2, 3, 4]
+a[:];{a: [0, 1, 2, 3, 4]};[0, 1, 2, 3, 4]
+a[0:0];{a: [0, 1, 2, 3, 4]};[0];question: with inclusive bounds [0:0] is one element, with exclusive bounds it would be empty
+a[4:4];{a: [0, 1, 2, 3, 4]};[4]
+a[0:4];{a: [0, 1, 2, 3, 4]};[0, 1, 2, 3, 4]
+a[4:];{a: [0, 1, 2, 3, 4]};[4]
+a[5:];{a: [0, 1, 2, 3, 4]};[]
+a[1 : 2];{a: [5, 6, 7]};[6, 7]
+a[1:3];{a: ['a', 'b', 'c', 'd']};['b', 'c', 'd']
+a[0:1];{a: [{x: 1}, {x: 2}, {x: 3}]};[{x: 1}, {x: 2}]
+a[0:1];{a: [null, null]};[null, null]
+# Reversed bounds give an empty slice
+a[2:1];{a: [0, 1, 2, 3, 4]};[]
+a[3:1];{a: [0, 1, 2, 3, 4]};[];bug: reversed bounds error when from exceeds to by more than one while [2:1] gives []
+a[4:0];{a: [0, 1, 2, 3, 4]};[];bug: reversed bounds error while [2:1] gives []
+# Out-of-range bounds
+a[0:10];{a: [0, 1, 2, 3, 4]};!error;question: an end past the array errors while a start past the end ([5:]) yields [] - clamp or error?
+a[0:5];{a: [0, 1, 2, 3, 4]};!error;question: an end equal to len errors under inclusive bounds - clamp or error?
+a[6:];{a: [0, 1, 2, 3, 4]};!error;question: a start two past the end errors while [5:] yields []
+# Empty arrays
+a[:];{a: []};[];bug: a full slice of an empty array errors because the implicit end len-1 is -1
+a[0:];{a: []};[];bug: an open-ended slice of an empty array errors because the implicit end len-1 is -1
+a[:0];{a: []};!error;question: under inclusive bounds [:0] names index 0 which does not exist - clamp or error?
+# Negative bounds
+a[-2:];{a: [0, 1, 2, 3, 4]};!error;question: negative indexing is documented for items[-1] but negative slice bounds fail to convert
+a[:-2];{a: [0, 1, 2, 3, 4]};!error;question: negative indexing is documented for items[-1] but negative slice bounds fail to convert
+a[-3:-2];{a: [0, 1, 2, 3, 4]};!error;question: negative indexing is documented for items[-1] but negative slice bounds fail to convert
+a[:i];{a: [5, 6, 7], i: -1};!error;question: negative indexing is documented for items[-1] but negative slice bounds fail to convert
+# Decimal bounds are truncated
+a[1.5:3];{a: [0, 1, 2, 3, 4]};[1, 2, 3];question: fractional slice bounds truncate
+a[0:1.9];{a: [0, 1, 2, 3, 4]};[0, 1];question: fractional slice bounds truncate
+# Dynamic bounds
+a[i:j];{a: [0, 1, 2, 3, 4], i: 1, j: 2};[1, 2]
+a[i:j];{a: [0, 1, 2, 3, 4], i: 0, j: 0};[0]
+a[i:j];{a: [0, 1, 2, 3, 4], i: 3, j: 4};[3, 4]
+a[i:j];{a: [0, 1, 2, 3, 4], i: 2, j: 1};[]
+a[i:j];{a: [0, 1, 2, 3, 4], i: null, j: 2};!error
+a[i:j];{a: [0, 1, 2, 3, 4], i: '1', j: 2};!error
+a[i:j];{a: [0, 1, 2, 3, 4], j: 2};!error
+a[i:];{a: [5, 6, 7], i: 0};[5, 6, 7]
+a[i:];{a: [5, 6, 7], i: 2};[7]
+a[i:];{a: [5, 6, 7], i: 3};[]
+a[:j];{a: [5, 6, 7], j: 0};[5]
+a[:j];{a: [5, 6, 7], j: 1};[5, 6]
+a[len(a)-2:];{a: [5, 6, 7]};[6, 7]
+a[len(a)-2:];{a: [5, 6, 7, 8]};[7, 8]
+a[1:len(a)-1];{a: [5, 6, 7, 8]};[6, 7, 8]
+# Slicing non-sequence values
+a[1:2];{a: null};!error;question: slicing null errors while indexing and member access on null yield null
+a[1:2];{};!error;question: slicing a missing value errors while indexing a missing value yields null
+a[1:2];{a: 5};!error
+a[1:2];{a: true};!error
+a[1:2];{a: {x: 1}};!error
+a[:];{a: null};!error;question: slicing null errors while indexing null yields null
+# Slices compose with other postfix operators
+a[1:3][0];{a: [0, 1, 2, 3, 4]};1
+a[1:3][2];{a: [0, 1, 2, 3, 4]};3
+a[1:3][3];{a: [0, 1, 2, 3, 4]};null
+a[1:3].x;{a: [0, 1, 2, 3, 4]};null
+a.b[0:1];{a: {b: [5, 6, 7]}};[5, 6]
+a[0:1][0:0];{a: [5, 6, 7]};[5]
+a[1:][0].x;{a: [{x: 1}, {x: 2}]};2
+len(a[1:]);{a: [5, 6, 7]};2
+sum(a[0:1]);{a: [100, 200, 300]};300
+[1, 2, 3][0:1];;[1, 2]
+[1, 2, 3][1:];;[2, 3]
+'hello'[0:1];;!error;question: slicing a string literal is a parse error while array literals allow it
+# String slices
+s[0:2];{s: 'hello'};'hel'
+s[1:];{s: 'hello'};'ello'
+s[:1];{s: 'hello'};'he'
+s[:];{s: 'hello'};'hello'
+s[0:4];{s: 'hello'};'hello'
+s[4:4];{s: 'hello'};'o'
+s[5:];{s: 'hello'};''
+s[2:1];{s: 'hello'};''
+s[0:5];{s: 'hello'};!error;question: an end equal to the length errors - clamp or error?
+s[0:5];{s: 'sample_string'};'sample'
+s[7:12];{s: 'sample_string'};'string'
+s[7:];{s: 'sample_string'};'string'
+s[:5];{s: 'sample_string'};'sample'
+s[:];{s: ''};'';bug: a full slice of an empty string errors because the implicit end len-1 is -1
+s[i:j];{s: 'hello', i: 1, j: 3};'ell'
+s[i:j];{s: 'hello', i: null, j: 3};!error
+s[1:2];{s: null};!error;question: slicing null errors while indexing null yields null
+# String slices are by character, not by UTF-8 byte
+s[0:1];{s: 'żółw'};'żó';bug: string slices use UTF-8 byte offsets - [0:1] happens to be the 2-byte 'ż' instead of two characters
+s[1:];{s: 'żółw'};'ółw';bug: string slices use UTF-8 byte offsets so a start inside a multi-byte character errors
+s[0:0];{s: 'żółw'};'ż';bug: string slices use UTF-8 byte offsets so an end inside a multi-byte character errors
+s[1:2];{s: 'żółw'};'ół';bug: string slices use UTF-8 byte offsets instead of characters
+s[:];{s: 'żółw'};'żółw'
+s[2:3];{s: 'ab😀c'};'😀c';bug: string slices use UTF-8 byte offsets so a 4-byte emoji cannot be sliced by character
+s[0:1];{s: '日本語'};'日本';bug: string slices use UTF-8 byte offsets instead of characters

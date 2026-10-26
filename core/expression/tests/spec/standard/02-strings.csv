@@ -1,0 +1,61 @@
+expression (string);input (json 5);output (json 5);note
+# String concatenation with +
+'a' + 'b';;'ab'
+'Hello' + ' ' + 'World';;'Hello World'
+'' + '';;''
+'a' + '';;'a'
+'' + 'a';;'a'
+'1' + '2';;'12'
+'1.5' + '0';;'1.50'
+'á' + 'ü' + '😀';;'áü😀'
+'a' + ('b' + 'c');;'abc'
+('a' + 'b') + 'c';;'abc'
+'x' + string(1);;'x1'
+string(1.50) + 'x';;'1.50x'
+string(1 + 2) + '!';;'3!'
+'a' + 'b' == 'ab';;true
+len('ab' + 'cd');;4
+# Concatenation does not coerce other types
+'a' + 1;;!error
+1 + 'a';;!error
+'1' + 1;;!error
+1 + '1';;!error
+'a' + 1.5;;!error
+'a' + null;;!error
+null + 'a';;!error
+'a' + true;;!error
+true + 'a';;!error
+'a' + [1];;!error
+['a'] + 'b';;!error
+'a' + {x: 1};;!error
+'a' + d('2024-01-01');;'a2024-01-01T00:00:00Z'
+'a' + 'b' + 1;;!error
+1 + 2 + 'a';;!error
+'a' + (1 + 2);;!error
+# Other arithmetic operators reject strings
+'a' - 'a';;!error
+'ab' * 2;;!error
+2 * 'ab';;!error
+'6' / '3';;!error
+'7' % '2';;!error
+'2' ^ '3';;!error
+'10' - 1;;!error
+# String concatenation from input
+a + b;{a: 'foo', b: 'bar'};'foobar'
+a + b;{a: '', b: ''};''
+a + b;{a: 'foo', b: ''};'foo'
+a + b;{a: 'foo', b: null};!error
+a + b;{a: 'foo'};!error
+a + b;{a: 'foo', b: 1};!error
+a + b;{a: 1, b: 'foo'};!error
+a + ' ' + b;{a: 'John', b: 'Doe'};'John Doe'
+a + ' ' + b;{a: 'John', b: ''};'John '
+a + ' ' + b;{a: 'John', b: null};!error
+a + ' ' + b;{a: 'John'};!error
+a + ' ' + b;{a: 1, b: 2};!error
+a + '!';{a: 'hi'};'hi!'
+a + '!';{a: ''};'!'
+a + '!';{a: null};!error
+a + '!';{a: 5};!error
+a + '!';{a: ['hi']};!error
+a + '!';{};!error

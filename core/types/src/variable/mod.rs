@@ -24,10 +24,12 @@ mod map;
 mod ref_deser;
 mod ref_ser;
 mod ser;
+mod shape;
 
 pub use crate::rccell::RcCell;
 
 pub use crate::variable::map::{Iter as MapIter, VariableMap};
+pub use crate::variable::shape::{Shape, ShapeHint};
 
 thread_local! {
     static DOLLAR_KEY_RC: Rc<str> = Rc::from("$");
@@ -261,10 +263,12 @@ impl Variable {
         let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
             Variable::Object(obj) => {
                 let mut obj_ref = obj.borrow_mut();
-                Some(match obj_ref.entry(Symbol::from(part)) {
-                    Entry::Occupied(occ) => occ.get().shallow_clone(),
-                    Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
-                })
+                if let Some(existing) = obj_ref.get_str(part) {
+                    return Some(existing.shallow_clone());
+                }
+                let fresh = Self::empty_object();
+                obj_ref.insert_str(part, fresh.shallow_clone());
+                Some(fresh)
             }
             _ => None,
         })?;
@@ -273,7 +277,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.insert(Symbol::from(last_part), variable)
+        object.insert_str(last_part, variable)
     }
 
     pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
@@ -318,18 +322,39 @@ impl Variable {
         match self {
             Variable::Array(a) => {
                 let arr = a.borrow();
-                Variable::from_array(arr.iter().map(|v| v.deep_clone()).collect())
+                Variable::from_array(arr.iter().map(Variable::deep_child).collect())
             }
             Variable::Object(o) => {
-                let obj = o.borrow();
-                Variable::from_object(
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), v.deep_clone()))
-                        .collect(),
-                )
+                Variable::from_object(o.borrow().map_values(Variable::deep_child))
             }
             _ => self.shallow_clone(),
         }
+    }
+
+    fn deep_child(&self) -> Self {
+        match self {
+            Variable::Array(_) | Variable::Object(_) => self.deep_nested(),
+            _ => self.shallow_clone(),
+        }
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn deep_nested(&self) -> Self {
+        self.deep_clone()
+    }
+
+    fn depth_child(&self, depth: usize) -> Self {
+        match self {
+            Variable::Array(_) | Variable::Object(_) if !depth.is_zero() => {
+                self.depth_nested(depth)
+            }
+            _ => self.shallow_clone(),
+        }
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn depth_nested(&self, depth: usize) -> Self {
+        self.depth_clone(depth)
     }
 
     pub fn depth_clone(&self, depth: usize) -> Self {
@@ -338,16 +363,11 @@ impl Variable {
             false => match self {
                 Variable::Array(a) => {
                     let arr = a.borrow();
-                    Variable::from_array(arr.iter().map(|v| v.depth_clone(depth - 1)).collect())
+                    Variable::from_array(arr.iter().map(|v| v.depth_child(depth - 1)).collect())
                 }
-                Variable::Object(o) => {
-                    let obj = o.borrow();
-                    Variable::from_object(
-                        obj.iter()
-                            .map(|(k, v)| (k.clone(), v.depth_clone(depth - 1)))
-                            .collect(),
-                    )
-                }
+                Variable::Object(o) => Variable::from_object(
+                    o.borrow().map_values(|value| value.depth_child(depth - 1)),
+                ),
                 _ => self.shallow_clone(),
             },
         }
@@ -389,6 +409,28 @@ fn merge_variables(
         }
 
         let patch = patch_ref.borrow();
+        match strategy {
+            MergeStrategy::InPlace => {
+                if doc_ref.borrow_mut().merge_in_place(&patch, |entry, value| {
+                    merge_variables(entry, value, false, strategy);
+                }) {
+                    return true;
+                }
+            }
+            MergeStrategy::CloneOnWrite => {
+                let merged = doc_ref.borrow().merge_cow(&patch, |entry, value| {
+                    merge_variables(entry, value, false, strategy)
+                });
+                match merged {
+                    Some(Some(map)) => {
+                        *doc = Variable::from_object(map);
+                        return true;
+                    }
+                    Some(None) => return false,
+                    None => {}
+                }
+            }
+        }
         match strategy {
             MergeStrategy::InPlace => {
                 let mut map = doc_ref.borrow_mut();
@@ -521,6 +563,39 @@ mod tests {
     use crate::variable::Variable;
     use rust_decimal_macros::dec;
     use serde_json::json;
+
+    #[test]
+    fn merges_keep_order_and_sharing() {
+        let base: Variable = json!({ "b": 1, "a": { "x": 1, "y": [1] }, "c": "s" }).into();
+        for _ in 0..3 {
+            let mut doc = base.clone();
+            let patch: Variable = json!({ "a": { "y": [1], "z": 2 }, "d": true, "b": 1 }).into();
+            let merged = doc.merge_clone(&patch);
+            assert_eq!(
+                merged.to_string(),
+                r#"{"a":{"x":1,"y":[1],"z":2},"b":1,"c":"s","d":true}"#
+            );
+            assert_eq!(base.to_string(), r#"{"a":{"x":1,"y":[1]},"b":1,"c":"s"}"#);
+            let mut same = base.clone();
+            let unchanged = same.merge_clone(&json!({ "b": 1, "c": "s" }).into());
+            assert!(std::rc::Rc::ptr_eq(
+                &unchanged.as_object().unwrap(),
+                &base.as_object().unwrap()
+            ));
+            let mut empty = Variable::empty_object();
+            let ending = empty.merge(&merged);
+            assert_eq!(ending.to_string(), merged.to_string());
+            assert!(std::rc::Rc::ptr_eq(
+                &ending.dot("a").unwrap().as_object().unwrap(),
+                &merged.dot("a").unwrap().as_object().unwrap()
+            ));
+            let removed = doc.merge_clone(&json!({ "b": null, "e": 1 }).into());
+            assert_eq!(
+                removed.to_string(),
+                r#"{"a":{"x":1,"y":[1]},"c":"s","e":1}"#
+            );
+        }
+    }
 
     #[test]
     fn insert_detached() {

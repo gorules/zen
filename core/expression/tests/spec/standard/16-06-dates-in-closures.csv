@@ -1,0 +1,111 @@
+expression (string);input (json 5);output (json 5);note
+# map: date arithmetic per element
+map(events, d(#.at).add(1, 'day').format('%Y-%m-%d'));{events: [{at: '2024-02-28 22:00'}, {at: '2024-02-29 23:30'}, {at: '2024-12-31 12:00'}]};['2024-02-29', '2024-03-01', '2025-01-01']
+map(events, d(#.at).add(1, 'day').format('%Y-%m-%d'));{events: [{at: '2025-03-29 12:00'}, {at: '2025-10-25 08:00'}]};['2025-03-30', '2025-10-26']
+map(events, d(#.at).add(1, 'day').format('%Y-%m-%d'));{events: [{at: '2023-01-31'}, {at: 'oops'}, {at: '2023-03-15 09:00:00'}]};['2023-02-01', 'Invalid date', '2023-03-16']
+map(events, d(#.at).add(1, 'day').format('%Y-%m-%d'));{events: []};[]
+map(events, d(#.at).add(1, 'day').format('%Y-%m-%d'));{events: [{at: 1700000000000}, {at: '2023-11-14 22:13:20'}, {at: null}]};['2023-11-15', '2023-11-15', 'Invalid date']
+map(events, d(#.at).endOf('month'));{events: [{at: '2024-02-28 22:00'}, {at: '2024-02-29 23:30'}, {at: '2024-12-31 12:00'}]};['2024-02-29T23:59:59Z', '2024-02-29T23:59:59Z', '2024-12-31T23:59:59Z']
+map(events, d(#.at).endOf('month'));{events: [{at: '2025-03-29 12:00'}, {at: '2025-10-25 08:00'}]};['2025-03-31T23:59:59Z', '2025-10-31T23:59:59Z']
+map(events, d(#.at).endOf('month'));{events: [{at: '2023-01-31'}, {at: 'oops'}, {at: '2023-03-15 09:00:00'}]};['2023-01-31T23:59:59Z', 'Invalid date', '2023-03-31T23:59:59Z']
+map(events, d(#.at).endOf('month'));{events: []};[]
+map(events, d(#.at).endOf('month'));{events: [{at: 1700000000000}, {at: '2023-11-14 22:13:20'}, {at: null}]};['2023-11-30T23:59:59Z', '2023-11-30T23:59:59Z', 'Invalid date']
+map(events, d(#.at).startOf('month').add(1, 'M'));{events: [{at: '2024-02-28 22:00'}, {at: '2024-02-29 23:30'}, {at: '2024-12-31 12:00'}]};['2024-03-01T00:00:00Z', '2024-03-01T00:00:00Z', '2025-01-01T00:00:00Z']
+map(events, d(#.at).startOf('month').add(1, 'M'));{events: [{at: '2025-03-29 12:00'}, {at: '2025-10-25 08:00'}]};['2025-04-01T00:00:00Z', '2025-11-01T00:00:00Z']
+map(events, d(#.at).startOf('month').add(1, 'M'));{events: [{at: '2023-01-31'}, {at: 'oops'}, {at: '2023-03-15 09:00:00'}]};['2023-02-01T00:00:00Z', 'Invalid date', '2023-04-01T00:00:00Z']
+map(events, d(#.at).startOf('month').add(1, 'M'));{events: []};[]
+map(events, d(#.at).startOf('month').add(1, 'M'));{events: [{at: 1700000000000}, {at: '2023-11-14 22:13:20'}, {at: null}]};['2023-12-01T00:00:00Z', '2023-12-01T00:00:00Z', 'Invalid date']
+map(events, d(#.at).weekday());{events: [{at: '2024-02-28 22:00'}, {at: '2024-02-29 23:30'}, {at: '2024-12-31 12:00'}]};[3, 4, 2]
+map(events, d(#.at).weekday());{events: [{at: '2025-03-29 12:00'}, {at: '2025-10-25 08:00'}]};[6, 6]
+map(events, d(#.at).weekday());{events: [{at: '2023-01-31'}, {at: 'oops'}, {at: '2023-03-15 09:00:00'}]};[2, null, 3]
+map(events, d(#.at).weekday());{events: []};[]
+map(events, d(#.at).weekday());{events: [{at: 1700000000000}, {at: '2023-11-14 22:13:20'}, {at: null}]};[2, 2, null]
+map(events, d(#.at, 'Europe/Berlin').format('%H:%M %Z'));{events: [{at: '2024-02-28 22:00'}, {at: '2024-02-29 23:30'}, {at: '2024-12-31 12:00'}]};['22:00 CET', '23:30 CET', '12:00 CET']
+map(events, d(#.at, 'Europe/Berlin').format('%H:%M %Z'));{events: [{at: '2025-03-29 12:00'}, {at: '2025-10-25 08:00'}]};['12:00 CET', '08:00 CEST']
+map(events, d(#.at, 'Europe/Berlin').format('%H:%M %Z'));{events: [{at: '2023-01-31'}, {at: 'oops'}, {at: '2023-03-15 09:00:00'}]};['00:00 CET', 'Invalid date', '09:00 CET']
+# map over plain date strings and numbers
+map(xs, d(#).add(1, 'M').format('%F'));{xs: ['2024-01-31', '2024-03-31', '2024-05-31']};['2024-02-29', '2024-04-30', '2024-06-30']
+map(xs, d(#).add(1, 'M').format('%F'));{xs: ['2023-12-31 23:59:59']};['2024-01-31']
+map(xs, d(#).add(1, 'M').format('%F'));{xs: []};[]
+map(xs, d(#).add(1, 'M').format('%F'));{xs: ['2025-02-28', 'bad', '2025-02-27']};['2025-03-28', 'Invalid date', '2025-03-27']
+map(xs, d(#).sub(1, 'q').format('%F'));{xs: ['2024-01-31', '2024-03-31', '2024-05-31']};['2023-10-31', '2023-12-31', '2024-02-29']
+map(xs, d(#).sub(1, 'q').format('%F'));{xs: ['2023-12-31 23:59:59']};['2023-09-30']
+map(xs, d(#).sub(1, 'q').format('%F'));{xs: []};[]
+map(xs, d(#).sub(1, 'q').format('%F'));{xs: ['2025-02-28', 'bad', '2025-02-27']};['2024-11-28', 'Invalid date', '2024-11-27']
+map(xs, d(#, 'Etc/GMT+5').add(1, 'y'));{xs: ['2024-01-31', '2024-03-31', '2024-05-31']};['2025-01-31T00:00:00-05:00', '2025-03-31T00:00:00-05:00', '2025-05-31T00:00:00-05:00']
+map(xs, d(#, 'Etc/GMT+5').add(1, 'y'));{xs: ['2023-12-31 23:59:59']};['2024-12-31T23:59:59-05:00']
+map(xs, d(#, 'Etc/GMT+5').add(1, 'y'));{xs: []};[]
+map(xs, d(#, 'Etc/GMT+5').add(1, 'y'));{xs: ['2025-02-28', 'bad', '2025-02-27']};['2026-02-28T00:00:00-05:00', 'Invalid date', '2026-02-27T00:00:00-05:00']
+map([0, 1, 2, 3], d(s).add(#, 'M').format('%F'));{s: '2024-01-31'};['2024-01-31', '2024-02-29', '2024-03-31', '2024-04-30']
+map([0, 1, 2, 3], d(s).add(#, 'M').format('%F'));{s: '2023-11-30'};['2023-11-30', '2023-12-30', '2024-01-30', '2024-02-29']
+map([0, 1, 2, 3], d(s).add(#, 'M').format('%F'));{s: '2024-08-31 10:00'};['2024-08-31', '2024-09-30', '2024-10-31', '2024-11-30']
+map([0, 1, 2, 3], d(s).add(#, 'M').format('%F'));{s: null};['Invalid date', 'Invalid date', 'Invalid date', 'Invalid date']
+map([1..4], d(s).add(# * 7, 'd').weekday());{s: '2025-03-17'};[1, 1, 1, 1]
+map([1..4], d(s).add(# * 7, 'd').weekday());{s: '2025-03-16'};[7, 7, 7, 7]
+map([1..4], d(s).add(# * 7, 'd').weekday());{s: 'x'};[null, null, null, null]
+map([0..3], d(s, 'Asia/Kolkata').add(#, 'q').quarter());{s: '2024-11-30'};[4, 1, 2, 3]
+map([0..3], d(s, 'Asia/Kolkata').add(#, 'q').quarter());{s: '2025-01-01'};[1, 2, 3, 4]
+map([0..3], d(s, 'Asia/Kolkata').add(#, 'q').quarter());{s: '2024-05-31'};[2, 3, 4, 1]
+# filter by comparisons with an outer cutoff
+map(filter(events, d(#.at).isBefore(d(cutoff))), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20'};[1]
+map(filter(events, d(#.at).isBefore(d(cutoff))), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-22'};[1, 2, 3]
+map(filter(events, d(#.at).isBefore(d(cutoff))), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-01-01'};[]
+map(filter(events, d(#.at).isBefore(d(cutoff))), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: null};[]
+map(filter(events, d(#.at).isBefore(d(cutoff))), #.id);{events: [], cutoff: '2025-03-20'};[]
+map(filter(events, d(#.at).isSame(d(cutoff), 'day')), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20 18:00'};[2]
+map(filter(events, d(#.at).isSame(d(cutoff), 'day')), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-19'};[1]
+map(filter(events, d(#.at).isSame(d(cutoff), 'day')), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: 'x'};[]
+map(filter(events, d(#.at) < d(cutoff)), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20'};[1, 4];question: an invalid date orders before every valid date instead of failing or comparing false
+map(filter(events, d(#.at) < d(cutoff)), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-21 00:00:01'};[1, 2, 3, 4];question: an invalid date orders before every valid date instead of failing or comparing false
+map(filter(events, d(#.at).isValid() and d(#.at) < d(cutoff)), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20'};[1]
+map(filter(events, d(#.at).isValid() and d(#.at) < d(cutoff)), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-21 00:00:01'};[1, 2, 3]
+map(filter(events, d(#.at).isAfter(d(cutoff), 'day')), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20 23:00'};[3]
+map(filter(events, d(#.at).isAfter(d(cutoff), 'day')), #.id);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-19'};[2, 3]
+count(events, d(#.at).isSameOrAfter(d(cutoff)));{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2025-03-20'};2
+count(events, d(#.at).isSameOrAfter(d(cutoff)));{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2020-01-01'};3
+count(events, d(#.at).isSameOrAfter(d(cutoff)));{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: '2030-01-01'};0
+count(events, d(#.at).isSameOrAfter(d(cutoff)));{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}], cutoff: null};0
+some(events, d(#.at).weekday() == 5);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}]};true
+some(events, d(#.at).weekday() == 5);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}]};false
+some(events, d(#.at).weekday() == 5);{events: []};false
+all(events, d(#.at).isValid());{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}]};false
+all(events, d(#.at).isValid());{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}]};true
+all(events, d(#.at).isValid());{events: []};true
+none(events, d(#.at).year() < 2025);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}]};true
+none(events, d(#.at).year() < 2025);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}]};!error
+none(events, d(#.at).year() < 2025);{events: [{at: '2024-12-31 23:59:59'}]};false
+none(events, d(#.at).year() < 2025);{events: []};true
+one(events, d(#.at).day() == 21);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}]};true
+one(events, d(#.at).day() == 21);{events: [{id: 1, at: '2025-03-19 23:59'}, {id: 2, at: '2025-03-20 00:00'}, {id: 3, at: '2025-03-21'}, {id: 4, at: 'bad'}, {id: 5, at: '2025-04-21'}]};false
+# min/max over mapped dates
+max(map(xs, d(#)));{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00']};'2024-02-29T00:00:00Z'
+max(map(xs, d(#)));{xs: ['2025-01-01']};'2025-01-01T00:00:00Z'
+max(map(xs, d(#)));{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59']};'2025-06-30T12:00:00Z'
+min(map(xs, d(#)));{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00']};'2023-12-31T23:59:59Z'
+min(map(xs, d(#)));{xs: ['2025-01-01']};'2025-01-01T00:00:00Z'
+min(map(xs, d(#)));{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59']};'2025-06-30T11:59:59Z'
+max(map(xs, d(#).add(1, 'M'))).format('%F');{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00']};'2024-03-29'
+max(map(xs, d(#).add(1, 'M'))).format('%F');{xs: ['2025-01-01']};'2025-02-01'
+max(map(xs, d(#).add(1, 'M'))).format('%F');{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59']};'2025-07-30'
+min(map(xs, d(#, 'America/New_York').startOf('day')));{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00']};'2023-12-31T00:00:00-05:00'
+min(map(xs, d(#, 'America/New_York').startOf('day')));{xs: ['2025-01-01']};'2025-01-01T00:00:00-05:00'
+min(map(xs, d(#, 'America/New_York').startOf('day')));{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59']};'2025-06-30T00:00:00-04:00'
+max(map(xs, d(#))).diff(min(map(xs, d(#))), 'day');{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00']};59
+max(map(xs, d(#))).diff(min(map(xs, d(#))), 'day');{xs: ['2025-01-01']};0
+max(map(xs, d(#))).diff(min(map(xs, d(#))), 'day');{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59']};0
+sum(map(xs, d(#).diff(d(start), 'day')));{xs: ['2024-02-29', '2023-12-31 23:59:59', '2024-02-28 23:00'], start: '2023-12-01'};209
+sum(map(xs, d(#).diff(d(start), 'day')));{xs: ['2025-01-01'], start: '2024-01-01'};366
+sum(map(xs, d(#).diff(d(start), 'day')));{xs: ['2025-06-30 12:00', '2025-06-30 11:59:59'], start: '2025-06-01'};58
+sum(map(xs, d(#).diff(d(start), 'hour'))) / len(xs);{xs: ['2025-01-01 06:00', '2025-01-01 18:00'], start: '2025-01-01'};12.0
+sum(map(xs, d(#).diff(d(start), 'hour'))) / len(xs);{xs: ['2025-01-02'], start: '2025-01-01'};24.0
+# grouping keys and lookups built from dates
+map(xs, d(#).format('%Y-Q') + string(d(#).quarter()));{xs: ['2024-03-31 23:59:59', '2024-04-01', '2025-12-31']};['2024-Q1', '2024-Q2', '2025-Q4']
+map(xs, d(#).format('%Y-Q') + string(d(#).quarter()));{xs: ['2023-07-15']};['2023-Q3']
+map(xs, d(#).format('%G-W%V'));{xs: ['2024-12-30', '2021-01-03', '2020-12-31', '2026-01-01']};['2025-W01', '2020-W53', '2020-W53', '2026-W01']
+filter(xs, d(#).weekday() <= 5);{xs: ['2025-03-14', '2025-03-15', '2025-03-16', '2025-03-17']};['2025-03-14', '2025-03-17']
+filter(xs, d(#).weekday() <= 5);{xs: []};[]
+len(filter([0..30], d(s).add(#, 'd').weekday() < 6));{s: '2025-03-01'};21
+len(filter([0..30], d(s).add(#, 'd').weekday() < 6));{s: '2024-02-01'};22
+len(filter([0..30], d(s).add(#, 'd').weekday() < 6));{s: '2025-12-01'};23
+map(filter([0..13], d(s).add(#, 'd').weekday() == 1), d(s).add(#, 'd').format('%F'));{s: '2025-03-20'};['2025-03-24', '2025-03-31']
+map(filter([0..13], d(s).add(#, 'd').weekday() == 1), d(s).add(#, 'd').format('%F'));{s: '2024-12-25'};['2024-12-30', '2025-01-06']

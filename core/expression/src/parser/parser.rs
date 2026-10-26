@@ -604,6 +604,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(crate) fn with_postfix<F>(
         &self,
         node: &'arena Node<'arena>,

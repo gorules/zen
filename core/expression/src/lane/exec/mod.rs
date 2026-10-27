@@ -272,6 +272,7 @@ impl Executor {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(super) fn execute<M: LaneSet>(
         program: &Program,
         frames: &mut [Frame<M>],
@@ -494,6 +495,7 @@ impl Executor {
         lanes
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(super) fn cold<M: LaneSet>(
         op: &Op,
         active: M,

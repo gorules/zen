@@ -23,11 +23,7 @@ impl<M: LaneSet> Frame<M> {
                     .iter()
                     .enumerate()
                     .all(|(i, k)| keys[..i].iter().all(|x| x.as_str() != k.as_str()));
-                out.push(
-                    (distinct && keys.len() <= 32)
-                        .then(|| MapShape::of(keys.iter()))
-                        .flatten(),
-                );
+                out.push((distinct && keys.len() <= 32).then(|| MapShape::of(keys.iter())));
                 fields
                     .iter()
                     .rev()

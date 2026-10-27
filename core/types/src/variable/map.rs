@@ -170,16 +170,8 @@ impl VariableMap {
         match &mut self.0 {
             Repr::Shaped { shape, values } => {
                 let index = shape.index_of(key)?;
-                match shape.without(index) {
-                    Some(reduced) => {
-                        *shape = reduced;
-                        Some(values.remove(index))
-                    }
-                    None => {
-                        self.spill();
-                        self.remove_str(key)
-                    }
-                }
+                *shape = shape.without(index);
+                Some(values.remove(index))
             }
             Repr::Dict(map) => map.remove(key),
         }
@@ -243,17 +235,9 @@ impl VariableMap {
         let Repr::Shaped { shape, values } = &mut self.0 else {
             return self.insert(key, value);
         };
-        match shape.with(&key) {
-            Some(child) => {
-                *shape = child;
-                values.push(value);
-                None
-            }
-            None => {
-                self.spill();
-                self.insert(key, value)
-            }
-        }
+        *shape = shape.with(&key);
+        values.push(value);
+        None
     }
 
     pub fn insert_new_str(&mut self, key: &str, value: Variable) {

@@ -10,8 +10,6 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 const MANY_AT: usize = 8;
 
-const MAX_TRANSITIONS: usize = 4096;
-
 const SWEEP_FLOOR: usize = 32;
 
 const MERGE_CACHE: usize = 8;
@@ -42,6 +40,7 @@ enum Transitions {
 }
 
 impl Transitions {
+    #[cfg(test)]
     fn len(&self) -> usize {
         match self {
             Transitions::Empty => 0,
@@ -79,14 +78,6 @@ impl Transitions {
                 *sweep_at = (*len * 2).max(SWEEP_FLOOR);
             }
         }
-    }
-
-    fn full(&mut self) -> bool {
-        if self.len() < MAX_TRANSITIONS {
-            return false;
-        }
-        self.sweep();
-        self.len() >= MAX_TRANSITIONS
     }
 
     fn push(&mut self, print: u64, child: &Rc<Shape>) {
@@ -184,9 +175,9 @@ impl Shape {
         ROOT.with(Rc::clone)
     }
 
-    pub fn of<'a>(keys: impl IntoIterator<Item = &'a Symbol>) -> Option<Rc<Shape>> {
+    pub fn of<'a>(keys: impl IntoIterator<Item = &'a Symbol>) -> Rc<Shape> {
         keys.into_iter()
-            .try_fold(Self::root(), |shape, key| shape.with(key))
+            .fold(Self::root(), |shape, key| shape.with(key))
     }
 
     pub fn id(&self) -> u64 {
@@ -240,20 +231,17 @@ impl Shape {
         })
     }
 
-    pub fn with(self: &Rc<Self>, key: &Symbol) -> Option<Rc<Shape>> {
+    pub fn with(self: &Rc<Self>, key: &Symbol) -> Rc<Shape> {
         if let Some(child) = self.transition(key.as_str()) {
-            return Some(child);
+            return child;
         }
         let mut transitions = self.transitions.borrow_mut();
-        if transitions.full() {
-            return None;
-        }
         let mut keys = Vec::with_capacity(self.keys.len() + 1);
         keys.extend(self.keys.iter().cloned());
         keys.push(key.clone());
         let child = Rc::new(Shape::new(keys.into_boxed_slice(), Some(self.clone())));
         transitions.push(Self::print(key.as_str()), &child);
-        Some(child)
+        child
     }
 
     pub(crate) fn merge_plan(self: &Rc<Self>, patch: &Shape, spill_at: usize) -> Option<MergePlan> {
@@ -305,7 +293,7 @@ impl Shape {
                 Some(_) => return None,
                 None if current.len() >= spill_at => return None,
                 None => {
-                    let child = current.with(key)?;
+                    let child = current.with(key);
                     slots.push(current.len() as u32);
                     current = child;
                 }
@@ -317,7 +305,7 @@ impl Shape {
         })
     }
 
-    pub fn without(&self, index: usize) -> Option<Rc<Shape>> {
+    pub fn without(&self, index: usize) -> Rc<Shape> {
         Self::of(
             self.keys
                 .iter()
@@ -385,7 +373,7 @@ mod tests {
 
     fn chain(keys: &[&str]) -> Rc<Shape> {
         let keys: Vec<Symbol> = keys.iter().map(|k| key(k)).collect();
-        Shape::of(keys.iter()).expect("unsaturated")
+        Shape::of(keys.iter())
     }
 
     #[test]
@@ -418,25 +406,21 @@ mod tests {
     #[test]
     fn removing_a_key_reuses_the_interned_shape() {
         let shape = chain(&["a", "b", "c"]);
-        let without = shape.without(1).expect("unsaturated");
+        let without = shape.without(1);
         assert!(Rc::ptr_eq(&without, &chain(&["a", "c"])));
     }
 
     #[test]
-    fn wide_fan_out_stays_interned_until_saturation() {
+    fn wide_fan_out_stays_interned() {
         let root = chain(&["fanout-fixed"]);
-        let children: Vec<Rc<Shape>> = (0..MAX_TRANSITIONS)
-            .map(|i| root.with(&key(&format!("k{i}"))).expect("below the cap"))
+        let children: Vec<Rc<Shape>> = (0..10_000)
+            .map(|i| root.with(&key(&format!("k{i}"))))
             .collect();
-        assert_eq!(root.transitions.borrow().len(), MAX_TRANSITIONS);
+        assert_eq!(root.transitions.borrow().len(), 10_000);
         for (i, child) in children.iter().enumerate() {
             assert_eq!(child.index_of(&format!("k{i}")), Some(1));
-            assert!(Rc::ptr_eq(
-                &root.with(&key(&format!("k{i}"))).expect("interned"),
-                child
-            ));
+            assert!(Rc::ptr_eq(&root.with(&key(&format!("k{i}"))), child));
         }
-        assert!(root.with(&key("one-too-many")).is_none());
     }
 
     fn root_transitions() -> usize {
@@ -472,7 +456,7 @@ mod tests {
     fn dead_transitions_are_swept_under_unbounded_key_layouts() {
         let before = root_transitions();
         let first = Rc::downgrade(&chain(&["dyn-first", "id"]));
-        for i in 0..(MAX_TRANSITIONS * 4) {
+        for i in 0..16_384 {
             let shape = chain(&[&format!("dyn{i}"), "id"]);
             assert_eq!(shape.index_of("id"), Some(1));
         }
@@ -485,12 +469,12 @@ mod tests {
         let base = chain(&["reuse-base"]);
         let wide = chain(&["reuse-wide"]);
         let alive: Vec<Rc<Shape>> = (0..(MANY_AT * 2))
-            .map(|i| wide.with(&key(&format!("w{i}"))).expect("unsaturated"))
+            .map(|i| wide.with(&key(&format!("w{i}"))))
             .collect();
         for _ in 0..1000 {
-            let child = base.with(&key("reused")).expect("unsaturated");
+            let child = base.with(&key("reused"));
             assert_eq!(child.index_of("reused"), Some(1));
-            let child = wide.with(&key("reused")).expect("unsaturated");
+            let child = wide.with(&key("reused"));
             assert_eq!(child.index_of("reused"), Some(1));
         }
         assert_eq!(base.transitions.borrow().len(), 1);

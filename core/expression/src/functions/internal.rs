@@ -691,7 +691,10 @@ pub(crate) mod imp {
             let center_num = a.get(center).context("Index out of bounds")?;
             Ok(V::Number(*center_num))
         } else {
-            let center_left = a.get(center - 1).context("Index out of bounds")?;
+            let center_left = center
+                .checked_sub(1)
+                .and_then(|i| a.get(i))
+                .context("Index out of bounds")?;
             let center_right = a.get(center).context("Index out of bounds")?;
 
             let median = center_left

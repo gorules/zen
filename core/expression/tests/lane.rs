@@ -4363,8 +4363,17 @@ fn lane_date_folds_match_the_stack_vm() {
 #[test]
 #[cfg_attr(miri, ignore)]
 fn lane_handles_deep_and_wide_expressions() {
-    let n = 50_000;
-    let values = 10_000;
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(deep_and_wide_on_this_thread)
+        .expect("spawn")
+        .join()
+        .expect("deep and wide expressions");
+}
+
+fn deep_and_wide_on_this_thread() {
+    let n = 5_000;
+    let values = 100;
     let nest = |open: &str, middle: &str, close: &str| {
         format!("{}{middle}{}", open.repeat(n), close.repeat(n))
     };

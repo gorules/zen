@@ -41,7 +41,7 @@ pub struct Parser<'arena, 'token_ref, Flavor> {
     current: Cell<Option<&'token_ref Token<'arena>>>,
     pub(crate) bump: &'arena Bump,
     position: Cell<usize>,
-    depth: Cell<u8>,
+    depth: Cell<u32>,
     marker_flavor: PhantomData<Flavor>,
     has_range_operator: bool,
     pub(crate) node_metadata:
@@ -150,7 +150,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         target_token.is_some()
     }
 
-    pub(crate) fn depth(&self) -> u8 {
+    pub(crate) fn depth(&self) -> u32 {
         self.depth.get()
     }
 

@@ -131,6 +131,7 @@ impl Lookup {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn chain(hir: &Hir, node: NodeId, out: &mut Vec<NodeId>) {
         match hir.node(node).op {
             Op::And(a, b) => {
@@ -141,6 +142,7 @@ impl Lookup {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn keys(hir: &Hir, node: NodeId, out: &mut Vec<NodeId>) -> Option<()> {
         let n = hir.node(node);
         if matches!(n.ty.kind, Kind::Code(_)) && !matches!(n.op, Op::Const(_)) {
@@ -236,6 +238,7 @@ impl Lookup {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn points(hir: &Hir, node: NodeId, out: &mut Vec<Dec>) {
         match &hir.node(node).op {
             Op::Const(Lit::Num(d)) => out.push(*d),
@@ -291,6 +294,7 @@ impl Lookup {
         })
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn eval(hir: &Hir, node: NodeId, key: Option<NodeId>, value: Val) -> Option<Val> {
         if Some(node) == key {
             return Some(value);

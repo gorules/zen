@@ -10,6 +10,7 @@ use zen_types::symbol::Symbol;
 use zen_types::variable::Shape as MapShape;
 
 impl<M: LaneSet> Frame<M> {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(super) fn collect_shapes(layout: &Layout, out: &mut Vec<Option<Rc<MapShape>>>) {
         match layout {
             Layout::Value(_) => {}

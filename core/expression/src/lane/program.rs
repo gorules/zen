@@ -118,6 +118,7 @@ impl Const {
         self.variable()
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub fn number(node: &crate::parser::Node) -> Option<Decimal> {
         use crate::lexer::{ArithmeticOperator, Operator};
         use crate::parser::Node;
@@ -567,6 +568,7 @@ impl Op {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(crate) fn reads(&self, reg: Reg) -> bool {
         let input = |i: &Input| matches!(i, Input::Reg(r) if *r == reg);
         let operand = |o: &Operand| matches!(o, Operand::Reg(r) if *r == reg);

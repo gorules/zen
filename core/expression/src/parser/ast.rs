@@ -195,6 +195,7 @@ impl<'a> Node<'a> {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(crate) fn member_key(&self, vec: &mut BumpVec<&'a str>) -> Option<()> {
         match self {
             Node::Member { node, property } => {

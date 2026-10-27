@@ -522,6 +522,7 @@ impl Lowering {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn leftmost(&self, id: NodeId) -> Vec<NodeId> {
         match &self.nodes[id as usize].op {
             Op::And(a, _) | Op::Or(a, _) | Op::Not(a) => self.leftmost(*a),
@@ -531,6 +532,7 @@ impl Lowering {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn guarded(&mut self, id: NodeId) -> Lowered {
         if let Op::And(a, b) = self.nodes[id as usize].op {
             let (a, b) = (self.guarded(a)?, self.guarded(b)?);
@@ -826,6 +828,7 @@ impl Lowering {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn parent(&mut self, id: NodeId, scope: Scope) -> Lowered {
         let node = &self.nodes[id as usize];
         let (from, ty) = (node.scope, node.ty);
@@ -864,6 +867,7 @@ impl Lowering {
         Ok((scope, lifted))
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn expr(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         match ast {
             Ast::Null => Ok(self.konst(Lit::Null)),
@@ -942,6 +946,7 @@ impl Lowering {
         Ok(self.add(Op::Neg(a), ty, scope))
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn segments<'a>(ast: &'a Ast<'a>, out: &mut Vec<&'a str>) -> Result<Base<'a>, Unsupported> {
         match ast {
             Ast::Identifier("$") => Ok(Base::Dollar),
@@ -1421,6 +1426,7 @@ impl Lowering {
         Ok(self.add(op, Ty::new(Kind::Bool, nullable), scope))
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn inset(&mut self, a: NodeId, items: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         if self.kind(a) == Kind::Date {
             return self.dates_in(a, items, ctx, r);
@@ -2126,6 +2132,7 @@ impl Lowering {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn seq(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Result<Seq, Unsupported> {
         match ast {
             Ast::Parenthesized(inner) => self.seq(inner, ctx, r),

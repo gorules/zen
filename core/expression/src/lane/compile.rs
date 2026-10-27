@@ -184,6 +184,7 @@ impl<'a> LaneCompiler<'a> {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn layout(&mut self, node: &'a Node<'a>, used: &mut Vec<Reg>) -> Result<Layout> {
         if !Self::shaped(node) {
             let reg = self.node(node)?;
@@ -476,6 +477,7 @@ impl<'a> LaneCompiler<'a> {
         Some(Ok(reg))
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(crate) fn dollar_static(node: &Node) -> bool {
         let mut base = node;
         let mut chain = false;
@@ -760,6 +762,7 @@ impl<'a> LaneCompiler<'a> {
         self.stack[target].element_key.clone()
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn node_key(&self, node: &Node) -> Option<String> {
         match node {
             Node::Identifier("$") if self.dollar.as_ref().is_some_and(|d| !d.is_empty()) => None,

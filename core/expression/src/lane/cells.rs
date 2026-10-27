@@ -38,6 +38,7 @@ enum Shape {
 }
 
 impl Shape {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn classify(node: &Node) -> Shape {
         if let Some(keys) = Self::equalities(node) {
             return Shape::Equal(keys);
@@ -83,6 +84,7 @@ impl Shape {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn equalities(node: &Node) -> Option<Vec<Key>> {
         match node {
             Node::Binary {

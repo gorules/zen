@@ -263,7 +263,7 @@ impl Spec {
             (Variable::Bool(a), Variable::Bool(b)) => a == b,
             (Variable::Number(a), Variable::Number(b)) => a == b,
             (Variable::String(a), Variable::String(b)) => a == b,
-            (Variable::String(a), Variable::Dynamic(d)) => a.as_ref() == d.to_string(),
+            (Variable::String(a), Variable::Dynamic(d)) => a.as_str() == d.to_string(),
             (Variable::Dynamic(a), Variable::Dynamic(b)) => {
                 a.type_name() == b.type_name() && a.to_string() == b.to_string()
             }

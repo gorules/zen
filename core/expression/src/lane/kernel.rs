@@ -672,6 +672,7 @@ struct KernelBuilder<'h, 'a> {
 }
 
 impl<'h, 'a> KernelBuilder<'h, 'a> {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn node(&mut self, node: &'a Node<'a>) -> Option<Code> {
         self.depth += 1;
         let code = match self.depth > Kernel::DEPTH {
@@ -2021,6 +2022,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         any || text(node)
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn addends(&mut self, node: &'a Node<'a>, out: &mut Vec<ValFn>) -> Option<()> {
         match node {
             Node::Binary {

@@ -1,0 +1,411 @@
+expression (string);input (json 5);output (json 5);note
+# String functions reject null and missing arguments
+upper(s);{s: ' Ab '};' AB '
+upper(s);{s: ''};''
+upper(s);{s: null};!error
+upper(s);{};!error
+upper(s);{s: 5};!error
+upper(s);{s: ['a']};!error
+lower(s);{s: ' Ab '};' ab '
+lower(s);{s: ''};''
+lower(s);{s: null};!error
+lower(s);{};!error
+lower(s);{s: 5};!error
+lower(s);{s: ['a']};!error
+trim(s);{s: ' Ab '};'Ab'
+trim(s);{s: ''};''
+trim(s);{s: null};!error
+trim(s);{};!error
+trim(s);{s: 5};!error
+trim(s);{s: ['a']};!error
+startsWith(s, ' A');{s: ' Ab '};true
+startsWith(s, ' A');{s: ''};false
+startsWith(s, ' A');{s: null};!error
+startsWith(s, ' A');{};!error
+startsWith(s, ' A');{s: 5};!error
+startsWith(s, ' A');{s: ['a']};!error
+endsWith(s, ' ');{s: ' Ab '};true
+endsWith(s, ' ');{s: ''};false
+endsWith(s, ' ');{s: null};!error
+endsWith(s, ' ');{};!error
+endsWith(s, ' ');{s: 5};!error
+endsWith(s, ' ');{s: ['a']};!error
+contains(s, 'b');{s: ' Ab '};true
+contains(s, 'b');{s: ''};false
+contains(s, 'b');{s: null};!error
+contains(s, 'b');{};!error
+contains(s, 'b');{s: 5};!error
+contains(s, 'b');{s: ['a']};false
+split(s, 'b');{s: ' Ab '};[' A', ' ']
+split(s, 'b');{s: ''};['']
+split(s, 'b');{s: null};!error
+split(s, 'b');{};!error
+split(s, 'b');{s: 5};!error
+split(s, 'b');{s: ['a']};!error
+matches(s, 'A');{s: ' Ab '};true
+matches(s, 'A');{s: ''};false
+matches(s, 'A');{s: null};!error
+matches(s, 'A');{};!error
+matches(s, 'A');{s: 5};!error
+matches(s, 'A');{s: ['a']};!error
+# Defaulting a string argument with ?? before the call
+upper(s ?? '');{s: ' Ab '};' AB '
+upper(s ?? '');{s: ''};''
+upper(s ?? '');{s: null};''
+upper(s ?? '');{};''
+upper(s ?? '');{s: 5};!error
+upper(s ?? '');{s: ['a']};!error
+trim(s ?? 'none');{s: ' Ab '};'Ab'
+trim(s ?? 'none');{s: ''};''
+trim(s ?? 'none');{s: null};'none'
+trim(s ?? 'none');{};'none'
+trim(s ?? 'none');{s: 5};!error
+trim(s ?? 'none');{s: ['a']};!error
+len(s ?? '');{s: ' Ab '};4
+len(s ?? '');{s: ''};0
+len(s ?? '');{s: null};0
+len(s ?? '');{};0
+len(s ?? '');{s: 5};!error
+len(s ?? '');{s: ['a']};1
+s != null and startsWith(s, ' ');{s: ' Ab '};true
+s != null and startsWith(s, ' ');{s: ''};false
+s != null and startsWith(s, ' ');{s: null};false
+s != null and startsWith(s, ' ');{};false
+s != null and startsWith(s, ' ');{s: 5};!error
+s != null and startsWith(s, ' ');{s: ['a']};!error
+type(s) == 'string' ? lower(s) : 'n/a';{s: ' Ab '};' ab '
+type(s) == 'string' ? lower(s) : 'n/a';{s: ''};''
+type(s) == 'string' ? lower(s) : 'n/a';{s: null};'n/a'
+type(s) == 'string' ? lower(s) : 'n/a';{};'n/a'
+type(s) == 'string' ? lower(s) : 'n/a';{s: 5};'n/a'
+type(s) == 'string' ? lower(s) : 'n/a';{s: ['a']};'n/a'
+# Null in the second argument of string functions
+startsWith('abc', p);{p: 'b'};false
+startsWith('abc', p);{p: null};!error
+startsWith('abc', p);{};!error
+startsWith('abc', p);{p: 1};!error
+endsWith('abc', p);{p: 'b'};false
+endsWith('abc', p);{p: null};!error
+endsWith('abc', p);{};!error
+endsWith('abc', p);{p: 1};!error
+contains('abc', p);{p: 'b'};true
+contains('abc', p);{p: null};!error
+contains('abc', p);{};!error
+contains('abc', p);{p: 1};!error
+split('a,b', p);{p: 'b'};['a,', '']
+split('a,b', p);{p: null};!error
+split('a,b', p);{};!error
+split('a,b', p);{p: 1};!error
+matches('abc', p);{p: 'b'};true
+matches('abc', p);{p: null};!error
+matches('abc', p);{};!error
+matches('abc', p);{p: 1};!error
+contains(['a', 'b', null], p);{p: 'b'};true
+contains(['a', 'b', null], p);{p: null};true
+contains(['a', 'b', null], p);{};true
+contains(['a', 'b', null], p);{p: 1};false
+contains(['a', 'b'], p);{p: 'b'};true
+contains(['a', 'b'], p);{p: null};false
+contains(['a', 'b'], p);{};false
+contains(['a', 'b'], p);{p: 1};false
+# Number functions reject null and missing arguments
+abs(n);{n: -2.5};2.5
+abs(n);{n: 0};0
+abs(n);{n: null};!error
+abs(n);{};!error
+abs(n);{n: '3'};!error
+abs(n);{n: true};!error
+floor(n);{n: -2.5};-3
+floor(n);{n: 0};0
+floor(n);{n: null};!error
+floor(n);{};!error
+floor(n);{n: '3'};!error
+floor(n);{n: true};!error
+ceil(n);{n: -2.5};-2
+ceil(n);{n: 0};0
+ceil(n);{n: null};!error
+ceil(n);{};!error
+ceil(n);{n: '3'};!error
+ceil(n);{n: true};!error
+round(n);{n: -2.5};-3
+round(n);{n: 0};0
+round(n);{n: null};!error
+round(n);{};!error
+round(n);{n: '3'};!error
+round(n);{n: true};!error
+trunc(n);{n: -2.5};-2
+trunc(n);{n: 0};0
+trunc(n);{n: null};!error
+trunc(n);{};!error
+trunc(n);{n: '3'};!error
+trunc(n);{n: true};!error
+round(n, 1);{n: -2.5};-2.5
+round(n, 1);{n: 0};0.0
+round(n, 1);{n: null};!error
+round(n, 1);{};!error
+round(n, 1);{n: '3'};!error
+round(n, 1);{n: true};!error
+abs(n ?? 0);{n: -2.5};2.5
+abs(n ?? 0);{n: 0};0
+abs(n ?? 0);{n: null};0
+abs(n ?? 0);{};0
+abs(n ?? 0);{n: '3'};!error
+abs(n ?? 0);{n: true};!error
+round(n ?? 0) + 1;{n: -2.5};-2
+round(n ?? 0) + 1;{n: 0};1
+round(n ?? 0) + 1;{n: null};1
+round(n ?? 0) + 1;{};1
+round(n ?? 0) + 1;{n: '3'};!error
+round(n ?? 0) + 1;{n: true};!error
+isNumeric(n) ? number(n) * 2 : null;{n: -2.5};-5.0
+isNumeric(n) ? number(n) * 2 : null;{n: 0};0
+isNumeric(n) ? number(n) * 2 : null;{n: null};null
+isNumeric(n) ? number(n) * 2 : null;{};null
+isNumeric(n) ? number(n) * 2 : null;{n: '3'};6
+isNumeric(n) ? number(n) * 2 : null;{n: true};null
+# Null in the precision argument
+round(1.25, p);{p: 1};1.3
+round(1.25, p);{p: null};!error
+round(1.25, p);{};!error
+round(1.25, p);{p: '1'};!error
+trunc(1.25, p);{p: 1};1.2
+trunc(1.25, p);{p: null};!error
+trunc(1.25, p);{};!error
+trunc(1.25, p);{p: '1'};!error
+# Conversion functions give null a meaning of its own
+string(n);{n: -2.5};'-2.5'
+string(n);{n: 0};'0'
+string(n);{n: null};'null'
+string(n);{};'null'
+string(n);{n: '3'};'3'
+string(n);{n: true};'true'
+type(n);{n: -2.5};'number'
+type(n);{n: 0};'number'
+type(n);{n: null};'null'
+type(n);{};'null'
+type(n);{n: '3'};'string'
+type(n);{n: true};'bool'
+number(n);{n: -2.5};-2.5
+number(n);{n: 0};0
+number(n);{n: null};!error
+number(n);{};!error
+number(n);{n: '3'};3
+number(n);{n: true};1
+isNumeric(n);{n: -2.5};true
+isNumeric(n);{n: 0};true
+isNumeric(n);{n: null};false
+isNumeric(n);{};false
+isNumeric(n);{n: '3'};true
+isNumeric(n);{n: true};false
+bool(n);{n: -2.5};true
+bool(n);{n: 0};false
+bool(n);{n: null};false
+bool(n);{};false
+bool(n);{n: '3'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(n);{n: true};true
+string(n) == 'null';{n: -2.5};false
+string(n) == 'null';{n: 0};false
+string(n) == 'null';{n: null};true
+string(n) == 'null';{};true
+string(n) == 'null';{n: '3'};false
+string(n) == 'null';{n: true};false
+number(n ?? '0');{n: -2.5};-2.5
+number(n ?? '0');{n: 0};0
+number(n ?? '0');{n: null};0
+number(n ?? '0');{};0
+number(n ?? '0');{n: '3'};3
+number(n ?? '0');{n: true};1
+# Aggregates reject null lists and null elements; empty lists differ per function
+sum(xs);{xs: [1, 2, 3]};6
+sum(xs);{xs: [1, null, 3]};!error
+sum(xs);{xs: [null]};!error
+sum(xs);{xs: []};0
+sum(xs);{xs: null};!error
+sum(xs);{};!error
+sum(xs);{xs: [1, '2']};!error
+sum(xs);{xs: 5};!error
+max(xs);{xs: [1, 2, 3]};3
+max(xs);{xs: [1, null, 3]};!error
+max(xs);{xs: [null]};!error
+max(xs);{xs: []};!error
+max(xs);{xs: null};!error
+max(xs);{};!error
+max(xs);{xs: [1, '2']};!error
+max(xs);{xs: 5};!error
+min(xs);{xs: [1, 2, 3]};1
+min(xs);{xs: [1, null, 3]};!error
+min(xs);{xs: [null]};!error
+min(xs);{xs: []};!error
+min(xs);{xs: null};!error
+min(xs);{};!error
+min(xs);{xs: [1, '2']};!error
+min(xs);{xs: 5};!error
+avg(xs);{xs: [1, 2, 3]};2
+avg(xs);{xs: [1, null, 3]};!error
+avg(xs);{xs: [null]};!error
+avg(xs);{xs: []};!error
+avg(xs);{xs: null};!error
+avg(xs);{};!error
+avg(xs);{xs: [1, '2']};!error
+avg(xs);{xs: 5};!error
+len(xs);{xs: [1, 2, 3]};3
+len(xs);{xs: [1, null, 3]};3
+len(xs);{xs: [null]};1
+len(xs);{xs: []};0
+len(xs);{xs: null};!error
+len(xs);{};!error
+len(xs);{xs: [1, '2']};2
+len(xs);{xs: 5};!error
+sum(xs ?? []);{xs: [1, 2, 3]};6
+sum(xs ?? []);{xs: [1, null, 3]};!error
+sum(xs ?? []);{xs: [null]};!error
+sum(xs ?? []);{xs: []};0
+sum(xs ?? []);{xs: null};0
+sum(xs ?? []);{};0
+sum(xs ?? []);{xs: [1, '2']};!error
+sum(xs ?? []);{xs: 5};!error
+sum(filter(xs, # != null));{xs: [1, 2, 3]};6
+sum(filter(xs, # != null));{xs: [1, null, 3]};4
+sum(filter(xs, # != null));{xs: [null]};0
+sum(filter(xs, # != null));{xs: []};0
+sum(filter(xs, # != null));{xs: null};!error
+sum(filter(xs, # != null));{};!error
+sum(filter(xs, # != null));{xs: [1, '2']};!error
+sum(filter(xs, # != null));{xs: 5};!error
+sum(map(xs, # ?? 0));{xs: [1, 2, 3]};6
+sum(map(xs, # ?? 0));{xs: [1, null, 3]};4
+sum(map(xs, # ?? 0));{xs: [null]};0
+sum(map(xs, # ?? 0));{xs: []};0
+sum(map(xs, # ?? 0));{xs: null};!error
+sum(map(xs, # ?? 0));{};!error
+sum(map(xs, # ?? 0));{xs: [1, '2']};!error
+sum(map(xs, # ?? 0));{xs: 5};!error
+len(xs) > 0 ? max(xs) : null;{xs: [1, 2, 3]};3
+len(xs) > 0 ? max(xs) : null;{xs: [1, null, 3]};!error
+len(xs) > 0 ? max(xs) : null;{xs: [null]};!error
+len(xs) > 0 ? max(xs) : null;{xs: []};null
+len(xs) > 0 ? max(xs) : null;{xs: null};!error
+len(xs) > 0 ? max(xs) : null;{};!error
+len(xs) > 0 ? max(xs) : null;{xs: [1, '2']};!error
+len(xs) > 0 ? max(xs) : null;{xs: 5};!error
+contains(xs, null);{xs: [1, 2, 3]};false
+contains(xs, null);{xs: [1, null, 3]};true
+contains(xs, null);{xs: [null]};true
+contains(xs, null);{xs: []};false
+contains(xs, null);{xs: null};!error
+contains(xs, null);{};!error
+contains(xs, null);{xs: [1, '2']};false
+contains(xs, null);{xs: 5};!error
+null in xs;{xs: [1, 2, 3]};false
+null in xs;{xs: [1, null, 3]};true
+null in xs;{xs: [null]};true
+null in xs;{xs: []};false
+null in xs;{xs: null};!error
+null in xs;{};!error
+null in xs;{xs: [1, '2']};false
+null in xs;{xs: 5};!error
+flatten([xs]);{xs: [1, 2, 3]};[1, 2, 3]
+flatten([xs]);{xs: [1, null, 3]};[1, null, 3]
+flatten([xs]);{xs: [null]};[null]
+flatten([xs]);{xs: []};[]
+flatten([xs]);{xs: null};[null]
+flatten([xs]);{};[null]
+flatten([xs]);{xs: [1, '2']};[1, '2']
+flatten([xs]);{xs: 5};[5]
+# keys and values of null
+keys(o);{o: {a: 1, b: null}};['a', 'b']
+keys(o);{o: {}};[]
+keys(o);{o: null};!error
+keys(o);{};!error
+keys(o);{o: [5, null]};[0, 1]
+keys(o);{o: 'ab'};!error
+values(o);{o: {a: 1, b: null}};[1, null]
+values(o);{o: {}};[]
+values(o);{o: null};!error
+values(o);{};!error
+values(o);{o: [5, null]};!error
+values(o);{o: 'ab'};!error
+keys(o ?? {});{o: {a: 1, b: null}};['a', 'b']
+keys(o ?? {});{o: {}};[]
+keys(o ?? {});{o: null};[]
+keys(o ?? {});{};[]
+keys(o ?? {});{o: [5, null]};[0, 1]
+keys(o ?? {});{o: 'ab'};!error
+len(o ?? []);{o: {a: 1, b: null}};!error
+len(o ?? []);{o: {}};!error
+len(o ?? []);{o: null};0
+len(o ?? []);{};0
+len(o ?? []);{o: [5, null]};2
+len(o ?? []);{o: 'ab'};2
+# Dates from null or missing input are invalid dates, not errors
+d(t).isValid();{t: '2024-05-06'};true
+d(t).isValid();{t: null};false
+d(t).isValid();{};false
+d(t).isValid();{t: 'garbage'};false
+d(t).year();{t: '2024-05-06'};2024
+d(t).year();{t: null};null
+d(t).year();{};null
+d(t).year();{t: 'garbage'};null
+d(t).year() ?? 0;{t: '2024-05-06'};2024
+d(t).year() ?? 0;{t: null};0
+d(t).year() ?? 0;{};0
+d(t).year() ?? 0;{t: 'garbage'};0
+d(t).year() + 1;{t: '2024-05-06'};2025
+d(t).year() + 1;{t: null};!error
+d(t).year() + 1;{};!error
+d(t).year() + 1;{t: 'garbage'};!error
+d(t).format('%Y');{t: '2024-05-06'};'2024'
+d(t).format('%Y');{t: null};'Invalid date'
+d(t).format('%Y');{};'Invalid date'
+d(t).format('%Y');{t: 'garbage'};'Invalid date'
+d(t).add(1, 'd').isValid();{t: '2024-05-06'};true
+d(t).add(1, 'd').isValid();{t: null};false
+d(t).add(1, 'd').isValid();{};false
+d(t).add(1, 'd').isValid();{t: 'garbage'};false
+t == null ? 'no date' : d(t).format('%d.%m.');{t: '2024-05-06'};'06.05.'
+t == null ? 'no date' : d(t).format('%d.%m.');{t: null};'no date'
+t == null ? 'no date' : d(t).format('%d.%m.');{};'no date'
+t == null ? 'no date' : d(t).format('%d.%m.');{t: 'garbage'};'Invalid date'
+d(t ?? '2000-01-01').year();{t: '2024-05-06'};2024
+d(t ?? '2000-01-01').year();{t: null};2000
+d(t ?? '2000-01-01').year();{};2000
+d(t ?? '2000-01-01').year();{t: 'garbage'};null
+d(t).isValid() and d(t).year() > 2020;{t: '2024-05-06'};true
+d(t).isValid() and d(t).year() > 2020;{t: null};false
+d(t).isValid() and d(t).year() > 2020;{};false
+d(t).isValid() and d(t).year() > 2020;{t: 'garbage'};false
+date(t);{t: '2024-05-06'};1714953600
+date(t);{t: null};!error
+date(t);{};!error
+date(t);{t: 'garbage'};!error
+t.year();{t: '2024-05-06'};!error
+t.year();{t: null};!error
+t.year();{};!error
+t.year();{t: 'garbage'};!error
+# Function calls that are skipped by ?? , and/or and ternaries do not raise
+'x' ?? upper(1);;'x'
+false and len(null) > 0;;false
+true or sum(null) > 0;;true
+true ? 1 : abs('a');;1
+s ?? upper(s);{s: 'a'};'a'
+s ?? upper(s);{s: null};!error
+s ?? upper(s);{};!error
+xs ?? max(xs);{xs: [1]};[1]
+xs ?? max(xs);{};!error
+# Nested function calls propagate a null argument error outward
+len(upper(s));{s: 'ab'};2
+len(upper(s));{s: null};!error
+len(upper(s));{};!error
+abs(round(n));{n: -1.6};2
+abs(round(n));{n: null};!error
+string(len(xs));{xs: [1]};'1'
+string(len(xs));{xs: null};!error
+type(sum(xs));{xs: [1]};'number'
+type(sum(xs));{xs: [null]};!error
+upper(string(n));{n: null};'NULL'
+upper(string(n));{};'NULL'
+upper(string(n));{n: 1.5};'1.5'
+len(string(n));{n: null};4
+len(split(s, ','));{s: null};!error
+len(split(s ?? '', ','));{s: null};1
+len(split(s ?? '', ','));{s: 'a,b'};2

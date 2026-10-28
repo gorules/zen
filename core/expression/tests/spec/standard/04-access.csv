@@ -1,0 +1,186 @@
+expression (string);input (json 5);output (json 5);note
+# Dot access: present values of every kind
+a;{a: 1};1
+a;{a: 'x'};'x'
+a;{a: null};null
+a;{a: true};true
+a;{a: [1, 2]};[1, 2]
+a;{a: {b: 1}};{b: 1}
+a;{a: 1.50};1.5
+a;{};null
+a;;null
+a.b;{a: {b: 1}};1
+a.b;{a: {b: 'v'}};'v'
+a.b;{a: {b: null}};null
+a.b;{a: {b: [1]}};[1]
+a.b;{a: {b: {c: 1}}};{c: 1}
+a.b;{a: {c: 1}};null
+a.b;{a: {}};null
+a.b;{};null
+a.b;;null
+a.b.c;{a: {b: {c: 1}}};1
+a.b.c;{a: {b: {c: 'deep'}}};'deep'
+a.b.c;{a: {b: {c: null}}};null
+a.b.c;{a: {b: {}}};null
+a.b.c;{a: {b: null}};null
+a.b.c;{a: {}};null
+a.b.c;{a: null};null
+a.b.c;{};null
+a.b.c;;null
+a.b.c.d.e.f;{a: {b: {c: {d: {e: {f: 'deep'}}}}}};'deep'
+a.b.c.d.e.f;{a: {b: {c: {d: {e: {}}}}}};null
+a.b.c.d.e.f;{a: {b: {c: {d: 5}}}};null
+a . b;{a: {b: 1}};1
+(a).b;{a: {b: 2}};2
+(a.b).c;{a: {b: {c: 3}}};3
+# Dot access on non-object values is null, not an error
+a.b;{a: 5};null
+a.b;{a: 'str'};null
+a.b;{a: true};null
+a.b;{a: false};null
+a.b;{a: [1, 2]};null
+a.b;{a: []};null
+a.length;{a: 'abc'};null
+a.length;{a: [1, 2, 3]};null
+a.b.c;{a: {b: 5}};null
+a.b.c;{a: {b: 'str'}};null
+a.b.c;{a: {b: true}};null
+a.b.c;{a: {b: [1]}};null
+a.b.c;{a: 0};null
+# Bracket access with string keys
+a['b'];{a: {b: 1}};1
+a['b'];{a: {b: null}};null
+a['b'];{a: {}};null
+a['b'];{a: null};null
+a['b'];{a: 5};null
+a['b'];{};null
+a['b']['c'];{a: {b: {c: 1}}};1
+a['b']['c'];{a: {b: 5}};null
+a['b'].c;{a: {b: {c: 2}}};2
+a.b['c'];{a: {b: {c: 3}}};3
+a['my key'];{a: {'my key': 3}};3
+a['my key'];{a: {'my': 3}};null
+a['ключ'];{a: {'ключ': 3}};3
+a['日本'];{a: {'日本': 'jp'}};'jp'
+a['😀'];{a: {'😀': 1}};1
+a['1'];{a: {'1': 3}};3
+a['0'];{a: {'0': 'z'}};'z'
+a['a.b'];{a: {'a.b': 1}};1
+a.a.b;{a: {'a.b': 1}};null
+a['b c'].d;{a: {'b c': {d: 4}}};4
+a['B'];{a: {b: 1}};null
+a['-'];{a: {'-': 'dash'}};'dash'
+a['$'];{a: {'$': 1}};1
+# Number keys do not coerce to object string keys
+a[1];{a: {'1': 3}};null
+a[0];{a: {'0': 'z'}};null
+a.1;{a: {'1': 3}};!error
+# Dynamic keys
+a[k];{a: {b: 1}, k: 'b'};1
+a[k];{a: {b: 1}, k: 'c'};null
+a[k];{a: {b: 1}, k: 1};null
+a[k];{a: {b: 1}, k: null};null
+a[k];{a: {b: 1}};null
+a[k];{a: {b: 1}, k: true};null
+a[k];{a: {'1': 'one'}, k: '1'};'one'
+a[k];{a: [5, 6], k: 1};6
+a[k];{a: [5, 6], k: 0};5
+a[k];{a: [5, 6], k: '1'};null
+a[k];{a: [5, 6], k: null};null
+a[k];{a: [5, 6]};null
+a[k];{a: 'xyz', k: 1};'y'
+a[k];{a: null, k: 'b'};null
+a[k1][k2];{a: {x: {y: 7}}, k1: 'x', k2: 'y'};7
+a[k1][k2];{a: {x: {y: 7}}, k1: 'x', k2: 'z'};null
+a[k1][k2];{a: {x: 5}, k1: 'x', k2: 'y'};null
+a[k1][k2];{a: {x: {y: 7}}};null
+a[k.p];{a: {x: 8}, k: {p: 'x'}};8
+a[k.p];{a: {x: 8}, k: {}};null
+a[k.p];{a: {x: 8}, k: null};null
+a[b[0]];{a: [10, 20], b: [1]};20
+a[b[0]];{a: [10, 20], b: []};null
+a[b[0]];{a: {n: 1}, b: ['n']};1
+a['b' + 'c'];{a: {bc: 1}};1
+a[k + 'x'];{a: {yx: 2}, k: 'y'};2
+a[lower(k)];{a: {key: 3}, k: 'KEY'};3
+a[string(n)];{a: {'5': 'five'}, n: 5};'five'
+a[k ?? 'd'];{a: {d: 'dflt', v: 'val'}, k: null};'dflt'
+a[k ?? 'd'];{a: {d: 'dflt', v: 'val'}, k: 'v'};'val'
+a[true ? 'x' : 'y'];{a: {x: 1, y: 2}};1
+# Unusual key types in brackets yield null
+a[true];{a: [1]};null
+a[null];{a: [1]};null
+a[[0]];{a: [1]};null
+a[{}];{a: [1]};null
+a[true];{a: {'true': 1}};null
+# Literal receivers
+[1, 2, 3][0];;1
+[1, 2, 3][2];;3
+[1, 2, 3][3];;null
+[[1, 2], [3]][1][0];;3
+[{a: 1}][0].a;;1
+{a: 1}.a;;!error;question: member access on an object literal is a parse error while array literals allow it
+{a: 1}['a'];;!error;question: bracket access on an object literal is a parse error while array literals allow it
+'abc'[1];;!error;question: indexing a string literal is a parse error while array literals allow it
+true.x;;!error
+null.x;;!error
+null[0];;!error
+a?.b;{a: {b: 1}};!error
+# Access results feed expressions
+a.b + 1;{a: {b: 1}};2
+a.b + a.c;{a: {b: 1, c: 2}};3
+a.b ?? 'none';{a: {b: 'v'}};'v'
+a.b ?? 'none';{a: {}};'none'
+a.b ?? 'none';{a: 5};'none'
+a.b ?? 'none';{a: {b: false}};false
+a.b == null;{a: {}};true
+a.b == null;{a: {b: 0}};false
+a.b.c ?? a.d;{a: {d: 'fallback'}};'fallback'
+len(a.b);{a: {b: [1, 2, 3]}};3
+len(a.b);{a: {b: 'abcd'}};4
+upper(a.b);{a: {b: 'x'}};'X'
+`${a.b}`;{a: {b: 'x'}};'x'
+[a.b, a.c];{a: {b: 1}};[1, null]
+{v: a.b};{a: {b: 1}};{v: 1}
+# Root reference
+$root;{a: 1};{a: 1}
+$root;{};{}
+$root;;null
+$root;5;5
+$root;'s';'s'
+$root;[1, 2];[1, 2]
+$root.a;{a: 1};1
+$root.a;{};null
+$root.a;;null
+$root.a;5;null
+$root.a.b;{a: {b: 2}};2
+$root.a.b;{a: 3};null
+$root['a'];{a: 1};1
+$root['a b'];{'a b': 1};1
+$root[k];{a: 1, k: 'a'};1
+$root[k];{a: 1, k: 'zz'};null
+$root[0];[1, 2];1
+$root[1];[1, 2];2
+$root.$root;{'$root': 1};1
+($root).a;{a: 4};4
+len($root);[1, 2, 3];3
+keys($root);{a: 1};['a']
+# $ is an ordinary identifier in standard mode
+$;{'$': 5};5
+$;{a: 1};null
+$.a;{'$': {a: 1}};1
+$.a;{a: 1};null
+# Identifier lookup on a non-object environment
+x;;null
+x;{};null
+x;{x: null};null
+x;5;!error;question: an identifier on a non-object root errors while $root.x on the same root is null
+x;'str';!error;question: an identifier on a non-object root errors while $root.x on the same root is null
+x;[1, 2];!error;question: an identifier on a non-object root errors while $root.x on the same root is null
+x;true;!error;question: an identifier on a non-object root errors while $root.x on the same root is null
+# Identifiers are case sensitive and may contain $ and _
+X;{x: 1};null
+_x;{_x: 1};1
+x1;{x1: 1};1
+$x;{'$x': 1};1
+a_b.c_d;{a_b: {c_d: 2}};2

@@ -687,7 +687,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     let str_capacity = parts
                         .iter()
-                        .fold(separator.len() * (parts.len() - 1), |acc, s| acc + s.len());
+                        .fold(separator.len() * parts.len().saturating_sub(1), |acc, s| {
+                            acc + s.len()
+                        });
 
                     let mut s = StdString::with_capacity(str_capacity);
                     let mut it = parts.into_iter().peekable();

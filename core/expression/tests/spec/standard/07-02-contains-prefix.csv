@@ -1,0 +1,169 @@
+expression (string);input (json 5);output (json 5);note
+# contains: string literals
+contains('hello world', 'world');;true
+contains('hello world', 'World');;false
+contains('hello world', 'o w');;true
+contains('hello world', 'hello world');;true
+contains('hello', 'hello world');;false
+contains('abc', '');;true
+contains('', '');;true
+contains('', 'a');;false
+contains('a.b', '.');;true
+contains('abc', '.');;false
+contains('a*b', '*');;true
+contains('abc', 'b*');;false
+contains('äöü', 'ö');;true
+contains('äöü', 'o');;false
+contains('straße', 'ss');;false
+contains('STRASSE', 'SS');;true
+contains('日本語', '本');;true
+contains('😀👍', '👍');;true
+contains('ΣΑΣ', 'σ');;false
+contains('abc', ' ');;false
+contains('a b', ' ');;true
+# contains: string and substring from input
+contains(s, t);{s: 'hello', t: 'ell'};true
+contains(s, t);{s: 'hello', t: 'ell'};true
+contains(s, t);{s: 'hello', t: 'L'};false
+contains(s, t);{s: 'hello', t: ''};true
+contains(s, t);{s: '', t: ''};true
+contains(s, t);{s: '', t: 'x'};false
+contains(s, t);{s: '日本語', t: '本'};true
+contains(s, t);{s: 'e\u0301', t: '\u0301'};true
+contains(s, t);{s: 'a\tb', t: '\t'};true
+contains(s, t);{s: null, t: 'a'};!error
+contains(s, t);{s: 'a', t: null};!error
+contains(s, t);{s: null, t: null};!error
+contains(s, t);{t: 'a'};!error
+contains(s, t);{s: 'a'};!error
+contains(s, t);{s: 5, t: '5'};!error
+contains(s, t);{s: '5', t: 5};!error
+contains(s, t);{s: 'true', t: true};!error
+contains(s, t);{s: ['a', 'b'], t: 'a'};true
+contains(s, t);{s: ['ab'], t: 'a'};false
+contains(s, t);{s: {a: 1}, t: 'a'};!error
+# contains: single-byte needle over many rows
+contains(s, 'e');{s: 'hello'};true
+contains(s, 'e');{s: 'hello'};true
+contains(s, 'e');{s: 'HELLO'};false
+contains(s, 'e');{s: ''};false
+contains(s, 'e');{s: 'é'};false
+contains(s, 'e');{s: 'e\u0301'};true
+contains(s, 'e');{s: 'eee'};true
+contains(s, 'e');{s: '   '};false
+contains(s, 'e');{s: null};!error
+contains(s, 'e');{};!error
+contains(s, 'e');{s: 1};!error
+contains(s, 'e');{s: ['e']};true
+# contains: multi-byte needle over many rows
+contains(s, 'é');{s: 'café'};true
+contains(s, 'é');{s: 'cafe'};false
+contains(s, 'é');{s: 'CAFÉ'};false
+contains(s, 'é');{s: 'cafe\u0301'};false
+contains(s, 'é');{s: ''};false
+contains(s, 'é');{s: 'café'};true
+# contains: arrays
+contains(['a', 'b'], 'a');;true
+contains(['A'], 'a');;false
+contains([1, 2], 2);;true
+contains([1], '1');;false
+contains(['1'], 1);;false
+contains([true], true);;true
+contains([true], 'true');;false
+contains([null], null);;true
+contains([], null);;false
+contains([1.0], 1);;true
+contains(['ä'], 'ä');;true
+contains([[1]], [1]);;false;question: arrays inside arrays are never equal for contains
+contains([{a: 1}], {a: 1});;false;question: objects inside arrays are never equal for contains
+contains([d('2024-01-01')], d('2024-01-01'));;true
+# contains: bad arguments
+contains(1, 1);;!error
+contains(null, 'a');;!error
+contains('a', null);;!error
+contains(true, 'true');;!error
+contains({a: 1}, 'a');;!error
+contains('abc');;!error
+contains();;!error
+contains('a', 'b', 'c');;!error
+# startsWith: literals
+startsWith('hello', 'he');;true
+startsWith('hello', 'He');;false
+startsWith('hello', 'hello');;true
+startsWith('hello', 'hello!');;false
+startsWith('hello', 'lo');;false
+startsWith('hello', '');;true
+startsWith('', '');;true
+startsWith('', 'a');;false
+startsWith(' abc', 'abc');;false
+startsWith('äb', 'ä');;true
+startsWith('äb', 'a');;false
+startsWith('日本', '日');;true
+startsWith('😀x', '😀');;true
+startsWith('Straße', 'STRASSE');;false
+startsWith('Hello, World!', 'World');;false
+# startsWith: input rows
+startsWith(s, 'ab');{s: 'abc'};true
+startsWith(s, 'ab');{s: 'abc'};true
+startsWith(s, 'ab');{s: 'ab'};true
+startsWith(s, 'ab');{s: 'a'};false
+startsWith(s, 'ab');{s: 'AB'};false
+startsWith(s, 'ab');{s: ''};false
+startsWith(s, 'ab');{s: ' ab'};false
+startsWith(s, 'ab');{s: null};!error
+startsWith(s, 'ab');{};!error
+startsWith(s, 'ab');{s: 12};!error
+startsWith(s, 'ab');{s: ['ab']};!error
+startsWith(s, t);{s: 'prefix-x', t: 'prefix-'};true
+startsWith(s, t);{s: 'prefix-x', t: ''};true
+startsWith(s, t);{s: 'e\u0301', t: 'e'};true
+startsWith(s, t);{s: '\u00e9', t: 'e'};false
+startsWith(s, t);{s: 'x', t: null};!error
+startsWith(s, t);{s: '1', t: 1};!error
+# startsWith: bad arguments
+startsWith(1, '1');;!error
+startsWith(null, 'a');;!error
+startsWith('a', null);;!error
+startsWith(true, 't');;!error
+startsWith(['a'], 'a');;!error
+startsWith('a');;!error
+startsWith('a', 'b', 'c');;!error
+# endsWith: literals
+endsWith('hello', 'lo');;true
+endsWith('hello', 'LO');;false
+endsWith('hello', 'hello');;true
+endsWith('hello', 'ohello');;false
+endsWith('hello', '');;true
+endsWith('', '');;true
+endsWith('', 'a');;false
+endsWith('a', 'ba');;false
+endsWith('abc ', 'abc');;false
+endsWith('ß', 's');;false
+endsWith('straße', 'ße');;true
+endsWith('日本語', '語');;true
+endsWith('x😀', '😀');;true
+endsWith('file.CSV', '.csv');;false
+# endsWith: input rows
+endsWith(s, '.csv');{s: 'a.csv'};true
+endsWith(s, '.csv');{s: 'a.csv'};true
+endsWith(s, '.csv');{s: 'a.CSV'};false
+endsWith(s, '.csv');{s: '.csv'};true
+endsWith(s, '.csv');{s: 'csv'};false
+endsWith(s, '.csv');{s: ''};false
+endsWith(s, '.csv');{s: 'a.csv\n'};false
+endsWith(s, '.csv');{s: null};!error
+endsWith(s, '.csv');{};!error
+endsWith(s, '.csv');{s: 1};!error
+endsWith(s, '.csv');{s: false};!error
+endsWith(s, t);{s: 'e\u0301', t: '\u0301'};true
+endsWith(s, t);{s: 'e\u0301', t: 'é'};false
+endsWith(s, t);{s: 'abc', t: ''};true
+endsWith(s, t);{s: 'abc', t: null};!error
+# endsWith: bad arguments
+endsWith(1, '1');;!error
+endsWith(10, 0);;!error
+endsWith(null, '');;!error
+endsWith('a');;!error
+endsWith('a', 'b', 'c');;!error
+startsWith(lower(s), 'ab') and endsWith(lower(s), 'yz');{s: 'ABxYZ'};true
+startsWith(lower(s), 'ab') and endsWith(lower(s), 'yz');{s: 'abxy'};false

@@ -6198,6 +6198,7 @@ dependencies = [
  "ahash 0.8.12",
  "hipstr",
  "nohash-hasher",
+ "recursive",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",

@@ -1,0 +1,173 @@
+expression (string);input (json 5);output (json 5);note
+# Nullish coalescing: only null and missing fall through
+null ?? 1;;1
+1 ?? 2;;1
+0 ?? 1;;0
+false ?? 1;;false
+true ?? 1;;true
+'' ?? 'x';;''
+[] ?? 1;;[]
+{} ?? 1;;{}
+null ?? null;;null
+null ?? false;;false
+null ?? null ?? 3;;3
+null ?? 2 ?? 3;;2
+1 ?? null ?? 3;;1
+d('2024-01-01') ?? 1;;'2024-01-01T00:00:00Z'
+# Nullish coalescing: the right side is evaluated only when needed
+1 ?? (1 + {});;1
+0 ?? (1 + {});;0
+false ?? (1 + {});;false
+null ?? (1 + {});;!error
+# Nullish coalescing binds tighter than arithmetic and comparison
+null ?? 1 + 2;;3
+2 ?? 1 + 2;;4
+null ?? 2 * 3;;6
+null ?? 2 ^ 3;;8
+2 ^ null ?? 3;;8
+null ?? 1 == 1;;true
+null ?? 2 == 1;;false
+null ?? false or true;;true
+null ?? true and false;;false
+null ?? 1 in [1];;true
+1 + (null ?? 2);;3
+-(null ?? 5);;-5
+-null ?? 5;;!error
+null ?? -5;;-5
+# Nullish coalescing: variable operands
+x ?? 'default';{x: 'set'};'set'
+x ?? 'default';{x: null};'default'
+x ?? 'default';{};'default'
+x ?? 'default';{x: ''};''
+x ?? 'default';{x: 0};0
+x ?? 'default';{x: false};false
+x ?? 'default';{x: []};[]
+x ?? 0;{x: 5};5
+x ?? 0;{x: null};0
+x ?? 0;{};0
+x ?? 0;{x: -0.5};-0.5
+x ?? 0;{x: '7'};'7'
+a ?? b;{a: 1, b: 2};1
+a ?? b;{a: null, b: 2};2
+a ?? b;{b: 2};2
+a ?? b;{a: null};null
+a ?? b;{};null
+a ?? b;{a: false, b: true};false
+a ?? b ?? c;{a: 1, b: 2, c: 3};1
+a ?? b ?? c;{b: 2, c: 3};2
+a ?? b ?? c;{c: 3};3
+a ?? b ?? c;{};null
+a ?? b ?? c;{a: 0, c: 3};0
+x.y ?? 'd';{x: {y: 1}};1
+x.y ?? 'd';{x: {}};'d'
+x.y ?? 'd';{x: null};'d'
+x.y ?? 'd';{};'d'
+x.y ?? 'd';{x: {y: false}};false
+x.y.z ?? 'd';{};'d'
+x.y.z ?? 'd';{x: {y: {z: 0}}};0
+x[0] ?? 'd';{x: []};'d'
+x[0] ?? 'd';{x: [null]};'d'
+x[0] ?? 'd';{x: [0]};0
+x ?? 1 + 1;{x: 5};6
+x ?? 1 + 1;{};2
+x ?? 1 + 1;{x: null};2
+x ?? 1 + 1;{x: 'a'};!error
+x ?? 1 * 3;{x: 2};6
+x ?? 1 * 3;{};3
+x ?? 1 > 0;{x: 5};true
+x ?? 1 > 0;{x: -5};false
+x ?? 1 > 0;{};true
+x ?? 1 > 0;{x: 'a'};!error
+(x ?? 0) >= 18;{x: 21};true
+(x ?? 0) >= 18;{};false
+(x ?? 0) >= 18;{x: null};false
+(x ?? 0) >= 18;{x: 18};true
+x ?? false or y;{y: true};true
+x ?? false or y;{x: true};true
+x ?? false or y;{x: false, y: false};false
+x ?? false or y;{x: 1, y: true};!error
+# Ternary: condition must be a boolean
+true ? 1 : 2;;1
+false ? 1 : 2;;2
+1 == 1 ? 'y' : 'n';;'y'
+1 == 2 ? 'y' : 'n';;'n'
+null ? 1 : 2;;!error
+1 ? 1 : 2;;!error
+0 ? 1 : 2;;!error
+'' ? 1 : 2;;!error
+'true' ? 1 : 2;;!error
+[] ? 1 : 2;;!error
+{} ? 1 : 2;;!error
+# Ternary: only the chosen branch is evaluated
+true ? 1 : (1 + {});;1
+false ? (1 + {}) : 2;;2
+true ? (1 + {}) : 2;;!error
+false ? 1 : (1 + {});;!error
+true ? null : 1;;null
+false ? 1 : [1, 2];;[1, 2]
+true ? {a: 1} : 0;;{a: 1}
+# Ternary: nesting is right-associative
+true ? 1 : false ? 2 : 3;;1
+false ? 1 : true ? 2 : 3;;2
+false ? 1 : false ? 2 : 3;;3
+true ? false ? 1 : 2 : 3;;2
+true ? true ? 1 : 2 : 3;;1
+false ? true ? 1 : 2 : 3;;3
+(true ? false : true) ? 1 : 2;;2
+true ? 1 : 2 ? 3 : 4;;1
+false ? 1 : (true ? 2 : 3);;2
+# Ternary: lowest precedence
+true or false ? 'a' : 'b';;'a'
+false and true ? 'a' : 'b';;'b'
+1 + 1 == 2 ? 'a' : 'b';;'a'
+true ? 1 : 2 + 10;;1
+false ? 1 : 2 + 10;;12
+null ?? true ? 'a' : 'b';;'a'
+null ?? false ? 'a' : 'b';;'b'
+(true ? 1 : 2) + 10;;11
+true ? 1 + 1 : 0;;2
+not true ? 'a' : 'b';;'b'
+1 in [1] ? 'a' : 'b';;'a'
+[true ? 1 : 2, false ? 1 : 2];;[1, 2]
+{k: false ? 'a' : 'b'};;{k: 'b'}
+# Ternary: variable operands
+x ? 'yes' : 'no';{x: true};'yes'
+x ? 'yes' : 'no';{x: false};'no'
+x ? 'yes' : 'no';{x: null};!error
+x ? 'yes' : 'no';{};!error
+x ? 'yes' : 'no';{x: 1};!error
+x ? 'yes' : 'no';{x: 'true'};!error
+age >= 18 ? 'adult' : 'minor';{age: 18};'adult'
+age >= 18 ? 'adult' : 'minor';{age: 17.9};'minor'
+age >= 18 ? 'adult' : 'minor';{age: 99};'adult'
+age >= 18 ? 'adult' : 'minor';{age: null};!error
+age >= 18 ? 'adult' : 'minor';{};!error
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: 95};'A'
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: 90};'A'
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: 85};'B'
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: 70};'C'
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: 0};'F'
+score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'F';{score: '95'};!error
+x == null ? 'missing' : x;{};'missing'
+x == null ? 'missing' : x;{x: null};'missing'
+x == null ? 'missing' : x;{x: 0};0
+x == null ? 'missing' : x;{x: false};false
+x == null ? 'missing' : x;{x: 'v'};'v'
+c ? a : b;{c: true, a: 1, b: 2};1
+c ? a : b;{c: false, a: 1, b: 2};2
+c ? a : b;{c: true, b: 2};null
+c ? a : b;{c: false, a: 1};null
+c ? a : b;{c: true, a: 1, b: 'x'};1
+c ? a : b;{c: null, a: 1, b: 2};!error
+c ? a + {} : b;{c: false, a: 1, b: 2};2
+c ? a + {} : b;{c: true, a: 1, b: 2};!error
+x > 0 ? x : -x;{x: 5};5
+x > 0 ? x : -x;{x: -5};5
+x > 0 ? x : -x;{x: 0};0
+x > 0 ? x : -x;{x: -0.25};0.25
+x in [1..5] ? 'in' : 'out';{x: 3};'in'
+x in [1..5] ? 'in' : 'out';{x: 6};'out'
+x in [1..5] ? 'in' : 'out';{x: null};!error
+(x ?? 0) > 0 ? 'pos' : 'non';{x: 1};'pos'
+(x ?? 0) > 0 ? 'pos' : 'non';{};'non'
+(x ?? 0) > 0 ? 'pos' : 'non';{x: -1};'non'

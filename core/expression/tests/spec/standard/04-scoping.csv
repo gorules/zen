@@ -1,0 +1,190 @@
+expression (string);input (json 5);output (json 5);note
+# Intended model: one program-level environment (input + top-level assignments). A closure body runs once per element
+# and assignments made inside it are local to that iteration: they shadow outer names, do not persist to the next
+# iteration and are not visible after the closure returns. Top-level parenthesized sequences have no scope of their own.
+# Closures read top-level assignments
+"x = 10; y = filter(list, #.y > x); y";{list: [{y: 5}, {y: 15}, {y: 20}]};[{y: 15}, {y: 20}]
+"x = 10; y = filter(list, #.y > x); y";{list: []};[]
+"x = 10; y = filter(list, #.y > x); y";{list: [{y: 10}]};[]
+"x = 10; y = filter(list, #.y > x); y";{list: [{}, {y: 11}]};!error
+"x = 10; y = filter(list, #.y > x); y";{list: null};!error
+"x = 10; y = filter(list, #.y > x); len(y)";{list: [{y: 5}, {y: 15}, {y: 20}]};2
+"x = 10; y = filter(list, #.y > x)";{list: [{y: 5}, {y: 15}, {y: 20}]};{x: 10, y: [{y: 15}, {y: 20}]}
+"x = 10; y = filter(list, #.y > x); z = map(y, #.y + x); z";{list: [{y: 5}, {y: 15}, {y: 20}]};[25, 30]
+"x = 10; y = filter(list, #.y > x); z = map(y, #.y + x); z";{list: [{y: 11}]};[21]
+"x = 10; y = filter(list, #.y > x); z = map(y, #.y + x); z";{list: [{y: 1}]};[]
+"x = 10; y = filter(list, #.y > x); z = map(y, #.y + x); [x, y, z]";{list: [{y: 12}], x: 0};[10, [{y: 12}], [22]]
+"x = 5; map(list, # + x)";{list: [1, 2]};[6, 7]
+"x = 5; map(list, # + x)";{list: []};[]
+"x = 5; map(list, # + x)";{list: [0.5]};[5.5]
+"x = 5; map(list, # + x)";{list: [1], x: 100};[6]
+"x = 1; map(list, x)";{list: [1, 2]};[1, 1]
+"x = 1; map(list, #.x)";{list: [{x: 5}, {x: 6}]};[5, 6]
+"x = 1; map(list, #.x + x)";{list: [{x: 5}, {x: 6}]};[6, 7]
+"x.y = 3; map(list, # * x.y)";{list: [1, 2]};[3, 6]
+"limit = 2; cnt = count(list, # > limit); cnt";{list: [1, 5, 10], limit: 4};2
+"limit = 2; cnt = count(list, # > limit); cnt";{list: [1, 5, 10]};2
+"limit = 2; cnt = count(list, # > limit); cnt";{list: [], limit: 4};0
+"cnt = count(list, # > limit); cnt";{list: [1, 5, 10], limit: 4};2
+"cnt = count(list, # > limit); cnt";{list: [1, 5, 10], limit: 0};3
+"cnt = count(list, # > limit); cnt";{list: [1, 5, 10]};!error
+"t = 3; [some(list, # > t), all(list, # > t), none(list, # > t), one(list, # > t), count(list, # > t)]";{list: [1, 5]};[true, false, false, true, 1]
+"t = 3; [some(list, # > t), all(list, # > t), none(list, # > t), one(list, # > t), count(list, # > t)]";{list: [4, 5]};[true, true, false, false, 2]
+"t = 3; [some(list, # > t), all(list, # > t), none(list, # > t), one(list, # > t), count(list, # > t)]";{list: []};[false, true, true, false, 0]
+"t = 3; flatMap(list, [#, # * t])";{list: [1, 2]};[1, 3, 2, 6]
+# Element fields versus variables of the same name
+map(list, x);{list: [{x: 5}], x: 9};[9]
+map(list, #.x);{list: [{x: 5}], x: 9};[5]
+map(list, #.x + x);{list: [{x: 5}, {x: 1}], x: 9};[14, 10]
+"x = 10; y = filter(list, #.x > x); y";{list: [{x: 5}, {x: 15}]};[{x: 15}]
+"x = 10; y = filter(list, #.x > x); y";{list: [{x: 10}]};[]
+"x = 10; y = filter(list, #.x > x); y";{list: [{x: 11}], x: 100};[{x: 11}]
+# Closures capture the current value - reassignment between closures
+"x = 5; a = map(list, # + x); x = 100; b = map(list, # + x); [a, b]";{list: [1, 2]};[[6, 7], [101, 102]]
+"x = 5; a = map(list, # + x); x = 100; b = map(list, # + x); [a, b]";{list: []};[[], []]
+"n = 2; r = map(list, # * n); n = 3; r2 = map(list, # * n); [r, r2]";{list: [1, 2]};[[2, 4], [3, 6]]
+"y = 1; x = map(list, # + y); y = 2; x";{list: [1]};[2]
+"a = 1; a = map(list, # + a); a";{list: [1, 2]};[2, 3]
+"list = map(list, # * 2); list";{list: [1, 2]};[2, 4]
+"list = map(list, # * 2); list";{list: []};[]
+"list = map(list, # * 2)";{list: [1, 2]};{list: [2, 4]}
+"list = filter(list, # > 1); list";{list: [1, 2]};[2]
+"list = filter(list, # > 1); list = map(list, # * 10); list";{list: [1, 2, 3]};[20, 30]
+# Aliases
+"x = 10; y = filter(list as x, x.y > 10); x";{list: [{y: 5}, {y: 15}]};10
+"x = 10; y = filter(list as x, x.y > 10); y";{list: [{y: 5}, {y: 15}]};[{y: 15}]
+"x = 10; y = map(list as x, x.y); y";{list: [{y: 5}, {y: 15}]};[5, 15]
+"x = 10; y = map(list as x, x); y";{list: [{y: 5}, {y: 15}]};[{y: 5}, {y: 15}]
+"x = 5; map(list as x, x + 1)";{list: [1, 2]};[2, 3]
+"x.y = 3; map(list as x, x.y)";{list: [{y: 1}]};[1]
+"x.y = 3; map(list as x, x.y)";{list: [{}]};[null]
+map(list as x, x + 1);{list: [1, 2], x: 100};[2, 3]
+map(list as x, x);{list: [], x: 100};[]
+map(list as p, p.v);{list: [{v: 1}, {v: 2}], p: {v: 9}};[1, 2]
+map(a as o, map(o.items as o, o + 1));{a: [{items: [1, 2]}, {items: [3]}]};[[2, 3], [4]]
+map(a as o, map(o.items as i, i + len(o.items)));{a: [{items: [1, 2]}, {items: [3]}]};[[3, 4], [4]]
+map(a as o, map(o.items, # + o.k));{a: [{k: 100, items: [1, 2]}, {k: 200, items: [3]}]};[[101, 102], [203]]
+map(a as o, map(o.items, # + o.k));{a: []};[]
+map(a as o, map(o.items, # + o.k));{a: [{k: 1, items: []}]};[[]]
+map(a, map(#.items, # + 1));{a: [{items: [1, 2]}, {items: [3]}]};[[2, 3], [4]]
+map(a as o, filter(o.items as i, i > o.min));{a: [{min: 1, items: [1, 2]}, {min: 0, items: [0, 5]}]};[[2], [5]]
+map(a as o, map(o.items as i, map(i.v as j, j + i.k + o.k)));{a: [{k: 100, items: [{k: 10, v: [1, 2]}]}]};[[[111, 112]]]
+# Nested closures and #
+map(list, filter(list, # > 1));{list: [1, 2, 3]};[[2, 3], [2, 3], [2, 3]]
+map(list as o, filter(list, # > o));{list: [1, 2, 3]};[[2, 3], [3], []]
+map(list as o, count(list, # < o));{list: [3, 1, 2]};[2, 0, 1]
+# Assignments inside closure bodies are local to the iteration
+"map(list, (z = #; z * 2))";{list: [5, 6]};[10, 12]
+"map(list, (z = #; z * 2))";{list: []};[]
+"map(list, (z = #; z * 2))";{list: [0.5]};[1]
+"map(list as p, (t = p.v; t * 2))";{list: [{v: 1}, {v: 2}]};[2, 4]
+"map(list, (t = #; map(t.items, # + t.k)))";{list: [{k: 10, items: [1, 2]}]};[[11, 12]]
+"map(list, (z = #; map([1, 2], z + #)))";{list: [10, 20]};[[11, 12], [21, 22]]
+"map(list, (z = #; map([1, 2], (w = # * z; w))))";{list: [10, 20]};[[10, 20], [20, 40]]
+"map(a as o, (t = o; map(o.items as i, (u = i; t.k + u))))";{a: [{k: 10, items: [1, 2]}, {k: 20, items: [3]}]};[[11, 12], [23]]
+"map(list, (y = #.y * 2; #.y + y))";{list: [{y: 1}, {y: 2}]};[3, 6]
+"y = 100; map(list, (y = #.y * 2; #.y + y))";{list: [{y: 1}, {y: 2}]};[3, 6]
+"map(list, (i = #; filter(list, # > i)))";{list: [1, 2, 3]};[[2, 3], [3], []]
+"map(list, (i = #; r = map(list, # * 10); [i, r]))";{list: [1, 2]};[[1, [10, 20]], [2, [10, 20]]]
+"filter(list, (lim = 2; # > lim))";{list: [1, 2, 3]};[3]
+"some(list, (t = #; t > 1))";{list: [1, 2, 3]};true
+"all(list, (t = #; t > 0))";{list: [1, 2, 3]};true
+"count(list, (t = #; t > 1))";{list: [1, 2, 3]};2
+"one(list, (t = #; t > 2))";{list: [1, 2, 3]};true
+"none(list, (t = #; t > 5))";{list: [1, 2, 3]};true
+"flatMap(list, (t = #; [t, t]))";{list: [1, 2]};[1, 1, 2, 2]
+"x = map(list, (list = [9]; #)); x";{list: [1, 2]};[1, 2]
+"list = map(list, (list = 0; #)); list";{list: [1, 2]};[1, 2]
+"x = 10; y = map(list, (x = #.y; x)); y";{list: [{y: 1}, {y: 2}]};[1, 2]
+"x = 10; y = map(list, (x = #.y; x))";{list: [{y: 1}, {y: 2}]};{x: 10, y: [1, 2]}
+"y = map(list, (t = #.y; t))";{list: [{y: 1}, {y: 2}]};{y: [1, 2]}
+# ... they must not leak out of the closure
+"x = 10; y = map(list, (x = #.y; x)); x";{list: [{y: 1}, {y: 2}]};10;bug: an assignment inside the closure body overwrites the outer x (reads back the last element)
+"x = 10; y = map(list, (x = #.y; x)); x";{list: [{y: 7}]};10;bug: an assignment inside the closure body overwrites the outer x
+"x = 10; y = map(list, (x = #.y; x)); x";{list: []};10
+"x = 10; y = map(list, (x = #.y; x)); [x, y]";{list: [{y: 1}, {y: 2}]};[10, [1, 2]];bug: the returned object says x = 10 but reading x gives the closure's last value
+"y = map(list, (t = #.y; t)); t";{list: [{y: 1}, {y: 2}]};null;bug: t assigned inside the closure leaks to the outer scope as the last element's value
+"y = map(list, (t = #.y; t)); t";{list: [{y: 3}]};null;bug: t assigned inside the closure leaks to the outer scope
+"y = map(list, (t = #.y; t)); t";{list: []};null
+"y = map(list, (t = #.y; t)); $root";{list: [{y: 1}, {y: 2}]};{list: [{y: 1}, {y: 2}], y: [1, 2]};bug: $root contains t although the returned object does not
+"y = map([], (t = 1; t)); t";{};null
+"y = some([1, 2, 3], (t = #; # == 2)); t";{};null;bug: t leaks and its value depends on where some() short-circuits (2)
+"y = all([1, 2, 3], (t = #; # < 2)); t";{};null;bug: t leaks and its value depends on where all() short-circuits (2)
+"y = count([1, 2, 3], (t = #; # > 1)); t";{};null;bug: t leaks out of count()
+"y = none([1, 2, 3], (t = #; # > 5)); t";{};null;bug: t leaks out of none()
+"y = one([1, 2, 3], (t = #; # == 2)); t";{};null;bug: t leaks out of one()
+"y = flatMap([[1], [2, 3]], (t = #; #)); t";{};null;bug: t leaks out of flatMap()
+"y = filter(list, (lim = 2; # > lim)); lim";{list: [1, 2, 3]};null;bug: lim leaks out of filter()
+"a = map(list, (t = #; t)); b = map(list2, (t = # * 10; t)); [a, b, t]";{list: [1, 2], list2: [3]};[[1, 2], [30], null];bug: t from the second closure leaks to the outer scope
+"a = map(list, (t = #; t)); b = map(list2, t); [a, b]";{list: [1, 2], list2: [3]};[[1, 2], [null]];bug: t from the first closure is visible inside a later, unrelated closure
+"sum(map(list, (t = # * 2; t))) + (t ?? 0)";{list: [1, 2]};6;bug: t leaks out of map() into the enclosing expression
+"sum(map(list, (x = #; x))) + (x ?? 0)";{list: [1, 2]};3;bug: x leaks out of map() into the enclosing expression
+# ... they must not persist from one iteration to the next
+"y = map([1, 2, 3], (s = (s ?? 0) + #; s)); y";{};[1, 2, 3];bug: s carries over between iterations making map() a running sum
+"y = map(list, (s = (s ?? 0) + #; s)); y";{list: [5, 5]};[5, 5];bug: s carries over between iterations
+"y = map(list, (s = (s ?? 0) + #; s)); y";{list: [5, 5], s: 100};[105, 105];bug: s carries over between iterations instead of starting from the outer s
+"x = 1; map(list, (x = x * 10; x))";{list: [1, 2]};[10, 10];bug: each iteration should start from the outer x = 1 but sees the previous iteration's x
+"map(list, (x = x * 10; x))";{list: [1, 2], x: 1};[10, 10];bug: each iteration should start from the input x = 1
+"map(list, (x = x * 10; x))";{list: [1, 2, 3], x: 2};[20, 20, 20];bug: each iteration should start from the input x = 2
+"r = map(list, (x = x * 10; x)); x";{list: [1, 2], x: 1};1;bug: the closure overwrites input x (100)
+"x = 1; y = map(list, (x = x * 10; x)); x";{list: [1, 2]};1;bug: the closure overwrites the outer x (100)
+"x = 0; y = map(list, (x = x + #; x)); [x, y]";{list: [1, 2, 3]};[0, [1, 2, 3]];bug: x accumulates across iterations and leaks out
+"x = 0; y = sum(map(list, (x = x + #; 0))); x";{list: [1, 2, 3]};0;bug: x accumulates across iterations and leaks out
+"x = 3; r = filter(list, (x = x + 1; # > x)); [r, x]";{list: [1, 5, 9]};[[5, 9], 3];bug: x is incremented once per iteration and leaks out
+"n = 0; r = some(list, (n = n + 1; # == 2)); n";{list: [1, 2, 3]};0;bug: a closure body counts iterations into the outer n
+"n = 0; r = all(list, (n = n + 1; # < 2)); n";{list: [1, 2, 3]};0;bug: a closure body counts iterations into the outer n
+"n = 0; r = count(list, (n = n + 1; true)); [r, n]";{list: [1, 2, 3]};[3, 0];bug: a closure body counts iterations into the outer n
+# ... and an inner closure must not clobber an outer iteration's local
+"map(list, (i = #; r = map(list, (i = # * 10; i)); i))";{list: [1, 2]};[1, 2];bug: the inner closure's i overwrites the outer iteration's i (gives [20, 20])
+"map(list, (i = #; r = map(list, (i = # * 10; i)); i))";{list: [3]};[3];bug: the inner closure's i overwrites the outer iteration's i
+"map(list, (i = #; map(list, (i = # * 10; i))))";{list: [1, 2]};[[10, 20], [10, 20]]
+"map(list, (i = #; count(list, (i = i; # > i))))";{list: [1, 2, 3]};[2, 1, 0]
+"map(list, (i = #; r = map(list, (j = # * 10; j)); i + j))";{list: [1, 2]};!error;bug: j is local to the inner closure so i + j reads null (currently j leaks as 20 giving [21, 22])
+"map([1, 2], (x = #; map([10, 20], (x = x + #; x))))";{};[[11, 21], [12, 22]];bug: the inner closure's x persists across inner iterations
+# Assigning to an alias name inside the closure body
+"map(list as x, (x = 1; x))";{list: [5, 6]};[1, 1];bug: x = 1 then x in the same block reads the alias, so the assignment is silently ignored
+"map(list as x, (x.y = 1; x))";{list: [{y: 5}]};[{y: 5}];question: a dotted assignment to an alias writes a same-named outer variable and the alias is unchanged
+"map(list as x, (z = x; z))";{list: [5, 6]};[5, 6]
+"map(list as x, (z = x; z)); z";{list: [5, 6]};!error;question: a program cannot begin with a closure call followed by more statements
+# Assignments inside closures must not mutate elements of the input
+"y = map(list, (t = #; t.k = 1; t)); y";{list: [{a: 1}, {a: 2}]};[{a: 1, k: 1}, {a: 2, k: 1}]
+"y = map(list, (t = #; t.k = 1; t)); list";{list: [{a: 1}, {a: 2}]};[{a: 1}, {a: 2}];bug: t.k = 1 writes through t into the input element (the caller's input is mutated)
+"y = map(list, (t = #; t.k = 1; t)); list";{list: [{a: 1}]};[{a: 1}];bug: t.k = 1 writes through t into the input element
+"y = map(list, (t = #; t.k = 1; t)); list";{list: []};[]
+"y = map(list, (t.k = #; t)); y";{list: [1, 2]};[{k: 1}, {k: 2}]
+# Parenthesized sequences outside closures share the program environment
+"(t = 1; t + 1) + t";{};3;question: a parenthesized sequence has no scope of its own so t stays visible after it
+"[(t = 1; t), t]";{};[1, 1];question: a parenthesized sequence has no scope of its own
+"{a: (t = 1; t), b: t}";{};{a: 1, b: 1};question: a parenthesized sequence has no scope of its own
+"`${(t = 5; t)}-${t}`";{};'5-5';question: a parenthesized sequence inside a template has no scope of its own
+"(a = 1; a) + (a = 2; a)";{};3
+"[(a = 1; a), (a = a + 1; a), a]";{};[1, 2, 2];question: sequences inside an array literal share one environment
+"{x: (a = 1; a), y: (a = 2; a)}";{};{x: 1, y: 2}
+"a = 1; b = (a = 5; a); [a, b]";{};[5, 5];question: a nested sequence rebinds the outer a
+"x = ((y = 1; y) + (y = 2; y)); [x, y]";{};[3, 2];question: nested sequences rebind y in the program environment
+"x = 1; y = (z = 2; z + x); [x, y, z]";{};[1, 3, 2];question: z from a nested sequence is visible at the top level
+"x = 1; y = (z = 2; z + x)";{};{x: 1, y: 3}
+"x = 1; y = (z = 2; z + x); $root";{};{x: 1, y: 3, z: 2};question: $root contains z although the returned object does not
+# Assignments inside ternary branches
+"true ? (t = 1; t) : (t = 2; t)";{};1
+"false ? (t = 1; t) : (t = 2; t)";{};2
+"c ? (t = 'yes'; t) : (t = 'no'; t)";{c: true};'yes'
+"c ? (t = 'yes'; t) : (t = 'no'; t)";{c: false};'no'
+"c ? (t = 'yes'; t) : (t = 'no'; t)";{c: null};!error
+"c ? (t = 'yes'; t) : (t = 'no'; t)";{};!error
+"r = c ? (t = 1; t) : 0; r";{c: true};1
+"r = c ? (t = 1; t) : 0; r";{c: false};0
+"r = c ? (t = 1; t) : 0; t";{c: false};null
+"r = c ? (t = 1; t) : 0; t";{c: true};1;question: t assigned inside the taken branch is visible after the program-level ternary
+# Assignments inside closures combined with ternaries, templates, objects
+"map(list, # + (n = 1; n))";{list: [1, 2]};[2, 3]
+"map(list, (n = #; n) + (n = 10; n))";{list: [1, 2]};[11, 12]
+"map(list, `${(n = #; n)}`)";{list: [1, 2]};['1', '2']
+"map(list, {v: (n = #; n), w: n})";{list: [1, 2]};[{v: 1, w: 1}, {v: 2, w: 2}];question: a sequence inside an object literal leaks n to a sibling property in the same iteration
+"map(list, # > 1 ? (n = 'big'; n) : (n = 'small'; n))";{list: [1, 2]};['small', 'big']
+"map(list, #.x ?? (n = 0; n))";{list: [{x: 1}, {}]};[1, 0]
+# Reading a name before it is assigned
+"x = y + 1; y = 5; x";{y: 1};2
+"x = y + 1; y = 5; [x, y]";{y: 1};[2, 5]
+"x = y; y = 5; x";{};null
+"x = y; y = 5; x";{y: 'in'};'in'

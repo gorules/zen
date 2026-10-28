@@ -1,0 +1,941 @@
+expression (string);input (json 5);output (json 5);note
+# normalize then transform: case after trim
+upper(trim(s));{s: ' gold '};'GOLD'
+upper(trim(s));{s: 'Gold'};'GOLD'
+upper(trim(s));{s: 'GOLD'};'GOLD'
+upper(trim(s));{s: '\tsilver\n'};'SILVER'
+upper(trim(s));{s: 'Bronze '};'BRONZE'
+upper(trim(s));{s: ''};''
+upper(trim(s));{s: '   '};''
+upper(trim(s));{s: 'straße '};'STRASSE'
+upper(trim(s));{s: '\u00a0vip\u3000'};'VIP'
+upper(trim(s));{s: 'platinum'};'PLATINUM'
+upper(trim(s));{s: null};!error
+upper(trim(s));{s: 42};!error
+upper(trim(s));{s: true};!error
+upper(trim(s));{s: ['gold']};!error
+upper(trim(s));{};!error
+lower(trim(s));{s: ' gold '};'gold'
+lower(trim(s));{s: 'Gold'};'gold'
+lower(trim(s));{s: 'GOLD'};'gold'
+lower(trim(s));{s: '\tsilver\n'};'silver'
+lower(trim(s));{s: 'Bronze '};'bronze'
+lower(trim(s));{s: ''};''
+lower(trim(s));{s: '   '};''
+lower(trim(s));{s: 'straße '};'straße'
+lower(trim(s));{s: '\u00a0vip\u3000'};'vip'
+lower(trim(s));{s: 'platinum'};'platinum'
+lower(trim(s));{s: null};!error
+lower(trim(s));{s: 42};!error
+lower(trim(s));{s: true};!error
+lower(trim(s));{s: ['gold']};!error
+lower(trim(s));{};!error
+trim(upper(s));{s: ' gold '};'GOLD'
+trim(upper(s));{s: 'Gold'};'GOLD'
+trim(upper(s));{s: 'GOLD'};'GOLD'
+trim(upper(s));{s: '\tsilver\n'};'SILVER'
+trim(upper(s));{s: 'Bronze '};'BRONZE'
+trim(upper(s));{s: ''};''
+trim(upper(s));{s: '   '};''
+trim(upper(s));{s: 'straße '};'STRASSE'
+trim(upper(s));{s: '\u00a0vip\u3000'};'VIP'
+trim(upper(s));{};!error
+upper(trim(s)) == trim(upper(s));{s: ' gold '};true
+upper(trim(s)) == trim(upper(s));{s: 'Gold'};true
+upper(trim(s)) == trim(upper(s));{s: 'GOLD'};true
+upper(trim(s)) == trim(upper(s));{s: '\tsilver\n'};true
+upper(trim(s)) == trim(upper(s));{s: 'Bronze '};true
+upper(trim(s)) == trim(upper(s));{s: ''};true
+upper(trim(s)) == trim(upper(s));{s: '   '};true
+upper(trim(s)) == trim(upper(s));{s: 'straße '};true
+upper(trim(s)) == trim(upper(s));{s: '\u00a0vip\u3000'};true
+upper(trim(s)) == trim(upper(s));{s: 'platinum'};true
+# normalize then compare
+lower(trim(s)) == 'gold';{s: ' gold '};true
+lower(trim(s)) == 'gold';{s: 'Gold'};true
+lower(trim(s)) == 'gold';{s: 'GOLD'};true
+lower(trim(s)) == 'gold';{s: '\tsilver\n'};false
+lower(trim(s)) == 'gold';{s: 'Bronze '};false
+lower(trim(s)) == 'gold';{s: ''};false
+lower(trim(s)) == 'gold';{s: '   '};false
+lower(trim(s)) == 'gold';{s: 'straße '};false
+lower(trim(s)) == 'gold';{s: '\u00a0vip\u3000'};false
+lower(trim(s)) == 'gold';{s: 'platinum'};false
+lower(trim(s)) == 'gold';{s: null};!error
+lower(trim(s)) == 'gold';{s: 42};!error
+lower(trim(s)) == 'gold';{s: true};!error
+lower(trim(s)) == 'gold';{s: ['gold']};!error
+lower(trim(s)) == 'gold';{};!error
+upper(trim(s)) == 'STRASSE';{s: 'straße'};true
+upper(trim(s)) == 'STRASSE';{s: ' Straße '};true
+upper(trim(s)) == 'STRASSE';{s: 'STRASSE'};true
+upper(trim(s)) == 'STRASSE';{s: 'strasse'};true
+upper(trim(s)) == 'STRASSE';{s: 'strase'};false
+upper(trim(s)) == 'STRASSE';{s: 'STRAẞE'};false
+lower(trim(s)) == lower(trim(t));{s: 'Gold', t: 'gold'};true
+lower(trim(s)) == lower(trim(t));{s: ' gold', t: 'GOLD '};true
+lower(trim(s)) == lower(trim(t));{s: 'Straße', t: 'STRASSE'};false
+lower(trim(s)) == lower(trim(t));{s: 'ΣΑΣ', t: 'σας'};true
+lower(trim(s)) == lower(trim(t));{s: 'İstanbul', t: 'istanbul'};false
+lower(trim(s)) == lower(trim(t));{s: 'a b', t: 'a  b'};false
+lower(trim(s)) == lower(trim(t));{s: '', t: ' '};true
+lower(trim(s)) == lower(trim(t));{s: 'x', t: null};!error
+lower(trim(s)) == lower(trim(t));{s: null, t: null};!error
+lower(trim(s)) == lower(trim(t));{s: 1, t: '1'};!error
+upper(s) == upper(t);{s: 'Gold', t: 'gold'};true
+upper(s) == upper(t);{s: ' gold', t: 'GOLD '};false
+upper(s) == upper(t);{s: 'Straße', t: 'STRASSE'};true
+upper(s) == upper(t);{s: 'ΣΑΣ', t: 'σας'};true
+upper(s) == upper(t);{s: 'İstanbul', t: 'istanbul'};false
+upper(s) == upper(t);{s: 'a b', t: 'a  b'};false
+upper(s) == upper(t);{s: '', t: ' '};false
+upper(s) == upper(t);{s: 'x', t: null};!error
+upper(s) == upper(t);{s: null, t: null};!error
+upper(s) == upper(t);{s: 1, t: '1'};!error
+upper(s) == upper(t) and s != t;{s: 'Gold', t: 'gold'};true
+upper(s) == upper(t) and s != t;{s: ' gold', t: 'GOLD '};false
+upper(s) == upper(t) and s != t;{s: 'Straße', t: 'STRASSE'};true
+upper(s) == upper(t) and s != t;{s: 'ΣΑΣ', t: 'σας'};true
+upper(s) == upper(t) and s != t;{s: 'İstanbul', t: 'istanbul'};false
+upper(s) == upper(t) and s != t;{s: 'a b', t: 'a  b'};false
+upper(s) == upper(t) and s != t;{s: '', t: ' '};false
+# membership after normalization
+lower(s) in ['gold', 'silver', 'bronze'];{s: ' gold '};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: 'Gold'};true
+lower(s) in ['gold', 'silver', 'bronze'];{s: 'GOLD'};true
+lower(s) in ['gold', 'silver', 'bronze'];{s: '\tsilver\n'};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: 'Bronze '};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: ''};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: '   '};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: 'straße '};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: '\u00a0vip\u3000'};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: 'platinum'};false
+lower(s) in ['gold', 'silver', 'bronze'];{s: null};!error
+lower(s) in ['gold', 'silver', 'bronze'];{s: 42};!error
+lower(s) in ['gold', 'silver', 'bronze'];{s: true};!error
+lower(s) in ['gold', 'silver', 'bronze'];{s: ['gold']};!error
+lower(s) in ['gold', 'silver', 'bronze'];{};!error
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: ' gold '};true
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 'Gold'};true
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 'GOLD'};true
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: '\tsilver\n'};true
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 'Bronze '};true
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: ''};false
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: '   '};false
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 'straße '};false
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: '\u00a0vip\u3000'};false
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 'platinum'};false
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: null};!error
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: 42};!error
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: true};!error
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{s: ['gold']};!error
+lower(trim(s)) in ['gold', 'silver', 'bronze'];{};!error
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: 'n/a'};false
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: ' None '};false
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: '-'};false
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: ''};false
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: '  '};false
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: 'value'};true
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: 'none of these'};true
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: null};!error
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{s: 0};!error
+upper(trim(s)) not in ['N/A', 'NONE', '-', ''];{};!error
+lower(s) in allowed;{s: 'US', allowed: ['us', 'ca']};true
+lower(s) in allowed;{s: 'Ca', allowed: ['us', 'ca']};true
+lower(s) in allowed;{s: 'MX', allowed: ['us', 'ca']};false
+lower(s) in allowed;{s: 'US', allowed: []};false
+lower(s) in allowed;{s: 'US', allowed: ['US']};false
+lower(s) in allowed;{s: 'us', allowed: null};!error
+lower(s) in allowed;{s: null, allowed: ['us']};!error
+lower(s) in allowed;{s: 'us', allowed: 'us'};!error
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'us', zip: '94107'};true
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'CA', zip: '90210'};true
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'us', zip: '10001'};false
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'mx', zip: '94107'};false
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'mx', zip: null};false
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'us', zip: null};!error
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: null, zip: '9'};!error
+upper(country) in ['US', 'CA'] and startsWith(zip, '9');{country: 'Us', zip: 94107};!error
+# contains over normalized text
+contains(lower(s), lower(t));{s: 'Hello World', t: 'world'};true
+contains(lower(s), lower(t));{s: 'HELLO', t: 'ell'};true
+contains(lower(s), lower(t));{s: 'Straße', t: 'SS'};false
+contains(lower(s), lower(t));{s: 'Straße', t: 'ß'};true
+contains(lower(s), lower(t));{s: 'abc', t: ''};true
+contains(lower(s), lower(t));{s: '', t: ''};true
+contains(lower(s), lower(t));{s: '', t: 'a'};false
+contains(lower(s), lower(t));{s: 'Ünïcödé', t: 'ÏCÖ'};true
+contains(lower(s), lower(t));{s: 'a b', t: 'A  B'};false
+contains(lower(s), lower(t));{s: 'x', t: null};!error
+contains(lower(s), lower(t));{s: null, t: 'x'};!error
+contains(lower(s), lower(t));{s: 12, t: '1'};!error
+contains(upper(s), upper(t));{s: 'Hello World', t: 'world'};true
+contains(upper(s), upper(t));{s: 'HELLO', t: 'ell'};true
+contains(upper(s), upper(t));{s: 'Straße', t: 'SS'};true
+contains(upper(s), upper(t));{s: 'Straße', t: 'ß'};true
+contains(upper(s), upper(t));{s: 'abc', t: ''};true
+contains(upper(s), upper(t));{s: '', t: ''};true
+contains(upper(s), upper(t));{s: '', t: 'a'};false
+contains(upper(s), upper(t));{s: 'Ünïcödé', t: 'ÏCÖ'};true
+contains(upper(s), upper(t));{s: 'a b', t: 'A  B'};false
+contains(upper(s), upper(t));{s: 'x', t: null};!error
+contains(upper(s), upper(t));{s: null, t: 'x'};!error
+contains(upper(s), upper(t));{s: 12, t: '1'};!error
+contains(s, t) or contains(lower(s), lower(t));{s: 'Hello World', t: 'world'};true
+contains(s, t) or contains(lower(s), lower(t));{s: 'HELLO', t: 'ell'};true
+contains(s, t) or contains(lower(s), lower(t));{s: 'Straße', t: 'SS'};false
+contains(s, t) or contains(lower(s), lower(t));{s: 'Straße', t: 'ß'};true
+contains(s, t) or contains(lower(s), lower(t));{s: 'abc', t: ''};true
+contains(s, t) or contains(lower(s), lower(t));{s: '', t: ''};true
+contains(s, t) or contains(lower(s), lower(t));{s: '', t: 'a'};false
+contains(s, t) or contains(lower(s), lower(t));{s: 'Ünïcödé', t: 'ÏCÖ'};true
+contains(s, t) or contains(lower(s), lower(t));{s: 'a b', t: 'A  B'};false
+contains(s, t) or contains(lower(s), lower(t));{s: 'x', t: null};!error
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'Customer requested REFUND'};true
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'chargeback filed'};true
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'Disputed charge'};false
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'normal purchase'};false
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: ''};false
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'refunded twice'};true
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: 'Charge-back'};false
+contains(lower(d), 'refund') or contains(lower(d), 'chargeback');{d: null};!error
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'Customer requested REFUND'};true
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'chargeback filed'};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'Disputed charge'};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'normal purchase'};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: ''};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'refunded twice'};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: 'Charge-back'};false
+contains(lower(d), 'refund') and not contains(lower(d), 'refunded');{d: null};!error
+# prefix and suffix after normalization
+startsWith(upper(trim(code)), 'SKU-');{code: ' sku-001 '};true
+startsWith(upper(trim(code)), 'SKU-');{code: 'SKU-002'};true
+startsWith(upper(trim(code)), 'SKU-');{code: 'Sku-3'};true
+startsWith(upper(trim(code)), 'SKU-');{code: 'ski-004'};false
+startsWith(upper(trim(code)), 'SKU-');{code: 'SKU'};false
+startsWith(upper(trim(code)), 'SKU-');{code: ''};false
+startsWith(upper(trim(code)), 'SKU-');{code: '\tsku-9\n'};true
+startsWith(upper(trim(code)), 'SKU-');{code: null};!error
+startsWith(upper(trim(code)), 'SKU-');{code: 7};!error
+endsWith(lower(email), '@example.com');{email: 'Joe@Example.com'};true
+endsWith(lower(email), '@example.com');{email: 'ann@example.COM'};true
+endsWith(lower(email), '@example.com');{email: 'bob@example.co'};false
+endsWith(lower(email), '@example.com');{email: 'x@sub.example.com'};false
+endsWith(lower(email), '@example.com');{email: 'example.com'};false
+endsWith(lower(email), '@example.com');{email: ''};false
+endsWith(lower(email), '@example.com');{email: ' a@example.com '};false
+endsWith(lower(email), '@example.com');{email: null};!error
+endsWith(lower(trim(email)), 'example.com');{email: 'Joe@Example.com'};true
+endsWith(lower(trim(email)), 'example.com');{email: 'ann@example.COM'};true
+endsWith(lower(trim(email)), 'example.com');{email: 'bob@example.co'};false
+endsWith(lower(trim(email)), 'example.com');{email: 'x@sub.example.com'};true
+endsWith(lower(trim(email)), 'example.com');{email: 'example.com'};true
+endsWith(lower(trim(email)), 'example.com');{email: ''};false
+endsWith(lower(trim(email)), 'example.com');{email: ' a@example.com '};true
+endsWith(lower(trim(email)), 'example.com');{email: null};!error
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: 'https://a.io'};true
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: 'HTTP://A.IO'};true
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: 'ftp://x'};false
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: 'httpx://'};false
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: 'Https://'};true
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: ''};false
+startsWith(lower(url), 'https://') or startsWith(lower(url), 'http://');{url: null};!error
+# split then map
+split(s, ',');{s: 'a,b,c'};['a', 'b', 'c']
+split(s, ',');{s: ' a , b ,c '};[' a ', ' b ', 'c ']
+split(s, ',');{s: 'a,,b'};['a', '', 'b']
+split(s, ',');{s: ','};['', '']
+split(s, ',');{s: ''};['']
+split(s, ',');{s: 'single'};['single']
+split(s, ',');{s: 'x, y, z, '};['x', ' y', ' z', ' ']
+split(s, ',');{s: 'ä,ö,ü'};['ä', 'ö', 'ü']
+split(s, ',');{s: null};!error
+split(s, ',');{s: 5};!error
+split(s, ',');{};!error
+map(split(s, ','), trim(#));{s: 'a,b,c'};['a', 'b', 'c']
+map(split(s, ','), trim(#));{s: ' a , b ,c '};['a', 'b', 'c']
+map(split(s, ','), trim(#));{s: 'a,,b'};['a', '', 'b']
+map(split(s, ','), trim(#));{s: ','};['', '']
+map(split(s, ','), trim(#));{s: ''};['']
+map(split(s, ','), trim(#));{s: 'single'};['single']
+map(split(s, ','), trim(#));{s: 'x, y, z, '};['x', 'y', 'z', '']
+map(split(s, ','), trim(#));{s: 'ä,ö,ü'};['ä', 'ö', 'ü']
+map(split(s, ','), trim(#));{s: null};!error
+map(split(s, ','), trim(#));{s: 5};!error
+map(split(s, ','), trim(#));{};!error
+map(split(s, ','), upper(trim(#)));{s: 'a,b,c'};['A', 'B', 'C']
+map(split(s, ','), upper(trim(#)));{s: ' a , b ,c '};['A', 'B', 'C']
+map(split(s, ','), upper(trim(#)));{s: 'a,,b'};['A', '', 'B']
+map(split(s, ','), upper(trim(#)));{s: ','};['', '']
+map(split(s, ','), upper(trim(#)));{s: ''};['']
+map(split(s, ','), upper(trim(#)));{s: 'single'};['SINGLE']
+map(split(s, ','), upper(trim(#)));{s: 'x, y, z, '};['X', 'Y', 'Z', '']
+map(split(s, ','), upper(trim(#)));{s: 'ä,ö,ü'};['Ä', 'Ö', 'Ü']
+map(split(s, ','), upper(trim(#)));{s: null};!error
+map(split(s, ','), upper(trim(#)));{s: 5};!error
+map(split(s, ','), upper(trim(#)));{};!error
+filter(map(split(s, ','), trim(#)), # != '');{s: 'a,b,c'};['a', 'b', 'c']
+filter(map(split(s, ','), trim(#)), # != '');{s: ' a , b ,c '};['a', 'b', 'c']
+filter(map(split(s, ','), trim(#)), # != '');{s: 'a,,b'};['a', 'b']
+filter(map(split(s, ','), trim(#)), # != '');{s: ','};[]
+filter(map(split(s, ','), trim(#)), # != '');{s: ''};[]
+filter(map(split(s, ','), trim(#)), # != '');{s: 'single'};['single']
+filter(map(split(s, ','), trim(#)), # != '');{s: 'x, y, z, '};['x', 'y', 'z']
+filter(map(split(s, ','), trim(#)), # != '');{s: 'ä,ö,ü'};['ä', 'ö', 'ü']
+filter(map(split(s, ','), trim(#)), # != '');{s: null};!error
+filter(map(split(s, ','), trim(#)), # != '');{s: 5};!error
+filter(map(split(s, ','), trim(#)), # != '');{};!error
+len(split(s, ','));{s: 'a,b,c'};3
+len(split(s, ','));{s: ' a , b ,c '};3
+len(split(s, ','));{s: 'a,,b'};3
+len(split(s, ','));{s: ','};2
+len(split(s, ','));{s: ''};1
+len(split(s, ','));{s: 'single'};1
+len(split(s, ','));{s: 'x, y, z, '};4
+len(split(s, ','));{s: 'ä,ö,ü'};3
+len(split(s, ','));{s: null};!error
+len(split(s, ','));{s: 5};!error
+len(split(s, ','));{};!error
+map(split(s, ','), len(#));{s: 'a,b,c'};[1, 1, 1]
+map(split(s, ','), len(#));{s: ' a , b ,c '};[3, 3, 2]
+map(split(s, ','), len(#));{s: 'a,,b'};[1, 0, 1]
+map(split(s, ','), len(#));{s: ','};[0, 0]
+map(split(s, ','), len(#));{s: ''};[0]
+map(split(s, ','), len(#));{s: 'single'};[6]
+map(split(s, ','), len(#));{s: 'x, y, z, '};[1, 2, 2, 1]
+map(split(s, ','), len(#));{s: 'ä,ö,ü'};[1, 1, 1];bug: len counts UTF-8 bytes, intended character count
+map(split(s, ','), len(#));{s: null};!error
+map(split(s, ','), len(#));{s: 5};!error
+map(split(s, ','), len(#));{};!error
+map(split(s, ','), len(trim(#)));{s: 'a,b,c'};[1, 1, 1]
+map(split(s, ','), len(trim(#)));{s: ' a , b ,c '};[1, 1, 1]
+map(split(s, ','), len(trim(#)));{s: 'a,,b'};[1, 0, 1]
+map(split(s, ','), len(trim(#)));{s: ','};[0, 0]
+map(split(s, ','), len(trim(#)));{s: ''};[0]
+map(split(s, ','), len(trim(#)));{s: 'single'};[6]
+map(split(s, ','), len(trim(#)));{s: 'x, y, z, '};[1, 1, 1, 0]
+map(split(s, ','), len(trim(#)));{s: 'ä,ö,ü'};[1, 1, 1];bug: len counts UTF-8 bytes, intended character count
+map(split(s, ','), len(trim(#)));{s: null};!error
+map(split(s, ','), len(trim(#)));{s: 5};!error
+map(split(s, ','), len(trim(#)));{};!error
+count(split(s, ','), trim(#) == '');{s: 'a,b,c'};0
+count(split(s, ','), trim(#) == '');{s: ' a , b ,c '};0
+count(split(s, ','), trim(#) == '');{s: 'a,,b'};1
+count(split(s, ','), trim(#) == '');{s: ','};2
+count(split(s, ','), trim(#) == '');{s: ''};1
+count(split(s, ','), trim(#) == '');{s: 'single'};0
+count(split(s, ','), trim(#) == '');{s: 'x, y, z, '};1
+count(split(s, ','), trim(#) == '');{s: 'ä,ö,ü'};0
+count(split(s, ','), trim(#) == '');{s: null};!error
+count(split(s, ','), trim(#) == '');{s: 5};!error
+count(split(s, ','), trim(#) == '');{};!error
+split(s, ',')[0];{s: 'a,b,c'};'a'
+split(s, ',')[0];{s: ' a , b ,c '};' a '
+split(s, ',')[0];{s: 'a,,b'};'a'
+split(s, ',')[0];{s: ','};''
+split(s, ',')[0];{s: ''};''
+split(s, ',')[0];{s: 'single'};'single'
+split(s, ',')[0];{s: 'x, y, z, '};'x'
+split(s, ',')[0];{s: 'ä,ö,ü'};'ä'
+split(s, ',')[0];{s: null};!error
+split(s, ',')[0];{s: 5};!error
+split(s, ',')[0];{};!error
+trim(split(s, ',')[1] ?? '');{s: 'a,b,c'};'b'
+trim(split(s, ',')[1] ?? '');{s: ' a , b ,c '};'b'
+trim(split(s, ',')[1] ?? '');{s: 'a,,b'};''
+trim(split(s, ',')[1] ?? '');{s: ','};''
+trim(split(s, ',')[1] ?? '');{s: ''};''
+trim(split(s, ',')[1] ?? '');{s: 'single'};''
+trim(split(s, ',')[1] ?? '');{s: 'x, y, z, '};'y'
+trim(split(s, ',')[1] ?? '');{s: 'ä,ö,ü'};'ö'
+trim(split(s, ',')[1] ?? '');{s: null};!error
+trim(split(s, ',')[1] ?? '');{s: 5};!error
+trim(split(s, ',')[1] ?? '');{};!error
+len(filter(split(s, ' '), # != ''));{s: 'the quick brown fox'};4
+len(filter(split(s, ' '), # != ''));{s: '  leading and trailing  '};3
+len(filter(split(s, ' '), # != ''));{s: 'double  space'};2
+len(filter(split(s, ' '), # != ''));{s: 'one'};1
+len(filter(split(s, ' '), # != ''));{s: ''};0
+len(filter(split(s, ' '), # != ''));{s: 'tab\tseparated words'};2
+len(filter(split(s, ' '), # != ''));{s: 'Ünïcödé wörds here'};3
+len(filter(split(s, ' '), # != ''));{s: null};!error
+filter(split(trim(s), ' '), # != '');{s: 'the quick brown fox'};['the', 'quick', 'brown', 'fox']
+filter(split(trim(s), ' '), # != '');{s: '  leading and trailing  '};['leading', 'and', 'trailing']
+filter(split(trim(s), ' '), # != '');{s: 'double  space'};['double', 'space']
+filter(split(trim(s), ' '), # != '');{s: 'one'};['one']
+filter(split(trim(s), ' '), # != '');{s: ''};[]
+filter(split(trim(s), ' '), # != '');{s: 'tab\tseparated words'};['tab\tseparated', 'words']
+filter(split(trim(s), ' '), # != '');{s: 'Ünïcödé wörds here'};['Ünïcödé', 'wörds', 'here']
+filter(split(trim(s), ' '), # != '');{s: null};!error
+map(filter(split(s, ' '), # != ''), upper(#));{s: 'the quick brown fox'};['THE', 'QUICK', 'BROWN', 'FOX']
+map(filter(split(s, ' '), # != ''), upper(#));{s: '  leading and trailing  '};['LEADING', 'AND', 'TRAILING']
+map(filter(split(s, ' '), # != ''), upper(#));{s: 'double  space'};['DOUBLE', 'SPACE']
+map(filter(split(s, ' '), # != ''), upper(#));{s: 'one'};['ONE']
+map(filter(split(s, ' '), # != ''), upper(#));{s: ''};[]
+map(filter(split(s, ' '), # != ''), upper(#));{s: 'tab\tseparated words'};['TAB\tSEPARATED', 'WORDS']
+map(filter(split(s, ' '), # != ''), upper(#));{s: 'Ünïcödé wörds here'};['ÜNÏCÖDÉ', 'WÖRDS', 'HERE']
+map(filter(split(s, ' '), # != ''), upper(#));{s: null};!error
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: 'the quick brown fox'};5
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: '  leading and trailing  '};8
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: 'double  space'};6
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: 'one'};3
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: ''};!error
+max(map(filter(split(s, ' '), # != ''), len(#)));{s: 'aa bbb c'};3
+map(split(s, ','), number(#));{s: '1,2,3'};[1, 2, 3]
+map(split(s, ','), number(#));{s: ' 10 , 20 '};[10, 20]
+map(split(s, ','), number(#));{s: '1.50,2.25'};[1.50, 2.25]
+map(split(s, ','), number(#));{s: '-1,1'};[-1, 1]
+map(split(s, ','), number(#));{s: '7'};[7]
+map(split(s, ','), number(#));{s: '1,x'};!error
+map(split(s, ','), number(#));{s: ''};!error
+map(split(s, ','), number(#));{s: null};!error
+sum(map(split(s, ','), number(#)));{s: '1,2,3'};6
+sum(map(split(s, ','), number(#)));{s: ' 10 , 20 '};30
+sum(map(split(s, ','), number(#)));{s: '1.50,2.25'};3.75
+sum(map(split(s, ','), number(#)));{s: '-1,1'};0
+sum(map(split(s, ','), number(#)));{s: '7'};7
+sum(map(split(s, ','), number(#)));{s: '1,x'};!error
+sum(map(split(s, ','), number(#)));{s: ''};!error
+sum(map(split(s, ','), number(#)));{s: null};!error
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: '1,2,3'};12
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: ' 10 , 20 '};60
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: '1.50,2.25'};7.50
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: '-1,1'};0
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: '7'};14
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: '1,x'};!error
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: ''};!error
+sum(map(split(s, ','), number(trim(#)))) * 2;{s: null};!error
+string(sum(map(split(s, ','), number(#))));{s: '1,2,3'};'6'
+string(sum(map(split(s, ','), number(#))));{s: ' 10 , 20 '};'30'
+string(sum(map(split(s, ','), number(#))));{s: '1.50,2.25'};'3.75'
+string(sum(map(split(s, ','), number(#))));{s: '-1,1'};'0'
+string(sum(map(split(s, ','), number(#))));{s: '7'};'7'
+# split into parts: emails, paths, key-value pairs
+split(email, '@')[1];{email: 'Joe.Doe@Example.COM'};'Example.COM'
+split(email, '@')[1];{email: 'ann@mail.co.uk'};'mail.co.uk'
+split(email, '@')[1];{email: 'no-at-sign'};null
+split(email, '@')[1];{email: 'a@b@c'};'b'
+split(email, '@')[1];{email: '@example.com'};'example.com'
+split(email, '@')[1];{email: 'user@'};''
+split(email, '@')[1];{email: ''};null
+split(email, '@')[1];{email: null};!error
+lower(split(email, '@')[1] ?? '');{email: 'Joe.Doe@Example.COM'};'example.com'
+lower(split(email, '@')[1] ?? '');{email: 'ann@mail.co.uk'};'mail.co.uk'
+lower(split(email, '@')[1] ?? '');{email: 'no-at-sign'};''
+lower(split(email, '@')[1] ?? '');{email: 'a@b@c'};'b'
+lower(split(email, '@')[1] ?? '');{email: '@example.com'};'example.com'
+lower(split(email, '@')[1] ?? '');{email: 'user@'};''
+lower(split(email, '@')[1] ?? '');{email: ''};''
+lower(split(email, '@')[1] ?? '');{email: null};!error
+lower(split(email, '@')[0]);{email: 'Joe.Doe@Example.COM'};'joe.doe'
+lower(split(email, '@')[0]);{email: 'ann@mail.co.uk'};'ann'
+lower(split(email, '@')[0]);{email: 'no-at-sign'};'no-at-sign'
+lower(split(email, '@')[0]);{email: 'a@b@c'};'a'
+lower(split(email, '@')[0]);{email: '@example.com'};''
+lower(split(email, '@')[0]);{email: 'user@'};'user'
+lower(split(email, '@')[0]);{email: ''};''
+lower(split(email, '@')[0]);{email: null};!error
+len(split(email, '@')) == 2;{email: 'Joe.Doe@Example.COM'};true
+len(split(email, '@')) == 2;{email: 'ann@mail.co.uk'};true
+len(split(email, '@')) == 2;{email: 'no-at-sign'};false
+len(split(email, '@')) == 2;{email: 'a@b@c'};false
+len(split(email, '@')) == 2;{email: '@example.com'};true
+len(split(email, '@')) == 2;{email: 'user@'};true
+len(split(email, '@')) == 2;{email: ''};false
+len(split(email, '@')) == 2;{email: null};!error
+split(lower(email), '@')[1] == 'example.com';{email: 'Joe.Doe@Example.COM'};true
+split(lower(email), '@')[1] == 'example.com';{email: 'ann@mail.co.uk'};false
+split(lower(email), '@')[1] == 'example.com';{email: 'no-at-sign'};false
+split(lower(email), '@')[1] == 'example.com';{email: 'a@b@c'};false
+split(lower(email), '@')[1] == 'example.com';{email: '@example.com'};true
+split(lower(email), '@')[1] == 'example.com';{email: 'user@'};false
+split(lower(email), '@')[1] == 'example.com';{email: ''};false
+split(lower(email), '@')[1] == 'example.com';{email: null};!error
+split(p, '/');{p: '/usr/local/bin'};['', 'usr', 'local', 'bin']
+split(p, '/');{p: 'a/b'};['a', 'b']
+split(p, '/');{p: '/'};['', '']
+split(p, '/');{p: ''};['']
+split(p, '/');{p: 'no-slash'};['no-slash']
+split(p, '/');{p: '/trailing/'};['', 'trailing', '']
+split(p, '/');{p: 'ä/ö'};['ä', 'ö']
+split(p, '/');{p: null};!error
+filter(split(p, '/'), # != '');{p: '/usr/local/bin'};['usr', 'local', 'bin']
+filter(split(p, '/'), # != '');{p: 'a/b'};['a', 'b']
+filter(split(p, '/'), # != '');{p: '/'};[]
+filter(split(p, '/'), # != '');{p: ''};[]
+filter(split(p, '/'), # != '');{p: 'no-slash'};['no-slash']
+filter(split(p, '/'), # != '');{p: '/trailing/'};['trailing']
+filter(split(p, '/'), # != '');{p: 'ä/ö'};['ä', 'ö']
+filter(split(p, '/'), # != '');{p: null};!error
+len(filter(split(p, '/'), # != ''));{p: '/usr/local/bin'};3
+len(filter(split(p, '/'), # != ''));{p: 'a/b'};2
+len(filter(split(p, '/'), # != ''));{p: '/'};0
+len(filter(split(p, '/'), # != ''));{p: ''};0
+len(filter(split(p, '/'), # != ''));{p: 'no-slash'};1
+len(filter(split(p, '/'), # != ''));{p: '/trailing/'};1
+len(filter(split(p, '/'), # != ''));{p: 'ä/ö'};2
+len(filter(split(p, '/'), # != ''));{p: null};!error
+map(split(q, '&'), split(#, '='));{q: 'a=1&b=2'};[['a', '1'], ['b', '2']]
+map(split(q, '&'), split(#, '='));{q: 'key=value'};[['key', 'value']]
+map(split(q, '&'), split(#, '='));{q: 'x=&y=z'};[['x', ''], ['y', 'z']]
+map(split(q, '&'), split(#, '='));{q: 'flag'};[['flag']]
+map(split(q, '&'), split(#, '='));{q: ''};[['']]
+map(split(q, '&'), split(#, '='));{q: 'a=1&a=2'};[['a', '1'], ['a', '2']]
+map(split(q, '&'), split(#, '='));{q: 'k=v=w'};[['k', 'v', 'w']]
+map(split(q, '&'), split(#, '='));{q: null};!error
+map(split(q, '&'), split(#, '=')[0]);{q: 'a=1&b=2'};['a', 'b']
+map(split(q, '&'), split(#, '=')[0]);{q: 'key=value'};['key']
+map(split(q, '&'), split(#, '=')[0]);{q: 'x=&y=z'};['x', 'y']
+map(split(q, '&'), split(#, '=')[0]);{q: 'flag'};['flag']
+map(split(q, '&'), split(#, '=')[0]);{q: ''};['']
+map(split(q, '&'), split(#, '=')[0]);{q: 'a=1&a=2'};['a', 'a']
+map(split(q, '&'), split(#, '=')[0]);{q: 'k=v=w'};['k']
+map(split(q, '&'), split(#, '=')[0]);{q: null};!error
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'a=1&b=2'};['1', '2']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'key=value'};['value']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'x=&y=z'};['', 'z']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'flag'};['']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: ''};['']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'a=1&a=2'};['1', '2']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: 'k=v=w'};['v']
+map(split(q, '&'), split(#, '=')[1] ?? '');{q: null};!error
+some(split(q, '&'), startsWith(#, 'a='));{q: 'a=1&b=2'};true
+some(split(q, '&'), startsWith(#, 'a='));{q: 'key=value'};false
+some(split(q, '&'), startsWith(#, 'a='));{q: 'x=&y=z'};false
+some(split(q, '&'), startsWith(#, 'a='));{q: 'flag'};false
+some(split(q, '&'), startsWith(#, 'a='));{q: ''};false
+some(split(q, '&'), startsWith(#, 'a='));{q: 'a=1&a=2'};true
+some(split(q, '&'), startsWith(#, 'a='));{q: 'k=v=w'};false
+some(split(q, '&'), startsWith(#, 'a='));{q: null};!error
+map(split(s, '|'), split(#, ','));{s: 'a,b|c,d'};[['a', 'b'], ['c', 'd']]
+map(split(s, '|'), split(#, ','));{s: 'x|y'};[['x'], ['y']]
+map(split(s, '|'), split(#, ','));{s: '|'};[[''], ['']]
+map(split(s, '|'), split(#, ','));{s: 'one'};[['one']]
+map(split(s, '|'), split(#, ','));{s: ''};[['']]
+map(split(s, '|'), split(#, ','));{s: 'a,b,c|'};[['a', 'b', 'c'], ['']]
+map(split(s, '|'), split(#, ','));{s: null};!error
+split(split(s, '|')[0], ',');{s: 'a,b|c,d'};['a', 'b']
+split(split(s, '|')[0], ',');{s: 'x|y'};['x']
+split(split(s, '|')[0], ',');{s: '|'};['']
+split(split(s, '|')[0], ',');{s: 'one'};['one']
+split(split(s, '|')[0], ',');{s: ''};['']
+split(split(s, '|')[0], ',');{s: 'a,b,c|'};['a', 'b', 'c']
+split(split(s, '|')[0], ',');{s: null};!error
+flatMap(split(s, '|'), split(#, ','));{s: 'a,b|c,d'};['a', 'b', 'c', 'd']
+flatMap(split(s, '|'), split(#, ','));{s: 'x|y'};['x', 'y']
+flatMap(split(s, '|'), split(#, ','));{s: '|'};['', '']
+flatMap(split(s, '|'), split(#, ','));{s: 'one'};['one']
+flatMap(split(s, '|'), split(#, ','));{s: ''};['']
+flatMap(split(s, '|'), split(#, ','));{s: 'a,b,c|'};['a', 'b', 'c', '']
+flatMap(split(s, '|'), split(#, ','));{s: null};!error
+len(flatMap(split(s, '|'), split(#, ',')));{s: 'a,b|c,d'};4
+len(flatMap(split(s, '|'), split(#, ',')));{s: 'x|y'};2
+len(flatMap(split(s, '|'), split(#, ',')));{s: '|'};2
+len(flatMap(split(s, '|'), split(#, ',')));{s: 'one'};1
+len(flatMap(split(s, '|'), split(#, ',')));{s: ''};1
+len(flatMap(split(s, '|'), split(#, ',')));{s: 'a,b,c|'};4
+len(flatMap(split(s, '|'), split(#, ',')));{s: null};!error
+# membership in split results
+'vip' in split(s, ',');{s: 'vip,new'};true
+'vip' in split(s, ',');{s: 'new'};false
+'vip' in split(s, ',');{s: 'VIP'};false
+'vip' in split(s, ',');{s: ' vip'};false
+'vip' in split(s, ',');{s: 'vip'};true
+'vip' in split(s, ',');{s: ''};false
+'vip' in split(s, ',');{s: 'a,vip,b'};true
+'vip' in split(s, ',');{s: null};!error
+contains(split(s, ','), 'vip');{s: 'vip,new'};true
+contains(split(s, ','), 'vip');{s: 'new'};false
+contains(split(s, ','), 'vip');{s: 'VIP'};false
+contains(split(s, ','), 'vip');{s: ' vip'};false
+contains(split(s, ','), 'vip');{s: 'vip'};true
+contains(split(s, ','), 'vip');{s: ''};false
+contains(split(s, ','), 'vip');{s: 'a,vip,b'};true
+contains(split(s, ','), 'vip');{s: null};!error
+'vip' in map(split(s, ','), lower(trim(#)));{s: 'vip,new'};true
+'vip' in map(split(s, ','), lower(trim(#)));{s: 'new'};false
+'vip' in map(split(s, ','), lower(trim(#)));{s: 'VIP'};true
+'vip' in map(split(s, ','), lower(trim(#)));{s: ' vip'};true
+'vip' in map(split(s, ','), lower(trim(#)));{s: 'vip'};true
+'vip' in map(split(s, ','), lower(trim(#)));{s: ''};false
+'vip' in map(split(s, ','), lower(trim(#)));{s: 'a,vip,b'};true
+'vip' in map(split(s, ','), lower(trim(#)));{s: null};!error
+some(split(s, ','), lower(trim(#)) == 'vip');{s: 'vip,new'};true
+some(split(s, ','), lower(trim(#)) == 'vip');{s: 'new'};false
+some(split(s, ','), lower(trim(#)) == 'vip');{s: 'VIP'};true
+some(split(s, ','), lower(trim(#)) == 'vip');{s: ' vip'};true
+some(split(s, ','), lower(trim(#)) == 'vip');{s: 'vip'};true
+some(split(s, ','), lower(trim(#)) == 'vip');{s: ''};false
+some(split(s, ','), lower(trim(#)) == 'vip');{s: 'a,vip,b'};true
+some(split(s, ','), lower(trim(#)) == 'vip');{s: null};!error
+# string comparisons feeding decisions
+s == 'GOLD' or lower(s) == 'gold';{s: 'GOLD'};true
+s == 'GOLD' or lower(s) == 'gold';{s: 'gold'};true
+s == 'GOLD' or lower(s) == 'gold';{s: 'Gold'};true
+s == 'GOLD' or lower(s) == 'gold';{s: ' gold'};false
+s == 'GOLD' or lower(s) == 'gold';{s: 'silver'};false
+s == 'GOLD' or lower(s) == 'gold';{s: ''};false
+s == 'GOLD' or lower(s) == 'gold';{s: null};!error
+s == 'GOLD' or lower(s) == 'gold';{s: 1};!error
+s == 'GOLD' or lower(s) == 'gold';{s: true};!error
+s == 'GOLD' or lower(s) == 'gold';{};!error
+s == 'GOLD' or s == 'gold';{s: 'GOLD'};true
+s == 'GOLD' or s == 'gold';{s: 'gold'};true
+s == 'GOLD' or s == 'gold';{s: 'Gold'};false
+s == 'GOLD' or s == 'gold';{s: ' gold'};false
+s == 'GOLD' or s == 'gold';{s: 'silver'};false
+s == 'GOLD' or s == 'gold';{s: ''};false
+s == 'GOLD' or s == 'gold';{s: null};false
+s == 'GOLD' or s == 'gold';{s: 1};false
+s == 'GOLD' or s == 'gold';{s: true};false
+s == 'GOLD' or s == 'gold';{};false
+lower(s) == 'gold' or s == 'GOLD';{s: 'GOLD'};true
+lower(s) == 'gold' or s == 'GOLD';{s: 'gold'};true
+lower(s) == 'gold' or s == 'GOLD';{s: 'Gold'};true
+lower(s) == 'gold' or s == 'GOLD';{s: ' gold'};false
+lower(s) == 'gold' or s == 'GOLD';{s: 'silver'};false
+lower(s) == 'gold' or s == 'GOLD';{s: ''};false
+lower(s) == 'gold' or s == 'GOLD';{s: null};!error
+lower(s) == 'gold' or s == 'GOLD';{s: 1};!error
+lower(s) == 'gold' or s == 'GOLD';{s: true};!error
+lower(s) == 'gold' or s == 'GOLD';{};!error
+s != null and lower(s) == 'gold';{s: 'GOLD'};true
+s != null and lower(s) == 'gold';{s: 'gold'};true
+s != null and lower(s) == 'gold';{s: 'Gold'};true
+s != null and lower(s) == 'gold';{s: ' gold'};false
+s != null and lower(s) == 'gold';{s: 'silver'};false
+s != null and lower(s) == 'gold';{s: ''};false
+s != null and lower(s) == 'gold';{s: null};false
+s != null and lower(s) == 'gold';{s: 1};!error
+s != null and lower(s) == 'gold';{s: true};!error
+s != null and lower(s) == 'gold';{};false
+type(s) == 'string' and lower(s) == 'gold';{s: 'GOLD'};true
+type(s) == 'string' and lower(s) == 'gold';{s: 'gold'};true
+type(s) == 'string' and lower(s) == 'gold';{s: 'Gold'};true
+type(s) == 'string' and lower(s) == 'gold';{s: ' gold'};false
+type(s) == 'string' and lower(s) == 'gold';{s: 'silver'};false
+type(s) == 'string' and lower(s) == 'gold';{s: ''};false
+type(s) == 'string' and lower(s) == 'gold';{s: null};false
+type(s) == 'string' and lower(s) == 'gold';{s: 1};false
+type(s) == 'string' and lower(s) == 'gold';{s: true};false
+type(s) == 'string' and lower(s) == 'gold';{};false
+lower(s ?? '') == 'gold';{s: 'GOLD'};true
+lower(s ?? '') == 'gold';{s: 'gold'};true
+lower(s ?? '') == 'gold';{s: 'Gold'};true
+lower(s ?? '') == 'gold';{s: ' gold'};false
+lower(s ?? '') == 'gold';{s: 'silver'};false
+lower(s ?? '') == 'gold';{s: ''};false
+lower(s ?? '') == 'gold';{s: null};false
+lower(s ?? '') == 'gold';{s: 1};!error
+lower(s ?? '') == 'gold';{s: true};!error
+lower(s ?? '') == 'gold';{};false
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: 'GOLD'};0.2
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: 'gold'};0.2
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: 'Gold'};0.2
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: ' gold'};0
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: 'silver'};0.1
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: ''};0
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: null};!error
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: 1};!error
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{s: true};!error
+lower(s) == 'gold' ? 0.2 : lower(s) == 'silver' ? 0.1 : 0;{};!error
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: 'GOLD'};'premium'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: 'gold'};'premium'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: 'Gold'};'premium'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: ' gold'};'premium'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: 'silver'};'standard'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: ''};'standard'
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: null};!error
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: 1};!error
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{s: true};!error
+upper(trim(s)) == 'GOLD' ? 'premium' : 'standard';{};!error
+(s ?? '') == 'active';{s: 'active'};true
+(s ?? '') == 'active';{s: 'Active'};false
+(s ?? '') == 'active';{s: ''};false
+(s ?? '') == 'active';{s: null};false
+(s ?? '') == 'active';{};false
+lower(s ?? 'unknown');{s: 'ACTIVE'};'active'
+lower(s ?? 'unknown');{s: 'Pending'};'pending'
+lower(s ?? 'unknown');{s: null};'unknown'
+lower(s ?? 'unknown');{s: 5};!error
+lower(s ?? 'unknown');{};'unknown'
+trim(s) == '' ? 'blank' : trim(s);{s: ''};'blank'
+trim(s) == '' ? 'blank' : trim(s);{s: '  '};'blank'
+trim(s) == '' ? 'blank' : trim(s);{s: '\t\n'};'blank'
+trim(s) == '' ? 'blank' : trim(s);{s: ' x '};'x'
+trim(s) == '' ? 'blank' : trim(s);{s: 'y'};'y'
+trim(s) == '' ? 'blank' : trim(s);{s: null};!error
+trim(s) == '' ? 'blank' : trim(s);{};!error
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: 'abc'};true
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: '   '};false
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: '0123456789'};true
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: '01234567890'};false
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: ' 0123456789 '};true
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: ''};false
+len(trim(s)) > 0 and len(trim(s)) <= 10;{s: null};!error
+len(trim(s)) > 0 and len(trim(s)) <= 10;{};!error
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: 'URGENT: fix'};1
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: 'High priority'};2
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: 'low'};3
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: 'highly urgent'};1
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: ''};3
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{s: null};!error
+contains(lower(s), 'urgent') ? 1 : contains(lower(s), 'high') ? 2 : 3;{};!error
+status == 'open' and (lower(owner) == 'me' or owner == null);{status: 'open', owner: 'ME'};true
+status == 'open' and (lower(owner) == 'me' or owner == null);{status: 'open', owner: 'you'};false
+status == 'open' and (lower(owner) == 'me' or owner == null);{status: 'closed', owner: 'me'};false
+status == 'open' and (lower(owner) == 'me' or owner == null);{status: 'open'};!error
+status == 'open' and (lower(owner) == 'me' or owner == null);{status: 'Open', owner: 'me'};false
+startsWith(s, t) and endsWith(s, t);{s: 'abcab', t: 'ab'};true
+startsWith(s, t) and endsWith(s, t);{s: 'aba', t: 'aba'};true
+startsWith(s, t) and endsWith(s, t);{s: 'abc', t: 'a'};false
+startsWith(s, t) and endsWith(s, t);{s: 'x', t: ''};true
+startsWith(s, t) and endsWith(s, t);{s: '', t: ''};true
+startsWith(s, t) and endsWith(s, t);{s: 'ab', t: 'abc'};false
+startsWith(s, t) and endsWith(s, t);{s: 'ab', t: null};!error
+# initials and capitalization with slices
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'ada', last: 'lovelace'};'A. L.'
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'Grace', last: 'Hopper'};'G. H.'
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'x', last: 'y'};'X. Y.'
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'élodie', last: 'dupont'};'É. D.';bug: string slices use UTF-8 byte offsets instead of characters
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'ann', last: null};!error
+upper(first[0:0]) + '. ' + upper(last[0:0]) + '.';{first: 'ann'};!error
+upper(first[0]) + lower(first[1:]);{first: 'ada', last: 'lovelace'};'Ada'
+upper(first[0]) + lower(first[1:]);{first: 'Grace', last: 'Hopper'};'Grace'
+upper(first[0]) + lower(first[1:]);{first: 'x', last: 'y'};'X'
+upper(first[0]) + lower(first[1:]);{first: 'élodie', last: 'dupont'};'Élodie';bug: string indexing uses UTF-8 byte offsets instead of characters
+upper(first[0]) + lower(first[1:]);{first: 'ann', last: null};'Ann'
+upper(first[0]) + lower(first[1:]);{first: 'ann'};'Ann'
+upper(s[0:0]) + s[1:];{s: 'hello'};'Hello'
+upper(s[0:0]) + s[1:];{s: 'h'};'H'
+upper(s[0:0]) + s[1:];{s: 'hELLO'};'HELLO'
+upper(s[0:0]) + s[1:];{s: 'élan'};'Élan';bug: string slices use UTF-8 byte offsets instead of characters
+upper(s[0:0]) + s[1:];{s: ' space'};' space'
+upper(s[0:0]) + s[1:];{s: null};!error
+upper(s[0:0]) + s[1:];{};!error
+lower(s[0:2]) == 'abc';{s: 'ABCDEF'};true
+lower(s[0:2]) == 'abc';{s: 'abc'};true
+lower(s[0:2]) == 'abc';{s: 'abx'};false
+lower(s[0:2]) == 'abc';{s: 'ab'};!error
+lower(s[0:2]) == 'abc';{s: 'AbC-1'};true
+lower(s[0:2]) == 'abc';{};!error
+upper(s[0:1]) == 'US';{s: 'us-east'};true
+upper(s[0:1]) == 'US';{s: 'US'};true
+upper(s[0:1]) == 'US';{s: 'uk'};false
+upper(s[0:1]) == 'US';{s: 'u'};!error
+upper(s[0:1]) == 'US';{s: 'Us1'};true
+upper(s[0:1]) == 'US';{};!error
+# number and string round trips
+number(trim(s)) * 2;{s: ' 12 '};24
+number(trim(s)) * 2;{s: '1.25'};2.50
+number(trim(s)) * 2;{s: '-3'};-6
+number(trim(s)) * 2;{s: 'x'};!error
+number(trim(s)) * 2;{s: ''};!error
+number(trim(s)) * 2;{s: null};!error
+number(trim(s)) * 2;{};!error
+string(number(s)) == trim(s);{s: '12'};true
+string(number(s)) == trim(s);{s: ' 12'};true
+string(number(s)) == trim(s);{s: '1.50'};true
+string(number(s)) == trim(s);{s: '007'};false
+string(number(s)) == trim(s);{s: '-0.5'};true
+string(number(s)) == trim(s);{s: 'x'};!error
+string(number(s)) == trim(s);{};!error
+string(n) + ' ' + upper(unit);{n: 12, unit: 'kg'};'12 KG'
+string(n) + ' ' + upper(unit);{n: 1.50, unit: 'lb'};'1.50 LB'
+string(n) + ' ' + upper(unit);{n: null, unit: 'g'};'null G'
+string(n) + ' ' + upper(unit);{n: 1, unit: null};!error
+string(n) + ' ' + upper(unit);{n: true, unit: 'x'};'true X'
+string(n) + ' ' + upper(unit);{n: 'five', unit: 'm'};'five M'
+len(string(n));{n: 100};3
+len(string(n));{n: 1.50};4
+len(string(n));{n: -0.001};6
+len(string(n));{n: null};4
+len(string(n));{n: true};4
+len(string(n));{n: 'abc'};3
+# properties over many strings
+trim(trim(s)) == trim(s);{s: ''};true
+trim(trim(s)) == trim(s);{s: 'a'};true
+trim(trim(s)) == trim(s);{s: 'Hello'};true
+trim(trim(s)) == trim(s);{s: '  padded  '};true
+trim(trim(s)) == trim(s);{s: 'MiXeD CaSe'};true
+trim(trim(s)) == trim(s);{s: 'straße'};true
+trim(trim(s)) == trim(s);{s: 'ΣΑΣ'};true
+trim(trim(s)) == trim(s);{s: 'İ'};true
+trim(trim(s)) == trim(s);{s: 'ﬁle'};true
+trim(trim(s)) == trim(s);{s: 'ǅ'};true
+trim(trim(s)) == trim(s);{s: '日本語'};true
+trim(trim(s)) == trim(s);{s: '😀 ok'};true
+trim(trim(s)) == trim(s);{s: 'a\tb\nc'};true
+trim(trim(s)) == trim(s);{s: '\u00a0x\u00a0'};true
+trim(trim(s)) == trim(s);{s: 'ＡＢＣ'};true
+upper(upper(s)) == upper(s);{s: ''};true
+upper(upper(s)) == upper(s);{s: 'a'};true
+upper(upper(s)) == upper(s);{s: 'Hello'};true
+upper(upper(s)) == upper(s);{s: '  padded  '};true
+upper(upper(s)) == upper(s);{s: 'MiXeD CaSe'};true
+upper(upper(s)) == upper(s);{s: 'straße'};true
+upper(upper(s)) == upper(s);{s: 'ΣΑΣ'};true
+upper(upper(s)) == upper(s);{s: 'İ'};true
+upper(upper(s)) == upper(s);{s: 'ﬁle'};true
+upper(upper(s)) == upper(s);{s: 'ǅ'};true
+upper(upper(s)) == upper(s);{s: '日本語'};true
+upper(upper(s)) == upper(s);{s: '😀 ok'};true
+upper(upper(s)) == upper(s);{s: 'a\tb\nc'};true
+upper(upper(s)) == upper(s);{s: '\u00a0x\u00a0'};true
+upper(upper(s)) == upper(s);{s: 'ＡＢＣ'};true
+lower(lower(s)) == lower(s);{s: ''};true
+lower(lower(s)) == lower(s);{s: 'a'};true
+lower(lower(s)) == lower(s);{s: 'Hello'};true
+lower(lower(s)) == lower(s);{s: '  padded  '};true
+lower(lower(s)) == lower(s);{s: 'MiXeD CaSe'};true
+lower(lower(s)) == lower(s);{s: 'straße'};true
+lower(lower(s)) == lower(s);{s: 'ΣΑΣ'};true
+lower(lower(s)) == lower(s);{s: 'İ'};true
+lower(lower(s)) == lower(s);{s: 'ﬁle'};true
+lower(lower(s)) == lower(s);{s: 'ǅ'};true
+lower(lower(s)) == lower(s);{s: '日本語'};true
+lower(lower(s)) == lower(s);{s: '😀 ok'};true
+lower(lower(s)) == lower(s);{s: 'a\tb\nc'};true
+lower(lower(s)) == lower(s);{s: '\u00a0x\u00a0'};true
+lower(lower(s)) == lower(s);{s: 'ＡＢＣ'};true
+upper(lower(s)) == upper(s);{s: ''};true
+upper(lower(s)) == upper(s);{s: 'a'};true
+upper(lower(s)) == upper(s);{s: 'Hello'};true
+upper(lower(s)) == upper(s);{s: '  padded  '};true
+upper(lower(s)) == upper(s);{s: 'MiXeD CaSe'};true
+upper(lower(s)) == upper(s);{s: 'straße'};true
+upper(lower(s)) == upper(s);{s: 'ΣΑΣ'};true
+upper(lower(s)) == upper(s);{s: 'İ'};false
+upper(lower(s)) == upper(s);{s: 'ﬁle'};true
+upper(lower(s)) == upper(s);{s: 'ǅ'};true
+upper(lower(s)) == upper(s);{s: '日本語'};true
+upper(lower(s)) == upper(s);{s: '😀 ok'};true
+upper(lower(s)) == upper(s);{s: 'a\tb\nc'};true
+upper(lower(s)) == upper(s);{s: '\u00a0x\u00a0'};true
+upper(lower(s)) == upper(s);{s: 'ＡＢＣ'};true
+lower(upper(s)) == lower(s);{s: ''};true
+lower(upper(s)) == lower(s);{s: 'a'};true
+lower(upper(s)) == lower(s);{s: 'Hello'};true
+lower(upper(s)) == lower(s);{s: '  padded  '};true
+lower(upper(s)) == lower(s);{s: 'MiXeD CaSe'};true
+lower(upper(s)) == lower(s);{s: 'straße'};false
+lower(upper(s)) == lower(s);{s: 'ΣΑΣ'};true
+lower(upper(s)) == lower(s);{s: 'İ'};true
+lower(upper(s)) == lower(s);{s: 'ﬁle'};false
+lower(upper(s)) == lower(s);{s: 'ǅ'};true
+lower(upper(s)) == lower(s);{s: '日本語'};true
+lower(upper(s)) == lower(s);{s: '😀 ok'};true
+lower(upper(s)) == lower(s);{s: 'a\tb\nc'};true
+lower(upper(s)) == lower(s);{s: '\u00a0x\u00a0'};true
+lower(upper(s)) == lower(s);{s: 'ＡＢＣ'};true
+upper(s);{s: ''};''
+upper(s);{s: 'a'};'A'
+upper(s);{s: 'Hello'};'HELLO'
+upper(s);{s: '  padded  '};'  PADDED  '
+upper(s);{s: 'MiXeD CaSe'};'MIXED CASE'
+upper(s);{s: 'straße'};'STRASSE'
+upper(s);{s: 'ΣΑΣ'};'ΣΑΣ'
+upper(s);{s: 'İ'};'İ'
+upper(s);{s: 'ﬁle'};'FILE'
+upper(s);{s: 'ǅ'};'Ǆ'
+upper(s);{s: '日本語'};'日本語'
+upper(s);{s: '😀 ok'};'😀 OK'
+upper(s);{s: 'a\tb\nc'};'A\tB\nC'
+upper(s);{s: '\u00a0x\u00a0'};'\u00a0X\u00a0'
+upper(s);{s: 'ＡＢＣ'};'ＡＢＣ'
+lower(s);{s: ''};''
+lower(s);{s: 'a'};'a'
+lower(s);{s: 'Hello'};'hello'
+lower(s);{s: '  padded  '};'  padded  '
+lower(s);{s: 'MiXeD CaSe'};'mixed case'
+lower(s);{s: 'straße'};'straße'
+lower(s);{s: 'ΣΑΣ'};'σας'
+lower(s);{s: 'İ'};'i̇'
+lower(s);{s: 'ﬁle'};'ﬁle'
+lower(s);{s: 'ǅ'};'ǆ'
+lower(s);{s: '日本語'};'日本語'
+lower(s);{s: '😀 ok'};'😀 ok'
+lower(s);{s: 'a\tb\nc'};'a\tb\nc'
+lower(s);{s: '\u00a0x\u00a0'};'\u00a0x\u00a0'
+lower(s);{s: 'ＡＢＣ'};'ａｂｃ'
+trim(s);{s: ''};''
+trim(s);{s: 'a'};'a'
+trim(s);{s: 'Hello'};'Hello'
+trim(s);{s: '  padded  '};'padded'
+trim(s);{s: 'MiXeD CaSe'};'MiXeD CaSe'
+trim(s);{s: 'straße'};'straße'
+trim(s);{s: 'ΣΑΣ'};'ΣΑΣ'
+trim(s);{s: 'İ'};'İ'
+trim(s);{s: 'ﬁle'};'ﬁle'
+trim(s);{s: 'ǅ'};'ǅ'
+trim(s);{s: '日本語'};'日本語'
+trim(s);{s: '😀 ok'};'😀 ok'
+trim(s);{s: 'a\tb\nc'};'a\tb\nc'
+trim(s);{s: '\u00a0x\u00a0'};'x'
+trim(s);{s: 'ＡＢＣ'};'ＡＢＣ'
+contains(s, trim(s));{s: ''};true
+contains(s, trim(s));{s: 'a'};true
+contains(s, trim(s));{s: 'Hello'};true
+contains(s, trim(s));{s: '  padded  '};true
+contains(s, trim(s));{s: 'MiXeD CaSe'};true
+contains(s, trim(s));{s: 'straße'};true
+contains(s, trim(s));{s: 'ΣΑΣ'};true
+contains(s, trim(s));{s: 'İ'};true
+contains(s, trim(s));{s: 'ﬁle'};true
+contains(s, trim(s));{s: 'ǅ'};true
+contains(s, trim(s));{s: '日本語'};true
+contains(s, trim(s));{s: '😀 ok'};true
+contains(s, trim(s));{s: 'a\tb\nc'};true
+contains(s, trim(s));{s: '\u00a0x\u00a0'};true
+contains(s, trim(s));{s: 'ＡＢＣ'};true
+startsWith(s, s) and endsWith(s, s);{s: ''};true
+startsWith(s, s) and endsWith(s, s);{s: 'a'};true
+startsWith(s, s) and endsWith(s, s);{s: 'Hello'};true
+startsWith(s, s) and endsWith(s, s);{s: '  padded  '};true
+startsWith(s, s) and endsWith(s, s);{s: 'MiXeD CaSe'};true
+startsWith(s, s) and endsWith(s, s);{s: 'straße'};true
+startsWith(s, s) and endsWith(s, s);{s: 'ΣΑΣ'};true
+startsWith(s, s) and endsWith(s, s);{s: 'İ'};true
+startsWith(s, s) and endsWith(s, s);{s: 'ﬁle'};true
+startsWith(s, s) and endsWith(s, s);{s: 'ǅ'};true
+startsWith(s, s) and endsWith(s, s);{s: '日本語'};true
+startsWith(s, s) and endsWith(s, s);{s: '😀 ok'};true
+startsWith(s, s) and endsWith(s, s);{s: 'a\tb\nc'};true
+startsWith(s, s) and endsWith(s, s);{s: '\u00a0x\u00a0'};true
+startsWith(s, s) and endsWith(s, s);{s: 'ＡＢＣ'};true
+s + '' == s;{s: ''};true
+s + '' == s;{s: 'a'};true
+s + '' == s;{s: 'Hello'};true
+s + '' == s;{s: '  padded  '};true
+s + '' == s;{s: 'MiXeD CaSe'};true
+s + '' == s;{s: 'straße'};true
+s + '' == s;{s: 'ΣΑΣ'};true
+s + '' == s;{s: 'İ'};true
+len(split(s, t)) - 1;{s: 'a,b,c', t: ','};2
+len(split(s, t)) - 1;{s: 'aaa', t: 'a'};3
+len(split(s, t)) - 1;{s: 'abcabc', t: 'bc'};2
+len(split(s, t)) - 1;{s: 'none', t: ','};0
+len(split(s, t)) - 1;{s: '', t: ','};0
+len(split(s, t)) - 1;{s: 'x--y--z', t: '--'};2
+len(split(s, t)) - 1;{s: 'ß,ß', t: ','};1
+contains(s, t) == (len(split(s, t)) > 1);{s: 'a,b,c', t: ','};true
+contains(s, t) == (len(split(s, t)) > 1);{s: 'aaa', t: 'a'};true
+contains(s, t) == (len(split(s, t)) > 1);{s: 'abcabc', t: 'bc'};true
+contains(s, t) == (len(split(s, t)) > 1);{s: 'none', t: ','};true
+contains(s, t) == (len(split(s, t)) > 1);{s: '', t: ','};true
+contains(s, t) == (len(split(s, t)) > 1);{s: 'x--y--z', t: '--'};true
+contains(s, t) == (len(split(s, t)) > 1);{s: 'ß,ß', t: ','};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'a,b,c', t: ','};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'aaa', t: 'a'};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'abcabc', t: 'bc'};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'none', t: ','};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: '', t: ','};false
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'x--y--z', t: '--'};true
+startsWith(s, t) == (split(s, t)[0] == '');{s: 'ß,ß', t: ','};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'a,b,c', t: ','};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'aaa', t: 'a'};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'abcabc', t: 'bc'};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'none', t: ','};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: '', t: ','};false
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'x--y--z', t: '--'};true
+endsWith(s, t) == (split(s, t)[len(split(s, t)) - 1] == '');{s: 'ß,ß', t: ','};true

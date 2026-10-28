@@ -1,0 +1,170 @@
+expression (string);input (json 5);output (json 5);note
+# format: strftime-style specifiers (Thursday 2023-10-05 04:05:06.007 UTC)
+d('2023-10-05T04:05:06.007Z').format('%Y-%m-%d');;'2023-10-05'
+d('2023-10-05T04:05:06.007Z').format('%Y');;'2023'
+d('2023-10-05T04:05:06.007Z').format('%y');;'23'
+d('2023-10-05T04:05:06.007Z').format('%C');;'20'
+d('2023-10-05T04:05:06.007Z').format('%m');;'10'
+d('2023-10-05T04:05:06.007Z').format('%-m');;'10'
+d('2023-10-05T04:05:06.007Z').format('%d');;'05'
+d('2023-10-05T04:05:06.007Z').format('%-d');;'5'
+d('2023-10-05T04:05:06.007Z').format('%e');;' 5'
+d('2023-10-05T04:05:06.007Z').format('%H');;'04'
+d('2023-10-05T04:05:06.007Z').format('%-H');;'4'
+d('2023-10-05T04:05:06.007Z').format('%k');;' 4'
+d('2023-10-05T04:05:06.007Z').format('%I');;'04'
+d('2023-10-05T04:05:06.007Z').format('%l');;' 4'
+d('2023-10-05T04:05:06.007Z').format('%p');;'AM'
+d('2023-10-05T04:05:06.007Z').format('%P');;'am'
+d('2023-10-05T04:05:06.007Z').format('%M');;'05'
+d('2023-10-05T04:05:06.007Z').format('%S');;'06'
+d('2023-10-05T04:05:06.007Z').format('%f');;'007000000'
+d('2023-10-05T04:05:06.007Z').format('%.f');;'.007'
+d('2023-10-05T04:05:06.007Z').format('%.3f');;'.007'
+d('2023-10-05T04:05:06.007Z').format('%.6f');;'.007000'
+d('2023-10-05T04:05:06.007Z').format('%3f');;'007'
+d('2023-10-05T04:05:06.007Z').format('%6f');;'007000'
+d('2023-10-05T04:05:06.007Z').format('%a');;'Thu'
+d('2023-10-05T04:05:06.007Z').format('%A');;'Thursday'
+d('2023-10-05T04:05:06.007Z').format('%b');;'Oct'
+d('2023-10-05T04:05:06.007Z').format('%h');;'Oct'
+d('2023-10-05T04:05:06.007Z').format('%B');;'October'
+d('2023-10-05T04:05:06.007Z').format('%j');;'278'
+d('2023-10-05T04:05:06.007Z').format('%u');;'4'
+d('2023-10-05T04:05:06.007Z').format('%w');;'4'
+d('2023-10-05T04:05:06.007Z').format('%U');;'40'
+d('2023-10-05T04:05:06.007Z').format('%W');;'40'
+d('2023-10-05T04:05:06.007Z').format('%V');;'40'
+d('2023-10-05T04:05:06.007Z').format('%G');;'2023'
+d('2023-10-05T04:05:06.007Z').format('%g');;'23'
+d('2023-10-05T04:05:06.007Z').format('%s');;'1696478706'
+d('2023-10-05T04:05:06.007Z').format('%z');;'+0000'
+d('2023-10-05T04:05:06.007Z').format('%:z');;'+00:00'
+d('2023-10-05T04:05:06.007Z').format('%D');;'10/05/23'
+d('2023-10-05T04:05:06.007Z').format('%x');;'10/05/23'
+d('2023-10-05T04:05:06.007Z').format('%F');;'2023-10-05'
+d('2023-10-05T04:05:06.007Z').format('%T');;'04:05:06'
+d('2023-10-05T04:05:06.007Z').format('%X');;'04:05:06'
+d('2023-10-05T04:05:06.007Z').format('%R');;'04:05'
+d('2023-10-05T04:05:06.007Z').format('%r');;'04:05:06 AM'
+d('2023-10-05T04:05:06.007Z').format('%c');;'Thu Oct  5 04:05:06 2023'
+d('2023-10-05T04:05:06.007Z').format('%v');;' 5-Oct-2023'
+d('2023-10-05T04:05:06.007Z').format('%+');;'2023-10-05T04:05:06.007+00:00'
+d('2023-10-05T04:05:06.007Z').format('%%');;'%'
+d('2023-10-05T04:05:06.007Z').format('100%% at %H');;'100% at 04'
+d('2023-10-05T04:05:06.007Z').format('');;''
+d('2023-10-05T04:05:06.007Z').format('plain text');;'plain text'
+d('2023-10-05T04:05:06.007Z').format('Day %j of %Y, week %V');;'Day 278 of 2023, week 40'
+# afternoon, Sunday, week-number edge cases
+d('2023-10-15T14:30:45Z').format('%A, %B %d %Y, %H:%M:%S');;'Sunday, October 15 2023, 14:30:45'
+d('2023-10-15T14:30:45Z').format('%I:%M %p');;'02:30 PM'
+d('2023-10-15T12:00:00Z').format('%I %p');;'12 PM'
+d('2023-10-15T00:00:00Z').format('%I %p');;'12 AM'
+d('2023-10-15T14:30:45Z').format('%u %w');;'7 0'
+d('2023-01-01').format('%U %W %V %G');;'01 00 52 2022'
+d('2023-01-02').format('%U %W %V %G');;'01 01 01 2023'
+d('2024-12-31').format('%U %W %V %G %j');;'52 53 01 2025 366'
+d('2021-01-03').format('%U %W %V %G');;'01 00 53 2020'
+d('0987-06-05').format('%Y %y %C');;'0987 87 09'
+d('1969-12-31 23:59:59').format('%s');;'-1'
+# invalid specifiers are evaluation errors, not panics
+d('2023-10-05').format('%Q');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%E');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%#z');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%-');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%^A');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%#Z');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format('%a%');;!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d('2023-10-05').format(null);;!error
+d('2023-10-05').format(1);;!error
+# format with zones
+d('2023-10-05', 'UTC').format();;'2023-10-05 00:00:00 UTC'
+d('2023-10-05', 'Europe/Berlin').format();;'2023-10-05 00:00:00 CEST'
+d('2023-01-05', 'Europe/Berlin').format();;'2023-01-05 00:00:00 CET'
+d('2023-10-05', 'UTC').format('%z %Z');;'+0000 UTC'
+d('2023-10-05', 'Europe/Berlin').format('%z %Z %:z');;'+0200 CEST +02:00'
+d('2023-10-05', 'America/New_York').format('%z %Z');;'-0400 EDT'
+d('2023-01-05', 'America/New_York').format('%z %Z');;'-0500 EST'
+d('2023-10-05', 'Asia/Kolkata').format('%z %Z');;'+0530 IST'
+d('2023-10-05', 'Asia/Kathmandu').format('%z %:z');;'+0545 +05:45'
+d('2023-10-05', 'Australia/Lord_Howe').format('%z');;'+1100'
+d('2023-06-05', 'Australia/Lord_Howe').format('%z');;'+1030'
+d('2023-10-05', 'Etc/GMT+5').format('%z');;'-0500'
+d('2023-10-05', 'Etc/GMT+5').format('%Y-%m-%d %H:%M');;'2023-10-05 00:00'
+d('2023-10-05T04:05:06Z').tz('Asia/Tokyo').format('%Y-%m-%d %H:%M %z');;'2023-10-05 13:05 +0900'
+d('2023-10-05T22:05:06Z').tz('Asia/Tokyo').format('%A %d');;'Friday 06'
+d('2023-10-05T22:05:06Z').tz('Asia/Kathmandu').format('%F %T');;'2023-10-06 03:50:06'
+d('2023-10-05T22:05:06Z').tz('America/St_Johns').format('%F %T %z');;'2023-10-05 19:35:06 -0230'
+# format on invalid dates
+d('foo').format('%Y');;'Invalid date'
+d('foo').format();;'Invalid date'
+d(null).format('%Y-%m-%d');;'Invalid date'
+# format on rows
+d(s).format('%Y-%m-%d');{s: '2023-10-15 13:45'};'2023-10-15'
+d(s).format('%Y-%m-%d');{s: '2023-10-15 13:45'};'2023-10-15'
+d(s).format('%Y-%m-%d');{s: '2024-02-29'};'2024-02-29'
+d(s).format('%Y-%m-%d');{s: 1697328000000};'2023-10-15'
+d(s).format('%Y-%m-%d');{s: 'x'};'Invalid date'
+d(s).format('%Y-%m-%d');{};'Invalid date'
+d(s).format(f);{s: '2023-10-15 13:45', f: '%H:%M'};'13:45'
+d(s).format(f);{s: '2023-10-15 13:45', f: '%d/%m/%Y'};'15/10/2023'
+d(s).format(f);{s: '2023-10-15 13:45', f: '%A'};'Sunday'
+d(s).format(f);{s: '2023-10-15 13:45', f: '%Q'};!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d(s).format(f);{s: '2023-10-15 13:45', f: '%'};!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d(s).format(f);{s: '2023-10-15 13:45', f: '%-'};!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d(s).format(f);{s: '2023-10-15 13:45', f: '%a%'};!error;bug: an unknown format specifier panics inside chrono instead of raising an evaluation error
+d(s).format(f);{s: '2023-10-15 13:45', f: null};!error
+d(s, 'Europe/Berlin').format('%H:%M %z');{s: '2025-03-30 01:59'};'01:59 +0100'
+d(s, 'Europe/Berlin').format('%H:%M %z');{s: '2025-03-30 03:00'};'03:00 +0200'
+d(s, 'Europe/Berlin').format('%H:%M %z');{s: '2025-10-26 02:30'};'02:30 +0200'
+d(s, 'Europe/Berlin').format('%H:%M %z');{s: 1761442200000};'02:30 +0100'
+d(s, 'Europe/Berlin').format('%H:%M %z');{s: 1761442200000};'02:30 +0100'
+# the string form: RFC 3339 to the second, Z for a zero offset
+d('2023-10-05T04:05:06.007Z');;'2023-10-05T04:05:06Z'
+d('2023-10-05', 'Europe/London');;'2023-10-05T00:00:00+01:00'
+d('2023-01-05', 'Europe/London');;'2023-01-05T00:00:00Z'
+d('2023-01-05', 'Etc/GMT-14');;'2023-01-05T00:00:00+14:00'
+d('2023-01-05', 'America/St_Johns');;'2023-01-05T00:00:00-03:30'
+[d('2023-06-05'), d('2023-06-05', 'Asia/Kolkata')];;['2023-06-05T00:00:00Z', '2023-06-05T00:00:00+05:30']
+{at: d('2023-06-05')};;{at: '2023-06-05T00:00:00Z'}
+type(d('2023-06-05'));;'date'
+type(d('foo'));;'date'
+string(d('2023-10-05'));;'2023-10-05T00:00:00Z'
+string(d('2023-10-05', 'Europe/Berlin'));;'2023-10-05T00:00:00+02:00'
+string(d('foo'));;'Invalid date'
+`${d('2023-10-05')}`;;'2023-10-05T00:00:00Z'
+`due ${d('2023-10-05').add(1, 'd').format('%Y-%m-%d')}`;;'due 2023-10-06'
+`at ${d(s).format('%H:%M')}`;{s: '2023-10-05 09:30'};'at 09:30'
+`at ${d(s).format('%H:%M')}`;{s: '2023-10-05 23:59'};'at 23:59'
+`at ${d(s).format('%H:%M')}`;{s: 'bad'};'at Invalid date'
+d('2023-10-05') + '';;'2023-10-05T00:00:00Z'
+'x' + d('2023-10-05');;'x2023-10-05T00:00:00Z'
+# tz() converts the zone and keeps the instant
+d('2023-10-15T00:00:00Z').tz('Asia/Kolkata');;'2023-10-15T05:30:00+05:30'
+d('2023-10-15T00:00:00Z').tz('Asia/Kathmandu');;'2023-10-15T05:45:00+05:45'
+d('2023-10-15T00:00:00Z').tz('Australia/Lord_Howe');;'2023-10-15T11:00:00+11:00'
+d('2023-06-15T00:00:00Z').tz('Australia/Lord_Howe');;'2023-06-15T10:30:00+10:30'
+d('2023-10-15T00:00:00Z').tz('Etc/GMT+5');;'2023-10-14T19:00:00-05:00'
+d('2023-10-15T00:00:00Z').tz('Etc/UTC');;'2023-10-15T00:00:00Z'
+d('2023-10-15', 'Europe/Berlin').tz('UTC');;'2023-10-14T22:00:00Z'
+d('2023-10-15', 'Europe/Berlin').tz('America/New_York');;'2023-10-14T18:00:00-04:00'
+d('2023-10-15', 'Europe/Berlin').tz('America/New_York').tz('Europe/Berlin');;'2023-10-15T00:00:00+02:00'
+d('2023-10-15', 'Europe/Berlin').tz('Asia/Tokyo') == d('2023-10-15', 'Europe/Berlin');;true
+d('2023-10-15', 'Europe/Berlin').tz('Asia/Tokyo').timestamp();;1697320800000
+d('2023-10-15').tz('Nope/Zone');;!error
+d('2023-10-15').tz('utc');;!error
+d('2023-10-15').tz(null);;!error
+d('2023-10-15').tz('');;!error
+d('foo').tz('UTC');;'Invalid date'
+d(s).tz('Asia/Kolkata');{s: '2023-10-15T00:00:00Z'};'2023-10-15T05:30:00+05:30'
+d(s).tz('Asia/Kolkata');{s: '2023-10-15T00:00:00Z'};'2023-10-15T05:30:00+05:30'
+d(s).tz('Asia/Kolkata');{s: '2023-12-31 20:00'};'2024-01-01T01:30:00+05:30'
+d(s).tz('Asia/Kolkata');{s: 0};'1970-01-01T05:30:00+05:30'
+d(s).tz('Asia/Kolkata');{s: 'x'};'Invalid date'
+d(s).tz('Asia/Kolkata');{};'Invalid date'
+d(s).tz(z).hour();{s: '2023-10-15 12:00', z: 'Asia/Kathmandu'};17
+d(s).tz(z).hour();{s: '2023-10-15 12:00', z: 'America/New_York'};8
+d(s).tz(z).hour();{s: '2023-10-15 12:00', z: 'Australia/Lord_Howe'};23
+d(s).tz(z).hour();{s: '2023-10-15 12:00', z: 'Etc/GMT+12'};0
+d(s).tz(z).hour();{s: '2023-10-15 12:00', z: 'Bad/Zone'};!error

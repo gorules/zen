@@ -1,0 +1,134 @@
+expression (string);input (json 5);output (json 5);note
+# Comma list: $ matches any entry (each entry is its own unary test)
+'a', 'b', 'c';{$: 'a'};true
+'a', 'b', 'c';{$: 'b'};true
+'a', 'b', 'c';{$: 'c'};true
+'a', 'b', 'c';{$: 'd'};false
+'a', 'b', 'c';{$: 'A'};false
+'a', 'b', 'c';{$: 'a, b'};false
+'a', 'b', 'c';{$: null};false
+'a', 'b', 'c';{};false
+'a', 'b', 'c';{$: ['a']};false
+'a', 'b', 'c';{$: 1};false
+'US','GB';{$: 'US'};true
+'US','GB';{$: 'GB'};true
+'US','GB';{$: 'us'};false
+'US','GB';{$: 'US,GB'};false
+'US','GB';{$: null};false
+1, 2, 3;{$: 1};true
+1, 2, 3;{$: 3.0};true
+1, 2, 3;{$: 4};false
+1, 2, 3;{$: 0};false
+1, 2, 3;{$: '1'};false
+1, 2, 3;{$: null};false
+1, 2, 3;{$: true};false
+1, 2, 3;{};false
+true, false;{$: true};true
+true, false;{$: false};true
+true, false;{$: null};false
+true, false;{$: 0};false
+true, false;{$: 'true'};false
+'x';{$: 'x'};true
+'x';{$: 'y'};false
+# Mixed types in a comma list: each entry uses its own type's equality
+1, 'a', true, null;{$: 1};true
+1, 'a', true, null;{$: 'a'};true
+1, 'a', true, null;{$: true};true
+1, 'a', true, null;{$: null};true
+1, 'a', true, null;{};true
+1, 'a', true, null;{$: '1'};false
+1, 'a', true, null;{$: false};false
+1, 'a', true, null;{$: 2};false
+# Comma list with repeated entries
+'a', 'a';{$: 'a'};true
+'a', 'a';{$: 'b'};false
+'a', 'a';{$: null};false
+'a', 'a';{$: ''};false
+# Comma list mixing shorthands
+> 10, < -5;{$: 15};true
+> 10, < -5;{$: -6};true
+> 10, < -5;{$: 0};false
+> 10, < -5;{$: 10};false
+> 10, < -5;{$: -5};false
+> 10, < -5;{$: null};!error
+0, > 100;{$: 0};true
+0, > 100;{$: 101};true
+0, > 100;{$: 50};false
+0, > 100;{$: null};!error
+'a', > 5;{$: 'a'};true
+'a', > 5;{$: 6};true
+'a', > 5;{$: 5};false
+'a', > 5;{$: 'b'};!error
+> 5, 'a';{$: 6};true
+> 5, 'a';{$: 'a'};!error;question: a list entry errors on a type mismatch even when a later entry would match; order of entries changes the outcome
+> 5, 'a';{$: 3};false
+[1..3], 7, > 10;{$: 2};true
+[1..3], 7, > 10;{$: 7};true
+[1..3], 7, > 10;{$: 11};true
+[1..3], 7, > 10;{$: 5};false
+[1..3], 7, > 10;{$: 3.5};false
+[1..3], 7, > 10;{$: null};!error
+null, > 0;{$: null};true
+null, > 0;{$: 1};true
+null, > 0;{$: 0};false
+null, > 0;{$: -1};false
+# `or` between entries is the same as comma
+'a' or 'b';{$: 'a'};true
+'a' or 'b';{$: 'b'};true
+'a' or 'b';{$: 'c'};false
+'a' or 'b';{$: null};false
+'a' and 'b';{$: 'a'};false
+'a' and 'b';{$: 'b'};false
+'a' and 'b';{$: 'ab'};false
+'a' and 'b';{$: null};false
+# Array literal: $ in array
+[1, 2];{$: 1};true
+[1, 2];{$: 2.0};true
+[1, 2];{$: 3};false
+[1, 2];{$: '1'};false
+[1, 2];{$: null};false
+[1, 2];{};false
+[1, 2];{$: true};false
+[1, 2];{$: [1, 2]};!error;question: an array $ against an array cell errors instead of comparing or testing membership
+['gold', 'silver'];{$: 'gold'};true
+['gold', 'silver'];{$: 'bronze'};false
+['gold', 'silver'];{$: 'Gold'};false
+['gold', 'silver'];{$: null};false
+['gold', 'silver'];{$: 1};false
+[1, 'a'];{$: 1};true
+[1, 'a'];{$: 'a'};true
+[1, 'a'];{$: '1'};false
+[1, 'a'];{$: null};false
+[true];{$: true};true
+[true];{$: false};false
+[true];{$: 1};false
+[true];{$: null};false
+[null];{$: null};true
+[null];{};true
+[null];{$: 0};false
+[null];{$: 'null'};false
+[];{$: 1};false
+[];{$: 'a'};false
+[];{$: null};false
+[];{$: true};false
+# Nested arrays: membership does not look inside nested arrays
+[[1], 2];{$: 2};true
+[[1], 2];{$: 1};false
+[[1], 2];{$: null};false
+[[1], 2];{$: 'a'};false
+[[1]];{$: [1]};!error;question: an array $ against a nested-array cell errors instead of deep membership
+[[1]];{$: 1};false
+# Array literal next to other entries
+[1, 2], 5;{$: 1};true
+[1, 2], 5;{$: 5};true
+[1, 2], 5;{$: 3};false
+[1, 2], 5;{$: null};false
+# Malformed lists are parse errors
+'a',;{$: 'a'};!error
+'a',;{$: 'b'};!error
+'a',,'b';{$: 'a'};!error
+'a',,'b';{$: 'b'};!error
+, 'a';{$: 'a'};!error
+, 'a';{$: null};!error
+'a' 'b';{$: 'a'};!error
+'a' 'b';{$: 'b'};!error

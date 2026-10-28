@@ -1,0 +1,393 @@
+expression (string);input (json 5);output (json 5);note
+# string building inside closures
+map(names, upper(#[0:0]) + #[1:]);{names: ['alice', 'bob']};['Alice', 'Bob']
+map(names, upper(#[0:0]) + #[1:]);{names: ['Ann', 'JOHN', 'mary']};['Ann', 'JOHN', 'Mary']
+map(names, upper(#[0:0]) + #[1:]);{names: ['x']};['X']
+map(names, upper(#[0:0]) + #[1:]);{names: []};[]
+map(names, upper(#[0:0]) + #[1:]);{names: ['élan', 'zoë']};['Élan', 'Zoë'];bug: string slices use UTF-8 byte offsets instead of characters
+map(names, upper(#[0:0]) + #[1:]);{names: ['alice', null]};!error
+map(names, upper(#[0:0]) + #[1:]);{names: ['a', 5]};!error
+map(names, upper(#[0:0]) + #[1:]);{names: 'alice'};!error
+map(names, upper(#[0:0]) + #[1:]);{names: null};!error
+map(names, upper(#[0:0]) + #[1:]);{};!error
+map(names, upper(#[0]) + lower(#[1:]));{names: ['alice', 'bob']};['Alice', 'Bob']
+map(names, upper(#[0]) + lower(#[1:]));{names: ['Ann', 'JOHN', 'mary']};['Ann', 'John', 'Mary']
+map(names, upper(#[0]) + lower(#[1:]));{names: ['x']};['X']
+map(names, upper(#[0]) + lower(#[1:]));{names: []};[]
+map(names, upper(#[0]) + lower(#[1:]));{names: ['élan', 'zoë']};['Élan', 'Zoë'];bug: string indexing uses UTF-8 byte offsets instead of characters
+map(names, upper(#[0]) + lower(#[1:]));{names: ['alice', null]};!error
+map(names, upper(#[0]) + lower(#[1:]));{names: ['a', 5]};!error
+map(names, upper(#[0]) + lower(#[1:]));{names: 'alice'};!error
+map(names, upper(#[0]) + lower(#[1:]));{names: null};!error
+map(names, upper(#[0]) + lower(#[1:]));{};!error
+map(names, upper(#));{names: ['alice', 'bob']};['ALICE', 'BOB']
+map(names, upper(#));{names: ['Ann', 'JOHN', 'mary']};['ANN', 'JOHN', 'MARY']
+map(names, upper(#));{names: ['x']};['X']
+map(names, upper(#));{names: []};[]
+map(names, upper(#));{names: ['élan', 'zoë']};['ÉLAN', 'ZOË']
+map(names, upper(#));{names: ['alice', null]};!error
+map(names, upper(#));{names: ['a', 5]};!error
+map(names, upper(#));{names: 'alice'};!error
+map(names, upper(#));{names: null};!error
+map(names, upper(#));{};!error
+map(names, trim(lower(#)));{names: ['alice', 'bob']};['alice', 'bob']
+map(names, trim(lower(#)));{names: ['Ann', 'JOHN', 'mary']};['ann', 'john', 'mary']
+map(names, trim(lower(#)));{names: ['x']};['x']
+map(names, trim(lower(#)));{names: []};[]
+map(names, trim(lower(#)));{names: ['élan', 'zoë']};['élan', 'zoë']
+map(names, trim(lower(#)));{names: ['alice', null]};!error
+map(names, trim(lower(#)));{names: ['a', 5]};!error
+map(names, trim(lower(#)));{names: 'alice'};!error
+map(names, trim(lower(#)));{names: null};!error
+map(names, trim(lower(#)));{};!error
+map(names, '<' + # + '>');{names: ['alice', 'bob']};['<alice>', '<bob>']
+map(names, '<' + # + '>');{names: ['Ann', 'JOHN', 'mary']};['<Ann>', '<JOHN>', '<mary>']
+map(names, '<' + # + '>');{names: ['x']};['<x>']
+map(names, '<' + # + '>');{names: []};[]
+map(names, '<' + # + '>');{names: ['élan', 'zoë']};['<élan>', '<zoë>']
+map(names, '<' + # + '>');{names: ['alice', null]};!error
+map(names, '<' + # + '>');{names: ['a', 5]};!error
+map(names, '<' + # + '>');{names: 'alice'};!error
+map(names, '<' + # + '>');{names: null};!error
+map(names, '<' + # + '>');{};!error
+map(names, # + '!' + #);{names: ['alice', 'bob']};['alice!alice', 'bob!bob']
+map(names, # + '!' + #);{names: ['Ann', 'JOHN', 'mary']};['Ann!Ann', 'JOHN!JOHN', 'mary!mary']
+map(names, # + '!' + #);{names: ['x']};['x!x']
+map(names, # + '!' + #);{names: []};[]
+map(names, # + '!' + #);{names: ['élan', 'zoë']};['élan!élan', 'zoë!zoë']
+map(names, # + '!' + #);{names: ['alice', null]};!error
+map(names, # + '!' + #);{names: ['a', 5]};!error
+map(names, # + '!' + #);{names: 'alice'};!error
+map(names, # + '!' + #);{names: null};!error
+map(names, # + '!' + #);{};!error
+map(names, len(#));{names: ['alice', 'bob']};[5, 3]
+map(names, len(#));{names: ['Ann', 'JOHN', 'mary']};[3, 4, 4]
+map(names, len(#));{names: ['x']};[1]
+map(names, len(#));{names: []};[]
+map(names, len(#));{names: ['élan', 'zoë']};[4, 3];bug: len counts UTF-8 bytes, intended character count
+map(names, len(#));{names: ['alice', null]};!error
+map(names, len(#));{names: ['a', 5]};!error
+map(names, len(#));{names: 'alice'};!error
+map(names, len(#));{names: null};!error
+map(names, len(#));{};!error
+map(names, #[0] ?? '?');{names: ['alice', 'bob']};['a', 'b']
+map(names, #[0] ?? '?');{names: ['Ann', 'JOHN', 'mary']};['A', 'J', 'm']
+map(names, #[0] ?? '?');{names: ['x']};['x']
+map(names, #[0] ?? '?');{names: []};[]
+map(names, #[0] ?? '?');{names: ['élan', 'zoë']};['é', 'z'];bug: string indexing uses UTF-8 byte offsets instead of characters
+map(names, #[0] ?? '?');{names: ['', 'b']};['?', 'b']
+# title case of free text
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'hello world'};['Hello', 'World']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'the QUICK brown'};['The', 'Quick', 'Brown']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'a'};['A']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'x y z'};['X', 'Y', 'Z']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'jean luc picard'};['Jean', 'Luc', 'Picard']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: 'one two'};['One', 'Two']
+map(split(s, ' '), upper(#[0:0]) + lower(#[1:]));{s: null};!error
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'hello world'};['Hello', 'World']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'the QUICK brown'};['The', 'QUICK', 'Brown']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'a'};['A']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'x y z'};['X', 'Y', 'Z']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'jean luc picard'};['Jean', 'Luc', 'Picard']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: 'one two'};['One', 'Two']
+map(split(s, ' '), upper(#[0]) + #[1:]);{s: null};!error
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'hello world'};['Hello', 'World']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'the QUICK brown'};['the', 'Quick', 'Brown']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'a'};['a']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'x y z'};['x', 'y', 'z']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'jean luc picard'};['Jean', 'luc', 'Picard']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: 'one two'};['one', 'two']
+map(split(lower(s), ' '), len(#) > 3 ? upper(#[0:0]) + #[1:] : #);{s: null};!error
+# predicates over string arrays
+some(tags, lower(#) == 'vip');{tags: ['VIP', 'new']};true
+some(tags, lower(#) == 'vip');{tags: ['vip']};true
+some(tags, lower(#) == 'vip');{tags: [' Vip ']};false
+some(tags, lower(#) == 'vip');{tags: ['regular']};false
+some(tags, lower(#) == 'vip');{tags: []};false
+some(tags, lower(#) == 'vip');{tags: ['a', 'b', 'VIP', 'vip']};true
+some(tags, lower(#) == 'vip');{tags: ['x', null]};!error
+some(tags, lower(#) == 'vip');{tags: null};!error
+some(tags, lower(trim(#)) == 'vip');{tags: ['VIP', 'new']};true
+some(tags, lower(trim(#)) == 'vip');{tags: ['vip']};true
+some(tags, lower(trim(#)) == 'vip');{tags: [' Vip ']};true
+some(tags, lower(trim(#)) == 'vip');{tags: ['regular']};false
+some(tags, lower(trim(#)) == 'vip');{tags: []};false
+some(tags, lower(trim(#)) == 'vip');{tags: ['a', 'b', 'VIP', 'vip']};true
+some(tags, lower(trim(#)) == 'vip');{tags: ['x', null]};!error
+some(tags, lower(trim(#)) == 'vip');{tags: null};!error
+count(tags, lower(#) == 'vip');{tags: ['VIP', 'new']};1
+count(tags, lower(#) == 'vip');{tags: ['vip']};1
+count(tags, lower(#) == 'vip');{tags: [' Vip ']};0
+count(tags, lower(#) == 'vip');{tags: ['regular']};0
+count(tags, lower(#) == 'vip');{tags: []};0
+count(tags, lower(#) == 'vip');{tags: ['a', 'b', 'VIP', 'vip']};2
+count(tags, lower(#) == 'vip');{tags: ['x', null]};!error
+count(tags, lower(#) == 'vip');{tags: null};!error
+one(tags, upper(#) == 'VIP');{tags: ['VIP', 'new']};true
+one(tags, upper(#) == 'VIP');{tags: ['vip']};true
+one(tags, upper(#) == 'VIP');{tags: [' Vip ']};false
+one(tags, upper(#) == 'VIP');{tags: ['regular']};false
+one(tags, upper(#) == 'VIP');{tags: []};false
+one(tags, upper(#) == 'VIP');{tags: ['a', 'b', 'VIP', 'vip']};false
+one(tags, upper(#) == 'VIP');{tags: ['x', null]};!error
+one(tags, upper(#) == 'VIP');{tags: null};!error
+none(tags, contains(lower(#), 'vip'));{tags: ['VIP', 'new']};false
+none(tags, contains(lower(#), 'vip'));{tags: ['vip']};false
+none(tags, contains(lower(#), 'vip'));{tags: [' Vip ']};false
+none(tags, contains(lower(#), 'vip'));{tags: ['regular']};true
+none(tags, contains(lower(#), 'vip'));{tags: []};true
+none(tags, contains(lower(#), 'vip'));{tags: ['a', 'b', 'VIP', 'vip']};false
+none(tags, contains(lower(#), 'vip'));{tags: ['x', null]};!error
+none(tags, contains(lower(#), 'vip'));{tags: null};!error
+all(tags, upper(#) == #);{tags: ['VIP', 'new']};false
+all(tags, upper(#) == #);{tags: ['vip']};false
+all(tags, upper(#) == #);{tags: [' Vip ']};false
+all(tags, upper(#) == #);{tags: ['regular']};false
+all(tags, upper(#) == #);{tags: []};true
+all(tags, upper(#) == #);{tags: ['a', 'b', 'VIP', 'vip']};false
+all(tags, upper(#) == #);{tags: ['x', null]};false
+all(tags, upper(#) == #);{tags: null};!error
+filter(tags, lower(#) != 'vip');{tags: ['VIP', 'new']};['new']
+filter(tags, lower(#) != 'vip');{tags: ['vip']};[]
+filter(tags, lower(#) != 'vip');{tags: [' Vip ']};[' Vip ']
+filter(tags, lower(#) != 'vip');{tags: ['regular']};['regular']
+filter(tags, lower(#) != 'vip');{tags: []};[]
+filter(tags, lower(#) != 'vip');{tags: ['a', 'b', 'VIP', 'vip']};['a', 'b']
+filter(tags, lower(#) != 'vip');{tags: ['x', null]};!error
+filter(tags, lower(#) != 'vip');{tags: null};!error
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['VIP', 'new']};['vip', 'new']
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['vip']};['vip']
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: [' Vip ']};['vip']
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['regular']};['regular']
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: []};[]
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['a', 'b', 'VIP', 'vip']};['a', 'b', 'vip', 'vip']
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['x', null]};!error
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: null};!error
+map(filter(tags, len(trim(#)) > 0), lower(trim(#)));{tags: ['  ', 'A ', '']};['a']
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['USD', 'EUR', 'GBP']};true
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['usd', 'EUR']};false
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['US', 'EURO']};false
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: []};true
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['USD', '']};false
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['ÄÖÜ']};false
+all(codes, matches(#, '^[A-Z]{3}$'));{codes: ['USD', 1]};!error
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['USD', 'EUR', 'GBP']};[]
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['usd', 'EUR']};['usd']
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['US', 'EURO']};['US', 'EURO']
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: []};[]
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['USD', '']};['']
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['ÄÖÜ']};['ÄÖÜ']
+filter(codes, not matches(#, '^[A-Z]{3}$'));{codes: ['USD', 1]};!error
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['USD', 'EUR', 'GBP']};[true, true, false]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['usd', 'EUR']};[true, true]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['US', 'EURO']};[false, false]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: []};[]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['USD', '']};[true, false]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['ÄÖÜ']};[false]
+map(codes, upper(#) in ['USD', 'EUR']);{codes: ['USD', 1]};!error
+none(emails, endsWith(lower(#), '.ru'));{emails: ['a@x.com', 'B@Y.ORG']};true
+none(emails, endsWith(lower(#), '.ru'));{emails: ['bad', 'c@d.ru']};false
+none(emails, endsWith(lower(#), '.ru'));{emails: ['x@spam.ru', 'y@mail.RU']};false
+none(emails, endsWith(lower(#), '.ru'));{emails: []};true
+none(emails, endsWith(lower(#), '.ru'));{emails: ['a@b']};true
+none(emails, endsWith(lower(#), '.ru'));{emails: [null]};!error
+map(emails, split(#, '@')[1] ?? '');{emails: ['a@x.com', 'B@Y.ORG']};['x.com', 'Y.ORG']
+map(emails, split(#, '@')[1] ?? '');{emails: ['bad', 'c@d.ru']};['', 'd.ru']
+map(emails, split(#, '@')[1] ?? '');{emails: ['x@spam.ru', 'y@mail.RU']};['spam.ru', 'mail.RU']
+map(emails, split(#, '@')[1] ?? '');{emails: []};[]
+map(emails, split(#, '@')[1] ?? '');{emails: ['a@b']};['b']
+map(emails, split(#, '@')[1] ?? '');{emails: [null]};!error
+map(emails, lower(split(#, '@')[0]));{emails: ['a@x.com', 'B@Y.ORG']};['a', 'b']
+map(emails, lower(split(#, '@')[0]));{emails: ['bad', 'c@d.ru']};['bad', 'c']
+map(emails, lower(split(#, '@')[0]));{emails: ['x@spam.ru', 'y@mail.RU']};['x', 'y']
+map(emails, lower(split(#, '@')[0]));{emails: []};[]
+map(emails, lower(split(#, '@')[0]));{emails: ['a@b']};['a']
+map(emails, lower(split(#, '@')[0]));{emails: [null]};!error
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: ['a@x.com', 'B@Y.ORG']};['a@x.com', 'B@Y.ORG']
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: ['bad', 'c@d.ru']};['c@d.ru']
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: ['x@spam.ru', 'y@mail.RU']};['x@spam.ru', 'y@mail.RU']
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: []};[]
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: ['a@b']};[]
+filter(emails, matches(#, '^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$'));{emails: [null]};!error
+# object arrays: concatenation and search
+map(people, #.first + ' ' + #.last);{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};['Ada Lovelace', 'Alan Turing']
+map(people, #.first + ' ' + #.last);{people: [{first: ' grace ', last: 'HOPPER'}]};[' grace  HOPPER']
+map(people, #.first + ' ' + #.last);{people: [{first: 'Ann', last: null}]};!error
+map(people, #.first + ' ' + #.last);{people: [{first: 'Ann'}]};!error
+map(people, #.first + ' ' + #.last);{people: []};[]
+map(people, #.first + ' ' + #.last);{people: [{first: 'Zoë', last: 'Ñúñez'}]};['Zoë Ñúñez']
+map(people, #.first + ' ' + #.last);{people: null};!error
+map(people, `${#.last}, ${#.first}`);{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};['Lovelace, Ada', 'Turing, Alan']
+map(people, `${#.last}, ${#.first}`);{people: [{first: ' grace ', last: 'HOPPER'}]};['HOPPER,  grace ']
+map(people, `${#.last}, ${#.first}`);{people: [{first: 'Ann', last: null}]};['null, Ann']
+map(people, `${#.last}, ${#.first}`);{people: [{first: 'Ann'}]};['null, Ann']
+map(people, `${#.last}, ${#.first}`);{people: []};[]
+map(people, `${#.last}, ${#.first}`);{people: [{first: 'Zoë', last: 'Ñúñez'}]};['Ñúñez, Zoë']
+map(people, `${#.last}, ${#.first}`);{people: null};!error
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};['LOVELACE, Ada', 'TURING, Alan']
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: [{first: ' grace ', last: 'HOPPER'}]};['HOPPER, grace']
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: [{first: 'Ann', last: null}]};!error
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: [{first: 'Ann'}]};!error
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: []};[]
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: [{first: 'Zoë', last: 'Ñúñez'}]};['ÑÚÑEZ, Zoë']
+map(people as p, upper(p.last) + ', ' + trim(p.first));{people: null};!error
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};['Ada Lovelace', 'Alan Turing']
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: [{first: ' grace ', last: 'HOPPER'}]};['grace HOPPER']
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: [{first: 'Ann', last: null}]};['Ann -']
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: [{first: 'Ann'}]};['Ann -']
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: []};[]
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: [{first: 'Zoë', last: 'Ñúñez'}]};['Zoë Ñúñez']
+map(people, trim(#.first) + ' ' + (#.last ?? '-'));{people: null};!error
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};['AL', 'AT']
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: [{first: ' grace ', last: 'HOPPER'}]};[' H']
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: [{first: 'Ann', last: null}]};['A']
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: [{first: 'Ann'}]};['A']
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: []};[]
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: [{first: 'Zoë', last: 'Ñúñez'}]};['ZÑ'];bug: string indexing uses UTF-8 byte offsets instead of characters
+map(people, upper(#.first[0]) + upper(#.last[0] ?? ''));{people: null};!error
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: [{first: 'Ada', last: 'Lovelace'}, {first: 'Alan', last: 'Turing'}]};[{name: 'ADA', initial: 'L'}, {name: 'ALAN', initial: 'T'}]
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: [{first: ' grace ', last: 'HOPPER'}]};[{name: ' GRACE ', initial: 'H'}]
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: [{first: 'Ann', last: null}]};[{name: 'ANN', initial: null}]
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: [{first: 'Ann'}]};[{name: 'ANN', initial: null}]
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: []};[]
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: [{first: 'Zoë', last: 'Ñúñez'}]};[{name: 'ZOË', initial: 'Ñ'}];bug: string indexing uses UTF-8 byte offsets instead of characters
+map(people, {name: upper(#.first), initial: #.last[0] ?? null});{people: null};!error
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'blue'};[{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'EF-3', name: 'blue jeans', qty: 5}]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'BLUE'};[{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'EF-3', name: 'blue jeans', qty: 5}]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'hat'};[{sku: 'cd-2', name: 'Red Hat', qty: 0}]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'x'};[]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ''};[{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ' blue'};[{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}]
+filter(items, contains(lower(#.name), lower(q)));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: null};!error
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'blue'};['AB-1', 'EF-3']
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'BLUE'};['AB-1', 'EF-3']
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'hat'};['CD-2']
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'x'};[]
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ''};['AB-1', 'CD-2', 'EF-3', 'GH-4']
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ' blue'};['AB-1', 'EF-3']
+map(filter(items, contains(lower(#.name), lower(trim(q)))), upper(#.sku));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: null};!error
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'blue'};2
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'BLUE'};2
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'hat'};0
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: 'x'};0
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ''};3
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: ' blue'};1
+count(items, contains(lower(#.name), lower(q)) and #.qty > 0);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}], q: null};!error
+map(items, {sku: upper(#.sku), name: trim(#.name)});{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}]};[{sku: 'AB-1', name: 'Blue Shirt'}, {sku: 'CD-2', name: 'Red Hat'}, {sku: 'EF-3', name: 'blue jeans'}, {sku: 'GH-4', name: 'Green Scarf'}]
+map(items, {sku: upper(#.sku), name: trim(#.name)});{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}]};[{sku: 'AB-1', name: 'Blue Shirt'}]
+map(items, {sku: upper(#.sku), name: trim(#.name)});{items: []};[]
+map(items, {sku: upper(#.sku), name: trim(#.name)});{items: [{sku: null, name: 'x', qty: 1}]};!error
+map(items, {sku: upper(#.sku), name: trim(#.name)});{items: [{sku: 'a', name: 5, qty: 1}]};!error
+map(filter(items, #.qty > 0), trim(#.name) + ' x' + string(#.qty));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}]};['Blue Shirt x2', 'blue jeans x5', 'Green Scarf x1']
+map(filter(items, #.qty > 0), trim(#.name) + ' x' + string(#.qty));{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}]};['Blue Shirt x2']
+map(filter(items, #.qty > 0), trim(#.name) + ' x' + string(#.qty));{items: []};[]
+map(filter(items, #.qty > 0), trim(#.name) + ' x' + string(#.qty));{items: [{sku: null, name: 'x', qty: 1}]};['x x1']
+map(filter(items, #.qty > 0), trim(#.name) + ' x' + string(#.qty));{items: [{sku: 'a', name: 5, qty: 1}]};!error
+map(items, `${upper(#.sku)}: ${trim(#.name)} (${#.qty})`);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}, {sku: 'cd-2', name: 'Red Hat', qty: 0}, {sku: 'EF-3', name: 'blue jeans', qty: 5}, {sku: 'gh-4', name: 'Green Scarf', qty: 1}]};['AB-1: Blue Shirt (2)', 'CD-2: Red Hat (0)', 'EF-3: blue jeans (5)', 'GH-4: Green Scarf (1)']
+map(items, `${upper(#.sku)}: ${trim(#.name)} (${#.qty})`);{items: [{sku: 'ab-1', name: ' Blue Shirt ', qty: 2}]};['AB-1: Blue Shirt (2)']
+map(items, `${upper(#.sku)}: ${trim(#.name)} (${#.qty})`);{items: []};[]
+map(items, `${upper(#.sku)}: ${trim(#.name)} (${#.qty})`);{items: [{sku: null, name: 'x', qty: 1}]};!error
+map(items, `${upper(#.sku)}: ${trim(#.name)} (${#.qty})`);{items: [{sku: 'a', name: 5, qty: 1}]};!error
+# nested closures over strings
+map(groups, map(#.members, upper(#)));{groups: [{name: 'a', members: ['x', 'Y']}, {name: 'b', members: []}]};[['X', 'Y'], []]
+map(groups, map(#.members, upper(#)));{groups: [{name: 'Admins', members: ['root', 'ADMIN']}]};[['ROOT', 'ADMIN']]
+map(groups, map(#.members, upper(#)));{groups: [{name: 'c', members: ['ä']}]};[['Ä']]
+map(groups, map(#.members, upper(#)));{groups: []};[]
+map(groups, map(#.members, upper(#)));{groups: [{name: 'd', members: null}]};!error
+map(groups as g, map(g.members, g.name + ':' + lower(#)));{groups: [{name: 'a', members: ['x', 'Y']}, {name: 'b', members: []}]};[['a:x', 'a:y'], []]
+map(groups as g, map(g.members, g.name + ':' + lower(#)));{groups: [{name: 'Admins', members: ['root', 'ADMIN']}]};[['Admins:root', 'Admins:admin']]
+map(groups as g, map(g.members, g.name + ':' + lower(#)));{groups: [{name: 'c', members: ['ä']}]};[['c:ä']]
+map(groups as g, map(g.members, g.name + ':' + lower(#)));{groups: []};[]
+map(groups as g, map(g.members, g.name + ':' + lower(#)));{groups: [{name: 'd', members: null}]};!error
+flatMap(groups as g, map(g.members, lower(g.name) + '/' + #));{groups: [{name: 'a', members: ['x', 'Y']}, {name: 'b', members: []}]};['a/x', 'a/Y']
+flatMap(groups as g, map(g.members, lower(g.name) + '/' + #));{groups: [{name: 'Admins', members: ['root', 'ADMIN']}]};['admins/root', 'admins/ADMIN']
+flatMap(groups as g, map(g.members, lower(g.name) + '/' + #));{groups: [{name: 'c', members: ['ä']}]};['c/ä']
+flatMap(groups as g, map(g.members, lower(g.name) + '/' + #));{groups: []};[]
+flatMap(groups as g, map(g.members, lower(g.name) + '/' + #));{groups: [{name: 'd', members: null}]};!error
+filter(groups, some(#.members, lower(#) == 'admin'));{groups: [{name: 'a', members: ['x', 'Y']}, {name: 'b', members: []}]};[]
+filter(groups, some(#.members, lower(#) == 'admin'));{groups: [{name: 'Admins', members: ['root', 'ADMIN']}]};[{name: 'Admins', members: ['root', 'ADMIN']}]
+filter(groups, some(#.members, lower(#) == 'admin'));{groups: [{name: 'c', members: ['ä']}]};[]
+filter(groups, some(#.members, lower(#) == 'admin'));{groups: []};[]
+filter(groups, some(#.members, lower(#) == 'admin'));{groups: [{name: 'd', members: null}]};!error
+map(groups, len(#.members) == 0 ? #.name + ' (empty)' : #.name);{groups: [{name: 'a', members: ['x', 'Y']}, {name: 'b', members: []}]};['a', 'b (empty)']
+map(groups, len(#.members) == 0 ? #.name + ' (empty)' : #.name);{groups: [{name: 'Admins', members: ['root', 'ADMIN']}]};['Admins']
+map(groups, len(#.members) == 0 ? #.name + ' (empty)' : #.name);{groups: [{name: 'c', members: ['ä']}]};['c']
+map(groups, len(#.members) == 0 ? #.name + ' (empty)' : #.name);{groups: []};[]
+map(groups, len(#.members) == 0 ? #.name + ' (empty)' : #.name);{groups: [{name: 'd', members: null}]};!error
+flatMap(lines, split(#, ','));{lines: ['a,b', 'c']};['a', 'b', 'c']
+flatMap(lines, split(#, ','));{lines: ['x, y ,z']};['x', ' y ', 'z']
+flatMap(lines, split(#, ','));{lines: ['']};['']
+flatMap(lines, split(#, ','));{lines: []};[]
+flatMap(lines, split(#, ','));{lines: [',,']};['', '', '']
+flatMap(lines, split(#, ','));{lines: ['ä,ö', 'ü']};['ä', 'ö', 'ü']
+flatMap(lines, split(#, ','));{lines: ['a', null]};!error
+flatMap(lines, map(split(#, ','), trim(#)));{lines: ['a,b', 'c']};['a', 'b', 'c']
+flatMap(lines, map(split(#, ','), trim(#)));{lines: ['x, y ,z']};['x', 'y', 'z']
+flatMap(lines, map(split(#, ','), trim(#)));{lines: ['']};['']
+flatMap(lines, map(split(#, ','), trim(#)));{lines: []};[]
+flatMap(lines, map(split(#, ','), trim(#)));{lines: [',,']};['', '', '']
+flatMap(lines, map(split(#, ','), trim(#)));{lines: ['ä,ö', 'ü']};['ä', 'ö', 'ü']
+flatMap(lines, map(split(#, ','), trim(#)));{lines: ['a', null]};!error
+map(lines, len(split(#, ',')));{lines: ['a,b', 'c']};[2, 1]
+map(lines, len(split(#, ',')));{lines: ['x, y ,z']};[3]
+map(lines, len(split(#, ',')));{lines: ['']};[1]
+map(lines, len(split(#, ',')));{lines: []};[]
+map(lines, len(split(#, ',')));{lines: [',,']};[3]
+map(lines, len(split(#, ',')));{lines: ['ä,ö', 'ü']};[2, 1]
+map(lines, len(split(#, ',')));{lines: ['a', null]};!error
+map(lines, map(split(#, ','), upper(trim(#))));{lines: ['a,b', 'c']};[['A', 'B'], ['C']]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: ['x, y ,z']};[['X', 'Y', 'Z']]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: ['']};[['']]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: []};[]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: [',,']};[['', '', '']]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: ['ä,ö', 'ü']};[['Ä', 'Ö'], ['Ü']]
+map(lines, map(split(#, ','), upper(trim(#))));{lines: ['a', null]};!error
+# decisions over string arrays
+map(tiers, # == 'GOLD' or lower(#) == 'gold');{tiers: ['GOLD', 'gold', 'Gold', 'silver']};[true, true, true, false]
+map(tiers, # == 'GOLD' or lower(#) == 'gold');{tiers: ['bronze', 'SILVER']};[false, false]
+map(tiers, # == 'GOLD' or lower(#) == 'gold');{tiers: []};[]
+map(tiers, # == 'GOLD' or lower(#) == 'gold');{tiers: ['gold', null]};!error
+map(tiers, # == 'GOLD' or lower(#) == 'gold');{tiers: ['gold', 7]};!error
+map(tiers, lower(#) == 'gold' ? 0.2 : lower(#) == 'silver' ? 0.1 : 0);{tiers: ['GOLD', 'gold', 'Gold', 'silver']};[0.2, 0.2, 0.2, 0.1]
+map(tiers, lower(#) == 'gold' ? 0.2 : lower(#) == 'silver' ? 0.1 : 0);{tiers: ['bronze', 'SILVER']};[0, 0.1]
+map(tiers, lower(#) == 'gold' ? 0.2 : lower(#) == 'silver' ? 0.1 : 0);{tiers: []};[]
+map(tiers, lower(#) == 'gold' ? 0.2 : lower(#) == 'silver' ? 0.1 : 0);{tiers: ['gold', null]};!error
+map(tiers, lower(#) == 'gold' ? 0.2 : lower(#) == 'silver' ? 0.1 : 0);{tiers: ['gold', 7]};!error
+sum(map(tiers, lower(#) == 'gold' ? 10 : 1));{tiers: ['GOLD', 'gold', 'Gold', 'silver']};31
+sum(map(tiers, lower(#) == 'gold' ? 10 : 1));{tiers: ['bronze', 'SILVER']};2
+sum(map(tiers, lower(#) == 'gold' ? 10 : 1));{tiers: []};0
+sum(map(tiers, lower(#) == 'gold' ? 10 : 1));{tiers: ['gold', null]};!error
+sum(map(tiers, lower(#) == 'gold' ? 10 : 1));{tiers: ['gold', 7]};!error
+map(tiers, lower(#) in ['gold', 'silver'] ? upper(#) : 'OTHER');{tiers: ['GOLD', 'gold', 'Gold', 'silver']};['GOLD', 'GOLD', 'GOLD', 'SILVER']
+map(tiers, lower(#) in ['gold', 'silver'] ? upper(#) : 'OTHER');{tiers: ['bronze', 'SILVER']};['OTHER', 'SILVER']
+map(tiers, lower(#) in ['gold', 'silver'] ? upper(#) : 'OTHER');{tiers: []};[]
+map(tiers, lower(#) in ['gold', 'silver'] ? upper(#) : 'OTHER');{tiers: ['gold', null]};!error
+map(tiers, lower(#) in ['gold', 'silver'] ? upper(#) : 'OTHER');{tiers: ['gold', 7]};!error
+# object keys as strings
+map(keys(o), upper(#));{o: {a: 1, b: 'x'}};['A', 'B']
+map(keys(o), upper(#));{o: {'Content-Type': 'json', 'X-Id': '7'}};['CONTENT-TYPE', 'X-ID']
+map(keys(o), upper(#));{o: {}};[]
+map(keys(o), upper(#));{o: {'ä': 'ö'}};['Ä']
+map(keys(o), lower(#) + '=' + string(o[#]));{o: {a: 1, b: 'x'}};['a=1', 'b=x']
+map(keys(o), lower(#) + '=' + string(o[#]));{o: {'Content-Type': 'json', 'X-Id': '7'}};['content-type=json', 'x-id=7']
+map(keys(o), lower(#) + '=' + string(o[#]));{o: {}};[]
+map(keys(o), lower(#) + '=' + string(o[#]));{o: {'ä': 'ö'}};['ä=ö']
+filter(keys(o), startsWith(lower(#), 'x-'));{o: {a: 1, b: 'x'}};[]
+filter(keys(o), startsWith(lower(#), 'x-'));{o: {'Content-Type': 'json', 'X-Id': '7'}};['X-Id']
+filter(keys(o), startsWith(lower(#), 'x-'));{o: {}};[]
+filter(keys(o), startsWith(lower(#), 'x-'));{o: {'ä': 'ö'}};[]
+some(keys(o), lower(#) == 'content-type');{o: {a: 1, b: 'x'}};false
+some(keys(o), lower(#) == 'content-type');{o: {'Content-Type': 'json', 'X-Id': '7'}};true
+some(keys(o), lower(#) == 'content-type');{o: {}};false
+some(keys(o), lower(#) == 'content-type');{o: {'ä': 'ö'}};false
+# capitalization edge: empty words
+map(split(s, ' '), upper(#[0:0]) + #[1:]);{s: 'a  b'};!error
+map(split(s, ' '), upper(#[0:0]) + #[1:]);{s: ' a'};!error
+map(split(s, ' '), upper(#[0:0]) + #[1:]);{s: ''};!error
+map(filter(split(s, ' '), # != ''), upper(#[0:0]) + #[1:]);{s: 'a  b'};['A', 'B']
+map(filter(split(s, ' '), # != ''), upper(#[0:0]) + #[1:]);{s: ' a'};['A']
+map(filter(split(s, ' '), # != ''), upper(#[0:0]) + #[1:]);{s: ''};[]
+map(filter(split(s, ' '), # != ''), upper(#[0:0]) + #[1:]);{s: '  hello   world '};['Hello', 'World']
+map(split(s, ' '), len(#) > 0 ? upper(#[0:0]) + #[1:] : #);{s: 'a  b'};['A', '', 'B']
+map(split(s, ' '), len(#) > 0 ? upper(#[0:0]) + #[1:] : #);{s: ' a'};['', 'A']
+map(split(s, ' '), len(#) > 0 ? upper(#[0:0]) + #[1:] : #);{s: ''};['']

@@ -1,0 +1,153 @@
+expression (string);input (json 5);output (json 5);note
+# Minor units per currency
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 1234.5678, currency: 'USD'};1234.57
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 1234.5678, currency: 'JPY'};1235
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 1234.5678, currency: 'KWD'};1234.568
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 1234.5, currency: 'JPY'};1235
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 1233.5, currency: 'JPY'};1234
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 0.0005, currency: 'KWD'};0.001
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 0.0049, currency: 'EUR'};0.00
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: -2.675, currency: 'GBP'};-2.68
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 10, currency: 'XYZ'};10
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: 10.999, currency: null};11.00
+round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3, CHF: 2, GBP: 2})[currency] ?? 2);{amount: null, currency: 'USD'};!error
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234.5678, currency: 'USD'};'1234.57'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234.5678, currency: 'JPY'};'1235'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234.5678, currency: 'KWD'};'1234.568'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234.5, currency: 'USD'};'1234.5'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234, currency: 'USD'};'1234'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 1234.50, currency: 'EUR'};'1234.50'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 99.995, currency: 'USD'};'100.00'
+string(round(amount, ({USD: 2, EUR: 2, JPY: 0, KWD: 3})[currency] ?? 2));{amount: 0.1, currency: 'KWD'};'0.1'
+# Conversion through a USD pivot
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'USD', to: 'EUR', rates: {USD: 1, EUR: 0.9215, JPY: 149.37}, decimals: {JPY: 0}};92.15
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'EUR', to: 'USD', rates: {USD: 1, EUR: 0.9215, JPY: 149.37}, decimals: {JPY: 0}};108.52
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'EUR', to: 'JPY', rates: {USD: 1, EUR: 0.9215, JPY: 149.37}, decimals: {JPY: 0}};16209
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 15000, from: 'JPY', to: 'EUR', rates: {USD: 1, EUR: 0.9215, JPY: 149.37}, decimals: {JPY: 0}};92.54
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 0.01, from: 'USD', to: 'JPY', rates: {USD: 1, EUR: 0.9215, JPY: 149.37}, decimals: {JPY: 0}};1
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'USD', to: 'GBP', rates: {USD: 1, EUR: 0.9215}, decimals: {}};!error
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'USD', to: 'EUR', rates: {USD: 0, EUR: 0.9215}, decimals: {}};!error
+round(amount / rates[from] * rates[to], decimals[to] ?? 2);{amount: 100, from: 'USD', to: 'USD', rates: {USD: 1}, decimals: {}};100
+map(amounts, round(# * rate, 2));{rate: 0.9215, amounts: [1, 10, 100, 0.05, 0.06, 1234.56]};[0.92, 9.22, 92.15, 0.05, 0.06, 1137.65]
+map(amounts, round(# * rate, 2));{rate: 1.0852, amounts: []};[]
+map(amounts, round(# * rate, 2));{rate: 149.37, amounts: [0.01, 0.02, 0.03]};[1.49, 2.99, 4.48]
+map(amounts, round(# * rate, 2));{rate: null, amounts: [1]};!error
+map(amounts, round(# * rate, 2));{rate: 1.1, amounts: [1, null]};!error
+map(amounts, round(# * rate, 2));{rate: 0.7893, amounts: [0.00, 17.29, 34.58, 51.87, 68.16, 85.45, 102.74, 119.03, 136.32, 153.61, 170.90, 187.19, 204.48, 221.77, 238.06, 255.35, 272.64, 289.93, 306.22, 323.51, 340.80, 357.09, 374.38, 391.67, 408.96, 425.25, 442.54, 459.83, 476.12, 493.41, 10.70, 27.99, 44.28, 61.57, 78.86, 95.15, 112.44, 129.73, 146.02, 163.31, 180.60, 197.89, 214.18, 231.47, 248.76, 265.05, 282.34, 299.63, 316.92, 333.21]};[0.00, 13.65, 27.29, 40.94, 53.80, 67.45, 81.09, 93.95, 107.60, 121.24, 134.89, 147.75, 161.40, 175.04, 187.90, 201.55, 215.19, 228.84, 241.70, 255.35, 268.99, 281.85, 295.50, 309.15, 322.79, 335.65, 349.30, 362.94, 375.80, 389.45, 8.45, 22.09, 34.95, 48.60, 62.24, 75.10, 88.75, 102.40, 115.25, 128.90, 142.55, 156.19, 169.05, 182.70, 196.35, 209.20, 222.85, 236.50, 250.14, 263.00]
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 0.9215, amounts: [0.05, 0.05, 0.05, 0.05]};0.02
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 1.5, amounts: [0.01, 0.01, 0.01]};0.01
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 0.3333, amounts: [1, 1, 1]};-0.01
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 2, amounts: [1.11, 2.22]};0.00
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 0.7893, amounts: [0.00, 17.29, 34.58, 51.87, 68.16, 85.45, 102.74, 119.03, 136.32, 153.61, 170.90, 187.19, 204.48, 221.77, 238.06, 255.35, 272.64, 289.93, 306.22, 323.51, 340.80, 357.09, 374.38, 391.67, 408.96, 425.25, 442.54, 459.83, 476.12, 493.41, 10.70, 27.99, 44.28, 61.57, 78.86, 95.15, 112.44, 129.73, 146.02, 163.31, 180.60, 197.89, 214.18, 231.47, 248.76, 265.05, 282.34, 299.63, 316.92, 333.21]};-0.01
+sum(map(amounts, round(# * rate, 2))) - round(sum(amounts) * rate, 2);{rate: 1, amounts: []};0
+# Cash rounding to 0.05 and to whole units
+round(amount * 20) / 20;{amount: 10.02};10
+round(amount * 20) / 20;{amount: 10.024};10
+round(amount * 20) / 20;{amount: 10.025};10.05
+round(amount * 20) / 20;{amount: 10.03};10.05
+round(amount * 20) / 20;{amount: 10.07};10.05
+round(amount * 20) / 20;{amount: 10.075};10.1
+round(amount * 20) / 20;{amount: 10.974};10.95
+round(amount * 20) / 20;{amount: 10.975};11
+round(amount * 20) / 20;{amount: 0};0
+round(amount * 20) / 20;{amount: -10.025};-10.05
+round(amount * 20) / 20;{amount: '10'};!error
+string(round(amount * 20) / 20);{amount: 10.02};'10'
+string(round(amount * 20) / 20);{amount: 10.03};'10.05'
+string(round(amount * 20) / 20);{amount: 10.08};'10.10';"question: 202 / 20 yields scale 2 (10.10) while 201 / 20 gives 10.05 and 200 / 20 gives 10; division result scale is not normalized"
+string(round(amount * 20) / 20);{amount: 9.99};'10'
+string(round(amount * 20) / 20);{amount: 10};'10'
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: 2.5};3
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: 2.49};2
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: -2.5};-2
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: -2.51};-3
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: 0};0
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: 100};100
+floor(amount) + (amount - floor(amount) >= 0.5 ? 1 : 0);{amount: 1234567.4999};1234567
+ceil(amount * 100) / 100;{amount: 1.001};1.01
+ceil(amount * 100) / 100;{amount: 1.01};1.01
+ceil(amount * 100) / 100;{amount: 1.0100001};1.02
+ceil(amount * 100) / 100;{amount: -1.009};-1
+ceil(amount * 100) / 100;{amount: 0.001};0.01
+ceil(amount * 100) / 100;{amount: 999999.999};1000000
+trunc(amount * 100) / 100;{amount: 1.019};1.01
+trunc(amount * 100) / 100;{amount: -1.019};-1.01
+trunc(amount * 100) / 100;{amount: 0.009};0
+trunc(amount * 100) / 100;{amount: 12.3456};12.34
+trunc(amount * 100) / 100;{amount: 5};5
+# Penny allocation (largest remainder)
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 100, n: 3};[33.34, 33.33, 33.33]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 10, n: 4};[2.5, 2.5, 2.5, 2.5]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 0.05, n: 3};[0.02, 0.02, 0.01]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 1000.01, n: 7};[142.86, 142.86, 142.86, 142.86, 142.86, 142.86, 142.85]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 0.02, n: 5};[0.01, 0.01, 0, 0, 0]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 99.99, n: 1};[99.99]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); map([0..n), base + (# < rem ? 0.01 : 0))";{total: 1, n: 3};[0.34, 0.33, 0.33]
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 100, n: 3};true
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 10, n: 4};true
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 0.05, n: 3};true
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 1000.01, n: 7};true
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 123456.78, n: 9};true
+"base = floor(total * 100 / n) / 100; rem = round((total - base * n) * 100); sum(map([0..n), base + (# < rem ? 0.01 : 0))) == total";{total: 1, n: 3};true
+map(weights, round(total * # / sum(weights), 2));{total: 100, weights: [1, 1, 1]};[33.33, 33.33, 33.33]
+map(weights, round(total * # / sum(weights), 2));{total: 100, weights: [50, 30, 20]};[50, 30, 20]
+map(weights, round(total * # / sum(weights), 2));{total: 0.03, weights: [1, 1]};[0.02, 0.02]
+map(weights, round(total * # / sum(weights), 2));{total: 250, weights: [0.2, 0.3, 0.5]};[50, 75, 125]
+map(weights, round(total * # / sum(weights), 2));{total: 100, weights: []};[]
+map(weights, round(total * # / sum(weights), 2));{total: 100, weights: [0, 0]};!error
+map(weights, round(total * # / sum(weights), 2));{total: 100, weights: [1, '1']};!error
+# Price display strings
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 19.999, currency: 'USD'};'$20.00'
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 19.5, currency: 'EUR'};'€19.5'
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 19.50, currency: 'GBP'};'£19.50'
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 1999.5, currency: 'JPY'};'¥2000'
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 0.004, currency: 'USD'};'$0.00'
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 10, currency: 'CHF'};!error
+({USD: '$', EUR: '€', GBP: '£', JPY: '¥'})[currency] + string(round(amount, currency == 'JPY' ? 0 : 2));{amount: 10, currency: null};!error
+`${code} ${string(round(amount, 2) * 1.00)}`;{code: 'USD', amount: 10};'USD 10.00'
+`${code} ${string(round(amount, 2) * 1.00)}`;{code: 'USD', amount: 10.5};'USD 10.500'
+`${code} ${string(round(amount, 2) * 1.00)}`;{code: 'EUR', amount: 10.555};'EUR 10.5600'
+`${code} ${string(round(amount, 2) * 1.00)}`;{code: 'EUR', amount: 10.554};'EUR 10.5500'
+`${code} ${string(round(amount, 2) * 1.00)}`;{code: 'GBP', amount: 0.1};'GBP 0.100'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: -12.345};'(12.35)'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: 12.345};'12.35'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: -0.001};'(0.00)'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: 0};'0'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: -1000000.10};'(1000000.10)'
+amount < 0 ? '(' + string(abs(round(amount, 2))) + ')' : string(round(amount, 2));{amount: null};!error
+# Interest and fee math on money
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 1000000, rate: 5.25, days: 30, basis: 'ACT/360'};4375.00
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 1000000, rate: 5.25, days: 30, basis: 'ACT/365'};4315.07
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 250000, rate: 4.125, days: 91, basis: 'ACT/360'};2606.77
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 250000, rate: 4.125, days: 91};2571.06
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 1, rate: 0.01, days: 1, basis: 'ACT/360'};0.00
+round(principal * rate / 100 * days / (basis == 'ACT/360' ? 360 : 365), 2);{principal: 1000, rate: 10, days: 0, basis: 'ACT/360'};0
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 100, pct: 2.9, fixed: 0.30};3.20
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 10000, pct: 2.9, fixed: 0.30, maxFee: 250};250
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 5, pct: 2.9, fixed: 0.30, minFee: 0.50};0.50
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 12.34, pct: 1.4, fixed: 0.25, minFee: 0.1};0.42
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 0, pct: 2.9, fixed: 0};0
+round(amount * pct / 100 + fixed, 2) > (maxFee ?? 999999) ? maxFee : max([minFee ?? 0, round(amount * pct / 100 + fixed, 2)]);{amount: 1000, pct: 2.9, fixed: 0.30, maxFee: null};29.30
+sum(map(txns, #.currency == base ? #.amount : round(#.amount * (fx[#.currency] ?? 0), 2)));{base: 'EUR', fx: {USD: 0.9215, GBP: 1.1674}, txns: [{currency: 'EUR', amount: 10}, {currency: 'USD', amount: 10}, {currency: 'GBP', amount: 10}]};30.89
+sum(map(txns, #.currency == base ? #.amount : round(#.amount * (fx[#.currency] ?? 0), 2)));{base: 'EUR', fx: {}, txns: [{currency: 'JPY', amount: 1000}]};0
+sum(map(txns, #.currency == base ? #.amount : round(#.amount * (fx[#.currency] ?? 0), 2)));{base: 'EUR', fx: {USD: 0.9215}, txns: []};0
+sum(map(txns, #.currency == base ? #.amount : round(#.amount * (fx[#.currency] ?? 0), 2)));{base: 'EUR', fx: {USD: 0.9215}, txns: [{currency: 'USD', amount: 0.005}, {currency: 'USD', amount: 0.006}]};0.01
+sum(map(txns, #.currency == base ? #.amount : round(#.amount * (fx[#.currency] ?? 0), 2)));{base: 'USD', fx: {EUR: 1.0852}, txns: [{currency: 'USD', amount: 0.00}, {currency: 'EUR', amount: 31.11}, {currency: 'USD', amount: 62.22}, {currency: 'EUR', amount: 93.33}, {currency: 'USD', amount: 124.44}, {currency: 'EUR', amount: 155.55}, {currency: 'USD', amount: 186.66}, {currency: 'EUR', amount: 217.77}, {currency: 'USD', amount: 248.88}, {currency: 'EUR', amount: 279.99}, {currency: 'USD', amount: 310.10}, {currency: 'EUR', amount: 341.21}, {currency: 'USD', amount: 372.32}, {currency: 'EUR', amount: 403.43}, {currency: 'USD', amount: 434.54}, {currency: 'EUR', amount: 465.65}, {currency: 'USD', amount: 496.76}, {currency: 'EUR', amount: 527.87}, {currency: 'USD', amount: 558.98}, {currency: 'EUR', amount: 589.09}, {currency: 'USD', amount: 620.20}, {currency: 'EUR', amount: 651.31}, {currency: 'USD', amount: 682.42}, {currency: 'EUR', amount: 713.53}, {currency: 'USD', amount: 744.64}, {currency: 'EUR', amount: 775.75}, {currency: 'USD', amount: 806.86}, {currency: 'EUR', amount: 837.97}, {currency: 'USD', amount: 868.08}, {currency: 'EUR', amount: 899.19}, {currency: 'USD', amount: 30.30}, {currency: 'EUR', amount: 61.41}, {currency: 'USD', amount: 92.52}, {currency: 'EUR', amount: 123.63}, {currency: 'USD', amount: 154.74}, {currency: 'EUR', amount: 185.85}, {currency: 'USD', amount: 216.96}, {currency: 'EUR', amount: 247.07}, {currency: 'USD', amount: 278.18}, {currency: 'EUR', amount: 309.29}]};15873.70
+# Exactness of money sums
+sum(amounts) == expected;{amounts: [0.1, 0.2], expected: 0.3};true
+sum(amounts) == expected;{amounts: [0.1, 0.1, 0.1], expected: 0.3};true
+sum(amounts) == expected;{amounts: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01], expected: 1};true
+sum(amounts) == expected;{amounts: [0.010, 0.99], expected: 1.00};true
+sum(amounts) == expected;{amounts: [19.99, 0.01], expected: 20};true
+sum(amounts) == expected;{amounts: [], expected: 0};true
+sum(amounts) == expected;{amounts: [79228162514264337593543950335, -79228162514264337593543950335], expected: 0};true
+string(sum(amounts));{amounts: [0.10, 0.20]};'0.30'
+string(sum(amounts));{amounts: [1.5, 1.50]};'3.00'
+string(sum(amounts));{amounts: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]};'1.00'
+string(sum(amounts));{amounts: [19.99, 0.01]};'20.00'
+string(sum(amounts));{amounts: [0.001, 0.009]};'0.010'
+round(sum(map(lines, #.qty * #.unit)) * 1.0825, 2) == round(sum(map(lines, round(#.qty * #.unit * 1.0825, 2))), 2);{lines: [{qty: 1, unit: 10}]};true
+round(sum(map(lines, #.qty * #.unit)) * 1.0825, 2) == round(sum(map(lines, round(#.qty * #.unit * 1.0825, 2))), 2);{lines: [{qty: 1, unit: 0.99}, {qty: 1, unit: 0.99}, {qty: 1, unit: 0.99}]};false
+round(sum(map(lines, #.qty * #.unit)) * 1.0825, 2) == round(sum(map(lines, round(#.qty * #.unit * 1.0825, 2))), 2);{lines: [{qty: 3, unit: 1.11}, {qty: 7, unit: 0.13}]};true
+round(sum(map(lines, #.qty * #.unit)) * 1.0825, 2) == round(sum(map(lines, round(#.qty * #.unit * 1.0825, 2))), 2);{lines: []};true
+round(sum(map(lines, #.qty * #.unit)) * 1.0825, 2) == round(sum(map(lines, round(#.qty * #.unit * 1.0825, 2))), 2);{lines: [{qty: 2, unit: 0.05}, {qty: 2, unit: 0.06}]};true

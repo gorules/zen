@@ -72,6 +72,7 @@ pub enum Node<'a> {
 }
 
 impl<'a> Node<'a> {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub fn walk<F>(&self, mut func: F)
     where
         F: FnMut(&Self) + Clone,
@@ -194,6 +195,7 @@ impl<'a> Node<'a> {
         }
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     pub(crate) fn member_key(&self, vec: &mut BumpVec<&'a str>) -> Option<()> {
         match self {
             Node::Member { node, property } => {

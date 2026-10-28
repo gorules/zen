@@ -5,6 +5,7 @@ name = "zen-expression"
 license = "MIT"
 version = "2.1.6"
 edition = "2021"
+rust-version = "1.88"
 repository = "https://github.com/gorules/zen.git"
 homepage = "https://gorules.io"
 
@@ -64,3 +65,7 @@ name = "unary"
 [[bench]]
 harness = false
 name = "isolate"
+
+[[bench]]
+harness = false
+name = "lane"

@@ -1,0 +1,137 @@
+expression (string);input (json 5);output (json 5);note
+# date(): deprecated, unix seconds
+date('2023-10-15');;1697328000
+date('2023-10-15 10:30:45');;1697365845
+date('2023-10-15T10:30:45Z');;1697365845
+date('2023-10-15T12:30:45+02:00');;1697365845
+date('1970-01-01');;0
+date('1969-12-31 23:59:59');;-1
+date('now');;1742465730
+date(1697328000);;1697328000
+date(1.5);;1
+date('2023-10-15 10:30');;!error;question: the legacy parser rejects 'YYYY-MM-DD HH:MM' which d() accepts
+date('2023-02-29');;!error
+date('garbage');;!error
+date('');;!error
+date(null);;!error
+date(true);;!error
+# time(): deprecated, seconds since midnight
+time('10:30');;37800
+time('10:30:15');;37815
+time('10');;36000;bug: the legacy parser has an hour-only pattern but chrono cannot build a time from an hour alone, so it fails
+time('00:00');;0
+time('23:59:59');;86399
+time('2023-10-15 10:30:00');;37800
+time('2023-10-15T10:30:00Z');;37800
+time('2023-10-15T10:30:00+02:00');;30600
+time('now');;36930
+time(3600);;3600
+time(-1);;!error
+time('24:00');;!error
+time('10:60');;!error
+time('noon');;!error
+time(null);;!error
+# duration(): deprecated, seconds
+duration('1h');;3600
+duration('1h 30m');;5400
+duration('90min');;5400
+duration('1d');;86400
+duration('2 days');;172800
+duration('1w');;604800
+duration('45s');;45
+duration('1m');;60
+duration('1ms');;0
+duration('0s');;0
+duration(3600);;3600
+duration(1.5);;1
+duration('');;!error
+duration('abc');;!error
+duration('1x');;!error
+duration(-1);;!error
+duration(null);;!error
+# part extraction on strings and unix seconds
+year('2023-10-15');;2023
+year(1697328000);;2023
+year('2023-12-31T23:00:00-05:00');;2024
+year('bad');;!error
+year(null);;!error
+dayOfWeek('2023-10-15');;7
+dayOfWeek('2023-10-16');;1
+dayOfWeek(0);;4
+dayOfMonth('2023-10-15');;15
+dayOfMonth('2024-02-29 12:00:00');;29
+dayOfYear('2023-10-15');;288
+dayOfYear('2024-12-31');;366
+weekOfYear('2023-10-15');;41
+weekOfYear('2021-01-03');;53
+weekOfYear('2024-12-30');;1
+monthOfYear('2023-10-15');;10
+monthOfYear(0);;1
+monthString('2023-10-15');;'Oct'
+monthString('2023-01-01');;'Jan'
+weekdayString('2023-10-15');;'Sun'
+weekdayString('2023-10-18');;'Wed'
+dateString('2023-10-15');;'2023-10-15 00:00:00'
+dateString('2023-10-15T10:30:45+02:00');;'2023-10-15 08:30:45'
+dateString(0);;'1970-01-01 00:00:00'
+dateString(-1);;'1969-12-31 23:59:59'
+dateString(date('2023-10-15 10:30:45'));;'2023-10-15 10:30:45'
+# startOf / endOf: deprecated, unix seconds
+startOf('2023-10-15 10:30:45', 's');;1697365845
+startOf('2023-10-15 10:30:45', 'm');;1697365800
+startOf('2023-10-15 10:30:45', 'minute');;1697365800
+startOf('2023-10-15 10:30:45', 'h');;1697364000
+startOf('2023-10-15 10:30:45', 'd');;1697328000
+startOf('2023-10-15 10:30:45', 'day');;1697328000
+startOf('2023-10-15 10:30:45', 'w');;1696809600
+startOf('2023-10-15 10:30:45', 'M');;1696118400
+startOf('2023-10-15 10:30:45', 'month');;1696118400
+startOf('2023-10-15 10:30:45', 'y');;1672531200
+startOf('2024-03-01', 'week');;1708905600
+startOf(1697365845, 'd');;1697328000
+startOf('2023-10-15', 'q');;!error
+startOf('2023-10-15', 'mo');;!error
+startOf('2023-10-15', 'D');;!error
+startOf('bad', 'd');;!error
+endOf('2023-10-15 10:30:45', 's');;1697365845
+endOf('2023-10-15 10:30:45', 'm');;1697365859
+endOf('2023-10-15 10:30:45', 'h');;1697367599
+endOf('2023-10-15 10:30:45', 'd');;1697414399
+endOf('2023-10-15 10:30:45', 'w');;1697414399
+endOf('2024-02-26', 'w');;1709510399
+endOf('2023-10-15 10:30:45', 'M');;1698796799
+endOf('2024-02-10', 'M');;1709251199
+endOf('2023-02-10', 'month');;1677628799
+endOf('2023-10-15 10:30:45', 'y');;1704067199
+endOf('2024-01-15', 'year');;1735689599
+endOf('2023-02-15', 'y');;1704067199;bug: legacy endOf year keeps the current month's day count, so February gives Dec 28
+endOf('2023-04-15', 'y');;1704067199;bug: legacy endOf year keeps the current month's day count, so April gives Dec 30
+endOf('2023-10-15', 'q');;!error
+# legacy functions agree with d()
+date('2023-10-15 10:30:45') * 1000 == d('2023-10-15 10:30:45').timestamp();;true
+startOf('2023-10-15 10:30:45', 'w') * 1000 == d('2023-10-15 10:30:45').startOf('w').timestamp();;true
+weekOfYear('2027-01-01') == d('2027-01-01').week();;true
+# legacy functions on rows
+year(s);{s: '2023-10-15'};2023
+year(s);{s: '2023-10-15'};2023
+year(s);{s: 1697328000};2023
+year(s);{s: '1999-12-31 23:59:59'};1999
+year(s);{s: 'bad'};!error
+year(s);{};!error
+endOf(s, 'y');{s: '2023-01-15'};1704067199
+endOf(s, 'y');{s: '2023-03-15'};1704067199
+endOf(s, 'y');{s: '2023-06-15'};1704067199;bug: legacy endOf year keeps June's 30-day count and gives Dec 30
+endOf(s, 'y');{s: '2023-06-15'};1704067199;bug: legacy endOf year keeps June's 30-day count and gives Dec 30
+endOf(s, 'y');{s: '2024-02-29'};1735689599;bug: legacy endOf year keeps February's day count and gives Dec 29
+endOf(s, 'M');{s: '2024-02-01'};1709251199
+endOf(s, 'M');{s: '2023-02-01'};1677628799
+date(s);{s: '2023-10-15'};1697328000
+date(s);{s: '2023-10-15T12:30:45+02:00'};1697365845
+date(s);{s: 1697328000};1697328000
+date(s);{s: null};!error
+time(s);{s: '10:30'};37800
+time(s);{s: '23:59:59'};86399
+time(s);{s: '10:30'};37800
+duration(s);{s: '2h'};7200
+duration(s);{s: '1d 12h'};129600
+duration(s);{s: 'forever'};!error

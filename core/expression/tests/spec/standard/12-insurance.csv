@@ -1,0 +1,209 @@
+expression (string);input (json 5);output (json 5);note
+# Motor: age-banded base premium
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: 18};1177.98
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: 24};1177.98
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: 25};812.40
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: 64};812.40
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: 65};1056.12
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 1234.57, age: 99};1604.94
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 0, age: 30};0.0
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: null};!error
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40};!error
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: 812.40, age: '30'};!error
+round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2);{basePremium: null, age: 30};!error
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 812.40, age: 18};'1177.98'
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 812.40, age: 40};'812.40'
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 812.4, age: 40};'812.40'
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 999.99, age: 70};'1299.99'
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 100, age: 70};'130.0'
+string(round(basePremium * (age < 25 ? 1.45 : age < 65 ? 1.0 : 1.3), 2));{basePremium: 0.01, age: 20};'0.01'
+# Motor: claims loading and multi-policy discount
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: 0, multiPolicy: false};600.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: 1, multiPolicy: false};690.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: 2, multiPolicy: true};702.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, multiPolicy: true};540.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600};600.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 733.33, claims: 3, multiPolicy: true};957.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: null, multiPolicy: null};600.00
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: '1'};!error
+round(base * (1 + 0.15 * (claims ?? 0)) * (1 - (multiPolicy ?? false ? 0.1 : 0)), 2);{base: 600, claims: 1, multiPolicy: 'yes'};!error
+# Motor: deductible by vehicle class
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'SUV', value: 20000}};1000
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'Truck'}};1000
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'Sedan', value: 50000}};500
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'Sedan', value: 50000.01}};750
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'suv', value: 10}};500
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'Coupe'}};500
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: null};500
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{};500
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: {type: 'Sedan', value: '90000'}};!error
+vehicle.type in ['SUV', 'Truck'] ? 1000 : (vehicle.value ?? 0) > 50000 ? 750 : 500;{vehicle: 'SUV'};500
+# Underwriting decision objects
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 780, claims: 0};{decision: 'approve', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 700, claims: 0};{decision: 'approve', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 700, claims: 1};{decision: 'refer', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 699, claims: 0};{decision: 'refer', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 650, claims: 2};{decision: 'refer', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 649, claims: 0};{decision: 'refer', loading: 0.25}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 600, claims: 0};{decision: 'refer', loading: 0.25}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 599.99, claims: 0};{decision: 'decline', loading: 0.25}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: 720};{decision: 'refer', loading: 0}
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{score: null, claims: 0};!error
+{decision: score >= 700 and claims == 0 ? 'approve' : score >= 600 ? 'refer' : 'decline', loading: score < 650 ? 0.25 : 0};{claims: 0};!error
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 750, claims: 0, hasDui: false};'standard'
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 750};'standard'
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 750, hasDui: true};'declined'
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 640, hasDui: false};'substandard'
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 640, claims: 0};!error
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 750, claims: 1, hasDui: false};'substandard'
+score >= 700 and (claims ?? 0) == 0 and not (hasDui ?? false) ? 'standard' : hasDui ? 'declined' : 'substandard';{score: 750, claims: 0, hasDui: 'no'};!error
+# Homeowners: rate per thousand with flood zone surcharge
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 350000, rate: 3.25, floodZone: 'X', hasPool: false};1137.50
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 350000, rate: 3.25, floodZone: 'AE', hasPool: true};2122.50
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 412500, rate: 2.875, floodZone: 'V', hasPool: false};2134.69
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 412500, rate: 2.875, floodZone: 'VE', hasPool: true};2209.69
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 0, rate: 3, floodZone: 'A', hasPool: true};75.0
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 250000, rate: 3.1, floodZone: null, hasPool: false};775.0
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 250000, rate: 3.1, floodZone: 'ae', hasPool: false};775.0
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 250000, rate: 3.1, floodZone: 'X'};!error
+round(dwelling * rate / 1000 * (floodZone in ['A', 'AE', 'V', 'VE'] ? 1.8 : 1) + (hasPool ? 75 : 0), 2);{dwelling: 1234567, rate: 1.111, floodZone: 'X', hasPool: false};1371.60
+# Life: BMI and build class
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 80, heightCm: 175};26.1
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 50, heightCm: 160};19.5
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 100, heightCm: 200};25
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 72.5, heightCm: 180};22.4
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 120, heightCm: 165};44.1
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 80, heightCm: 0};!error
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: 80};!error
+round(weightKg / (heightCm / 100) ^ 2, 1);{weightKg: '80', heightCm: 175};!error
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 22};'normal'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 18.5};'normal'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 18.49};'under'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 25};'over'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 24.99};'normal'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 29.9};'over'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 30};'obese'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 45.2};'obese'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: 0};'under'
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: null};!error
+bmi in [18.5..25) ? 'normal' : bmi < 18.5 ? 'under' : bmi in [25..30) ? 'over' : 'obese';{bmi: '22'};!error
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 30, smoker: false, faceAmount: 500000};60.00
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 45, smoker: true, faceAmount: 250000};66.000
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 46, smoker: false, faceAmount: 250000};48.000
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 60, smoker: true, faceAmount: 100000};42.2400
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 61, smoker: false, faceAmount: 100000};34.800
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 17, smoker: false, faceAmount: 100000};34.800
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 30, smoker: null, faceAmount: 100000};!error
+(age in [18..45] ? 1 : age in (45..60] ? 1.6 : 2.9) * (smoker ? 2.2 : 1) * faceAmount / 1000 * 0.12;{age: 30, smoker: false};!error
+# Claims: loss ratio over paid claims
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 1200, claims: [{status: 'paid', amount: 300}, {status: 'denied', amount: 5000}, {status: 'paid', amount: 150.50}]};37.54
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 1200, claims: []};0
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 999.99, claims: [{status: 'paid', amount: 333.33}]};33.33
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 0, claims: [{status: 'paid', amount: 1}]};!error
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 800, claims: [{status: 'PAID', amount: 100}, {status: 'open', amount: 50}]};0
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 800, claims: [{status: 'paid', amount: null}]};!error
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 800, claims: null};!error
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 800};!error
+round(sum(map(filter(claims, #.status == 'paid'), #.amount)) / premium * 100, 2);{premium: 3000, claims: [{status: 'paid', amount: 1000}, {status: 'paid', amount: 1000}, {status: 'paid', amount: 1000}, {status: 'paid', amount: 0.01}]};100.00
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: [{status: 'open', reserve: 1500}, {status: 'paid'}, {status: 'open'}, {status: 'open', reserve: 250.25}]};{paid: 1, open: 3, reserve: 1750.25}
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: []};{paid: 0, open: 0, reserve: 0}
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: [{status: 'paid'}, {status: 'paid'}]};{paid: 2, open: 0, reserve: 0}
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: [{status: 'open', reserve: '100'}]};!error
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: [{}, {status: null}]};{paid: 0, open: 0, reserve: 0}
+{paid: count(claims, #.status == 'paid'), open: count(claims, #.status == 'open'), reserve: sum(map(filter(claims, #.status == 'open'), #.reserve ?? 0))};{claims: {status: 'open'}};!error
+map(claims, max([0, #.amount - deductible]));{deductible: 500, claims: [{amount: 1200}, {amount: 499.99}, {amount: 500}, {amount: 500.01}]};[700, 0, 0, 0.01]
+map(claims, max([0, #.amount - deductible]));{deductible: 0, claims: [{amount: 10}]};[10]
+map(claims, max([0, #.amount - deductible]));{deductible: 250, claims: []};[]
+map(claims, max([0, #.amount - deductible]));{deductible: null, claims: [{amount: 10}]};!error
+map(claims, max([0, #.amount - deductible]));{deductible: 100, claims: [{amount: 50}, {}]};!error
+map(claims, max([0, #.amount - deductible]));{deductible: 1000, claims: [{amount: 2500.75}, {amount: 1000}, {amount: 0}]};[1500.75, 0, 0]
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 10000, aggregateLimit: 25000, claims: [{amount: 12000}, {amount: 8000}, {amount: 3000}]};21000
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 10000, aggregateLimit: 25000, claims: [{amount: 12000}, {amount: 12000}, {amount: 12000}]};25000
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 10000, aggregateLimit: 25000, claims: [{amount: 10000}, {amount: 10000}, {amount: 5000}]};25000
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 10000, aggregateLimit: 25000, claims: []};0
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 5000.50, aggregateLimit: 9999.99, claims: [{amount: 5000.49}, {amount: 5000.51}]};9999.99
+sum(map(claims, min([#.amount, perClaimLimit]))) > aggregateLimit ? aggregateLimit : sum(map(claims, min([#.amount, perClaimLimit])));{perClaimLimit: 10000, aggregateLimit: 25000, claims: [{amount: null}]};!error
+# No-claims discount and installment plans
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 0};950.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 1};855.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 4};570.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 5};475.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 12};475.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950};950.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: null};950.0
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 777.77, ncdYears: 3};544.44
+round(base * (1 - min([ncdYears ?? 0, 5]) * 0.1), 2);{base: 950, ncdYears: 'five'};!error
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 1200, plan: 'monthly'};102.5
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 1000, plan: 'monthly'};85.83
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 1000, plan: 'quarterly'};250
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 1000, plan: 'annual'};1000
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 1000};1000
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 999.99, plan: 'monthly'};85.83
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: 0.10, plan: 'quarterly'};0.03
+round(annual / (plan == 'monthly' ? 12 : plan == 'quarterly' ? 4 : 1) + (plan == 'monthly' ? 2.5 : 0), 2);{annual: null, plan: 'monthly'};!error
+# Policy dates: age at inception, renewal and pro-rata refunds
+d(effective).diff(d(birthDate), 'year');{effective: '2025-01-01', birthDate: '1990-06-15'};34
+d(effective).diff(d(birthDate), 'year');{effective: '2025-06-15', birthDate: '1990-06-15'};35
+d(effective).diff(d(birthDate), 'year');{effective: '2025-06-14', birthDate: '1990-06-15'};34
+d(effective).diff(d(birthDate), 'year');{effective: '2024-02-29', birthDate: '2000-02-29'};24
+d(effective).diff(d(birthDate), 'year');{effective: '2025-02-28', birthDate: '2000-02-29'};25
+d(effective).diff(d(birthDate), 'year');{effective: '2025-03-01', birthDate: '2000-02-29'};25
+d(effective).diff(d(birthDate), 'year');{effective: '2025-01-01', birthDate: 'unknown'};null
+d(effective).diff(d(birthDate), 'year');{effective: '2025-01-01'};null
+d(effective).diff(d(birthDate), 'year');{effective: '2000-01-01', birthDate: '2010-01-01'};-10
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: '2000-03-20'};'standard'
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: '2000-03-21'};'young-driver'
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: '1970-12-31'};'standard'
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: '2007-01-01'};'young-driver'
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: '2000-02-29'};'standard'
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{dob: 'n/a'};!error
+d().diff(d(dob), 'year') >= 25 ? 'standard' : 'young-driver';{};!error
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2025-01-01'};'2025-12-31'
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2025-03-20'};'2026-03-19'
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2024-12-31'};'2025-12-30'
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2023-03-01'};'2024-02-29'
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2024-03-01'};'2025-02-28'
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2024-02-29'};'2025-02-27';bug: adding a year to Feb 29 gives an invalid date instead of clamping
+d(start).add(1, 'year').add(-1, 'day').format('%Y-%m-%d');{start: '2025-13-01'};'Invalid date'
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 1200, start: '2025-01-01', end: '2026-01-01', cancel: '2025-07-02'};601.64
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 1200, start: '2024-01-01', end: '2025-01-01', cancel: '2024-07-02'};600
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 1000, start: '2025-01-01', end: '2026-01-01', cancel: '2025-01-01'};1000
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 1000, start: '2025-01-01', end: '2026-01-01', cancel: '2026-01-01'};0
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 365, start: '2025-01-01', end: '2026-01-01', cancel: '2025-12-31'};1
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 500, start: '2025-01-01', end: '2025-01-01', cancel: '2025-01-01'};!error
+round(premium * d(end).diff(d(cancel), 'day') / d(end).diff(d(start), 'day'), 2);{premium: 1000, start: '2025-01-01', end: '2026-01-01', cancel: 'never'};!error
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-04-01'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-04-19'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-04-20'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-04-19 10:15:30'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-04-19 10:15:31'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-03-20'};'wait'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2025-03-21'};'send-reminder'
+d(renewal).diff(d(), 'day') <= 30 and d(renewal) > d() ? 'send-reminder' : 'wait';{renewal: '2024-12-31'};'wait'
+# Quote summaries as templates
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 'P-1001', name: 'Ana Silva', premium: 812.4, currency: 'EUR'};'Policy P-1001 for ANA SILVA: 812.4 EUR'
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 'P-1002', name: 'Jürgen Groß', premium: 1000, currency: 'EUR'};'Policy P-1002 for JÜRGEN GROSS: 1000 EUR'
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 'P-1003', name: 'li wei', premium: 99.999};'Policy P-1003 for LI WEI: 100.00 USD'
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 1004, name: 'o\'brien', premium: 12.345, currency: null};'Policy 1004 for O\'BRIEN: 12.35 USD'
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: null, name: 'x', premium: 0.005};'Policy null for X: 0.01 USD'
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 'P-1', name: null, premium: 1};!error
+`Policy ${policyNo} for ${upper(name)}: ${string(round(premium, 2))} ${currency ?? 'USD'}`;{policyNo: 'P-1', name: 'x'};!error
+`${count(drivers, #.age < 25)} young of ${len(drivers)} drivers, oldest ${max(map(drivers, #.age))}`;{drivers: [{age: 19}, {age: 45}, {age: 24}]};'2 young of 3 drivers, oldest 45'
+`${count(drivers, #.age < 25)} young of ${len(drivers)} drivers, oldest ${max(map(drivers, #.age))}`;{drivers: [{age: 25}]};'0 young of 1 drivers, oldest 25'
+`${count(drivers, #.age < 25)} young of ${len(drivers)} drivers, oldest ${max(map(drivers, #.age))}`;{drivers: []};!error
+`${count(drivers, #.age < 25)} young of ${len(drivers)} drivers, oldest ${max(map(drivers, #.age))}`;{drivers: [{age: 30}, {age: null}]};!error
+`${count(drivers, #.age < 25)} young of ${len(drivers)} drivers, oldest ${max(map(drivers, #.age))}`;{drivers: [{age: 70}, {age: 71}, {age: 22}, {age: 23}, {age: 18}]};'3 young of 5 drivers, oldest 71'
+# Fleet eligibility over driver lists
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 30, licenseYears: 10, points: 0}, {age: 21, licenseYears: 2, points: 6}]};true
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 20, licenseYears: 3, points: 0}]};false
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 40, licenseYears: 1, points: 0}]};false
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 40, licenseYears: 20, points: 7}]};false
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: []};true
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 40, licenseYears: 20}]};!error
+all(drivers, #.age >= 21 and #.licenseYears >= 2) and none(drivers, #.points > 6);{drivers: [{age: 18, licenseYears: 0, points: 12}, {age: 50}]};false
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: [{value: 20000, age: 3}, {value: 8000, age: 12}]};860.00
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: [{value: 20000, age: 10}, {value: 20000, age: 11}, {value: 15000, age: 1}, {value: 15000, age: 2}, {value: 33333.33, age: 0}]};2985.00
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: []};0
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: [{value: 10000}]};!error
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: [{value: null, age: 1}]};!error
+round(sum(map(vehicles, #.value * (#.age > 10 ? 0.02 : 0.035))) * (len(vehicles) >= 5 ? 0.9 : 1), 2);{vehicles: [{value: 12345.67, age: 4}, {value: 7654.32, age: 15}, {value: 1, age: 1}, {value: 2, age: 2}]};585.29

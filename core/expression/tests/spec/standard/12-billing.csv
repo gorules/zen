@@ -1,0 +1,122 @@
+expression (string);input (json 5);output (json 5);note
+# Mid-cycle proration by days
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 29, newPrice: 99, periodStart: '2025-03-01', periodEnd: '2025-04-01', changeDate: '2025-03-16'};36.13
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 29, newPrice: 99, periodStart: '2025-02-01', periodEnd: '2025-03-01', changeDate: '2025-02-15'};35
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 29, newPrice: 99, periodStart: '2024-02-01', periodEnd: '2024-03-01', changeDate: '2024-02-15'};36.21
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 99, newPrice: 29, periodStart: '2025-03-01', periodEnd: '2025-04-01', changeDate: '2025-03-31'};-2.26
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 10, newPrice: 20, periodStart: '2025-03-01', periodEnd: '2025-04-01', changeDate: '2025-03-01'};10
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 10, newPrice: 20, periodStart: '2025-03-01', periodEnd: '2025-04-01', changeDate: '2025-04-01'};0
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 10, newPrice: 20, periodStart: '2025-03-01', periodEnd: '2025-03-01', changeDate: '2025-03-01'};!error
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 12.99, newPrice: 24.99, periodStart: '2024-12-15', periodEnd: '2025-01-15', changeDate: '2024-12-31'};5.81
+"total = d(periodEnd).diff(d(periodStart), 'day'); left = d(periodEnd).diff(d(changeDate), 'day'); round((newPrice - oldPrice) * left / total, 2)";{oldPrice: 10, newPrice: 20, periodStart: '2025-03-01', periodEnd: '2025-04-01'};!error
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 30, start: '2025-04-01'};30
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 30, start: '2025-04-30'};1
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 31, start: '2025-03-17'};15
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 28, start: '2025-02-15'};14
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 29, start: '2024-02-15'};15
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 49.99, start: '2025-01-31'};1.61
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 49.99, start: '2025-12-01'};49.99
+round(price * (d(start).endOf('month').day() - d(start).day() + 1) / d(start).endOf('month').day(), 2);{price: 49.99, start: 'soon'};!error
+# Next renewal dates
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-01-31', cycles: 1, interval: 'month'};'2025-02-28'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-01-31', cycles: 2, interval: 'month'};'2025-03-31'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-01-31', cycles: 3, interval: 'month'};'2025-04-30'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2024-01-31', cycles: 1, interval: 'month'};'2024-02-29'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-01-31', cycles: 1, interval: 'quarter'};'2025-04-30'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2024-02-29', cycles: 4, interval: 'quarter'};'2025-02-28'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-08-31', cycles: 6, interval: 'month'};'2026-02-28'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-03-20', cycles: 0, interval: 'year'};'2025-03-20'
+d(anchor).add(cycles * (interval == 'year' ? 12 : interval == 'quarter' ? 3 : 1), 'month').format('%Y-%m-%d');{anchor: '2025-03-20', cycles: null, interval: 'month'};!error
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: '2025-01-31'};[28, 31, 30, 31, 30, 31]
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: '2025-01-30'};[28, 30, 30, 30, 30, 30]
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: '2025-01-29'};[28, 29, 29, 29, 29, 29]
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: '2024-08-31'};[30, 31, 30, 31, 31, 28]
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: '2025-03-15'};[15, 15, 15, 15, 15, 15]
+map([1, 2, 3, 4, 5, 6], d(anchor).add(#, 'month').day());{anchor: 'x'};[null, null, null, null, null, null]
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-03-10'};'trialing'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-03-06'};'past_due'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-03-06', paymentMethod: 'card'};'active'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-02-18', trialDays: 30};'past_due'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-02-17', trialDays: 30, paymentMethod: 'sepa'};'active'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-03-20 10:15:31', trialDays: 0};'trialing'
+d(trialStart).add(trialDays ?? 14, 'day').isAfter(d()) ? 'trialing' : paymentMethod != null ? 'active' : 'past_due';{trialStart: '2025-03-20 10:15:30', trialDays: 0};'past_due'
+# Usage-based metered billing with tiers
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 0};0.0000
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 1000};0.0000
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 1001};0.0020
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 10000};18.0000
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 10001};18.0015
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 2500000};3753.0000
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: 1234.5};0.4690
+max([0, min([units, 10000]) - 1000]) * 0.002 + max([0, units - 10000]) * 0.0015;{units: null};!error
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 20, usage: [{qty: 50000}, {qty: 50000}]};120.00
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 20, usage: [{qty: 50000}, {qty: 50001}]};100.00
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 0, usage: []};0.00
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 20, usage: [{qty: 1}]};20.00
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 20, usage: [{qty: 1000}, {qty: 1997}, {qty: 2994}, {qty: 3991}, {qty: 4988}, {qty: 5985}, {qty: 6982}, {qty: 7979}, {qty: 8976}, {qty: 9973}, {qty: 10970}, {qty: 11967}, {qty: 12964}, {qty: 13961}, {qty: 14958}, {qty: 15955}, {qty: 16952}, {qty: 17949}, {qty: 18946}, {qty: 19943}, {qty: 20940}, {qty: 21937}, {qty: 22934}, {qty: 23931}, {qty: 24928}, {qty: 25925}, {qty: 26922}, {qty: 27919}, {qty: 28916}, {qty: 29913}, {qty: 30910}, {qty: 31907}, {qty: 32904}, {qty: 33901}, {qty: 34898}, {qty: 35895}, {qty: 36892}, {qty: 37889}, {qty: 38886}, {qty: 39883}, {qty: 40880}, {qty: 41877}, {qty: 42874}, {qty: 43871}, {qty: 44868}, {qty: 45865}, {qty: 46862}, {qty: 47859}]};958.09
+round(sum(map(usage, #.qty)) * (sum(map(usage, #.qty)) > 100000 ? 0.0008 : 0.001) + base, 2);{base: 20, usage: [{qty: '5'}]};!error
+map(usage, {day: d(#.at).format('%Y-%m-%d'), cost: round(#.qty * price, 4)});{price: 0.00015, usage: [{at: '2025-03-01 23:59:59', qty: 1234}, {at: '2025-03-02 00:00:00', qty: 1}]};[{day: '2025-03-01', cost: 0.1851}, {day: '2025-03-02', cost: 0.0002}]
+map(usage, {day: d(#.at).format('%Y-%m-%d'), cost: round(#.qty * price, 4)});{price: 0.5, usage: []};[]
+map(usage, {day: d(#.at).format('%Y-%m-%d'), cost: round(#.qty * price, 4)});{price: 0.00003, usage: [{at: '2024-12-31 12:00', qty: 99999}]};[{day: '2024-12-31', cost: 3.0000}]
+map(usage, {day: d(#.at).format('%Y-%m-%d'), cost: round(#.qty * price, 4)});{price: 0.1, usage: [{at: 'bad', qty: 1}]};[{day: 'Invalid date', cost: 0.1}]
+# Seat-based pricing and add-ons
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 5, seatPrice: 12, annual: false, addons: [{price: 99}]};0
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 6, seatPrice: 12, annual: false, addons: []};12
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 25, seatPrice: 8.5, annual: true, addons: [{price: 49}, {price: 19.99}]};1768.99
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 0, seatPrice: 12, annual: true, addons: []};0
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 100, seatPrice: 7.333, annual: false, addons: []};696.64
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 10, seatPrice: 12, addons: []};!error
+seats <= 5 ? 0 : round((seats - 5) * seatPrice * (annual ? 10 : 1), 2) + sum(map(addons, #.price));{seats: 10, seatPrice: 12, annual: false, addons: null};!error
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: 'starter'};0
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: 'pro'};49
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: 'business'};199
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: 'enterprise'};'contact-sales'
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: 'Pro'};'contact-sales'
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{plan: null};'contact-sales'
+({starter: 0, pro: 49, business: 199, enterprise: null})[plan] ?? 'contact-sales';{};'contact-sales'
+# Invoices: discounts, credits, tax and balance
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 49, qty: 1}, {unit: 12.5, qty: 4}], discountPct: 10, taxRate: 0.08, credit: 20};{subtotal: 99.0, discount: 9.90, tax: 7.13, total: 96.23, due: 76.23}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 49, qty: 1}], taxRate: 0.2};{subtotal: 49, discount: 0, tax: 9.8, total: 58.8, due: 58.8}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [], taxRate: 0.2, credit: 50};{subtotal: 0, discount: 0, tax: 0.0, total: 0.0, due: 0.0}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 10, qty: 1}], taxRate: 0.1, credit: 500};{subtotal: 10, discount: 0, tax: 1.0, total: 11.0, due: 0.0}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 19.99, qty: 3}], discountPct: 15, taxRate: 0.0725};{subtotal: 59.97, discount: 9.00, tax: 3.70, total: 54.67, due: 54.67}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 0.333, qty: 3}], discountPct: 33.33, taxRate: 0.19, credit: 0.5};{subtotal: 0.999, discount: 0.33, tax: 0.13, total: 0.799, due: 0.299}
+"sub = sum(map(lines, #.unit * #.qty)); disc = round(sub * (discountPct ?? 0) / 100, 2); tax = round((sub - disc) * taxRate, 2); total = sub - disc + tax; {subtotal: sub, discount: disc, tax: tax, total: total, due: total - min([credit ?? 0, total])}";{lines: [{unit: 10, qty: 1}], taxRate: null};!error
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [{unit: 10, qty: 1}], taxRate: 0.2};'12.0'
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [{unit: 10.00, qty: 1}], taxRate: 0.20};'12.00'
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [{unit: 9.99, qty: 1}], taxRate: 0.21};'12.09'
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [{unit: 100, qty: 3}], taxRate: 0};'300'
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [{unit: 0.5, qty: 1}], taxRate: 0.1};'0.55'
+string(round(sum(map(lines, #.unit * #.qty)) * (1 + taxRate), 2));{lines: [], taxRate: 0.19};'0';question: 0 * 1.19 drops the scale ('0') while other products keep it
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-03-20', terms: 'net30'};'19 Apr 2025'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-12-15', terms: 'net30'};'14 Jan 2026'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-01-31', terms: 'net30'};'02 Mar 2025'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2024-02-14', terms: 'net15'};'29 Feb 2024'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-11-02', terms: 'net60'};'01 Jan 2026'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-03-20', terms: 'due-on-receipt'};'20 Mar 2025'
+d(issued).add(({net15: 15, net30: 30, net60: 60})[terms] ?? 0, 'day').format('%d %b %Y');{issued: '2025-03-20'};'20 Mar 2025'
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 1000, dueDate: '2025-03-20'};0
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 1000, dueDate: '2025-03-19'};15.00
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 1000, dueDate: '2025-02-18'};15.00
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 1000, dueDate: '2025-02-17'};30.00
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 2499.99, dueDate: '2024-12-01'};150.00
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 1000, dueDate: '2025-04-01'};0
+d().diff(d(dueDate), 'day') > 0 ? round(balance * 0.015 * ceil(d().diff(d(dueDate), 'day') / 30), 2) : 0;{balance: 0, dueDate: '2020-01-01'};0.00
+# Dunning and churn signals
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: [{status: 'paid', at: '2025-01-01'}]};'none'
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: [{status: 'failed', at: '2025-03-01'}, {status: 'failed', at: '2025-03-05'}]};'retry'
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: [{status: 'failed', at: '2025-02-01'}, {status: 'failed', at: '2025-02-10'}, {status: 'failed', at: '2025-03-05'}]};'cancel'
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: [{status: 'failed', at: '2025-02-01'}, {status: 'failed', at: '2025-02-10'}, {status: 'failed', at: '2025-03-06'}]};'final-notice'
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: [{status: 'failed', at: '2025-02-01'}, {status: 'failed', at: '2025-02-10'}, {status: 'failed', at: '2025-02-20'}, {status: 'paid', at: '2025-03-19'}]};'final-notice'
+"failures = count(payments, #.status == 'failed'); failures == 0 ? 'none' : failures < 3 ? 'retry' : d().diff(d(payments[len(payments) - 1].at), 'day') > 14 ? 'cancel' : 'final-notice'";{payments: []};'none'
+"mrr = sum(map(filter(subs, #.status == 'active'), #.interval == 'year' ? #.amount / 12 : #.amount)); round(mrr, 2)";{subs: [{status: 'active', interval: 'month', amount: 49}, {status: 'active', interval: 'year', amount: 490}, {status: 'canceled', interval: 'month', amount: 99}]};89.83
+"mrr = sum(map(filter(subs, #.status == 'active'), #.interval == 'year' ? #.amount / 12 : #.amount)); round(mrr, 2)";{subs: []};0
+"mrr = sum(map(filter(subs, #.status == 'active'), #.interval == 'year' ? #.amount / 12 : #.amount)); round(mrr, 2)";{subs: [{status: 'active', interval: 'year', amount: 1000}]};83.33
+"mrr = sum(map(filter(subs, #.status == 'active'), #.interval == 'year' ? #.amount / 12 : #.amount)); round(mrr, 2)";{subs: [{status: 'active', interval: 'year', amount: 100}, {status: 'active', interval: 'year', amount: 100}, {status: 'active', interval: 'year', amount: 100}]};25.00
+"mrr = sum(map(filter(subs, #.status == 'active'), #.interval == 'year' ? #.amount / 12 : #.amount)); round(mrr, 2)";{subs: [{status: 'active', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'trialing', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'active', interval: 'month', amount: 9.99}, {status: 'trialing', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'trialing', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}, {status: 'trialing', interval: 'year', amount: 0}, {status: 'active', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'trialing', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'active', interval: 'month', amount: 9.99}, {status: 'trialing', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'trialing', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}, {status: 'trialing', interval: 'year', amount: 0}, {status: 'active', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'trialing', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'active', interval: 'month', amount: 9.99}, {status: 'trialing', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}, {status: 'active', interval: 'year', amount: 0}, {status: 'trialing', interval: 'month', amount: 9.99}, {status: 'active', interval: 'year', amount: 99.90}, {status: 'active', interval: 'month', amount: 19}]};223.89
+# Receipt lines
+map(lines, `${#.qty} x ${#.name} @ ${string(#.unit)} = ${string(#.unit * #.qty)}`);{lines: [{qty: 2, name: 'Pro seat', unit: 12.50}, {qty: 1, name: 'Add-on: SSO', unit: 99}]};['2 x Pro seat @ 12.50 = 25.00', '1 x Add-on: SSO @ 99 = 99']
+map(lines, `${#.qty} x ${#.name} @ ${string(#.unit)} = ${string(#.unit * #.qty)}`);{lines: []};[]
+map(lines, `${#.qty} x ${#.name} @ ${string(#.unit)} = ${string(#.unit * #.qty)}`);{lines: [{qty: 3, name: 'Café crème', unit: 3.10}]};['3 x Café crème @ 3.10 = 9.30']
+map(lines, `${#.qty} x ${#.name} @ ${string(#.unit)} = ${string(#.unit * #.qty)}`);{lines: [{qty: 1.5, name: 'GB', unit: 0.25}]};['1.5 x GB @ 0.25 = 0.375']
+map(lines, `${#.qty} x ${#.name} @ ${string(#.unit)} = ${string(#.unit * #.qty)}`);{lines: [{qty: 1, name: 'x', unit: null}]};!error

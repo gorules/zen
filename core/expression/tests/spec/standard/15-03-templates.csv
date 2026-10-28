@@ -1,0 +1,363 @@
+expression (string);input (json 5);output (json 5);note
+# templates: function calls and pipelines inside interpolation
+`${upper(first)} ${lower(last)}`;{first: 'ada', last: 'LOVELACE'};'ADA lovelace'
+`${upper(first)} ${lower(last)}`;{first: ' Grace ', last: 'hopper'};' GRACE  hopper'
+`${upper(first)} ${lower(last)}`;{first: 'Zoë', last: 'Ñúñez'};'ZOË ñúñez'
+`${upper(first)} ${lower(last)}`;{first: '', last: ''};' '
+`${upper(first)} ${lower(last)}`;{first: 'x', last: null};!error
+`${upper(first)} ${lower(last)}`;{};!error
+`${upper(trim(first))}-${len(last ?? '')}`;{first: 'ada', last: 'LOVELACE'};'ADA-8'
+`${upper(trim(first))}-${len(last ?? '')}`;{first: ' Grace ', last: 'hopper'};'GRACE-6'
+`${upper(trim(first))}-${len(last ?? '')}`;{first: 'Zoë', last: 'Ñúñez'};'ZOË-5';bug: len counts UTF-8 bytes, intended character count
+`${upper(trim(first))}-${len(last ?? '')}`;{first: '', last: ''};'-0'
+`${upper(trim(first))}-${len(last ?? '')}`;{first: 'x', last: null};'X-0'
+`${upper(trim(first))}-${len(last ?? '')}`;{};!error
+`${trim(first)} ${last ?? '?'}`;{first: 'ada', last: 'LOVELACE'};'ada LOVELACE'
+`${trim(first)} ${last ?? '?'}`;{first: ' Grace ', last: 'hopper'};'Grace hopper'
+`${trim(first)} ${last ?? '?'}`;{first: 'Zoë', last: 'Ñúñez'};'Zoë Ñúñez'
+`${trim(first)} ${last ?? '?'}`;{first: '', last: ''};' '
+`${trim(first)} ${last ?? '?'}`;{first: 'x', last: null};'x ?'
+`${trim(first)} ${last ?? '?'}`;{};!error
+`${first ?? 'anon'}`;{first: 'ada', last: 'LOVELACE'};'ada'
+`${first ?? 'anon'}`;{first: ' Grace ', last: 'hopper'};' Grace '
+`${first ?? 'anon'}`;{first: 'Zoë', last: 'Ñúñez'};'Zoë'
+`${first ?? 'anon'}`;{first: '', last: ''};''
+`${first ?? 'anon'}`;{first: 'x', last: null};'x'
+`${first ?? 'anon'}`;{};'anon'
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{first: 'ada', last: 'LOVELACE'};'Dear A. LOVELACE'
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{first: ' Grace ', last: 'hopper'};'Dear  . hopper'
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{first: 'Zoë', last: 'Ñúñez'};'Dear Z. Ñúñez'
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{first: '', last: ''};'Dear ?. '
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{first: 'x', last: null};'Dear X. null'
+`Dear ${upper(first[0] ?? '?')}. ${last}`;{};'Dear ?. null'
+# templates: arithmetic with decimals
+`${qty} x ${price} = ${qty * price}`;{qty: 3, price: 19.99};'3 x 19.99 = 59.97'
+`${qty} x ${price} = ${qty * price}`;{qty: 1, price: 0.10};'1 x 0.10 = 0.10'
+`${qty} x ${price} = ${qty * price}`;{qty: 0, price: 5};'0 x 5 = 0'
+`${qty} x ${price} = ${qty * price}`;{qty: 2, price: 1.005};'2 x 1.005 = 2.010'
+`${qty} x ${price} = ${qty * price}`;{qty: 1.5, price: 2.40};'1.5 x 2.40 = 3.600'
+`${qty} x ${price} = ${qty * price}`;{qty: 2, price: null};!error
+`${qty} x ${price} = ${qty * price}`;{qty: '2', price: 1};!error
+`${qty} x ${price} = ${qty * price}`;{};!error
+`Total: $${qty * price}`;{qty: 3, price: 19.99};'Total: $59.97'
+`Total: $${qty * price}`;{qty: 1, price: 0.10};'Total: $0.10'
+`Total: $${qty * price}`;{qty: 0, price: 5};'Total: $0'
+`Total: $${qty * price}`;{qty: 2, price: 1.005};'Total: $2.010'
+`Total: $${qty * price}`;{qty: 1.5, price: 2.40};'Total: $3.600'
+`Total: $${qty * price}`;{qty: 2, price: null};!error
+`Total: $${qty * price}`;{qty: '2', price: 1};!error
+`Total: $${qty * price}`;{};!error
+`${qty * price + 0.01}`;{qty: 3, price: 19.99};'59.98'
+`${qty * price + 0.01}`;{qty: 1, price: 0.10};'0.11'
+`${qty * price + 0.01}`;{qty: 0, price: 5};'0.01'
+`${qty * price + 0.01}`;{qty: 2, price: 1.005};'2.020'
+`${qty * price + 0.01}`;{qty: 1.5, price: 2.40};'3.610'
+`${qty * price + 0.01}`;{qty: 2, price: null};!error
+`${qty * price + 0.01}`;{qty: '2', price: 1};!error
+`${qty * price + 0.01}`;{};!error
+`${round(qty * price, 1)}`;{qty: 3, price: 19.99};'60.0'
+`${round(qty * price, 1)}`;{qty: 1, price: 0.10};'0.1'
+`${round(qty * price, 1)}`;{qty: 0, price: 5};'0'
+`${round(qty * price, 1)}`;{qty: 2, price: 1.005};'2.0'
+`${round(qty * price, 1)}`;{qty: 1.5, price: 2.40};'3.6'
+`${round(qty * price, 1)}`;{qty: 2, price: null};!error
+`${round(qty * price, 1)}`;{qty: '2', price: 1};!error
+`${round(qty * price, 1)}`;{};!error
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 3, price: 19.99};'big order'
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 1, price: 0.10};'small order'
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 0, price: 5};'small order'
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 2, price: 1.005};'small order'
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 1.5, price: 2.40};'small order'
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: 2, price: null};!error
+`${qty * price > 10 ? 'big' : 'small'} order`;{qty: '2', price: 1};!error
+`${qty * price > 10 ? 'big' : 'small'} order`;{};!error
+`${(price ?? 0) * 100}%`;{qty: 3, price: 19.99};'1999.00%'
+`${(price ?? 0) * 100}%`;{qty: 1, price: 0.10};'10.00%'
+`${(price ?? 0) * 100}%`;{qty: 0, price: 5};'500%'
+`${(price ?? 0) * 100}%`;{qty: 2, price: 1.005};'100.500%'
+`${(price ?? 0) * 100}%`;{qty: 1.5, price: 2.40};'240.00%'
+`${(price ?? 0) * 100}%`;{qty: 2, price: null};'0%'
+`${(price ?? 0) * 100}%`;{qty: '2', price: 1};'100%'
+`${(price ?? 0) * 100}%`;{};'0%'
+`${price - 0.01}`;{qty: 3, price: 19.99};'19.98'
+`${price - 0.01}`;{qty: 1, price: 0.10};'0.09'
+`${price - 0.01}`;{qty: 0, price: 5};'4.99'
+`${price - 0.01}`;{qty: 2, price: 1.005};'0.995'
+`${price - 0.01}`;{qty: 1.5, price: 2.40};'2.39'
+`${price - 0.01}`;{qty: 2, price: null};!error
+`${price - 0.01}`;{qty: '2', price: 1};'0.99'
+`${price - 0.01}`;{};!error
+`${-price}`;{qty: 3, price: 19.99};'-19.99'
+`${-price}`;{qty: 1, price: 0.10};'-0.10'
+`${-price}`;{qty: 0, price: 5};'-5'
+`${-price}`;{qty: 2, price: 1.005};'-1.005'
+`${-price}`;{qty: 1.5, price: 2.40};'-2.40'
+`${-price}`;{price: null};!error
+# templates: ternaries and null coalescing
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{tier: 'gold', pts: 1200};'gold:1200'
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{tier: 'SILVER', pts: 50};'silver:50'
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{tier: null, pts: 0};'none:0'
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{pts: 10};'none:10'
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{tier: 'bronze'};'bronze:0'
+`${lower(tier ?? 'none')}:${pts ?? 0}`;{tier: 1, pts: 1};!error
+`${tier == null ? 'guest' : upper(tier)}`;{tier: 'gold', pts: 1200};'GOLD'
+`${tier == null ? 'guest' : upper(tier)}`;{tier: 'SILVER', pts: 50};'SILVER'
+`${tier == null ? 'guest' : upper(tier)}`;{tier: null, pts: 0};'guest'
+`${tier == null ? 'guest' : upper(tier)}`;{pts: 10};'guest'
+`${tier == null ? 'guest' : upper(tier)}`;{tier: 'bronze'};'BRONZE'
+`${tier == null ? 'guest' : upper(tier)}`;{tier: 1, pts: 1};!error
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{tier: 'gold', pts: 1200};'elite'
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{tier: 'SILVER', pts: 50};'member'
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{tier: null, pts: 0};'new'
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{pts: 10};'new'
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{tier: 'bronze'};'new'
+`${(pts ?? 0) >= 1000 ? 'elite' : (pts ?? 0) >= 50 ? 'member' : 'new'}`;{tier: 1, pts: 1};'new'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{tier: 'gold', pts: 1200};'gold / 1200'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{tier: 'SILVER', pts: 50};'SILVER / 50'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{tier: null, pts: 0};'none / 0'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{pts: 10};'none / 10'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{tier: 'bronze'};'bronze / n/a'
+`${tier ?? 'none'} / ${pts ?? 'n/a'}`;{tier: 1, pts: 1};'1 / 1'
+`${lower(tier) in ['gold', 'silver']}`;{tier: 'gold', pts: 1200};'true'
+`${lower(tier) in ['gold', 'silver']}`;{tier: 'SILVER', pts: 50};'true'
+`${lower(tier) in ['gold', 'silver']}`;{tier: null, pts: 0};!error
+`${lower(tier) in ['gold', 'silver']}`;{pts: 10};!error
+`${lower(tier) in ['gold', 'silver']}`;{tier: 'bronze'};'false'
+`${lower(tier) in ['gold', 'silver']}`;{tier: 1, pts: 1};!error
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{tier: 'gold', pts: 1200};'has old'
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{tier: 'SILVER', pts: 50};'no old'
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{tier: null, pts: 0};!error
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{pts: 10};!error
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{tier: 'bronze'};'no old'
+`${contains(lower(tier), 'old') ? 'has old' : 'no old'}`;{tier: 1, pts: 1};!error
+# templates: nested member access
+`${user.name} lives in ${user.address.city}`;{user: {name: 'Ann', address: {city: 'Oslo', zip: '0150'}}};'Ann lives in Oslo'
+`${user.name} lives in ${user.address.city}`;{user: {name: 'Bo', address: null}};'Bo lives in null'
+`${user.name} lives in ${user.address.city}`;{user: {name: 'Cy'}};'Cy lives in null'
+`${user.name} lives in ${user.address.city}`;{user: null};'null lives in null'
+`${user.name} lives in ${user.address.city}`;{};'null lives in null'
+`${user.name} lives in ${user.address.city}`;{user: {name: 'Dee', address: {city: 'São Paulo', zip: 1310}}};'Dee lives in São Paulo'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{user: {name: 'Ann', address: {city: 'Oslo', zip: '0150'}}};'Oslo (0150)'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{user: {name: 'Bo', address: null}};'unknown (-)'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{user: {name: 'Cy'}};'unknown (-)'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{user: null};'unknown (-)'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{};'unknown (-)'
+`${user.address.city ?? 'unknown'} (${user.address.zip ?? '-'})`;{user: {name: 'Dee', address: {city: 'São Paulo', zip: 1310}}};'São Paulo (1310)'
+`${upper(user.address.city ?? 'n/a')}`;{user: {name: 'Ann', address: {city: 'Oslo', zip: '0150'}}};'OSLO'
+`${upper(user.address.city ?? 'n/a')}`;{user: {name: 'Bo', address: null}};'N/A'
+`${upper(user.address.city ?? 'n/a')}`;{user: {name: 'Cy'}};'N/A'
+`${upper(user.address.city ?? 'n/a')}`;{user: null};'N/A'
+`${upper(user.address.city ?? 'n/a')}`;{};'N/A'
+`${upper(user.address.city ?? 'n/a')}`;{user: {name: 'Dee', address: {city: 'São Paulo', zip: 1310}}};'SÃO PAULO'
+`${user['name']}`;{user: {name: 'Ann', address: {city: 'Oslo', zip: '0150'}}};'Ann'
+`${user['name']}`;{user: {name: 'Bo', address: null}};'Bo'
+`${user['name']}`;{user: {name: 'Cy'}};'Cy'
+`${user['name']}`;{user: null};'null'
+`${user['name']}`;{};'null'
+`${user['name']}`;{user: {name: 'Dee', address: {city: 'São Paulo', zip: 1310}}};'Dee'
+`${orders[0].id}/${orders[0].lines[0].sku}`;{orders: [{id: 'A1', lines: [{sku: 'x', qty: 2}]}]};'A1/x'
+`${orders[0].id}/${orders[0].lines[0].sku}`;{orders: [{id: 'B2', lines: []}]};'B2/null'
+`${orders[0].id}/${orders[0].lines[0].sku}`;{orders: []};'null/null'
+`${orders[0].id}/${orders[0].lines[0].sku}`;{orders: null};'null/null'
+`${orders[0].id}/${orders[0].lines[0].sku}`;{};'null/null'
+`first: ${orders[0].lines[0].qty ?? 0}`;{orders: [{id: 'A1', lines: [{sku: 'x', qty: 2}]}]};'first: 2'
+`first: ${orders[0].lines[0].qty ?? 0}`;{orders: [{id: 'B2', lines: []}]};'first: 0'
+`first: ${orders[0].lines[0].qty ?? 0}`;{orders: []};'first: 0'
+`first: ${orders[0].lines[0].qty ?? 0}`;{orders: null};'first: 0'
+`first: ${orders[0].lines[0].qty ?? 0}`;{};'first: 0'
+`${o['key with space']}|${o['ä']}`;{o: {'key with space': 'v1', 'ä': 'umlaut'}};'v1|umlaut'
+`${o['key with space']}|${o['ä']}`;{o: {}};'null|null'
+`${o['key with space']}|${o['ä']}`;{o: null};'null|null'
+# templates: closures and aggregates inside interpolation
+`${len(xs)} items, total ${sum(xs)}`;{xs: [1, 2, 3]};'3 items, total 6'
+`${len(xs)} items, total ${sum(xs)}`;{xs: [0.5, 0.25]};'2 items, total 0.75'
+`${len(xs)} items, total ${sum(xs)}`;{xs: []};'0 items, total 0'
+`${len(xs)} items, total ${sum(xs)}`;{xs: [10]};'1 items, total 10'
+`${count(xs, # > 1)}/${len(xs)}`;{xs: [1, 2, 3]};'2/3'
+`${count(xs, # > 1)}/${len(xs)}`;{xs: [0.5, 0.25]};'0/2'
+`${count(xs, # > 1)}/${len(xs)}`;{xs: []};'0/0'
+`${count(xs, # > 1)}/${len(xs)}`;{xs: [10]};'1/1'
+`${sum(map(xs, # * 2))}`;{xs: [1, 2, 3]};'12'
+`${sum(map(xs, # * 2))}`;{xs: [0.5, 0.25]};'1.50'
+`${sum(map(xs, # * 2))}`;{xs: []};'0'
+`${sum(map(xs, # * 2))}`;{xs: [10]};'20'
+`${some(xs, # > 2) ? 'has big' : 'all small'}`;{xs: [1, 2, 3]};'has big'
+`${some(xs, # > 2) ? 'has big' : 'all small'}`;{xs: [0.5, 0.25]};'all small'
+`${some(xs, # > 2) ? 'has big' : 'all small'}`;{xs: []};'all small'
+`${some(xs, # > 2) ? 'has big' : 'all small'}`;{xs: [10]};'has big'
+`${len(filter(words, len(#) > 3))} long words`;{words: ['alpha', 'beta']};'2 long words'
+`${len(filter(words, len(#) > 3))} long words`;{words: []};'0 long words'
+`${len(filter(words, len(#) > 3))} long words`;{words: ['ONE']};'0 long words'
+`${len(filter(words, len(#) > 3))} long words`;{words: ['a', 'b', 'c']};'0 long words'
+`${upper(words[0] ?? 'none')} and ${len(words) - 1} more`;{words: ['alpha', 'beta']};'ALPHA and 1 more'
+`${upper(words[0] ?? 'none')} and ${len(words) - 1} more`;{words: []};'NONE and -1 more'
+`${upper(words[0] ?? 'none')} and ${len(words) - 1} more`;{words: ['ONE']};'ONE and 0 more'
+`${upper(words[0] ?? 'none')} and ${len(words) - 1} more`;{words: ['a', 'b', 'c']};'A and 2 more'
+# templates inside closures
+map(xs, `#${#}`);{xs: [1, 2, 3]};['#1', '#2', '#3']
+map(xs, `#${#}`);{xs: [0.5, 0.25]};['#0.5', '#0.25']
+map(xs, `#${#}`);{xs: []};[]
+map(xs, `#${#}`);{xs: [10]};['#10']
+map(xs, `#${#}`);{xs: ['a', null, true]};['#a', '#null', '#true']
+map(xs, `${#}:${# * 2}`);{xs: [1, 2, 3]};['1:2', '2:4', '3:6']
+map(xs, `${#}:${# * 2}`);{xs: [0.5, 0.25]};['0.5:1.0', '0.25:0.50']
+map(xs, `${#}:${# * 2}`);{xs: []};[]
+map(xs, `${#}:${# * 2}`);{xs: [10]};['10:20']
+map(words, `<${upper(#)}>`);{words: ['alpha', 'beta']};['<ALPHA>', '<BETA>']
+map(words, `<${upper(#)}>`);{words: []};[]
+map(words, `<${upper(#)}>`);{words: ['ONE']};['<ONE>']
+map(words, `<${upper(#)}>`);{words: ['a', 'b', 'c']};['<A>', '<B>', '<C>']
+map(words, `<${upper(#)}>`);{words: ['ß', 'ﬁ']};['<SS>', '<FI>']
+map(words, `${#}${len(#) > 3 ? '!' : ''}`);{words: ['alpha', 'beta']};['alpha!', 'beta!']
+map(words, `${#}${len(#) > 3 ? '!' : ''}`);{words: []};[]
+map(words, `${#}${len(#) > 3 ? '!' : ''}`);{words: ['ONE']};['ONE']
+map(words, `${#}${len(#) > 3 ? '!' : ''}`);{words: ['a', 'b', 'c']};['a', 'b', 'c']
+filter(map(words, `${lower(#)}`), # != 'one');{words: ['alpha', 'beta']};['alpha', 'beta']
+filter(map(words, `${lower(#)}`), # != 'one');{words: []};[]
+filter(map(words, `${lower(#)}`), # != 'one');{words: ['ONE']};[]
+filter(map(words, `${lower(#)}`), # != 'one');{words: ['a', 'b', 'c']};['a', 'b', 'c']
+map(rows, `${#.k}=${#.v}`);{rows: [{k: 'a', v: 1}, {k: 'b', v: 2.50}]};['a=1', 'b=2.50']
+map(rows, `${#.k}=${#.v}`);{rows: [{k: 'x'}]};['x=null']
+map(rows, `${#.k}=${#.v}`);{rows: []};[]
+map(rows, `${#.k}=${#.v}`);{rows: [{k: null, v: null}]};['null=null']
+map(rows, `${upper(#.k ?? '?')}=${#.v ?? 0}`);{rows: [{k: 'a', v: 1}, {k: 'b', v: 2.50}]};['A=1', 'B=2.50']
+map(rows, `${upper(#.k ?? '?')}=${#.v ?? 0}`);{rows: [{k: 'x'}]};['X=0']
+map(rows, `${upper(#.k ?? '?')}=${#.v ?? 0}`);{rows: []};[]
+map(rows, `${upper(#.k ?? '?')}=${#.v ?? 0}`);{rows: [{k: null, v: null}]};['?=0']
+map(rows as r, `${r.k}:${r.v * 10}`);{rows: [{k: 'a', v: 1}, {k: 'b', v: 2.50}]};['a:10', 'b:25.00']
+map(rows as r, `${r.k}:${r.v * 10}`);{rows: [{k: 'x'}]};!error
+map(rows as r, `${r.k}:${r.v * 10}`);{rows: []};[]
+map(rows as r, `${r.k}:${r.v * 10}`);{rows: [{k: null, v: null}]};!error
+# templates inside objects and arrays
+[`${a}`, `${b}`];{a: 'x', b: 1};['x', '1']
+[`${a}`, `${b}`];{a: 'Ä', b: 1.50};['Ä', '1.50']
+[`${a}`, `${b}`];{a: null, b: null};['null', 'null']
+[`${a}`, `${b}`];{};['null', 'null']
+[`${a}`, `${b}`];{a: '', b: true};['', 'true']
+{label: `${a}-${b}`, raw: a};{a: 'x', b: 1};{label: 'x-1', raw: 'x'}
+{label: `${a}-${b}`, raw: a};{a: 'Ä', b: 1.50};{label: 'Ä-1.50', raw: 'Ä'}
+{label: `${a}-${b}`, raw: a};{a: null, b: null};{label: 'null-null', raw: null}
+{label: `${a}-${b}`, raw: a};{};{label: 'null-null', raw: null}
+{label: `${a}-${b}`, raw: a};{a: '', b: true};{label: '-true', raw: ''}
+map([1, 2], `${a}${#}`);{a: 'x', b: 1};['x1', 'x2']
+map([1, 2], `${a}${#}`);{a: 'Ä', b: 1.50};['Ä1', 'Ä2']
+map([1, 2], `${a}${#}`);{a: null, b: null};['null1', 'null2']
+map([1, 2], `${a}${#}`);{};['null1', 'null2']
+map([1, 2], `${a}${#}`);{a: '', b: true};['1', '2']
+({id: `${upper(a ?? 'n')}_${b ?? 0}`}).id;{a: 'x', b: 1};'X_1'
+({id: `${upper(a ?? 'n')}_${b ?? 0}`}).id;{a: 'Ä', b: 1.50};'Ä_1.50'
+({id: `${upper(a ?? 'n')}_${b ?? 0}`}).id;{a: null, b: null};'N_0'
+({id: `${upper(a ?? 'n')}_${b ?? 0}`}).id;{};'N_0'
+({id: `${upper(a ?? 'n')}_${b ?? 0}`}).id;{a: '', b: true};'_true'
+[`${a}`, `${b}`][1];{a: 'x', b: 1};'1'
+[`${a}`, `${b}`][1];{a: 'Ä', b: 1.50};'1.50'
+[`${a}`, `${b}`][1];{a: null, b: null};'null'
+[`${a}`, `${b}`][1];{};'null'
+[`${a}`, `${b}`][1];{a: '', b: true};'true'
+len([`${a}`, `${b}`, ``]);{a: 'x', b: 1};3
+len([`${a}`, `${b}`, ``]);{a: 'Ä', b: 1.50};3
+len([`${a}`, `${b}`, ``]);{a: null, b: null};3
+len([`${a}`, `${b}`, ``]);{};3
+len([`${a}`, `${b}`, ``]);{a: '', b: true};3
+# templates: type-dependent operators across rows
+`${a + b}`;{a: 1, b: 2};'3'
+`${a + b}`;{a: 'x', b: 'y'};'xy'
+`${a + b}`;{a: 0.1, b: 0.2};'0.3'
+`${a + b}`;{a: 'x', b: 1};!error
+`${a + b}`;{a: null, b: 'y'};!error
+`${a + b}`;{a: '', b: ''};''
+`${a}${b}`;{a: 1, b: 2};'12'
+`${a}${b}`;{a: 'x', b: 'y'};'xy'
+`${a}${b}`;{a: 0.1, b: 0.2};'0.10.2'
+`${a}${b}`;{a: 'x', b: 1};'x1'
+`${a}${b}`;{a: null, b: 'y'};'nully'
+`${a}${b}`;{a: '', b: ''};''
+`${a}${b}` == string(a) + string(b);{a: 1, b: 2};true
+`${a}${b}` == string(a) + string(b);{a: 'x', b: 'y'};true
+`${a}${b}` == string(a) + string(b);{a: 0.1, b: 0.2};true
+`${a}${b}` == string(a) + string(b);{a: 'x', b: 1};true
+`${a}${b}` == string(a) + string(b);{a: null, b: 'y'};true
+`${a}${b}` == string(a) + string(b);{a: '', b: ''};true
+`${a == b}`;{a: 1, b: 2};'false'
+`${a == b}`;{a: 'x', b: 'y'};'false'
+`${a == b}`;{a: 0.1, b: 0.2};'false'
+`${a == b}`;{a: 'x', b: 1};'false'
+`${a == b}`;{a: null, b: 'y'};'false'
+`${a == b}`;{a: '', b: ''};'true'
+# templates: results fed into string functions
+upper(`${a}-${b}`);{a: 'ab', b: 'CD'};'AB-CD'
+upper(`${a}-${b}`);{a: ' x', b: 'y '};' X-Y '
+upper(`${a}-${b}`);{a: 'ß', b: 'ö'};'SS-Ö'
+upper(`${a}-${b}`);{a: null, b: 'z'};'NULL-Z'
+upper(`${a}-${b}`);{a: 1, b: 2.0};'1-2.0'
+trim(`${a} ${b}`);{a: 'ab', b: 'CD'};'ab CD'
+trim(`${a} ${b}`);{a: ' x', b: 'y '};'x y'
+trim(`${a} ${b}`);{a: 'ß', b: 'ö'};'ß ö'
+trim(`${a} ${b}`);{a: null, b: 'z'};'null z'
+trim(`${a} ${b}`);{a: 1, b: 2.0};'1 2.0'
+len(`${a}${b}`);{a: 'ab', b: 'CD'};4
+len(`${a}${b}`);{a: ' x', b: 'y '};4
+len(`${a}${b}`);{a: 'ß', b: 'ö'};2;bug: len counts UTF-8 bytes, intended character count
+len(`${a}${b}`);{a: null, b: 'z'};5
+len(`${a}${b}`);{a: 1, b: 2.0};4
+split(`${a},${b}`, ',');{a: 'ab', b: 'CD'};['ab', 'CD']
+split(`${a},${b}`, ',');{a: ' x', b: 'y '};[' x', 'y ']
+split(`${a},${b}`, ',');{a: 'ß', b: 'ö'};['ß', 'ö']
+split(`${a},${b}`, ',');{a: null, b: 'z'};['null', 'z']
+split(`${a},${b}`, ',');{a: 1, b: 2.0};['1', '2.0']
+contains(`${a}${b}`, 'null');{a: 'ab', b: 'CD'};false
+contains(`${a}${b}`, 'null');{a: ' x', b: 'y '};false
+contains(`${a}${b}`, 'null');{a: 'ß', b: 'ö'};false
+contains(`${a}${b}`, 'null');{a: null, b: 'z'};true
+contains(`${a}${b}`, 'null');{a: 1, b: 2.0};false
+matches(`${a}${b}`, '^[a-z]+$');{a: 'ab', b: 'CD'};false
+matches(`${a}${b}`, '^[a-z]+$');{a: ' x', b: 'y '};false
+matches(`${a}${b}`, '^[a-z]+$');{a: 'ß', b: 'ö'};false
+matches(`${a}${b}`, '^[a-z]+$');{a: null, b: 'z'};true
+matches(`${a}${b}`, '^[a-z]+$');{a: 1, b: 2.0};false
+`${a}` == a;{a: 'ab', b: 'CD'};true
+`${a}` == a;{a: ' x', b: 'y '};true
+`${a}` == a;{a: 'ß', b: 'ö'};true
+`${a}` == a;{a: null, b: 'z'};false
+`${a}` == a;{a: 1, b: 2.0};false
+# templates: literal text around interpolations
+`$${n}`;{n: 5};'$5'
+`$${n}`;{n: 9.90};'$9.90'
+`$${n}`;{n: null};'$null'
+`$${n}`;{n: 'x'};'$x'
+`${n}%`;{n: 5};'5%'
+`${n}%`;{n: 12.50};'12.50%'
+`${n}%`;{n: -0.5};'-0.5%'
+`${n}%`;{};'null%'
+`{${n}}`;{n: 1};'{1}'
+`{${n}}`;{n: 'a'};'{a}'
+`{${n}}`;{};'{null}'
+`a ${n} b ${n} c`;{n: 1};'a 1 b 1 c'
+`a ${n} b ${n} c`;{n: 'x'};'a x b x c'
+`a ${n} b ${n} c`;{n: ''};'a  b  c'
+`${s}` + '|' + `${t}`;{s: 'a', t: 'b'};'a|b'
+`${s}` + '|' + `${t}`;{s: '', t: ''};'|'
+`${s}` + '|' + `${t}`;{s: null};'null|null'
+`${s}` + '|' + `${t}`;{s: 1, t: false};'1|false'
+`${s}`;{s: '  spaced  '};'  spaced  '
+`${s}`;{s: 'tab\there'};'tab\there'
+`${s}`;{s: 'line\nbreak'};'line\nbreak'
+`${s}`;{s: '日本語'};'日本語'
+`${s}`;{s: '😀'};'😀'
+`${s}`;{s: '\u00a0'};'\u00a0'
+`${s}`;{s: 'é'};'é'
+`${s}`;{s: 'O\'Brien'};'O\'Brien'
+`${s}`;{s: 'back\\slash'};'back\\slash'
+`${s}`;{s: '`tick`'};'`tick`'
+`${s}`;{s: '${not}'};'${not}'
+# templates: nested templates
+`${`inner ${x}`}`;{x: 1};'inner 1';bug: a template nested in an interpolation fails to parse
+`${`inner ${x}`}`;{x: 'a'};'inner a';bug: a template nested in an interpolation fails to parse
+`${`inner ${x}`}`;{x: null};'inner null';bug: a template nested in an interpolation fails to parse
+`${`inner ${x}`}`;{};'inner null';bug: a template nested in an interpolation fails to parse
+`${x > 0 ? `+${x}` : `${x}`}`;{x: 5};'+5';bug: a template nested in an interpolation fails to parse
+`${x > 0 ? `+${x}` : `${x}`}`;{x: 0};'0';bug: a template nested in an interpolation fails to parse
+`${x > 0 ? `+${x}` : `${x}`}`;{x: -2.5};'-2.5';bug: a template nested in an interpolation fails to parse
+`${x > 0 ? `+${x}` : `${x}`}`;{x: null};!error
+map(xs, `${`[${#}]`}`);{xs: [1, 'a']};['[1]', '[a]'];bug: a template nested in an interpolation fails to parse
+map(xs, `${`[${#}]`}`);{xs: []};[];bug: a template nested in an interpolation fails to parse

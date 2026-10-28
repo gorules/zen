@@ -1,0 +1,284 @@
+expression (string);input (json 5);output (json 5);note
+# closures over list inputs: integers, decimals, empty, nulls, missing, wrong type
+map(xs, # * 2);{xs: [1, 2, 3, 4, 5]};[2, 4, 6, 8, 10]
+map(xs, # * 2);{xs: [0.5, 1.25, -0.10, 2]};[1, 2.5, -0.2, 4]
+map(xs, # * 2);{xs: []};[]
+map(xs, # * 2);{xs: [-3, 0, 7]};[-6, 0, 14]
+map(xs, # * 2);{xs: [1, null, 3]};!error
+map(xs, # * 2);{xs: null};!error;question: a null list input is an error rather than an empty list
+map(xs, # * 2);{};!error;question: a missing list input is an error rather than an empty list
+map(xs, # * 2);{xs: 'abc'};!error
+map(xs, # * 2);{xs: {a: 1}};!error
+map(xs, # * 2);{xs: 5};!error
+filter(xs, # > 1);{xs: [1, 2, 3, 4, 5]};[2, 3, 4, 5]
+filter(xs, # > 1);{xs: [0.5, 1.25, -0.10, 2]};[1.25, 2]
+filter(xs, # > 1);{xs: []};[]
+filter(xs, # > 1);{xs: [-3, 0, 7]};[7]
+filter(xs, # > 1);{xs: [1, null, 3]};!error
+filter(xs, # > 1);{xs: null};!error
+filter(xs, # > 1);{};!error
+filter(xs, # > 1);{xs: 'abc'};!error
+some(xs, # > 2);{xs: [1, 2, 3, 4, 5]};true
+some(xs, # > 2);{xs: [0.5, 1.25, -0.10, 2]};false
+some(xs, # > 2);{xs: []};false
+some(xs, # > 2);{xs: [-3, 0, 7]};true
+some(xs, # > 2);{xs: [5, null]};true
+some(xs, # > 2);{xs: [1, null, 3]};!error
+some(xs, # > 2);{xs: null};!error
+some(xs, # > 2);{xs: 'abc'};!error
+all(xs, # > 0);{xs: [1, 2, 3, 4, 5]};true
+all(xs, # > 0);{xs: [0.5, 1.25, -0.10, 2]};false
+all(xs, # > 0);{xs: []};true
+all(xs, # > 0);{xs: [-3, 0, 7]};false
+all(xs, # > 0);{xs: [1, null, 3]};!error
+all(xs, # > 0);{xs: [-1, null]};false
+all(xs, # > 0);{xs: null};!error
+none(xs, # < 0);{xs: [1, 2, 3, 4, 5]};true
+none(xs, # < 0);{xs: [0.5, 1.25, -0.10, 2]};false
+none(xs, # < 0);{xs: []};true
+none(xs, # < 0);{xs: [-3, 0, 7]};false
+none(xs, # < 0);{xs: [-1, null]};false
+none(xs, # < 0);{xs: [1, null]};!error
+none(xs, # < 0);{};!error
+one(xs, # < 0);{xs: [1, 2, 3, 4, 5]};false
+one(xs, # < 0);{xs: [0.5, 1.25, -0.10, 2]};true
+one(xs, # < 0);{xs: []};false
+one(xs, # < 0);{xs: [-3, 0, 7]};true
+one(xs, # < 0);{xs: [-3, -0.5]};false
+one(xs, # < 0);{xs: [1, null]};!error
+one(xs, # < 0);{xs: null};!error
+count(xs, # >= 1);{xs: [1, 2, 3, 4, 5]};5
+count(xs, # >= 1);{xs: [0.5, 1.25, -0.10, 2]};2
+count(xs, # >= 1);{xs: []};0
+count(xs, # >= 1);{xs: [-3, 0, 7]};1
+count(xs, # >= 1);{xs: [1, null, 3]};!error
+count(xs, # >= 1);{xs: null};!error
+count(xs, # >= 1);{xs: 'abc'};!error
+map(xs, # / 2);{xs: [1, 2, 3, 4, 5]};[0.5, 1, 1.5, 2, 2.5]
+map(xs, # / 2);{xs: [0.5, 1.25, -0.10, 2]};[0.25, 0.625, -0.05, 1]
+map(xs, # / 2);{xs: []};[]
+map(xs, # / 2);{xs: [-3, 0, 7]};[-1.5, 0, 3.5]
+map(xs, # + 0.1);{xs: [1, 2]};[1.1, 2.1]
+map(xs, # + 0.1);{xs: [0.5, 1.25, -0.10]};[0.6, 1.35, 0]
+map(xs, # - 1);{xs: [0.5, 1.25, -0.10]};[-0.5, 0.25, -1.1]
+map(xs, # % 2);{xs: [0.5, 1.25, -0.10, 2, -3]};[0.5, 1.25, -0.10, 0, -1]
+map(xs, # % 2 == 0);{xs: [1, 2, -3, -4]};[false, true, false, true]
+map(xs, abs(#));{xs: [1, -2, -0.10]};[1, 2, 0.10]
+map(xs, round(#));{xs: [0.5, 1.25, -0.10, 2]};[1, 1, 0, 2]
+map(xs, floor(#));{xs: [0.5, 1.5, -0.5, 2.25]};[0, 1, -1, 2]
+map(xs, string(#));{xs: [1, 2, 3]};['1', '2', '3']
+map(xs, string(#));{xs: [0.5, 1.25, -0.10, 2]};['0.5', '1.25', '-0.10', '2']
+map(xs, string(#));{xs: [1.0, 1.00, 1, 1e2]};['1.0', '1.00', '1', '100']
+map(xs, string(#));{xs: []};[]
+map(xs, string(# * 2));{xs: [0.5, 1.25, -0.10]};['1.0', '2.50', '-0.20']
+map(xs, string(#) + 'x');{xs: [1, -2]};['1x', '-2x']
+map(xs, # > 1 ? 'hi' : 'lo');{xs: [1, 2, 3]};['lo', 'hi', 'hi']
+map(xs, # > 1 ? 'hi' : 'lo');{xs: [0.5, 1.25, -0.10]};['lo', 'hi', 'lo']
+map(xs, # > 1 ? 'hi' : 'lo');{xs: []};[]
+map(xs, # ?? 0);{xs: [1, null, 3]};[1, 0, 3]
+map(xs, # ?? 0);{xs: [0.5, null]};[0.5, 0]
+map(xs, # ?? 0);{xs: [null, null]};[0, 0]
+map(xs, # ?? 0);{xs: []};[]
+filter(xs, # != null);{xs: [1, null, 3]};[1, 3]
+filter(xs, # != null);{xs: [null]};[]
+filter(xs, # != null);{xs: ['a', null, 0.5]};['a', 0.5]
+filter(xs, # % 2 == 0);{xs: [1, 2, 3, 4, 5]};[2, 4]
+filter(xs, # % 2 == 0);{xs: [0.5, 1.25, -0.10, 2]};[2]
+filter(xs, # % 2 == 0);{xs: [-3, 0, 7]};[0]
+count(xs, # == 1.25);{xs: [0.5, 1.25, -0.10, 2]};1
+count(xs, # == 1.25);{xs: [1.250, 1.25, 1.2500]};3
+count(xs, # == 1.25);{xs: [1, 2]};0
+filter(xs, # == 1);{xs: [1.0, 1.00, 1, 2]};[1.0, 1.00, 1]
+map(xs, # * 79228162514264337593543950335);{xs: [1, 2]};!error
+map(xs, # * 79228162514264337593543950335);{xs: [1]};[79228162514264337593543950335]
+map(xs, # * 79228162514264337593543950335);{xs: []};[]
+# aggregates over map and filter results (typed lists)
+sum(map(xs, # * 2));{xs: [1, 2, 3, 4, 5]};30
+sum(map(xs, # * 2));{xs: [0.5, 1.25, -0.10, 2]};7.3
+sum(map(xs, # * 2));{xs: []};0
+sum(map(xs, # * 2));{xs: [-3, 0, 7]};8
+sum(map(xs, # * 2));{xs: [1, null]};!error
+sum(map(xs, # * 2));{xs: null};!error
+sum(filter(xs, # > 0));{xs: [1, 2, 3, 4, 5]};15
+sum(filter(xs, # > 0));{xs: [0.5, 1.25, -0.10, 2]};3.75
+sum(filter(xs, # > 0));{xs: []};0
+sum(filter(xs, # > 0));{xs: [-3, 0, 7]};7
+sum(filter(xs, # > 0));{xs: [-3, -1]};0
+string(sum(filter(xs, # > 0)));{xs: [0.5, 1.25, -0.10, 2]};'3.75'
+string(sum(map(xs, #)));{xs: [0.5, 1.25, -0.10]};'1.65'
+max(map(xs, # + 1));{xs: [1, 2, 3, 4, 5]};6
+max(map(xs, # + 1));{xs: [0.5, 1.25, -0.10, 2]};3
+max(map(xs, # + 1));{xs: []};!error
+max(map(xs, # + 1));{xs: [-3, 0, 7]};8
+max(map(xs, # + 1));{xs: [-3, -5]};-2
+min(filter(xs, # > 0));{xs: [1, 2, 3, 4, 5]};1
+min(filter(xs, # > 0));{xs: [0.5, 1.25, -0.10, 2]};0.5
+min(filter(xs, # > 0));{xs: []};!error
+min(filter(xs, # > 0));{xs: [-3, 0, 7]};7
+min(filter(xs, # > 0));{xs: [-3, -1]};!error
+min(map(xs, # - 10));{xs: [1, 2, 3]};-9
+min(map(xs, #));{xs: [0.5, 1.25, -0.10]};-0.10
+string(min(filter(xs, # >= 0)));{xs: [0.5, 1.25, -0.10, 0.00]};'0.00'
+avg(map(xs, #));{xs: [0.5, 1.25, -0.10, 2]};0.9125
+avg(map(xs, # * 2));{xs: [1, 2]};3
+avg(map(xs, #));{xs: []};!error
+sum(map(xs, # / 3));{xs: [1, 2]};1
+sum(map(xs, # * 0.5));{xs: [1, 2, 3]};3
+sum(map(xs, 79228162514264337593543950335));{xs: [1, 2]};!error
+sum(map(xs, 79228162514264337593543950335));{xs: [1]};79228162514264337593543950335
+len(filter(xs, # > 1));{xs: [1, 2, 3, 4, 5]};4
+len(filter(xs, # > 1));{xs: [0.5, 1.25, -0.10, 2]};2
+len(filter(xs, # > 1));{xs: []};0
+len(map(xs, #));{xs: [1, null, 'a']};3
+count(map(xs, # * 2), # > 2);{xs: [1, 2, 3]};2
+count(map(xs, # * 2), # > 2);{xs: [0.5, 1.25, 2]};2
+count(map(xs, # * 2), # > 2);{xs: []};0
+contains(map(xs, # * 2), 2.5);{xs: [0.5, 1.25, -0.10]};true
+contains(map(xs, # * 2), 2.5);{xs: [1, 2]};false
+contains(filter(xs, # > 0), 2);{xs: [2.00, -2]};true
+# closures over string lists
+map(xs, upper(#));{xs: ['a', 'héllo', '日本', '']};['A', 'HÉLLO', '日本', '']
+map(xs, upper(#));{xs: ['Ab', 'aB', 'b']};['AB', 'AB', 'B']
+map(xs, upper(#));{xs: []};[]
+map(xs, upper(#));{xs: ['a', null]};!error
+map(xs, upper(#));{xs: [1]};!error
+map(xs, lower(#));{xs: ['ÉCOLE', 'ABC']};['école', 'abc']
+map(xs, # + '!');{xs: ['a', 'héllo', '日本', '']};['a!', 'héllo!', '日本!', '!']
+map(xs, # + '!');{xs: ['a', null]};!error
+map(xs, len(#));{xs: ['a', 'bb', '']};[1, 2, 0]
+map(xs, len(#));{xs: ['a', 'héllo', '日本', '']};[1, 5, 2, 0];bug: len counts UTF-8 bytes instead of characters
+map(xs, len(#));{xs: []};[]
+filter(xs, len(#) == 2);{xs: ['a', 'héllo', '日本', 'ab']};['日本', 'ab'];bug: len counts UTF-8 bytes instead of characters
+filter(xs, len(#) == 2);{xs: ['ab', 'c']};['ab']
+map(xs, #[0]);{xs: ['ab', 'c']};['a', 'c']
+map(xs, #[0]);{xs: ['a', 'héllo', '日本', '']};['a', 'h', '日', null];bug: string indexing is byte-based, so a multi-byte first character yields null
+filter(xs, startsWith(#, 'h'));{xs: ['a', 'héllo', '日本', '']};['héllo']
+filter(xs, startsWith(#, 'h'));{xs: ['Ab', 'aB', 'b']};[]
+filter(xs, startsWith(#, 'h'));{xs: []};[]
+filter(xs, startsWith(#, 'h'));{xs: ['h', null]};!error
+filter(xs, contains(#, 'é'));{xs: ['héllo', 'abc', 'hé']};['héllo', 'hé']
+filter(xs, contains(#, 'é'));{xs: ['e', 'E']};[]
+filter(xs, # != '');{xs: ['a', 'héllo', '日本', '']};['a', 'héllo', '日本']
+filter(xs, # != '');{xs: ['']};[]
+some(xs, # == '日本');{xs: ['a', 'héllo', '日本', '']};true
+some(xs, # == '日本');{xs: ['Ab', 'aB', 'b']};false
+some(xs, # == '日本');{xs: []};false
+some(xs, # == '日本');{xs: [1, '日本']};true
+all(xs, len(#) > 0);{xs: ['a', 'bb']};true
+all(xs, len(#) > 0);{xs: ['a', '']};false
+all(xs, len(#) > 0);{xs: []};true
+none(xs, # == 'x');{xs: ['a', 'b']};true
+none(xs, # == 'x');{xs: ['x']};false
+count(xs, lower(#) == 'ab');{xs: ['Ab', 'aB', 'b']};2
+count(xs, lower(#) == 'ab');{xs: ['a', 'héllo', '日本', '']};0
+one(xs, # == 'b');{xs: ['Ab', 'aB', 'b']};true
+one(xs, # == 'b');{xs: ['b', 'b']};false
+map(xs, # in ['a', 'b']);{xs: ['a', 'c', 'b']};[true, false, true]
+map(xs, # in ['a', 'b']);{xs: []};[]
+map(xs, # == 'hé');{xs: ['héllo', 'abc', 'hé']};[false, false, true]
+map(xs, number(#));{xs: ['1', '2.50', '-0.10']};[1, 2.5, -0.1]
+sum(map(xs, number(#)));{xs: ['1', '2.50', '-0.10']};3.4
+sum(map(xs, len(#)));{xs: ['a', 'bb', '']};3
+max(map(xs, len(#)));{xs: ['a', 'bb']};2
+flatMap(xs, [#, upper(#)]);{xs: ['a', 'é']};['a', 'A', 'é', 'É']
+# closures over boolean lists
+filter(xs, #);{xs: [true, false, true]};[true, true]
+filter(xs, #);{xs: []};[]
+filter(xs, #);{xs: [true, null]};!error
+map(xs, not #);{xs: [true, false]};[false, true]
+all(xs, #);{xs: [true, true]};true
+all(xs, #);{xs: [true, false]};false
+count(xs, #);{xs: [true, false, true]};2
+count(xs, #);{xs: [1]};!error
+# closures over object lists
+map(xs, #.x);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};[1, 2.5, -0.10]
+map(xs, #.x);{xs: [{x: 1}, {s: 'b'}, {x: null}]};[1, null, null]
+map(xs, #.x);{xs: []};[]
+map(xs, #.x);{xs: [1, 'a']};[null, null]
+map(xs, #.x);{xs: null};!error
+map(xs, #.x * 2);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};[2, 5, -0.2]
+map(xs, #.x * 2);{xs: [{x: 1}, {s: 'b'}, {x: null}]};!error
+map(xs, #.x * 2);{xs: []};[]
+map(xs, #.s);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};['a', 'b', 'c']
+map(xs, #.s);{xs: [{x: 1}, {s: 'b'}, {x: null}]};[null, 'b', null]
+filter(xs, #.x > 1);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};[{x: 2.5, s: 'b'}]
+filter(xs, #.x > 1);{xs: [{x: 1}, {s: 'b'}, {x: null}]};!error
+filter(xs, #.x > 1);{xs: []};[]
+filter(xs, #.x != null);{xs: [{x: 1}, {s: 'b'}, {x: null}]};[{x: 1}]
+filter(xs, #.s == 'b');{xs: [{x: 1}, {s: 'b'}, {x: null}]};[{s: 'b'}]
+sum(map(xs, #.x));{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};3.4
+sum(map(xs, #.x));{xs: [{x: 1}, {s: 'b'}, {x: null}]};!error
+sum(map(xs, #.x));{xs: []};0
+sum(map(xs, #.x ?? 0));{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};3.4
+sum(map(xs, #.x ?? 0));{xs: [{x: 1}, {s: 'b'}, {x: null}]};1
+max(map(xs, #.x));{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};2.5
+min(map(xs, #.x));{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};-0.10
+max(map(xs, #.x));{xs: []};!error
+map(filter(xs, #.x > 0), #.s);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};['a', 'b']
+map(filter(xs, #.x > 0), #.s);{xs: []};[]
+sum(map(filter(xs, #.x > 0), #.x));{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};3.5
+sum(map(filter(xs, #.x > 0), #.x));{xs: [{x: -1}]};0
+some(xs, #.s == 'b');{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};true
+some(xs, #.s == 'b');{xs: [{x: 1}, {s: 'b'}, {x: null}]};true
+some(xs, #.s == 'b');{xs: []};false
+all(xs, #.x != null);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}, {x: -0.10, s: 'c'}]};true
+all(xs, #.x != null);{xs: [{x: 1}, {s: 'b'}, {x: null}]};false
+count(xs, #.x == null);{xs: [{x: 1, s: 'a'}, {x: 2.5, s: 'b'}]};0
+count(xs, #.x == null);{xs: [{x: 1}, {s: 'b'}, {x: null}]};2
+map(xs as o, o.x + 1);{xs: [{x: 1}, {x: 0.5}]};[2, 1.5]
+map(xs as o, o.x + 1);{xs: []};[]
+map(xs, {v: #.x, s: #.s});{xs: [{x: 1, s: 'a'}, {x: 2}]};[{v: 1, s: 'a'}, {v: 2, s: null}]
+map(xs, #.a.b);{xs: [{a: {b: 1}}, {a: 5}, {a: 's'}]};[1, null, null]
+filter(xs, 'p' in #.tags);{xs: [{x: 1, tags: ['p']}, {x: 2, tags: []}]};[{x: 1, tags: ['p']}]
+filter(xs, 'p' in #.tags);{xs: [{x: 1, tags: ['p']}, {x: 2}]};!error
+map(xs, len(#.tags ?? []));{xs: [{tags: ['a']}, {tags: []}, {}]};[1, 0, 0]
+map(xs as o, o.tags[0]);{xs: [{tags: ['a']}, {tags: []}, {}]};['a', null, null]
+flatMap(xs, #.tags);{xs: [{tags: ['a', 'b']}, {tags: []}]};['a', 'b']
+flatMap(xs, #.tags);{xs: []};[]
+sum(map(xs, #.qty * #.price));{xs: [{qty: 2, price: 1.25}, {qty: 3, price: 0.10}]};2.8
+max(map(xs, #.qty * #.price));{xs: [{qty: 2, price: 10}, {qty: 1, price: 20}, {qty: 3, price: 15}]};45
+# nested list inputs
+map(xs, map(#, # * 2));{xs: [[1, 2], [], [3]]};[[2, 4], [], [6]]
+map(xs, map(#, # * 2));{xs: [[0.5], [1.25, -0.10]]};[[1], [2.5, -0.2]]
+map(xs, map(#, # * 2));{xs: [[1], null]};!error
+map(xs, sum(#));{xs: [[1, 2], [], [3]]};[3, 0, 3]
+map(xs, len(#));{xs: [[1, 2], [], [3]]};[2, 0, 1]
+flatMap(xs, map(#, # + 1));{xs: [[1, 2], [], [3]]};[2, 3, 4]
+flatMap(xs, #);{xs: [[1, 2], [], [3]]};[1, 2, 3]
+some(xs, 3 in #);{xs: [[1, 2], [], [3]]};true
+sum(flatMap(xs, #));{xs: [[0.5, 1], [2.25]]};3.75
+# mixed lists
+map(xs, #);{xs: [1, 'a', true]};[1, 'a', true]
+filter(xs, # == 'a');{xs: [1, 'a', true]};['a']
+map(xs, type(#));{xs: [1, 'a', true, null, [1], {a: 1}]};['number', 'string', 'bool', 'null', 'array', 'object']
+filter(xs, type(#) == 'number');{xs: [1, 'a', 0.5, null]};[1, 0.5]
+sum(filter(xs, type(#) == 'number'));{xs: [1, 'a', 0.5, null]};1.5
+# several closures reading the same inputs in one expression
+[none(xs, contains(s, 'x')), map(ys, len(s))];{xs: [1, 2], ys: [0.5, 1.25], s: 'abc'};[true, [3, 3]]
+[none(xs, contains(s, 'x')), map(ys, len(s))];{xs: [1, 2], ys: [0.5, 1.25], s: 'xyz'};[false, [3, 3]]
+[none(xs, contains(s, 'x')), map(ys, len(s))];{xs: [], ys: [], s: 'xyz'};[true, []]
+[none(xs, contains(s, 'x')), map(ys, len(s))];{xs: [1], ys: [1], s: null};!error
+[some(xs, # > 1), map(xs, # * 2)];{xs: [1, 2, 3]};[true, [2, 4, 6]]
+[some(xs, # > 1), map(xs, # * 2)];{xs: [0.5, 1.25, -0.10]};[true, [1, 2.5, -0.2]]
+[some(xs, # > 1), map(xs, # * 2)];{xs: []};[false, []]
+[some(xs, # > 1), map(xs, # * 2)];{xs: [2, null]};!error
+[sum(map(xs, #)), sum(filter(xs, # > 0)), count(xs, # > 0)];{xs: [1, 2, 3]};[6, 6, 3]
+[sum(map(xs, #)), sum(filter(xs, # > 0)), count(xs, # > 0)];{xs: [0.5, 1.25, -0.10]};[1.65, 1.75, 2]
+[sum(map(xs, #)), sum(filter(xs, # > 0)), count(xs, # > 0)];{xs: []};[0, 0, 0]
+[min(map(xs, #)), max(map(xs, #))];{xs: [3, 1, 2]};[1, 3]
+[min(map(xs, #)), max(map(xs, #))];{xs: [0.5, 1.25, -0.10]};[-0.10, 1.25]
+[min(map(xs, #)), max(map(xs, #))];{xs: []};!error
+[map(xs, #.x), filter(xs, #.x > 1)];{xs: [{x: 1}, {x: 2.5}]};[[1, 2.5], [{x: 2.5}]]
+[map(xs, #.x), filter(xs, #.x > 1)];{xs: []};[[], []]
+[filter(xs, # > t), map(xs, # * t)];{t: 2, xs: [1, 2, 3]};[[3], [2, 4, 6]]
+[filter(xs, # > t), map(xs, # * t)];{t: 0.5, xs: [0.25, 1.25]};[[1.25], [0.125, 0.625]]
+[filter(xs, # > t), map(xs, # * t)];{t: null, xs: [1]};!error
+[map(xs, upper(#)), count(xs, # == 'a'), some(xs, startsWith(#, 'é'))];{xs: ['a', 'é', 'a']};[['A', 'É', 'A'], 2, true]
+[map(xs, upper(#)), count(xs, # == 'a'), some(xs, startsWith(#, 'é'))];{xs: []};[[], 0, false]
+[map(xs, # * 2), map(ys, #.v), filter(zs, # != '')];{xs: [1, 0.5], ys: [{v: 'a'}], zs: ['', 'b']};[[2, 1], ['a'], ['b']]
+[map(xs, # * 2), map(ys, #.v), filter(zs, # != '')];{xs: [], ys: [], zs: []};[[], [], []]
+map(xs, count(ys, # == 1) + #);{xs: [10, 20], ys: [1, 1, 2]};[12, 22]
+map(xs as x, count(ys, # < x));{xs: [1, 2.5], ys: [0.5, 1, 2]};[1, 3]
+filter(xs as x, some(ys, # == x));{xs: [1, 2, 3], ys: [3, 1]};[1, 3]
+filter(xs as x, none(ys, # == x));{xs: ['a', 'b', 'c'], ys: ['b']};['a', 'c']
+map(xs as x, filter(ys, #.k == x));{xs: ['a', 'b'], ys: [{k: 'a', v: 1}, {k: 'b', v: 2}, {k: 'a', v: 3}]};[[{k: 'a', v: 1}, {k: 'a', v: 3}], [{k: 'b', v: 2}]]

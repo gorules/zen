@@ -1,0 +1,503 @@
+expression (string);input (json 5);output (json 5);note
+# empty collections at every nesting level
+len(a);{a: []};0
+len(a);{a: [[]]};1
+len(a);{a: [[], []]};2
+len(a);{a: [[[]]]};1
+len(a);{a: [{b: []}]};1
+len(a);{a: [{b: [{c: []}]}]};1
+len(a);{a: [{}]};1
+len(a);{a: [{b: [{}]}]};1
+flatten(a);{a: []};[]
+flatten(a);{a: [[]]};[]
+flatten(a);{a: [[], []]};[]
+flatten(a);{a: [[[]]]};[[]]
+flatten(a);{a: [{b: []}]};[{b: []}]
+flatten(a);{a: [{b: [{c: []}]}]};[{b: [{c: []}]}]
+flatten(a);{a: [{}]};[{}]
+flatten(a);{a: [{b: [{}]}]};[{b: [{}]}]
+len(flatten(a));{a: []};0
+len(flatten(a));{a: [[]]};0
+len(flatten(a));{a: [[], []]};0
+len(flatten(a));{a: [[[]]]};1
+len(flatten(a));{a: [{b: []}]};1
+len(flatten(a));{a: [{b: [{c: []}]}]};1
+len(flatten(a));{a: [{}]};1
+len(flatten(a));{a: [{b: [{}]}]};1
+map(a, len(#));{a: []};[]
+map(a, len(#));{a: [[]]};[0]
+map(a, len(#));{a: [[], []]};[0, 0]
+map(a, len(#));{a: [[[]]]};[1]
+map(a, len(#));{a: [{b: []}]};!error
+map(a, len(#));{a: [{b: [{c: []}]}]};!error
+map(a, len(#));{a: [{}]};!error
+map(a, len(#));{a: [{b: [{}]}]};!error
+map(a, #.b);{a: []};[]
+map(a, #.b);{a: [[]]};[null]
+map(a, #.b);{a: [[], []]};[null, null]
+map(a, #.b);{a: [[[]]]};[null]
+map(a, #.b);{a: [{b: []}]};[[]]
+map(a, #.b);{a: [{b: [{c: []}]}]};[[{c: []}]]
+map(a, #.b);{a: [{}]};[null]
+map(a, #.b);{a: [{b: [{}]}]};[[{}]]
+map(a, #.b ?? []);{a: []};[]
+map(a, #.b ?? []);{a: [[]]};[[]]
+map(a, #.b ?? []);{a: [[], []]};[[], []]
+map(a, #.b ?? []);{a: [[[]]]};[[]]
+map(a, #.b ?? []);{a: [{b: []}]};[[]]
+map(a, #.b ?? []);{a: [{b: [{c: []}]}]};[[{c: []}]]
+map(a, #.b ?? []);{a: [{}]};[[]]
+map(a, #.b ?? []);{a: [{b: [{}]}]};[[{}]]
+flatMap(a, #.b ?? []);{a: []};[]
+flatMap(a, #.b ?? []);{a: [[]]};[]
+flatMap(a, #.b ?? []);{a: [[], []]};[]
+flatMap(a, #.b ?? []);{a: [[[]]]};[]
+flatMap(a, #.b ?? []);{a: [{b: []}]};[]
+flatMap(a, #.b ?? []);{a: [{b: [{c: []}]}]};[{c: []}]
+flatMap(a, #.b ?? []);{a: [{}]};[]
+flatMap(a, #.b ?? []);{a: [{b: [{}]}]};[{}]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: []};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [[]]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [[], []]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [[[]]]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [{b: []}]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [{b: [{c: []}]}]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [{}]};[]
+flatMap(a, flatMap(#.b ?? [], #.c ?? []));{a: [{b: [{}]}]};[]
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: []};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [[]]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [[], []]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [[[]]]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [{b: []}]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [{b: [{c: []}]}]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [{}]};0
+sum(flatMap(a, map(#.b ?? [], len(#.c ?? []))));{a: [{b: [{}]}]};0
+some(a, true);{a: []};false
+some(a, true);{a: [[]]};true
+some(a, true);{a: [[], []]};true
+some(a, true);{a: [[[]]]};true
+some(a, true);{a: [{b: []}]};true
+some(a, true);{a: [{b: [{c: []}]}]};true
+some(a, true);{a: [{}]};true
+some(a, true);{a: [{b: [{}]}]};true
+all(a, false);{a: []};true
+all(a, false);{a: [[]]};false
+all(a, false);{a: [[], []]};false
+all(a, false);{a: [[[]]]};false
+all(a, false);{a: [{b: []}]};false
+all(a, false);{a: [{b: [{c: []}]}]};false
+all(a, false);{a: [{}]};false
+all(a, false);{a: [{b: [{}]}]};false
+none(a, true);{a: []};true
+none(a, true);{a: [[]]};false
+none(a, true);{a: [[], []]};false
+none(a, true);{a: [[[]]]};false
+none(a, true);{a: [{b: []}]};false
+none(a, true);{a: [{b: [{c: []}]}]};false
+none(a, true);{a: [{}]};false
+none(a, true);{a: [{b: [{}]}]};false
+count(a, true);{a: []};0
+count(a, true);{a: [[]]};1
+count(a, true);{a: [[], []]};2
+count(a, true);{a: [[[]]]};1
+count(a, true);{a: [{b: []}]};1
+count(a, true);{a: [{b: [{c: []}]}]};1
+count(a, true);{a: [{}]};1
+count(a, true);{a: [{b: [{}]}]};1
+one(a, true);{a: []};false
+one(a, true);{a: [[]]};true
+one(a, true);{a: [[], []]};false
+one(a, true);{a: [[[]]]};true
+one(a, true);{a: [{b: []}]};true
+one(a, true);{a: [{b: [{c: []}]}]};true
+one(a, true);{a: [{}]};true
+one(a, true);{a: [{b: [{}]}]};true
+a[0];{a: []};null
+a[0];{a: [[]]};[]
+a[0];{a: [[], []]};[]
+a[0];{a: [[[]]]};[[]]
+a[0];{a: [{b: []}]};{b: []}
+a[0];{a: [{b: [{c: []}]}]};{b: [{c: []}]}
+a[0];{a: [{}]};{}
+a[0];{a: [{b: [{}]}]};{b: [{}]}
+a[0][0];{a: []};null
+a[0][0];{a: [[]]};null
+a[0][0];{a: [[], []]};null
+a[0][0];{a: [[[]]]};[]
+a[0][0];{a: [{b: []}]};null
+a[0][0];{a: [{b: [{c: []}]}]};null
+a[0][0];{a: [{}]};null
+a[0][0];{a: [{b: [{}]}]};null
+a[0].b[0].c;{a: []};null
+a[0].b[0].c;{a: [[]]};null
+a[0].b[0].c;{a: [[], []]};null
+a[0].b[0].c;{a: [[[]]]};null
+a[0].b[0].c;{a: [{b: []}]};null
+a[0].b[0].c;{a: [{b: [{c: []}]}]};[]
+a[0].b[0].c;{a: [{}]};null
+a[0].b[0].c;{a: [{b: [{}]}]};null
+map(a, []);{a: []};[]
+map(a, []);{a: [[]]};[[]]
+map(a, []);{a: [[], []]};[[], []]
+map(a, []);{a: [[[]]]};[[]]
+map(a, []);{a: [{b: []}]};[[]]
+map(a, []);{a: [{b: [{c: []}]}]};[[]]
+map(a, []);{a: [{}]};[[]]
+map(a, []);{a: [{b: [{}]}]};[[]]
+flatMap(a, []);{a: []};[]
+flatMap(a, []);{a: [[]]};[]
+flatMap(a, []);{a: [[], []]};[]
+flatMap(a, []);{a: [[[]]]};[]
+flatMap(a, []);{a: [{b: []}]};[]
+flatMap(a, []);{a: [{b: [{c: []}]}]};[]
+flatMap(a, []);{a: [{}]};[]
+flatMap(a, []);{a: [{b: [{}]}]};[]
+map(a, {});{a: []};[]
+map(a, {});{a: [[]]};[{}]
+map(a, {});{a: [[], []]};[{}, {}]
+map(a, {});{a: [[[]]]};[{}]
+map(a, {});{a: [{b: []}]};[{}]
+map(a, {});{a: [{b: [{c: []}]}]};[{}]
+map(a, {});{a: [{}]};[{}]
+map(a, {});{a: [{b: [{}]}]};[{}]
+merge(map(a, {}));{a: []};{}
+merge(map(a, {}));{a: [[]]};{}
+merge(map(a, {}));{a: [[], []]};{}
+merge(map(a, {}));{a: [[[]]]};{}
+merge(map(a, {}));{a: [{b: []}]};{}
+merge(map(a, {}));{a: [{b: [{c: []}]}]};{}
+merge(map(a, {}));{a: [{}]};{}
+merge(map(a, {}));{a: [{b: [{}]}]};{}
+mergeDeep(map(a, {}));{a: []};{}
+mergeDeep(map(a, {}));{a: [[]]};{}
+mergeDeep(map(a, {}));{a: [[], []]};{}
+mergeDeep(map(a, {}));{a: [[[]]]};{}
+mergeDeep(map(a, {}));{a: [{b: []}]};{}
+mergeDeep(map(a, {}));{a: [{b: [{c: []}]}]};{}
+mergeDeep(map(a, {}));{a: [{}]};{}
+mergeDeep(map(a, {}));{a: [{b: [{}]}]};{}
+merge(map(a, []));{a: []};{}
+merge(map(a, []));{a: [[]]};[]
+merge(map(a, []));{a: [[], []]};[]
+merge(map(a, []));{a: [[[]]]};[]
+merge(map(a, []));{a: [{b: []}]};[]
+merge(map(a, []));{a: [{b: [{c: []}]}]};[]
+merge(map(a, []));{a: [{}]};[]
+merge(map(a, []));{a: [{b: [{}]}]};[]
+filter(a, len(#) == 0);{a: []};[]
+filter(a, len(#) == 0);{a: [[]]};[[]]
+filter(a, len(#) == 0);{a: [[], []]};[[], []]
+filter(a, len(#) == 0);{a: [[[]]]};[]
+filter(a, len(#) == 0);{a: [{b: []}]};!error
+filter(a, len(#) == 0);{a: [[], [1], []]};[[], []]
+map(a, keys(#));{a: []};[]
+map(a, keys(#));{a: [[]]};[[]]
+map(a, keys(#));{a: [[], []]};[[], []]
+map(a, keys(#));{a: [[[]]]};[[0]]
+map(a, keys(#));{a: [{b: []}]};[['b']]
+map(a, keys(#));{a: [{b: [{c: []}]}]};[['b']]
+map(a, keys(#));{a: [{}]};[[]]
+map(a, keys(#));{a: [{b: [{}]}]};[['b']]
+map(a, values(#));{a: []};[]
+map(a, values(#));{a: [[]]};!error
+map(a, values(#));{a: [[], []]};!error
+map(a, values(#));{a: [[[]]]};!error
+map(a, values(#));{a: [{b: []}]};[[[]]]
+map(a, values(#));{a: [{b: [{c: []}]}]};[[[{c: []}]]]
+map(a, values(#));{a: [{}]};[[]]
+map(a, values(#));{a: [{b: [{}]}]};[[[{}]]]
+sum(map(a, len(keys(#))));{a: []};0
+sum(map(a, len(keys(#))));{a: [[]]};0
+sum(map(a, len(keys(#))));{a: [[], []]};0
+sum(map(a, len(keys(#))));{a: [[[]]]};1
+sum(map(a, len(keys(#))));{a: [{b: []}]};1
+sum(map(a, len(keys(#))));{a: [{b: [{c: []}]}]};1
+sum(map(a, len(keys(#))));{a: [{}]};0
+sum(map(a, len(keys(#))));{a: [{b: [{}]}]};1
+[] in a;{a: []};false;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[] in a;{a: [[]]};true;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[] in a;{a: [[], []]};true;bug: membership of an array needle errors instead of using the deep equality `in` implies
+sum(flatten(a));{a: []};0
+sum(flatten(a));{a: [[]]};0
+sum(flatten(a));{a: [[], []]};0
+sum(flatten(a));{a: [[[]]]};!error
+sum(flatten(a));{a: [{b: []}]};!error
+sum(flatten(a));{a: [{b: [{c: []}]}]};!error
+sum(flatten(a));{a: [{}]};!error
+sum(flatten(a));{a: [{b: [{}]}]};!error
+max(flatten(a));{a: []};!error
+max(flatten(a));{a: [[]]};!error
+max(flatten(a));{a: [[], []]};!error
+max(flatten(a));{a: [[[]]]};!error
+avg(flatten(a));{a: []};!error
+avg(flatten(a));{a: [[]]};!error
+avg(flatten(a));{a: [[], []]};!error
+map(a, map(#, #));{a: []};[]
+map(a, map(#, #));{a: [[]]};[[]]
+map(a, map(#, #));{a: [[], []]};[[], []]
+map(a, map(#, #));{a: [[[]]]};[[[]]]
+map(a, map(#, #));{a: [{b: []}]};!error
+map(a, map(#, #));{a: [{b: [{c: []}]}]};!error
+map(a, map(#, #));{a: [{}]};!error
+map(a, map(#, #));{a: [{b: [{}]}]};!error
+# empty objects at every nesting level
+keys(o);{o: {}};[]
+keys(o);{o: {x: {}}};['x']
+keys(o);{o: {x: {y: {}}}};['x']
+keys(o);{o: {x: []}};['x']
+keys(o);{o: {x: {y: []}}};['x']
+keys(o);{o: {x: null}};['x']
+values(o);{o: {}};[]
+values(o);{o: {x: {}}};[{}]
+values(o);{o: {x: {y: {}}}};[{y: {}}]
+values(o);{o: {x: []}};[[]]
+values(o);{o: {x: {y: []}}};[{y: []}]
+values(o);{o: {x: null}};[null]
+map(values(o), keys(#));{o: {}};[]
+map(values(o), keys(#));{o: {x: {}}};[[]]
+map(values(o), keys(#));{o: {x: {y: {}}}};[['y']]
+map(values(o), keys(#));{o: {x: []}};[[]]
+map(values(o), keys(#));{o: {x: {y: []}}};[['y']]
+map(values(o), keys(#));{o: {x: null}};!error
+mergeDeep([o, o]);{o: {}};{}
+mergeDeep([o, o]);{o: {x: {}}};{x: {}}
+mergeDeep([o, o]);{o: {x: {y: {}}}};{x: {y: {}}}
+mergeDeep([o, o]);{o: {x: []}};{x: []}
+mergeDeep([o, o]);{o: {x: {y: []}}};{x: {y: []}}
+mergeDeep([o, o]);{o: {x: null}};{x: null}
+merge([o, {}]);{o: {}};{}
+merge([o, {}]);{o: {x: {}}};{x: {}}
+merge([o, {}]);{o: {x: {y: {}}}};{x: {y: {}}}
+merge([o, {}]);{o: {x: []}};{x: []}
+merge([o, {}]);{o: {x: {y: []}}};{x: {y: []}}
+merge([o, {}]);{o: {x: null}};{x: null}
+mergeDeep([o, {x: {z: 1}}]);{o: {}};{x: {z: 1}}
+mergeDeep([o, {x: {z: 1}}]);{o: {x: {}}};{x: {z: 1}}
+mergeDeep([o, {x: {z: 1}}]);{o: {x: {y: {}}}};{x: {y: {}, z: 1}}
+mergeDeep([o, {x: {z: 1}}]);{o: {x: []}};{x: {z: 1}}
+mergeDeep([o, {x: {z: 1}}]);{o: {x: {y: []}}};{x: {y: [], z: 1}}
+mergeDeep([o, {x: {z: 1}}]);{o: {x: null}};{x: {z: 1}}
+o.x.y;{o: {}};null
+o.x.y;{o: {x: {}}};null
+o.x.y;{o: {x: {y: {}}}};{}
+o.x.y;{o: {x: []}};null
+o.x.y;{o: {x: {y: []}}};[]
+o.x.y;{o: {x: null}};null
+len(keys(o.x ?? {}));{o: {}};0
+len(keys(o.x ?? {}));{o: {x: {}}};0
+len(keys(o.x ?? {}));{o: {x: {y: {}}}};1
+len(keys(o.x ?? {}));{o: {x: []}};0
+len(keys(o.x ?? {}));{o: {x: {y: []}}};1
+len(keys(o.x ?? {}));{o: {x: null}};0
+flatten(values(o));{o: {}};[]
+flatten(values(o));{o: {x: {}}};[{}]
+flatten(values(o));{o: {x: {y: {}}}};[{y: {}}]
+flatten(values(o));{o: {x: []}};[]
+flatten(values(o));{o: {x: {y: []}}};[{y: []}]
+flatten(values(o));{o: {x: null}};[null]
+# building nested results from closures
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]});{xs: [1, 2, 3]};[{v: 1, sq: 1, parts: [1, 2]}, {v: 2, sq: 4, parts: [2, 3]}, {v: 3, sq: 9, parts: [3, 4]}]
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]});{xs: [0.5]};[{v: 0.5, sq: 0.25, parts: [0.5, 1.5]}]
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]});{xs: []};[]
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]});{xs: [-1, 10]};[{v: -1, sq: 1, parts: [-1, 0]}, {v: 10, sq: 100, parts: [10, 11]}]
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]})[0].parts[1];{xs: [1, 2, 3]};2
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]})[0].parts[1];{xs: [0.5]};1.5
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]})[0].parts[1];{xs: []};null
+map(xs, {v: #, sq: # * #, parts: [#, # + 1]})[0].parts[1];{xs: [-1, 10]};0
+map(xs, [[#], [[#]]]);{xs: [1, 2, 3]};[[[1], [[1]]], [[2], [[2]]], [[3], [[3]]]]
+map(xs, [[#], [[#]]]);{xs: [0.5]};[[[0.5], [[0.5]]]]
+map(xs, [[#], [[#]]]);{xs: []};[]
+map(xs, [[#], [[#]]]);{xs: [-1, 10]};[[[-1], [[-1]]], [[10], [[10]]]]
+map(xs, {a: {b: {c: #}}});{xs: [1, 2, 3]};[{a: {b: {c: 1}}}, {a: {b: {c: 2}}}, {a: {b: {c: 3}}}]
+map(xs, {a: {b: {c: #}}});{xs: [0.5]};[{a: {b: {c: 0.5}}}]
+map(xs, {a: {b: {c: #}}});{xs: []};[]
+map(xs, {a: {b: {c: #}}});{xs: [-1, 10]};[{a: {b: {c: -1}}}, {a: {b: {c: 10}}}]
+map(map(xs, {a: {b: {c: #}}}), #.a.b.c * 2);{xs: [1, 2, 3]};[2, 4, 6]
+map(map(xs, {a: {b: {c: #}}}), #.a.b.c * 2);{xs: [0.5]};[1.0]
+map(map(xs, {a: {b: {c: #}}}), #.a.b.c * 2);{xs: []};[]
+map(map(xs, {a: {b: {c: #}}}), #.a.b.c * 2);{xs: [-1, 10]};[-2, 20]
+map(xs, {a: {b: {c: #}}})[1].a.b.c;{xs: [1, 2, 3]};2
+map(xs, {a: {b: {c: #}}})[1].a.b.c;{xs: [0.5]};null
+map(xs, {a: {b: {c: #}}})[1].a.b.c;{xs: []};null
+map(xs, {a: {b: {c: #}}})[1].a.b.c;{xs: [-1, 10]};10
+{total: sum(xs), items: map(xs, {v: #, pct: # * 100})};{xs: [1, 2, 3]};{total: 6, items: [{v: 1, pct: 100}, {v: 2, pct: 200}, {v: 3, pct: 300}]}
+{total: sum(xs), items: map(xs, {v: #, pct: # * 100})};{xs: [0.5]};{total: 0.5, items: [{v: 0.5, pct: 50.0}]}
+{total: sum(xs), items: map(xs, {v: #, pct: # * 100})};{xs: []};{total: 0, items: []}
+{total: sum(xs), items: map(xs, {v: #, pct: # * 100})};{xs: [-1, 10]};{total: 9, items: [{v: -1, pct: -100}, {v: 10, pct: 1000}]}
+{total: sum(xs), items: map(xs, {v: #})}.items[0].v;{xs: [1, 2, 3]};1;bug: postfix access works on a parenthesized object literal but not a bare one
+{total: sum(xs), items: map(xs, {v: #})}.items[0].v;{xs: [0.5]};0.5;bug: postfix access works on a parenthesized object literal but not a bare one
+{total: sum(xs), items: map(xs, {v: #})}.items[0].v;{xs: []};null;bug: postfix access works on a parenthesized object literal but not a bare one
+{total: sum(xs), items: map(xs, {v: #})}.items[0].v;{xs: [-1, 10]};-1;bug: postfix access works on a parenthesized object literal but not a bare one
+({total: sum(xs), items: map(xs, {v: #})}).items[0].v;{xs: [1, 2, 3]};1
+({total: sum(xs), items: map(xs, {v: #})}).items[0].v;{xs: [0.5]};0.5
+({total: sum(xs), items: map(xs, {v: #})}).items[0].v;{xs: []};null
+({total: sum(xs), items: map(xs, {v: #})}).items[0].v;{xs: [-1, 10]};-1
+{pos: filter(xs, # > 0), neg: filter(xs, # < 0), n: len(xs)};{xs: [1, 2, 3]};{pos: [1, 2, 3], neg: [], n: 3}
+{pos: filter(xs, # > 0), neg: filter(xs, # < 0), n: len(xs)};{xs: [0.5]};{pos: [0.5], neg: [], n: 1}
+{pos: filter(xs, # > 0), neg: filter(xs, # < 0), n: len(xs)};{xs: []};{pos: [], neg: [], n: 0}
+{pos: filter(xs, # > 0), neg: filter(xs, # < 0), n: len(xs)};{xs: [-1, 10]};{pos: [10], neg: [-1], n: 2}
+[filter(xs, # > 0), filter(xs, # <= 0)];{xs: [1, 2, 3]};[[1, 2, 3], []]
+[filter(xs, # > 0), filter(xs, # <= 0)];{xs: [0.5]};[[0.5], []]
+[filter(xs, # > 0), filter(xs, # <= 0)];{xs: []};[[], []]
+[filter(xs, # > 0), filter(xs, # <= 0)];{xs: [-1, 10]};[[10], [-1]]
+map(xs, filter(xs, # != 0));{xs: [1, 2, 3]};[[1, 2, 3], [1, 2, 3], [1, 2, 3]]
+map(xs, filter(xs, # != 0));{xs: [0.5]};[[0.5]]
+map(xs, filter(xs, # != 0));{xs: []};[]
+map(xs, filter(xs, # != 0));{xs: [-1, 10]};[[-1, 10], [-1, 10]]
+map(xs as x, {x: x, others: filter(xs, # != x)});{xs: [1, 2, 3]};[{x: 1, others: [2, 3]}, {x: 2, others: [1, 3]}, {x: 3, others: [1, 2]}]
+map(xs as x, {x: x, others: filter(xs, # != x)});{xs: [0.5]};[{x: 0.5, others: []}]
+map(xs as x, {x: x, others: filter(xs, # != x)});{xs: []};[]
+map(xs as x, {x: x, others: filter(xs, # != x)});{xs: [-1, 10]};[{x: -1, others: [10]}, {x: 10, others: [-1]}]
+flatMap(xs, [{k: 'v', n: #}, {k: 'd', n: # * 2}]);{xs: [1, 2, 3]};[{k: 'v', n: 1}, {k: 'd', n: 2}, {k: 'v', n: 2}, {k: 'd', n: 4}, {k: 'v', n: 3}, {k: 'd', n: 6}]
+flatMap(xs, [{k: 'v', n: #}, {k: 'd', n: # * 2}]);{xs: [0.5]};[{k: 'v', n: 0.5}, {k: 'd', n: 1.0}]
+flatMap(xs, [{k: 'v', n: #}, {k: 'd', n: # * 2}]);{xs: []};[]
+flatMap(xs, [{k: 'v', n: #}, {k: 'd', n: # * 2}]);{xs: [-1, 10]};[{k: 'v', n: -1}, {k: 'd', n: -2}, {k: 'v', n: 10}, {k: 'd', n: 20}]
+flatMap(xs, [[#]]);{xs: [1, 2, 3]};[[1], [2], [3]]
+flatMap(xs, [[#]]);{xs: [0.5]};[[0.5]]
+flatMap(xs, [[#]]);{xs: []};[]
+flatMap(xs, [[#]]);{xs: [-1, 10]};[[-1], [10]]
+flatMap(xs, [[#, #]])[0];{xs: [1, 2, 3]};[1, 1]
+flatMap(xs, [[#, #]])[0];{xs: [0.5]};[0.5, 0.5]
+flatMap(xs, [[#, #]])[0];{xs: []};null
+flatMap(xs, [[#, #]])[0];{xs: [-1, 10]};[-1, -1]
+flatMap(xs, #);{xs: [1, 2, 3]};[1, 2, 3]
+flatMap(xs, #);{xs: [0.5]};[0.5]
+flatMap(xs, #);{xs: []};[]
+flatMap(xs, #);{xs: [-1, 10]};[-1, 10]
+map(xs, `${#}:${# * 2}`);{xs: [1, 2, 3]};['1:2', '2:4', '3:6']
+map(xs, `${#}:${# * 2}`);{xs: []};[]
+map(xs, `${#}:${# * 2}`);{xs: [-1, 10]};['-1:-2', '10:20']
+map(xs, {[string(#)]: #});{xs: [1, 2, 3]};[{'1': 1}, {'2': 2}, {'3': 3}]
+map(xs, {[string(#)]: #});{xs: [0.5]};[{'0.5': 0.5}]
+map(xs, {[string(#)]: #});{xs: []};[]
+map(xs, {[string(#)]: #});{xs: [-1, 10]};[{'-1': -1}, {'10': 10}]
+merge(map(xs, {[string(#)]: # * 2}));{xs: [1, 2, 3]};{'1': 2, '2': 4, '3': 6}
+merge(map(xs, {[string(#)]: # * 2}));{xs: [0.5]};{'0.5': 1.0}
+merge(map(xs, {[string(#)]: # * 2}));{xs: []};{}
+merge(map(xs, {[string(#)]: # * 2}));{xs: [-1, 10]};{'-1': -2, '10': 20}
+keys(merge(map(xs, {[string(#)]: true})));{xs: [1, 2, 3]};['1', '2', '3']
+keys(merge(map(xs, {[string(#)]: true})));{xs: [0.5]};['0.5']
+keys(merge(map(xs, {[string(#)]: true})));{xs: []};[]
+keys(merge(map(xs, {[string(#)]: true})));{xs: [-1, 10]};['-1', '10']
+mergeDeep(map(xs, {all: [#], last: #}));{xs: [1, 2, 3]};{all: [1, 2, 3], last: 3}
+mergeDeep(map(xs, {all: [#], last: #}));{xs: [0.5]};{all: [0.5], last: 0.5}
+mergeDeep(map(xs, {all: [#], last: #}));{xs: []};{}
+mergeDeep(map(xs, {all: [#], last: #}));{xs: [-1, 10]};{all: [-1, 10], last: 10}
+mergeDeep(map(xs, {s: {[string(#)]: [#]}}));{xs: [1, 2, 3]};{s: {'1': [1], '2': [2], '3': [3]}}
+mergeDeep(map(xs, {s: {[string(#)]: [#]}}));{xs: [0.5]};{s: {'0.5': [0.5]}}
+mergeDeep(map(xs, {s: {[string(#)]: [#]}}));{xs: []};{}
+mergeDeep(map(xs, {s: {[string(#)]: [#]}}));{xs: [-1, 10]};{s: {'-1': [-1], '10': [10]}}
+merge(map(xs, [#, #]));{xs: [1, 2, 3]};[1, 1, 2, 2, 3, 3]
+merge(map(xs, [#, #]));{xs: [0.5]};[0.5, 0.5]
+merge(map(xs, [#, #]));{xs: []};{}
+merge(map(xs, [#, #]));{xs: [-1, 10]};[-1, -1, 10, 10]
+merge(map(xs, [[#]]));{xs: [1, 2, 3]};[[1], [2], [3]]
+merge(map(xs, [[#]]));{xs: [0.5]};[[0.5]]
+merge(map(xs, [[#]]));{xs: []};{}
+merge(map(xs, [[#]]));{xs: [-1, 10]};[[-1], [10]]
+# building nested results then querying them
+map(people, {n: #.n, ages: map(#.kids ?? [], #.age)});{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[{n: 'a', ages: [3, 9]}, {n: 'b', ages: []}, {n: 'c', ages: [12]}]
+map(people, {n: #.n, ages: map(#.kids ?? [], #.age)});{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[{n: 'x', ages: [1]}]
+map(people, {n: #.n, ages: map(#.kids ?? [], #.age)});{people: []};[]
+map(people, {n: #.n, ages: map(#.kids ?? [], #.age)});{people: [{n: 'y'}]};[{n: 'y', ages: []}]
+filter(map(people, {n: #.n, ages: map(#.kids ?? [], #.age)}), len(#.ages) > 0);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[{n: 'a', ages: [3, 9]}, {n: 'c', ages: [12]}]
+filter(map(people, {n: #.n, ages: map(#.kids ?? [], #.age)}), len(#.ages) > 0);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[{n: 'x', ages: [1]}]
+filter(map(people, {n: #.n, ages: map(#.kids ?? [], #.age)}), len(#.ages) > 0);{people: []};[]
+filter(map(people, {n: #.n, ages: map(#.kids ?? [], #.age)}), len(#.ages) > 0);{people: [{n: 'y'}]};[]
+map(filter(map(people, {n: #.n, k: len(#.kids ?? [])}), #.k > 0), #.n);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};['a', 'c']
+map(filter(map(people, {n: #.n, k: len(#.kids ?? [])}), #.k > 0), #.n);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};['x']
+map(filter(map(people, {n: #.n, k: len(#.kids ?? [])}), #.k > 0), #.n);{people: []};[]
+map(filter(map(people, {n: #.n, k: len(#.kids ?? [])}), #.k > 0), #.n);{people: [{n: 'y'}]};[]
+map(people, {n: #.n, older: filter(#.kids ?? [], #.age > 5)})[0].older;{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[{n: 'a2', age: 9}]
+map(people, {n: #.n, older: filter(#.kids ?? [], #.age > 5)})[0].older;{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[]
+map(people, {n: #.n, older: filter(#.kids ?? [], #.age > 5)})[0].older;{people: []};null
+map(people, {n: #.n, older: filter(#.kids ?? [], #.age > 5)})[0].older;{people: [{n: 'y'}]};[]
+len(map(people, #.kids ?? [])[0]);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};2
+len(map(people, #.kids ?? [])[0]);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};1
+len(map(people, #.kids ?? [])[0]);{people: []};!error
+len(map(people, #.kids ?? [])[0]);{people: [{n: 'y'}]};0
+'a1' in flatMap(people, map(#.kids ?? [], #.n));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};true
+'a1' in flatMap(people, map(#.kids ?? [], #.n));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};false
+'a1' in flatMap(people, map(#.kids ?? [], #.n));{people: []};false
+'a1' in flatMap(people, map(#.kids ?? [], #.n));{people: [{n: 'y'}]};false
+contains(map(people, #.n), 'b');{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};true
+contains(map(people, #.n), 'b');{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};false
+contains(map(people, #.n), 'b');{people: []};false
+contains(map(people, #.n), 'b');{people: [{n: 'y'}]};false
+some(people, 'x1' in map(#.kids ?? [], #.n));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};false
+some(people, 'x1' in map(#.kids ?? [], #.n));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};true
+some(people, 'x1' in map(#.kids ?? [], #.n));{people: []};false
+some(people, 'x1' in map(#.kids ?? [], #.n));{people: [{n: 'y'}]};false
+map(people, len(filter(#.kids ?? [], #.age >= 9)) > 0);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[true, false, true]
+map(people, len(filter(#.kids ?? [], #.age >= 9)) > 0);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[false]
+map(people, len(filter(#.kids ?? [], #.age >= 9)) > 0);{people: []};[]
+map(people, len(filter(#.kids ?? [], #.age >= 9)) > 0);{people: [{n: 'y'}]};[false]
+flatMap(people as p, map(p.kids ?? [], p.n + '/' + #.n));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};['a/a1', 'a/a2', 'c/c1']
+flatMap(people as p, map(p.kids ?? [], p.n + '/' + #.n));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};['x/x1']
+flatMap(people as p, map(p.kids ?? [], p.n + '/' + #.n));{people: []};[]
+flatMap(people as p, map(p.kids ?? [], p.n + '/' + #.n));{people: [{n: 'y'}]};[]
+max(flatMap(people, map(#.kids ?? [], #.age)));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};12
+max(flatMap(people, map(#.kids ?? [], #.age)));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};1
+max(flatMap(people, map(#.kids ?? [], #.age)));{people: []};!error
+max(flatMap(people, map(#.kids ?? [], #.age)));{people: [{n: 'y'}]};!error
+map(people, max(map(#.kids ?? [], #.age)));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};!error
+map(people, max(map(#.kids ?? [], #.age)));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[1]
+map(people, max(map(#.kids ?? [], #.age)));{people: []};[]
+map(people, max(map(#.kids ?? [], #.age)));{people: [{n: 'y'}]};!error
+map(people, sum(map(#.kids ?? [], #.age)));{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[12, 0, 12]
+map(people, sum(map(#.kids ?? [], #.age)));{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[1]
+map(people, sum(map(#.kids ?? [], #.age)));{people: []};[]
+map(people, sum(map(#.kids ?? [], #.age)));{people: [{n: 'y'}]};[0]
+map(people, #.kids[0].age ?? 0);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};[3, 0, 12]
+map(people, #.kids[0].age ?? 0);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[1]
+map(people, #.kids[0].age ?? 0);{people: []};[]
+map(people, #.kids[0].age ?? 0);{people: [{n: 'y'}]};[0]
+map(people, #.kids[1].n);{people: [{n: 'a', kids: [{n: 'a1', age: 3}, {n: 'a2', age: 9}]}, {n: 'b', kids: []}, {n: 'c', kids: [{n: 'c1', age: 12}]}]};['a2', null, null]
+map(people, #.kids[1].n);{people: [{n: 'x', kids: [{n: 'x1', age: 1}]}]};[null]
+map(people, #.kids[1].n);{people: []};[]
+map(people, #.kids[1].n);{people: [{n: 'y'}]};[null]
+# len, contains and in over nested results
+len(filter(m, 2 in #));{m: [[1, 2], [2, 3], [4]]};2
+len(filter(m, 2 in #));{m: [['a'], ['b', 'a']]};0
+len(filter(m, 2 in #));{m: [[], [null]]};0
+len(filter(m, 2 in #));{m: []};0
+map(m, contains(#, 'a'));{m: [[1, 2], [2, 3], [4]]};[false, false, false]
+map(m, contains(#, 'a'));{m: [['a'], ['b', 'a']]};[true, true]
+map(m, contains(#, 'a'));{m: [[], [null]]};[false, false]
+map(m, contains(#, 'a'));{m: []};[]
+map(m, null in #);{m: [[1, 2], [2, 3], [4]]};[false, false, false]
+map(m, null in #);{m: [['a'], ['b', 'a']]};[false, false]
+map(m, null in #);{m: [[], [null]]};[false, true]
+map(m, null in #);{m: []};[]
+2 in flatten(m);{m: [[1, 2], [2, 3], [4]]};true
+2 in flatten(m);{m: [['a'], ['b', 'a']]};false
+2 in flatten(m);{m: [[], [null]]};false
+2 in flatten(m);{m: []};false
+len(flatten(m)) - len(m);{m: [[1, 2], [2, 3], [4]]};2
+len(flatten(m)) - len(m);{m: [['a'], ['b', 'a']]};1
+len(flatten(m)) - len(m);{m: [[], [null]]};-1
+len(flatten(m)) - len(m);{m: []};0
+map(m, len(#) in [1, 2]);{m: [[1, 2], [2, 3], [4]]};[true, true, true]
+map(m, len(#) in [1, 2]);{m: [['a'], ['b', 'a']]};[true, true]
+map(m, len(#) in [1, 2]);{m: [[], [null]]};[false, true]
+map(m, len(#) in [1, 2]);{m: []};[]
+map(m, len(#) in [1..2]);{m: [[1, 2], [2, 3], [4]]};[true, true, true]
+map(m, len(#) in [1..2]);{m: [['a'], ['b', 'a']]};[true, true]
+map(m, len(#) in [1..2]);{m: [[], [null]]};[false, true]
+map(m, len(#) in [1..2]);{m: []};[]
+filter(m, len(#) not in [0, 1]);{m: [[1, 2], [2, 3], [4]]};[[1, 2], [2, 3]]
+filter(m, len(#) not in [0, 1]);{m: [['a'], ['b', 'a']]};[['b', 'a']]
+filter(m, len(#) not in [0, 1]);{m: [[], [null]]};[]
+filter(m, len(#) not in [0, 1]);{m: []};[]
+map(m, # in [[1, 2]]);{m: [[1, 2], [2, 3], [4]]};[true, false, false];bug: membership of an array needle errors instead of using the deep equality `in` implies
+map(m, # in [[1, 2]]);{m: [['a'], ['b', 'a']]};[false, false];bug: membership of an array needle errors instead of using the deep equality `in` implies
+map(m, # in [[1, 2]]);{m: [[], [null]]};[false, false];bug: membership of an array needle errors instead of using the deep equality `in` implies
+map(m, # in [[1, 2]]);{m: []};[]
+[1, 2] in m;{m: [[1, 2], [2, 3], [4]]};true;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[1, 2] in m;{m: [['a'], ['b', 'a']]};false;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[1, 2] in m;{m: [[], [null]]};false;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[1, 2] in m;{m: []};false;bug: membership of an array needle errors instead of using the deep equality `in` implies
+map(m, len(#))[0] in [1, 2];{m: [[1, 2], [2, 3], [4]]};true
+map(m, len(#))[0] in [1, 2];{m: [['a'], ['b', 'a']]};true
+map(m, len(#))[0] in [1, 2];{m: [[], [null]]};false
+map(m, len(#))[0] in [1, 2];{m: []};false

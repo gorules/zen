@@ -1,0 +1,92 @@
+name: Beta release
+
+on:
+  workflow_dispatch:
+    inputs:
+      rust:
+        description: 'Publish the core crates to crates.io'
+        type: boolean
+        default: true
+      nodejs:
+        description: 'Publish @gorules/zen-engine to npm (dist-tag beta)'
+        type: boolean
+        default: true
+      python:
+        description: 'Publish zen-engine to PyPI'
+        type: boolean
+        default: false
+      version:
+        description: 'Exact version, e.g. 2.2.0-beta.3 (empty: next beta for this branch)'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Show the version and file changes without tagging'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  beta:
+    name: Tag beta
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.PAT }}
+
+      - name: Bump versions
+        id: bump
+        env:
+          RUST: ${{ inputs.rust }}
+          NODEJS: ${{ inputs.nodejs }}
+          PYTHON: ${{ inputs.python }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          targets=()
+          [ "$RUST" = "true" ] && targets+=(rust)
+          [ "$NODEJS" = "true" ] && targets+=(nodejs)
+          [ "$PYTHON" = "true" ] && targets+=(python)
+          python3 .github/beta-release/bump.py \
+            --branch "$GITHUB_REF_NAME" \
+            --version "$VERSION" \
+            --targets "$(IFS=,; echo "${targets[*]}")" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
+      - name: Show changes
+        run: git diff
+
+      - name: Commit and push tags
+        if: ${{ !inputs.dry-run }}
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          TAGS: ${{ steps.bump.outputs.tags }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(release): $VERSION"
+          for tag in $TAGS; do
+            git tag -a "$tag" -m "$tag"
+          done
+          git push origin $TAGS
+
+      - name: Create pre-releases
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          TAGS: ${{ steps.bump.outputs.tags }}
+        run: |
+          for tag in $TAGS; do
+            gh release create "$tag" --prerelease --verify-tag --generate-notes --title "$tag"
+          done

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'zen-engine-v*'
+      - '!zen-engine-v*-beta*'
   workflow_dispatch:
 
 permissions:

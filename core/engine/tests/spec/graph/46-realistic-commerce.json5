@@ -1,0 +1,336 @@
+// Realistic commerce decisions modelled on the shapes of the published sample graphs: cart
+// promotions with per-column collect (`promos[]`), billable-weight shipping with rate cells that
+// compute from the input, tax rates looked up per line by dynamic key, a reverse-charge switch,
+// fraud screening with first-hit severity plus collected reasons and points, loyalty earning, and
+// a returns policy over dates. Each suite is one decision exercised across main paths,
+// boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Promotions: the best discount is the first matching rule, `promos[]` lists every promotion the
+// cart qualifies for.
+{
+  name: "promotions: best discount first, every qualifying promotion listed",
+  graph: {
+    nodes: [
+      {expression: "totals", passThrough: true, fields: {
+        subtotal: "sum(map(items, #.price * #.qty))",
+        hasElectronics: "some(items, #.category == 'electronics')",
+      }},
+      {table: "promos", passThrough: true, inputs: ["subtotal", "customer.tier", "promoCode", "hasElectronics"], outputs: ["discountPct", "promos[]"], rules: [
+        ["", "'vip'", "", "", "0.15", "'VIP15'"],
+        [">= 200", "", "'BIG20'", "false", "0.2", "'BIG20'"],
+        [">= 100", "", "", "", "0.1", "'SPEND100'"],
+        ["", "", "'WELCOME'", "", "0.05", "'WELCOME'"],
+      ]},
+      {expression: "checkout", fields: {
+        subtotal: "subtotal",
+        discount: "round(subtotal * (discountPct ?? 0), 2)",
+        total: "subtotal - $.discount",
+        promos: "promos ?? []",
+      }},
+    ],
+  },
+  cases: [
+    [{items: [{price: 20, qty: 2, category: "books"}]}, {subtotal: 40, discount: 0, total: 40, promos: []}],
+    [{items: [{price: 20, qty: 5, category: "books"}]}, {subtotal: 100, discount: 10, total: 90, promos: ["SPEND100"]}],
+    [{items: [{price: 99.99, qty: 1, category: "books"}]}, {subtotal: 99.99, discount: 0, total: 99.99, promos: []}],
+    [{items: [{price: 50, qty: 3, category: "books"}], customer: {tier: "vip"}}, {subtotal: 150, discount: 22.5, total: 127.5, promos: ["VIP15", "SPEND100"]}],
+    [{items: [{price: 125, qty: 2, category: "books"}], promoCode: "BIG20"}, {subtotal: 250, discount: 50, total: 200, promos: ["BIG20", "SPEND100"]}],
+    [{items: [{price: 125, qty: 1, category: "books"}, {price: 125, qty: 1, category: "electronics"}], promoCode: "BIG20"}, {subtotal: 250, discount: 25, total: 225, promos: ["SPEND100"]}],
+    [{items: [{price: 25, qty: 2, category: "toys"}], promoCode: "WELCOME"}, {subtotal: 50, discount: 2.5, total: 47.5, promos: ["WELCOME"]}],
+    [{items: [{price: 100, qty: 3, category: "toys"}], promoCode: "WELCOME", customer: {tier: "vip"}}, {subtotal: 300, discount: 45, total: 255, promos: ["VIP15", "SPEND100", "WELCOME"]}],
+    [{items: [{price: 199.99, qty: 1, category: "toys"}], promoCode: "BIG20"}, {subtotal: 199.99, discount: 20, total: 179.99, promos: ["SPEND100"]}],
+    [{items: [{price: 125, qty: 2, category: "toys"}], promoCode: "big20"}, {subtotal: 250, discount: 25, total: 225, promos: ["SPEND100"]}],
+    [{items: [{price: 0.1, qty: 3, category: "toys"}], customer: {tier: "vip"}}, {subtotal: 0.3, discount: 0.05, total: 0.25, promos: ["VIP15"]}],
+    [{items: []}, {subtotal: 0, discount: 0, total: 0, promos: []}],
+    [{items: [], customer: {tier: "vip"}}, {subtotal: 0, discount: 0, total: 0, promos: ["VIP15"]}],
+    [{customer: {tier: "vip"}}, "!error"],
+    [{items: [{price: 20, qty: "2", category: "books"}]}, "!error"],
+    [{items: [{price: 20, category: "books"}]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Shipping: billable weight from actual and dimensional weight, a zone table with a postcode
+// cell, a switch for unshippable and free shipping, and rate cells computed from the weight.
+// Orders are placed on Thursday 2025-03-20.
+{
+  name: "shipping: billable weight, zones, free threshold and express",
+  graph: {
+    nodes: [
+      {expression: "measure", passThrough: true, fields: {
+        "parcel.dimWeight": "parcel.length == null ? 0 : round(parcel.length * parcel.width * parcel.height / 5000, 2)",
+        "parcel.billable": "ceil(max([parcel.weight, $.parcel.dimWeight]))",
+      }},
+      {table: "zone", passThrough: true, inputs: ["destination.country", "destination.postcode"], outputs: ["zone", "transitDays"], rules: [
+        ["'DE'", "startsWith($, '18') or startsWith($, '25')", "'remote'", "4"],
+        ["'DE'", "", "'domestic'", "2"],
+        ["'AT', 'FR', 'NL', 'BE', 'PL'", "", "'eu'", "4"],
+        ["", "", "'world'", "8"],
+      ]},
+      {switch: "gate", when: [
+        "zone == 'world' and parcel.billable > 30",
+        "zone == 'domestic' and orderTotal >= 50 and service != 'express'",
+        "",
+      ]},
+      {expression: "unshippable", fields: {shippable: "false", reason: "'too heavy for international'", billable: "parcel.billable"}},
+      {expression: "free", fields: {
+        carrier: "'dhl'",
+        cost: "0",
+        eta: "d(orderedAt).add(transitDays, 'day').format('%Y-%m-%d')",
+        billable: "parcel.billable",
+      }},
+      {table: "rates", passThrough: true, inputs: ["zone", "parcel.billable"], outputs: ["rate.base"], rules: [
+        ["'domestic'", "<= 2", "4.99"],
+        ["'domestic'", "<= 10", "6.99 + 0.5 * (parcel.billable - 2)"],
+        ["'domestic'", "", "10.99 + 0.4 * (parcel.billable - 10)"],
+        ["'remote'", "", "9.99 + 0.6 * parcel.billable"],
+        ["'eu'", "<= 5", "14.5"],
+        ["'eu'", "", "14.5 + 1.8 * (parcel.billable - 5)"],
+        ["'world'", "", "29 + 3.5 * parcel.billable"],
+      ]},
+      {expression: "price", fields: {
+        carrier: "zone == 'world' ? 'ups' : 'dhl'",
+        cost: "round(rate.base + (service == 'express' ? max([5, rate.base * 0.5]) : 0), 2)",
+        eta: "d(orderedAt).add(service == 'express' ? max([1, transitDays - 1]) : transitDays, 'day').format('%Y-%m-%d')",
+        billable: "parcel.billable",
+      }},
+    ],
+    edges: [
+      "input -> measure -> zone -> gate",
+      "gate:0 -> unshippable -> output",
+      "gate:1 -> free -> output",
+      "gate:2 -> rates -> price -> output",
+    ],
+  },
+  cases: [
+    [{orderedAt: "2025-03-20", orderTotal: 30, destination: {country: "DE", postcode: "10115"}, parcel: {weight: 0.8, length: 30, width: 20, height: 10}}, {carrier: "dhl", cost: 4.99, eta: "2025-03-22", billable: 2}],
+    [{orderedAt: "2025-03-20", orderTotal: 50, destination: {country: "DE", postcode: "10115"}, parcel: {weight: 0.8, length: 30, width: 20, height: 10}}, {carrier: "dhl", cost: 0, eta: "2025-03-22", billable: 2}],
+    [{orderedAt: "2025-03-20", orderTotal: 49.99, destination: {country: "DE", postcode: "10115"}, parcel: {weight: 2}}, {carrier: "dhl", cost: 4.99, eta: "2025-03-22", billable: 2}],
+    [{orderedAt: "2025-03-20", orderTotal: 50, service: "express", destination: {country: "DE", postcode: "10115"}, parcel: {weight: 0.8, length: 30, width: 20, height: 10}}, {carrier: "dhl", cost: 9.99, eta: "2025-03-21", billable: 2}],
+    [{orderedAt: "2025-03-20", orderTotal: 20, destination: {country: "DE", postcode: "80331"}, parcel: {weight: 7.2, length: 10, width: 10, height: 10}}, {carrier: "dhl", cost: 9.99, eta: "2025-03-22", billable: 8}],
+    [{orderedAt: "2025-03-20", orderTotal: 20, destination: {country: "DE", postcode: "80331"}, parcel: {weight: 25}}, {carrier: "dhl", cost: 16.99, eta: "2025-03-22", billable: 25}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "DE", postcode: "18439"}, parcel: {weight: 3}}, {carrier: "dhl", cost: 11.79, eta: "2025-03-24", billable: 3}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "DE", postcode: "25980"}, parcel: {weight: 0.4}}, {carrier: "dhl", cost: 10.59, eta: "2025-03-24", billable: 1}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "FR", postcode: "75001"}, parcel: {weight: 5, length: 60, width: 40, height: 40}}, {carrier: "dhl", cost: 41.5, eta: "2025-03-24", billable: 20}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, service: "express", destination: {country: "FR"}, parcel: {weight: 5}}, {carrier: "dhl", cost: 21.75, eta: "2025-03-23", billable: 5}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "US", postcode: "10001"}, parcel: {weight: 2}}, {carrier: "ups", cost: 36, eta: "2025-03-28", billable: 2}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "US"}, parcel: {weight: 30}}, {carrier: "ups", cost: 134, eta: "2025-03-28", billable: 30}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {country: "US"}, parcel: {weight: 30.01}}, {shippable: false, reason: "too heavy for international", billable: 31}],
+    [{orderedAt: "2025-03-20", orderTotal: 100, destination: {}, parcel: {weight: 1}}, {carrier: "ups", cost: 32.5, eta: "2025-03-28", billable: 1}],
+    [{orderedAt: "2025-03-20", orderTotal: 10, destination: {country: "DE"}, parcel: {weight: 1}}, {carrier: "dhl", cost: 4.99, eta: "2025-03-22", billable: 1}],
+    [{orderedAt: "2025-03-20", destination: {country: "DE", postcode: "10115"}, parcel: {weight: 1}}, {carrier: "dhl", cost: 4.99, eta: "2025-03-22", billable: 1}],
+    // Missing weight, a string weight, and a parcel with only some dimensions.
+    [{orderedAt: "2025-03-20", orderTotal: 10, destination: {country: "DE"}, parcel: {}}, "!error"],
+    [{orderedAt: "2025-03-20", orderTotal: 10, destination: {country: "DE"}, parcel: {weight: "2"}}, "!error"],
+    [{orderedAt: "2025-03-20", orderTotal: 10, destination: {country: "DE"}, parcel: {weight: 1, length: 30}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sales tax: a rates table writes one rate per category under `rates`, the tax expression looks a
+// line's rate up by dynamic key with the standard rate as fallback, and a switch applies the
+// reverse charge to cross-border B2B sales inside the EU list. The seller is in DE.
+{
+  name: "sales tax: per-category rates by dynamic key and reverse charge",
+  graph: {
+    nodes: [
+      {table: "rates", passThrough: true, inputs: ["shipTo.country"], outputs: ["rates.standard", "rates.food", "rates.books", "rates.digital"], rules: [
+        ["'DE'", "0.19", "0.07", "0.07", "0.19"],
+        ["'FR'", "0.2", "0.055", "0.055", "0.2"],
+        ["'GB'", "0.2", "0", "0", "0.2"],
+        ["'US'", "0", "0", "0", "0"],
+      ]},
+      {switch: "b2b", when: ["customer.vatId != null and shipTo.country != 'DE' and shipTo.country in ['FR', 'AT', 'NL']", ""]},
+      {expression: "reverseCharge", fields: {
+        net: "sum(map(lines, #.price * #.qty))",
+        tax: "0",
+        gross: "$.net",
+        reverseCharge: "true",
+      }},
+      {expression: "tax", fields: {
+        net: "sum(map(lines, #.price * #.qty))",
+        tax: "round(sum(map(lines, #.price * #.qty * (rates[#.category] ?? rates.standard))), 2)",
+        gross: "$.net + $.tax",
+        reverseCharge: "false",
+      }},
+    ],
+    edges: ["input -> rates -> b2b", "b2b:0 -> reverseCharge -> output", "b2b:1 -> tax -> output"],
+  },
+  cases: [
+    [{shipTo: {country: "DE"}, lines: [{price: 100, qty: 1, category: "standard"}, {price: 10, qty: 3, category: "food"}]}, {net: 130, tax: 21.1, gross: 151.1, reverseCharge: false}],
+    [{shipTo: {country: "FR"}, lines: [{price: 20, qty: 2, category: "books"}, {price: 9.99, qty: 1, category: "digital"}]}, {net: 49.99, tax: 4.2, gross: 54.19, reverseCharge: false}],
+    [{shipTo: {country: "FR"}, customer: {vatId: "FR123"}, lines: [{price: 20, qty: 2, category: "books"}, {price: 9.99, qty: 1, category: "digital"}]}, {net: 49.99, tax: 0, gross: 49.99, reverseCharge: true}],
+    [{shipTo: {country: "DE"}, customer: {vatId: "DE999"}, lines: [{price: 100, qty: 1, category: "standard"}]}, {net: 100, tax: 19, gross: 119, reverseCharge: false}],
+    [{shipTo: {country: "GB"}, customer: {vatId: "GB1"}, lines: [{price: 100, qty: 1, category: "standard"}, {price: 50, qty: 1, category: "food"}]}, {net: 150, tax: 20, gross: 170, reverseCharge: false}],
+    [{shipTo: {country: "FR"}, customer: {vatId: null}, lines: [{price: 100, qty: 1, category: "standard"}]}, {net: 100, tax: 20, gross: 120, reverseCharge: false}],
+    [{shipTo: {country: "DE"}, lines: [{price: 40, qty: 1, category: "toys"}]}, {net: 40, tax: 7.6, gross: 47.6, reverseCharge: false}],
+    [{shipTo: {country: "DE"}, lines: [{price: 0.99, qty: 3, category: "food"}]}, {net: 2.97, tax: 0.21, gross: 3.18, reverseCharge: false}],
+    [{shipTo: {country: "US"}, lines: [{price: 100, qty: 2, category: "standard"}]}, {net: 200, tax: 0, gross: 200, reverseCharge: false}],
+    [{shipTo: {country: "DE"}, lines: []}, {net: 0, tax: 0, gross: 0, reverseCharge: false}],
+    [{shipTo: {country: "NL"}, customer: {vatId: "NL1"}, lines: [{price: 10, qty: 1, category: "food"}]}, {net: 10, tax: 0, gross: 10, reverseCharge: true}],
+    // A line without a category falls back to the standard rate; an unknown country has no rates;
+    // a string price fails the arithmetic.
+    [{shipTo: {country: "DE"}, lines: [{price: 10, qty: 1}]}, {net: 10, tax: 1.9, gross: 11.9, reverseCharge: false}],
+    [{shipTo: {country: "JP"}, lines: [{price: 10, qty: 1, category: "food"}]}, "!error"],
+    [{shipTo: {country: "DE"}, lines: [{price: "10", qty: 1, category: "food"}]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fraud screening: column-less signal rules; `severity` is first hit while `reasons[]` and
+// `points[]` collect from every matching row (the catch-all adds a zero point and no reason).
+{
+  name: "fraud screening: first-hit severity with collected reasons and points",
+  graph: {
+    nodes: [
+      {table: "signals", passThrough: true, inputs: [null], outputs: ["severity", "reasons[]", "points[]"], rules: [
+        ["payment.cvvMatch == false", "'high'", "'cvv mismatch'", "40"],
+        ["payment.cardCountry != shipping.country and device.ipCountry != shipping.country", "'high'", "'country mismatch'", "35"],
+        ["payment.avsMatch == false", "'medium'", "'avs mismatch'", "20"],
+        ["(payment.attempts24h ?? 0) >= 3", "'medium'", "'velocity'", "15 + 5 * (payment.attempts24h - 3)"],
+        ["(customer.accountAgeDays ?? 0) < 1 and order.amount > 500", "'medium'", "'new account high value'", "25"],
+        ["endsWith(customer.email ?? '', '.ru') or contains(customer.email ?? '', '+')", "'low'", "'email pattern'", "5"],
+        ["", "'none'", "", "0"],
+      ]},
+      {expression: "score", passThrough: true, fields: {score: "sum(points)"}},
+      {switch: "decide", when: ["score >= 70 or (severity == 'high' and score >= 40)", "score >= 30", ""]},
+      {expression: "decline", fields: {action: "'decline'", score: "score", reasons: "reasons"}},
+      {expression: "review", fields: {action: "'review'", score: "score", reasons: "reasons"}},
+      {expression: "accept", fields: {action: "'accept'", score: "score"}},
+    ],
+    edges: [
+      "input -> signals -> score -> decide",
+      "decide:0 -> decline -> output",
+      "decide:1 -> review -> output",
+      "decide:2 -> accept -> output",
+    ],
+  },
+  cases: [
+    [{order: {amount: 120}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 0}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: false, attempts24h: 1}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "decline", score: 40, reasons: ["cvv mismatch"]}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE", avsMatch: false, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 20}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE", avsMatch: false, cvvMatch: true, attempts24h: 3}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "review", score: 35, reasons: ["avs mismatch", "velocity"]}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: true, attempts24h: 5}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 25}],
+    [{order: {amount: 120}, payment: {cardCountry: "US", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "US"}}, {action: "review", score: 35, reasons: ["country mismatch"]}],
+    [{order: {amount: 120}, payment: {cardCountry: "US", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 0}],
+    [{order: {amount: 600}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 0, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 25}],
+    [{order: {amount: 600}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 0, email: "a+1@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "review", score: 30, reasons: ["new account high value", "email pattern"]}],
+    [{order: {amount: 500}, payment: {cardCountry: "DE", avsMatch: true, cvvMatch: true, attempts24h: 1}, customer: {accountAgeDays: 0, email: "x@y.ru"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 5}],
+    [{order: {amount: 120}, payment: {cardCountry: "BR", avsMatch: false, cvvMatch: false, attempts24h: 4}, customer: {accountAgeDays: 400, email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "NG"}}, {action: "decline", score: 115, reasons: ["cvv mismatch", "country mismatch", "avs mismatch", "velocity"]}],
+    [{order: {amount: 600}, payment: {cardCountry: "DE", avsMatch: false, cvvMatch: true, attempts24h: 7}, customer: {email: "a@b.de"}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "decline", score: 80, reasons: ["avs mismatch", "velocity", "new account high value"]}],
+    // Missing and mistyped signals.
+    [{order: {amount: 120}, payment: {cardCountry: "DE"}, customer: {accountAgeDays: 400}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 0}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE", attempts24h: "5"}, customer: {accountAgeDays: 400}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 0}],
+    [{order: {amount: 120}, customer: {accountAgeDays: 400}, shipping: {country: "DE"}, device: {ipCountry: "DE"}}, {action: "accept", score: 0}],
+    [{order: {amount: 120}, payment: {cardCountry: "DE"}, customer: {accountAgeDays: 400}, device: {ipCountry: "DE"}}, {action: "review", score: 35, reasons: ["country mismatch"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Loyalty: the tier is re-evaluated from spend and order count, the tier and category pick an
+// earning multiplier and bonus, and the expression accumulates the point balance.
+{
+  name: "loyalty: tier evaluation, earning multiplier and point balance",
+  graph: {
+    nodes: [
+      {table: "tierEval", passThrough: true, inputs: ["member.lifetimeSpend", "member.ordersYtd"], outputs: ["newTier"], rules: [
+        [">= 10000", ">= 24", "'platinum'"],
+        [">= 5000", ">= 12", "'gold'"],
+        [">= 1000", "", "'silver'"],
+        ["", "", "'bronze'"],
+      ]},
+      {table: "earn", passThrough: true, inputs: ["newTier", "purchase.category"], outputs: ["earn.multiplier", "earn.bonus"], rules: [
+        ["'platinum'", "", "3", "100"],
+        ["'gold'", "'electronics'", "1.5", "0"],
+        ["'gold'", "", "2", "50"],
+        ["'silver'", "", "1.5", "0"],
+        ["", "", "1", "0"],
+      ]},
+      {expression: "points", fields: {
+        tier: "newTier",
+        tierChanged: "newTier != (member.tier ?? 'bronze')",
+        earned: "floor(purchase.amount * earn.multiplier) + earn.bonus",
+        balance: "(member.points ?? 0) + $.earned",
+        rewardsAvailable: "floor($.balance / 500)",
+      }},
+    ],
+  },
+  cases: [
+    [{member: {tier: "silver", lifetimeSpend: 2000, ordersYtd: 3, points: 100}, purchase: {amount: 80, category: "books"}}, {tier: "silver", tierChanged: false, earned: 120, balance: 220, rewardsAvailable: 0}],
+    [{member: {tier: "silver", lifetimeSpend: 5000, ordersYtd: 12, points: 300}, purchase: {amount: 80, category: "books"}}, {tier: "gold", tierChanged: true, earned: 210, balance: 510, rewardsAvailable: 1}],
+    [{member: {tier: "gold", lifetimeSpend: 6000, ordersYtd: 20, points: 0}, purchase: {amount: 199.99, category: "electronics"}}, {tier: "gold", tierChanged: false, earned: 299, balance: 299, rewardsAvailable: 0}],
+    [{member: {tier: "gold", lifetimeSpend: 5000, ordersYtd: 11, points: 0}, purchase: {amount: 10, category: "books"}}, {tier: "silver", tierChanged: true, earned: 15, balance: 15, rewardsAvailable: 0}],
+    [{member: {tier: "platinum", lifetimeSpend: 10000, ordersYtd: 24, points: 1801}, purchase: {amount: 33.33, category: "books"}}, {tier: "platinum", tierChanged: false, earned: 199, balance: 2000, rewardsAvailable: 4}],
+    [{member: {tier: "gold", lifetimeSpend: 10000, ordersYtd: 23, points: 0}, purchase: {amount: 10}}, {tier: "gold", tierChanged: false, earned: 70, balance: 70, rewardsAvailable: 0}],
+    [{member: {lifetimeSpend: 0, ordersYtd: 0}, purchase: {amount: 25.5, category: "books"}}, {tier: "bronze", tierChanged: false, earned: 25, balance: 25, rewardsAvailable: 0}],
+    [{member: {tier: "silver", points: 499}, purchase: {amount: 1, category: "books"}}, {tier: "bronze", tierChanged: true, earned: 1, balance: 500, rewardsAvailable: 1}],
+    [{member: {tier: "bronze", lifetimeSpend: 100, points: 100}, purchase: {amount: -50, category: "books"}}, {tier: "bronze", tierChanged: false, earned: -50, balance: 50, rewardsAvailable: 0}],
+    [{member: {tier: "bronze", lifetimeSpend: 100}, purchase: {amount: 0.99, category: "books"}}, {tier: "bronze", tierChanged: false, earned: 0, balance: 0, rewardsAvailable: 0}],
+    [{member: {tier: "bronze", lifetimeSpend: "20000", ordersYtd: 30}, purchase: {amount: 10}}, {tier: "bronze", tierChanged: false, earned: 10, balance: 10, rewardsAvailable: 0}],
+    [{member: {tier: "silver", lifetimeSpend: 2000}, purchase: {category: "books"}}, "!error"],
+    [{member: {tier: "silver", lifetimeSpend: 2000}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Returns: days since delivery, a return window by category and tier, a switch that accepts
+// defective items unconditionally and rejects late returns, then refund terms by condition.
+{
+  name: "returns: windows, defective override, condition terms and restocking",
+  graph: {
+    nodes: [
+      {expression: "age", passThrough: true, fields: {daysSinceDelivery: "d(requestedAt).diff(d(deliveredAt), 'day')"}},
+      {table: "window", passThrough: true, inputs: ["item.category", "customer.tier"], outputs: ["window"], rules: [
+        ["'electronics'", "'vip'", "60"],
+        ["'electronics'", "", "30"],
+        ["'final-sale'", "", "0"],
+        ["", "'vip'", "90"],
+        ["", "", "45"],
+      ]},
+      {switch: "gate", when: ["reason == 'defective'", "daysSinceDelivery > window", ""]},
+      {expression: "defective", fields: {eligible: "true", refundPct: "100", restockingFee: "0", labelPaidBy: "'merchant'", refund: "item.price"}},
+      {expression: "late", fields: {eligible: "false", reason: "'outside return window'", daysLate: "daysSinceDelivery - window"}},
+      {table: "terms", passThrough: true, inputs: ["item.condition", "item.category"], outputs: ["refundPct", "restockingPct"], rules: [
+        ["'new'", "", "100", "0"],
+        ["'opened'", "'electronics'", "100", "15"],
+        ["'opened'", "", "100", "0"],
+        ["'used'", "", "50", "0"],
+        ["", "", "0", "0"],
+      ]},
+      {expression: "settle", fields: {
+        eligible: "refundPct > 0",
+        refundPct: "refundPct",
+        restockingFee: "round(item.price * restockingPct / 100, 2)",
+        labelPaidBy: "customer.tier == 'vip' ? 'merchant' : 'customer'",
+        refund: "round(item.price * refundPct / 100 - $.restockingFee, 2)",
+      }},
+    ],
+    edges: [
+      "input -> age -> window -> gate",
+      "gate:0 -> defective -> output",
+      "gate:1 -> late -> output",
+      "gate:2 -> terms -> settle -> output",
+    ],
+  },
+  cases: [
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "books", condition: "new", price: 25}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "customer", refund: 25}],
+    [{deliveredAt: "2025-02-18", requestedAt: "2025-03-20", item: {category: "electronics", condition: "opened", price: 499.99}}, {eligible: true, refundPct: 100, restockingFee: 75, labelPaidBy: "customer", refund: 424.99}],
+    [{deliveredAt: "2025-02-17", requestedAt: "2025-03-20", item: {category: "electronics", condition: "opened", price: 499.99}}, {eligible: false, reason: "outside return window", daysLate: 1}],
+    [{deliveredAt: "2025-02-03", requestedAt: "2025-03-20", item: {category: "electronics", condition: "new", price: 499.99}, customer: {tier: "vip"}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "merchant", refund: 499.99}],
+    [{deliveredAt: "2024-12-20", requestedAt: "2025-03-20", item: {category: "apparel", condition: "new", price: 60}, customer: {tier: "vip"}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "merchant", refund: 60}],
+    [{deliveredAt: "2024-12-19", requestedAt: "2025-03-20", item: {category: "apparel", condition: "new", price: 60}, customer: {tier: "vip"}}, {eligible: false, reason: "outside return window", daysLate: 1}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "final-sale", condition: "new", price: 30}}, {eligible: false, reason: "outside return window", daysLate: 19}],
+    // A zero-day window still admits a same-day request.
+    [{deliveredAt: "2025-03-20", requestedAt: "2025-03-20", item: {category: "final-sale", condition: "new", price: 30}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "customer", refund: 30}],
+    [{deliveredAt: "2024-11-01", requestedAt: "2025-03-20", reason: "defective", item: {category: "final-sale", condition: "used", price: 30}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "merchant", refund: 30}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "apparel", condition: "used", price: 39.99}}, {eligible: true, refundPct: 50, restockingFee: 0, labelPaidBy: "customer", refund: 20}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "apparel", condition: "damaged", price: 40}}, {eligible: false, refundPct: 0, restockingFee: 0, labelPaidBy: "customer", refund: 0}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "apparel", price: 40}}, {eligible: false, refundPct: 0, restockingFee: 0, labelPaidBy: "customer", refund: 0}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {condition: "opened", price: 40}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "customer", refund: 40}],
+    // Without dates the age is null, `null > window` errors and counts as false, so the return is
+    // not rejected as late.
+    [{item: {category: "books", condition: "new", price: 25}}, {eligible: true, refundPct: 100, restockingFee: 0, labelPaidBy: "customer", refund: 25}],
+    [{deliveredAt: "2025-03-01", requestedAt: "2025-03-20", item: {category: "books", condition: "new", price: "25"}}, "!error"],
+  ],
+}

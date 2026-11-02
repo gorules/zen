@@ -1,0 +1,1123 @@
+// Policy diagnostics and the evaluation gate. Static analysis of a policy unit produces
+// diagnostics with a severity. `DecisionEngine` refuses a policy whose unit has any error
+// diagnostic, so a suite without `diagnostics` expects every case to fail with
+// `CompilationErrors [codes]`. A suite that pins `diagnostics: [codes]` asserts the exact set of
+// error codes and evaluates through the workspace, which runs the policy anyway; those cases pin
+// what the editor path does with a broken policy. Warnings and hints never gate evaluation
+// (`diagnostics: []` asserts there is no error at all).
+//
+// Error codes reachable from a policy: PARSE_ERROR, UNDEFINED_VARIABLE, TYPE_MISMATCH,
+// INVALID_EXPRESSION, EMPTY_BLOCK, MISSING_DEFAULT_BRANCH, MIXED_SCOPE, MAX_DEPTH_EXCEEDED,
+// CYCLIC_DEPENDENCY, DUPLICATE_WRITER, INVALID_WRITE_PATH, INPUT_OVERRIDE,
+// SELF_REFERENCING_WRITE, UNREACHABLE_ENTITY_READ, PARTIAL_OBJECT_WRITE,
+// UNSUPPORTED_NESTED_ITERATION, DATA_MODEL_COLLISION, UNKNOWN_DATA_MODEL_TARGET,
+// DUPLICATE_PROPERTY, DUPLICATE_ENUM_VALUE, INVALID_NAME, IMPORT_NOT_FOUND, CIRCULAR_IMPORT.
+// The graph codes (INVALID_GRAPH_STRUCTURE, UNREACHABLE_NODE, MISSING_INPUT_SCHEMA,
+// UNRESOLVED_FUNCTION_TYPE, IMPLICIT_ANY, UNCHECKED_NODE) do not apply to policies, and the
+// linter codes are hints that the evaluation gate never sees.
+
+// --- PARSE_ERROR -------------------------------------------------------------------------------
+
+{
+  name: "PARSE_ERROR: an unterminated expression",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "c.n * (2"}, {expression: "c.b", value: "c.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: ExpressionFailed"],
+    {input: {c: {n: 1}}, goals: ["c.b"], output: {c: {n: 1, b: 2}}},
+    {input: {c: {n: 1}}, goals: ["c.a"], output: "!error: ExpressionFailed"},
+  ],
+}
+
+{
+  name: "PARSE_ERROR gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "c.n * (2"}, {expression: "c.b", value: "c.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"PARSE_ERROR\"]"],
+    [{c: {}}, "!error: CompilationErrors [\"PARSE_ERROR\"]"],
+    {input: {c: {n: 1}}, goals: ["c.b"], output: "!error: CompilationErrors [\"PARSE_ERROR\"]"},
+  ],
+}
+
+{
+  name: "PARSE_ERROR: a call of an unknown function",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {c: {s: "string"}},
+    blocks: [{expression: "c.x", value: "nosuch(c.s)"}],
+  },
+  cases: [
+    [{c: {s: "a"}}, "!error: ExpressionFailed"],
+    [{c: {s: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "PARSE_ERROR: a data model without a name",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {raw: {imports: [], blocks: [
+    {id: "m", type: "dataModel", props: {data: {name: "", scope: "entity", properties: [{id: "p1", name: "age", type: "number", array: false, optional: false}]}}},
+    {id: "b0", type: "expression", props: {data: {key: "x", value: "1"}}},
+  ]}},
+  cases: [
+    {input: {}, output: {x: 1}, note: "question: the unnamed data model is dropped and evaluation proceeds"},
+    {input: {age: "not validated"}, output: {age: "not validated", x: 1}},
+  ],
+}
+
+{
+  name: "PARSE_ERROR: a property without a name",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {raw: {imports: [], blocks: [
+    {id: "m", type: "dataModel", props: {data: {name: "c", scope: "entity", properties: [
+      {id: "p1", name: "", type: "number", array: false, optional: false},
+      {id: "p2", name: "age", type: "number", array: false, optional: false},
+    ]}}},
+    {id: "b0", type: "expression", props: {data: {key: "c.x", value: "c.age + 1"}}},
+  ]}},
+  cases: [
+    [{c: {age: 1}}, {c: {age: 1, x: 2}}],
+    [{c: {age: "1"}}, "!error: InputValidationFailed"],
+    [{c: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- UNDEFINED_VARIABLE ------------------------------------------------------------------------
+
+{
+  name: "UNDEFINED_VARIABLE: a read of an undeclared property",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.missing * 2"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: MissingRequiredInputs"],
+    [{c: {n: 1, missing: 4}}, {c: {n: 1, missing: 4, x: 8}}],
+    [{c: {n: 1, missing: null}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "UNDEFINED_VARIABLE gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.missing * 2"}],
+  },
+  cases: [
+    [{c: {n: 1, missing: 4}}, "!error: CompilationErrors [\"UNDEFINED_VARIABLE\"]"],
+    [{c: {n: 1}}, "!error: CompilationErrors [\"UNDEFINED_VARIABLE\"]"],
+  ],
+}
+
+{
+  name: "UNDEFINED_VARIABLE with TYPE_MISMATCH: a read of an undeclared entity",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "ghost.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: MissingRequiredInputs"],
+    [{c: {n: 1}, ghost: {n: 2}}, {c: {n: 1, x: 3}, ghost: {n: 2}}],
+  ],
+}
+
+// --- TYPE_MISMATCH -----------------------------------------------------------------------------
+
+{
+  name: "TYPE_MISMATCH: membership test against a number",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {c: {age: "number"}},
+    blocks: [{expression: "c.a", value: "c.age in 5"}],
+  },
+  cases: [
+    [{c: {age: 1}}, "!error: ExpressionFailed"],
+    [{c: {age: 5}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "TYPE_MISMATCH: indexing and member access on a number read null",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {c: {age: "number"}},
+    blocks: [{expression: "c.a", value: "c.age[0]"}, {expression: "c.b", value: "c.age.x"}],
+  },
+  cases: [
+    [{c: {age: 1}}, {c: {age: 1, a: null, b: null}}],
+    [{c: {age: 0}}, {c: {age: 0, a: null, b: null}}],
+  ],
+}
+
+{
+  name: "TYPE_MISMATCH: a table output cell outside the declared column type",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {c: {p: "number"}},
+    blocks: [{table: "t", inputs: ["c.p"], outputs: [{field: "c.o", type: "number"}], rules: [["> 0", "'x'"], ["", "1"]]}],
+  },
+  cases: [
+    {input: {c: {p: 1}}, output: {c: {p: 1, o: "x"}}, note: "question: the declared column type is not enforced at runtime; the string is written to a number column"},
+    [{c: {p: 0}}, {c: {p: 0, o: 1}}],
+  ],
+}
+
+{
+  name: "TYPE_MISMATCH: an unknown declared column type",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {c: {p: "number"}},
+    blocks: [{table: "t", inputs: ["c.p"], outputs: [{field: "c.o", type: "foo"}], rules: [["", "1"]]}],
+  },
+  cases: [
+    [{c: {p: 1}}, {c: {p: 1, o: 1}}],
+    [{c: {p: -1}}, {c: {p: -1, o: 1}}],
+  ],
+}
+
+{
+  name: "TYPE_MISMATCH: a field-less input cell that is not a boolean",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {c: {p: "number"}},
+    blocks: [{table: "t", inputs: [null], outputs: ["c.o"], rules: [["c.p + 1", "1"], ["", "2"]]}],
+  },
+  cases: [
+    [{c: {p: 1}}, {c: {p: 1, o: 2}}],
+    [{c: {p: -1}}, {c: {p: -1, o: 2}}],
+  ],
+}
+
+{
+  name: "TYPE_MISMATCH gates the policy even outside the goal's cone",
+  policy: {
+    models: {c: {s: "string", n: "number"}},
+    blocks: [{expression: "c.ok", value: "c.n + 1"}, {expression: "c.bad", value: "c.s - 1"}],
+  },
+  cases: [
+    [{c: {s: "a", n: 1}}, "!error: CompilationErrors [\"TYPE_MISMATCH\"]"],
+    {input: {c: {s: "a", n: 1}}, goals: ["c.ok"], output: "!error: CompilationErrors [\"TYPE_MISMATCH\"]"},
+  ],
+}
+
+// --- INVALID_EXPRESSION ------------------------------------------------------------------------
+
+{
+  name: "INVALID_EXPRESSION: a function called with the wrong arity",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "abs(c.n, 1)"}, {expression: "c.b", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: ExpressionFailed"],
+    {input: {c: {n: -1}}, goals: ["c.b"], output: {c: {n: -1, b: -1}}},
+  ],
+}
+
+{
+  name: "INVALID_EXPRESSION: a function argument of the wrong type",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "len(c.n)"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "INVALID_EXPRESSION gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "abs(c.n, 1)"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"INVALID_EXPRESSION\"]"],
+    [{}, "!error: CompilationErrors [\"INVALID_EXPRESSION\"]"],
+  ],
+}
+
+// --- EMPTY_BLOCK -------------------------------------------------------------------------------
+
+// Only an assertion without conditions is an error; empty expressions, matches and tables are
+// warnings (see the warning-only section).
+{
+  name: "EMPTY_BLOCK: an assertion with no conditions",
+  diagnostics: ["EMPTY_BLOCK"],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: []}],
+  },
+  cases: [
+    {input: {c: {p: true}}, output: {c: {p: true, ok: false}}, note: "question: an assertion with no conditions writes false rather than a vacuous true"},
+    {input: {c: {}}, output: {c: {ok: false}}, note: "question: an assertion with no conditions writes false rather than a vacuous true"},
+  ],
+}
+
+{
+  name: "EMPTY_BLOCK gates the policy",
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: []}, {expression: "c.copy", value: "c.p"}],
+  },
+  cases: [
+    [{c: {p: true}}, "!error: CompilationErrors [\"EMPTY_BLOCK\"]"],
+    {input: {c: {p: true}}, goals: ["c.copy"], output: "!error: CompilationErrors [\"EMPTY_BLOCK\"]"},
+  ],
+}
+
+// --- MISSING_DEFAULT_BRANCH ---------------------------------------------------------------------
+
+{
+  name: "MISSING_DEFAULT_BRANCH: arms over a string that is not an enum",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {c: {s: "string"}},
+    blocks: [{match: "c.kind", arms: [["c.s == 'a'", "1"], ["c.s == 'b'", "2"]]}],
+  },
+  cases: [
+    [{c: {s: "a"}}, {c: {s: "a", kind: 1}}],
+    [{c: {s: "b"}}, {c: {s: "b", kind: 2}}],
+    [{c: {s: "z"}}, {c: {s: "z", kind: null}}],
+  ],
+}
+
+{
+  name: "MISSING_DEFAULT_BRANCH gates the policy",
+  policy: {
+    models: {c: {s: "string"}},
+    blocks: [{match: "c.kind", arms: [["c.s == 'a'", "1"], ["c.s == 'b'", "2"]]}],
+  },
+  cases: [
+    [{c: {s: "a"}}, "!error: CompilationErrors [\"MISSING_DEFAULT_BRANCH\"]"],
+    [{c: {s: "z"}}, "!error: CompilationErrors [\"MISSING_DEFAULT_BRANCH\"]"],
+  ],
+}
+
+// Discriminated unions are exhaustive without a default arm: no diagnostic.
+{
+  name: "no MISSING_DEFAULT_BRANCH for arms covering every enum value",
+  diagnostics: [],
+  policy: {
+    models: {c: {t: "string(a|b)"}},
+    blocks: [{match: "c.x", arms: [["c.t == 'a'", "1"], ["c.t == 'b'", "2"]]}],
+  },
+  cases: [
+    [{c: {t: "a"}}, {c: {t: "a", x: 1}}],
+    [{c: {t: "b"}}, {c: {t: "b", x: 2}}],
+    [{c: {t: "c"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "no MISSING_DEFAULT_BRANCH for arms covering both booleans",
+  diagnostics: [],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{match: "c.x", arms: [["c.p == true", "'yes'"], ["c.p == false", "'no'"]]}],
+  },
+  cases: [
+    [{c: {p: true}}, {c: {p: true, x: "yes"}}],
+    [{c: {p: false}}, {c: {p: false, x: "no"}}],
+  ],
+}
+
+{
+  name: "no MISSING_DEFAULT_BRANCH for a gap-free numeric range",
+  diagnostics: [],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{match: "c.x", arms: [["c.n < 10", "'low'"], ["c.n >= 10", "'high'"]]}],
+  },
+  cases: [
+    [{c: {n: 9.99}}, {c: {n: 9.99, x: "low"}}],
+    [{c: {n: 10}}, {c: {n: 10, x: "high"}}],
+    [{c: {n: -1000}}, {c: {n: -1000, x: "low"}}],
+  ],
+}
+
+// --- MIXED_SCOPE -------------------------------------------------------------------------------
+
+{
+  name: "MIXED_SCOPE: a table writing two entities",
+  diagnostics: ["MIXED_SCOPE"],
+  policy: {
+    models: {customer: {age: "number"}, order: {n: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.a", "order.b"], rules: [[">= 18", "1", "2"], ["", "3", "4"]]}],
+  },
+  cases: [
+    [{customer: {age: 20}, order: {n: 1}}, {customer: {age: 20, a: 1}, order: {n: 1, b: 2}}],
+    [{customer: {age: 2}, order: {n: 1}}, {customer: {age: 2, a: 3}, order: {n: 1, b: 4}}],
+  ],
+}
+
+{
+  name: "MIXED_SCOPE: a table writing an entity and a global",
+  diagnostics: ["MIXED_SCOPE"],
+  policy: {
+    models: {c: {n: "number"}},
+    globals: {g: {k: "number"}},
+    blocks: [{table: "t", inputs: ["c.n"], outputs: ["c.a", "top"], rules: [["", "1", "2"]]}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, a: 1}, top: 2}],
+  ],
+}
+
+{
+  name: "MIXED_SCOPE gates the policy",
+  policy: {
+    models: {customer: {age: "number"}, order: {n: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.a", "order.b"], rules: [["", "1", "2"]]}],
+  },
+  cases: [
+    [{customer: {age: 20}, order: {n: 1}}, "!error: CompilationErrors [\"MIXED_SCOPE\"]"],
+  ],
+}
+
+// --- MAX_DEPTH_EXCEEDED -------------------------------------------------------------------------
+
+{
+  name: "MAX_DEPTH_EXCEEDED: an assertion condition nested 32 levels deep",
+  diagnostics: ["MAX_DEPTH_EXCEEDED"],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: [["and", "c.p", 32]]}],
+  },
+  cases: [
+    {input: {c: {p: true}}, output: {c: {p: true, ok: false}}, note: "question: the too-deep condition is dropped, leaving an assertion with no conditions that writes false"},
+    [{c: {p: false}}, {c: {p: false, ok: false}}],
+  ],
+}
+
+{
+  name: "no MAX_DEPTH_EXCEEDED at depth 31",
+  diagnostics: [],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: [["and", "c.p", 31]]}],
+  },
+  cases: [
+    [{c: {p: true}}, {c: {p: true, ok: true}}],
+    [{c: {p: false}}, {c: {p: false, ok: false}}],
+  ],
+}
+
+{
+  name: "MAX_DEPTH_EXCEEDED gates the policy",
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: ["c.p", ["and", "c.p", 40]]}],
+  },
+  cases: [
+    [{c: {p: true}}, "!error: CompilationErrors [\"MAX_DEPTH_EXCEEDED\"]"],
+  ],
+}
+
+// --- CYCLIC_DEPENDENCY -------------------------------------------------------------------------
+
+{
+  name: "CYCLIC_DEPENDENCY: two computed properties reading each other",
+  diagnostics: ["CYCLIC_DEPENDENCY", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "c.b + 1"}, {expression: "c.b", value: "c.a + 1"}, {expression: "c.k", value: "c.n"}],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, k: 1}}, note: "question: without goals the cyclic writes are silently skipped"},
+    {input: {c: {n: 1, a: 1, b: 2}}, output: {c: {n: 1, a: 1, b: 2, k: 1}}, note: "question: without goals the cyclic writes are silently skipped and the input values stay"},
+    {input: {c: {n: 1}}, goals: ["c.a"], output: "!error: ExpressionFailed", note: "question: a goal on a cyclic property runs one block of the cycle against a null read"},
+    {input: {c: {n: 1}}, goals: ["c.k"], output: {c: {n: 1, k: 1}}},
+  ],
+}
+
+{
+  name: "CYCLIC_DEPENDENCY gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.a", value: "c.b + 1"}, {expression: "c.b", value: "c.a + 1"}, {expression: "c.k", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"CYCLIC_DEPENDENCY\", \"UNDEFINED_VARIABLE\"]"],
+    {input: {c: {n: 1}}, goals: ["c.k"], output: "!error: CompilationErrors [\"CYCLIC_DEPENDENCY\", \"UNDEFINED_VARIABLE\"]"},
+  ],
+}
+
+{
+  name: "CYCLIC_DEPENDENCY: a three-block cycle across a table and a match",
+  diagnostics: ["CYCLIC_DEPENDENCY", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [
+      {expression: "c.a", value: "c.z + 1"},
+      {table: "t", inputs: ["c.a"], outputs: ["c.y"], rules: [["> 0", "1"], ["", "0"]]},
+      {match: "c.z", arms: [["c.y == 1", "5"], ["", "6"]]},
+    ],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1}}, note: "question: without goals the cyclic writes are silently skipped"},
+  ],
+}
+
+// --- DUPLICATE_WRITER --------------------------------------------------------------------------
+
+{
+  name: "DUPLICATE_WRITER: an expression and an assertion writing one property",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{assertion: "c.flag", conditions: ["c.n > 0"]}, {expression: "c.flag", value: "'text'"}],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, flag: true}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the first writer"},
+    {input: {c: {n: 0}}, output: {c: {n: 0, flag: false}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the first writer"},
+  ],
+}
+
+{
+  name: "DUPLICATE_WRITER: two tables writing one output column",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [
+      {table: "t1", inputs: ["c.n"], outputs: ["c.band"], rules: [["", "'one'"]]},
+      {table: "t2", inputs: ["c.n"], outputs: ["c.band"], rules: [["", "'two'"]]},
+    ],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, band: "one"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the first writer"},
+  ],
+}
+
+{
+  name: "DUPLICATE_WRITER gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.v", value: "1"}, {expression: "c.v", value: "2"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"DUPLICATE_WRITER\"]"],
+    {input: {c: {n: 1}}, goals: ["c.v"], output: "!error: CompilationErrors [\"DUPLICATE_WRITER\"]"},
+  ],
+}
+
+// --- INVALID_WRITE_PATH ------------------------------------------------------------------------
+
+{
+  name: "INVALID_WRITE_PATH: malformed table output fields",
+  diagnostics: ["INVALID_WRITE_PATH"],
+  policy: {
+    models: {c: {p: "number"}},
+    blocks: [{table: "t", inputs: ["c.p"], outputs: ["c.a[]b", "[]", "c.ok"], rules: [["", "1", "2", "3"]]}],
+  },
+  cases: [
+    {input: {c: {p: 1}}, output: {c: {p: 1, ok: 3}}, note: "question: output columns with invalid paths are dropped silently"},
+  ],
+}
+
+{
+  name: "INVALID_WRITE_PATH: malformed assertion output paths",
+  diagnostics: ["INVALID_WRITE_PATH"],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "c..ok", conditions: ["c.p"]}, {assertion: "c.fine", conditions: ["c.p"]}],
+  },
+  cases: [
+    {input: {c: {p: true}}, output: {c: {p: true, fine: true}}, note: "question: the assertion with an invalid path writes nothing"},
+  ],
+}
+
+{
+  name: "INVALID_WRITE_PATH gates the policy",
+  policy: {
+    models: {c: {p: "number"}},
+    blocks: [{expression: "c.", value: "1"}, {expression: "c.b", value: "2"}],
+  },
+  cases: [
+    [{c: {p: 1}}, "!error: CompilationErrors [\"INVALID_WRITE_PATH\"]"],
+  ],
+}
+
+// --- INPUT_OVERRIDE ----------------------------------------------------------------------------
+
+{
+  name: "INPUT_OVERRIDE: a table writing a declared property",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {c: {age: "number", band: "string"}},
+    blocks: [{table: "t", inputs: ["c.age"], outputs: ["c.band"], rules: [[">= 18", "'adult'"], ["", "'minor'"]]}],
+  },
+  cases: [
+    {input: {c: {age: 20, band: "given"}}, output: {c: {age: 20, band: "given"}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write and keeps the input"},
+    {input: {c: {age: 20}}, output: {c: {age: 20}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write, so the property stays absent"},
+  ],
+}
+
+{
+  name: "INPUT_OVERRIDE: a nested write below a declared property",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {c: {age: "number", info: "string"}},
+    blocks: [{expression: "c.info.extra", value: "c.age"}],
+  },
+  cases: [
+    {input: {c: {age: 1, info: "x"}}, output: {c: {age: 1, info: "x"}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write"},
+  ],
+}
+
+{
+  name: "INPUT_OVERRIDE gates the policy",
+  policy: {
+    models: {c: {age: "number"}},
+    blocks: [{expression: "c.age", value: "1"}],
+  },
+  cases: [
+    [{c: {age: 5}}, "!error: CompilationErrors [\"INPUT_OVERRIDE\"]"],
+  ],
+}
+
+// --- SELF_REFERENCING_WRITE --------------------------------------------------------------------
+
+{
+  name: "SELF_REFERENCING_WRITE: a block accumulating into its own output",
+  diagnostics: ["SELF_REFERENCING_WRITE", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.t", value: "c.n"}, {expression: "c.u", value: "(c.u ?? 1) + c.t"}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, t: 1, u: 2}}],
+    {input: {c: {n: 1, u: 10}}, output: {c: {n: 1, t: 1, u: 11}}, note: "question: SelfReferencingWrite is an error diagnostic; evaluation reads the input value of the property being written"},
+  ],
+}
+
+{
+  name: "SELF_REFERENCING_WRITE: a nested write reading its own parent object",
+  diagnostics: ["SELF_REFERENCING_WRITE", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.box.x", value: "c.box"}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, box: {x: null}}}],
+  ],
+}
+
+{
+  name: "SELF_REFERENCING_WRITE gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.u", value: "(c.u ?? 0) + c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"SELF_REFERENCING_WRITE\", \"UNDEFINED_VARIABLE\"]"],
+  ],
+}
+
+// --- UNREACHABLE_ENTITY_READ -------------------------------------------------------------------
+
+{
+  name: "UNREACHABLE_ENTITY_READ: an owner block reading a member property directly",
+  diagnostics: ["UNREACHABLE_ENTITY_READ"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.x", value: "company.revenue"}],
+  },
+  cases: [
+    {input: {customer: {companies: [{revenue: 1}]}}, output: {customer: {companies: [{revenue: 1}], x: null}}, note: "question: the unreachable member read evaluates to null rather than failing"},
+    {input: {customer: {companies: []}}, output: {customer: {companies: [], x: null}}, note: "question: the unreachable member read evaluates to null rather than failing"},
+  ],
+}
+
+{
+  name: "UNREACHABLE_ENTITY_READ gates the policy",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.x", value: "company.revenue"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}]}}, "!error: CompilationErrors [\"UNREACHABLE_ENTITY_READ\"]"],
+  ],
+}
+
+// An aggregate over the relationship is the reachable form: no diagnostic.
+{
+  name: "no UNREACHABLE_ENTITY_READ for an aggregate over the relationship",
+  diagnostics: [],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.x", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}], x: 3}}],
+    [{customer: {companies: []}}, {customer: {companies: [], x: 0}}],
+  ],
+}
+
+// --- PARTIAL_OBJECT_WRITE ----------------------------------------------------------------------
+
+{
+  name: "PARTIAL_OBJECT_WRITE: the whole object written before a nested leaf",
+  diagnostics: ["PARTIAL_OBJECT_WRITE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.box", value: "{a: c.n}"}, {expression: "c.box.b", value: "c.n + 1"}],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, box: {a: 1, b: 2}}}, note: "question: the diagnostic says the whole-object write overwrites the nested writes, yet here the nested leaf is merged into the object"},
+    {input: {c: {n: 0}}, output: {c: {n: 0, box: {a: 0, b: 1}}}, note: "question: the diagnostic says the whole-object write overwrites the nested writes, yet here the nested leaf is merged into the object"},
+  ],
+}
+
+{
+  name: "PARTIAL_OBJECT_WRITE: a nested leaf written before the whole object",
+  diagnostics: ["PARTIAL_OBJECT_WRITE"],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.box.b", value: "c.n + 1"}, {expression: "c.box", value: "{a: c.n}"}],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, box: {b: 2}}}, note: "question: with the nested block first, the whole-object write is lost entirely; the result depends on block order"},
+    {input: {c: {n: 0}}, output: {c: {n: 0, box: {b: 1}}}, note: "question: with the nested block first, the whole-object write is lost entirely; the result depends on block order"},
+  ],
+}
+
+{
+  name: "PARTIAL_OBJECT_WRITE gates the policy",
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.box", value: "{a: c.n}"}, {expression: "c.box.b", value: "c.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"PARTIAL_OBJECT_WRITE\"]"],
+  ],
+}
+
+// --- UNSUPPORTED_NESTED_ITERATION --------------------------------------------------------------
+
+{
+  name: "UNSUPPORTED_NESTED_ITERATION: a write to a member two relationships deep",
+  diagnostics: ["UNSUPPORTED_NESTED_ITERATION"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [{expression: "employee.rich", value: "employee.salary > 10"}],
+  },
+  cases: [
+    [{customer: {companies: [{employees: [{salary: 20}]}]}}, "!error: MissingRequiredInputs"],
+    [{customer: {companies: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "UNSUPPORTED_NESTED_ITERATION gates the policy",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [{expression: "employee.rich", value: "employee.salary > 10"}],
+  },
+  cases: [
+    [{customer: {companies: [{employees: [{salary: 20}]}]}}, "!error: CompilationErrors [\"UNSUPPORTED_NESTED_ITERATION\"]"],
+  ],
+}
+
+// --- DATA_MODEL_COLLISION ----------------------------------------------------------------------
+
+{
+  name: "DATA_MODEL_COLLISION: a dictionary named like an entity",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    dictionaries: {c: ["a"]},
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, x: 2}}],
+  ],
+}
+
+{
+  name: "DATA_MODEL_COLLISION: a dictionary named like a global property",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    dictionaries: {mode: ["a"]},
+    globals: {g: {mode: "string"}},
+    blocks: [{expression: "x", value: "mode + '!'"}],
+  },
+  cases: [
+    [{mode: "z"}, {mode: "z", x: "z!"}],
+  ],
+}
+
+{
+  name: "DATA_MODEL_COLLISION: an entity named like a global property",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    globals: {g: {c: "number"}},
+    models: {c: {n: "number"}},
+    blocks: [{expression: "x", value: "1"}],
+  },
+  cases: [
+    [{}, {x: 1}],
+  ],
+}
+
+{
+  name: "DATA_MODEL_COLLISION gates the policy",
+  policy: {
+    dictionaries: {c: ["a"]},
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n + 1"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"DATA_MODEL_COLLISION\"]"],
+  ],
+}
+
+// --- UNKNOWN_DATA_MODEL_TARGET -----------------------------------------------------------------
+
+{
+  name: "UNKNOWN_DATA_MODEL_TARGET: relationships and references to undeclared entities",
+  diagnostics: ["UNKNOWN_DATA_MODEL_TARGET"],
+  policy: {
+    models: {c: {friend: "ghost", pick: "&phantom"}},
+    blocks: [{expression: "c.x", value: "1"}],
+  },
+  cases: [
+    [{c: {}}, {c: {x: 1}}],
+    {input: {c: {friend: {anything: 1}}}, output: {c: {friend: {anything: 1}, x: 1}}},
+  ],
+}
+
+{
+  name: "UNKNOWN_DATA_MODEL_TARGET gates the policy",
+  policy: {
+    models: {c: {friend: "ghost"}},
+    blocks: [{expression: "c.x", value: "1"}],
+  },
+  cases: [
+    [{c: {}}, "!error: CompilationErrors [\"UNKNOWN_DATA_MODEL_TARGET\"]"],
+  ],
+}
+
+// --- DUPLICATE_PROPERTY ------------------------------------------------------------------------
+
+{
+  name: "DUPLICATE_PROPERTY: a property declared twice in one model",
+  diagnostics: ["DUPLICATE_PROPERTY"],
+  policy: {raw: {imports: [], blocks: [
+    {id: "m", type: "dataModel", props: {data: {name: "c", scope: "entity", properties: [
+      {id: "p1", name: "age", type: "number", array: false, optional: false},
+      {id: "p2", name: "age", type: "string", array: false, optional: false},
+    ]}}},
+    {id: "b0", type: "expression", props: {data: {key: "c.x", value: "c.age"}}},
+  ]}},
+  cases: [
+    [{c: {age: 1}}, {c: {age: 1, x: 1}}],
+    {input: {c: {age: "1"}}, output: "!error: InputValidationFailed", note: "question: the first declaration of a duplicated property wins"},
+  ],
+}
+
+{
+  name: "DUPLICATE_PROPERTY gates the policy",
+  policy: {raw: {imports: [], blocks: [
+    {id: "m", type: "dataModel", props: {data: {name: "c", scope: "entity", properties: [
+      {id: "p1", name: "age", type: "number", array: false, optional: false},
+      {id: "p2", name: "age", type: "number", array: false, optional: false},
+    ]}}},
+    {id: "b0", type: "expression", props: {data: {key: "c.x", value: "c.age"}}},
+  ]}},
+  cases: [
+    [{c: {age: 1}}, "!error: CompilationErrors [\"DUPLICATE_PROPERTY\"]"],
+  ],
+}
+
+// --- DUPLICATE_ENUM_VALUE ----------------------------------------------------------------------
+
+{
+  name: "DUPLICATE_ENUM_VALUE: a repeated inline enum value and dictionary value",
+  diagnostics: ["DUPLICATE_ENUM_VALUE"],
+  policy: {
+    dictionaries: {d: ["x", "x", "y"]},
+    models: {c: {t: "string(a|a|b)", u: "d?"}},
+    blocks: [{expression: "c.x", value: "c.t"}],
+  },
+  cases: [
+    [{c: {t: "a"}}, {c: {t: "a", x: "a"}}],
+    [{c: {t: "b", u: "y"}}, {c: {t: "b", u: "y", x: "b"}}],
+    [{c: {t: "z"}}, "!error: InputValidationFailed"],
+    [{c: {t: "a", u: "z"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "DUPLICATE_ENUM_VALUE gates the policy",
+  policy: {
+    models: {c: {t: "string(a|a)"}},
+    blocks: [{expression: "c.x", value: "c.t"}],
+  },
+  cases: [
+    [{c: {t: "a"}}, "!error: CompilationErrors [\"DUPLICATE_ENUM_VALUE\"]"],
+  ],
+}
+
+// --- INVALID_NAME ------------------------------------------------------------------------------
+
+{
+  name: "INVALID_NAME: entity and property names with spaces or a leading digit",
+  diagnostics: ["INVALID_NAME"],
+  policy: {
+    models: {"my entity": {age: "number"}, c: {"first name": "string", "2x": "number", n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, x: 1}}],
+    {input: {c: {n: 1, "2x": "not validated"}}, output: {c: {n: 1, "2x": "not validated", x: 1}}, note: "question: properties with invalid names are dropped from validation"},
+  ],
+}
+
+{
+  name: "INVALID_NAME: a dictionary name with a dot",
+  diagnostics: ["INVALID_NAME"],
+  policy: {
+    dictionaries: {"a.b": ["x"]},
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, x: 1}}],
+  ],
+}
+
+{
+  name: "INVALID_NAME gates the policy",
+  policy: {
+    models: {c: {"bad[name]": "string", n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"INVALID_NAME\"]"],
+  ],
+}
+
+// --- IMPORT_NOT_FOUND and CIRCULAR_IMPORT ------------------------------------------------------
+
+{
+  name: "IMPORT_NOT_FOUND gates the policy",
+  policy: {
+    imports: ["gone"],
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"IMPORT_NOT_FOUND\"]"],
+    [{}, "!error: CompilationErrors [\"IMPORT_NOT_FOUND\"]"],
+  ],
+}
+
+{
+  name: "CIRCULAR_IMPORT gates the policy",
+  policy: {
+    imports: ["other"],
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  policies: {other: {imports: ["main"], blocks: [{expression: "c.y", value: "c.x + 1"}]}},
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"CIRCULAR_IMPORT\"]"],
+  ],
+}
+
+{
+  name: "CIRCULAR_IMPORT: a self import still evaluates through the workspace",
+  diagnostics: ["CIRCULAR_IMPORT"],
+  policy: {
+    imports: ["main"],
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n * 2"}],
+  },
+  cases: [
+    {input: {c: {n: 2}}, output: {c: {n: 2, x: 4}}, note: "question: a self import is a CircularImport error diagnostic, yet evaluation succeeds"},
+  ],
+}
+
+// --- Errors in other members of the unit -------------------------------------------------------
+
+{
+  name: "an error diagnostic in an imported policy gates the importer",
+  policy: {
+    imports: ["broken"],
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  policies: {broken: {models: {c: {s: "string"}}, blocks: [{expression: "c.y", value: "c.s * 2"}]}},
+  cases: [
+    [{c: {n: 1, s: "a"}}, "!error: CompilationErrors [\"TYPE_MISMATCH\"]"],
+    {input: {c: {n: 1}}, goals: ["c.x"], output: "!error: CompilationErrors [\"TYPE_MISMATCH\"]"},
+  ],
+}
+
+{
+  name: "an error diagnostic in a deep import gates the root",
+  policy: {
+    imports: ["mid"],
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n"}],
+  },
+  policies: {
+    mid: {imports: ["leaf"], blocks: []},
+    leaf: {models: {c: {n: "number"}}, blocks: [{expression: "c.n", value: "1"}]},
+  },
+  cases: [
+    [{c: {n: 1}}, "!error: CompilationErrors [\"INPUT_OVERRIDE\"]"],
+  ],
+}
+
+{
+  name: "an error diagnostic in a workspace policy outside the unit does not gate",
+  diagnostics: [],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{expression: "c.x", value: "c.n + 1"}],
+  },
+  policies: {unrelated: {models: {c: {s: "string"}}, blocks: [{expression: "c.y", value: "c.s * 2"}]}},
+  cases: [
+    [{c: {n: 1}}, {c: {n: 1, x: 2}}],
+    [{c: {n: -1}}, {c: {n: -1, x: 0}}],
+  ],
+}
+
+{
+  name: "several error codes are reported together, sorted",
+  policy: {
+    models: {c: {n: "number", s: "string"}},
+    blocks: [
+      {expression: "c.n", value: "1"},
+      {expression: "c.a", value: "c.s - 1"},
+      {expression: "c.b", value: "(c.n"},
+    ],
+  },
+  cases: [
+    [{c: {n: 1, s: "a"}}, "!error: CompilationErrors [\"INPUT_OVERRIDE\", \"PARSE_ERROR\", \"TYPE_MISMATCH\"]"],
+  ],
+}
+
+{
+  name: "several error codes evaluated through the workspace",
+  diagnostics: ["INPUT_OVERRIDE", "PARSE_ERROR", "TYPE_MISMATCH"],
+  policy: {
+    models: {c: {n: "number", s: "string"}},
+    blocks: [
+      {expression: "c.n", value: "1"},
+      {expression: "c.a", value: "c.s - 1"},
+      {expression: "c.b", value: "(c.n"},
+      {expression: "c.ok", value: "c.n * 10"},
+    ],
+  },
+  cases: [
+    [{c: {n: 2, s: "a"}}, "!error: ExpressionFailed"],
+    {input: {c: {n: 2, s: "a"}}, goals: ["c.ok"], output: {c: {n: 2, s: "a", ok: 20}}},
+    {input: {c: {n: 2, s: "a"}}, goals: ["c.b"], output: "!error: ExpressionFailed"},
+  ],
+}
+
+// --- Warning-only policies evaluate normally ---------------------------------------------------
+
+{
+  name: "empty expression, match and table blocks are warnings",
+  diagnostics: [],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [
+      {expression: "c.a", value: ""},
+      {match: "c.b", arms: []},
+      {table: "t", inputs: ["c.n"], outputs: ["c.d"], rules: []},
+      {expression: "c.e", value: "c.n + 1"},
+    ],
+  },
+  cases: [
+    {input: {c: {n: 1}}, output: {c: {n: 1, b: null, d: null, e: 2}}},
+    {input: {c: {n: 0}}, output: {c: {n: 0, b: null, d: null, e: 1}}},
+  ],
+}
+
+{
+  name: "an empty assertion condition is a warning and is skipped",
+  diagnostics: [],
+  policy: {
+    models: {c: {p: "boolean", q: "boolean"}},
+    blocks: [{assertion: "c.ok", conditions: ["c.p", "", "c.q"]}],
+  },
+  cases: [
+    [{c: {p: true, q: true}}, {c: {p: true, q: true, ok: true}}],
+    [{c: {p: true, q: false}}, {c: {p: true, q: false, ok: false}}],
+    [{c: {p: false, q: true}}, {c: {p: false, q: true, ok: false}}],
+  ],
+}
+
+{
+  name: "a table output column without a field is a warning",
+  diagnostics: [],
+  policy: {
+    models: {c: {n: "number"}},
+    blocks: [{table: "t", inputs: ["c.n"], outputs: ["c.g", ""], rules: [["> 1", "'big'", "'ignored'"], ["", "'small'", "'ignored'"]]}],
+  },
+  cases: [
+    [{c: {n: 5}}, {c: {n: 5, g: "big"}}],
+    [{c: {n: 1}}, {c: {n: 1, g: "small"}}],
+  ],
+}
+
+{
+  name: "an assertion without an output path is a warning",
+  diagnostics: [],
+  policy: {
+    models: {c: {p: "boolean"}},
+    blocks: [{assertion: "", conditions: ["c.p"]}, {expression: "c.copy", value: "c.p"}],
+  },
+  cases: [
+    [{c: {p: true}}, {c: {p: true, copy: true}}],
+    [{c: {p: false}}, {c: {p: false, copy: false}}],
+  ],
+}
+
+// Linter findings (redundant `??`, redundant parentheses, duplicate table rows, a column that
+// never discriminates, matches that could be tables) are hints, not evaluation errors.
+{
+  name: "linter findings do not gate evaluation",
+  policy: {
+    models: {c: {n: "number", m: "number"}},
+    blocks: [
+      {expression: "c.e", value: "((c.n))"},
+      {expression: "c.f", value: "c.n ?? 0"},
+      {table: "t2", inputs: ["c.n", "c.m"], outputs: ["c.g"], rules: [["> 1", "", "1"], ["> 1", "", "3"], ["", "", "0"]]},
+      {match: "c.h", arms: [["c.n == 1", "'one'"], ["c.n == 2", "'two'"], ["c.n == 3", "'three'"], ["", "'many'"]]},
+    ],
+  },
+  cases: [
+    [{c: {n: 1, m: 2}}, {c: {n: 1, m: 2, e: 1, f: 1, g: 0, h: "one"}}],
+    [{c: {n: 5, m: 2}}, {c: {n: 5, m: 2, e: 5, f: 5, g: 1, h: "many"}}],
+    [{c: {n: 3, m: 0}}, {c: {n: 3, m: 0, e: 3, f: 3, g: 1, h: "three"}}],
+  ],
+}
+
+{
+  name: "a comparison of a string with a number is not a diagnostic",
+  diagnostics: [],
+  policy: {
+    models: {c: {s: "string"}},
+    blocks: [{expression: "c.x", value: "c.s == 1"}],
+  },
+  cases: [
+    [{c: {s: "a"}}, {c: {s: "a", x: false}}],
+    [{c: {s: "1"}}, {c: {s: "1", x: false}}],
+  ],
+}

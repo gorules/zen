@@ -1,0 +1,947 @@
+// Deep relationship trees: three levels of entities below the root (customer -> company ->
+// department -> employee), mixed with single relationships. Chapter 09 covers one and two
+// levels; this chapter pins down how computed properties at each level read their parents and
+// their children, how aggregates cross several levels, and what happens when a level is absent.
+//
+// Every entity has ONE source path: the first relationship that targets it (models sorted by
+// name, properties in declaration order). Only the root entity and entities whose source hangs
+// directly off the root are written per member; a block writing an entity whose source hangs off
+// another sourced entity is an UNSUPPORTED_NESTED_ITERATION error ("only one level of
+// relationship nesting is evaluated"). Reads at any depth are plain data access.
+
+// ---------------------------------------------------------------------------
+// Three levels read from the root: nested closures over plain input data.
+// ---------------------------------------------------------------------------
+{
+  name: "root aggregates across three levels",
+  policy: {
+    models: {
+      customer: {name: "string", companies: "company[]"},
+      company: {name: "string", departments: "department[]"},
+      department: {name: "string", employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "customer.headcount", value: "sum(map(customer.companies, sum(map(#.departments, len(#.employees)))))"},
+      {expression: "customer.salaries", value: "flatMap(customer.companies, flatMap(#.departments, map(#.employees, #.salary)))"},
+      {expression: "customer.departmentCount", value: "sum(map(customer.companies, len(#.departments)))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {name: "c", companies: [
+        {name: "a", departments: [{name: "x", employees: [{salary: 1}, {salary: 2}]}, {name: "y", employees: [{salary: 3}]}]},
+        {name: "b", departments: [{name: "z", employees: [{salary: 4}]}]},
+      ]}},
+      {customer: {name: "c", companies: [
+        {name: "a", departments: [{name: "x", employees: [{salary: 1}, {salary: 2}]}, {name: "y", employees: [{salary: 3}]}]},
+        {name: "b", departments: [{name: "z", employees: [{salary: 4}]}]},
+      ], headcount: 4, salaries: [1, 2, 3, 4], departmentCount: 3}},
+    ],
+    [
+      {customer: {name: "c", companies: []}},
+      {customer: {name: "c", companies: [], headcount: 0, salaries: [], departmentCount: 0}},
+    ],
+    [
+      {customer: {name: "c", companies: [{name: "a", departments: []}]}},
+      {customer: {name: "c", companies: [{name: "a", departments: []}], headcount: 0, salaries: [], departmentCount: 0}},
+    ],
+    [
+      {customer: {name: "c", companies: [{name: "a", departments: [{name: "x", employees: []}]}]}},
+      {customer: {name: "c", companies: [{name: "a", departments: [{name: "x", employees: []}]}], headcount: 0, salaries: [], departmentCount: 1}},
+    ],
+    [
+      {customer: {name: "c", companies: [{name: "a", departments: [{name: "x", employees: [{salary: 0.1}, {salary: 0.2}]}]}, {name: "b", departments: []}]}},
+      {customer: {name: "c", companies: [{name: "a", departments: [{name: "x", employees: [{salary: 0.1}, {salary: 0.2}]}]}, {name: "b", departments: []}], headcount: 2, salaries: [0.1, 0.2], departmentCount: 1}},
+    ],
+  ],
+}
+
+// Filtering at one level and aggregating at another, with closure aliases at each level.
+{
+  name: "aliased closures at every level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {name: "string", departments: "department[]"},
+      department: {name: "string", employees: "employee[]"},
+      employee: {salary: "number", senior: "boolean"},
+    },
+    blocks: [
+      {expression: "customer.seniorPay", value: "sum(flatMap(customer.companies as c, flatMap(c.departments as d, map(filter(d.employees as e, e.senior), #.salary))))"},
+      {expression: "customer.tags", value: "flatMap(customer.companies as c, map(c.departments as d, c.name + '/' + d.name))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {name: "a", departments: [{name: "x", employees: [{salary: 10, senior: true}, {salary: 1, senior: false}]}]},
+        {name: "b", departments: [{name: "y", employees: [{salary: 5, senior: true}]}, {name: "z", employees: []}]},
+      ]}},
+      {customer: {companies: [
+        {name: "a", departments: [{name: "x", employees: [{salary: 10, senior: true}, {salary: 1, senior: false}]}]},
+        {name: "b", departments: [{name: "y", employees: [{salary: 5, senior: true}]}, {name: "z", employees: []}]},
+      ], seniorPay: 15, tags: ["a/x", "b/y", "b/z"]}},
+    ],
+    [
+      {customer: {companies: [{name: "a", departments: [{name: "x", employees: [{salary: 1, senior: false}]}]}]}},
+      {customer: {companies: [{name: "a", departments: [{name: "x", employees: [{salary: 1, senior: false}]}]}], seniorPay: 0, tags: ["a/x"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], seniorPay: 0, tags: []}}],
+  ],
+}
+
+// Index access through three levels: out-of-range indexes read null at any level. A negative
+// index (`len([]) - 1`) is an expression error, not null.
+{
+  name: "index access through three levels",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "customer.first", value: "customer.companies[0].departments[0].employees[0].salary"},
+      {expression: "customer.second", value: "customer.companies[0].departments[0].employees[1].salary ?? -1"},
+      {expression: "customer.lastCompanyDepts", value: "len(customer.companies[len(customer.companies) - 1].departments ?? [])"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 7}, {salary: 8}]}]}, {departments: [{employees: []}, {employees: []}]}]}},
+      {customer: {companies: [{departments: [{employees: [{salary: 7}, {salary: 8}]}]}, {departments: [{employees: []}, {employees: []}]}], first: 7, second: 8, lastCompanyDepts: 2}},
+    ],
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 7}]}]}]}},
+      {customer: {companies: [{departments: [{employees: [{salary: 7}]}]}], first: 7, second: -1, lastCompanyDepts: 1}},
+    ],
+    [
+      {customer: {companies: [{departments: [{employees: []}]}]}},
+      {customer: {companies: [{departments: [{employees: []}]}], first: null, second: -1, lastCompanyDepts: 1}},
+    ],
+    [
+      {customer: {companies: [{departments: []}]}},
+      {customer: {companies: [{departments: []}], first: null, second: -1, lastCompanyDepts: 0}},
+    ],
+    [
+      {customer: {companies: []}},
+      "!error: ExpressionFailed",
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// First-level computeds aggregate the levels below them; the root aggregates first-level
+// computeds. The member blocks must finish before the root reads them.
+// ---------------------------------------------------------------------------
+{
+  name: "first level aggregates levels two and three, root aggregates the first level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {name: "string", departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.payroll", value: "sum(flatMap(company.departments, map(#.employees, #.salary)))"},
+      {expression: "company.headcount", value: "sum(map(company.departments, len(#.employees)))"},
+      {expression: "customer.payroll", value: "sum(map(customer.companies, #.payroll))"},
+      {expression: "customer.largest", value: "max(map(customer.companies, #.headcount))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {name: "a", departments: [{employees: [{salary: 1}, {salary: 2}]}, {employees: [{salary: 3}]}]},
+        {name: "b", departments: [{employees: [{salary: 10}]}]},
+      ]}},
+      {customer: {companies: [
+        {name: "a", departments: [{employees: [{salary: 1}, {salary: 2}]}, {employees: [{salary: 3}]}], payroll: 6, headcount: 3},
+        {name: "b", departments: [{employees: [{salary: 10}]}], payroll: 10, headcount: 1},
+      ], payroll: 16, largest: 3}},
+    ],
+    [
+      {customer: {companies: [{name: "a", departments: []}]}},
+      {customer: {companies: [{name: "a", departments: [], payroll: 0, headcount: 0}], payroll: 0, largest: 0}},
+    ],
+    [
+      {customer: {companies: [{name: "a", departments: [{employees: []}, {employees: [{salary: 2.5}]}]}, {name: "b", departments: [{employees: [{salary: 2.5}]}]}]}},
+      {customer: {companies: [
+        {name: "a", departments: [{employees: []}, {employees: [{salary: 2.5}]}], payroll: 2.5, headcount: 1},
+        {name: "b", departments: [{employees: [{salary: 2.5}]}], payroll: 2.5, headcount: 1},
+      ], payroll: 5, largest: 1}},
+    ],
+  ],
+}
+
+// The same tree with the root block declared before the member blocks: document order does not
+// matter, dependencies do.
+{
+  name: "root aggregate declared before the member computeds it reads",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {budget: "number", employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "customer.payroll", value: "sum(map(customer.companies, #.payroll))"},
+      {expression: "company.payroll", value: "sum(map(company.departments, #.budget))"},
+      {expression: "customer.flag", value: "customer.payroll > 10"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{budget: 4, employees: []}, {budget: 8, employees: []}]}]}},
+      {customer: {companies: [{departments: [{budget: 4, employees: []}, {budget: 8, employees: []}], payroll: 12}], payroll: 12, flag: true}},
+    ],
+    [
+      {customer: {companies: [{departments: [{budget: 1, employees: []}]}, {departments: []}]}},
+      {customer: {companies: [{departments: [{budget: 1, employees: []}], payroll: 1}, {departments: [], payroll: 0}], payroll: 1, flag: false}},
+    ],
+  ],
+}
+
+// First-level computeds read the root (input and computed) and the levels below.
+{
+  name: "first level reads root input and deep children",
+  policy: {
+    models: {
+      customer: {limit: "number", companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.payroll", value: "sum(flatMap(company.departments, map(#.employees, #.salary)))"},
+      {expression: "company.over", value: "company.payroll > customer.limit"},
+      {expression: "company.overpaid", value: "count(flatMap(company.departments, #.employees), #.salary > customer.limit)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {limit: 5, companies: [{departments: [{employees: [{salary: 4}, {salary: 6}]}]}, {departments: [{employees: [{salary: 1}]}]}]}},
+      {customer: {limit: 5, companies: [
+        {departments: [{employees: [{salary: 4}, {salary: 6}]}], payroll: 10, over: true, overpaid: 1},
+        {departments: [{employees: [{salary: 1}]}], payroll: 1, over: false, overpaid: 0},
+      ]}},
+    ],
+    [
+      {customer: {limit: 0, companies: [{departments: []}]}},
+      {customer: {limit: 0, companies: [{departments: [], payroll: 0, over: false, overpaid: 0}]}},
+    ],
+    [
+      {customer: {limit: -1, companies: [{departments: [{employees: [{salary: 0}]}, {employees: [{salary: 0}]}]}]}},
+      {customer: {limit: -1, companies: [{departments: [{employees: [{salary: 0}]}, {employees: [{salary: 0}]}], payroll: 0, over: true, overpaid: 2}]}},
+    ],
+    [{customer: {limit: 3, companies: []}}, {customer: {limit: 3, companies: []}}],
+  ],
+}
+
+// A root computed reading the deepest level, read back by first-level members, then
+// aggregated again at the root: root -> members -> root through three levels of data.
+{
+  name: "root computed over leaves feeds first-level members",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {name: "string", departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "customer.top", value: "max(flatMap(customer.companies, flatMap(#.departments, map(#.employees, #.salary))))"},
+      {expression: "company.hasTop", value: "some(flatMap(company.departments, #.employees), #.salary == customer.top)"},
+      {expression: "customer.topCompanies", value: "map(filter(customer.companies, #.hasTop), #.name)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {name: "a", departments: [{employees: [{salary: 3}]}]},
+        {name: "b", departments: [{employees: [{salary: 1}]}, {employees: [{salary: 9}]}]},
+        {name: "c", departments: [{employees: [{salary: 9}]}]},
+      ]}},
+      {customer: {top: 9, companies: [
+        {name: "a", departments: [{employees: [{salary: 3}]}], hasTop: false},
+        {name: "b", departments: [{employees: [{salary: 1}]}, {employees: [{salary: 9}]}], hasTop: true},
+        {name: "c", departments: [{employees: [{salary: 9}]}], hasTop: true},
+      ], topCompanies: ["b", "c"]}},
+    ],
+    [
+      {customer: {companies: [{name: "a", departments: [{employees: [{salary: 2}]}]}, {name: "b", departments: []}]}},
+      {customer: {top: 2, companies: [{name: "a", departments: [{employees: [{salary: 2}]}], hasTop: true}, {name: "b", departments: [], hasTop: false}], topCompanies: ["a"]}},
+    ],
+  ],
+}
+
+// A root factor feeds members, members feed the root total: a chain that alternates levels.
+{
+  name: "alternating root and member computeds",
+  policy: {
+    models: {
+      customer: {age: "number", companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {cost: "number"},
+    },
+    blocks: [
+      {expression: "customer.factor", value: "customer.age >= 40 ? 2 : 1"},
+      {expression: "company.cost", value: "sum(map(company.departments, #.cost)) * customer.factor"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.cost))"},
+      {expression: "company.share", value: "customer.total == 0 ? 0 : company.cost / customer.total"},
+      {expression: "customer.maxShare", value: "max(map(customer.companies, #.share))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {age: 50, companies: [{departments: [{cost: 1}, {cost: 2}]}, {departments: [{cost: 1}]}]}},
+      {customer: {age: 50, factor: 2, total: 8, maxShare: 0.75, companies: [
+        {departments: [{cost: 1}, {cost: 2}], cost: 6, share: 0.75},
+        {departments: [{cost: 1}], cost: 2, share: 0.25},
+      ]}},
+    ],
+    [
+      {customer: {age: 20, companies: [{departments: [{cost: 5}]}, {departments: [{cost: 5}]}]}},
+      {customer: {age: 20, factor: 1, total: 10, maxShare: 0.5, companies: [
+        {departments: [{cost: 5}], cost: 5, share: 0.5},
+        {departments: [{cost: 5}], cost: 5, share: 0.5},
+      ]}},
+    ],
+    [
+      {customer: {age: 20, companies: [{departments: []}]}},
+      {customer: {age: 20, factor: 1, total: 0, maxShare: 0, companies: [{departments: [], cost: 0, share: 0}]}},
+    ],
+  ],
+}
+
+// First-level match and table blocks decide on a deep aggregate.
+{
+  name: "first-level match on a deep aggregate",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.headcount", value: "sum(map(company.departments, len(#.employees)))"},
+      {match: "company.size", arms: [
+        ["company.headcount >= 3", "'large'"],
+        ["company.headcount >= 1", "'small'"],
+        ["", "'empty'"],
+      ]},
+      {expression: "customer.sizes", value: "map(customer.companies, #.size)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {departments: [{employees: [{salary: 1}, {salary: 1}]}, {employees: [{salary: 1}]}]},
+        {departments: [{employees: [{salary: 1}]}]},
+        {departments: [{employees: []}]},
+      ]}},
+      {customer: {companies: [
+        {departments: [{employees: [{salary: 1}, {salary: 1}]}, {employees: [{salary: 1}]}], headcount: 3, size: "large"},
+        {departments: [{employees: [{salary: 1}]}], headcount: 1, size: "small"},
+        {departments: [{employees: []}], headcount: 0, size: "empty"},
+      ], sizes: ["large", "small", "empty"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], sizes: []}}],
+  ],
+}
+
+{
+  name: "first-level table on a deep aggregate",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.payroll", value: "sum(flatMap(company.departments, map(#.employees, #.salary)))"},
+      {table: "band", inputs: ["company.payroll"], outputs: ["company.band"], rules: [
+        ["> 100", "'high'"],
+        ["> 0", "'mid'"],
+        ["", "'none'"],
+      ]},
+      {expression: "customer.highCount", value: "count(customer.companies, #.band == 'high')"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 60}, {salary: 50}]}]}, {departments: [{employees: [{salary: 5}]}]}]}},
+      {customer: {companies: [
+        {departments: [{employees: [{salary: 60}, {salary: 50}]}], payroll: 110, band: "high"},
+        {departments: [{employees: [{salary: 5}]}], payroll: 5, band: "mid"},
+      ], highCount: 1}},
+    ],
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 100}]}]}, {departments: []}]}},
+      {customer: {companies: [
+        {departments: [{employees: [{salary: 100}]}], payroll: 100, band: "mid"},
+        {departments: [], payroll: 0, band: "none"},
+      ], highCount: 0}},
+    ],
+  ],
+}
+
+// A first-level closure reads the root inside its predicate.
+{
+  name: "first-level filter of children against a root property",
+  policy: {
+    models: {
+      customer: {minSize: "number", companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {name: "string", employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.bigDepartments", value: "map(filter(company.departments, len(#.employees) >= customer.minSize), #.name)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {minSize: 2, companies: [{departments: [{name: "x", employees: [{salary: 1}, {salary: 1}]}, {name: "y", employees: [{salary: 1}]}]}]}},
+      {customer: {minSize: 2, companies: [{departments: [{name: "x", employees: [{salary: 1}, {salary: 1}]}, {name: "y", employees: [{salary: 1}]}], bigDepartments: ["x"]}]}},
+    ],
+    [
+      {customer: {minSize: 0, companies: [{departments: [{name: "x", employees: []}]}, {departments: []}]}},
+      {customer: {minSize: 0, companies: [{departments: [{name: "x", employees: []}], bigDepartments: ["x"]}, {departments: [], bigDepartments: []}]}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Writing below the first level: refused as UNSUPPORTED_NESTED_ITERATION. With the diagnostic
+// pinned, the workspace still runs the policy; the deep block is not evaluated.
+// ---------------------------------------------------------------------------
+{
+  name: "second-level write is refused",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {budget: "number"},
+    },
+    blocks: [{expression: "department.big", value: "department.budget > 10"}],
+  },
+  cases: [
+    [{customer: {companies: [{departments: [{budget: 20}]}]}}, "!error: UNSUPPORTED_NESTED_ITERATION"],
+    [{customer: {companies: []}}, "!error: UNSUPPORTED_NESTED_ITERATION"],
+  ],
+}
+
+{
+  name: "third-level write is refused",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "employee.high", value: "employee.salary > 10"},
+      {expression: "customer.n", value: "len(customer.companies)"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{departments: [{employees: [{salary: 20}]}]}]}}, "!error: UNSUPPORTED_NESTED_ITERATION"],
+  ],
+}
+
+{
+  name: "second-level write through the workspace",
+  diagnostics: ["UNSUPPORTED_NESTED_ITERATION"],
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {budget: "number"},
+    },
+    blocks: [
+      {expression: "department.big", value: "department.budget > 10"},
+      {expression: "customer.n", value: "len(customer.companies)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{budget: 20}, {budget: 1}]}]}},
+      "!error: MissingRequiredInputs",
+      "question: run through the workspace, the refused deep block is neither evaluated nor dropped: the required-input check looks for department.budget at company.departments.budget and fails the whole evaluation, including the unrelated customer.n",
+    ],
+    [
+      {customer: {companies: []}},
+      "!error: MissingRequiredInputs",
+      "question: fails as MissingRequiredInputs department.budget even with no companies at all",
+    ],
+  ],
+}
+
+// The workaround that is supported: compute per-child values at the first level as a list.
+{
+  name: "per-child values computed as a first-level list",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {name: "string", budget: "number"},
+    },
+    blocks: [
+      {expression: "company.departmentFlags", value: "map(company.departments, {name: #.name, big: #.budget > 10})"},
+      {expression: "company.bigNames", value: "map(filter(company.departmentFlags, #.big), #.name)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{name: "x", budget: 20}, {name: "y", budget: 1}]}]}},
+      {customer: {companies: [{
+        departments: [{name: "x", budget: 20}, {name: "y", budget: 1}],
+        departmentFlags: [{name: "x", big: true}, {name: "y", big: false}],
+        bigNames: ["x"],
+      }]}},
+    ],
+    [
+      {customer: {companies: [{departments: []}, {departments: [{name: "z", budget: 11}]}]}},
+      {customer: {companies: [
+        {departments: [], departmentFlags: [], bigNames: []},
+        {departments: [{name: "z", budget: 11}], departmentFlags: [{name: "z", big: true}], bigNames: ["z"]},
+      ]}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Single and array relationships mixed.
+// ---------------------------------------------------------------------------
+
+// Array -> single -> array: company members with one address holding a list of phones.
+{
+  name: "array then single then array, read from the first level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {name: "string", office: "office"},
+      office: {country: "string", phones: "phone[]"},
+      phone: {number: "string", mobile: "boolean"},
+    },
+    blocks: [
+      {expression: "company.mobiles", value: "count(company.office.phones, #.mobile)"},
+      {expression: "company.domestic", value: "company.office.country == 'US'"},
+      {expression: "customer.mobiles", value: "sum(map(customer.companies, #.mobiles))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {name: "a", office: {country: "US", phones: [{number: "1", mobile: true}, {number: "2", mobile: false}]}},
+        {name: "b", office: {country: "DE", phones: [{number: "3", mobile: true}]}},
+      ]}},
+      {customer: {companies: [
+        {name: "a", office: {country: "US", phones: [{number: "1", mobile: true}, {number: "2", mobile: false}]}, mobiles: 1, domestic: true},
+        {name: "b", office: {country: "DE", phones: [{number: "3", mobile: true}]}, mobiles: 1, domestic: false},
+      ], mobiles: 2}},
+    ],
+    [
+      {customer: {companies: [{name: "a", office: {country: "US", phones: []}}]}},
+      {customer: {companies: [{name: "a", office: {country: "US", phones: []}, mobiles: 0, domestic: true}], mobiles: 0}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], mobiles: 0}}],
+  ],
+}
+
+// Single -> array -> array: one credit report with accounts, each with payments.
+{
+  name: "single then array then array, aggregated at the root",
+  policy: {
+    models: {
+      customer: {report: "creditReport"},
+      creditReport: {bureau: "string", accounts: "account[]"},
+      account: {limit: "number", payments: "payment[]"},
+      payment: {late: "boolean"},
+    },
+    blocks: [
+      {expression: "customer.totalLimit", value: "sum(map(customer.report.accounts, #.limit))"},
+      {expression: "customer.latePayments", value: "count(flatMap(customer.report.accounts, #.payments), #.late)"},
+      {expression: "customer.clean", value: "all(customer.report.accounts, none(#.payments, #.late))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {report: {bureau: "x", accounts: [{limit: 100, payments: [{late: false}, {late: true}]}, {limit: 50, payments: []}]}}},
+      {customer: {report: {bureau: "x", accounts: [{limit: 100, payments: [{late: false}, {late: true}]}, {limit: 50, payments: []}]}, totalLimit: 150, latePayments: 1, clean: false}},
+    ],
+    [
+      {customer: {report: {bureau: "x", accounts: [{limit: 1, payments: [{late: false}]}]}}},
+      {customer: {report: {bureau: "x", accounts: [{limit: 1, payments: [{late: false}]}]}, totalLimit: 1, latePayments: 0, clean: true}},
+    ],
+    [
+      {customer: {report: {bureau: "x", accounts: []}}},
+      {customer: {report: {bureau: "x", accounts: []}, totalLimit: 0, latePayments: 0, clean: true}},
+    ],
+  ],
+}
+
+// A computed on the single relationship (directly under the root) aggregates its array.
+{
+  name: "computed on a root single relationship aggregates its members",
+  policy: {
+    models: {
+      customer: {report: "creditReport"},
+      creditReport: {accounts: "account[]"},
+      account: {limit: "number", balance: "number"},
+    },
+    blocks: [
+      {expression: "creditReport.utilization", value: "sum(map(creditReport.accounts, #.balance)) / sum(map(creditReport.accounts, #.limit))"},
+      {expression: "customer.risky", value: "customer.report.utilization > 0.5"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {report: {accounts: [{limit: 100, balance: 80}, {limit: 100, balance: 40}]}}},
+      {customer: {report: {accounts: [{limit: 100, balance: 80}, {limit: 100, balance: 40}], utilization: 0.6}, risky: true}},
+    ],
+    [
+      {customer: {report: {accounts: [{limit: 10, balance: 5}]}}},
+      {customer: {report: {accounts: [{limit: 10, balance: 5}], utilization: 0.5}, risky: false}},
+    ],
+  ],
+}
+
+// Members of an array that sits inside a root single relationship: one level of iteration, but
+// the source hangs off the single relationship.
+{
+  name: "per-member block on an array inside a single relationship",
+  policy: {
+    models: {
+      customer: {report: "creditReport"},
+      creditReport: {accounts: "account[]"},
+      account: {limit: "number", balance: "number"},
+    },
+    blocks: [
+      {expression: "account.maxed", value: "account.balance >= account.limit"},
+      {expression: "customer.maxedCount", value: "count(customer.report.accounts, #.maxed)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {report: {accounts: [{limit: 10, balance: 10}, {limit: 10, balance: 1}]}}},
+      {customer: {report: {accounts: [{limit: 10, balance: 10, maxed: true}, {limit: 10, balance: 1, maxed: false}]}, maxedCount: 1}},
+      "bug: there is only one array level here, but the account source hangs off the creditReport single relationship and the write is refused as UNSUPPORTED_NESTED_ITERATION",
+    ],
+    [
+      {customer: {report: {accounts: []}}},
+      {customer: {report: {accounts: []}, maxedCount: 0}},
+      "bug: refused as UNSUPPORTED_NESTED_ITERATION although no nested iteration exists",
+    ],
+  ],
+}
+
+// A single relationship nested in a single relationship: writing the inner one.
+{
+  name: "write on a single relationship nested in a single relationship",
+  policy: {
+    models: {
+      customer: {report: "creditReport"},
+      creditReport: {bureau: "bureau"},
+      bureau: {weight: "number"},
+    },
+    blocks: [{expression: "bureau.heavy", value: "bureau.weight > 1"}],
+  },
+  cases: [
+    [
+      {customer: {report: {bureau: {weight: 3}}}},
+      {customer: {report: {bureau: {weight: 3, heavy: true}}}},
+      "bug: no iteration is involved at all, yet the write is refused as UNSUPPORTED_NESTED_ITERATION",
+    ],
+  ],
+}
+
+// A single relationship under each array member: the per-member block writes on the member and
+// reads through its single relationship.
+{
+  name: "per-member read through a member's single relationship",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {revenue: "number", rating: "rating"},
+      rating: {score: "number", agency: "string"},
+    },
+    blocks: [
+      {expression: "company.adjusted", value: "company.revenue * company.rating.score"},
+      {expression: "customer.agencies", value: "map(customer.companies, #.rating.agency)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, rating: {score: 0.5, agency: "x"}}, {revenue: 2, rating: {score: 2, agency: "y"}}]}},
+      {customer: {companies: [
+        {revenue: 10, rating: {score: 0.5, agency: "x"}, adjusted: 5},
+        {revenue: 2, rating: {score: 2, agency: "y"}, adjusted: 4},
+      ], agencies: ["x", "y"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], agencies: []}}],
+  ],
+}
+
+// Writing on a member's single relationship is a second level of nesting.
+{
+  name: "write on a single relationship under array members",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {rating: "rating"},
+      rating: {score: "number"},
+    },
+    blocks: [{expression: "rating.good", value: "rating.score > 1"}],
+  },
+  cases: [
+    [{customer: {companies: [{rating: {score: 2}}]}}, "!error: UNSUPPORTED_NESTED_ITERATION"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Missing levels.
+// ---------------------------------------------------------------------------
+
+// A required middle level absent from a member: the deep read needs it.
+{
+  name: "required middle level missing",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [{expression: "company.headcount", value: "sum(map(company.departments, len(#.employees)))"}],
+  },
+  cases: [
+    [{customer: {companies: [{departments: [{employees: [{salary: 1}]}]}]}}, {customer: {companies: [{departments: [{employees: [{salary: 1}]}], headcount: 1}]}}],
+    [{customer: {companies: [{}]}}, "!error"],
+    [{customer: {companies: [{departments: [{employees: [{salary: 1}]}]}, {}]}}, "!error"],
+    [{customer: {companies: [{departments: null}]}}, "!error"],
+  ],
+}
+
+// Optional levels at every depth with `??` defaults.
+{
+  name: "optional levels with defaults",
+  policy: {
+    models: {
+      customer: {companies: "company[]?"},
+      company: {departments: "department[]?"},
+      department: {employees: "employee[]?"},
+      employee: {salary: "number?"},
+    },
+    blocks: [
+      {expression: "customer.payroll", value: "sum(flatMap(customer.companies ?? [], flatMap(#.departments ?? [], map(#.employees ?? [], #.salary ?? 0))))"},
+      {expression: "customer.companyCount", value: "len(customer.companies ?? [])"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {payroll: 0, companyCount: 0}}],
+    [{customer: {companies: null}}, {customer: {companies: null, payroll: 0, companyCount: 0}}],
+    [{customer: {companies: [{}]}}, {customer: {companies: [{}], payroll: 0, companyCount: 1}}],
+    [{customer: {companies: [{departments: null}]}}, {customer: {companies: [{departments: null}], payroll: 0, companyCount: 1}}],
+    [{customer: {companies: [{departments: [{}]}]}}, {customer: {companies: [{departments: [{}]}], payroll: 0, companyCount: 1}}],
+    [{customer: {companies: [{departments: [{employees: [{}]}]}]}}, {customer: {companies: [{departments: [{employees: [{}]}]}], payroll: 0, companyCount: 1}}],
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 4}, {salary: null}, {}]}, {}]}, {}]}},
+      {customer: {companies: [{departments: [{employees: [{salary: 4}, {salary: null}, {}]}, {}]}, {}], payroll: 4, companyCount: 2}},
+    ],
+  ],
+}
+
+// Optional middle level read per member: missing and null levels give the default.
+{
+  name: "per-member read of an optional child level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]?"},
+      department: {budget: "number"},
+    },
+    blocks: [
+      {expression: "company.budget", value: "sum(map(company.departments ?? [], #.budget))"},
+      {expression: "company.hasDepartments", value: "company.departments != null"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [{budget: 2}, {budget: 3}]}, {}, {departments: null}, {departments: []}]}},
+      {customer: {companies: [
+        {departments: [{budget: 2}, {budget: 3}], budget: 5, hasDepartments: true},
+        {budget: 0, hasDepartments: false},
+        {departments: null, budget: 0, hasDepartments: false},
+        {departments: [], budget: 0, hasDepartments: true},
+      ]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// A missing optional single relationship in the middle of a path.
+{
+  name: "optional single relationship in the middle of a deep path",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {office: "office?"},
+      office: {phones: "phone[]"},
+      phone: {mobile: "boolean"},
+    },
+    blocks: [{expression: "company.mobiles", value: "count(company.office.phones ?? [], #.mobile)"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{office: {phones: [{mobile: true}, {mobile: true}]}}, {office: null}, {}]}},
+      {customer: {companies: [{office: {phones: [{mobile: true}, {mobile: true}]}, mobiles: 2}, {office: null, mobiles: 0}, {mobiles: 0}]}},
+    ],
+    [{customer: {companies: [{office: {phones: []}}]}}, {customer: {companies: [{office: {phones: []}, mobiles: 0}]}}],
+  ],
+}
+
+// Null items at deeper levels.
+{
+  name: "null items at the second and third level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "customer.departments", value: "sum(map(customer.companies, len(#.departments)))"},
+      {expression: "customer.realEmployees", value: "count(flatMap(filter(flatMap(customer.companies, #.departments), # != null), #.employees), # != null)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{departments: [null, {employees: [null, {salary: 1}]}]}]}},
+      {customer: {companies: [{departments: [null, {employees: [null, {salary: 1}]}]}], departments: 2, realEmployees: 1}},
+    ],
+    [
+      {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}]}]}},
+      {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}]}], departments: 1, realEmployees: 2}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Validation at depth.
+// ---------------------------------------------------------------------------
+{
+  name: "values are validated at every level",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: [{departments: [{employees: [{salary: 1, extra: "x"}]}], extra: 1}]}}, {customer: {companies: [{departments: [{employees: [{salary: 1, extra: "x"}]}], extra: 1}], n: 1}}],
+    [{customer: {companies: [{departments: [{employees: [{salary: "1"}]}]}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{departments: [{employees: {salary: 1}}]}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{departments: [{employees: [1]}]}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{departments: {employees: []}}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{departments: ["x"]}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{departments: [{employees: [{salary: true}]}]}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Goals in deep trees.
+// ---------------------------------------------------------------------------
+{
+  name: "goals pick one branch of a deep tree",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {departments: "department[]"},
+      department: {employees: "employee[]"},
+      employee: {salary: "number"},
+    },
+    blocks: [
+      {expression: "company.payroll", value: "sum(flatMap(company.departments, map(#.employees, #.salary)))"},
+      {expression: "company.headcount", value: "sum(map(company.departments, len(#.employees)))"},
+      {expression: "customer.payroll", value: "sum(map(customer.companies, #.payroll))"},
+    ],
+  },
+  cases: [
+    {
+      input: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}]}]}},
+      goals: ["customer.payroll"],
+      output: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}], payroll: 3}], payroll: 3}},
+    },
+    {
+      input: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}]}]}},
+      goals: ["company.headcount"],
+      output: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}], headcount: 2}]}},
+    },
+    {
+      input: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}]}]}},
+      goals: ["company.payroll", "company.headcount"],
+      output: {customer: {companies: [{departments: [{employees: [{salary: 1}, {salary: 2}]}], payroll: 3, headcount: 2}]}},
+    },
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// A self-referencing relationship (company.subsidiaries: company[]). The entity's source is
+// the first relationship by model name, so `company.subsidiaries` (model `company`) wins over
+// `customer.companies`.
+// ---------------------------------------------------------------------------
+{
+  name: "self-referencing relationship read from the root",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {revenue: "number", subsidiaries: "company[]?"},
+    },
+    blocks: [
+      {expression: "customer.groupRevenue", value: "sum(map(customer.companies, #.revenue + sum(map(#.subsidiaries ?? [], #.revenue))))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, subsidiaries: [{revenue: 1}, {revenue: 2}]}, {revenue: 5}]}},
+      {customer: {companies: [{revenue: 10, subsidiaries: [{revenue: 1}, {revenue: 2}]}, {revenue: 5}], groupRevenue: 18}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], groupRevenue: 0}}],
+  ],
+}
+
+{
+  name: "per-member block on a self-referencing entity",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {revenue: "number", subsidiaries: "company[]?"},
+    },
+    blocks: [{expression: "company.big", value: "company.revenue > 5"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10}, {revenue: 1}]}},
+      {customer: {companies: [{revenue: 10, big: true}, {revenue: 1, big: false}]}},
+      "bug: company's source is company.subsidiaries (model company sorts before customer), so the per-member block never runs over customer.companies and nothing is written",
+    ],
+    [
+      {customer: {companies: [{revenue: 10, subsidiaries: [{revenue: 7}]}]}},
+      {customer: {companies: [{revenue: 10, subsidiaries: [{revenue: 7}], big: true}]}},
+      "bug: the self-referencing source shadows customer.companies; no member is written (whether subsidiaries should also get big is open)",
+    ],
+  ],
+}

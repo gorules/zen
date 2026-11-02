@@ -1,0 +1,755 @@
+// Realistic insurance policies: motor households with vehicles and claims as members, home cover
+// over properties with peril loadings, claims triage with fraud indicators and document checks,
+// renewal pricing against referenced products and a market global, group life census, travel
+// quotes with referenced regions and global activity lists, and telematics fleet scoring. Each
+// suite combines several block kinds over related entities and runs valid, boundary, missing and
+// invalid data. Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Motor household ---------------------------------------------------------------------------
+// Vehicles and claims are members of one policyholder. A driver factor match on the root feeds
+// every per-vehicle premium; a usage table runs per vehicle; claims within five years load the
+// household total, and a multi-car discount applies from two vehicles. A missing optional
+// `garaged` defaults to false through `??`.
+
+{
+  name: "motor household with vehicles and claims",
+  policy: {
+    models: {
+      holder: {dob: "date", licensed: "date", vehicles: "vehicle[]", claims: "claim[]"},
+      vehicle: {plate: "string", value: "number", year: "number", use: "string(private|commute|business)", garaged: "boolean?"},
+      claim: {date: "date", amount: "number", atFault: "boolean"},
+    },
+    blocks: [
+      {expression: "holder.age", value: "d().diff(holder.dob, 'year')"},
+      {expression: "holder.experience", value: "d().diff(holder.licensed, 'year')"},
+      {expression: "claim.recent", value: "d().diff(claim.date, 'year') < 5"},
+      {expression: "holder.faultClaims", value: "count(holder.claims, #.recent and #.atFault)"},
+      {expression: "holder.claimsPaid", value: "sum(map(filter(holder.claims, #.recent), #.amount))"},
+      {match: "holder.driverFactor", arms: [
+        ["holder.age < 25", "1.6"],
+        ["holder.experience < 3", "1.3"],
+        ["holder.age >= 75", "1.2"],
+        ["", "1"],
+      ]},
+      {expression: "vehicle.ageYears", value: "d().year() - vehicle.year"},
+      {table: "usage", inputs: ["vehicle.use"], outputs: ["vehicle.useFactor"], rules: [
+        ["'private'", "1"],
+        ["'commute'", "1.1"],
+        ["'business'", "1.35"],
+      ]},
+      {expression: "vehicle.premium", value: "round(vehicle.value * (vehicle.ageYears > 10 ? 0.02 : 0.03) * vehicle.useFactor * holder.driverFactor * ((vehicle.garaged ?? false) ? 0.9 : 1), 2)"},
+      {match: "holder.claimLoad", arms: [
+        ["holder.faultClaims == 0", "0.85"],
+        ["holder.faultClaims == 1", "1.15"],
+        ["", "1.5"],
+      ]},
+      {expression: "holder.gross", value: "sum(map(holder.vehicles, #.premium))"},
+      {expression: "holder.total", value: "round(holder.gross * holder.claimLoad * (len(holder.vehicles) >= 2 ? 0.95 : 1), 2)"},
+      {match: "holder.decision", arms: [
+        ["holder.faultClaims >= 3", "'decline'"],
+        ["holder.claimsPaid > 50000", "'refer'"],
+        ["len(holder.vehicles) == 0", "'no-cover'"],
+        ["", "'quote'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {holder: {dob: "1980-01-01", licensed: "2000-01-01", vehicles: [{plate: "A", value: 20000, year: 2020, use: "private"}], claims: []}},
+      {holder: {dob: "1980-01-01", licensed: "2000-01-01", claims: [], vehicles: [
+        {plate: "A", value: 20000, year: 2020, use: "private", ageYears: 5, useFactor: 1, premium: 600},
+      ], age: 45, experience: 25, faultClaims: 0, claimsPaid: 0, driverFactor: 1, claimLoad: 0.85, gross: 600, total: 510, decision: "quote"}},
+    ],
+    // A young driver with two vehicles: an old garaged commuter and a business van; one recent
+    // at-fault claim and the multi-car discount.
+    [
+      {holder: {dob: "2002-06-01", licensed: "2020-01-01", vehicles: [
+        {plate: "B", value: 15000, year: 2012, use: "commute", garaged: true},
+        {plate: "C", value: 8000, year: 2016, use: "business"},
+      ], claims: [{date: "2023-05-01", amount: 4000, atFault: true}]}},
+      {holder: {dob: "2002-06-01", licensed: "2020-01-01", vehicles: [
+        {plate: "B", value: 15000, year: 2012, use: "commute", garaged: true, ageYears: 13, useFactor: 1.1, premium: 475.2},
+        {plate: "C", value: 8000, year: 2016, use: "business", ageYears: 9, useFactor: 1.35, premium: 518.4},
+      ], claims: [{date: "2023-05-01", amount: 4000, atFault: true, recent: true}],
+      age: 22, experience: 5, faultClaims: 1, claimsPaid: 4000, driverFactor: 1.6, claimLoad: 1.15, gross: 993.6, total: 1085.51, decision: "quote"}},
+    ],
+    // A novice of 35: licensed one day short of two years.
+    [
+      {holder: {dob: "1990-03-20", licensed: "2023-03-21", vehicles: [{plate: "D", value: 30000, year: 2025, use: "private", garaged: false}], claims: []}},
+      {holder: {dob: "1990-03-20", licensed: "2023-03-21", claims: [], vehicles: [
+        {plate: "D", value: 30000, year: 2025, use: "private", garaged: false, ageYears: 0, useFactor: 1, premium: 1170},
+      ], age: 35, experience: 1, faultClaims: 0, claimsPaid: 0, driverFactor: 1.3, claimLoad: 0.85, gross: 1170, total: 994.5, decision: "quote"}},
+    ],
+    // An elderly driver; a six-year-old claim no longer counts, a null `garaged` is not garaged.
+    [
+      {holder: {dob: "1945-01-01", licensed: "1965-01-01", vehicles: [{plate: "E", value: 10000, year: 2014, use: "private", garaged: null}], claims: [{date: "2019-01-01", amount: 60000, atFault: true}]}},
+      {holder: {dob: "1945-01-01", licensed: "1965-01-01", vehicles: [
+        {plate: "E", value: 10000, year: 2014, use: "private", garaged: null, ageYears: 11, useFactor: 1, premium: 240},
+      ], claims: [{date: "2019-01-01", amount: 60000, atFault: true, recent: false}],
+      age: 80, experience: 60, faultClaims: 0, claimsPaid: 0, driverFactor: 1.2, claimLoad: 0.85, gross: 240, total: 204, decision: "quote"}},
+    ],
+    // Boundaries: exactly 25 years old and 3 years licensed is the standard factor, a 10-year-old
+    // vehicle keeps the 3% rate, a claim exactly five years old has dropped out.
+    [
+      {holder: {dob: "2000-03-20", licensed: "2022-03-20", vehicles: [{plate: "F", value: 10000, year: 2015, use: "commute"}], claims: [
+        {date: "2020-03-20", amount: 100, atFault: false},
+        {date: "2020-03-21", amount: 200, atFault: true},
+      ]}},
+      {holder: {dob: "2000-03-20", licensed: "2022-03-20", vehicles: [
+        {plate: "F", value: 10000, year: 2015, use: "commute", ageYears: 10, useFactor: 1.1, premium: 330},
+      ], claims: [
+        {date: "2020-03-20", amount: 100, atFault: false, recent: false},
+        {date: "2020-03-21", amount: 200, atFault: true, recent: true},
+      ], age: 25, experience: 3, faultClaims: 1, claimsPaid: 200, driverFactor: 1, claimLoad: 1.15, gross: 330, total: 379.5, decision: "quote"}},
+    ],
+    [
+      {holder: {dob: "1985-01-01", licensed: "2005-01-01", vehicles: [{plate: "G", value: 5000, year: 2010, use: "private"}], claims: [
+        {date: "2024-01-01", amount: 1000, atFault: true},
+        {date: "2024-02-01", amount: 1000, atFault: true},
+        {date: "2024-03-01", amount: 1000, atFault: true},
+      ]}},
+      {holder: {dob: "1985-01-01", licensed: "2005-01-01", vehicles: [
+        {plate: "G", value: 5000, year: 2010, use: "private", ageYears: 15, useFactor: 1, premium: 100},
+      ], claims: [
+        {date: "2024-01-01", amount: 1000, atFault: true, recent: true},
+        {date: "2024-02-01", amount: 1000, atFault: true, recent: true},
+        {date: "2024-03-01", amount: 1000, atFault: true, recent: true},
+      ], age: 40, experience: 20, faultClaims: 3, claimsPaid: 3000, driverFactor: 1, claimLoad: 1.5, gross: 100, total: 150, decision: "decline"}},
+    ],
+    // Large non-fault claims keep the no-claims discount but refer the case.
+    [
+      {holder: {dob: "1975-01-01", licensed: "1995-01-01", vehicles: [{plate: "H", value: 40000, year: 2022, use: "business"}], claims: [
+        {date: "2024-06-01", amount: 30000, atFault: false},
+        {date: "2023-06-01", amount: 25000, atFault: false},
+      ]}},
+      {holder: {dob: "1975-01-01", licensed: "1995-01-01", vehicles: [
+        {plate: "H", value: 40000, year: 2022, use: "business", ageYears: 3, useFactor: 1.35, premium: 1620},
+      ], claims: [
+        {date: "2024-06-01", amount: 30000, atFault: false, recent: true},
+        {date: "2023-06-01", amount: 25000, atFault: false, recent: true},
+      ], age: 50, experience: 30, faultClaims: 0, claimsPaid: 55000, driverFactor: 1, claimLoad: 0.85, gross: 1620, total: 1377, decision: "refer"}},
+    ],
+    [
+      {holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [], claims: []}},
+      {holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [], claims: [], age: 35, experience: 15, faultClaims: 0, claimsPaid: 0, driverFactor: 1, claimLoad: 0.85, gross: 0, total: 0, decision: "no-cover"}},
+    ],
+    [{holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [{plate: "X", value: 1, year: 2020, use: "racing"}], claims: []}}, "!error: InputValidationFailed"],
+    [{holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [{plate: "X", year: 2020, use: "private"}], claims: []}}, "!error: ExpressionFailed"],
+    [{holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [], claims: [{date: "2024-02-30", amount: 1, atFault: false}]}}, "!error: InputValidationFailed"],
+    [{holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: [], claims: [{date: "2024-02-01", amount: 1, atFault: "no"}]}}, "!error: InputValidationFailed"],
+    [{holder: {dob: "1990-01-01", licensed: "2010-01-01", vehicles: []}}, "!error: MissingRequiredInputs"],
+    [{holder: {dob: null, licensed: "2010-01-01", vehicles: [], claims: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Home cover over properties ----------------------------------------------------------------
+// Per-property rate from a two-input first-hit table (kind and age), peril loadings from a
+// per-property hit-policy `collect` table, a deductible credit match, a bundle discount from two
+// properties, and an insurability assertion over all properties.
+
+{
+  name: "home cover with peril loadings per property",
+  policy: {
+    models: {
+      household: {bundle: "boolean", deductible: "string(low|standard|high)", properties: "property[]"},
+      property: {kind: "string(house|apartment|cabin)", rebuildCost: "number", contents: "number", built: "number", floodZone: "string(none|low|high)", alarm: "boolean", occupied: "boolean"},
+    },
+    blocks: [
+      {expression: "property.age", value: "d().year() - property.built"},
+      {table: "rate", inputs: ["property.kind", "property.age"], outputs: ["property.rate"], rules: [
+        ["'house'", "< 30", "0.0012"],
+        ["'house'", "", "0.0015"],
+        ["'apartment'", "", "0.0009"],
+        ["'cabin'", "", "0.002"],
+      ]},
+      {table: "perils", hit: "collect", inputs: ["property.floodZone", "property.occupied", "property.alarm"], outputs: ["property.loadings"], rules: [
+        ["'high'", "", "", "0.5"],
+        ["'low'", "", "", "0.1"],
+        ["", "false", "", "0.25"],
+        ["", "", "true", "-0.1"],
+      ]},
+      {expression: "property.premium", value: "round((property.rebuildCost + property.contents) * property.rate * (1 + sum(property.loadings)), 2)"},
+      {match: "household.deductibleCredit", arms: [
+        ["household.deductible == 'high'", "0.15"],
+        ["household.deductible == 'low'", "-0.1"],
+        ["", "0"],
+      ]},
+      {expression: "household.sumInsured", value: "sum(map(household.properties, #.rebuildCost + #.contents))"},
+      {expression: "household.base", value: "sum(map(household.properties, #.premium))"},
+      {expression: "household.premium", value: "round(household.base * (1 - household.deductibleCredit) * (household.bundle and len(household.properties) > 1 ? 0.9 : 1), 2)"},
+      {assertion: "household.insurable", conditions: [
+        "none(household.properties, #.floodZone == 'high' and not #.occupied)",
+        "household.sumInsured <= 5000000",
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {household: {bundle: false, deductible: "standard", properties: [{kind: "house", rebuildCost: 300000, contents: 50000, built: 2000, floodZone: "none", alarm: true, occupied: true}]}},
+      {household: {bundle: false, deductible: "standard", properties: [
+        {kind: "house", rebuildCost: 300000, contents: 50000, built: 2000, floodZone: "none", alarm: true, occupied: true, age: 25, rate: 0.0012, loadings: [-0.1], premium: 378},
+      ], deductibleCredit: 0, sumInsured: 350000, base: 378, premium: 378, insurable: true}},
+    ],
+    // An old house in a low flood zone and an empty cabin in a high one: two loadings on the
+    // cabin, the high deductible and the bundle discount; the empty cabin is not insurable.
+    [
+      {household: {bundle: true, deductible: "high", properties: [
+        {kind: "house", rebuildCost: 400000, contents: 100000, built: 1980, floodZone: "low", alarm: false, occupied: true},
+        {kind: "cabin", rebuildCost: 150000, contents: 20000, built: 1990, floodZone: "high", alarm: false, occupied: false},
+      ]}},
+      {household: {bundle: true, deductible: "high", properties: [
+        {kind: "house", rebuildCost: 400000, contents: 100000, built: 1980, floodZone: "low", alarm: false, occupied: true, age: 45, rate: 0.0015, loadings: [0.1], premium: 825},
+        {kind: "cabin", rebuildCost: 150000, contents: 20000, built: 1990, floodZone: "high", alarm: false, occupied: false, age: 35, rate: 0.002, loadings: [0.5, 0.25], premium: 595},
+      ], deductibleCredit: 0.15, sumInsured: 670000, base: 1420, premium: 1086.3, insurable: false}},
+    ],
+    // A bundle with a single property gets no bundle discount; a low deductible costs 10% more.
+    [
+      {household: {bundle: true, deductible: "low", properties: [{kind: "apartment", rebuildCost: 200000, contents: 0, built: 2020, floodZone: "none", alarm: true, occupied: true}]}},
+      {household: {bundle: true, deductible: "low", properties: [
+        {kind: "apartment", rebuildCost: 200000, contents: 0, built: 2020, floodZone: "none", alarm: true, occupied: true, age: 5, rate: 0.0009, loadings: [-0.1], premium: 162},
+      ], deductibleCredit: -0.1, sumInsured: 200000, base: 162, premium: 178.2, insurable: true}},
+    ],
+    [
+      {household: {bundle: false, deductible: "standard", properties: []}},
+      {household: {bundle: false, deductible: "standard", properties: [], deductibleCredit: 0, sumInsured: 0, base: 0, premium: 0, insurable: true}},
+    ],
+    // A house of exactly 30 years takes the older rate and has no loadings at all; the sum
+    // insured is one over the limit.
+    [
+      {household: {bundle: true, deductible: "standard", properties: [
+        {kind: "house", rebuildCost: 1000000, contents: 0, built: 1995, floodZone: "none", alarm: false, occupied: true},
+        {kind: "house", rebuildCost: 4000000, contents: 500001, built: 2024, floodZone: "none", alarm: true, occupied: true},
+      ]}},
+      {household: {bundle: true, deductible: "standard", properties: [
+        {kind: "house", rebuildCost: 1000000, contents: 0, built: 1995, floodZone: "none", alarm: false, occupied: true, age: 30, rate: 0.0015, loadings: [], premium: 1500},
+        {kind: "house", rebuildCost: 4000000, contents: 500001, built: 2024, floodZone: "none", alarm: true, occupied: true, age: 1, rate: 0.0012, loadings: [-0.1], premium: 4860},
+      ], deductibleCredit: 0, sumInsured: 5500001, base: 6360, premium: 5724, insurable: false}},
+    ],
+    [
+      {household: {bundle: false, deductible: "high", properties: [{kind: "house", rebuildCost: 250000, contents: 25000, built: 2010, floodZone: "high", alarm: true, occupied: true}]}},
+      {household: {bundle: false, deductible: "high", properties: [
+        {kind: "house", rebuildCost: 250000, contents: 25000, built: 2010, floodZone: "high", alarm: true, occupied: true, age: 15, rate: 0.0012, loadings: [0.5, -0.1], premium: 462},
+      ], deductibleCredit: 0.15, sumInsured: 275000, base: 462, premium: 392.7, insurable: true}},
+    ],
+    // A property without `alarm` reads null: neither the `true` cell nor any other matches it.
+    [
+      {household: {bundle: false, deductible: "standard", properties: [{kind: "house", rebuildCost: 100000, contents: 0, built: 2000, floodZone: "none", occupied: true}]}},
+      {household: {bundle: false, deductible: "standard", properties: [
+        {kind: "house", rebuildCost: 100000, contents: 0, built: 2000, floodZone: "none", occupied: true, age: 25, rate: 0.0012, loadings: [], premium: 120},
+      ], deductibleCredit: 0, sumInsured: 100000, base: 120, premium: 120, insurable: true}},
+    ],
+    [{household: {bundle: false, deductible: "standard", properties: [{kind: "castle", rebuildCost: 1, contents: 0, built: 2000, floodZone: "none", alarm: true, occupied: true}]}}, "!error: InputValidationFailed"],
+    [{household: {bundle: false, deductible: "zero", properties: []}}, "!error: InputValidationFailed"],
+    [{household: {bundle: false, deductible: "standard", properties: [{kind: "house", rebuildCost: "100000", contents: 0, built: 2000, floodZone: "none", alarm: true, occupied: true}]}}, "!error: InputValidationFailed"],
+    [{household: {deductible: "standard", properties: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Claims triage -----------------------------------------------------------------------------
+// Fraud indicators collected by a first-hit table with a `[]` column over date differences and an
+// unwitnessed-theft flag; required documents per claim type from a match producing a list,
+// missing documents through a received-kinds list; cover from an and-assertion on the policy
+// period; the payable amount net of the excess; a routing match.
+
+{
+  name: "claims triage with fraud indicators and documents",
+  policy: {
+    models: {
+      claim: {type: "string(theft|collision|water|fire)", incident: "date", reported: "date", policyStart: "date", policyEnd: "date", amount: "number", excess: "number", witnesses: "number?", documents: "document[]"},
+      document: {kind: "string", received: "boolean"},
+    },
+    blocks: [
+      {expression: "claim.reportDelay", value: "claim.reported.diff(claim.incident, 'day')"},
+      {expression: "claim.policyAgeDays", value: "claim.incident.diff(claim.policyStart, 'day')"},
+      {expression: "claim.unwitnessedTheft", value: "claim.type == 'theft' and (claim.witnesses ?? 0) == 0"},
+      {table: "indicators", inputs: ["claim.policyAgeDays", "claim.reportDelay", "claim.amount", "claim.unwitnessedTheft"], outputs: ["claim.indicators[]"], rules: [
+        ["< 30", "", "", "", "'early-claim'"],
+        ["", "> 30", "", "", "'late-report'"],
+        ["", "", "> 20000", "", "'high-value'"],
+        ["", "", "", "true", "'no-witness'"],
+      ]},
+      {expression: "claim.fraudScore", value: "len(claim.indicators)"},
+      {match: "claim.requiredDocs", arms: [
+        ["claim.type == 'theft'", "['police', 'invoice']"],
+        ["claim.type == 'collision'", "['photos', 'estimate']"],
+        ["claim.type == 'water'", "['photos']"],
+        ["", "[]"],
+      ]},
+      {expression: "claim.receivedKinds", value: "map(filter(claim.documents, #.received), #.kind)"},
+      {expression: "claim.missingDocs", value: "filter(claim.requiredDocs, not (# in claim.receivedKinds))"},
+      {assertion: "claim.covered", conditions: ["claim.incident >= claim.policyStart", "claim.incident < claim.policyEnd"]},
+      {expression: "claim.payable", value: "claim.covered ? max([claim.amount - claim.excess, 0]) : 0"},
+      {match: "claim.route", arms: [
+        ["claim.fraudScore >= 2", "'siu'"],
+        ["len(claim.missingDocs) > 0", "'pending-docs'"],
+        ["claim.amount <= 1000", "'fast-track'"],
+        ["", "'adjuster'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {claim: {type: "collision", incident: "2025-03-10", reported: "2025-03-11", policyStart: "2024-06-01", policyEnd: "2025-06-01", amount: 3000, excess: 500, witnesses: 1, documents: [{kind: "photos", received: true}, {kind: "estimate", received: true}]}},
+      {claim: {type: "collision", incident: "2025-03-10", reported: "2025-03-11", policyStart: "2024-06-01", policyEnd: "2025-06-01", amount: 3000, excess: 500, witnesses: 1, documents: [{kind: "photos", received: true}, {kind: "estimate", received: true}],
+        reportDelay: 1, policyAgeDays: 282, unwitnessedTheft: false, indicators: [], fraudScore: 0, requiredDocs: ["photos", "estimate"], receivedKinds: ["photos", "estimate"], missingDocs: [], covered: true, payable: 2500, route: "adjuster"}},
+    ],
+    // An early, large, unwitnessed theft goes to the special investigations unit.
+    [
+      {claim: {type: "theft", incident: "2025-03-01", reported: "2025-03-15", policyStart: "2025-02-15", policyEnd: "2026-02-15", amount: 25000, excess: 1000, documents: [{kind: "police", received: true}, {kind: "invoice", received: false}]}},
+      {claim: {type: "theft", incident: "2025-03-01", reported: "2025-03-15", policyStart: "2025-02-15", policyEnd: "2026-02-15", amount: 25000, excess: 1000, documents: [{kind: "police", received: true}, {kind: "invoice", received: false}],
+        reportDelay: 14, policyAgeDays: 14, unwitnessedTheft: true, indicators: ["early-claim", "high-value", "no-witness"], fraudScore: 3, requiredDocs: ["police", "invoice"], receivedKinds: ["police"], missingDocs: ["invoice"], covered: true, payable: 24000, route: "siu"}},
+    ],
+    // The policy end is exclusive: an incident on the end date is not covered.
+    [
+      {claim: {type: "water", incident: "2025-01-01", reported: "2025-03-01", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 800, excess: 200, documents: []}},
+      {claim: {type: "water", incident: "2025-01-01", reported: "2025-03-01", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 800, excess: 200, documents: [],
+        reportDelay: 59, policyAgeDays: 366, unwitnessedTheft: false, indicators: ["late-report"], fraudScore: 1, requiredDocs: ["photos"], receivedKinds: [], missingDocs: ["photos"], covered: false, payable: 0, route: "pending-docs"}},
+    ],
+    // The excess exceeds the loss: nothing is payable, but a small claim is still fast-tracked.
+    [
+      {claim: {type: "fire", incident: "2025-03-19", reported: "2025-03-19", policyStart: "2020-01-01", policyEnd: "2030-01-01", amount: 1000, excess: 1500, documents: []}},
+      {claim: {type: "fire", incident: "2025-03-19", reported: "2025-03-19", policyStart: "2020-01-01", policyEnd: "2030-01-01", amount: 1000, excess: 1500, documents: [],
+        reportDelay: 0, policyAgeDays: 1904, unwitnessedTheft: false, indicators: [], fraudScore: 0, requiredDocs: [], receivedKinds: [], missingDocs: [], covered: true, payable: 0, route: "fast-track"}},
+    ],
+    // Every indicator threshold is strict: 30 days into the policy, reported 30 days later and a
+    // loss of exactly 20000 raise nothing. A witnessed theft with an extra unreceived document.
+    [
+      {claim: {type: "theft", incident: "2025-01-31", reported: "2025-03-02", policyStart: "2025-01-01", policyEnd: "2026-01-01", amount: 20000, excess: 0, witnesses: 2, documents: [{kind: "police", received: true}, {kind: "invoice", received: true}, {kind: "photos", received: false}]}},
+      {claim: {type: "theft", incident: "2025-01-31", reported: "2025-03-02", policyStart: "2025-01-01", policyEnd: "2026-01-01", amount: 20000, excess: 0, witnesses: 2, documents: [{kind: "police", received: true}, {kind: "invoice", received: true}, {kind: "photos", received: false}],
+        reportDelay: 30, policyAgeDays: 30, unwitnessedTheft: false, indicators: [], fraudScore: 0, requiredDocs: ["police", "invoice"], receivedKinds: ["police", "invoice"], missingDocs: [], covered: true, payable: 20000, route: "adjuster"}},
+    ],
+    // A null witness count is no witness: one indicator alone does not reach the unit.
+    [
+      {claim: {type: "theft", incident: "2024-12-01", reported: "2024-12-02", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 500, excess: 100, witnesses: null, documents: [{kind: "police", received: true}, {kind: "invoice", received: true}]}},
+      {claim: {type: "theft", incident: "2024-12-01", reported: "2024-12-02", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 500, excess: 100, witnesses: null, documents: [{kind: "police", received: true}, {kind: "invoice", received: true}],
+        reportDelay: 1, policyAgeDays: 335, unwitnessedTheft: true, indicators: ["no-witness"], fraudScore: 1, requiredDocs: ["police", "invoice"], receivedKinds: ["police", "invoice"], missingDocs: [], covered: true, payable: 400, route: "fast-track"}},
+    ],
+    // An incident the day before the policy started: negative policy age, not covered.
+    [
+      {claim: {type: "collision", incident: "2023-12-31", reported: "2024-01-05", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 5000, excess: 500, documents: [{kind: "photos", received: true}, {kind: "estimate", received: true}]}},
+      {claim: {type: "collision", incident: "2023-12-31", reported: "2024-01-05", policyStart: "2024-01-01", policyEnd: "2025-01-01", amount: 5000, excess: 500, documents: [{kind: "photos", received: true}, {kind: "estimate", received: true}],
+        reportDelay: 5, policyAgeDays: -1, unwitnessedTheft: false, indicators: ["early-claim"], fraudScore: 1, requiredDocs: ["photos", "estimate"], receivedKinds: ["photos", "estimate"], missingDocs: [], covered: false, payable: 0, route: "adjuster"}},
+    ],
+    // A document without `received` reads null, and a null filter predicate is an error (as in
+    // the expression language), unlike an assertion condition which counts null as false.
+    [{claim: {type: "collision", incident: "2025-03-01", reported: "2025-03-02", policyStart: "2024-01-01", policyEnd: "2026-01-01", amount: 900, excess: 100, documents: [{kind: "photos"}, {kind: "estimate", received: true}]}}, "!error: ExpressionFailed"],
+    [{claim: {type: "hail", incident: "2025-03-01", reported: "2025-03-02", policyStart: "2024-01-01", policyEnd: "2026-01-01", amount: 1, excess: 0, documents: []}}, "!error: InputValidationFailed"],
+    [{claim: {type: "fire", incident: "yesterday", reported: "2025-03-02", policyStart: "2024-01-01", policyEnd: "2026-01-01", amount: 1, excess: 0, documents: []}}, "!error: InputValidationFailed"],
+    [{claim: {type: "fire", incident: "2025-03-01", reported: "2025-03-02", policyStart: "2024-01-01", policyEnd: "2026-01-01", amount: "1", excess: 0, documents: []}}, "!error: InputValidationFailed"],
+    [{claim: {type: "fire", incident: "2025-03-01", reported: "2025-03-02", policyStart: "2024-01-01", policyEnd: "2026-01-01", amount: 1, documents: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Renewal pricing ---------------------------------------------------------------------------
+// The renewal references a product from a pool; a market global moderates the action. Loyalty
+// comes from a two-input first-hit table and is capped by the product; claim and payment
+// adjustments are matches; the quote is floored at the product minimum. Goals evaluate only the
+// requested cone, so unrelated inputs (and the product pool) may be absent.
+
+{
+  name: "renewal pricing against referenced products",
+  policy: {
+    globals: {market: {competitorIndex: "number"}},
+    models: {
+      renewal: {product: "&product", previousPremium: "number", tenure: "number", claimsLastYear: "number", autoRenew: "boolean", paymentMethod: "string(card|invoice|directDebit)"},
+      product: {id: "string", indexation: "number", maxLoyalty: "number", minPremium: "number"},
+    },
+    blocks: [
+      {expression: "renewal.indexed", value: "round(renewal.previousPremium * (1 + renewal.product.indexation), 2)"},
+      {table: "loyalty", inputs: ["renewal.tenure", "renewal.claimsLastYear"], outputs: ["renewal.loyaltyPct"], rules: [
+        [">= 10", "0", "0.15"],
+        [">= 5", "0", "0.1"],
+        [">= 2", "0", "0.05"],
+        ["", "", "0"],
+      ]},
+      {expression: "renewal.loyalty", value: "min([renewal.loyaltyPct, renewal.product.maxLoyalty])"},
+      {match: "renewal.claimLoad", arms: [
+        ["renewal.claimsLastYear >= 2", "0.3"],
+        ["renewal.claimsLastYear == 1", "0.1"],
+        ["", "0"],
+      ]},
+      {match: "renewal.paymentAdj", arms: [
+        ["renewal.paymentMethod == 'directDebit'", "-0.02"],
+        ["renewal.paymentMethod == 'invoice'", "0.03"],
+        ["", "0"],
+      ]},
+      {expression: "renewal.quoted", value: "max([round(renewal.indexed * (1 - renewal.loyalty + renewal.claimLoad + renewal.paymentAdj), 2), renewal.product.minPremium])"},
+      {expression: "renewal.change", value: "renewal.previousPremium > 0 ? round((renewal.quoted - renewal.previousPremium) / renewal.previousPremium * 100, 1) : 0"},
+      {match: "renewal.action", arms: [
+        ["renewal.change > 20", "'retention-call'"],
+        ["competitorIndex < 1 and renewal.change > 0", "'review-price'"],
+        ["renewal.autoRenew", "'auto'"],
+        ["", "'send-offer'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {competitorIndex: 1, renewal: {product: "basic", previousPremium: 1000, tenure: 12, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 1, renewal: {product: {id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, previousPremium: 1000, tenure: 12, claimsLastYear: 0, autoRenew: true, paymentMethod: "card",
+        indexed: 1050, loyaltyPct: 0.15, loyalty: 0.1, claimLoad: 0, paymentAdj: 0, quoted: 945, change: -5.5, action: "auto"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    [
+      {competitorIndex: 1, renewal: {product: "plus", previousPremium: 1000, tenure: 6, claimsLastYear: 0, autoRenew: false, paymentMethod: "directDebit"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 1, renewal: {product: {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}, previousPremium: 1000, tenure: 6, claimsLastYear: 0, autoRenew: false, paymentMethod: "directDebit",
+        indexed: 1030, loyaltyPct: 0.1, loyalty: 0.1, claimLoad: 0, paymentAdj: -0.02, quoted: 906.4, change: -9.4, action: "send-offer"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    // Two claims cancel loyalty and load the premium: a 37% increase calls for retention.
+    [
+      {competitorIndex: 1, renewal: {product: "plus", previousPremium: 500, tenure: 3, claimsLastYear: 2, autoRenew: true, paymentMethod: "invoice"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 1, renewal: {product: {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}, previousPremium: 500, tenure: 3, claimsLastYear: 2, autoRenew: true, paymentMethod: "invoice",
+        indexed: 515, loyaltyPct: 0, loyalty: 0, claimLoad: 0.3, paymentAdj: 0.03, quoted: 684.95, change: 37, action: "retention-call"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    // The product minimum lifts a heavily discounted quote.
+    [
+      {competitorIndex: 1, renewal: {product: "plus", previousPremium: 300, tenure: 20, claimsLastYear: 0, autoRenew: true, paymentMethod: "directDebit"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 1, renewal: {product: {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}, previousPremium: 300, tenure: 20, claimsLastYear: 0, autoRenew: true, paymentMethod: "directDebit",
+        indexed: 309, loyaltyPct: 0.15, loyalty: 0.15, claimLoad: 0, paymentAdj: -0.02, quoted: 400, change: 33.3, action: "retention-call"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    // A soft market (index below 1) reviews any increase before auto-renewal.
+    [
+      {competitorIndex: 0.95, renewal: {product: "basic", previousPremium: 1000, tenure: 1, claimsLastYear: 1, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+      {competitorIndex: 0.95, renewal: {product: {id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, previousPremium: 1000, tenure: 1, claimsLastYear: 1, autoRenew: true, paymentMethod: "card",
+        indexed: 1050, loyaltyPct: 0, loyalty: 0, claimLoad: 0.1, paymentAdj: 0, quoted: 1155, change: 15.5, action: "review-price"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+    ],
+    [
+      {competitorIndex: 0.95, renewal: {product: "basic", previousPremium: 1000, tenure: 6, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+      {competitorIndex: 0.95, renewal: {product: {id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, previousPremium: 1000, tenure: 6, claimsLastYear: 0, autoRenew: true, paymentMethod: "card",
+        indexed: 1050, loyaltyPct: 0.1, loyalty: 0.1, claimLoad: 0, paymentAdj: 0, quoted: 945, change: -5.5, action: "auto"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+    ],
+    // Tenure of exactly 2 earns 5%; the quote lands just under the minimum and is lifted to it.
+    [
+      {competitorIndex: 1, renewal: {product: "basic", previousPremium: 200, tenure: 2, claimsLastYear: 0, autoRenew: false, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+      {competitorIndex: 1, renewal: {product: {id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}, previousPremium: 200, tenure: 2, claimsLastYear: 0, autoRenew: false, paymentMethod: "card",
+        indexed: 210, loyaltyPct: 0.05, loyalty: 0.05, claimLoad: 0, paymentAdj: 0, quoted: 200, change: 0, action: "send-offer"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]},
+    ],
+    // One claim removes loyalty even after ten years.
+    [
+      {competitorIndex: 0.9, renewal: {product: "plus", previousPremium: 800, tenure: 10, claimsLastYear: 1, autoRenew: false, paymentMethod: "invoice"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 0.9, renewal: {product: {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}, previousPremium: 800, tenure: 10, claimsLastYear: 1, autoRenew: false, paymentMethod: "invoice",
+        indexed: 824, loyaltyPct: 0, loyalty: 0, claimLoad: 0.1, paymentAdj: 0.03, quoted: 931.12, change: 16.4, action: "review-price"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    // A zero previous premium (a reinstated policy) reports no change.
+    [
+      {competitorIndex: 1, renewal: {product: "plus", previousPremium: 0, tenure: 0, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+      {competitorIndex: 1, renewal: {product: {id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}, previousPremium: 0, tenure: 0, claimsLastYear: 0, autoRenew: true, paymentMethod: "card",
+        indexed: 0, loyaltyPct: 0, loyalty: 0, claimLoad: 0, paymentAdj: 0, quoted: 400, change: 0, action: "auto"}, product: [{id: "plus", indexation: 0.03, maxLoyalty: 0.15, minPremium: 400}]},
+    ],
+    {
+      input: {renewal: {product: "basic", tenure: 7, claimsLastYear: 0}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.08, minPremium: 200}]},
+      goals: ["renewal.loyalty"],
+      output: {renewal: {product: {id: "basic", indexation: 0.05, maxLoyalty: 0.08, minPremium: 200}, tenure: 7, claimsLastYear: 0, loyaltyPct: 0.1, loyalty: 0.08}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.08, minPremium: 200}]},
+    },
+    {
+      input: {renewal: {claimsLastYear: 3}},
+      goals: ["renewal.claimLoad"],
+      output: {renewal: {claimsLastYear: 3, claimLoad: 0.3}},
+    },
+    [{competitorIndex: 1, renewal: {product: "gold", previousPremium: 1, tenure: 1, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]}, "!error: InputValidationFailed"],
+    [{renewal: {product: "basic", previousPremium: 1, tenure: 1, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]}, "!error: MissingRequiredInputs"],
+    [{competitorIndex: 1, renewal: {product: "basic", previousPremium: 1, tenure: 1, claimsLastYear: 0, autoRenew: true, paymentMethod: "cash"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: 0.1, minPremium: 200}]}, "!error: InputValidationFailed"],
+    [{competitorIndex: 1, renewal: {product: "basic", previousPremium: 1, tenure: 1, claimsLastYear: 0, autoRenew: true, paymentMethod: "card"}, product: [{id: "basic", indexation: 0.05, maxLoyalty: "10%", minPremium: 200}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Group life census -------------------------------------------------------------------------
+// An employer with employees as members, each with dependents read through closures (a block
+// cannot write the dependents themselves: they hang off a member). Age band rates from a table
+// with interval cells, cover capped at 500000, smoker loading through `??`, an industry load
+// match, and a quotability assertion over participation.
+
+{
+  name: "group life census with dependents",
+  policy: {
+    models: {
+      employer: {industry: "string(office|construction|healthcare)", contribution: "number", employees: "employee[]"},
+      employee: {dob: "date", salary: "number", enrolled: "boolean", smoker: "boolean?", dependents: "dependent[]"},
+      dependent: {relation: "string(spouse|child)", dob: "date"},
+    },
+    blocks: [
+      {expression: "employee.age", value: "d().diff(employee.dob, 'year')"},
+      {table: "band", inputs: ["employee.age"], outputs: ["employee.monthlyRate"], rules: [
+        ["< 30", "18"],
+        ["[30..44]", "25"],
+        ["[45..59]", "42"],
+        ["", "70"],
+      ]},
+      {expression: "employee.cover", value: "min([employee.salary * 3, 500000])"},
+      {expression: "employee.eligibleDeps", value: "count(employee.dependents, #.relation == 'spouse' or (#.relation == 'child' and d().diff(#.dob, 'year') < 26))"},
+      {expression: "employee.monthly", value: "employee.enrolled ? round(employee.monthlyRate * ((employee.smoker ?? false) ? 1.5 : 1) * employee.cover / 100000 + employee.eligibleDeps * 12, 2) : 0"},
+      {match: "employer.industryLoad", arms: [
+        ["employer.industry == 'construction'", "1.25"],
+        ["employer.industry == 'healthcare'", "1.1"],
+        ["", "1"],
+      ]},
+      {expression: "employer.enrolledCount", value: "count(employer.employees, #.enrolled)"},
+      {expression: "employer.participation", value: "len(employer.employees) == 0 ? 0 : round(employer.enrolledCount / len(employer.employees), 4)"},
+      {expression: "employer.monthlyPremium", value: "round(sum(map(employer.employees, #.monthly)) * employer.industryLoad, 2)"},
+      {expression: "employer.employerShare", value: "round(employer.monthlyPremium * employer.contribution, 2)"},
+      {assertion: "employer.quotable", conditions: ["employer.participation >= 0.75", "employer.enrolledCount >= 2", "employer.contribution >= 0.5"]},
+    ],
+  },
+  cases: [
+    [
+      {employer: {industry: "office", contribution: 0.5, employees: [
+        {dob: "1990-01-01", salary: 60000, enrolled: true, smoker: false, dependents: [{relation: "spouse", dob: "1990-05-05"}, {relation: "child", dob: "2015-01-01"}]},
+        {dob: "2000-01-01", salary: 40000, enrolled: true, dependents: []},
+      ]}},
+      {employer: {industry: "office", contribution: 0.5, employees: [
+        {dob: "1990-01-01", salary: 60000, enrolled: true, smoker: false, dependents: [{relation: "spouse", dob: "1990-05-05"}, {relation: "child", dob: "2015-01-01"}], age: 35, monthlyRate: 25, cover: 180000, eligibleDeps: 2, monthly: 69},
+        {dob: "2000-01-01", salary: 40000, enrolled: true, dependents: [], age: 25, monthlyRate: 18, cover: 120000, eligibleDeps: 0, monthly: 21.6},
+      ], industryLoad: 1, enrolledCount: 2, participation: 1, monthlyPremium: 90.6, employerShare: 45.3, quotable: true}},
+    ],
+    // Construction load, a capped smoker cover, a 27-year-old child no longer counted (a
+    // 24-year-old one is), one employee not enrolled: exactly 75% participation still quotes.
+    [
+      {employer: {industry: "construction", contribution: 0.6, employees: [
+        {dob: "1970-03-20", salary: 200000, enrolled: true, smoker: true, dependents: [{relation: "child", dob: "1998-01-01"}, {relation: "child", dob: "2000-03-21"}]},
+        {dob: "1960-01-01", salary: 50000, enrolled: false, dependents: []},
+        {dob: "1985-06-01", salary: 30000, enrolled: true, smoker: null, dependents: [{relation: "spouse", dob: "1986-01-01"}]},
+        {dob: "1995-01-01", salary: 55000, enrolled: true, smoker: false, dependents: []},
+      ]}},
+      {employer: {industry: "construction", contribution: 0.6, employees: [
+        {dob: "1970-03-20", salary: 200000, enrolled: true, smoker: true, dependents: [{relation: "child", dob: "1998-01-01"}, {relation: "child", dob: "2000-03-21"}], age: 55, monthlyRate: 42, cover: 500000, eligibleDeps: 1, monthly: 327},
+        {dob: "1960-01-01", salary: 50000, enrolled: false, dependents: [], age: 65, monthlyRate: 70, cover: 150000, eligibleDeps: 0, monthly: 0},
+        {dob: "1985-06-01", salary: 30000, enrolled: true, smoker: null, dependents: [{relation: "spouse", dob: "1986-01-01"}], age: 39, monthlyRate: 25, cover: 90000, eligibleDeps: 1, monthly: 34.5},
+        {dob: "1995-01-01", salary: 55000, enrolled: true, smoker: false, dependents: [], age: 30, monthlyRate: 25, cover: 165000, eligibleDeps: 0, monthly: 41.25},
+      ], industryLoad: 1.25, enrolledCount: 3, participation: 0.75, monthlyPremium: 503.44, employerShare: 302.06, quotable: true}},
+    ],
+    // Two of three enrolled and a low employer contribution: not quotable.
+    [
+      {employer: {industry: "healthcare", contribution: 0.4, employees: [
+        {dob: "1999-03-21", salary: 35000, enrolled: true, dependents: []},
+        {dob: "1999-03-20", salary: 35000, enrolled: true, smoker: true, dependents: []},
+        {dob: "1950-01-01", salary: 10000, enrolled: false, dependents: [{relation: "spouse", dob: "1950-01-01"}]},
+      ]}},
+      {employer: {industry: "healthcare", contribution: 0.4, employees: [
+        {dob: "1999-03-21", salary: 35000, enrolled: true, dependents: [], age: 25, monthlyRate: 18, cover: 105000, eligibleDeps: 0, monthly: 18.9},
+        {dob: "1999-03-20", salary: 35000, enrolled: true, smoker: true, dependents: [], age: 26, monthlyRate: 18, cover: 105000, eligibleDeps: 0, monthly: 28.35},
+        {dob: "1950-01-01", salary: 10000, enrolled: false, dependents: [{relation: "spouse", dob: "1950-01-01"}], age: 75, monthlyRate: 70, cover: 30000, eligibleDeps: 1, monthly: 0},
+      ], industryLoad: 1.1, enrolledCount: 2, participation: 0.6667, monthlyPremium: 51.98, employerShare: 20.79, quotable: false}},
+    ],
+    [
+      {employer: {industry: "office", contribution: 1, employees: []}},
+      {employer: {industry: "office", contribution: 1, employees: [], industryLoad: 1, enrolledCount: 0, participation: 0, monthlyPremium: 0, employerShare: 0, quotable: false}},
+    ],
+    [
+      {employer: {industry: "office", contribution: 0.5, employees: [
+        {dob: "1980-01-01", salary: 100000, enrolled: true, smoker: false, dependents: [{relation: "child", dob: "2010-01-01"}, {relation: "child", dob: "2012-01-01"}, {relation: "spouse", dob: "1981-01-01"}]},
+      ]}},
+      {employer: {industry: "office", contribution: 0.5, employees: [
+        {dob: "1980-01-01", salary: 100000, enrolled: true, smoker: false, dependents: [{relation: "child", dob: "2010-01-01"}, {relation: "child", dob: "2012-01-01"}, {relation: "spouse", dob: "1981-01-01"}], age: 45, monthlyRate: 42, cover: 300000, eligibleDeps: 3, monthly: 162},
+      ], industryLoad: 1, enrolledCount: 1, participation: 1, monthlyPremium: 162, employerShare: 81, quotable: false}},
+    ],
+    // An employee without `enrolled` reads null; the ternary on it is an error.
+    [{employer: {industry: "office", contribution: 0.5, employees: [{dob: "1990-01-01", salary: 60000, dependents: []}, {dob: "2000-01-01", salary: 40000, enrolled: true, dependents: []}]}}, "!error: ExpressionFailed"],
+    [{employer: {industry: "office", contribution: 0.5, employees: [{dob: "1990-01-01", salary: 1, enrolled: true, dependents: [{relation: "parent", dob: "1960-01-01"}]}]}}, "!error: InputValidationFailed"],
+    [{employer: {industry: "mining", contribution: 0.5, employees: []}}, "!error: InputValidationFailed"],
+    [{employer: {industry: "office", contribution: 0.5, employees: [{dob: "1990-01-01", enrolled: true, dependents: []}]}}, "!error: ExpressionFailed"],
+    [{employer: {industry: "office", contribution: 0.5, employees: [{dob: "1990-01-01", salary: 1, enrolled: true, dependents: [{relation: "child", dob: "2010-13-01"}]}]}}, "!error: InputValidationFailed"],
+    [{employer: {industry: "office", employees: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Travel quote ------------------------------------------------------------------------------
+// Trip days inclusive of both ends, traveller age at departure (a member reading a root input), a
+// hazardous-activity flag against a global list, a destination region by reference, an
+// acceptability assertion over all travellers and a status match.
+
+{
+  name: "travel quote with travellers and regions",
+  policy: {
+    globals: {rules: {hazardous: "string[]", maxAge: "number"}},
+    models: {
+      trip: {start: "date", end: "date", destination: "&region", cancelCover: "number", travellers: "traveller[]"},
+      region: {id: "string", dailyRate: "number", medicalLoad: "number"},
+      traveller: {dob: "date", activities: "string[]", preexisting: "boolean"},
+    },
+    blocks: [
+      {expression: "trip.days", value: "trip.end.diff(trip.start, 'day') + 1"},
+      {expression: "traveller.age", value: "trip.start.diff(traveller.dob, 'year')"},
+      {match: "traveller.ageFactor", arms: [
+        ["traveller.age < 18", "0.5"],
+        ["traveller.age >= 65", "2"],
+        ["", "1"],
+      ]},
+      {expression: "traveller.hazard", value: "some(traveller.activities, # in hazardous)"},
+      {expression: "traveller.premium", value: "round(trip.days * trip.destination.dailyRate * traveller.ageFactor * (traveller.preexisting ? trip.destination.medicalLoad : 1) * (traveller.hazard ? 1.5 : 1), 2)"},
+      {expression: "trip.cancellation", value: "round(trip.cancelCover * 0.04, 2)"},
+      {expression: "trip.total", value: "sum(map(trip.travellers, #.premium)) + trip.cancellation"},
+      {assertion: "trip.acceptable", conditions: ["trip.days >= 1", "trip.days <= 90", "len(trip.travellers) > 0", "all(trip.travellers, #.age <= maxAge)"]},
+      {match: "trip.status", arms: [
+        ["not trip.acceptable", "'decline'"],
+        ["some(trip.travellers, #.hazard)", "'refer-activities'"],
+        ["", "'issue'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {hazardous: ["skiing", "diving", "climbing"], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-10", destination: "EU", cancelCover: 2000, travellers: [
+        {dob: "1985-01-01", activities: ["hiking"], preexisting: false},
+        {dob: "2015-06-01", activities: [], preexisting: false},
+      ]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, {id: "WW", dailyRate: 5, medicalLoad: 2}]},
+      {hazardous: ["skiing", "diving", "climbing"], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-10", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 2000, travellers: [
+        {dob: "1985-01-01", activities: ["hiking"], preexisting: false, age: 40, ageFactor: 1, hazard: false, premium: 25},
+        {dob: "2015-06-01", activities: [], preexisting: false, age: 9, ageFactor: 0.5, hazard: false, premium: 12.5},
+      ], days: 10, cancellation: 80, total: 117.5, acceptable: true, status: "issue"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, {id: "WW", dailyRate: 5, medicalLoad: 2}]},
+    ],
+    // A senior diver with a pre-existing condition worldwide: every factor multiplies.
+    [
+      {hazardous: ["skiing", "diving", "climbing"], maxAge: 80, trip: {start: "2025-05-01", end: "2025-05-21", destination: "WW", cancelCover: 0, travellers: [
+        {dob: "1955-05-02", activities: ["diving", "museum"], preexisting: true},
+      ]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, {id: "WW", dailyRate: 5, medicalLoad: 2}]},
+      {hazardous: ["skiing", "diving", "climbing"], maxAge: 80, trip: {start: "2025-05-01", end: "2025-05-21", destination: {id: "WW", dailyRate: 5, medicalLoad: 2}, cancelCover: 0, travellers: [
+        {dob: "1955-05-02", activities: ["diving", "museum"], preexisting: true, age: 69, ageFactor: 2, hazard: true, premium: 630},
+      ], days: 21, cancellation: 0, total: 630, acceptable: true, status: "refer-activities"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, {id: "WW", dailyRate: 5, medicalLoad: 2}]},
+    ],
+    // 91 days is one too many.
+    [
+      {hazardous: [], maxAge: 80, trip: {start: "2025-01-01", end: "2025-04-01", destination: "EU", cancelCover: 1000, travellers: [{dob: "1990-01-01", activities: [], preexisting: false}]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+      {hazardous: [], maxAge: 80, trip: {start: "2025-01-01", end: "2025-04-01", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 1000, travellers: [
+        {dob: "1990-01-01", activities: [], preexisting: false, age: 35, ageFactor: 1, hazard: false, premium: 227.5},
+      ], days: 91, cancellation: 40, total: 267.5, acceptable: false, status: "decline"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+    ],
+    // 90 days and a traveller of exactly the maximum age are accepted.
+    [
+      {hazardous: [], maxAge: 80, trip: {start: "2025-01-01", end: "2025-03-31", destination: "EU", cancelCover: 0, travellers: [{dob: "1945-01-01", activities: [], preexisting: true}]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+      {hazardous: [], maxAge: 80, trip: {start: "2025-01-01", end: "2025-03-31", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 0, travellers: [
+        {dob: "1945-01-01", activities: [], preexisting: true, age: 80, ageFactor: 2, hazard: false, premium: 630},
+      ], days: 90, cancellation: 0, total: 630, acceptable: true, status: "issue"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+    ],
+    // One traveller over the maximum age declines the whole trip; the child is priced at half.
+    [
+      {hazardous: ["skiing"], maxAge: 80, trip: {start: "2025-06-01", end: "2025-06-07", destination: "WW", cancelCover: 500, travellers: [
+        {dob: "1944-06-01", activities: [], preexisting: false},
+        {dob: "2010-06-02", activities: ["skiing"], preexisting: false},
+      ]}, region: [{id: "WW", dailyRate: 5, medicalLoad: 2}]},
+      {hazardous: ["skiing"], maxAge: 80, trip: {start: "2025-06-01", end: "2025-06-07", destination: {id: "WW", dailyRate: 5, medicalLoad: 2}, cancelCover: 500, travellers: [
+        {dob: "1944-06-01", activities: [], preexisting: false, age: 81, ageFactor: 2, hazard: false, premium: 70},
+        {dob: "2010-06-02", activities: ["skiing"], preexisting: false, age: 14, ageFactor: 0.5, hazard: true, premium: 26.25},
+      ], days: 7, cancellation: 20, total: 116.25, acceptable: false, status: "decline"}, region: [{id: "WW", dailyRate: 5, medicalLoad: 2}]},
+    ],
+    [
+      {hazardous: [], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-01", destination: "EU", cancelCover: 0, travellers: []}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+      {hazardous: [], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-01", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 0, travellers: [], days: 1, cancellation: 0, total: 0, acceptable: false, status: "decline"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+    ],
+    // With an empty hazardous list no activity is hazardous.
+    [
+      {hazardous: [], maxAge: 99, trip: {start: "2025-04-01", end: "2025-04-02", destination: "EU", cancelCover: 12.5, travellers: [{dob: "2000-04-01", activities: ["skiing"], preexisting: false}]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+      {hazardous: [], maxAge: 99, trip: {start: "2025-04-01", end: "2025-04-02", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 12.5, travellers: [
+        {dob: "2000-04-01", activities: ["skiing"], preexisting: false, age: 25, ageFactor: 1, hazard: false, premium: 5},
+      ], days: 2, cancellation: 0.5, total: 5.5, acceptable: true, status: "issue"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+    ],
+    // An end date before the start: negative days, declined.
+    [
+      {hazardous: [], maxAge: 80, trip: {start: "2025-04-10", end: "2025-04-01", destination: "EU", cancelCover: 0, travellers: [{dob: "1995-01-01", activities: [], preexisting: false}]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+      {hazardous: [], maxAge: 80, trip: {start: "2025-04-10", end: "2025-04-01", destination: {id: "EU", dailyRate: 2.5, medicalLoad: 1.4}, cancelCover: 0, travellers: [
+        {dob: "1995-01-01", activities: [], preexisting: false, age: 30, ageFactor: 1, hazard: false, premium: -20},
+      ], days: -8, cancellation: 0, total: -20, acceptable: false, status: "decline"}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]},
+    ],
+    [{hazardous: [], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-02", destination: "ASIA", cancelCover: 0, travellers: []}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]}, "!error: InputValidationFailed"],
+    [{hazardous: [], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-02", destination: "EU", cancelCover: 0, travellers: [{dob: "1990-01-01", activities: "skiing", preexisting: false}]}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]}, "!error: InputValidationFailed"],
+    [{hazardous: [], trip: {start: "2025-04-01", end: "2025-04-02", destination: "EU", cancelCover: 0, travellers: []}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]}, "!error: MissingRequiredInputs"],
+    [{hazardous: [1, 2], maxAge: 80, trip: {start: "2025-04-01", end: "2025-04-02", destination: "EU", cancelCover: 0, travellers: []}, region: [{id: "EU", dailyRate: 2.5, medicalLoad: 1.4}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Telematics fleet scoring ------------------------------------------------------------------
+// Vehicles are members with trips read through closures. Per-vehicle rates per 100 km and night
+// share guard against zero distance, flags come from a per-vehicle first-hit table with a `[]`
+// column, the score is clamped at zero, the band match separates vehicles without data, and the
+// fleet discount uses the average over vehicles that drove.
+
+{
+  name: "telematics fleet scoring",
+  policy: {
+    models: {
+      fleet: {basePremium: "number", vehicles: "vehicle[]"},
+      vehicle: {plate: "string", trips: "trip[]"},
+      trip: {km: "number", harshBrakes: "number", nightKm: "number?", maxSpeed: "number"},
+    },
+    blocks: [
+      {expression: "vehicle.km", value: "sum(map(vehicle.trips, #.km))"},
+      {expression: "vehicle.brakesPer100", value: "vehicle.km > 0 ? round(sum(map(vehicle.trips, #.harshBrakes)) / vehicle.km * 100, 2) : 0"},
+      {expression: "vehicle.nightShare", value: "vehicle.km > 0 ? round(sum(map(vehicle.trips, #.nightKm ?? 0)) / vehicle.km, 2) : 0"},
+      {expression: "vehicle.speedingTrips", value: "count(vehicle.trips, #.maxSpeed > 130)"},
+      {table: "flags", inputs: ["vehicle.brakesPer100", "vehicle.nightShare"], outputs: ["vehicle.flags[]"], rules: [
+        ["> 5", "", "'harsh-braking'"],
+        ["", "> 0.3", "'night-driving'"],
+      ]},
+      {expression: "vehicle.score", value: "max([100 - vehicle.brakesPer100 * 4 - vehicle.nightShare * 50 - vehicle.speedingTrips * 10, 0])"},
+      {match: "vehicle.band", arms: [
+        ["vehicle.km == 0", "'no-data'"],
+        ["vehicle.score >= 80", "'A'"],
+        ["vehicle.score >= 60", "'B'"],
+        ["", "'C'"],
+      ]},
+      {expression: "fleet.avgScore", value: "count(fleet.vehicles, #.km > 0) == 0 ? 0 : avg(map(filter(fleet.vehicles, #.km > 0), #.score))"},
+      {match: "fleet.discount", arms: [
+        ["fleet.avgScore >= 85", "0.2"],
+        ["fleet.avgScore >= 70", "0.1"],
+        ["", "0"],
+      ]},
+      {expression: "fleet.premium", value: "round(fleet.basePremium * len(fleet.vehicles) * (1 - fleet.discount), 2)"},
+    ],
+  },
+  cases: [
+    [
+      {fleet: {basePremium: 1000, vehicles: [{plate: "A", trips: [{km: 100, harshBrakes: 2, nightKm: 20, maxSpeed: 120}, {km: 300, harshBrakes: 4, maxSpeed: 135}]}]}},
+      {fleet: {basePremium: 1000, vehicles: [
+        {plate: "A", trips: [{km: 100, harshBrakes: 2, nightKm: 20, maxSpeed: 120}, {km: 300, harshBrakes: 4, maxSpeed: 135}], km: 400, brakesPer100: 1.5, nightShare: 0.05, speedingTrips: 1, flags: [], score: 81.5, band: "A"},
+      ], avgScore: 81.5, discount: 0.1, premium: 900}},
+    ],
+    // A vehicle without trips has no data and is left out of the average.
+    [
+      {fleet: {basePremium: 1000, vehicles: [{plate: "A", trips: [{km: 50, harshBrakes: 5, nightKm: 30, maxSpeed: 100}]}, {plate: "B", trips: []}]}},
+      {fleet: {basePremium: 1000, vehicles: [
+        {plate: "A", trips: [{km: 50, harshBrakes: 5, nightKm: 30, maxSpeed: 100}], km: 50, brakesPer100: 10, nightShare: 0.6, speedingTrips: 0, flags: ["harsh-braking", "night-driving"], score: 30, band: "C"},
+        {plate: "B", trips: [], km: 0, brakesPer100: 0, nightShare: 0, speedingTrips: 0, flags: [], score: 100, band: "no-data"},
+      ], avgScore: 30, discount: 0, premium: 2000}},
+    ],
+    [
+      {fleet: {basePremium: 500, vehicles: [
+        {plate: "A", trips: [{km: 1000, harshBrakes: 0, nightKm: 0, maxSpeed: 110}]},
+        {plate: "B", trips: [{km: 500, harshBrakes: 5, nightKm: null, maxSpeed: 131}]},
+      ]}},
+      {fleet: {basePremium: 500, vehicles: [
+        {plate: "A", trips: [{km: 1000, harshBrakes: 0, nightKm: 0, maxSpeed: 110}], km: 1000, brakesPer100: 0, nightShare: 0, speedingTrips: 0, flags: [], score: 100, band: "A"},
+        {plate: "B", trips: [{km: 500, harshBrakes: 5, nightKm: null, maxSpeed: 131}], km: 500, brakesPer100: 1, nightShare: 0, speedingTrips: 1, flags: [], score: 86, band: "A"},
+      ], avgScore: 93, discount: 0.2, premium: 800}},
+    ],
+    [
+      {fleet: {basePremium: 750, vehicles: []}},
+      {fleet: {basePremium: 750, vehicles: [], avgScore: 0, discount: 0, premium: 0}},
+    ],
+    // Thresholds are strict: 5 brakes per 100 km, a night share of 0.3 and 130 km/h raise nothing.
+    [
+      {fleet: {basePremium: 1200, vehicles: [{plate: "A", trips: [{km: 100, harshBrakes: 5, nightKm: 30, maxSpeed: 130}]}]}},
+      {fleet: {basePremium: 1200, vehicles: [
+        {plate: "A", trips: [{km: 100, harshBrakes: 5, nightKm: 30, maxSpeed: 130}], km: 100, brakesPer100: 5, nightShare: 0.3, speedingTrips: 0, flags: [], score: 65, band: "B"},
+      ], avgScore: 65, discount: 0, premium: 1200}},
+    ],
+    [
+      {fleet: {basePremium: 100, vehicles: [{plate: "A", trips: [{km: 10, harshBrakes: 10, nightKm: 10, maxSpeed: 200}]}]}},
+      {fleet: {basePremium: 100, vehicles: [
+        {plate: "A", trips: [{km: 10, harshBrakes: 10, nightKm: 10, maxSpeed: 200}], km: 10, brakesPer100: 100, nightShare: 1, speedingTrips: 1, flags: ["harsh-braking", "night-driving"], score: 0, band: "C"},
+      ], avgScore: 0, discount: 0, premium: 100}},
+    ],
+    // An average of exactly 70 earns the lower discount.
+    [
+      {fleet: {basePremium: 1000, vehicles: [
+        {plate: "A", trips: [{km: 100, harshBrakes: 10, nightKm: 0, maxSpeed: 100}]},
+        {plate: "B", trips: [{km: 60, harshBrakes: 1, maxSpeed: 90}, {km: 40, harshBrakes: 4, maxSpeed: 95}]},
+      ]}},
+      {fleet: {basePremium: 1000, vehicles: [
+        {plate: "A", trips: [{km: 100, harshBrakes: 10, nightKm: 0, maxSpeed: 100}], km: 100, brakesPer100: 10, nightShare: 0, speedingTrips: 0, flags: ["harsh-braking"], score: 60, band: "B"},
+        {plate: "B", trips: [{km: 60, harshBrakes: 1, maxSpeed: 90}, {km: 40, harshBrakes: 4, maxSpeed: 95}], km: 100, brakesPer100: 5, nightShare: 0, speedingTrips: 0, flags: [], score: 80, band: "A"},
+      ], avgScore: 70, discount: 0.1, premium: 1800}},
+    ],
+    [{fleet: {basePremium: 1, vehicles: [{plate: "A", trips: [{harshBrakes: 1, maxSpeed: 100}]}]}}, "!error: ExpressionFailed"],
+    [{fleet: {basePremium: 1, vehicles: [{plate: "A", trips: "none"}]}}, "!error: InputValidationFailed"],
+    [{fleet: {vehicles: []}}, "!error: MissingRequiredInputs"],
+    [{fleet: {basePremium: 1, vehicles: [{plate: "A", trips: [{km: 1, harshBrakes: "many", maxSpeed: 100}]}]}}, "!error: InputValidationFailed"],
+  ],
+}

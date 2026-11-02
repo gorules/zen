@@ -2,7 +2,7 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum DecisionGraphValidationError {
     #[error("Invalid input node count: {0}")]
     InvalidInputCount(u32),

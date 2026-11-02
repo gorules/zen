@@ -50,6 +50,7 @@ toml = "0.8"
 mimalloc = "0.1.52"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+recursive = { workspace = true }
 async-trait = { version = "0.1" }
 http = { version = "1.3" }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
@@ -67,5 +68,22 @@ name = "engine"
 
 [features]
 default = []
+driver = []
 bindgen = ["rquickjs/bindgen"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]
+
+[[test]]
+name = "golden"
+required-features = ["arbitrary_precision"]
+
+[[test]]
+name = "ceiling_lists"
+required-features = ["driver"]
+
+[[test]]
+name = "ceiling_switch"
+required-features = ["driver"]
+
+[[test]]
+name = "ceiling_table"
+required-features = ["driver"]

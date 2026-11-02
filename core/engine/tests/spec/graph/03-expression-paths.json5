@@ -1,0 +1,405 @@
+// Expression field keys are dotted paths: `a.b.c` writes into nested objects of the node output,
+// creating them as needed. `$` mirrors the same nested shape for later fields.
+
+// ---------------------------------------------------------------------------
+// Building nested objects.
+{
+  name: "a dotted key builds nested objects",
+  graph: {nodes: [{expression: "calc", fields: {"a.b.c": "v"}}]},
+  cases: [
+    [{v: 1}, {a: {b: {c: 1}}}],
+    [{v: "s"}, {a: {b: {c: "s"}}}],
+    [{v: [1, 2]}, {a: {b: {c: [1, 2]}}}],
+    [{v: {d: 1}}, {a: {b: {c: {d: 1}}}}],
+    [{v: false}, {a: {b: {c: false}}}],
+    [{}, {a: {b: {c: null}}}],
+  ],
+}
+
+{
+  name: "sibling dotted keys share their parent",
+  graph: {nodes: [{expression: "calc", fields: {"a.x": "1", "a.y": "2", "a.z.w": "3"}}]},
+  cases: [
+    [{}, {a: {x: 1, y: 2, z: {w: 3}}}],
+    [{a: {old: 1}}, {a: {x: 1, y: 2, z: {w: 3}}}],
+  ],
+}
+
+{
+  name: "dotted keys at different depths",
+  graph: {nodes: [{expression: "calc", fields: {"r": "1", "s.t": "2", "u.v.w": "3", "x.y.z.q": "4"}}]},
+  cases: [
+    [{}, {r: 1, s: {t: 2}, u: {v: {w: 3}}, x: {y: {z: {q: 4}}}}],
+  ],
+}
+
+{
+  name: "a ten level deep key",
+  graph: {nodes: [{expression: "calc", fields: {"a.b.c.d.e.f.g.h.i.j": "v", back: "$.a.b.c.d.e.f.g.h.i.j"}}]},
+  cases: [
+    [{v: 1}, {a: {b: {c: {d: {e: {f: {g: {h: {i: {j: 1}}}}}}}}}, back: 1}],
+    [{v: "deep"}, {a: {b: {c: {d: {e: {f: {g: {h: {i: {j: "deep"}}}}}}}}}, back: "deep"}],
+  ],
+}
+
+{
+  name: "$ mirrors the nested shape",
+  graph: {nodes: [{expression: "calc", fields: {"a.b": "v", leaf: "$.a.b", node: "$.a", flat: "$['a.b']"}}]},
+  cases: [
+    [{v: 1}, {a: {b: 1}, leaf: 1, node: {b: 1}}],
+    [{v: "x"}, {a: {b: "x"}, leaf: "x", node: {b: "x"}}],
+    [{v: [1]}, {a: {b: [1]}, leaf: [1], node: {b: [1]}}],
+  ],
+}
+
+{
+  name: "fields reading a nested branch built so far",
+  graph: {nodes: [{expression: "calc", fields: {"p.a": "1", "p.b": "2", total: "sum(values($.p))", "p.c": "3", count: "len(keys($.p))"}}]},
+  cases: [
+    [{}, {p: {a: 1, b: 2, c: 3}, total: 3, count: 3}],
+    [{p: {z: 9}}, {p: {a: 1, b: 2, c: 3}, total: 3, count: 3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Writing into an object produced by an earlier field.
+{
+  name: "a dotted key extends an object literal written earlier",
+  graph: {nodes: [{expression: "calc", fields: {o: "{a: 1}", "o.b": "2"}}]},
+  cases: [
+    [{}, {o: {a: 1, b: 2}}],
+    [{o: {z: 1}}, {o: {a: 1, b: 2}}],
+  ],
+}
+
+{
+  name: "a dotted key overwrites a leaf of an object written earlier",
+  graph: {nodes: [{expression: "calc", fields: {o: "{a: 1, b: 1}", "o.a": "2"}}]},
+  cases: [
+    [{}, {o: {a: 2, b: 1}}],
+  ],
+}
+
+{
+  name: "a plain key after a dotted key replaces the whole branch",
+  graph: {nodes: [{expression: "calc", fields: {"o.a": "1", "o.b": "2", o: "{c: 3}"}}]},
+  cases: [
+    [{}, {o: {c: 3}}],
+    [{o: {a: 9}}, {o: {c: 3}}],
+  ],
+}
+
+{
+  name: "a plain scalar key after a dotted key replaces the branch",
+  graph: {nodes: [{expression: "calc", fields: {"o.a": "1", o: "5", read: "$.o"}}]},
+  cases: [
+    [{}, {o: 5, read: 5}],
+  ],
+}
+
+// Writing a field into an object copied from the request must not change the request.
+{
+  name: "extending a copied request object does not change the request",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {copy: "inp", "copy.extra": "1"}}]},
+  cases: [
+    {input: {inp: {v: 1}}, output: {inp: {v: 1}, copy: {v: 1, extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also adds extra to the passed-through inp", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+    [{inp: {}}, {inp: {}, copy: {extra: 1}}, "bug: the copy aliases the request object, so writing copy.extra also adds extra to the passed-through inp"],
+    {input: {inp: {extra: 0}}, output: {inp: {extra: 0}, copy: {extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also overwrites the passed-through inp.extra", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+  ],
+}
+
+{
+  name: "extending a copied request object does not leak into sibling branches",
+  graph: {
+    nodes: [
+      {expression: "writer", fields: {copy: "inp", "copy.extra": "1"}},
+      {expression: "reader", fields: {seen: "$nodes.input.inp"}},
+    ],
+    edges: ["input -> writer -> output", "input -> reader -> output"],
+  },
+  cases: [
+    {input: {inp: {v: 1}}, output: {copy: {v: 1, extra: 1}, seen: {v: 1}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+    {input: {inp: {v: "x"}}, output: {copy: {v: "x", extra: 1}, seen: {v: "x"}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+  ],
+}
+
+{
+  name: "extending a copied request object without pass-through",
+  graph: {nodes: [{expression: "calc", fields: {copy: "inp", "copy.extra": "1", original: "inp"}}]},
+  cases: [
+    [{inp: {v: 1}}, {copy: {v: 1, extra: 1}, original: {v: 1}}, "bug: the copy aliases the request object, so a later read of inp sees extra"],
+    [{inp: {}}, {copy: {extra: 1}, original: {}}, "bug: the copy aliases the request object, so a later read of inp sees extra"],
+  ],
+}
+
+{
+  name: "extending an object copied from an earlier field",
+  graph: {nodes: [{expression: "calc", fields: {first: "{a: 1}", second: "$.first", "second.b": "2"}}]},
+  cases: [
+    [{}, {first: {a: 1}, second: {a: 1, b: 2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Merging dotted output into input objects under pass-through.
+{
+  name: "pass-through merges a dotted key into an input object",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"customer.tier": "customer.score > 50 ? 'gold' : 'silver'"}}]},
+  cases: [
+    [{customer: {score: 80, name: "ann"}}, {customer: {score: 80, name: "ann", tier: "gold"}}],
+    [{customer: {score: 10}}, {customer: {score: 10, tier: "silver"}}],
+    [{customer: {score: 10, tier: "old"}}, {customer: {score: 10, tier: "silver"}}],
+    [{customer: {score: 51}, other: [1]}, {customer: {score: 51, tier: "gold"}, other: [1]}],
+  ],
+}
+
+{
+  name: "pass-through merges deep dotted keys into nested input objects",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"a.b.c": "1", "a.b.d": "2"}}]},
+  cases: [
+    [{a: {b: {x: 0}, y: 0}}, {a: {b: {x: 0, c: 1, d: 2}, y: 0}}],
+    [{a: {b: {c: 9}}}, {a: {b: {c: 1, d: 2}}}],
+    [{a: {}}, {a: {b: {c: 1, d: 2}}}],
+    [{}, {a: {b: {c: 1, d: 2}}}],
+  ],
+}
+
+{
+  name: "pass-through replaces a scalar input with the dotted object",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"a.b": "1"}}]},
+  cases: [
+    [{a: 5}, {a: {b: 1}}],
+    [{a: "s"}, {a: {b: 1}}],
+    [{a: true}, {a: {b: 1}}],
+    [{a: [1, 2]}, {a: {b: 1}}],
+    [{a: null}, {a: {b: 1}}],
+  ],
+}
+
+{
+  name: "without pass-through a dotted key does not merge with the input",
+  graph: {nodes: [{expression: "calc", fields: {"customer.tier": "'gold'"}}]},
+  cases: [
+    [{customer: {score: 80, name: "ann"}}, {customer: {tier: "gold"}}],
+    [{}, {customer: {tier: "gold"}}],
+    [{customer: 1}, {customer: {tier: "gold"}}],
+  ],
+}
+
+{
+  name: "pass-through with a dotted key under an input array",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"items.count": "len(items)"}}]},
+  cases: [
+    [{items: [1, 2, 3]}, {items: {count: 3}}, "question: a dotted key whose parent is an input array replaces the array with an object under pass-through"],
+    [{items: []}, {items: {count: 0}}, "question: a dotted key whose parent is an input array replaces the array with an object under pass-through"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Conflicting paths inside one node.
+{
+  name: "a dotted key under an earlier scalar field is dropped",
+  graph: {nodes: [{expression: "calc", fields: {a: "1", "a.b": "2", read: "$.a"}}]},
+  cases: [
+    [{}, {a: {b: 2}, read: {b: 2}}, "bug: writing a.b under a scalar a is silently ignored; it should replace a (as a later plain key does) or fail"],
+    [{a: {b: 0}}, {a: {b: 2}, read: {b: 2}}, "bug: writing a.b under a scalar a is silently ignored; it should replace a (as a later plain key does) or fail"],
+  ],
+}
+
+{
+  name: "a dotted key under an earlier string field is dropped",
+  graph: {nodes: [{expression: "calc", fields: {a: "'s'", "a.b.c": "2"}}]},
+  cases: [
+    [{}, {a: {b: {c: 2}}}, "bug: writing a.b.c under a string a is silently ignored"],
+  ],
+}
+
+{
+  name: "a dotted key under an earlier null field",
+  graph: {nodes: [{expression: "calc", fields: {a: "missing", "a.b": "2"}}]},
+  cases: [
+    [{}, {a: {b: 2}}, "bug: writing a.b under a null a is silently ignored"],
+    [{missing: {x: 1}}, {a: {x: 1, b: 2}}],
+  ],
+}
+
+{
+  name: "a dotted key under an earlier array field is dropped",
+  graph: {nodes: [{expression: "calc", fields: {items: "[1, 2]", "items.0": "9", "items.x": "8"}}]},
+  cases: [
+    [{}, {items: [1, 2]}, "question: a dotted key whose parent is an array is silently ignored, including numeric segments"],
+  ],
+}
+
+{
+  name: "a nested scalar blocks a deeper write",
+  graph: {nodes: [{expression: "calc", fields: {"a.b": "1", "a.b.c": "2", "a.d": "3"}}]},
+  cases: [
+    [{}, {a: {b: {c: 2}, d: 3}}, "bug: writing a.b.c under a scalar a.b is silently ignored"],
+  ],
+}
+
+{
+  name: "duplicate dotted keys overwrite",
+  graph: {nodes: [{expression: "calc", fields: [["a.b", "1"], ["a.b", "2"], ["a.c", "$.a.b + 1"]]}]},
+  cases: [
+    [{}, {a: {b: 2, c: 3}}],
+  ],
+}
+
+{
+  name: "a duplicate dotted key turned null",
+  graph: {nodes: [{expression: "calc", fields: [["a.b", "1"], ["a.b", "missing"], ["a.c", "2"]]}]},
+  cases: [
+    [{}, {a: {b: null, c: 2}}],
+    [{missing: 5}, {a: {b: 5, c: 2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Numeric segments create objects, never arrays.
+{
+  name: "numeric path segments create object keys",
+  graph: {nodes: [{expression: "calc", fields: {"items.0": "'a'", "items.1.name": "'b'"}}]},
+  cases: [
+    [{}, {items: {"0": "a", "1": {name: "b"}}}],
+    [{items: ["x", "y"]}, {items: {"0": "a", "1": {name: "b"}}}],
+  ],
+}
+
+{
+  name: "numeric keys under pass-through over an input array",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"items.0": "'a'"}}]},
+  cases: [
+    [{items: ["x", "y"]}, {items: {"0": "a"}}, "question: a numeric segment does not index into an input array; the array is replaced by an object"],
+    [{}, {items: {"0": "a"}}],
+  ],
+}
+
+{
+  name: "reading numeric keys back",
+  graph: {nodes: [{expression: "calc", fields: {"m.0": "'zero'", back: "$.m['0']", missing: "$.m[0]"}}]},
+  cases: [
+    [{}, {m: {"0": "zero"}, back: "zero"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// The `$` root and keys with special characters.
+{
+  name: "a key named $ is an ordinary output key",
+  graph: {nodes: [{expression: "calc", fields: {"$": "v"}}]},
+  cases: [
+    [{v: 1}, {"$": 1}],
+    [{v: "s"}, {"$": "s"}],
+    [{v: {a: 1}}, {"$": {a: 1}}],
+  ],
+}
+
+{
+  name: "a key starting with $. nests under a $ key",
+  graph: {nodes: [{expression: "calc", fields: {"$.x": "v", read: "$['$'].x"}}]},
+  cases: [
+    [{v: 1}, {"$": {x: 1}, read: 1}],
+    [{v: "s"}, {"$": {x: "s"}, read: "s"}],
+  ],
+}
+
+{
+  name: "a key with spaces",
+  graph: {nodes: [{expression: "calc", fields: {"my key": "v", read: "$['my key']", "outer.inner key": "v"}}]},
+  cases: [
+    [{v: 1}, {"my key": 1, read: 1, outer: {"inner key": 1}}],
+    [{v: "x"}, {"my key": "x", read: "x", outer: {"inner key": "x"}}],
+  ],
+}
+
+{
+  name: "keys with dashes, unicode and symbols",
+  graph: {nodes: [{expression: "calc", fields: {"a-b": "1", "ключ": "2", "x@y": "3", "c[0]": "4", "q?": "5"}}]},
+  cases: [
+    [{}, {"a-b": 1, "ключ": 2, "x@y": 3, "c[0]": 4, "q?": 5}],
+  ],
+}
+
+{
+  name: "empty path segments",
+  graph: {nodes: [{expression: "calc", fields: {"a..b": "1", ".lead": "2", "trail.": "3"}}]},
+  cases: [
+    [{}, {a: {"": {b: 1}}, "": {lead: 2}, trail: {"": 3}}, "question: empty segments in a dotted key become empty-string keys rather than being rejected"],
+  ],
+}
+
+{
+  name: "a key that is a single dot",
+  graph: {nodes: [{expression: "calc", fields: {".": "1", ok: "2"}}]},
+  cases: [
+    [{}, {"": {"": 1}, ok: 2}, "question: a key \".\" becomes nested empty-string keys"],
+  ],
+}
+
+{
+  name: "a request key containing a dot is not a path",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"a.b": "2", flat: "$['a.b']"}}]},
+  cases: [
+    [{"a.b": 1}, {"a.b": 1, a: {b: 2}}],
+    [{"a.b": 1, a: {c: 3}}, {"a.b": 1, a: {b: 2, c: 3}}],
+  ],
+}
+
+{
+  name: "a request with a dotted key read through member access",
+  graph: {nodes: [{expression: "calc", fields: {member: "a.b", bracket: "$nodes.input['a.b']"}}]},
+  cases: [
+    [{"a.b": 1}, {bracket: 1}],
+    [{"a.b": 1, a: {b: 2}}, {member: 2, bracket: 1}],
+    [{a: {b: 3}}, {member: 3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Dotted keys across nodes.
+{
+  name: "a downstream node reads nested output of an upstream node",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {"res.a": "x", "res.b": "x * 2"}},
+      {expression: "second", fields: {"out.sum": "res.a + res.b", "out.keys": "keys(res)"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {out: {sum: 3, keys: ["a", "b"]}}],
+    [{x: 0}, {out: {sum: 0, keys: ["a", "b"]}}],
+    [{x: -2}, {out: {sum: -6, keys: ["a", "b"]}}],
+  ],
+}
+
+{
+  name: "chained pass-through nodes each add to the same nested object",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {"res.a": "1"}},
+      {expression: "b", passThrough: true, fields: {"res.b": "res.a + 1"}},
+      {expression: "c", passThrough: true, fields: {"res.c": "res.b + 1"}},
+    ],
+  },
+  cases: [
+    [{}, {res: {a: 1, b: 2, c: 3}}],
+    [{res: {z: 0}, k: 1}, {res: {z: 0, a: 1, b: 2, c: 3}, k: 1}],
+  ],
+}
+
+{
+  name: "parallel branches write disjoint leaves of the same object",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {"res.left": "x"}},
+      {expression: "right", fields: {"res.right": "x * 10"}},
+    ],
+    edges: ["input -> left -> output", "input -> right -> output"],
+  },
+  cases: [
+    [{x: 1}, {res: {left: 1, right: 10}}],
+    [{x: 0}, {res: {left: 0, right: 0}}],
+  ],
+}

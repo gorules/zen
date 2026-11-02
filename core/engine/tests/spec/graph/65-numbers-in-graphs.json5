@@ -1,0 +1,543 @@
+// Numbers across nodes. Every number is an exact decimal (96-bit mantissa, up to 28 fractional
+// digits, max 79228162514264337593543950335). These suites follow a number through tables,
+// expression chains, loops and sub-decisions: its value and its scale (observed with `string()`)
+// must survive every hop, rounding helpers round half away from zero, division by zero is null,
+// overflow is an error of the node that overflows, and table cells compare numbers by value.
+// 21-values pins single-node precision; here the interest is the hops between nodes.
+
+// ---------------------------------------------------------------------------------------------
+// Scale preservation: the textual scale of a number survives tables, chains, loops and
+// sub-decisions, and arithmetic produces the scale decimal arithmetic defines.
+{
+  name: "scale: a request number keeps its scale through a pass-through table and an expression",
+  graph: {nodes: [
+    {table: "t", passThrough: true, inputs: ["kind"], outputs: ["seen"], rules: [["", "true"]]},
+    {expression: "show", fields: {s: "string(amount)", v: "amount"}},
+  ]},
+  cases: [
+    [{amount: 1.50, kind: "a"}, {s: "1.50", v: 1.5}],
+    [{amount: 2.000}, {s: "2.000", v: 2}],
+    [{amount: 0.10}, {s: "0.10", v: 0.1}],
+    [{amount: 100}, {s: "100", v: 100}],
+    [{amount: -0.0500}, {s: "-0.0500", v: -0.05}],
+  ],
+}
+
+{
+  name: "scale: a table output cell keeps the scale it is written with",
+  graph: {nodes: [
+    {table: "t", inputs: ["band"], outputs: ["rate"], rules: [
+      ["'a'", "1.50"],
+      ["'b'", "2.000"],
+      ["'c'", "0.1"],
+      ["", "5"],
+    ]},
+    {expression: "show", fields: {s: "string(rate)", twice: "string(rate * 2)", plus: "string(rate + 1)"}},
+  ]},
+  cases: [
+    [{band: "a"}, {s: "1.50", twice: "3.00", plus: "2.50"}],
+    [{band: "b"}, {s: "2.000", twice: "4.000", plus: "3.000"}],
+    [{band: "c"}, {s: "0.1", twice: "0.2", plus: "1.1"}],
+    [{band: "z"}, {s: "5", twice: "10", plus: "6"}],
+  ],
+}
+
+{
+  name: "scale: arithmetic scale follows decimal rules across a chain",
+  graph: {nodes: [
+    {expression: "a", fields: {sum: "x + y", prod: "x * y", diff: "x - y"}},
+    {expression: "b", fields: {sum: "string(sum)", prod: "string(prod)", diff: "string(diff)"}},
+  ]},
+  cases: [
+    [{x: 1.10, y: 2.2}, {sum: "3.30", prod: "2.420", diff: "-1.10"}],
+    [{x: 1.5, y: 2}, {sum: "3.5", prod: "3.0", diff: "-0.5"}],
+    [{x: 0.25, y: 0.75}, {sum: "1.00", prod: "0.1875", diff: "-0.50"}],
+    [{x: 10, y: 0.010}, {sum: "10.010", prod: "0.100", diff: "9.990"}],
+  ],
+}
+
+{
+  name: "scale: a number crosses a sub-decision boundary unchanged",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {s: "string(v)", next: "v * 1"}}]},
+  },
+  graph: {nodes: [
+    {decision: "call", key: "child"},
+    {expression: "after", fields: {s: "s", next: "string(next)"}},
+  ]},
+  cases: [
+    [{v: 1.50}, {s: "1.50", next: "1.50"}],
+    [{v: 3}, {s: "3", next: "3"}],
+    [{v: 0.000001}, {s: "0.000001", next: "0.000001"}],
+    [{v: 12345678901234567890.12}, {s: "12345678901234567890.12", next: "12345678901234567890.12"}],
+  ],
+}
+
+{
+  name: "scale: per-item numbers keep their scale through a loop node",
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {s: "string(price)", total: "string(price * qty)"}},
+  ]},
+  cases: [
+    [{items: [{price: 1.50, qty: 2}, {price: 2, qty: 1.5}, {price: 0.333, qty: 3}]}, {lines: [{s: "1.50", total: "3.00"}, {s: "2", total: "3.0"}, {s: "0.333", total: "0.999"}]}],
+    [{items: [{price: 9.99, qty: 0}]}, {lines: [{s: "9.99", total: "0.00"}]}, "bug: a zero product drops its scale (9.99 * 0 prints '0'), as zero sums do in the expression spec"],
+    [{items: []}, {lines: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rounding helpers across nodes: half away from zero, a places argument read from the request, the
+// rounded value feeding a table.
+{
+  name: "rounding: round, floor, ceil and trunc on positive and negative halves",
+  graph: {nodes: [{expression: "calc", fields: {r: "round(x)", f: "floor(x)", c: "ceil(x)", t: "trunc(x)", r1: "round(x, 1)"}}]},
+  cases: [
+    [{x: 0.5}, {r: 1, f: 0, c: 1, t: 0, r1: 0.5}],
+    [{x: -0.5}, {r: -1, f: -1, c: 0, t: 0, r1: -0.5}],
+    [{x: 1.45}, {r: 1, f: 1, c: 2, t: 1, r1: 1.5}],
+    [{x: -1.45}, {r: -1, f: -2, c: -1, t: -1, r1: -1.5}],
+    [{x: 2.55}, {r: 3, f: 2, c: 3, t: 2, r1: 2.6}],
+    [{x: 7}, {r: 7, f: 7, c: 7, t: 7, r1: 7}],
+    [{x: 0.04999}, {r: 0, f: 0, c: 1, t: 0, r1: 0}],
+  ],
+}
+
+{
+  name: "rounding: the number of places comes from the request",
+  graph: {nodes: [{expression: "calc", fields: {r: "round(x, p)", s: "string(round(x, p))"}}]},
+  cases: [
+    [{x: 3.14159, p: 0}, {r: 3, s: "3"}],
+    [{x: 3.14159, p: 2}, {r: 3.14, s: "3.14"}],
+    [{x: 3.14159, p: 4}, {r: 3.1416, s: "3.1416"}],
+    [{x: 3.14159, p: 10}, {r: 3.14159, s: "3.14159"}],
+    [{x: 2.5, p: 0}, {r: 3, s: "3"}],
+    [{x: 9.995, p: 2}, {r: 10, s: "10.00"}],
+  ],
+}
+
+{
+  name: "rounding: rounded money totals from a loop summed downstream",
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {net: "round(price * qty * (1 - discount), 2)"}},
+    {expression: "total", fields: {total: "sum(map(lines, #.net))", text: "string(sum(map(lines, #.net)))"}},
+  ]},
+  cases: [
+    [{items: [{price: 19.99, qty: 3, discount: 0.15}, {price: 0.99, qty: 7, discount: 0}]}, {total: 57.90, text: "57.90"}],
+    [{items: [{price: 10, qty: 1, discount: 0.333}]}, {total: 6.67, text: "6.67"}],
+    [{items: [{price: 0.005, qty: 1, discount: 0}, {price: 0.005, qty: 1, discount: 0}]}, {total: 0.02, text: "0.02"}],
+    [{items: []}, {total: 0, text: "0"}],
+  ],
+}
+
+{
+  name: "rounding: a rounded score lands in the band the unrounded score misses",
+  graph: {nodes: [
+    {expression: "score", passThrough: true, fields: {rounded: "round(raw)"}},
+    {table: "band", inputs: ["raw", "rounded"], outputs: ["rawBand", "roundedBand"], hit: "collect", rules: [
+      ["[0..50)", "", "'low'", ""],
+      ["[50..100]", "", "'high'", ""],
+      ["", "[0..50)", "", "'low'"],
+      ["", "[50..100]", "", "'high'"],
+    ]},
+  ]},
+  cases: [
+    [{raw: 49.5}, [{rawBand: "low"}, {roundedBand: "high"}]],
+    [{raw: 49.49}, [{rawBand: "low"}, {roundedBand: "low"}]],
+    [{raw: 50}, [{rawBand: "high"}, {roundedBand: "high"}]],
+    [{raw: 99.5}, [{rawBand: "high"}, {roundedBand: "high"}]],
+    [{raw: 100.4}, [{roundedBand: "high"}]],
+    [{raw: 100.5}, []],
+    [{raw: -0.5}, []],
+  ],
+}
+
+{
+  name: "rounding: an allocation split three ways and the remainder",
+  graph: {nodes: [
+    {expression: "split", passThrough: true, fields: {share: "floor(total / 3 * 100) / 100"}},
+    {expression: "rest", fields: {share: "share", last: "total - share * 2", check: "share * 2 + (total - share * 2) == total"}},
+  ]},
+  cases: [
+    [{total: 100}, {share: 33.33, last: 33.34, check: true}],
+    [{total: 10}, {share: 3.33, last: 3.34, check: true}],
+    [{total: 0.01}, {share: 0, last: 0.01, check: true}],
+    [{total: 9}, {share: 3, last: 3, check: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Division: exact where the quotient terminates, 28 digits where it does not, null on division by
+// zero (so the field is dropped unless it is defaulted).
+{
+  name: "division: terminating and repeating quotients",
+  graph: {nodes: [{expression: "calc", fields: {q: "a / b"}}]},
+  cases: [
+    [{a: 10, b: 4}, {q: 2.5}],
+    [{a: 1, b: 3}, {q: 0.3333333333333333333333333333}],
+    [{a: 2, b: 3}, {q: 0.6666666666666666666666666667}],
+    [{a: 1, b: 8}, {q: 0.125}],
+    [{a: -7, b: 2}, {q: -3.5}],
+    [{a: 0.3, b: 0.1}, {q: 3}],
+    [{a: 1, b: 0.0001}, {q: 10000}],
+  ],
+}
+
+{
+  name: "division: a repeating quotient multiplied back in a later node",
+  graph: {nodes: [
+    {expression: "a", fields: {third: "x / 3", x: "x"}},
+    {expression: "b", fields: {back: "third * 3", rounded: "round(third * 3, 10)", equal: "round(third * 3, 10) == x"}},
+  ]},
+  cases: [
+    [{x: 1}, {back: 0.9999999999999999999999999999, rounded: 1, equal: true}],
+    [{x: 2}, {back: 2.0000000000000000000000000001, rounded: 2, equal: true}],
+    [{x: 3}, {back: 3, rounded: 3, equal: true}],
+    [{x: 0}, {back: 0, rounded: 0, equal: true}],
+  ],
+}
+
+{
+  name: "division: by zero yields null, the field is dropped and a default can fill it",
+  graph: {nodes: [
+    {expression: "ratio", passThrough: true, fields: {ratio: "a / b"}},
+    {expression: "use", fields: {ratio: "ratio", safe: "ratio ?? 0", isNull: "ratio == null"}},
+  ]},
+  cases: [
+    [{a: 1, b: 2}, {ratio: 0.5, safe: 0.5, isNull: false}],
+    [{a: 1, b: 0}, {safe: 0, isNull: true}],
+    [{a: 0, b: 0}, {safe: 0, isNull: true}],
+    [{a: -5, b: 0.0}, {safe: 0, isNull: true}],
+    [{a: 0, b: 5}, {ratio: 0, safe: 0, isNull: false}],
+  ],
+}
+
+{
+  name: "division: a null quotient in arithmetic downstream is an error",
+  graph: {nodes: [
+    {expression: "ratio", fields: {ratio: "a / b"}},
+    {expression: "pct", fields: {pct: "ratio * 100"}},
+  ]},
+  cases: [
+    [{a: 1, b: 4}, {pct: 25}],
+    [{a: 1, b: 0}, "!error"],
+    [{a: 3, b: 3}, {pct: 100}],
+  ],
+}
+
+{
+  name: "division: modulo across signs and by zero",
+  graph: {nodes: [{expression: "calc", fields: {m: "a % b"}}]},
+  cases: [
+    [{a: 7, b: 3}, {m: 1}],
+    [{a: -7, b: 3}, {m: -1}],
+    [{a: 7, b: -3}, {m: 1}],
+    [{a: 7.5, b: 2}, {m: 1.5}],
+    [{a: 7, b: 0}, {}],
+  ],
+}
+
+{
+  name: "division: a ratio computed upstream drives a table",
+  graph: {nodes: [
+    {expression: "dti", fields: {dti: "debt / income"}},
+    {table: "t", inputs: ["dti"], outputs: ["decision"], rules: [
+      ["<= 0.36", "'approve'"],
+      ["(0.36..0.43]", "'review'"],
+      ["> 0.43", "'decline'"],
+      ["", "'no income'"],
+    ]},
+  ]},
+  cases: [
+    [{debt: 36, income: 100}, {decision: "approve"}],
+    [{debt: 1, income: 3}, {decision: "approve"}],
+    [{debt: 43, income: 100}, {decision: "review"}],
+    [{debt: 3, income: 7}, {decision: "review"}],
+    [{debt: 44, income: 100}, {decision: "decline"}],
+    [{debt: 10, income: 0}, {decision: "no income"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Magnitudes: the largest decimal passes through; arithmetic that leaves the range errors in the
+// node that computes it; tiny values round to the 28th fractional digit.
+{
+  name: "magnitudes: the largest decimal passes through tables and expressions",
+  graph: {nodes: [
+    {table: "t", passThrough: true, inputs: ["x"], outputs: ["big"], rules: [["> 0", "true"], ["", "false"]]},
+    {expression: "e", fields: {same: "x", minus: "x - 1", s: "string(x)", big: "big"}},
+  ]},
+  cases: [
+    [{x: 79228162514264337593543950335}, {same: 79228162514264337593543950335, minus: 79228162514264337593543950334, s: "79228162514264337593543950335", big: true}],
+    [{x: -79228162514264337593543950335}, "!error"],
+  ],
+}
+
+{
+  name: "magnitudes: overflow fails the node that overflows, not the one before",
+  graph: {nodes: [
+    {expression: "a", fields: {x: "x * 1000"}},
+    {expression: "b", fields: {x: "x * 1000"}},
+  ]},
+  cases: [
+    [{x: 1}, {x: 1000000}],
+    [{x: 79228162514264337593543950}, "!error: \"nodeId\":\"b\""],
+    [{x: 79228162514264337593543951}, "!error: \"nodeId\":\"a\""],
+    [{x: 79228162514264337593543950335}, "!error: \"nodeId\":\"a\""],
+  ],
+}
+
+{
+  name: "magnitudes: overflow in a table output cell skips the row",
+  graph: {nodes: [
+    {table: "t", inputs: ["k"], outputs: ["v"], rules: [
+      ["'big'", "x * x"],
+      ["", "x"],
+    ]},
+  ]},
+  cases: [
+    [{k: "small", x: 79228162514264337593543950335}, {v: 79228162514264337593543950335}],
+    [{k: "big", x: 1000}, {v: 1000000}],
+    [{k: "big", x: 10000000000000000}, {v: 10000000000000000}, "question: an overflowing output cell turns its row into a non-match and the catch-all wins, instead of failing the node (see 07)"],
+  ],
+}
+
+{
+  name: "magnitudes: a sum over many large values overflows",
+  graph: {nodes: [{expression: "calc", fields: {total: "sum(xs)"}}]},
+  cases: [
+    [{xs: [39614081257132168796771975167, 39614081257132168796771975168]}, {total: 79228162514264337593543950335}],
+    [{xs: [39614081257132168796771975168, 39614081257132168796771975168]}, "!error"],
+    [{xs: [79228162514264337593543950335, -1, 1]}, {total: 79228162514264337593543950335}],
+  ],
+}
+
+{
+  name: "magnitudes: tiny values and products below the smallest step",
+  graph: {nodes: [
+    {expression: "a", fields: {p: "x * y"}},
+    {expression: "b", fields: {p: "p", zero: "p == 0", s: "string(p)"}},
+  ]},
+  cases: [
+    [{x: 0.0000000000000000000000000001, y: 1}, {p: 0.0000000000000000000000000001, zero: false, s: "0.0000000000000000000000000001"}],
+    [{x: 0.00000000000001, y: 0.00000000000001}, {p: 0.0000000000000000000000000001, zero: false, s: "0.0000000000000000000000000001"}],
+    [{x: 0.0000000000000000000000000001, y: 0.1}, {p: 0, zero: true, s: "0.0000000000000000000000000000"}],
+    [{x: 0.0000000000000000000000000001, y: 0.5}, {p: 0, zero: true, s: "0.0000000000000000000000000000"}],
+  ],
+}
+
+{
+  name: "magnitudes: values with 28 fractional digits survive a chain of nodes",
+  graph: {nodes: [
+    {expression: "a", passThrough: true, fields: {y: "x + 0.0000000000000000000000000001"}},
+    {table: "t", passThrough: true, inputs: ["y"], outputs: ["above"], rules: [["> x", "true"], ["", "false"]]},
+    {expression: "c", fields: {y: "y", above: "above", gap: "y - x"}},
+  ]},
+  cases: [
+    [{x: 1}, {y: 1.0000000000000000000000000001, above: true, gap: 0.0000000000000000000000000001}],
+    [{x: 0}, {y: 0.0000000000000000000000000001, above: true, gap: 0.0000000000000000000000000001}],
+    [{x: -1}, {y: -0.9999999999999999999999999999, above: true, gap: 0.0000000000000000000000000001}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numbers carried as strings: a numeric string is a string until it is converted. number() keeps
+// the scale of the text, rejects malformed text, and the converted value behaves as a number in
+// tables and arithmetic downstream.
+{
+  name: "strings: number() converts upstream and the next node does arithmetic",
+  graph: {nodes: [
+    {expression: "parse", fields: {amount: "number(amount)"}},
+    {expression: "use", fields: {double: "amount * 2", s: "string(amount)"}},
+  ]},
+  cases: [
+    [{amount: "12"}, {double: 24, s: "12"}],
+    [{amount: "1.50"}, {double: 3, s: "1.50"}],
+    [{amount: " -0.25 "}, {double: -0.5, s: "-0.25"}],
+    [{amount: "1e3"}, {double: 2000, s: "1000"}],
+    [{amount: 7}, {double: 14, s: "7"}],
+    [{amount: "1,000"}, "!error"],
+    [{amount: ""}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "strings: a numeric string meets a numeric table only after conversion",
+  graph: {nodes: [
+    {table: "raw", passThrough: true, inputs: ["v"], outputs: ["rawHit"], rules: [["> 10", "true"], ["", "false"]]},
+    {table: "converted", passThrough: true, inputs: ["number(v)"], outputs: ["convHit"], rules: [["> 10", "true"], ["", "false"]]},
+    {expression: "out", fields: {rawHit: "rawHit", convHit: "convHit"}},
+  ]},
+  cases: [
+    [{v: "20"}, {rawHit: false, convHit: true}],
+    [{v: 20}, {rawHit: true, convHit: true}],
+    [{v: "5"}, {rawHit: false, convHit: false}],
+    [{v: "10.01"}, {rawHit: false, convHit: true}],
+  ],
+}
+
+{
+  name: "strings: isNumeric guards a conversion of mixed rows",
+  graph: {nodes: [{expression: "calc", fields: {n: "isNumeric(v) ? number(v) : 0", ok: "isNumeric(v)"}}]},
+  cases: [
+    [{v: "42"}, {n: 42, ok: true}],
+    [{v: "4.20"}, {n: 4.2, ok: true}],
+    [{v: "abc"}, {n: 0, ok: false}],
+    [{v: ""}, {n: 0, ok: false}],
+    [{v: 3}, {n: 3, ok: true}],
+    [{v: null}, {n: 0, ok: false}],
+  ],
+}
+
+{
+  name: "strings: a number turned into a string and back keeps its value",
+  graph: {nodes: [
+    {expression: "a", fields: {text: "string(x)"}},
+    {expression: "b", fields: {back: "number(text)", same: "number(text) == x", text: "text"}},
+  ]},
+  cases: [
+    [{x: 1.50}, {back: 1.5, same: false, text: "1.50"}],
+    [{x: 0.1}, {back: 0.1, same: false, text: "0.1"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Integer and decimal forms compare by value in table cells, switch conditions and membership.
+{
+  name: "equality: an integer cell matches decimal forms of the same value",
+  graph: {nodes: [
+    {table: "t", inputs: ["v"], outputs: ["hit"], rules: [
+      ["1", "'one'"],
+      ["2.0", "'two'"],
+      ["2.50", "'two and a half'"],
+      ["", "'other'"],
+    ]},
+  ]},
+  cases: [
+    [{v: 1}, {hit: "one"}],
+    [{v: 1.0}, {hit: "one"}],
+    [{v: 1.000}, {hit: "one"}],
+    [{v: 2}, {hit: "two"}],
+    [{v: 2.00}, {hit: "two"}],
+    [{v: 2.5}, {hit: "two and a half"}],
+    [{v: 2.500}, {hit: "two and a half"}],
+    [{v: 1.0000000000000000000000000001}, {hit: "other"}],
+    [{v: "1"}, {hit: "other"}],
+  ],
+}
+
+{
+  name: "equality: list cells and negated cells with mixed scales",
+  graph: {nodes: [
+    {table: "t", inputs: ["v"], outputs: ["hit"], rules: [
+      ["1, 2.0, 3.00", "'listed'"],
+      ["!= 4", "'not four'"],
+      ["", "'four'"],
+    ]},
+  ]},
+  cases: [
+    [{v: 1.0}, {hit: "listed"}],
+    [{v: 2}, {hit: "listed"}],
+    [{v: 3}, {hit: "listed"}],
+    [{v: 4.00}, {hit: "four"}],
+    [{v: 4}, {hit: "four"}],
+    [{v: 5}, {hit: "not four"}],
+  ],
+}
+
+{
+  name: "equality: a computed decimal meets integer point cells in an indexed table",
+  graph: {nodes: [
+    {expression: "calc", fields: {code: "a * b"}},
+    {table: "t", inputs: ["code"], outputs: ["label"], rules: [
+      ["1", "'c1'"], ["2", "'c2'"], ["3", "'c3'"], ["4", "'c4'"], ["5", "'c5'"],
+      ["6", "'c6'"], ["7", "'c7'"], ["8", "'c8'"], ["9", "'c9'"], ["10", "'c10'"],
+      ["", "'none'"],
+    ]},
+  ]},
+  cases: [
+    [{a: 0.5, b: 4}, {label: "c2"}],
+    [{a: 2.5, b: 2}, {label: "c5"}],
+    [{a: 1.10, b: 10}, {label: "none"}],
+    [{a: 0.3, b: 10}, {label: "c3"}],
+    [{a: 3.3, b: 3}, {label: "none"}],
+    [{a: 1, b: 10}, {label: "c10"}],
+  ],
+}
+
+{
+  name: "equality: switch conditions and membership compare by value",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["v == 1", "v in [2, 3.0]", ""]},
+      {expression: "one", fields: {r: "'one'"}},
+      {expression: "list", fields: {r: "'list'"}},
+      {expression: "other", fields: {r: "'other'"}},
+    ],
+    edges: ["input -> s", "s:0 -> one -> output", "s:1 -> list -> output", "s:2 -> other -> output"],
+  },
+  cases: [
+    [{v: 1.00}, {r: "one"}],
+    [{v: 2.0}, {r: "list"}],
+    [{v: 3}, {r: "list"}],
+    [{v: 3.000}, {r: "list"}],
+    [{v: "3"}, {r: "other"}],
+    [{v: 4}, {r: "other"}],
+  ],
+}
+
+{
+  name: "equality: interval boundaries with trailing zeros",
+  graph: {nodes: [
+    {table: "t", inputs: ["v"], outputs: ["in"], rules: [
+      ["[1.0..2.00]", "true"],
+      ["", "false"],
+    ]},
+  ]},
+  cases: [
+    [{v: 1}, {in: true}],
+    [{v: 2}, {in: true}],
+    [{v: 2.000}, {in: true}],
+    [{v: 0.99999}, {in: false}],
+    [{v: 2.0000000000000000000000000001}, {in: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Aggregates of decimals across nodes.
+{
+  name: "aggregates: sum, avg, min and max over decimals from a loop",
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {v: "price * qty"}},
+    {expression: "agg", fields: {
+      sum: "sum(map(lines, #.v))",
+      avg: "avg(map(lines, #.v))",
+      min: "min(map(lines, #.v))",
+      max: "max(map(lines, #.v))",
+    }},
+  ]},
+  cases: [
+    [{items: [{price: 0.1, qty: 1}, {price: 0.2, qty: 1}, {price: 0.3, qty: 1}]}, {sum: 0.6, avg: 0.2, min: 0.1, max: 0.3}],
+    [{items: [{price: 1, qty: 1}, {price: 1, qty: 1}, {price: 2, qty: 1}]}, {sum: 4, avg: 1.3333333333333333333333333333, min: 1, max: 2}],
+    [{items: [{price: -1.5, qty: 2}, {price: 1.5, qty: 2}]}, {sum: 0, avg: 0, min: -3, max: 3}],
+    [{items: [{price: 9.99, qty: 3}]}, {sum: 29.97, avg: 29.97, min: 29.97, max: 29.97}],
+  ],
+}
+
+{
+  name: "aggregates: collected table outputs summed downstream",
+  graph: {nodes: [
+    {table: "fees", hit: "collect", inputs: ["amount"], outputs: ["fee"], rules: [
+      ["> 0", "0.30"],
+      ["> 100", "amount * 0.029"],
+      ["> 1000", "amount * 0.001"],
+    ]},
+    {expression: "sum", fields: {total: "sum(map($root, #.fee))", count: "len($root)"}},
+  ]},
+  cases: [
+    [{amount: 50}, {total: 0.3, count: 1}],
+    [{amount: 200}, {total: 6.1, count: 2}],
+    [{amount: 2000}, {total: 60.3, count: 3}],
+    [{amount: 0}, {total: 0, count: 0}],
+  ],
+}

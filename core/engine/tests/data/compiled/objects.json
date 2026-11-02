@@ -1,0 +1,226 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request"
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Pass",
+   "content": {
+    "expressions": [
+     {
+      "id": "e1x0",
+      "key": "profile",
+      "value": "{ 'name': user.name, 'age': user.age, 'missing': user.none, 'tags': [user.name, 'x'] }"
+     },
+     {
+      "id": "e1x1",
+      "key": "meta",
+      "value": "{}"
+     },
+     {
+      "id": "e1x2",
+      "key": "nested",
+      "value": "{ 'a': { 'b': user.age * 2, 'c': null }, 'd': 'lit' }"
+     },
+     {
+      "id": "e1x3",
+      "key": "user",
+      "value": "{ 'extra': 1, 'age': user.age + 1 }"
+     }
+    ],
+    "passThrough": true
+   }
+  },
+  {
+   "id": "e2",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Strict",
+   "content": {
+    "expressions": [
+     {
+      "id": "e2x0",
+      "key": "out",
+      "value": "{ 'n': user.age / user.div, 'flag': user.age > 30 }"
+     },
+     {
+      "id": "e2x1",
+      "key": "computed",
+      "value": "{ [user.name]: 1 }"
+     }
+    ],
+    "passThrough": false
+   }
+  },
+  {
+   "id": "e3",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Dollar",
+   "content": {
+    "expressions": [
+     {
+      "id": "e3x0",
+      "key": "x",
+      "value": "{ 'a': user.age }"
+     },
+     {
+      "id": "e3x1",
+      "key": "y",
+      "value": "$.x.a + 1"
+     }
+    ],
+    "passThrough": false
+   }
+  },
+  {
+   "id": "e4",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Down",
+   "content": {
+    "expressions": [
+     {
+      "id": "e4x0",
+      "key": "seen",
+      "value": "profile.name"
+     },
+     {
+      "id": "e4x1",
+      "key": "deep",
+      "value": "nested.a.b"
+     }
+    ],
+    "passThrough": true
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "e1",
+   "targetId": "e4",
+   "type": "edge"
+  },
+  {
+   "id": "x2",
+   "sourceId": "e4",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x3",
+   "sourceId": "in",
+   "targetId": "e2",
+   "type": "edge"
+  },
+  {
+   "id": "x4",
+   "sourceId": "e2",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x5",
+   "sourceId": "in",
+   "targetId": "e3",
+   "type": "edge"
+  },
+  {
+   "id": "x6",
+   "sourceId": "e3",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "user": {
+     "name": "ann",
+     "age": 40,
+     "div": 2
+    },
+    "profile": {
+     "keep": 1,
+     "name": "old"
+    },
+    "nested": "text"
+   }
+  },
+  {
+   "input": {
+    "user": {
+     "name": "bob",
+     "age": 20,
+     "div": 0
+    }
+   }
+  },
+  {
+   "input": {
+    "user": {
+     "name": null,
+     "age": null
+    }
+   }
+  },
+  {
+   "input": {
+    "user": "str"
+   }
+  },
+  {
+   "input": {}
+  },
+  {
+   "input": {
+    "user": {
+     "name": "cy",
+     "age": 31,
+     "div": 3,
+     "none": 5
+    },
+    "meta": {
+     "k": 1
+    }
+   }
+  }
+ ]
+}

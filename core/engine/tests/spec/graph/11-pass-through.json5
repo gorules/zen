@@ -1,0 +1,683 @@
+// Pass-through: `passThrough: true` on expression, table and decision nodes.
+//
+// With pass-through the node's result is its input with the node's own output merged on
+// top (the same deep merge as at joins): new keys are added, existing keys are replaced,
+// nested objects merge key by key, arrays are replaced, and a null in the output deletes
+// the input key. Without pass-through the node's result is only its own output.
+
+// ---------------------------------------------------------------------------------------
+// Expression nodes: off versus on.
+
+{
+  name: "expression without pass-through returns only its fields",
+  graph: {
+    nodes: [{expression: "calc", fields: {total: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3}],
+    [{a: 1, b: 2, extra: "x"}, {total: 3}],
+    [{a: 0, b: 0, total: 99}, {total: 0}],
+  ],
+}
+
+{
+  name: "expression with pass-through adds its fields to the input",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {total: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, extra: "x"}, {a: 1, b: 2, extra: "x", total: 3}],
+    [{a: -1, b: 1, list: [1, 2], o: {p: true}}, {a: -1, b: 1, total: 0, list: [1, 2], o: {p: true}}],
+  ],
+}
+
+{
+  name: "pass-through replaces an existing input key",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {total: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2, total: 99}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, total: "text"}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, total: {nested: 1}}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, total: [1]}, {a: 1, b: 2, total: 3}],
+  ],
+}
+
+{
+  name: "pass-through can rewrite a key from its own previous value",
+  graph: {
+    nodes: [{expression: "inc", passThrough: true, fields: {count: "count + 1"}}],
+  },
+  cases: [
+    [{count: 0}, {count: 1}],
+    [{count: 41, other: "x"}, {count: 42, other: "x"}],
+    [{count: -0.5}, {count: 0.5}],
+  ],
+}
+
+{
+  name: "pass-through with an empty input object",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {const: "'c'", n: "1 + 1"}}],
+  },
+  cases: [
+    [{}, {const: "c", n: 2}],
+    [{x: null}, {const: "c", n: 2}],
+  ],
+}
+
+{
+  name: "pass-through with fields that have empty keys or values keeps only the input",
+  graph: {
+    nodes: [{expression: "noop", passThrough: true, fields: [["", "1"], ["k", ""]]}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{k: "kept"}, {k: "kept"}],
+  ],
+}
+
+{
+  name: "pass-through: later fields see earlier ones through $ and the input as root",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: [
+      ["net", "price * qty"],
+      ["tax", "$.net * 0.2"],
+      ["gross", "$.net + $.tax"],
+      ["original", "net ?? 'none'"],
+    ]}],
+  },
+  cases: [
+    [{price: 10, qty: 2}, {price: 10, qty: 2, net: 20, tax: 4, gross: 24, original: "none"}],
+    [{price: 10, qty: 2, net: 1}, {price: 10, qty: 2, net: 20, tax: 4, gross: 24, original: 1}],
+  ],
+}
+
+{
+  name: "duplicate keys in a pass-through node: the last one wins",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: [["k", "1"], ["k", "$.k + 1"]]}],
+  },
+  cases: [
+    [{}, {k: 2}],
+    [{k: 10}, {k: 2}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Null in the node's output deletes the input key.
+
+{
+  name: "a field evaluating to null deletes the input key",
+  graph: {
+    nodes: [{expression: "scrub", passThrough: true, fields: {password: "null", user: "user"}}],
+  },
+  cases: [
+    [{user: "ann", password: "pw"}, {user: "ann"}],
+    [{user: "ann"}, {user: "ann"}],
+    [{password: {nested: 1}}, {}],
+  ],
+}
+
+{
+  name: "a field reading a missing key deletes the same key from the input",
+  graph: {
+    nodes: [{expression: "copy", passThrough: true, fields: {mirror: "source"}}],
+  },
+  cases: [
+    [{source: 1, mirror: "old"}, {source: 1, mirror: 1}],
+    [{mirror: "old"}, {}, "question: a field that evaluates to null erases the input key instead of setting it to null"],
+    [{source: null, mirror: 0}, {}, "question: a field that evaluates to null erases the input key instead of setting it to null"],
+  ],
+}
+
+{
+  name: "a nested null deletes only the nested key",
+  graph: {
+    nodes: [{expression: "scrub", passThrough: true, fields: {"o.secret": "null"}}],
+  },
+  cases: [
+    [{o: {secret: 1, keep: 2}}, {o: {keep: 2}}],
+    [{o: {keep: 2}}, {o: {keep: 2}}],
+    [{o: {secret: 1}}, {o: {}}],
+    [{}, {o: {secret: null}}, "question: when the parent object is missing the nested null is materialized instead of omitted"],
+  ],
+}
+
+{
+  name: "null values already in the input pass through to nodes downstream",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {seen: "true"}},
+      {expression: "b", passThrough: true, fields: {wasNull: "x == null", hadKey: "'x' in keys($root)"}},
+    ],
+  },
+  cases: [
+    [{x: null}, {seen: true, wasNull: true, hadKey: true}],
+    [{}, {seen: true, wasNull: true, hadKey: false}],
+    [{x: 1}, {x: 1, seen: true, wasNull: false, hadKey: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Nested objects under pass-through.
+
+{
+  name: "dotted keys merge into an existing input object",
+  graph: {
+    nodes: [{expression: "enrich", passThrough: true, fields: {"customer.segment": "customer.age >= 65 ? 'senior' : 'adult'"}}],
+  },
+  cases: [
+    [{customer: {age: 70, name: "a"}}, {customer: {age: 70, name: "a", segment: "senior"}}],
+    [{customer: {age: 30, segment: "old"}}, {customer: {age: 30, segment: "adult"}}],
+    [{customer: {age: 18, address: {city: "x"}}}, {customer: {age: 18, address: {city: "x"}, segment: "adult"}}],
+  ],
+}
+
+{
+  name: "dotted keys create the object when the input lacks it",
+  graph: {
+    nodes: [{expression: "make", passThrough: true, fields: {"meta.version": "2", "meta.flags.on": "true"}}],
+  },
+  cases: [
+    [{}, {meta: {version: 2, flags: {on: true}}}],
+    [{other: 1}, {other: 1, meta: {version: 2, flags: {on: true}}}],
+    [{meta: {author: "x"}}, {meta: {author: "x", version: 2, flags: {on: true}}}],
+  ],
+}
+
+{
+  name: "dotted keys replace a primitive or array in the input",
+  graph: {
+    nodes: [{expression: "make", passThrough: true, fields: {"meta.version": "2"}}],
+  },
+  cases: [
+    [{meta: 5}, {meta: {version: 2}}],
+    [{meta: "s"}, {meta: {version: 2}}],
+    [{meta: [1, 2]}, {meta: {version: 2}}],
+    [{meta: null}, {meta: {version: 2}}],
+  ],
+}
+
+{
+  name: "an object-valued field deep-merges with the input object",
+  graph: {
+    nodes: [{expression: "cfg", passThrough: true, fields: {settings: "{theme: 'dark', limits: {max: 10}}"}}],
+  },
+  cases: [
+    [{settings: {lang: "en", limits: {min: 1}}}, {settings: {lang: "en", theme: "dark", limits: {min: 1, max: 10}}}],
+    [{settings: {theme: "light"}}, {settings: {theme: "dark", limits: {max: 10}}}],
+    [{}, {settings: {theme: "dark", limits: {max: 10}}}],
+  ],
+}
+
+{
+  name: "a primitive field replaces an input object",
+  graph: {
+    nodes: [{expression: "flatten", passThrough: true, fields: {settings: "'default'"}}],
+  },
+  cases: [
+    [{settings: {lang: "en"}}, {settings: "default"}],
+    [{settings: [1]}, {settings: "default"}],
+  ],
+}
+
+{
+  name: "array fields replace input arrays instead of merging",
+  graph: {
+    nodes: [{expression: "tags", passThrough: true, fields: {tags: "['new']", "o.list": "[]"}}],
+  },
+  cases: [
+    [{tags: ["a", "b", "c"]}, {tags: ["new"], o: {list: []}}],
+    [{tags: [], o: {list: [1, 2], keep: true}}, {tags: ["new"], o: {list: [], keep: true}}],
+    [{tags: {x: 1}}, {tags: ["new"], o: {list: []}}],
+  ],
+}
+
+{
+  name: "arrays of objects in the input stay untouched when not written",
+  graph: {
+    nodes: [{expression: "count", passThrough: true, fields: {n: "len(items)"}}],
+  },
+  cases: [
+    [{items: [{id: 1, o: {x: 1}}, {id: 2}]}, {items: [{id: 1, o: {x: 1}}, {id: 2}], n: 2}],
+    [{items: []}, {items: [], n: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Decision tables with pass-through.
+
+{
+  name: "first-hit table with pass-through adds its outputs to the input",
+  graph: {
+    nodes: [{table: "grade", passThrough: true, inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+      [">= 50", "'B'"],
+      ["", "'F'"],
+    ]}],
+  },
+  cases: [
+    [{score: 95}, {score: 95, grade: "A"}],
+    [{score: 60, name: "x"}, {score: 60, name: "x", grade: "B"}],
+    [{score: 10, grade: "old"}, {score: 10, grade: "F"}],
+  ],
+}
+
+{
+  name: "first-hit table with pass-through and no matching rule returns the input",
+  graph: {
+    nodes: [{table: "grade", passThrough: true, inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+    ]}],
+  },
+  cases: [
+    [{score: 95}, {score: 95, grade: "A"}],
+    [{score: 10}, {score: 10}],
+    [{score: 10, grade: "kept"}, {score: 10, grade: "kept"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "first-hit table without pass-through and no matching rule returns nothing",
+  graph: {
+    nodes: [{table: "grade", inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+    ]}],
+  },
+  cases: [
+    [{score: 95}, {grade: "A"}],
+    [{score: 10}, {}],
+    [{score: 10, grade: "kept"}, {}],
+  ],
+}
+
+{
+  name: "table outputs with dotted fields merge into nested input objects",
+  graph: {
+    nodes: [{table: "risk", passThrough: true, inputs: ["applicant.score"], outputs: ["applicant.risk", "decision.code"], rules: [
+      ["> 700", "'low'", "1"],
+      ["", "'high'", "2"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {score: 750, name: "a"}}, {applicant: {score: 750, name: "a", risk: "low"}, decision: {code: 1}}],
+    [{applicant: {score: 100}, decision: {note: "x"}}, {applicant: {score: 100, risk: "high"}, decision: {note: "x", code: 2}}],
+  ],
+}
+
+{
+  name: "a table output cell evaluating to null deletes the input key",
+  graph: {
+    nodes: [{table: "clear", passThrough: true, inputs: ["mode"], outputs: ["token", "status"], rules: [
+      ["'logout'", "null", "'out'"],
+      ["", "token", "'in'"],
+    ]}],
+  },
+  cases: [
+    [{mode: "logout", token: "abc"}, {mode: "logout", status: "out"}],
+    [{mode: "login", token: "abc"}, {mode: "login", token: "abc", status: "in"}],
+  ],
+}
+
+{
+  name: "collect table with pass-through replaces the input with its rows",
+  graph: {
+    nodes: [{table: "flags", hit: "collect", passThrough: true, inputs: ["n"], outputs: ["flag"], rules: [
+      ["> 0", "'positive'"],
+      ["> 10", "'large'"],
+    ]}],
+  },
+  cases: [
+    [{n: 20}, [{flag: "positive"}, {flag: "large"}], "question: pass-through cannot overlay an array result on the input object, so the input is dropped"],
+    [{n: 5}, [{flag: "positive"}], "question: pass-through cannot overlay an array result on the input object, so the input is dropped"],
+    [{n: -1}, [], "question: pass-through cannot overlay an array result on the input object, so the input is dropped"],
+  ],
+}
+
+{
+  name: "collect table with pass-through and an output path keeps the input",
+  graph: {
+    nodes: [{table: "flags", hit: "collect", passThrough: true, outputPath: "flags", inputs: ["n"], outputs: ["flag"], rules: [
+      ["> 0", "'positive'"],
+      ["> 10", "'large'"],
+    ]}],
+  },
+  cases: [
+    [{n: 20}, {n: 20, flags: [{flag: "positive"}, {flag: "large"}]}],
+    [{n: -1}, {n: -1, flags: []}],
+    [{n: 5, flags: [{flag: "old"}, {flag: "older"}]}, {n: 5, flags: [{flag: "positive"}]}],
+  ],
+}
+
+{
+  name: "first-hit table with per-column collect and pass-through",
+  graph: {
+    nodes: [{table: "tags", passThrough: true, inputs: ["n"], outputs: ["tags[]", "first"], rules: [
+      ["> 0", "'pos'", "'p'"],
+      ["> 10", "'big'", "'b'"],
+    ]}],
+  },
+  cases: [
+    [{n: 20}, {n: 20, tags: ["pos", "big"], first: "p"}],
+    [{n: 5, tags: ["old"]}, {n: 5, tags: ["pos"], first: "p"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Decision nodes with pass-through.
+
+{
+  name: "decision node with pass-through overlays the sub-decision result",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{x: 4}, {x: 4, y: 8}],
+    [{x: 0, z: "keep"}, {x: 0, z: "keep", y: 0}],
+    [{x: 1, y: "old"}, {x: 1, y: 2}],
+  ],
+}
+
+{
+  name: "decision node without pass-through returns only the sub-decision result",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 4}, {y: 8}],
+    [{x: 1, z: "drop"}, {y: 2}],
+  ],
+}
+
+{
+  name: "decision node whose sub-decision itself passes the input through",
+  decisions: {
+    child: {nodes: [{expression: "double", passThrough: true, fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 4, z: 1}, {x: 4, z: 1, y: 8}],
+    [{x: 0}, {x: 0, y: 0}],
+  ],
+}
+
+{
+  name: "decision node with pass-through and a sub-decision deleting a key",
+  decisions: {
+    child: {nodes: [{expression: "scrub", fields: {secret: "null", "o.inner": "null", done: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{secret: "x", o: {inner: 1, keep: 2}}, {secret: "x", o: {keep: 2}, done: true}, "question: the sub-decision's final merge already dropped its top-level null, so the parent's secret survives while the nested null still deletes o.inner"],
+    [{o: {keep: 2}}, {o: {keep: 2}, done: true}],
+  ],
+}
+
+{
+  name: "decision node with pass-through and a sub-decision returning nested objects",
+  decisions: {
+    child: {nodes: [{expression: "nest", fields: {"result.score": "base * 10", "result.ok": "base > 0"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{base: 1, result: {prev: true}}, {base: 1, result: {prev: true, score: 10, ok: true}}],
+    [{base: 0}, {base: 0, result: {score: 0, ok: false}}],
+  ],
+}
+
+{
+  name: "decision node with pass-through and an empty sub-decision",
+  decisions: {
+    child: {},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{o: {p: [1]}}, {o: {p: [1]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Chains of pass-through and non-pass-through nodes.
+
+{
+  name: "a chain of pass-through nodes accumulates every field",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {a: "x + 1"}},
+      {expression: "b", passThrough: true, fields: {b: "a + 1"}},
+      {expression: "c", passThrough: true, fields: {c: "b + 1"}},
+    ],
+  },
+  cases: [
+    [{x: 0}, {x: 0, a: 1, b: 2, c: 3}],
+    [{x: 10, y: "y"}, {x: 10, y: "y", a: 11, b: 12, c: 13}],
+  ],
+}
+
+{
+  name: "a non-pass-through node in the middle drops everything before it",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {a: "x + 1"}},
+      {expression: "b", fields: {b: "a + 1"}},
+      {expression: "c", passThrough: true, fields: {c: "b + 1", sawX: "x != null"}},
+    ],
+  },
+  cases: [
+    [{x: 0}, {b: 2, c: 3, sawX: false}],
+    [{x: 5, y: 1}, {b: 7, c: 8, sawX: false}],
+  ],
+}
+
+{
+  name: "a non-pass-through first node feeds only its output into a pass-through node",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {a: "x * 2"}},
+      {expression: "b", passThrough: true, fields: {b: "a + 1"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {a: 2, b: 3}],
+    [{x: 1, keep: "no"}, {a: 2, b: 3}],
+  ],
+}
+
+{
+  name: "a non-pass-through last node returns only its fields",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {a: "x * 2"}},
+      {expression: "b", passThrough: true, fields: {b: "a + 1"}},
+      {expression: "final", fields: {result: "b"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {result: 3}],
+    [{x: 4, noise: true}, {result: 9}],
+  ],
+}
+
+{
+  name: "a pass-through chain where each node rewrites the same key",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {v: "v + 1"}},
+      {expression: "b", passThrough: true, fields: {v: "v * 10"}},
+      {expression: "c", passThrough: true, fields: {v: "v - 1"}},
+    ],
+  },
+  cases: [
+    [{v: 0}, {v: 9}],
+    [{v: 2}, {v: 29}],
+    [{v: -1}, {v: -1}],
+  ],
+}
+
+{
+  name: "a pass-through chain where a later node deletes an earlier field",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {temp: "x * 2"}},
+      {expression: "b", passThrough: true, fields: {result: "temp + 1"}},
+      {expression: "c", passThrough: true, fields: {temp: "null"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {x: 1, result: 3}],
+    [{x: 5, temp: "in"}, {x: 5, result: 11}],
+  ],
+}
+
+{
+  name: "mixed node kinds in a pass-through chain",
+  decisions: {
+    child: {nodes: [{expression: "fee", fields: {fee: "amount * rate"}}]},
+  },
+  graph: {
+    nodes: [
+      {table: "rate", passThrough: true, inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.1"],
+        ["", "0.2"],
+      ]},
+      {decision: "fee", key: "child", passThrough: true},
+      {expression: "total", passThrough: true, fields: {total: "amount + fee"}},
+    ],
+  },
+  cases: [
+    [{tier: "gold", amount: 100}, {tier: "gold", amount: 100, rate: 0.1, fee: 10, total: 110}],
+    [{tier: "basic", amount: 50}, {tier: "basic", amount: 50, rate: 0.2, fee: 10, total: 60}],
+    [{amount: 0}, {amount: 0, rate: 0.2, fee: 0, total: 0}],
+  ],
+}
+
+{
+  name: "an unmatched pass-through table in a chain changes nothing",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {a: "1"}},
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["hit"], rules: [["> 100", "true"]]},
+      {expression: "c", passThrough: true, fields: {hit: "hit ?? false"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 1, a: 1, hit: false}],
+    [{n: 101}, {n: 101, a: 1, hit: true}],
+  ],
+}
+
+{
+  name: "an unmatched non-pass-through table in a chain leaves the next node with nothing",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {a: "1"}},
+      {table: "t", inputs: ["n"], outputs: ["hit"], rules: [["> 100", "true"]]},
+      {expression: "c", passThrough: true, fields: {hit: "hit ?? false", sawA: "a != null"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {hit: false, sawA: false}],
+    [{n: 101}, {hit: true, sawA: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Pass-through at a join: the node's input is the merged parents.
+
+{
+  name: "pass-through at a join carries every parent's keys",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {fromA: "x + 1"}},
+      {expression: "b", fields: {fromB: "x + 2"}},
+      {expression: "j", passThrough: true, fields: {sum: "fromA + fromB"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{x: 0}, {fromA: 1, fromB: 2, sum: 3}],
+    [{x: 1}, {fromA: 2, fromB: 3, sum: 5}],
+  ],
+}
+
+{
+  name: "pass-through at a join that includes the input",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {computed: "x * 2"}},
+      {expression: "j", passThrough: true, fields: {check: "computed == x * 2"}},
+    ],
+    edges: ["input -> a -> j", "input -> j", "j -> output"],
+  },
+  cases: [
+    [{x: 3}, {x: 3, computed: 6, check: true}],
+    [{x: 3, extra: [1]}, {x: 3, extra: [1], computed: 6, check: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Pass-through and function nodes, custom nodes (which have no pass-through option).
+
+{
+  name: "a pass-through expression after a function node",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({fromF: input.x * 3});"""},
+      {expression: "e", passThrough: true, fields: {fromE: "fromF + 1"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {fromF: 3, fromE: 4}],
+    [{x: 2, drop: true}, {fromF: 6, fromE: 7}],
+  ],
+}
+
+{
+  name: "a pass-through expression after a custom echo node",
+  graph: {
+    nodes: [
+      {custom: "c", kind: "echo", config: {}},
+      {expression: "e", passThrough: true, fields: {tagged: "true"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {a: 1, tagged: true}],
+    [{o: {p: 1}}, {o: {p: 1}, tagged: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Errors are not masked by pass-through.
+
+{
+  name: "a failing field in a pass-through node fails the graph",
+  graph: {
+    nodes: [{expression: "bad", passThrough: true, fields: {r: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, r: 3}],
+    [{a: "x", b: 1}, "!error"],
+    [{a: 1, b: [1]}, "!error"],
+  ],
+}

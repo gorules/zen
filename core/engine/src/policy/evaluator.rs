@@ -1,19 +1,12 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Instant;
-use zen_types::symbol::Symbol;
+use crate::compiled::policy::{Host, PolicyPlan};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use zen_expression::variable::Variable;
-use zen_types::rccell::RcCell;
 
-use zen_expression::{Isolate, OpcodeCache};
+use zen_expression::lane::{Bits, Programs};
 
-use crate::policy::blocks::{
-    Block, BlockKind, BlockReadPlan, ExecutionContext, ExecutionError, MatchSelection,
-    PropertyRead, TableSelection,
-};
+use crate::policy::blocks::{Block, BlockReadPlan, ExecutionError, PropertyRead};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, EvalGraph, WriteScope};
 use crate::policy::queries::path::PathClassifier;
@@ -22,8 +15,9 @@ use crate::policy::refs::RefPoolIndex;
 use crate::policy::validator::InputSchema;
 use crate::workspace::db::Db;
 use crate::workspace::types::{
-    BlockExecution, BlockRef, BlockTrace, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
+    BlockRef, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
 };
+use zen_types::path::DotPath;
 
 pub(crate) struct EvalArtifact {
     pub(crate) members: HashSet<Arc<str>>,
@@ -33,11 +27,227 @@ pub(crate) struct EvalArtifact {
     pub(crate) reference_fields: Vec<ReferenceField>,
     pub(crate) data_model_paths: DataModelPaths,
     pub(crate) classifier: PathClassifier,
-    pub(crate) opcode_cache: Arc<OpcodeCache>,
+    #[cfg(feature = "driver")]
+    pub(crate) opcode_cache: Arc<zen_expression::OpcodeCache>,
     pub(crate) rule_by_ref: Arc<HashMap<BlockRef, Arc<Block>>>,
     pub(crate) input_schema: InputSchema,
     pub(crate) reads: HashMap<BlockRef, Arc<[PropertyRead]>>,
     pub(crate) read_plans: HashMap<BlockRef, BlockReadPlan>,
+    pub(crate) compiled: OnceLock<Arc<PolicyPlan>>,
+    pub(crate) goal_plans: Mutex<HashMap<Vec<Arc<str>>, Arc<PolicyPlan>>>,
+    pub(crate) requirements: OnceLock<Requirements>,
+    pub(crate) programs: OnceLock<Arc<Programs>>,
+}
+
+pub(crate) type Iteration = (Arc<str>, Arc<str>, Option<Arc<str>>);
+
+pub(crate) struct Requirements {
+    order: Vec<PropertyPath>,
+    goals: Vec<Arc<str>>,
+    checks: Vec<Requirement>,
+}
+
+struct Requirement {
+    path: PropertyPath,
+    primary: Probe,
+    alternate: Option<Probe>,
+}
+
+struct Probe {
+    segments: Vec<Arc<str>>,
+    optional: Vec<bool>,
+    prefixes: Vec<String>,
+}
+
+impl Probe {
+    fn new(paths: &DataModelPaths, path: &str) -> Self {
+        let segments: Vec<Arc<str>> = path.split('.').map(Arc::from).collect();
+        let prefixes = (0..segments.len())
+            .map(|i| {
+                segments[..=i]
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(".")
+            })
+            .collect();
+        Self {
+            segments,
+            optional: paths.optional_steps(path),
+            prefixes,
+        }
+    }
+
+    fn missing(&self, input: &Variable) -> bool {
+        let mut current = input.shallow_clone();
+        for (i, segment) in self.segments.iter().enumerate() {
+            if current.as_object().is_none() {
+                return false;
+            }
+            let next = current
+                .as_object()
+                .and_then(|o| o.borrow().get_str(segment).map(Variable::shallow_clone));
+            match next {
+                Some(Variable::Null) | None => return !self.optional[i..].iter().any(|o| *o),
+                Some(v) => current = v,
+            }
+        }
+        false
+    }
+}
+
+struct Steps<'p> {
+    probe: &'p Probe,
+    steps: Vec<(Option<usize>, Vec<usize>)>,
+}
+
+impl<'p> Steps<'p> {
+    fn new(probe: &'p Probe, columns: &zen_expression::lane::Columns) -> Self {
+        let steps = probe
+            .prefixes
+            .iter()
+            .map(|path| {
+                let exact = columns
+                    .columns
+                    .iter()
+                    .position(|(p, _)| *p == path.as_str());
+                let under = columns
+                    .columns
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (p, _))| DotPath::under(p, path))
+                    .map(|(at, _)| at)
+                    .collect();
+                (exact, under)
+            })
+            .collect();
+        Self { probe, steps }
+    }
+
+    fn coded(column: &zen_expression::lane::Column) -> Option<usize> {
+        use zen_expression::lane::{Dictionary, Values};
+        match column.values {
+            Values::Dict {
+                values:
+                    values @ (Dictionary::Text { .. }
+                    | Dictionary::Scaled { .. }
+                    | Dictionary::Bool { .. }),
+                ..
+            } => Some(values.len()),
+            _ => None,
+        }
+    }
+
+    fn held(column: &zen_expression::lane::Column, row: usize) -> bool {
+        use zen_expression::lane::Values;
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { .. }, Some(len)) => {
+                column.valid(row) && column.code(row).is_some_and(|key| key < len)
+            }
+            (Values::Any(_) | Values::Dict { .. }, _) => {
+                column.valid(row) && !matches!(column.variable(row), Variable::Null)
+            }
+            _ => column.valid(row),
+        }
+    }
+
+    fn solid(column: &zen_expression::lane::Column, rows: usize) -> bool {
+        use zen_expression::lane::Values;
+        let full = column
+            .validity
+            .is_none_or(|(bits, offset)| Self::ones(bits, offset, rows));
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { keys, .. }, Some(len)) => {
+                full && keys.get(..rows).is_some_and(|keys| {
+                    keys.iter()
+                        .all(|&key| usize::try_from(key).is_ok_and(|key| key < len))
+                })
+            }
+            (values, _) => full && !matches!(values, Values::Any(_) | Values::Dict { .. }),
+        }
+    }
+
+    fn ones(bits: &[u64], offset: usize, rows: usize) -> bool {
+        (0..rows.div_ceil(64)).all(|w| {
+            let take = (rows - (w << 6)).min(64);
+            let mask = match take {
+                64 => u64::MAX,
+                _ => (1u64 << take) - 1,
+            };
+            Bits::word(bits, offset + (w << 6), take) & mask == mask
+        })
+    }
+
+    fn always(&self, columns: &zen_expression::lane::Columns) -> bool {
+        let rows = columns.rows;
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                return Self::solid(column, rows)
+                    && (i + 1 == self.steps.len()
+                        || !matches!(column.values, zen_expression::lane::Values::Struct { .. }));
+            }
+            if !under
+                .iter()
+                .any(|at| Self::solid(&columns.columns[*at].1, rows))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn missing(&self, columns: &zen_expression::lane::Columns, row: usize) -> bool {
+        let absent = |i: usize| !self.probe.optional[i..].iter().any(|o| *o);
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                if !Self::held(column, row) {
+                    return absent(i);
+                }
+                if i + 1 == self.steps.len() {
+                    return false;
+                }
+                let nested = matches!(
+                    column.values,
+                    zen_expression::lane::Values::Any(_)
+                        | zen_expression::lane::Values::Struct { .. }
+                );
+                let value = if nested {
+                    column.variable(row)
+                } else {
+                    Variable::Null
+                };
+                return match value {
+                    Variable::Object(_) => Probe {
+                        segments: self.probe.segments[i + 1..].to_vec(),
+                        optional: self.probe.optional[i + 1..].to_vec(),
+                        prefixes: Vec::new(),
+                    }
+                    .missing(&column.variable(row)),
+                    _ => false,
+                };
+            }
+            if !under
+                .iter()
+                .any(|at| Self::held(&columns.columns[*at].1, row))
+            {
+                return absent(i);
+            }
+        }
+        false
+    }
+}
+
+impl Requirement {
+    fn missing(&self, input: &Variable) -> bool {
+        if !self.primary.missing(input) {
+            return false;
+        }
+        self.alternate
+            .as_ref()
+            .is_none_or(|alternate| alternate.missing(input))
+    }
 }
 
 impl Db {
@@ -66,6 +276,65 @@ impl Db {
         let mut req = req.clone();
         req.trace = true;
         self.eval_artifact(&req.policy_path).evaluate(&req, true)
+    }
+
+    pub fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+    ) -> Result<crate::compiled::ColumnarOutput<'a>, EvaluationError> {
+        let probe = EvaluateRequest {
+            policy_path: policy_path.clone(),
+            input: Variable::Null,
+            goals: goals.to_vec(),
+            trace: false,
+        };
+        self.check_evaluable(&probe)?;
+        let artifact = self.eval_artifact(policy_path);
+        Ok(artifact
+            .plan(goals)
+            .evaluate_columns(&artifact, policy_path, goals, columns))
+    }
+
+    pub fn evaluate_batch(
+        &self,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
+            (0..requests.len()).map(|_| None).collect();
+        let mut groups: Vec<(Arc<str>, Vec<usize>)> = Vec::new();
+        for (index, request) in requests.iter().enumerate() {
+            match self.check_evaluable(request) {
+                Err(error) => results[index] = Some(Err(error)),
+                Ok(()) => match groups.iter_mut().find(|(p, _)| *p == request.policy_path) {
+                    Some((_, members)) => members.push(index),
+                    None => groups.push((request.policy_path.clone(), vec![index])),
+                },
+            }
+        }
+        for (path, members) in groups {
+            let artifact = self.eval_artifact(&path);
+            let batch: Vec<EvaluateRequest> =
+                members.iter().map(|&i| requests[i].clone()).collect();
+            for (index, result) in members.into_iter().zip(artifact.evaluate_batch(&batch)) {
+                results[index] = Some(result);
+            }
+        }
+        results
+            .into_iter()
+            .map(|r| r.unwrap_or_else(|| Err(EvaluationError::PolicyNotFound(Arc::from("")))))
+            .collect()
+    }
+
+    pub(crate) fn check_evaluable(&self, req: &EvaluateRequest) -> Result<(), EvaluationError> {
+        if self.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
+        if self.raw_policy(&req.policy_path).is_none() {
+            return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
+        }
+        self.check_imports_resolved(&req.policy_path)
     }
 
     fn check_imports_resolved(&self, entry: &Arc<str>) -> Result<(), EvaluationError> {
@@ -114,8 +383,85 @@ impl EvalArtifact {
         req: &EvaluateRequest,
         extras: bool,
     ) -> Result<EvaluationResult, EvaluationError> {
-        let start = Instant::now();
+        let plan = self.plan(&req.goals);
+        if !req.trace && !extras {
+            if let Some(result) = plan.evaluate(self, std::slice::from_ref(req)).pop() {
+                return result;
+            }
+        }
+        plan.traced(self, req, extras)
+    }
 
+    const GOAL_PLANS: usize = 32;
+
+    fn plan(&self, goals: &[Arc<str>]) -> Arc<PolicyPlan> {
+        if goals.is_empty() {
+            return self
+                .compiled
+                .get_or_init(|| {
+                    Arc::new(PolicyPlan::compile(
+                        self,
+                        self.eval_graph.terminal_sinks(&self.members),
+                    ))
+                })
+                .clone();
+        }
+        if let Some(plan) = self
+            .goal_plans
+            .lock()
+            .ok()
+            .and_then(|p| p.get(goals).cloned())
+        {
+            return plan;
+        }
+        let plan = Arc::new(PolicyPlan::compile(self, goals.to_vec()));
+        if let Ok(mut plans) = self.goal_plans.lock() {
+            if plans.len() >= Self::GOAL_PLANS {
+                plans.clear();
+            }
+            plans.insert(goals.to_vec(), plan.clone());
+        }
+        plan
+    }
+
+    pub(crate) fn evaluate_batch(
+        &self,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
+            (0..requests.len()).map(|_| None).collect();
+        let mut groups: Vec<(&[Arc<str>], Vec<usize>)> = Vec::new();
+        for (index, request) in requests.iter().enumerate() {
+            match request.trace {
+                true => {
+                    results[index] = Some(self.plan(&request.goals).traced(self, request, false))
+                }
+                false => match groups
+                    .iter_mut()
+                    .find(|(g, _)| *g == request.goals.as_slice())
+                {
+                    Some((_, members)) => members.push(index),
+                    None => groups.push((&request.goals, vec![index])),
+                },
+            }
+        }
+        for (goals, members) in groups {
+            let batch: Vec<EvaluateRequest> =
+                members.iter().map(|&i| requests[i].clone()).collect();
+            for (index, result) in members
+                .into_iter()
+                .zip(self.plan(goals).evaluate(self, &batch))
+            {
+                results[index] = Some(result);
+            }
+        }
+        results.into_iter().flatten().collect()
+    }
+
+    pub(crate) fn prepare(
+        &self,
+        req: &EvaluateRequest,
+    ) -> Result<(Variable, Vec<PropertyPath>), EvaluationError> {
         let input = self
             .input_schema
             .convert_dates(&req.input)
@@ -132,30 +478,7 @@ impl EvalArtifact {
         store.hydrate_references(&self.reference_fields, &pool_index);
 
         let order_to_run = self.compute_order_to_run(req, &store)?;
-
-        let roots: Vec<Arc<str>> = if req.goals.is_empty() {
-            self.eval_graph.terminal_sinks(&self.members)
-        } else {
-            req.goals.clone()
-        };
-        let mut driver = Driver::new(self, &store, &req.policy_path, req.trace, extras);
-        let outcome = roots.iter().try_for_each(|root| driver.demand(root));
-
-        let trace = req.trace.then(|| Trace {
-            engine_version: Arc::from(crate::ENGINE_VERSION),
-            properties: store.snapshot(&order_to_run),
-            executions: driver.executions,
-        });
-
-        if let Err(error) = outcome {
-            return Err(error.with_partial_trace(trace));
-        }
-
-        Ok(EvaluationResult {
-            output: store,
-            duration: start.elapsed(),
-            trace,
-        })
+        Ok((store, order_to_run))
     }
 
     fn validate_request(
@@ -177,11 +500,106 @@ impl EvalArtifact {
         Ok(())
     }
 
+    pub(crate) fn sure(
+        &self,
+        columns: &zen_expression::lane::Columns,
+        goals: &[Arc<str>],
+    ) -> Option<Vec<bool>> {
+        if !goals.is_empty() || !self.reference_fields.is_empty() {
+            return None;
+        }
+        let mut sure = self.input_schema.sure(columns)?;
+        for check in &self.requirements().checks {
+            let primary = Steps::new(&check.primary, columns);
+            if primary.always(columns) {
+                continue;
+            }
+            let alternate = check.alternate.as_ref().map(|a| Steps::new(a, columns));
+            if alternate.as_ref().is_some_and(|a| a.always(columns)) {
+                continue;
+            }
+            for (row, sure) in sure.iter_mut().enumerate() {
+                if *sure
+                    && primary.missing(columns, row)
+                    && alternate.as_ref().is_none_or(|a| a.missing(columns, row))
+                {
+                    *sure = false;
+                }
+            }
+        }
+        Some(sure)
+    }
+
+    fn requirements(&self) -> &Requirements {
+        self.requirements.get_or_init(|| {
+            let visible = &self.members;
+            let order: Vec<PropertyPath> = self
+                .execution_order
+                .iter()
+                .filter(|path| {
+                    self.eval_graph
+                        .writer_for(path)
+                        .is_some_and(|o| visible.contains(&o.policy_path))
+                })
+                .cloned()
+                .collect();
+            let goals = self.eval_graph.terminal_sinks(visible);
+            let entity_form = EntityForm::new(&self.entity_sources);
+            let checks = self
+                .eval_graph
+                .reachable_input_paths(&goals, visible)
+                .into_iter()
+                .filter(|p| {
+                    !entity_form
+                        .rewrite(p)
+                        .is_some_and(|entity| self.eval_graph.written_at(&entity, visible))
+                })
+                .map(|path| {
+                    let alternate = path.split_once('.').and_then(|(entity, rest)| {
+                        let src = self.entity_sources.get(entity)?;
+                        Some(Probe::new(
+                            &self.data_model_paths,
+                            &format!("{}.{}", src.path, rest),
+                        ))
+                    });
+                    Requirement {
+                        primary: Probe::new(&self.data_model_paths, &path),
+                        alternate,
+                        path,
+                    }
+                })
+                .collect();
+            Requirements {
+                order,
+                goals,
+                checks,
+            }
+        })
+    }
+
     fn compute_order_to_run(
         &self,
         req: &EvaluateRequest,
         input: &Variable,
     ) -> Result<Vec<PropertyPath>, EvaluationError> {
+        if req.goals.is_empty() {
+            let requirements = self.requirements();
+            let mut missing: Vec<PropertyPath> = requirements
+                .checks
+                .iter()
+                .filter(|check| check.missing(input))
+                .map(|check| check.path.clone())
+                .collect();
+            if !missing.is_empty() {
+                missing.sort();
+                return Err(EvaluationError::MissingRequiredInputs {
+                    goals: requirements.goals.clone(),
+                    missing,
+                });
+            }
+            return Ok(requirements.order.clone());
+        }
+
         let visible = &self.members;
         let visible_order: Vec<PropertyPath> = self
             .execution_order
@@ -257,200 +675,32 @@ impl EvalArtifact {
     }
 }
 
-struct Driver<'a> {
-    artifact: &'a EvalArtifact,
-    store: &'a Variable,
-    env: Variable,
-    entry: &'a Arc<str>,
-    trace: bool,
-    extras: bool,
-    isolate: Rc<RefCell<Isolate>>,
-    ran: HashSet<BlockRef>,
-    in_progress: HashSet<BlockRef>,
-    executions: Vec<BlockExecution>,
-}
-
-enum Pick {
-    Unconditional,
-    Match(MatchSelection),
-    Table(TableSelection),
-}
-
-impl Pick {
-    fn collect_reads(&self, plan: &BlockReadPlan, out: &mut Vec<Arc<str>>) {
-        match self {
-            Pick::Match(selection) => {
-                if let Some(arm_id) = &selection.matched_arm {
-                    if let Some(reads) = plan.match_arm_reads(arm_id) {
-                        out.extend(reads.iter().cloned());
-                    }
-                }
-            }
-            Pick::Table(selection) => {
-                for (row_idx, col_id) in &selection.used_cells {
-                    out.extend(plan.cell_reads(*row_idx, col_id));
-                }
-            }
-            Pick::Unconditional => {}
-        }
-    }
-}
-
-struct PhaseScope {
-    scoped: Variable,
-    entity_key: Rc<str>,
-}
-
-impl PhaseScope {
-    fn new(store: &Variable, entity_key: Rc<str>) -> Self {
-        Self {
-            scoped: store.depth_clone(1),
-            entity_key,
+impl EvalArtifact {
+    pub(crate) fn iteration(&self, rule: &Block) -> Option<Iteration> {
+        match rule.write_scope(&self.classifier) {
+            WriteScope::Entity(entity) => self
+                .entity_sources
+                .get(entity.as_ref())
+                .map(|src| (entity, src.path.clone(), src.owner.clone())),
+            _ => None,
         }
     }
 
-    fn bind(
-        &self,
-        instance: &Variable,
-        owner_binding: &Option<(String, Variable)>,
-    ) -> Option<InstanceSlot> {
-        let scoped_fields = self.scoped.as_object()?;
-
-        let needs_owner = match (owner_binding, instance.as_object()) {
-            (Some((name, _)), Some(fields)) => {
-                !fields.borrow().contains_key(&Symbol::from(name.as_str()))
-            }
-            _ => false,
-        };
-
-        let (bound, slot) = if needs_owner {
-            let wrapper = instance.depth_clone(1);
-            let synthetic_owner = match (owner_binding, wrapper.as_object()) {
-                (Some((name, owner_var)), Some(wrapper_fields)) => {
-                    let key = Symbol::from(name.as_str());
-                    let injected = owner_var.shallow_clone();
-                    wrapper_fields
-                        .borrow_mut()
-                        .insert(key.clone(), injected.shallow_clone());
-                    Some((key, injected))
-                }
-                _ => None,
-            };
-            let bound = wrapper.shallow_clone();
-            (
-                bound,
-                InstanceSlot::Wrapped {
-                    wrapper,
-                    synthetic_owner,
-                },
-            )
-        } else {
-            (instance.shallow_clone(), InstanceSlot::Direct)
-        };
-
-        {
-            let mut fields = scoped_fields.borrow_mut();
-            fields.remove(&Variable::dollar_key());
-            fields.insert(Symbol::from(self.entity_key.as_ref()), bound);
-        }
-        Some(slot)
-    }
-}
-
-enum InstanceSlot {
-    Direct,
-    Wrapped {
-        wrapper: Variable,
-        synthetic_owner: Option<(Symbol, Variable)>,
-    },
-}
-
-impl InstanceSlot {
-    fn write_back(&self, instance: &Variable) {
-        let Self::Wrapped {
-            wrapper,
-            synthetic_owner,
-        } = self
-        else {
-            return;
-        };
-        let (Some(written), Some(target)) = (wrapper.as_object(), instance.as_object()) else {
-            return;
-        };
-        let written = written.borrow();
-        let mut target = target.borrow_mut();
-        for (key, value) in written.iter() {
-            if Self::is_injected_owner(synthetic_owner, key.clone(), value) {
-                continue;
-            }
-            target.insert(key.clone(), value.shallow_clone());
-        }
+    pub(crate) fn programs(&self) -> Arc<Programs> {
+        self.programs
+            .get_or_init(|| {
+                Arc::new(Host::programs(
+                    self.rule_by_ref
+                        .iter()
+                        .filter(|(owner, _)| self.members.contains(&owner.policy_path))
+                        .map(|(_, rule)| rule.as_ref()),
+                ))
+            })
+            .clone()
     }
 
-    fn is_injected_owner(
-        synthetic_owner: &Option<(Symbol, Variable)>,
-        key: Symbol,
-        value: &Variable,
-    ) -> bool {
-        match synthetic_owner {
-            Some((owner_key, injected)) if owner_key.as_str() == key.as_str() => {
-                Self::same_ref(value, injected)
-            }
-            _ => false,
-        }
-    }
-
-    fn same_ref(a: &Variable, b: &Variable) -> bool {
-        match (a, b) {
-            (Variable::Object(x), Variable::Object(y)) => RcCell::ptr_eq(x, y),
-            (Variable::Array(x), Variable::Array(y)) => RcCell::ptr_eq(x, y),
-            (Variable::String(x), Variable::String(y)) => x == y,
-            _ => a == b,
-        }
-    }
-}
-
-impl<'a> Driver<'a> {
-    fn new(
-        artifact: &'a EvalArtifact,
-        store: &'a Variable,
-        entry: &'a Arc<str>,
-        trace: bool,
-        extras: bool,
-    ) -> Self {
-        Self {
-            isolate: Rc::new(RefCell::new(
-                Isolate::new().with_cache(Some(artifact.opcode_cache.clone())),
-            )),
-            artifact,
-            store,
-            env: store.depth_clone(1),
-            entry,
-            trace,
-            extras,
-            ran: HashSet::new(),
-            in_progress: HashSet::new(),
-            executions: Vec::new(),
-        }
-    }
-
-    fn bind_env(&self, isolate: &RefCell<Isolate>) {
-        if let Some(fields) = self.env.as_object() {
-            fields.borrow_mut().remove(&Variable::dollar_key());
-        }
-        isolate
-            .borrow_mut()
-            .set_environment(self.env.shallow_clone());
-    }
-
-    fn demand(&mut self, prop: &str) -> Result<(), EvaluationError> {
-        self.writers_of_longest_prefix(prop)
-            .iter()
-            .try_for_each(|owner| self.run_block(owner))
-    }
-
-    fn writers_of_longest_prefix(&self, prop: &str) -> &'a [BlockRef] {
-        let graph = &self.artifact.eval_graph;
+    pub(crate) fn writers_of_longest_prefix(&self, prop: &str) -> &[BlockRef] {
+        let graph = &self.eval_graph;
         let direct = graph.demand_writers_for(prop);
         if !direct.is_empty() {
             return direct;
@@ -465,284 +715,9 @@ impl<'a> Driver<'a> {
         }
         &[]
     }
-
-    fn run_block(&mut self, owner: &BlockRef) -> Result<(), EvaluationError> {
-        if self.ran.contains(owner) || !self.in_progress.insert(owner.clone()) {
-            return Ok(());
-        }
-        let result = self.run_block_inner(owner);
-        self.in_progress.remove(owner);
-        if result.is_ok() {
-            self.ran.insert(owner.clone());
-        }
-        result
-    }
-
-    fn run_block_inner(&mut self, owner: &BlockRef) -> Result<(), EvaluationError> {
-        let artifact = self.artifact;
-        let Some(rule) = artifact.rule_by_ref.get(owner) else {
-            return Ok(());
-        };
-        let rule = rule.clone();
-
-        if let Some(plan) = artifact.read_plans.get(owner) {
-            for path in plan.unconditional.iter() {
-                self.demand(path)?;
-            }
-        }
-
-        let iterated = match rule.write_scope(&artifact.classifier) {
-            WriteScope::Entity(entity) => artifact
-                .entity_sources
-                .get(entity.as_ref())
-                .map(|src| (entity, src.path.clone(), src.owner.clone())),
-            _ => None,
-        };
-
-        match iterated {
-            Some((entity, path, src_owner)) => {
-                self.run_iterated(owner, &rule, entity.as_ref(), &path, src_owner.as_deref())
-            }
-            None => self.run_singleton(owner, &rule),
-        }
-    }
-
-    fn select_pick(rule: &Block, ctx: &ExecutionContext) -> Result<Pick, ExecutionError> {
-        match &rule.kind {
-            BlockKind::Match(m) => m.select(ctx).map(Pick::Match),
-            BlockKind::DecisionTable(d) => d.select(ctx).map(Pick::Table),
-            BlockKind::Expression(_) | BlockKind::Assertion(_) => Ok(Pick::Unconditional),
-        }
-    }
-
-    fn commit_pick(
-        rule: &Block,
-        ctx: &ExecutionContext,
-        pick: &Pick,
-    ) -> Result<BlockTrace, ExecutionError> {
-        match (&rule.kind, pick) {
-            (BlockKind::Match(m), Pick::Match(selection)) => m.commit(ctx, selection),
-            (BlockKind::DecisionTable(d), Pick::Table(selection)) => d.commit(ctx, selection),
-            _ => rule.execute(ctx),
-        }
-    }
-
-    fn run_singleton(&mut self, owner: &BlockRef, rule: &Block) -> Result<(), EvaluationError> {
-        let artifact = self.artifact;
-        let write_log = (self.trace && self.extras).then(|| RefCell::new(Vec::new()));
-        let isolate = Rc::clone(&self.isolate);
-        let env = self.env.shallow_clone();
-        let ctx = ExecutionContext {
-            store: self.store,
-            policy_path: &owner.policy_path,
-            block_id: &rule.id,
-            trace: self.trace,
-            extras: self.extras,
-            write_log: write_log.as_ref(),
-            env_mirror: Some(&env),
-            isolate: &isolate,
-        };
-
-        if matches!(rule.kind, BlockKind::Match(_) | BlockKind::DecisionTable(_)) {
-            self.bind_env(&isolate);
-        }
-        let pick = Self::select_pick(rule, &ctx)?;
-        let mut demanded: Vec<Arc<str>> = Vec::new();
-        if let Some(plan) = artifact.read_plans.get(owner) {
-            pick.collect_reads(plan, &mut demanded);
-        }
-        for path in &demanded {
-            self.demand(path)?;
-        }
-        self.bind_env(&isolate);
-        let bt = Self::commit_pick(rule, &ctx, &pick)?;
-
-        if self.trace {
-            let trace_policy_path =
-                (&owner.policy_path != self.entry).then(|| owner.policy_path.clone());
-            let operand_values =
-                Block::operand_values(self.extras, self.reads_for(owner), self.store);
-            self.executions.push(BlockExecution {
-                block_id: rule.id.clone(),
-                policy_path: trace_policy_path,
-                instance_path: None,
-                trace: bt,
-                operand_values,
-                writes: write_log.map(RefCell::into_inner).unwrap_or_default(),
-                reads: self.execution_reads(owner, &pick),
-            });
-        }
-        Ok(())
-    }
-
-    fn run_iterated(
-        &mut self,
-        owner: &BlockRef,
-        rule: &Block,
-        entity: &str,
-        iter_path: &Arc<str>,
-        owner_name: Option<&str>,
-    ) -> Result<(), EvaluationError> {
-        let Some(target) = self.store.dot(iter_path.as_ref()) else {
-            return Ok(());
-        };
-        let single = target.as_object().is_some();
-        let instances: Vec<Variable> = match target.as_array() {
-            Some(arr) => arr.borrow().iter().map(|v| v.shallow_clone()).collect(),
-            None if single => vec![target.shallow_clone()],
-            None => return Ok(()),
-        };
-        let owner_binding = owner_name.and_then(|name| {
-            let owner_path = iter_path.rsplit_once('.').map(|(o, _)| o)?;
-            self.store
-                .dot(owner_path)
-                .map(|var| (name.to_string(), var))
-        });
-        let entity_key: Rc<str> = Rc::from(entity);
-        let artifact = self.artifact;
-
-        let picks: Vec<Pick> =
-            if matches!(rule.kind, BlockKind::Match(_) | BlockKind::DecisionTable(_)) {
-                let phase = PhaseScope::new(self.store, entity_key.clone());
-                let isolate = Rc::clone(&self.isolate);
-                isolate
-                    .borrow_mut()
-                    .set_environment(phase.scoped.shallow_clone());
-                let mut picks = Vec::with_capacity(instances.len());
-                for instance in &instances {
-                    let Some(_slot) = phase.bind(instance, &owner_binding) else {
-                        picks.push(Pick::Unconditional);
-                        continue;
-                    };
-                    let ctx = ExecutionContext {
-                        store: &phase.scoped,
-                        policy_path: &owner.policy_path,
-                        block_id: &rule.id,
-                        trace: self.trace,
-                        extras: self.extras,
-                        write_log: None,
-                        env_mirror: None,
-                        isolate: &isolate,
-                    };
-                    picks.push(Self::select_pick(rule, &ctx)?);
-                }
-                picks
-            } else {
-                instances.iter().map(|_| Pick::Unconditional).collect()
-            };
-
-        let mut demanded: Vec<Arc<str>> = Vec::new();
-        if let Some(plan) = artifact.read_plans.get(owner) {
-            for pick in &picks {
-                pick.collect_reads(plan, &mut demanded);
-            }
-        }
-        demanded.sort();
-        demanded.dedup();
-        for path in &demanded {
-            self.demand(path)?;
-        }
-
-        let trace_policy_path =
-            (&owner.policy_path != self.entry).then(|| owner.policy_path.clone());
-        let phase = PhaseScope::new(self.store, entity_key);
-        let isolate = Rc::clone(&self.isolate);
-        isolate
-            .borrow_mut()
-            .set_environment(phase.scoped.shallow_clone());
-        for (idx, instance) in instances.iter().enumerate() {
-            let Some(slot) = phase.bind(instance, &owner_binding) else {
-                continue;
-            };
-            let write_log = (self.trace && self.extras).then(|| RefCell::new(Vec::new()));
-            let ctx = ExecutionContext {
-                store: &phase.scoped,
-                policy_path: &owner.policy_path,
-                block_id: &rule.id,
-                trace: self.trace,
-                extras: self.extras,
-                write_log: write_log.as_ref(),
-                env_mirror: None,
-                isolate: &isolate,
-            };
-            let result = Self::commit_pick(rule, &ctx, &picks[idx]);
-            let operand_values = match (&result, self.trace) {
-                (Ok(_), true) => {
-                    Block::operand_values(self.extras, self.reads_for(owner), &phase.scoped)
-                }
-                _ => HashMap::default(),
-            };
-            slot.write_back(instance);
-            let bt = result?;
-            if self.trace {
-                self.executions.push(BlockExecution {
-                    block_id: rule.id.clone(),
-                    policy_path: trace_policy_path.clone(),
-                    instance_path: Some(match single {
-                        true => iter_path.clone(),
-                        false => format!("{iter_path}.{idx}").into(),
-                    }),
-                    trace: bt,
-                    operand_values,
-                    writes: write_log.map(RefCell::into_inner).unwrap_or_default(),
-                    reads: self.execution_reads(owner, &picks[idx]),
-                });
-            }
-        }
-        Ok(())
-    }
-
-    fn reads_for(&self, owner: &BlockRef) -> &[PropertyRead] {
-        if self.extras {
-            self.artifact
-                .reads
-                .get(owner)
-                .map(|r| r.as_ref())
-                .unwrap_or(&[])
-        } else {
-            &[]
-        }
-    }
-
-    fn execution_reads(&self, owner: &BlockRef, pick: &Pick) -> Vec<Arc<str>> {
-        if !self.extras {
-            return Vec::new();
-        }
-        let Some(plan) = self.artifact.read_plans.get(owner) else {
-            return Vec::new();
-        };
-        let mut reads: Vec<Arc<str>> = plan.unconditional.to_vec();
-        pick.collect_reads(plan, &mut reads);
-        reads.sort();
-        reads.dedup();
-        reads
-    }
 }
 
-impl Block {
-    fn operand_values(
-        extras: bool,
-        reads: &[PropertyRead],
-        store: &Variable,
-    ) -> HashMap<Arc<str>, Variable> {
-        let mut out: HashMap<Arc<str>, Variable> = HashMap::new();
-        if !extras {
-            return out;
-        }
-        for read in reads {
-            if read.via_alias || read.unresolved {
-                continue;
-            }
-            if let Some(value) = store.dot(&read.path) {
-                out.entry(read.path.clone())
-                    .or_insert_with(|| value.deep_clone());
-            }
-        }
-        out
-    }
-}
-
-trait StoreOps {
+pub(crate) trait StoreOps {
     fn hydrate_references(&self, reference_fields: &[ReferenceField], pool_index: &RefPoolIndex);
     fn snapshot(&self, order: &[PropertyPath]) -> HashMap<Arc<str>, Variable>;
 }
@@ -801,7 +776,7 @@ impl From<ExecutionError> for EvaluationError {
 }
 
 impl EvaluationError {
-    fn with_partial_trace(self, trace: Option<Trace>) -> Self {
+    pub(crate) fn with_partial_trace(self, trace: Option<Trace>) -> Self {
         match (self, trace) {
             (
                 EvaluationError::ExpressionFailed {

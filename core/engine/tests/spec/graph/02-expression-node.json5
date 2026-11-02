@@ -1,0 +1,631 @@
+// Expression nodes: each field is an expression evaluated against the node's input, in order. The
+// node's output is an object of the field results; `$` holds the fields computed so far.
+
+// ---------------------------------------------------------------------------
+// One field, every result type.
+{
+  name: "a single field copies an input value of any type",
+  graph: {nodes: [{expression: "calc", fields: {out: "v"}}]},
+  cases: [
+    [{v: 1}, {out: 1}],
+    [{v: -0.5}, {out: -0.5}],
+    [{v: "s"}, {out: "s"}],
+    [{v: ""}, {out: ""}],
+    [{v: true}, {out: true}],
+    [{v: false}, {out: false}],
+    [{v: [1, "a", null]}, {out: [1, "a", null]}],
+    [{v: {k: {n: 1}}}, {out: {k: {n: 1}}}],
+    [{v: {}}, {out: {}}],
+    [{v: []}, {out: []}],
+  ],
+}
+
+{
+  name: "literal results of every type",
+  graph: {nodes: [{expression: "calc", fields: {
+    n: "42",
+    f: "0.1 + 0.2",
+    s: "'text'",
+    t: "true",
+    l: "[1, 2, 3]",
+    o: "{a: 1, b: 'x'}",
+    e: "[]",
+    eo: "{}",
+  }}]},
+  cases: [
+    [{}, {n: 42, f: 0.3, s: "text", t: true, l: [1, 2, 3], o: {a: 1, b: "x"}, e: [], eo: {}}],
+    [{n: 1, s: "ignored"}, {n: 42, f: 0.3, s: "text", t: true, l: [1, 2, 3], o: {a: 1, b: "x"}, e: [], eo: {}}],
+  ],
+}
+
+{
+  name: "date results",
+  graph: {nodes: [{expression: "calc", fields: {day: "d(v)", year: "d(v).year()", text: "d(v).format('%Y-%m-%d')"}}]},
+  cases: [
+    [{v: "2024-01-01"}, {day: "2024-01-01T00:00:00Z", year: 2024, text: "2024-01-01"}],
+    [{v: "2023-12-31T23:59:59Z"}, {day: "2023-12-31T23:59:59Z", year: 2023, text: "2023-12-31"}],
+    [{v: date('2020-02-29')}, {day: "2020-02-29T00:00:00Z", year: 2020, text: "2020-02-29"}],
+  ],
+}
+
+{
+  name: "arithmetic on input fields",
+  graph: {nodes: [{expression: "calc", fields: {sum: "a + b", product: "a * b", ratio: "a / b"}}]},
+  cases: [
+    [{a: 6, b: 3}, {sum: 9, product: 18, ratio: 2}],
+    [{a: 1, b: 4}, {sum: 5, product: 4, ratio: 0.25}],
+    [{a: -2, b: 0.5}, {sum: -1.5, product: -1, ratio: -4}],
+    [{a: 0.1, b: 0.2}, {sum: 0.3, product: 0.02, ratio: 0.5}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Null and missing: a field reading a missing input is null; a null field is part of the node output
+// but the final result drops top-level null keys (merge-patch).
+{
+  name: "a missing input reads as null and the null field is dropped",
+  graph: {nodes: [{expression: "calc", fields: {out: "missing", other: "1"}}]},
+  cases: [
+    [{}, {other: 1}],
+    [{x: 1}, {other: 1}],
+    [{missing: null}, {other: 1}],
+    [{missing: 0}, {out: 0, other: 1}],
+    [{missing: false}, {out: false, other: 1}],
+  ],
+}
+
+{
+  name: "a null field result is observable downstream",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {out: "missing", seen: "1"}},
+      {expression: "second", fields: {isNull: "out == null", kind: "type(out)", seen: "seen"}},
+    ],
+  },
+  cases: [
+    [{}, {isNull: true, kind: "null", seen: 1}],
+    [{missing: 2}, {isNull: false, kind: "number", seen: 1}],
+    [{missing: "x"}, {isNull: false, kind: "string", seen: 1}],
+  ],
+}
+
+{
+  name: "null-coalescing defaults for missing inputs",
+  graph: {nodes: [{expression: "calc", fields: {name: "name ?? 'anonymous'", age: "age ?? 0"}}]},
+  cases: [
+    [{}, {name: "anonymous", age: 0}],
+    [{name: "ann"}, {name: "ann", age: 0}],
+    [{name: null, age: 30}, {name: "anonymous", age: 30}],
+    [{name: "", age: 0}, {name: "", age: 0}],
+  ],
+}
+
+{
+  name: "a nested null field keeps its key",
+  graph: {nodes: [{expression: "calc", fields: {"o.v": "missing", "o.w": "1"}}]},
+  cases: [
+    [{}, {o: {v: null, w: 1}}],
+    [{missing: 3}, {o: {v: 3, w: 1}}],
+  ],
+}
+
+{
+  name: "an object result holding null keeps it",
+  graph: {nodes: [{expression: "calc", fields: {o: "{v: missing, w: 1}"}}]},
+  cases: [
+    [{}, {o: {v: null, w: 1}}],
+    [{missing: "x"}, {o: {v: "x", w: 1}}],
+  ],
+}
+
+{
+  name: "every field null produces an empty result",
+  graph: {nodes: [{expression: "calc", fields: {a: "x", b: "null", c: "y.z"}}]},
+  cases: [
+    [{}, {}],
+    [{x: null, y: null}, {}],
+    [{x: 1}, {a: 1}],
+    [{y: {z: false}}, {c: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Evaluation order: fields run top to bottom. `$` holds earlier fields; plain names read the input.
+{
+  name: "a later field reads an earlier one through $",
+  graph: {nodes: [{expression: "calc", fields: {a: "x + 1", b: "$.a * 2", c: "$.b - $.a"}}]},
+  cases: [
+    [{x: 1}, {a: 2, b: 4, c: 2}],
+    [{x: 0}, {a: 1, b: 2, c: 1}],
+    [{x: -1}, {a: 0, b: 0, c: 0}],
+    [{x: 0.5}, {a: 1.5, b: 3, c: 1.5}],
+  ],
+}
+
+{
+  name: "a plain name reads the input, not an earlier field",
+  graph: {nodes: [{expression: "calc", fields: {a: "100", fromInput: "a", fromDollar: "$.a"}}]},
+  cases: [
+    [{a: 5}, {a: 100, fromInput: 5, fromDollar: 100}],
+    [{a: "s"}, {a: 100, fromInput: "s", fromDollar: 100}],
+    [{}, {a: 100, fromDollar: 100}],
+  ],
+}
+
+{
+  name: "$ of a field not yet computed is null",
+  graph: {nodes: [{expression: "calc", fields: {early: "$.late ?? 'unset'", late: "1"}}]},
+  cases: [
+    [{}, {early: "unset", late: 1}],
+    [{late: 9}, {early: "unset", late: 1}],
+  ],
+}
+
+{
+  name: "$ before any field is computed",
+  graph: {nodes: [{expression: "calc", fields: {first: "$ == null", second: "type($)"}}]},
+  cases: [
+    [{}, {first: true, second: "object"}],
+    [{a: 1}, {first: true, second: "object"}],
+  ],
+}
+
+{
+  name: "$ is an object of the fields computed so far",
+  graph: {nodes: [{expression: "calc", fields: {a: "1", b: "'two'", names: "keys($)", c: "values($)"}}]},
+  cases: [
+    [{}, {a: 1, b: "two", names: ["a", "b"], c: [1, "two", ["a", "b"]]}],
+    [{a: 5}, {a: 1, b: "two", names: ["a", "b"], c: [1, "two", ["a", "b"]]}],
+  ],
+}
+
+{
+  name: "conditions over earlier fields",
+  graph: {nodes: [{expression: "calc", fields: {
+    total: "sum(map(items, #.price * #.qty))",
+    discount: "$.total > 100 ? 0.1 : 0",
+    due: "$.total * (1 - $.discount)",
+  }}]},
+  cases: [
+    [{items: [{price: 10, qty: 2}]}, {total: 20, discount: 0, due: 20}],
+    [{items: [{price: 50, qty: 3}]}, {total: 150, discount: 0.1, due: 135}],
+    [{items: []}, {total: 0, discount: 0, due: 0}],
+    [{items: [{price: 100, qty: 1}, {price: 1, qty: 1}]}, {total: 101, discount: 0.1, due: 90.9}],
+  ],
+}
+
+{
+  name: "array and closure results feed later fields",
+  graph: {nodes: [{expression: "calc", fields: {doubled: "map(xs, # * 2)", total: "sum($.doubled)", big: "filter($.doubled, # > 4)"}}]},
+  cases: [
+    [{xs: [1, 2, 3]}, {doubled: [2, 4, 6], total: 12, big: [6]}],
+    [{xs: []}, {doubled: [], total: 0, big: []}],
+    [{xs: [10]}, {doubled: [20], total: 20, big: [20]}],
+  ],
+}
+
+{
+  name: "a request key named $ is read when no field has been computed yet",
+  graph: {nodes: [{expression: "calc", fields: {a: "$.x", b: "$.a"}}]},
+  cases: [
+    [{x: 3}, {}],
+    [{"$": {x: 9}}, {a: 9, b: 9}, "question: before the first field, $ falls back to the request key \"$\""],
+    [{x: 3, "$": {x: 9}}, {a: 9, b: 9}, "question: before the first field, $ falls back to the request key \"$\""],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate keys: the later field overwrites the earlier one, also in $.
+{
+  name: "a duplicate key overwrites the earlier value",
+  graph: {nodes: [{expression: "calc", fields: [["v", "1"], ["v", "2"]]}]},
+  cases: [
+    [{}, {v: 2}],
+    [{v: 0}, {v: 2}],
+  ],
+}
+
+{
+  name: "a duplicate key reads its own earlier value through $",
+  graph: {nodes: [{expression: "calc", fields: [["v", "x"], ["v", "$.v + 1"], ["v", "$.v * 10"]]}]},
+  cases: [
+    [{x: 1}, {v: 20}],
+    [{x: 0}, {v: 10}],
+    [{x: -1}, {v: 0}],
+  ],
+}
+
+{
+  name: "a duplicate key that turns null removes the value",
+  graph: {nodes: [{expression: "calc", fields: [["v", "1"], ["v", "missing"]]}]},
+  cases: [
+    [{}, {}],
+    [{missing: 3}, {v: 3}],
+  ],
+}
+
+{
+  name: "a duplicate key changes the type",
+  graph: {nodes: [{expression: "calc", fields: [["v", "[1]"], ["v", "'s'"], ["w", "type($.v)"]]}]},
+  cases: [
+    [{}, {v: "s", w: "string"}],
+  ],
+}
+
+{
+  name: "a duplicate key replacing an object with a scalar",
+  graph: {nodes: [{expression: "calc", fields: [["o", "{a: 1}"], ["o", "2"]]}]},
+  cases: [
+    [{}, {o: 2}],
+  ],
+}
+
+{
+  name: "a duplicate key replacing a scalar with an object",
+  graph: {nodes: [{expression: "calc", fields: [["o", "2"], ["o", "{a: 1}"]]}]},
+  cases: [
+    [{}, {o: {a: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Empty keys and empty expressions are skipped.
+{
+  name: "a field with an empty key is skipped",
+  graph: {nodes: [{expression: "calc", fields: [["", "1"], ["b", "2"]]}]},
+  cases: [
+    [{}, {b: 2}],
+    [{a: 1}, {b: 2}],
+  ],
+}
+
+{
+  name: "a field with an empty expression is skipped",
+  graph: {nodes: [{expression: "calc", fields: {a: "", b: "2"}}]},
+  cases: [
+    [{}, {b: 2}],
+    [{a: 1}, {b: 2}],
+  ],
+}
+
+{
+  name: "a node with no fields outputs an empty object",
+  graph: {nodes: [{expression: "calc", fields: {}}]},
+  cases: [
+    [{}, {}],
+    [{a: 1}, {}],
+    [{a: {b: 1}}, {}],
+  ],
+}
+
+{
+  name: "a node with no fields and pass-through returns the input",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {}}]},
+  cases: [
+    [{}, {}],
+    [{a: 1}, {a: 1}],
+    [{a: {b: 1}}, {a: {b: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Errors: one failing field fails the node and the graph; earlier successful fields do not survive.
+{
+  name: "a syntax error fails the graph",
+  graph: {nodes: [{expression: "calc", fields: {ok: "1", bad: "1 +"}}]},
+  cases: [
+    [{}, "!error: Failed to evaluate expression"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "a runtime type error fails the graph only for inputs that trigger it",
+  graph: {nodes: [{expression: "calc", fields: {ok: "1", total: "a + b"}}]},
+  cases: [
+    [{a: 1, b: 2}, {ok: 1, total: 3}],
+    [{a: "x", b: "y"}, {ok: 1, total: "xy"}],
+    [{a: "x", b: 1}, "!error"],
+    [{a: true, b: 1}, "!error"],
+  ],
+}
+
+{
+  name: "an error in the first field",
+  graph: {nodes: [{expression: "calc", fields: {bad: "a.b.", ok: "1"}}]},
+  cases: [
+    [{}, "!error"],
+    [{a: {b: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "the error names the node",
+  graph: {nodes: [{expression: "pricing step", id: "pricing", fields: {bad: "unknownFunction(1)"}}]},
+  cases: [
+    [{}, "!error: pricing"],
+  ],
+}
+
+{
+  name: "an error in a downstream node fails the graph",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {v: "a"}},
+      {expression: "second", fields: {w: "v * 2"}},
+    ],
+  },
+  cases: [
+    [{a: 2}, {w: 4}],
+    [{a: 0}, {w: 0}],
+    [{a: "s"}, "!error"],
+    [{a: [1]}, "!error"],
+  ],
+}
+
+{
+  name: "an error in a later field after an earlier field with $",
+  graph: {nodes: [{expression: "calc", fields: {a: "x", b: "$.a + 1"}}]},
+  cases: [
+    [{x: 1}, {a: 1, b: 2}],
+    [{x: 0.5}, {a: 0.5, b: 1.5}],
+    [{x: "s"}, "!error"],
+    [{x: true}, "!error"],
+    [{x: [1]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Many fields.
+{
+  name: "thirty fields chained through $",
+  graph: {nodes: [{expression: "calc", fields: [
+    ["f01", "x"], ["f02", "$.f01 + 1"], ["f03", "$.f02 + 1"], ["f04", "$.f03 + 1"], ["f05", "$.f04 + 1"],
+    ["f06", "$.f05 + 1"], ["f07", "$.f06 + 1"], ["f08", "$.f07 + 1"], ["f09", "$.f08 + 1"], ["f10", "$.f09 + 1"],
+    ["f11", "$.f10 + 1"], ["f12", "$.f11 + 1"], ["f13", "$.f12 + 1"], ["f14", "$.f13 + 1"], ["f15", "$.f14 + 1"],
+    ["f16", "$.f15 + 1"], ["f17", "$.f16 + 1"], ["f18", "$.f17 + 1"], ["f19", "$.f18 + 1"], ["f20", "$.f19 + 1"],
+    ["f21", "$.f20 + 1"], ["f22", "$.f21 + 1"], ["f23", "$.f22 + 1"], ["f24", "$.f23 + 1"], ["f25", "$.f24 + 1"],
+    ["f26", "$.f25 + 1"], ["f27", "$.f26 + 1"], ["f28", "$.f27 + 1"], ["f29", "$.f28 + 1"], ["f30", "$.f29 + 1"],
+  ]}]},
+  cases: [
+    [{x: 0}, {f01: 0, f02: 1, f03: 2, f04: 3, f05: 4, f06: 5, f07: 6, f08: 7, f09: 8, f10: 9, f11: 10, f12: 11, f13: 12, f14: 13, f15: 14, f16: 15, f17: 16, f18: 17, f19: 18, f20: 19, f21: 20, f22: 21, f23: 22, f24: 23, f25: 24, f26: 25, f27: 26, f28: 27, f29: 28, f30: 29}],
+    [{x: 100}, {f01: 100, f02: 101, f03: 102, f04: 103, f05: 104, f06: 105, f07: 106, f08: 107, f09: 108, f10: 109, f11: 110, f12: 111, f13: 112, f14: 113, f15: 114, f16: 115, f17: 116, f18: 117, f19: 118, f20: 119, f21: 120, f22: 121, f23: 122, f24: 123, f25: 124, f26: 125, f27: 126, f28: 127, f29: 128, f30: 129}],
+    [{x: 0.5}, {f01: 0.5, f02: 1.5, f03: 2.5, f04: 3.5, f05: 4.5, f06: 5.5, f07: 6.5, f08: 7.5, f09: 8.5, f10: 9.5, f11: 10.5, f12: 11.5, f13: 12.5, f14: 13.5, f15: 14.5, f16: 15.5, f17: 16.5, f18: 17.5, f19: 18.5, f20: 19.5, f21: 20.5, f22: 21.5, f23: 22.5, f24: 23.5, f25: 24.5, f26: 25.5, f27: 26.5, f28: 27.5, f29: 28.5, f30: 29.5}],
+    [{x: "s"}, "!error"],
+  ],
+}
+
+{
+  name: "twenty independent fields",
+  graph: {nodes: [{expression: "calc", fields: {
+    a: "x + 1", b: "x + 2", c: "x + 3", d: "x + 4", e: "x + 5",
+    f: "x * 1", g: "x * 2", h: "x * 3", i: "x * 4", j: "x * 5",
+    k: "x > 0", l: "x < 0", m: "x == 0", n: "string(x)", o: "x - 1",
+    p: "-x", q: "abs(x)", r: "x ^ 2", s: "[x]", t: "{v: x}",
+  }}]},
+  cases: [
+    [{x: 2}, {a: 3, b: 4, c: 5, d: 6, e: 7, f: 2, g: 4, h: 6, i: 8, j: 10, k: true, l: false, m: false, n: "2", o: 1, p: -2, q: 2, r: 4, s: [2], t: {v: 2}}],
+    [{x: 0}, {a: 1, b: 2, c: 3, d: 4, e: 5, f: 0, g: 0, h: 0, i: 0, j: 0, k: false, l: false, m: true, n: "0", o: -1, p: 0, q: 0, r: 0, s: [0], t: {v: 0}}],
+    [{x: -3}, {a: -2, b: -1, c: 0, d: 1, e: 2, f: -3, g: -6, h: -9, i: -12, j: -15, k: false, l: true, m: false, n: "-3", o: -4, p: 3, q: 3, r: 9, s: [-3], t: {v: -3}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Pass-through off: the output holds only the fields. Pass-through on: the input merged with the fields.
+{
+  name: "without pass-through the input is not part of the output",
+  graph: {nodes: [{expression: "calc", fields: {y: "x * 2"}}]},
+  cases: [
+    [{x: 1}, {y: 2}],
+    [{x: 1, other: "keep?"}, {y: 2}],
+    [{x: 1, y: 100}, {y: 2}],
+    [{x: 1, nested: {a: 1}}, {y: 2}],
+  ],
+}
+
+{
+  name: "with pass-through the input is merged under the fields",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {y: "x * 2"}}]},
+  cases: [
+    [{x: 1}, {x: 1, y: 2}],
+    [{x: 1, other: "keep"}, {x: 1, other: "keep", y: 2}],
+    [{x: 1, y: 100}, {x: 1, y: 2}],
+    [{x: 1, nested: {a: 1}}, {x: 1, nested: {a: 1}, y: 2}],
+    [{x: 0, list: [1, 2]}, {x: 0, list: [1, 2], y: 0}],
+  ],
+}
+
+{
+  name: "pass-through with a field overwriting an input key",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {x: "x + 1"}}]},
+  cases: [
+    [{x: 1}, {x: 2}],
+    [{x: -1, y: "keep"}, {x: 0, y: "keep"}],
+    [{x: 0.5}, {x: 1.5}],
+  ],
+}
+
+{
+  name: "pass-through with an object field merges into the input object",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {o: "{b: 2}"}}]},
+  cases: [
+    [{o: {a: 1}}, {o: {a: 1, b: 2}}],
+    [{o: {b: 1, c: 3}}, {o: {b: 2, c: 3}}],
+    [{o: 5}, {o: {b: 2}}],
+    [{o: [1]}, {o: {b: 2}}],
+    [{}, {o: {b: 2}}],
+  ],
+}
+
+{
+  name: "pass-through with an array field replaces the input array",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {l: "[9]"}}]},
+  cases: [
+    [{l: [1, 2, 3]}, {l: [9]}],
+    [{l: {a: 1}}, {l: [9]}],
+    [{}, {l: [9]}],
+  ],
+}
+
+{
+  name: "pass-through with a null field deletes the input key",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {a: "null", b: "missing"}}]},
+  cases: [
+    [{a: 1, b: 2, c: 3}, {c: 3}, "question: a null field under pass-through removes the input key instead of keeping or nulling it"],
+    [{a: {x: 1}}, {}, "question: a null field under pass-through removes the input key instead of keeping or nulling it"],
+    [{c: 3}, {c: 3}],
+    [{b: 5, missing: 7}, {b: 7, missing: 7}],
+  ],
+}
+
+{
+  name: "pass-through with a nested null field deletes the nested input key",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {"n.x": "null"}}]},
+  cases: [
+    [{n: {x: 1, y: 2}}, {n: {y: 2}}, "question: a nested null field under pass-through removes the nested input key"],
+    [{n: {y: 2}}, {n: {y: 2}}],
+    [{}, {n: {x: null}}],
+    [{n: 5}, {n: {x: null}}],
+  ],
+}
+
+{
+  name: "pass-through keeps input keys of every type",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {seen: "true"}}]},
+  cases: [
+    [{s: "x", n: 1, b: false, l: [1], o: {k: 1}}, {s: "x", n: 1, b: false, l: [1], o: {k: 1}, seen: true}],
+    [{}, {seen: true}],
+    [{seen: false}, {seen: true}],
+  ],
+}
+
+{
+  name: "pass-through with a non-object request",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {y: "1"}}]},
+  cases: [
+    [5, {y: 1}],
+    [null, {y: 1}],
+    ["s", {y: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Chains: the next node sees only the previous node's output; `$` does not carry over.
+{
+  name: "a second node sees only the first node's fields",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {y: "x + 1"}},
+      {expression: "second", fields: {z: "y * 2", xSeen: "x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {z: 4}],
+    [{x: 0}, {z: 2}],
+  ],
+}
+
+{
+  name: "a second node sees the input when the first passes it through",
+  graph: {
+    nodes: [
+      {expression: "first", passThrough: true, fields: {y: "x + 1"}},
+      {expression: "second", fields: {z: "y * 2", xSeen: "x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {z: 4, xSeen: 1}],
+    [{x: 5}, {z: 12, xSeen: 5}],
+  ],
+}
+
+{
+  name: "$ does not carry over to the next node",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {y: "1"}},
+      {expression: "second", fields: {fromDollar: "$.y", fromInput: "y"}},
+    ],
+  },
+  cases: [
+    [{}, {fromInput: 1}],
+    [{y: 9}, {fromInput: 1}],
+  ],
+}
+
+{
+  name: "a downstream node reads an upstream node through $nodes",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {y: "x + 1"}},
+      {expression: "second", fields: {z: "$nodes.first.y", x: "$nodes.input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {z: 2, x: 1}],
+    [{x: 10}, {z: 11, x: 10}],
+    [{x: -1}, {z: 0, x: -1}],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "three chained nodes with pass-through accumulate",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {s1: "x + 1"}},
+      {expression: "b", passThrough: true, fields: {s2: "s1 + 1"}},
+      {expression: "c", passThrough: true, fields: {s3: "s2 + 1"}},
+    ],
+  },
+  cases: [
+    [{x: 0}, {x: 0, s1: 1, s2: 2, s3: 3}],
+    [{x: 10, keep: "k"}, {x: 10, keep: "k", s1: 11, s2: 12, s3: 13}],
+  ],
+}
+
+{
+  name: "mixed pass-through in a chain",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {s1: "x + 1"}},
+      {expression: "b", fields: {s2: "s1 + x"}},
+      {expression: "c", passThrough: true, fields: {s3: "s2 * 2"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {s2: 3, s3: 6}],
+    [{x: 2, keep: true}, {s2: 5, s3: 10}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// String and boolean logic in fields.
+{
+  name: "string building over input fields",
+  graph: {nodes: [{expression: "calc", fields: {full: "first + ' ' + last", size: "len($.full)", upper: "upper($.full)"}}]},
+  cases: [
+    [{first: "ann", last: "lee"}, {full: "ann lee", size: 7, upper: "ANN LEE"}],
+    [{first: "", last: "x"}, {full: " x", size: 2, upper: " X"}],
+  ],
+}
+
+{
+  name: "boolean fields",
+  graph: {nodes: [{expression: "calc", fields: {adult: "age >= 18", senior: "age >= 65", both: "$.adult and not $.senior"}}]},
+  cases: [
+    [{age: 17}, {adult: false, senior: false, both: false}],
+    [{age: 18}, {adult: true, senior: false, both: true}],
+    [{age: 65}, {adult: true, senior: true, both: false}],
+    [{age: 40.5}, {adult: true, senior: false, both: true}],
+  ],
+}
+
+{
+  name: "template strings in fields",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`hello ${name}`", n: "`${len(name)}`"}}]},
+  cases: [
+    [{name: "ann"}, {msg: "hello ann", n: "3"}],
+    [{name: ""}, {msg: "hello ", n: "0"}],
+  ],
+}

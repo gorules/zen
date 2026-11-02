@@ -486,6 +486,43 @@ fn decision_table_invalid_collect_marker_is_reported() {
 }
 
 #[test]
+fn decision_table_collect_marker_under_collect_hit_policy_is_reported() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "collect",
+            "inputs": [
+                { "id": "c1", "name": "Age", "field": "age" }
+            ],
+            "outputs": [
+                { "id": "o1", "name": "Tags", "field": "tags[]" },
+                { "id": "o2", "name": "Plain", "field": "plain" }
+            ],
+            "rules": [
+                { "_id": "r1", "c1": "", "o1": "1", "o2": "2" }
+            ]
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let warnings: Vec<_> = ws
+        .diagnostics("g")
+        .into_iter()
+        .filter(|d| d.severity == Severity::Warning && d.code == DiagnosticCode::InvalidWritePath)
+        .collect();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "expected one collect marker warning, got {warnings:?}"
+    );
+    assert!(error_codes(&ws, "g").is_empty());
+}
+
+#[test]
 fn transform_loop_iterates_elements() {
     let mut ws = Workspace::new();
     let schema = json!({

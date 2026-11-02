@@ -1,0 +1,311 @@
+// Realistic operations decisions modelled on the shapes of the published sample graphs: skill
+// based assignment with closures over a list of agents, SLA clocks and escalation over dates
+// (evaluation time is fixed at Thursday 2025-03-20T10:15:30Z), program eligibility through a
+// collect switch whose branches meet at a summary node, appointment scheduling rules with
+// collected violations, route planning through a sub-decision loop, and wave planning in a
+// function node. Each suite is one decision exercised across main paths, boundaries, missing
+// data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Ticket assignment: online agents with the ticket's language and product are candidates, the
+// least loaded wins (first in list order on a tie); without a candidate a fallback table queues
+// the ticket by priority and channel.
+{
+  name: "ticket assignment: skills, language and load, with a fallback queue",
+  graph: {
+    nodes: [
+      {expression: "match", passThrough: true, fields: {
+        candidates: "filter(agents, #.online == true and ticket.language in #.languages and ticket.product in #.skills)",
+        bestLoad: "len($.candidates) == 0 ? -1 : min(map($.candidates, #.load))",
+        assignee: "len($.candidates) == 0 ? 'none' : filter($.candidates, #.load == $.bestLoad)[0].id",
+      }},
+      {switch: "route", when: ["assignee != 'none'", ""]},
+      {expression: "assigned", fields: {status: "'assigned'", queue: "'agent'", assignee: "assignee"}},
+      {table: "fallback", inputs: ["ticket.priority", "ticket.channel"], outputs: ["status", "queue"], rules: [
+        ["'p1'", "", "'escalated'", "'on-call'"],
+        ["", "'phone'", "'queued'", "'callback'"],
+        ["", "", "'queued'", "'backlog'"],
+      ]},
+    ],
+    edges: ["input -> match -> route", "route:0 -> assigned -> output", "route:1 -> fallback -> output"],
+  },
+  cases: [
+    [{ticket: {language: "en", product: "api", priority: "p2", channel: "email"}, agents: [{id: "a1", online: true, languages: ["en", "de"], skills: ["billing", "api"], load: 3}, {id: "a2", online: true, languages: ["en"], skills: ["api"], load: 1}, {id: "a3", online: false, languages: ["de"], skills: ["billing"], load: 0}, {id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "assigned", queue: "agent", assignee: "a2"}],
+    [{ticket: {language: "en", product: "billing", priority: "p2", channel: "email"}, agents: [{id: "a1", online: true, languages: ["en", "de"], skills: ["billing", "api"], load: 3}, {id: "a2", online: true, languages: ["en"], skills: ["api"], load: 1}, {id: "a3", online: false, languages: ["de"], skills: ["billing"], load: 0}, {id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "assigned", queue: "agent", assignee: "a1"}],
+    [{ticket: {language: "de", product: "billing", priority: "p2", channel: "email"}, agents: [{id: "a1", online: true, languages: ["en", "de"], skills: ["billing", "api"], load: 3}, {id: "a2", online: true, languages: ["en"], skills: ["api"], load: 1}, {id: "a3", online: false, languages: ["de"], skills: ["billing"], load: 0}, {id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "assigned", queue: "agent", assignee: "a1"}],
+    [{ticket: {language: "fr", product: "billing", priority: "p3", channel: "chat"}, agents: [{id: "a1", online: true, languages: ["en", "de"], skills: ["billing", "api"], load: 3}, {id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "assigned", queue: "agent", assignee: "a4"}],
+    [{ticket: {language: "fr", product: "api", priority: "p2", channel: "email"}, agents: [{id: "a1", online: true, languages: ["en", "de"], skills: ["billing", "api"], load: 3}, {id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "queued", queue: "backlog"}],
+    [{ticket: {language: "fr", product: "api", priority: "p1", channel: "phone"}, agents: [{id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "escalated", queue: "on-call"}],
+    [{ticket: {language: "fr", product: "api", priority: "p2", channel: "phone"}, agents: [{id: "a4", online: true, languages: ["fr", "en"], skills: ["billing"], load: 3}]}, {status: "queued", queue: "callback"}],
+    [{ticket: {language: "en", product: "api", priority: "p2", channel: "email"}, agents: [{id: "z9", online: true, languages: ["en"], skills: ["api"], load: 0}, {id: "a1", online: true, languages: ["en"], skills: ["api"], load: 0}]}, {status: "assigned", queue: "agent", assignee: "z9"}],
+    [{ticket: {language: "en", product: "api", priority: "p1", channel: "email"}, agents: []}, {status: "escalated", queue: "on-call"}],
+    [{ticket: {product: "api", priority: "p3", channel: "email"}, agents: [{id: "a2", online: true, languages: ["en"], skills: ["api"], load: 1}]}, {status: "queued", queue: "backlog"}],
+    [{ticket: {language: "en", product: "api", priority: "p3", channel: "email"}, agents: [{id: "a2", online: "true", languages: ["en"], skills: ["api"], load: 1}]}, {status: "queued", queue: "backlog"}],
+    [{ticket: {language: "en", product: "api"}, agents: [{id: "a2", online: false, languages: ["en"], skills: ["api"], load: 1}]}, {status: "queued", queue: "backlog"}],
+    // Bad data: an agent without a languages list breaks `in`, a missing agents list breaks filter.
+    [{ticket: {language: "en", product: "api", priority: "p2", channel: "email"}, agents: [{id: "a2", online: true, skills: ["api"], load: 1}]}, "!error"],
+    [{ticket: {language: "en", product: "api", priority: "p2", channel: "email"}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// SLA clock: response and resolution targets by priority and tier, elapsed hours against the
+// fixed evaluation time, a response breach measured either from the first response or from now,
+// and an escalation band; the final expression reads the clock through `$nodes`.
+{
+  name: "sla clock: targets, response breach and escalation band",
+  graph: {
+    nodes: [
+      {table: "targets", passThrough: true, inputs: ["priority", "customer.tier"], outputs: ["sla.responseH", "sla.resolveH"], rules: [
+        ["'p1'", "'enterprise'", "1", "4"],
+        ["'p1'", "", "2", "8"],
+        ["'p2'", "'enterprise'", "4", "24"],
+        ["'p2'", "", "8", "48"],
+        ["'p3'", "", "24", "120"],
+        ["", "", "48", "240"],
+      ]},
+      {expression: "clock", passThrough: true, fields: {
+        "sla.responseDue": "d(openedAt).add(sla.responseH, 'hour').format('%Y-%m-%dT%H:%M')",
+        "sla.elapsedH": "d().diff(d(openedAt), 'minute') / 60",
+        "sla.responseBreached": "firstResponseAt != null ? d(firstResponseAt).diff(d(openedAt), 'minute') > sla.responseH * 60 : $.sla.elapsedH > sla.responseH",
+        "sla.pctResolve": "round($.sla.elapsedH / sla.resolveH * 100, 1)",
+      }},
+      {table: "escalation", inputs: ["sla.pctResolve", "sla.responseBreached"], outputs: ["escalation"], rules: [
+        [">= 100", "", "'breached'"],
+        [">= 75", "", "'warning'"],
+        ["", "true", "'response-missed'"],
+        ["", "", "'ok'"],
+      ]},
+      {expression: "report", fields: {
+        escalation: "escalation",
+        responseDue: "$nodes.clock.sla.responseDue",
+        responseBreached: "$nodes.clock.sla.responseBreached",
+        pctResolve: "$nodes.clock.sla.pctResolve",
+      }},
+    ],
+  },
+  cases: [
+    [{priority: "p1", customer: {tier: "enterprise"}, openedAt: "2025-03-20T09:15:00Z", firstResponseAt: "2025-03-20T09:45:00Z"}, {escalation: "ok", responseDue: "2025-03-20T10:15", responseBreached: false, pctResolve: 25}],
+    [{priority: "p1", customer: {tier: "enterprise"}, openedAt: "2025-03-20T09:15:00Z"}, {escalation: "ok", responseDue: "2025-03-20T10:15", responseBreached: false, pctResolve: 25}],
+    [{priority: "p1", customer: {tier: "enterprise"}, openedAt: "2025-03-20T09:03:00Z"}, {escalation: "response-missed", responseDue: "2025-03-20T10:03", responseBreached: true, pctResolve: 30}],
+    [{priority: "p1", customer: {tier: "standard"}, openedAt: "2025-03-20T04:15:00Z", firstResponseAt: "2025-03-20T05:00:00Z"}, {escalation: "warning", responseDue: "2025-03-20T06:15", responseBreached: false, pctResolve: 75}],
+    [{priority: "p1", openedAt: "2025-03-20T02:15:00Z", firstResponseAt: "2025-03-20T02:20:00Z"}, {escalation: "breached", responseDue: "2025-03-20T04:15", responseBreached: false, pctResolve: 100}],
+    [{priority: "p2", customer: {tier: "enterprise"}, openedAt: "2025-03-19T10:15:00Z", firstResponseAt: "2025-03-19T16:15:00Z"}, {escalation: "breached", responseDue: "2025-03-19T14:15", responseBreached: true, pctResolve: 100}],
+    [{priority: "p2", customer: {tier: "pro"}, openedAt: "2025-03-19T10:15:00Z", firstResponseAt: "2025-03-19T19:00:00Z"}, {escalation: "response-missed", responseDue: "2025-03-19T18:15", responseBreached: true, pctResolve: 50}],
+    [{priority: "p2", customer: {tier: "pro"}, openedAt: "2025-03-19T10:15:00Z", firstResponseAt: "2025-03-19T18:15:00Z"}, {escalation: "ok", responseDue: "2025-03-19T18:15", responseBreached: false, pctResolve: 50}],
+    [{priority: "p3", openedAt: "2025-03-17T10:15:00Z", firstResponseAt: "2025-03-17T12:00:00Z"}, {escalation: "ok", responseDue: "2025-03-18T10:15", responseBreached: false, pctResolve: 60}],
+    [{priority: "p9", openedAt: "2025-03-10T10:15:00Z", firstResponseAt: "2025-03-10T11:00:00Z"}, {escalation: "breached", responseDue: "2025-03-12T10:15", responseBreached: false, pctResolve: 100}],
+    [{openedAt: "2025-03-19T10:15:00Z"}, {escalation: "ok", responseDue: "2025-03-21T10:15", responseBreached: false, pctResolve: 10}],
+    [{priority: "p1", customer: {tier: "enterprise"}, openedAt: "2025-03-20T12:00:00Z"}, {escalation: "ok", responseDue: "2025-03-20T13:00", responseBreached: false, pctResolve: -43.3}],
+    [{priority: "p3", openedAt: "2025-03-20T10:15:00Z", firstResponseAt: "2025-03-20T10:16:00Z"}, {escalation: "ok", responseDue: "2025-03-21T10:15", responseBreached: false, pctResolve: 0}],
+    // No opening time, and an unparsable first response.
+    [{priority: "p3"}, "!error"],
+    [{priority: "p3", openedAt: "2025-03-20T09:15:00Z", firstResponseAt: "soon"}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Assistance programs: the federal poverty line by household size, income as a percentage of it,
+// then a collect switch fans out to every program the household qualifies for; the default
+// branch always runs and carries the percentage, and all branches meet at a summary node.
+{
+  name: "program eligibility: poverty line, collect switch and a summary join",
+  graph: {
+    nodes: [
+      {table: "fpl", passThrough: true, inputs: ["household.size"], outputs: ["fpl"], rules: [
+        ["1", "15060"],
+        ["2", "20440"],
+        ["3", "25820"],
+        ["4", "31200"],
+        ["> 4", "31200 + 5380 * (household.size - 4)"],
+      ]},
+      {expression: "ratio", passThrough: true, fields: {incomePct: "round(household.income / fpl * 100)"}},
+      {switch: "programs", hit: "collect", when: [
+        "incomePct <= 138",
+        "incomePct <= 185 and some(household.members, #.age < 5 or #.pregnant == true)",
+        "incomePct <= 130",
+        "incomePct <= 150 and some(household.members, #.age >= 65 or #.disabled == true)",
+        "",
+      ]},
+      {expression: "medicaid", fields: {"programs.medicaid": "true"}},
+      {expression: "wic", fields: {"programs.wic": "true"}},
+      {expression: "snap", fields: {"programs.snap.monthly": "max([23, round([0, 292, 536, 768, 975][min([household.size, 4])] - 0.3 * household.income / 12)])"}},
+      {expression: "energy", fields: {"programs.energy": "true"}},
+      {expression: "base", fields: {incomePct: "incomePct"}},
+      {expression: "summary", fields: {incomePct: "incomePct", programs: "programs ?? {}"}},
+    ],
+    edges: [
+      "input -> fpl -> ratio -> programs",
+      "programs:0 -> medicaid -> summary",
+      "programs:1 -> wic -> summary",
+      "programs:2 -> snap -> summary",
+      "programs:3 -> energy -> summary",
+      "programs:4 -> base -> summary",
+      "summary -> output",
+    ],
+  },
+  cases: [
+    [{household: {size: 1, income: 12000, members: [{age: 30}]}}, {incomePct: 80, programs: {medicaid: true, snap: {monthly: 23}}}],
+    [{household: {size: 3, income: 24000, members: [{age: 30}, {age: 28, pregnant: true}, {age: 3}]}}, {incomePct: 93, programs: {medicaid: true, wic: true, snap: {monthly: 168}}}],
+    [{household: {size: 4, income: 40000, members: [{age: 40}, {age: 38}, {age: 10}, {age: 4}]}}, {incomePct: 128, programs: {medicaid: true, wic: true, snap: {monthly: 23}}}],
+    [{household: {size: 4, income: 45000, members: [{age: 40}, {age: 38}, {age: 10}, {age: 4}]}}, {incomePct: 144, programs: {wic: true}}],
+    [{household: {size: 2, income: 25000, members: [{age: 70}, {age: 68}]}}, {incomePct: 122, programs: {medicaid: true, snap: {monthly: 23}, energy: true}}],
+    [{household: {size: 2, income: 30000, members: [{age: 67}, {age: 60, disabled: true}]}}, {incomePct: 147, programs: {energy: true}}],
+    [{household: {size: 6, income: 50000, members: [{age: 35}, {age: 33}, {age: 12}, {age: 10}, {age: 8}, {age: 6}]}}, {incomePct: 119, programs: {medicaid: true, snap: {monthly: 23}}}],
+    [{household: {size: 1, income: 0, members: [{age: 22}]}}, {incomePct: 0, programs: {medicaid: true, snap: {monthly: 292}}}],
+    [{household: {size: 1, income: 20782.8, members: [{age: 22}]}}, {incomePct: 138, programs: {medicaid: true}}],
+    [{household: {size: 1, income: 100000, members: [{age: 22}]}}, {incomePct: 664, programs: {}}],
+    // Members missing: the member conditions error and count as false; the income rules still run.
+    [{household: {size: 1, income: 12000}}, {incomePct: 80, programs: {medicaid: true, snap: {monthly: 23}}}],
+    // No poverty line for size 0 or a string size; no income.
+    [{household: {size: 0, income: 12000, members: []}}, "!error"],
+    [{household: {size: "2", income: 12000, members: []}}, "!error"],
+    [{household: {size: 2, members: []}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Appointment scheduling: slot parts are derived once, then a column-less table takes `allowed`
+// from the first matching rule and collects every violation through `violations[]`.
+{
+  name: "scheduling: business hours, holidays, lead time and capacity",
+  graph: {
+    nodes: [
+      {expression: "parts", passThrough: true, fields: {
+        "slot.weekday": "d(slot.start).weekday()",
+        "slot.hour": "d(slot.start).hour()",
+        "slot.leadH": "d(slot.start).diff(d(), 'hour')",
+        "slot.date": "d(slot.start).format('%Y-%m-%d')",
+      }},
+      {table: "rules", inputs: [null], outputs: ["allowed", "violations[]"], rules: [
+        ["slot.weekday > 5", "false", "'weekend'"],
+        ["slot.hour < 9 or slot.hour + duration / 60 > 17", "false", "'outside business hours'"],
+        ["slot.date in holidays", "false", "'holiday'"],
+        ["slot.leadH < (patient.isNew == true ? 24 : 2)", "false", "'insufficient lead time'"],
+        ["provider.booked + 1 > provider.capacity", "false", "'provider full'"],
+        ["", "true", ""],
+      ]},
+      {expression: "result", fields: {allowed: "allowed", violations: "violations", date: "$nodes.parts.slot.date"}},
+    ],
+  },
+  cases: [
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, patient: {isNew: true}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["insufficient lead time"], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T10:16:00Z"}, duration: 30, patient: {isNew: true}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-22T10:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["weekend"], date: "2025-03-22"}],
+    [{slot: {start: "2025-03-21T08:30:00Z"}, duration: 30, patient: {isNew: true}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["outside business hours", "insufficient lead time"], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T16:30:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T16:30:00Z"}, duration: 90, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["outside business hours"], date: "2025-03-21"}],
+    [{slot: {start: "2025-04-21T10:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 0, capacity: 8}, holidays: ["2025-04-18", "2025-04-21"]}, {allowed: false, violations: ["holiday"], date: "2025-04-21"}],
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 8, capacity: 8}, holidays: []}, {allowed: false, violations: ["provider full"], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 7, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-22T07:00:00Z"}, duration: 30, patient: {isNew: true}, provider: {booked: 8, capacity: 8}, holidays: ["2025-03-22"]}, {allowed: false, violations: ["weekend", "outside business hours", "holiday", "provider full"], date: "2025-03-22"}],
+    [{slot: {start: "2025-03-20T09:00:00Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["insufficient lead time"], date: "2025-03-20"}],
+    [{slot: {start: "2025-03-20T12:15:30Z"}, duration: 30, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-20"}],
+    // Missing reference data: each rule whose condition errors is skipped.
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, patient: {isNew: false}}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T10:00:00Z"}, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T10:00:00Z"}, duration: 30, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: true, violations: [], date: "2025-03-21"}],
+    [{slot: {start: "2025-03-21T07:00:00Z"}, patient: {isNew: false}, provider: {booked: 3, capacity: 8}, holidays: []}, {allowed: false, violations: ["outside business hours"], date: "2025-03-21"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Route planning: a sub-decision runs once per stop (loop mode) to price service minutes, the
+// result array joins with the request, and an expression checks the route against the shift.
+{
+  name: "route planning: per-stop service time sub-decision and shift feasibility",
+  decisions: {
+    stopTime: {
+      nodes: [
+        {table: "minutes", inputs: ["type", "parcels"], outputs: ["minutes"], rules: [
+          ["'business'", "", "4 + parcels"],
+          ["'residential'", "<= 2", "3"],
+          ["'residential'", "", "3 + 0.5 * (parcels - 2)"],
+          ["'locker'", "", "2"],
+          ["", "", "6"],
+        ]},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "stops", key: "stopTime", executionMode: "loop", inputField: "route.stops", outputPath: "stopTimes"},
+      {expression: "plan", fields: {
+        stops: "len(route.stops)",
+        serviceMin: "sum(map(stopTimes, #.minutes))",
+        driveMin: "route.distanceKm / (route.urban == true ? 25 : 50) * 60",
+        totalMin: "round($.serviceMin + $.driveMin)",
+        shiftLeft: "driver.shiftMin - driver.usedMin",
+        feasible: "$.totalMin <= $.shiftLeft",
+        overtime: "max([0, $.totalMin - $.shiftLeft])",
+      }},
+    ],
+    edges: ["input -> stops -> plan -> output", "input -> plan"],
+  },
+  cases: [
+    [{route: {stops: [{type: "business", parcels: 3}, {type: "residential", parcels: 1}, {type: "locker", parcels: 5}], distanceKm: 50, urban: true}, driver: {shiftMin: 480, usedMin: 300}}, {stops: 3, serviceMin: 12, driveMin: 120, totalMin: 132, shiftLeft: 180, feasible: true, overtime: 0}],
+    [{route: {stops: [{type: "residential", parcels: 6}], distanceKm: 100}, driver: {shiftMin: 480, usedMin: 0}}, {stops: 1, serviceMin: 5, driveMin: 120, totalMin: 125, shiftLeft: 480, feasible: true, overtime: 0}],
+    [{route: {stops: [{type: "residential", parcels: 2}, {type: "farm", parcels: 1}], distanceKm: 10, urban: false}, driver: {shiftMin: 480, usedMin: 0}}, {stops: 2, serviceMin: 9, driveMin: 12, totalMin: 21, shiftLeft: 480, feasible: true, overtime: 0}],
+    [{route: {stops: [], distanceKm: 25}, driver: {shiftMin: 30, usedMin: 0}}, {stops: 0, serviceMin: 0, driveMin: 30, totalMin: 30, shiftLeft: 30, feasible: true, overtime: 0}],
+    [{route: {stops: [{type: "business", parcels: 10}], distanceKm: 200, urban: true}, driver: {shiftMin: 480, usedMin: 300}}, {stops: 1, serviceMin: 14, driveMin: 480, totalMin: 494, shiftLeft: 180, feasible: false, overtime: 314}],
+    [{route: {stops: [{type: "residential", parcels: 3}], distanceKm: 7, urban: true}, driver: {shiftMin: 480, usedMin: 0}}, {stops: 1, serviceMin: 3.5, driveMin: 16.8, totalMin: 20, shiftLeft: 480, feasible: true, overtime: 0}],
+    [{route: {stops: [{type: "business"}], distanceKm: 0}, driver: {shiftMin: 60, usedMin: 0}}, {stops: 1, serviceMin: 6, driveMin: 0, totalMin: 6, shiftLeft: 60, feasible: true, overtime: 0}],
+    // A residential stop without parcels: the `<= 2` cell errors, the next row's output cell
+    // errors too and skips that row, so the catch-all row prices it.
+    [{route: {stops: [{type: "residential"}], distanceKm: 0}, driver: {shiftMin: 60, usedMin: 0}}, {stops: 1, serviceMin: 6, driveMin: 0, totalMin: 6, shiftLeft: 60, feasible: true, overtime: 0}],
+    [{route: {stops: [{type: "locker"}], distanceKm: 5}, driver: {shiftMin: 60, usedMin: 60}}, {stops: 1, serviceMin: 2, driveMin: 6, totalMin: 8, shiftLeft: 0, feasible: false, overtime: 8}],
+    [{route: {distanceKm: 5}, driver: {shiftMin: 60, usedMin: 0}}, "!error"],
+    [{route: {stops: [{type: "locker"}]}, driver: {shiftMin: 60, usedMin: 0}}, "!error"],
+    [{route: {stops: [{type: "locker"}], distanceKm: "5"}, driver: {shiftMin: 60, usedMin: 0}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Wave planning: a function node sorts orders by priority then id and packs them first-fit into
+// waves of fixed capacity; a table after it picks the shift pattern from the wave count.
+{
+  name: "wave planning: first-fit packing in a function node, shift by wave count",
+  graph: {
+    nodes: [
+      {function: "pack", source: """
+export const handler = async (input) => {
+  const cap = input.waveCapacity;
+  if (!(cap > 0)) {
+    throw new Error('waveCapacity must be positive');
+  }
+  const orders = [...(input.orders ?? [])].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  const waves = [];
+  for (const o of orders) {
+    let w = waves.find((x) => x.units + o.units <= cap);
+    if (!w) {
+      w = { wave: waves.length + 1, units: 0, orders: [] };
+      waves.push(w);
+    }
+    w.units += o.units;
+    w.orders.push(o.id);
+  }
+  return { waves, waveCount: waves.length };
+};
+"""},
+      {table: "shift", passThrough: true, inputs: ["waveCount"], outputs: ["shift"], rules: [
+        ["<= 2", "'day'"],
+        ["<= 4", "'day+evening'"],
+        ["", "'overtime'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{waveCapacity: 10, orders: [{id: "a", priority: 1, units: 4}, {id: "b", priority: 2, units: 5}, {id: "c", priority: 1, units: 6}]}, {waves: [{wave: 1, units: 10, orders: ["a", "c"]}, {wave: 2, units: 5, orders: ["b"]}], waveCount: 2, shift: "day"}],
+    [{waveCapacity: 10, orders: []}, {waves: [], waveCount: 0, shift: "day"}],
+    [{waveCapacity: 10}, {waves: [], waveCount: 0, shift: "day"}],
+    [{waveCapacity: 10, orders: [{id: "x", priority: 1, units: 12}, {id: "y", priority: 1, units: 3}]}, {waves: [{wave: 1, units: 12, orders: ["x"]}, {wave: 2, units: 3, orders: ["y"]}], waveCount: 2, shift: "day"}],
+    [{waveCapacity: 10, orders: [{id: "a", priority: 1, units: 7}, {id: "b", priority: 1, units: 5}, {id: "c", priority: 2, units: 3}]}, {waves: [{wave: 1, units: 10, orders: ["a", "c"]}, {wave: 2, units: 5, orders: ["b"]}], waveCount: 2, shift: "day"}],
+    [{waveCapacity: 10, orders: [{id: "b", priority: 1, units: 2}, {id: "a", priority: 1, units: 2}]}, {waves: [{wave: 1, units: 4, orders: ["a", "b"]}], waveCount: 1, shift: "day"}],
+    [{waveCapacity: 5, orders: [{id: "a", priority: 1, units: 5}, {id: "b", priority: 1, units: 5}, {id: "c", priority: 1, units: 5}]}, {waves: [{wave: 1, units: 5, orders: ["a"]}, {wave: 2, units: 5, orders: ["b"]}, {wave: 3, units: 5, orders: ["c"]}], waveCount: 3, shift: "day+evening"}],
+    [{waveCapacity: 4, orders: [{id: "a", priority: 3, units: 4}, {id: "b", priority: 2, units: 4}, {id: "c", priority: 1, units: 4}, {id: "d", priority: 1, units: 3}, {id: "e", priority: 5, units: 1}]}, {waves: [{wave: 1, units: 4, orders: ["c"]}, {wave: 2, units: 4, orders: ["d", "e"]}, {wave: 3, units: 4, orders: ["b"]}, {wave: 4, units: 4, orders: ["a"]}], waveCount: 4, shift: "day+evening"}],
+    [{waveCapacity: 1, orders: [{id: "a", priority: 1, units: 1}, {id: "b", priority: 1, units: 1}, {id: "c", priority: 1, units: 1}, {id: "d", priority: 1, units: 1}, {id: "e", priority: 1, units: 1}]}, {waves: [{wave: 1, units: 1, orders: ["a"]}, {wave: 2, units: 1, orders: ["b"]}, {wave: 3, units: 1, orders: ["c"]}, {wave: 4, units: 1, orders: ["d"]}, {wave: 5, units: 1, orders: ["e"]}], waveCount: 5, shift: "overtime"}],
+    [{waveCapacity: 0, orders: [{id: "a", priority: 1, units: 1}]}, "!error: waveCapacity must be positive"],
+    [{orders: [{id: "a", priority: 1, units: 1}]}, "!error: waveCapacity must be positive"],
+  ],
+}

@@ -1,0 +1,1065 @@
+// Match blocks in larger policies: many arms, arms that read other computed properties,
+// matches that feed tables and assertions, per-member matches over relationships, matches
+// over enums and dictionaries (exhaustiveness without a default arm), and discriminated-union
+// style models where a `kind` property decides which other fields are meaningful. Chapter 05
+// covers the single-block basics.
+
+// ---------------------------------------------------------------------------
+// Many arms: a long ladder is still first-true-arm-wins in document order.
+// ---------------------------------------------------------------------------
+{
+  name: "ten-arm grade ladder with a default",
+  policy: {
+    models: {student: {score: "number"}},
+    blocks: [{match: "student.grade", arms: [
+      ["student.score >= 97", "'A+'"],
+      ["student.score >= 93", "'A'"],
+      ["student.score >= 90", "'A-'"],
+      ["student.score >= 87", "'B+'"],
+      ["student.score >= 83", "'B'"],
+      ["student.score >= 80", "'B-'"],
+      ["student.score >= 77", "'C+'"],
+      ["student.score >= 73", "'C'"],
+      ["student.score >= 70", "'C-'"],
+      ["student.score >= 60", "'D'"],
+      ["", "'F'"],
+    ]}],
+  },
+  cases: [
+    [{student: {score: 100}}, {student: {score: 100, grade: "A+"}}],
+    [{student: {score: 97}}, {student: {score: 97, grade: "A+"}}],
+    [{student: {score: 96.99}}, {student: {score: 96.99, grade: "A"}}],
+    [{student: {score: 90}}, {student: {score: 90, grade: "A-"}}],
+    [{student: {score: 88}}, {student: {score: 88, grade: "B+"}}],
+    [{student: {score: 83}}, {student: {score: 83, grade: "B"}}],
+    [{student: {score: 80.5}}, {student: {score: 80.5, grade: "B-"}}],
+    [{student: {score: 77}}, {student: {score: 77, grade: "C+"}}],
+    [{student: {score: 75}}, {student: {score: 75, grade: "C"}}],
+    [{student: {score: 70}}, {student: {score: 70, grade: "C-"}}],
+    [{student: {score: 69.999}}, {student: {score: 69.999, grade: "D"}}],
+    [{student: {score: 59}}, {student: {score: 59, grade: "F"}}],
+    [{student: {score: -3}}, {student: {score: -3, grade: "F"}}],
+  ],
+}
+
+{
+  name: "many arms over two fields with compound conditions",
+  policy: {
+    models: {parcel: {zone: "string", weight: "number", express: "boolean"}},
+    blocks: [{match: "parcel.rate", arms: [
+      ["parcel.zone == 'local' and parcel.weight <= 1 and not parcel.express", "3"],
+      ["parcel.zone == 'local' and parcel.weight <= 1", "5"],
+      ["parcel.zone == 'local' and parcel.express", "9"],
+      ["parcel.zone == 'local'", "6"],
+      ["parcel.zone in ['eu', 'uk'] and parcel.weight > 10", "40"],
+      ["parcel.zone in ['eu', 'uk'] and parcel.express", "25"],
+      ["parcel.zone in ['eu', 'uk']", "15"],
+      ["parcel.weight > 30 or parcel.zone == 'remote'", "99"],
+      ["", "50"],
+    ]}],
+  },
+  cases: [
+    [{parcel: {zone: "local", weight: 1, express: false}}, {parcel: {zone: "local", weight: 1, express: false, rate: 3}}],
+    [{parcel: {zone: "local", weight: 0.5, express: true}}, {parcel: {zone: "local", weight: 0.5, express: true, rate: 5}}],
+    [{parcel: {zone: "local", weight: 2, express: true}}, {parcel: {zone: "local", weight: 2, express: true, rate: 9}}],
+    [{parcel: {zone: "local", weight: 2, express: false}}, {parcel: {zone: "local", weight: 2, express: false, rate: 6}}],
+    [{parcel: {zone: "eu", weight: 11, express: true}}, {parcel: {zone: "eu", weight: 11, express: true, rate: 40}}],
+    [{parcel: {zone: "uk", weight: 10, express: true}}, {parcel: {zone: "uk", weight: 10, express: true, rate: 25}}],
+    [{parcel: {zone: "uk", weight: 10, express: false}}, {parcel: {zone: "uk", weight: 10, express: false, rate: 15}}],
+    [{parcel: {zone: "us", weight: 31, express: false}}, {parcel: {zone: "us", weight: 31, express: false, rate: 99}}],
+    [{parcel: {zone: "remote", weight: 1, express: true}}, {parcel: {zone: "remote", weight: 1, express: true, rate: 99}}],
+    [{parcel: {zone: "us", weight: 30, express: true}}, {parcel: {zone: "us", weight: 30, express: true, rate: 50}}],
+  ],
+}
+
+{
+  name: "arm conditions with closures over an array input",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{match: "cart.label", arms: [
+      ["len(cart.prices) == 0", "'empty'"],
+      ["all(cart.prices, # == 0)", "'free'"],
+      ["some(cart.prices, # < 0)", "'refund'"],
+      ["sum(cart.prices) > 1000", "'big'"],
+      ["count(cart.prices, # > 100) >= 2", "'several premium'"],
+      ["", "'normal'"],
+    ]}],
+  },
+  cases: [
+    [{cart: {prices: []}}, {cart: {prices: [], label: "empty"}}],
+    [{cart: {prices: [0, 0]}}, {cart: {prices: [0, 0], label: "free"}}],
+    [{cart: {prices: [5, -1]}}, {cart: {prices: [5, -1], label: "refund"}}],
+    [{cart: {prices: [999, 2]}}, {cart: {prices: [999, 2], label: "big"}}],
+    [{cart: {prices: [101, 101, 1]}}, {cart: {prices: [101, 101, 1], label: "several premium"}}],
+    [{cart: {prices: [101, 1]}}, {cart: {prices: [101, 1], label: "normal"}}],
+  ],
+}
+
+{
+  name: "arm values of a long ladder compute from several inputs",
+  policy: {
+    models: {loan: {amount: "number", years: "number"}},
+    blocks: [{match: "loan.payment", arms: [
+      ["loan.years <= 0", "loan.amount"],
+      ["loan.years == 1", "loan.amount * 1.05"],
+      ["loan.years <= 3", "round(loan.amount * 1.12 / loan.years, 2)"],
+      ["loan.years <= 5", "round(loan.amount * 1.2 / loan.years, 2)"],
+      ["", "round(loan.amount * 1.35 / loan.years, 2)"],
+    ]}],
+  },
+  cases: [
+    [{loan: {amount: 1000, years: 0}}, {loan: {amount: 1000, years: 0, payment: 1000}}],
+    [{loan: {amount: 1000, years: 1}}, {loan: {amount: 1000, years: 1, payment: 1050}}],
+    [{loan: {amount: 1000, years: 3}}, {loan: {amount: 1000, years: 3, payment: 373.33}}],
+    [{loan: {amount: 1000, years: 4}}, {loan: {amount: 1000, years: 4, payment: 300}}],
+    [{loan: {amount: 1000, years: 9}}, {loan: {amount: 1000, years: 9, payment: 150}}],
+    [{loan: {amount: 0.01, years: 2}}, {loan: {amount: 0.01, years: 2, payment: 0.01}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Arms reading other computed properties: expression, assertion, table and match outputs,
+// declared before or after the match.
+// ---------------------------------------------------------------------------
+{
+  name: "conditions read an expression, an assertion and a table output",
+  policy: {
+    models: {order: {amount: "number", qty: "number", country: "string"}},
+    blocks: [
+      {match: "order.route", arms: [
+        ["order.blocked", "'stop'"],
+        ["order.total > 1000 and order.band == 'A'", "'priority'"],
+        ["order.total > 1000", "'review'"],
+        ["", "'auto'"],
+      ]},
+      {expression: "order.total", value: "order.amount * order.qty"},
+      {assertion: "order.blocked", conditions: [["or", "order.country == 'XX'"], "order.qty > 500"]},
+      {table: "band", inputs: ["order.country"], outputs: ["order.band"], rules: [["'DE', 'NL'", "'A'"], ["", "'B'"]]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 10, qty: 600, country: "DE"}}, {order: {amount: 10, qty: 600, country: "DE", total: 6000, blocked: true, band: "A", route: "stop"}}],
+    [{order: {amount: 1, qty: 1, country: "XX"}}, {order: {amount: 1, qty: 1, country: "XX", total: 1, blocked: true, band: "B", route: "stop"}}],
+    [{order: {amount: 500, qty: 3, country: "NL"}}, {order: {amount: 500, qty: 3, country: "NL", total: 1500, blocked: false, band: "A", route: "priority"}}],
+    [{order: {amount: 500, qty: 3, country: "US"}}, {order: {amount: 500, qty: 3, country: "US", total: 1500, blocked: false, band: "B", route: "review"}}],
+    [{order: {amount: 5, qty: 3, country: "DE"}}, {order: {amount: 5, qty: 3, country: "DE", total: 15, blocked: false, band: "A", route: "auto"}}],
+  ],
+}
+
+{
+  name: "arm values read computed properties; one read only by an unselected arm is not written",
+  policy: {
+    models: {order: {amount: "number", member: "boolean"}},
+    blocks: [
+      {expression: "order.base", value: "order.amount * 1.2"},
+      {expression: "order.memberPrice", value: "order.base * 0.9"},
+      {match: "order.price", arms: [
+        ["order.member", "order.memberPrice"],
+        ["order.amount > 100", "order.base - 5"],
+        ["", "order.base"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 100, member: true}}, {order: {amount: 100, member: true, base: 120, memberPrice: 108, price: 108}}],
+    [{order: {amount: 200, member: false}}, {order: {amount: 200, member: false, base: 240, price: 235}}],
+    [{order: {amount: 50, member: false}}, {order: {amount: 50, member: false, base: 60, price: 60}}],
+    [{order: {amount: 0, member: true}}, {order: {amount: 0, member: true, base: 0, memberPrice: 0, price: 0}}],
+  ],
+}
+
+{
+  name: "a match reads another match in both conditions and values",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {match: "customer.offer", arms: [
+        ["customer.segment == 'youth'", "{segment: customer.segment, rate: 0.01}"],
+        ["customer.segment == 'senior'", "{segment: customer.segment, rate: 0.02}"],
+        ["", "{segment: customer.segment, rate: customer.income > 50000 ? 0.03 : 0.04}"],
+      ]},
+      {match: "customer.segment", arms: [
+        ["customer.age < 26", "'youth'"],
+        ["customer.age >= 65", "'senior'"],
+        ["", "'standard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20, income: 0}}, {customer: {age: 20, income: 0, segment: "youth", offer: {segment: "youth", rate: 0.01}}}],
+    [{customer: {age: 70, income: 0}}, {customer: {age: 70, income: 0, segment: "senior", offer: {segment: "senior", rate: 0.02}}}],
+    [{customer: {age: 40, income: 60000}}, {customer: {age: 40, income: 60000, segment: "standard", offer: {segment: "standard", rate: 0.03}}}],
+    [{customer: {age: 40, income: 50000}}, {customer: {age: 40, income: 50000, segment: "standard", offer: {segment: "standard", rate: 0.04}}}],
+  ],
+}
+
+{
+  name: "four chained matches declared in reverse dependency order; `x.a` only feeds one arm of `x.c`",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {match: "x.d", arms: [["x.c == 'big-even-pos'", "1"], ["", "0"]]},
+      {match: "x.c", arms: [["x.b == 'even-pos'", "x.a + '-' + x.b"], ["", "x.b"]]},
+      {match: "x.b", arms: [["x.n % 2 == 0 and x.n > 0", "'even-pos'"], ["x.n > 0", "'odd-pos'"], ["", "'non-pos'"]]},
+      {match: "x.a", arms: [["x.n > 100", "'big'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 102}}, {x: {n: 102, a: "big", b: "even-pos", c: "big-even-pos", d: 1}}],
+    [{x: {n: 4}}, {x: {n: 4, a: "small", b: "even-pos", c: "small-even-pos", d: 0}}],
+    [{x: {n: 101}}, {x: {n: 101, b: "odd-pos", c: "odd-pos", d: 0}}],
+    [{x: {n: 0}}, {x: {n: 0, b: "non-pos", c: "non-pos", d: 0}}],
+    [{x: {n: -4}}, {x: {n: -4, b: "non-pos", c: "non-pos", d: 0}}],
+  ],
+}
+
+{
+  name: "without goals, a computed read only by an unselected arm is not evaluated or written",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {expression: "x.expensive", value: "x.n * 1000"},
+      {expression: "x.cheap", value: "x.n + 1"},
+      {match: "x.out", arms: [["x.n > 5", "x.expensive"], ["", "x.cheap"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, expensive: 6000, out: 6000}}],
+    [{x: {n: 1}}, {x: {n: 1, cheap: 2, out: 2}}],
+    [{x: {n: 5}}, {x: {n: 5, cheap: 6, out: 6}}],
+    [{x: {n: -2.5}}, {x: {n: -2.5, cheap: -1.5, out: -1.5}}],
+  ],
+}
+
+{
+  name: "with a goal, only the selected arm's dependencies are evaluated",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {expression: "x.expensive", value: "x.n * 1000"},
+      {expression: "x.cheap", value: "x.n + 1"},
+      {match: "x.out", arms: [["x.n > 5", "x.expensive"], ["", "x.cheap"]]},
+    ],
+  },
+  cases: [
+    {input: {x: {n: 6}}, goals: ["x.out"], output: {x: {n: 6, expensive: 6000, out: 6000}}},
+    {input: {x: {n: 1}}, goals: ["x.out"], output: {x: {n: 1, cheap: 2, out: 2}}},
+    {input: {x: {n: 1}}, goals: ["x.out", "x.expensive"], output: {x: {n: 1, expensive: 1000, cheap: 2, out: 2}}},
+  ],
+}
+
+{
+  name: "a failing dependency of an unselected arm is not raised, with or without goals",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [
+      {expression: "x.bad", value: "x.s * 2"},
+      {match: "x.out", arms: [["x.n > 5", "x.bad"], ["", "'safe'"]]},
+    ],
+  },
+  cases: [
+    {input: {x: {n: 1, s: "a"}}, goals: ["x.out"], output: {x: {n: 1, s: "a", out: "safe"}}},
+    {input: {x: {n: 9, s: "a"}}, goals: ["x.out"], output: "!error: ExpressionFailed"},
+    {input: {x: {n: 1, s: "a"}}, output: {x: {n: 1, s: "a", out: "safe"}}},
+    {input: {x: {n: 9, s: "a"}}, output: "!error: ExpressionFailed"},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Matches feeding tables and assertions, and the other way round.
+// ---------------------------------------------------------------------------
+{
+  name: "a match result is a table input column",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {match: "customer.segment", arms: [["customer.age < 26", "'youth'"], ["customer.age >= 65", "'senior'"], ["", "'standard'"]]},
+      {table: "limits", inputs: ["customer.segment", "customer.income"], outputs: ["customer.limit"], rules: [
+        ["'youth'", "", "500"],
+        ["'senior'", "< 20000", "1000"],
+        ["'senior'", "", "3000"],
+        ["", ">= 100000", "20000"],
+        ["", "", "5000"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20, income: 200000}}, {customer: {age: 20, income: 200000, segment: "youth", limit: 500}}],
+    [{customer: {age: 70, income: 10000}}, {customer: {age: 70, income: 10000, segment: "senior", limit: 1000}}],
+    [{customer: {age: 70, income: 50000}}, {customer: {age: 70, income: 50000, segment: "senior", limit: 3000}}],
+    [{customer: {age: 40, income: 100000}}, {customer: {age: 40, income: 100000, segment: "standard", limit: 20000}}],
+    [{customer: {age: 40, income: 1}}, {customer: {age: 40, income: 1, segment: "standard", limit: 5000}}],
+  ],
+}
+
+{
+  name: "a match result is read by an assertion with groups",
+  policy: {
+    models: {applicant: {score: "number", employed: "boolean", years: "number"}},
+    blocks: [
+      {match: "applicant.risk", arms: [["applicant.score >= 750", "'low'"], ["applicant.score >= 600", "'medium'"], ["", "'high'"]]},
+      {assertion: "applicant.approved", conditions: [
+        ["or", "applicant.risk == 'low'"],
+        ["and", "applicant.risk == 'medium'", 1],
+        ["or", "applicant.employed", 2],
+        ["and", "applicant.years >= 5", 2],
+      ]},
+    ],
+  },
+  cases: [
+    [{applicant: {score: 800, employed: false, years: 0}}, {applicant: {score: 800, employed: false, years: 0, risk: "low", approved: true}}],
+    [{applicant: {score: 650, employed: true, years: 0}}, {applicant: {score: 650, employed: true, years: 0, risk: "medium", approved: true}}],
+    [{applicant: {score: 650, employed: false, years: 5}}, {applicant: {score: 650, employed: false, years: 5, risk: "medium", approved: true}}],
+    [{applicant: {score: 650, employed: false, years: 4}}, {applicant: {score: 650, employed: false, years: 4, risk: "medium", approved: false}}],
+    [{applicant: {score: 500, employed: true, years: 10}}, {applicant: {score: 500, employed: true, years: 10, risk: "high", approved: false}}],
+  ],
+}
+
+{
+  name: "table, then match, then table: a sandwich of block kinds",
+  policy: {
+    models: {item: {category: "string", price: "number"}},
+    blocks: [
+      {table: "vat", inputs: ["item.category"], outputs: ["item.vat"], rules: [["'food'", "0.07"], ["'book'", "0"], ["", "0.19"]]},
+      {match: "item.vatClass", arms: [["item.vat == 0", "'exempt'"], ["item.vat < 0.1", "'reduced'"], ["", "'standard'"]]},
+      {table: "label", inputs: ["item.vatClass", "item.price"], outputs: ["item.label"], rules: [
+        ["'exempt'", "", "'no tax'"],
+        ["'reduced'", "> 100", "'reduced, large'"],
+        ["'reduced'", "", "'reduced'"],
+        ["", "", "'standard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{item: {category: "book", price: 10}}, {item: {category: "book", price: 10, vat: 0, vatClass: "exempt", label: "no tax"}}],
+    [{item: {category: "food", price: 200}}, {item: {category: "food", price: 200, vat: 0.07, vatClass: "reduced", label: "reduced, large"}}],
+    [{item: {category: "food", price: 2}}, {item: {category: "food", price: 2, vat: 0.07, vatClass: "reduced", label: "reduced"}}],
+    [{item: {category: "tool", price: 100}}, {item: {category: "tool", price: 100, vat: 0.19, vatClass: "standard", label: "standard"}}],
+  ],
+}
+
+{
+  name: "a match writing an object, read field by field downstream",
+  policy: {
+    models: {customer: {tier: "string(free|pro|team)"}},
+    blocks: [
+      {match: "customer.plan", arms: [
+        ["customer.tier == 'free'", "{seats: 1, storage: 5, support: null}"],
+        ["customer.tier == 'pro'", "{seats: 1, storage: 100, support: 'email'}"],
+        ["customer.tier == 'team'", "{seats: 10, storage: 1000, support: 'phone'}"],
+      ]},
+      {expression: "customer.storagePerSeat", value: "customer.plan.storage / customer.plan.seats"},
+      {table: "sla", inputs: ["customer.plan.support"], outputs: ["customer.sla"], rules: [["'phone'", "4"], ["'email'", "24"], ["", "null"]]},
+      {assertion: "customer.hasSupport", conditions: ["customer.plan.support != null"]},
+    ],
+  },
+  cases: [
+    [{customer: {tier: "free"}}, {customer: {tier: "free", plan: {seats: 1, storage: 5, support: null}, storagePerSeat: 5, sla: null, hasSupport: false}}],
+    [{customer: {tier: "pro"}}, {customer: {tier: "pro", plan: {seats: 1, storage: 100, support: "email"}, storagePerSeat: 100, sla: 24, hasSupport: true}}],
+    [{customer: {tier: "team"}}, {customer: {tier: "team", plan: {seats: 10, storage: 1000, support: "phone"}, storagePerSeat: 100, sla: 4, hasSupport: true}}],
+  ],
+}
+
+{
+  name: "a match on a collected table array",
+  policy: {
+    models: {user: {age: "number", country: "string"}},
+    blocks: [
+      {table: "flags", inputs: ["user.age", "user.country"], outputs: ["user.flags[]"], rules: [
+        ["< 18", "", "'minor'"],
+        ["", "'XX'", "'sanctioned'"],
+        ["> 100", "", "'check age'"],
+      ]},
+      {match: "user.decision", arms: [
+        ["'sanctioned' in user.flags", "'deny'"],
+        ["len(user.flags) >= 2", "'manual'"],
+        ["len(user.flags) == 1", "'soft review'"],
+        ["", "'allow'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{user: {age: 30, country: "DE"}}, {user: {age: 30, country: "DE", flags: [], decision: "allow"}}],
+    [{user: {age: 10, country: "DE"}}, {user: {age: 10, country: "DE", flags: ["minor"], decision: "soft review"}}],
+    [{user: {age: 10, country: "XX"}}, {user: {age: 10, country: "XX", flags: ["minor", "sanctioned"], decision: "deny"}}],
+    [{user: {age: 101, country: "XX"}}, {user: {age: 101, country: "XX", flags: ["sanctioned", "check age"], decision: "deny"}}],
+  ],
+}
+
+{
+  name: "a match result targets a nested path that a sibling block extends",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [
+      {match: "order.pricing.band", arms: [["order.amount > 100", "'high'"], ["", "'low'"]]},
+      {expression: "order.pricing.fee", value: "order.pricing.band == 'high' ? 0 : 4.99"},
+    ],
+  },
+  cases: [
+    [{order: {amount: 101}}, {order: {amount: 101, pricing: {band: "high", fee: 0}}}],
+    [{order: {amount: 100}}, {order: {amount: 100, pricing: {band: "low", fee: 4.99}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Matches on relationship members.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member match reads a parent input property",
+  policy: {
+    models: {customer: {threshold: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{match: "company.status", arms: [
+      ["company.revenue >= customer.threshold * 2", "'well above'"],
+      ["company.revenue >= customer.threshold", "'above'"],
+      ["", "'below'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {threshold: 100, companies: [{revenue: 200}, {revenue: 150}, {revenue: 99}]}},
+      {customer: {threshold: 100, companies: [{revenue: 200, status: "well above"}, {revenue: 150, status: "above"}, {revenue: 99, status: "below"}]}},
+    ],
+    [
+      {customer: {threshold: 0, companies: [{revenue: 0}, {revenue: -1}]}},
+      {customer: {threshold: 0, companies: [{revenue: 0, status: "well above"}, {revenue: -1, status: "below"}]}},
+    ],
+    [{customer: {threshold: 5, companies: []}}, {customer: {threshold: 5, companies: []}}],
+  ],
+}
+
+{
+  name: "per-member match reads a parent aggregate of the members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.average", value: "avg(map(customer.companies, #.revenue))"},
+      {match: "company.relative", arms: [
+        ["company.revenue > customer.average", "'above average'"],
+        ["company.revenue == customer.average", "'average'"],
+        ["", "'below average'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10}, {revenue: 20}, {revenue: 30}]}},
+      {customer: {average: 20, companies: [{revenue: 10, relative: "below average"}, {revenue: 20, relative: "average"}, {revenue: 30, relative: "above average"}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 7}]}},
+      {customer: {average: 7, companies: [{revenue: 7, relative: "average"}]}},
+    ],
+  ],
+}
+
+{
+  name: "parent match over aggregates of per-member match results",
+  policy: {
+    models: {portfolio: {loans: "loan[]"}, loan: {daysLate: "number", amount: "number"}},
+    blocks: [
+      {match: "loan.state", arms: [
+        ["loan.daysLate == 0", "'current'"],
+        ["loan.daysLate <= 30", "'late'"],
+        ["loan.daysLate <= 90", "'delinquent'"],
+        ["", "'default'"],
+      ]},
+      {match: "portfolio.health", arms: [
+        ["some(portfolio.loans, #.state == 'default')", "'impaired'"],
+        ["sum(map(filter(portfolio.loans, #.state == 'delinquent'), #.amount)) > 10000", "'watch'"],
+        ["count(portfolio.loans, #.state != 'current') > len(portfolio.loans) / 2", "'weak'"],
+        ["", "'healthy'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {portfolio: {loans: [{daysLate: 0, amount: 1}, {daysLate: 120, amount: 1}]}},
+      {portfolio: {health: "impaired", loans: [{daysLate: 0, amount: 1, state: "current"}, {daysLate: 120, amount: 1, state: "default"}]}},
+    ],
+    [
+      {portfolio: {loans: [{daysLate: 60, amount: 20000}, {daysLate: 0, amount: 5}]}},
+      {portfolio: {health: "watch", loans: [{daysLate: 60, amount: 20000, state: "delinquent"}, {daysLate: 0, amount: 5, state: "current"}]}},
+    ],
+    [
+      {portfolio: {loans: [{daysLate: 10, amount: 1}, {daysLate: 31, amount: 1}, {daysLate: 0, amount: 1}]}},
+      {portfolio: {health: "weak", loans: [{daysLate: 10, amount: 1, state: "late"}, {daysLate: 31, amount: 1, state: "delinquent"}, {daysLate: 0, amount: 1, state: "current"}]}},
+    ],
+    [
+      {portfolio: {loans: [{daysLate: 10, amount: 1}, {daysLate: 0, amount: 1}]}},
+      {portfolio: {health: "healthy", loans: [{daysLate: 10, amount: 1, state: "late"}, {daysLate: 0, amount: 1, state: "current"}]}},
+    ],
+    [{portfolio: {loans: []}}, {portfolio: {health: "healthy", loans: []}}],
+  ],
+}
+
+// Writing to an entity nested two relationship levels deep is reported as
+// UNSUPPORTED_NESTED_ITERATION (only one level of nesting is evaluated); the workspace path
+// still runs it and fails the required-input check.
+{
+  name: "per-member match two levels deep is unsupported",
+  diagnostics: ["UNREACHABLE_ENTITY_READ", "UNSUPPORTED_NESTED_ITERATION"],
+  policy: {
+    models: {
+      customer: {bonusPool: "number", companies: "company[]"},
+      company: {target: "number", employees: "employee[]"},
+      employee: {sales: "number"},
+    },
+    blocks: [{match: "employee.bonus", arms: [
+      ["employee.sales >= company.target * 2", "customer.bonusPool * 0.1"],
+      ["employee.sales >= company.target", "customer.bonusPool * 0.05"],
+      ["", "0"],
+    ]}],
+  },
+  cases: [
+    [{customer: {bonusPool: 1000, companies: [{target: 10, employees: [{sales: 20}, {sales: 9}]}]}}, "!error: MissingRequiredInputs"],
+    [{customer: {bonusPool: 0, companies: [{target: 1, employees: []}]}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "middle-level match reads the root and aggregates the level below",
+  policy: {
+    models: {
+      customer: {minHeadcount: "number", companies: "company[]"},
+      company: {employees: "employee[]"},
+      employee: {sales: "number"},
+    },
+    blocks: [{match: "company.status", arms: [
+      ["len(company.employees) < customer.minHeadcount", "'understaffed'"],
+      ["sum(map(company.employees, #.sales)) >= 100", "'performing'"],
+      ["", "'ok'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {minHeadcount: 2, companies: [{employees: [{sales: 500}]}, {employees: [{sales: 60}, {sales: 40}]}, {employees: [{sales: 1}, {sales: 2}]}]}},
+      {customer: {minHeadcount: 2, companies: [
+        {employees: [{sales: 500}], status: "understaffed"},
+        {employees: [{sales: 60}, {sales: 40}], status: "performing"},
+        {employees: [{sales: 1}, {sales: 2}], status: "ok"},
+      ]}},
+    ],
+    [
+      {customer: {minHeadcount: 0, companies: [{employees: []}]}},
+      {customer: {minHeadcount: 0, companies: [{employees: [], status: "ok"}]}},
+    ],
+  ],
+}
+
+{
+  name: "match on a single relationship's fields",
+  policy: {
+    models: {customer: {report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
+    blocks: [
+      {match: "creditReport.grade", arms: [["creditReport.bankrupt", "'X'"], ["creditReport.score >= 700", "'A'"], ["", "'B'"]]},
+      {match: "customer.decision", arms: [["customer.report.grade == 'A'", "'approve'"], ["customer.report.grade == 'X'", "'decline'"], ["", "'refer'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {report: {score: 800, bankrupt: false}}}, {customer: {decision: "approve", report: {score: 800, bankrupt: false, grade: "A"}}}],
+    [{customer: {report: {score: 800, bankrupt: true}}}, {customer: {decision: "decline", report: {score: 800, bankrupt: true, grade: "X"}}}],
+    [{customer: {report: {score: 650, bankrupt: false}}}, {customer: {decision: "refer", report: {score: 650, bankrupt: false, grade: "B"}}}],
+  ],
+}
+
+{
+  name: "per-member match through a member's single relationship",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {name: "string", address: "address"}, address: {country: "string"}},
+    blocks: [{match: "company.jurisdiction", arms: [
+      ["company.address.country in ['DE', 'FR', 'NL']", "'EU'"],
+      ["company.address.country == 'GB'", "'UK'"],
+      ["", "'ROW'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{name: "a", address: {country: "DE"}}, {name: "b", address: {country: "GB"}}, {name: "c", address: {country: "US"}}]}},
+      {customer: {companies: [
+        {name: "a", address: {country: "DE"}, jurisdiction: "EU"},
+        {name: "b", address: {country: "GB"}, jurisdiction: "UK"},
+        {name: "c", address: {country: "US"}, jurisdiction: "ROW"},
+      ]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+{
+  name: "parent match reads the first member through an index",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {match: "company.size", arms: [["company.revenue > 100", "'big'"], ["", "'small'"]]},
+      {match: "customer.primary", arms: [
+        ["len(customer.companies) == 0", "'none'"],
+        ["customer.companies[0].size == 'big'", "'big primary'"],
+        ["", "'small primary'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 500}, {revenue: 1}]}}, {customer: {primary: "big primary", companies: [{revenue: 500, size: "big"}, {revenue: 1, size: "small"}]}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 500}]}}, {customer: {primary: "small primary", companies: [{revenue: 1, size: "small"}, {revenue: 500, size: "big"}]}}],
+    [{customer: {companies: []}}, {customer: {primary: "none", companies: []}}],
+  ],
+}
+
+{
+  name: "per-member match whose arm value reads a sibling member computed",
+  policy: {
+    models: {invoice: {lines: "line[]"}, line: {qty: "number", price: "number", taxable: "boolean"}},
+    blocks: [
+      {expression: "line.net", value: "line.qty * line.price"},
+      {match: "line.gross", arms: [["line.taxable", "line.net * 1.2"], ["", "line.net"]]},
+      {expression: "invoice.total", value: "sum(map(invoice.lines, #.gross))"},
+    ],
+  },
+  cases: [
+    [
+      {invoice: {lines: [{qty: 2, price: 10, taxable: true}, {qty: 1, price: 5, taxable: false}]}},
+      {invoice: {total: 29, lines: [{qty: 2, price: 10, taxable: true, net: 20, gross: 24}, {qty: 1, price: 5, taxable: false, net: 5, gross: 5}]}},
+    ],
+    [{invoice: {lines: []}}, {invoice: {total: 0, lines: []}}],
+    [
+      {invoice: {lines: [{qty: 3, price: 0.1, taxable: true}]}},
+      {invoice: {total: 0.36, lines: [{qty: 3, price: 0.1, taxable: true, net: 0.3, gross: 0.36}]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member match with an optional member field",
+  policy: {
+    models: {team: {members: "member[]"}, member: {role: "string?"}},
+    blocks: [{match: "member.access", arms: [
+      ["member.role == 'admin'", "'all'"],
+      ["member.role == null", "'none'"],
+      ["", "'read'"],
+    ]}],
+  },
+  cases: [
+    [
+      {team: {members: [{role: "admin"}, {role: null}, {}, {role: "viewer"}]}},
+      {team: {members: [{role: "admin", access: "all"}, {role: null, access: "none"}, {access: "none"}, {role: "viewer", access: "read"}]}},
+    ],
+    [{team: {members: []}}, {team: {members: []}}],
+  ],
+}
+
+{
+  name: "per-member lazy arm: a member computed read by one member's selected arm",
+  policy: {
+    models: {order: {lines: "line[]"}, line: {qty: "number", price: "number"}},
+    blocks: [
+      {expression: "line.bulkPrice", value: "line.qty * line.price * 0.8"},
+      {match: "line.total", arms: [["line.qty >= 10", "line.bulkPrice"], ["", "line.qty * line.price"]]},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{qty: 10, price: 1}, {qty: 1, price: 5}]}},
+      {order: {lines: [{qty: 10, price: 1, bulkPrice: 8, total: 8}, {qty: 1, price: 5, bulkPrice: 4, total: 5}]}},
+      "question: once one member selects the arm, its conditional read is evaluated and written for every member, including members whose own arm never reads it; at the root level a property read only by unselected arms is not written at all, so the output shape depends on the other members",
+    ],
+    [
+      {order: {lines: [{qty: 1, price: 2}, {qty: 2, price: 2}]}},
+      {order: {lines: [{qty: 1, price: 2, total: 2}, {qty: 2, price: 2, total: 4}]}},
+    ],
+    [
+      {order: {lines: [{qty: 20, price: 1}, {qty: 30, price: 1}]}},
+      {order: {lines: [{qty: 20, price: 1, bulkPrice: 16, total: 16}, {qty: 30, price: 1, bulkPrice: 24, total: 24}]}},
+    ],
+    [{order: {lines: []}}, {order: {lines: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Enums and dictionaries: an arm set that covers every value is exhaustive without a default.
+// ---------------------------------------------------------------------------
+{
+  name: "dictionary covered value by value, no default",
+  policy: {
+    dictionaries: {tier: [["BR", "Bronze"], ["SI", "Silver"], ["GO", "Gold"], ["PL", "Platinum"]]},
+    models: {customer: {tier: "tier"}},
+    blocks: [{match: "customer.discount", arms: [
+      ["customer.tier == 'BR'", "0"],
+      ["customer.tier == 'SI'", "0.05"],
+      ["customer.tier == 'GO'", "0.1"],
+      ["customer.tier == 'PL'", "0.2"],
+    ]}],
+  },
+  cases: [
+    [{customer: {tier: "BR"}}, {customer: {tier: "BR", discount: 0}}],
+    [{customer: {tier: "SI"}}, {customer: {tier: "SI", discount: 0.05}}],
+    [{customer: {tier: "GO"}}, {customer: {tier: "GO", discount: 0.1}}],
+    [{customer: {tier: "PL"}}, {customer: {tier: "PL", discount: 0.2}}],
+    [{customer: {tier: "Gold"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "dictionary covered with `in` lists and a reversed equality",
+  policy: {
+    dictionaries: {status: ["open", "pending", "closed", "archived"]},
+    models: {ticket: {status: "status"}},
+    blocks: [{match: "ticket.active", arms: [
+      ["ticket.status in ['open', 'pending']", "true"],
+      ["'closed' == ticket.status", "false"],
+      ["ticket.status in ['archived']", "false"],
+    ]}],
+  },
+  cases: [
+    [{ticket: {status: "open"}}, {ticket: {status: "open", active: true}}],
+    [{ticket: {status: "pending"}}, {ticket: {status: "pending", active: true}}],
+    [{ticket: {status: "closed"}}, {ticket: {status: "closed", active: false}}],
+    [{ticket: {status: "archived"}}, {ticket: {status: "archived", active: false}}],
+  ],
+}
+
+{
+  name: "enum covered by `or` inside one arm",
+  policy: {
+    models: {order: {channel: "string(web|app|store|phone)"}},
+    blocks: [{match: "order.kind", arms: [
+      ["order.channel == 'web' or order.channel == 'app'", "'digital'"],
+      ["order.channel == 'store' or order.channel == 'phone'", "'assisted'"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", kind: "digital"}}],
+    [{order: {channel: "app"}}, {order: {channel: "app", kind: "digital"}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", kind: "assisted"}}],
+    [{order: {channel: "phone"}}, {order: {channel: "phone", kind: "assisted"}}],
+  ],
+}
+
+{
+  name: "dictionary partially covered without default writes null",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    dictionaries: {status: ["open", "pending", "closed"]},
+    models: {ticket: {status: "status"}},
+    blocks: [{match: "ticket.sla", arms: [["ticket.status == 'open'", "24"], ["ticket.status == 'pending'", "72"]]}],
+  },
+  cases: [
+    [{ticket: {status: "open"}}, {ticket: {status: "open", sla: 24}}],
+    [{ticket: {status: "pending"}}, {ticket: {status: "pending", sla: 72}}],
+    [{ticket: {status: "closed"}}, {ticket: {status: "closed", sla: null}}],
+  ],
+}
+
+{
+  name: "optional enum covered value by value is not exhaustive: null falls through",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {order: {channel: "string(web|store)?"}},
+    blocks: [{match: "order.fee", arms: [["order.channel == 'web'", "0"], ["order.channel == 'store'", "2"]]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", fee: 0}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", fee: 2}}],
+    [{order: {channel: null}}, {order: {channel: null, fee: null}}],
+    [{order: {}}, {order: {fee: null}}],
+  ],
+}
+
+{
+  name: "optional enum with an explicit null arm and a default",
+  policy: {
+    models: {order: {channel: "string(web|store)?"}},
+    blocks: [{match: "order.fee", arms: [
+      ["order.channel == null", "-1"],
+      ["order.channel == 'web'", "0"],
+      ["", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", fee: 0}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", fee: 2}}],
+    [{order: {channel: null}}, {order: {channel: null, fee: -1}}],
+    [{order: {}}, {order: {fee: -1}}],
+  ],
+}
+
+{
+  name: "arms over two different enum paths are not a discriminated union",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {order: {channel: "string(web|store)", plan: "string(free|paid)"}},
+    blocks: [{match: "order.label", arms: [
+      ["order.channel == 'web'", "'web'"],
+      ["order.plan == 'free'", "'free store'"],
+      ["order.channel == 'store'", "'paid store'"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web", plan: "free"}}, {order: {channel: "web", plan: "free", label: "web"}}],
+    [{order: {channel: "store", plan: "free"}}, {order: {channel: "store", plan: "free", label: "free store"}}],
+    [{order: {channel: "store", plan: "paid"}}, {order: {channel: "store", plan: "paid", label: "paid store"}}],
+  ],
+}
+
+{
+  name: "numeric cover with intervals and points, no default",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{match: "x.band", arms: [
+      ["x.n < 0", "'negative'"],
+      ["x.n == 0", "'zero'"],
+      ["x.n in (0..10]", "'small'"],
+      ["x.n > 10 and x.n <= 100", "'medium'"],
+      ["x.n > 100", "'large'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: -0.001}}, {x: {n: -0.001, band: "negative"}}],
+    [{x: {n: 0}}, {x: {n: 0, band: "zero"}}],
+    [{x: {n: 0.001}}, {x: {n: 0.001, band: "small"}}],
+    [{x: {n: 10}}, {x: {n: 10, band: "small"}}],
+    [{x: {n: 10.5}}, {x: {n: 10.5, band: "medium"}}],
+    [{x: {n: 100}}, {x: {n: 100, band: "medium"}}],
+    [{x: {n: 100.01}}, {x: {n: 100.01, band: "large"}}],
+  ],
+}
+
+{
+  name: "numeric cover with a hole at a single point is not exhaustive",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{match: "x.sign", arms: [["x.n < 0", "-1"], ["x.n > 0", "1"]]}],
+  },
+  cases: [
+    [{x: {n: -2}}, {x: {n: -2, sign: -1}}],
+    [{x: {n: 2}}, {x: {n: 2, sign: 1}}],
+    [{x: {n: 0}}, {x: {n: 0, sign: null}}],
+  ],
+}
+
+{
+  name: "boolean covered by one `in` arm",
+  policy: {
+    models: {x: {b: "boolean"}},
+    blocks: [{match: "x.known", arms: [["x.b in [true, false]", "'yes'"]]}],
+  },
+  cases: [
+    [{x: {b: true}}, {x: {b: true, known: "yes"}}],
+    [{x: {b: false}}, {x: {b: false, known: "yes"}}],
+  ],
+}
+
+{
+  name: "enum on members: exhaustive per-member match",
+  policy: {
+    models: {cart: {items: "item[]"}, item: {kind: "string(goods|service|fee)", amount: "number"}},
+    blocks: [
+      {match: "item.vat", arms: [
+        ["item.kind == 'goods'", "item.amount * 0.2"],
+        ["item.kind == 'service'", "item.amount * 0.1"],
+        ["item.kind == 'fee'", "0"],
+      ]},
+      {expression: "cart.vat", value: "sum(map(cart.items, #.vat))"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {items: [{kind: "goods", amount: 100}, {kind: "service", amount: 50}, {kind: "fee", amount: 3}]}},
+      {cart: {vat: 25, items: [{kind: "goods", amount: 100, vat: 20}, {kind: "service", amount: 50, vat: 5}, {kind: "fee", amount: 3, vat: 0}]}},
+    ],
+    [{cart: {items: []}}, {cart: {vat: 0, items: []}}],
+    [{cart: {items: [{kind: "gift", amount: 1}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "inline-enum global discriminates a match on an entity",
+  policy: {
+    globals: {env: {mode: "string(live|test)"}},
+    models: {payment: {amount: "number"}},
+    blocks: [{match: "payment.charge", arms: [
+      ["mode == 'test'", "0"],
+      ["mode == 'live'", "payment.amount"],
+    ]}],
+  },
+  cases: [
+    [{payment: {amount: 9}, mode: "live"}, {payment: {amount: 9, charge: 9}, mode: "live"}],
+    [{payment: {amount: 0.5}, mode: "live"}, {payment: {amount: 0.5, charge: 0.5}, mode: "live"}],
+    [{payment: {amount: 9}, mode: "test"}, {payment: {amount: 9, charge: 0}, mode: "test"}],
+    [{payment: {amount: 9}, mode: "dev"}, "!error: InputValidationFailed"],
+    [{payment: {amount: 9}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "match over a computed literal union is exhaustive without a default",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {match: "x.parity", arms: [["x.n % 2 == 0", "'even'"], ["", "'odd'"]]},
+      {match: "x.code", arms: [["x.parity == 'even'", "0"], ["x.parity == 'odd'", "1"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 2}}, {x: {n: 2, parity: "even", code: 0}}],
+    [{x: {n: 3}}, {x: {n: 3, parity: "odd", code: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Discriminated-union style models: a `kind` field decides which optional fields apply.
+// ---------------------------------------------------------------------------
+{
+  name: "shape area by kind with kind-specific optional fields",
+  policy: {
+    models: {shape: {kind: "string(circle|rect|square)", radius: "number?", width: "number?", height: "number?"}},
+    blocks: [{match: "shape.area", arms: [
+      ["shape.kind == 'circle'", "3 * (shape.radius ?? 0) ^ 2"],
+      ["shape.kind == 'rect'", "(shape.width ?? 0) * (shape.height ?? 0)"],
+      ["shape.kind == 'square'", "(shape.width ?? 0) ^ 2"],
+    ]}],
+  },
+  cases: [
+    [{shape: {kind: "circle", radius: 2}}, {shape: {kind: "circle", radius: 2, area: 12}}],
+    [{shape: {kind: "rect", width: 2, height: 3.5}}, {shape: {kind: "rect", width: 2, height: 3.5, area: 7}}],
+    [{shape: {kind: "square", width: 4}}, {shape: {kind: "square", width: 4, area: 16}}],
+    [{shape: {kind: "rect", width: 2}}, {shape: {kind: "rect", width: 2, area: 0}}],
+    [{shape: {kind: "circle", width: 9, height: 9}}, {shape: {kind: "circle", width: 9, height: 9, area: 0}}],
+    [{shape: {kind: "triangle"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "union arms read optional fields without defaults: the selected arm's nulls fail",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {shape: {kind: "string(circle|rect)", radius: "number?", width: "number?", height: "number?"}},
+    blocks: [{match: "shape.area", arms: [
+      ["shape.kind == 'circle'", "3 * shape.radius * shape.radius"],
+      ["shape.kind == 'rect'", "shape.width * shape.height"],
+    ]}],
+  },
+  cases: [
+    [{shape: {kind: "circle", radius: 1}}, {shape: {kind: "circle", radius: 1, area: 3}}],
+    [{shape: {kind: "rect", width: 2, height: 5}}, {shape: {kind: "rect", width: 2, height: 5, area: 10}}],
+    [{shape: {kind: "circle", width: 2, height: 5}}, "!error: ExpressionFailed"],
+    [{shape: {kind: "rect", radius: 2}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "payment union: arms build differently shaped summaries",
+  policy: {
+    models: {payment: {method: "string(card|bank|wallet)", amount: "number", last4: "string?", iban: "string?", provider: "string?"}},
+    blocks: [
+      {match: "payment.summary", arms: [
+        ["payment.method == 'card'", "{kind: 'card', ref: '**** ' + (payment.last4 ?? '????'), fee: round(payment.amount * 0.029 + 0.3, 2)}"],
+        ["payment.method == 'bank'", "{kind: 'bank', ref: payment.iban ?? 'unknown', fee: 0}"],
+        ["payment.method == 'wallet'", "{kind: 'wallet', ref: payment.provider ?? 'unknown', fee: round(payment.amount * 0.01, 2)}"],
+      ]},
+      {expression: "payment.net", value: "payment.amount - payment.summary.fee"},
+    ],
+  },
+  cases: [
+    [
+      {payment: {method: "card", amount: 100, last4: "4242"}},
+      {payment: {method: "card", amount: 100, last4: "4242", summary: {kind: "card", ref: "**** 4242", fee: 3.2}, net: 96.8}},
+    ],
+    [
+      {payment: {method: "bank", amount: 100, iban: "DE89"}},
+      {payment: {method: "bank", amount: 100, iban: "DE89", summary: {kind: "bank", ref: "DE89", fee: 0}, net: 100}},
+    ],
+    [
+      {payment: {method: "wallet", amount: 50}},
+      {payment: {method: "wallet", amount: 50, summary: {kind: "wallet", ref: "unknown", fee: 0.5}, net: 49.5}},
+    ],
+    [
+      {payment: {method: "card", amount: 0}},
+      {payment: {method: "card", amount: 0, summary: {kind: "card", ref: "**** ????", fee: 0.3}, net: -0.3}},
+    ],
+  ],
+}
+
+{
+  name: "per-member union: line items priced by their kind",
+  policy: {
+    models: {
+      order: {lines: "line[]"},
+      line: {kind: "string(product|service|discount)", qty: "number?", unitPrice: "number?", hours: "number?", rate: "number?", percent: "number?"},
+    },
+    blocks: [
+      {match: "line.amount", arms: [
+        ["line.kind == 'product'", "(line.qty ?? 1) * (line.unitPrice ?? 0)"],
+        ["line.kind == 'service'", "(line.hours ?? 0) * (line.rate ?? 0)"],
+        ["line.kind == 'discount'", "0"],
+      ]},
+      {expression: "order.subtotal", value: "sum(map(order.lines, #.amount))"},
+      {expression: "order.discountPercent", value: "sum(map(filter(order.lines, #.kind == 'discount'), #.percent ?? 0))"},
+      {expression: "order.total", value: "order.subtotal * (1 - order.discountPercent / 100)"},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{kind: "product", qty: 2, unitPrice: 10}, {kind: "service", hours: 1.5, rate: 40}, {kind: "discount", percent: 10}]}},
+      {order: {subtotal: 80, discountPercent: 10, total: 72, lines: [
+        {kind: "product", qty: 2, unitPrice: 10, amount: 20},
+        {kind: "service", hours: 1.5, rate: 40, amount: 60},
+        {kind: "discount", percent: 10, amount: 0},
+      ]}},
+    ],
+    [
+      {order: {lines: [{kind: "product", unitPrice: 5}]}},
+      {order: {subtotal: 5, discountPercent: 0, total: 5, lines: [{kind: "product", unitPrice: 5, amount: 5}]}},
+    ],
+    [{order: {lines: []}}, {order: {subtotal: 0, discountPercent: 0, total: 0, lines: []}}],
+  ],
+}
+
+{
+  name: "union with a single-relationship variant per kind",
+  policy: {
+    models: {
+      applicant: {type: "string(person|company)", person: "personInfo?", company: "companyInfo?"},
+      personInfo: {age: "number"},
+      companyInfo: {years: "number"},
+    },
+    blocks: [{match: "applicant.eligible", arms: [
+      ["applicant.type == 'person'", "(applicant.person.age ?? 0) >= 18"],
+      ["applicant.type == 'company'", "(applicant.company.years ?? 0) >= 2"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {type: "person", person: {age: 30}}}, {applicant: {type: "person", person: {age: 30}, eligible: true}}],
+    [{applicant: {type: "person", person: {age: 17}}}, {applicant: {type: "person", person: {age: 17}, eligible: false}}],
+    [{applicant: {type: "company", company: {years: 2}}}, {applicant: {type: "company", company: {years: 2}, eligible: true}}],
+    [{applicant: {type: "company", company: {years: 1}}}, {applicant: {type: "company", company: {years: 1}, eligible: false}}],
+    [{applicant: {type: "company"}}, {applicant: {type: "company", eligible: false}}],
+    [{applicant: {type: "person", company: {years: 9}}}, {applicant: {type: "person", company: {years: 9}, eligible: false}}],
+  ],
+}
+
+{
+  name: "union kind chosen by a match, then a second exhaustive match discriminates on it",
+  policy: {
+    models: {event: {payload: "string"}},
+    blocks: [
+      {match: "event.kind", arms: [
+        ["startsWith(event.payload, 'ERR')", "'error'"],
+        ["startsWith(event.payload, 'WARN')", "'warning'"],
+        ["", "'info'"],
+      ]},
+      {match: "event.severity", arms: [
+        ["event.kind == 'error'", "3"],
+        ["event.kind == 'warning'", "2"],
+        ["event.kind == 'info'", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{event: {payload: "ERR disk"}}, {event: {payload: "ERR disk", kind: "error", severity: 3}}],
+    [{event: {payload: "WARN cpu"}}, {event: {payload: "WARN cpu", kind: "warning", severity: 2}}],
+    [{event: {payload: "ok"}}, {event: {payload: "ok", kind: "info", severity: 1}}],
+    [{event: {payload: ""}}, {event: {payload: "", kind: "info", severity: 1}}],
+  ],
+}

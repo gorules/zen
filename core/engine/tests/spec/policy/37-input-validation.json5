@@ -1,0 +1,778 @@
+// Input validation in depth. Chapter 01 pins the basic per-type rules at the entity root, chapters
+// 09/10/11/21/27 the relationship, reference, global and date rules. This chapter pins the
+// validator as a whole: which input keys it visits (root entities, reference pools, globals) and
+// which it ignores, the rendered error path for every nesting kind (members, nested
+// relationships, primitive arrays, pools, globals), the expected/got wording, how several errors
+// are collected into one `InputValidationFailed`, and the order between the request errors:
+// `GoalNotFound` first, then `InputValidationFailed` (whole input, every error), then
+// `MissingRequiredInputs` (only reads the requested cone needs), then runtime errors.
+
+// ---------------------------------------------------------------------------------------------
+// Which error wins. Validation runs over the whole input before the required-input check, so a
+// wrong type wins over a missing input even when the wrongly typed property is never read.
+
+{
+  name: "a wrong type wins over a missing required input",
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  cases: [
+    [{customer: {name: 5}}, "!error: InputValidationFailed"],
+    [{customer: {name: 5}}, "!error: customer.name"],
+    [{customer: {name: "Ann"}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: null, name: true}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1, name: "Ann"}}, {customer: {age: 1, name: "Ann", next: 2}}],
+  ],
+}
+
+{
+  name: "an unknown goal wins over a validation error",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  cases: [
+    {input: {customer: {age: "1"}}, goals: ["customer.nope"], output: "!error: GoalNotFound"},
+    {input: {customer: {}}, goals: ["customer.nope"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: "1"}}, goals: ["customer.next"], output: "!error: InputValidationFailed"},
+    {input: {customer: {}}, goals: ["customer.next"], output: "!error: MissingRequiredInputs"},
+    {input: {customer: {age: 4}}, goals: ["customer.next"], output: {customer: {age: 4, next: 5}}},
+  ],
+}
+
+{
+  name: "validation covers properties outside the goal cone",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20, income: "lots"}}, goals: ["customer.adult"], output: "!error: customer.income"},
+    {input: {customer: {age: 20}}, goals: ["customer.adult"], output: {customer: {age: 20, adult: true}}},
+    {input: {customer: {age: 20, income: null}}, goals: ["customer.adult"], output: {customer: {age: 20, income: null, adult: true}}},
+    {input: {customer: {income: 5}}, goals: ["customer.adult"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "a validation error wins over a runtime error the input would cause",
+  policy: {
+    models: {customer: {code: "string", age: "number"}},
+    blocks: [{expression: "customer.n", value: "number(customer.code)"}],
+  },
+  cases: [
+    [{customer: {code: "abc", age: "x"}}, "!error: InputValidationFailed"],
+    [{customer: {code: "abc", age: 1}}, "!error: ExpressionFailed"],
+    [{customer: {code: "12", age: 1}}, {customer: {code: "12", age: 1, n: 12}}],
+    [{customer: {age: 1}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a missing required input wins over a runtime error in another block",
+  policy: {
+    models: {customer: {code: "string", age: "number"}},
+    blocks: [
+      {expression: "customer.n", value: "number(customer.code)"},
+      {expression: "customer.next", value: "customer.age + 1"},
+    ],
+  },
+  cases: [
+    [{customer: {code: "abc"}}, "!error: MissingRequiredInputs"],
+    [{customer: {code: "abc"}}, "!error: customer.age"],
+    [{customer: {code: "abc", age: 1}}, "!error: ExpressionFailed"],
+    [{customer: {code: "7", age: 1}}, {customer: {code: "7", age: 1, n: 7, next: 2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Every error is collected: one InputValidationFailed lists each failing path, across
+// properties, entities, members and globals.
+
+{
+  name: "every invalid property of an entity is reported",
+  policy: {
+    models: {customer: {age: "number", name: "string", active: "boolean"}},
+    blocks: [{expression: "customer.ok", value: "customer.active"}],
+  },
+  cases: [
+    [{customer: {age: "1", name: 2, active: "y"}}, "!error: customer.age"],
+    [{customer: {age: "1", name: 2, active: "y"}}, "!error: customer.name"],
+    [{customer: {age: "1", name: 2, active: "y"}}, "!error: customer.active"],
+    [{customer: {age: 1, name: "a", active: "y"}}, "!error: customer.active"],
+    [{customer: {age: 1, name: "a", active: false}}, {customer: {age: 1, name: "a", active: false, ok: false}}],
+  ],
+}
+
+{
+  name: "errors from several entities and globals are reported together",
+  policy: {
+    globals: {settings: {rate: "number"}},
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [{expression: "order.due", value: "order.total * rate"}],
+  },
+  cases: [
+    [{rate: "x", customer: {age: "y"}, order: {total: "z"}}, "!error: rate"],
+    [{rate: "x", customer: {age: "y"}, order: {total: "z"}}, "!error: customer.age"],
+    [{rate: "x", customer: {age: "y"}, order: {total: "z"}}, "!error: order.total"],
+    [{rate: 2, customer: {age: 1}, order: {total: 3}}, {rate: 2, customer: {age: 1}, order: {total: 3, due: 6}}],
+  ],
+}
+
+{
+  name: "every failing member and item is reported",
+  policy: {
+    models: {customer: {companies: "company[]", tags: "string[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: "a"}, {revenue: 1}, {revenue: "c"}], tags: []}}, "!error: customer.companies[0].revenue"],
+    [{customer: {companies: [{revenue: "a"}, {revenue: 1}, {revenue: "c"}], tags: []}}, "!error: customer.companies[2].revenue"],
+    [{customer: {companies: [], tags: ["a", 1, "b", false]}}, "!error: customer.tags[1]"],
+    [{customer: {companies: [], tags: ["a", 1, "b", false]}}, "!error: customer.tags[3]"],
+    [{customer: {companies: [{revenue: 1}], tags: ["a"]}}, {customer: {companies: [{revenue: 1}], tags: ["a"], n: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Error paths and wording. The path starts at the input key, follows declared property names with
+// `.` and array positions with `[i]`. Expected/got name the declared type and the JSON kind of the
+// value (`number`, `string`, `bool`, `array`, `object`), or the quoted value for enums and ids.
+
+{
+  name: "the error path of a member property",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", report: "report?"}, report: {score: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}, {revenue: "x"}]}}, "!error: customer.companies[1].revenue"],
+    [{customer: {companies: [{revenue: 1, report: {score: "s"}}]}}, "!error: customer.companies[0].report.score"],
+    [{customer: {companies: [{revenue: 1}, 5]}}, "!error: customer.companies[1]"],
+    [{customer: {companies: [{revenue: 1, report: 7}]}}, "!error: customer.companies[0].report"],
+    [{customer: {companies: [{revenue: 1, report: {score: 2}}]}}, {customer: {companies: [{revenue: 1, report: {score: 2}}], n: 1}}],
+  ],
+}
+
+{
+  name: "expected and got name the declared type and the value kind",
+  policy: {
+    models: {customer: {age: "number", name: "string", active: "boolean", tags: "string[]?", report: "report?"}, report: {score: "number"}},
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  cases: [
+    [{customer: {age: true, name: "a", active: true}}, "!error: got: \"bool\""],
+    [{customer: {age: "1", name: "a", active: true}}, "!error: expected: \"number\", got: \"string\""],
+    [{customer: {age: 1, name: [], active: true}}, "!error: got: \"array\""],
+    [{customer: {age: 1, name: "a", active: {}}}, "!error: got: \"object\""],
+    [{customer: {age: 1, name: "a", active: true, tags: "a"}}, "!error: array of string"],
+    [{customer: {age: 1, name: "a", active: true, report: "r"}}, "!error: object (report)"],
+  ],
+}
+
+{
+  name: "enum and reference errors quote the offending value",
+  policy: {
+    models: {customer: {tier: "string(gold|silver)", product: "&product?"}, product: {id: "string"}},
+    blocks: [{expression: "customer.gold", value: "customer.tier == 'gold'"}],
+  },
+  cases: [
+    [{customer: {tier: "bronze"}}, "!error: one of 'gold', 'silver'"],
+    [{customer: {tier: "bronze"}}, "!error: 'bronze'"],
+    [{customer: {tier: 3}}, "!error: one of 'gold', 'silver'"],
+    [{customer: {tier: "gold", product: "p9"}, product: [{id: "p1"}]}, "!error: 'p9' (not found)"],
+    [{customer: {tier: "gold", product: 9}, product: [{id: "p1"}]}, "!error: reference id (string"],
+    [{customer: {tier: "gold", product: "p1"}, product: [{id: "p1"}]}, {customer: {tier: "gold", product: {id: "p1"}, gold: true}, product: [{id: "p1"}]}],
+  ],
+}
+
+{
+  name: "a global error path is the bare property name",
+  policy: {
+    globals: {env: {region: "string(eu|us)", limits: "number[]?"}},
+    blocks: [{expression: "isEu", value: "region == 'eu'"}],
+  },
+  cases: [
+    [{region: "apac"}, "!error: region"],
+    [{region: "eu", limits: [1, "2"]}, "!error: limits[1]"],
+    [{region: "eu", limits: 3}, "!error: array of number"],
+    [{region: "us", limits: [1, null, 3]}, {region: "us", limits: [1, null, 3], isEu: false}],
+  ],
+}
+
+{
+  name: "a pool error path starts at the pool key",
+  policy: {
+    models: {customer: {product: "&product?"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.has", value: "customer.product != null"}],
+  },
+  cases: [
+    [{customer: {}, product: [{id: "p1", price: 1}, {id: "p2", price: "x"}]}, "!error: product[1].price"],
+    [{customer: {}, product: [{id: 5, price: 1}]}, "!error: product[0].id"],
+    [{customer: {}, product: "p1"}, "!error: array of product"],
+    [{customer: {}, product: [{id: "p1", price: 1}]}, {customer: {has: false}, product: [{id: "p1", price: 1}]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Which keys the validator visits. Root entities (models no relationship or reference targets),
+// reference pools (keys named after a reference target) and global properties. Everything else
+// passes through unvalidated: undeclared keys, undeclared entity properties, and a top-level key
+// named after an entity that is only reachable through a relationship.
+
+{
+  name: "a relationship target entity supplied at the top level is not validated",
+  policy: {
+    models: {customer: {companies: "company[]?"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies ?? [])"}],
+  },
+  cases: [
+    [{customer: {}, company: {revenue: "x"}}, {customer: {n: 0}, company: {revenue: "x"}}],
+    [{customer: {}, company: 5}, {customer: {n: 0}, company: 5}],
+    [{customer: {}, company: [{revenue: "x"}]}, {customer: {n: 0}, company: [{revenue: "x"}]}],
+    [{customer: {companies: [{revenue: "x"}]}}, "!error: customer.companies[0].revenue"],
+  ],
+}
+
+{
+  name: "an undeclared property of an entity is not validated at any depth",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: [], misc: 5}}, {customer: {companies: [], misc: 5, n: 0}}],
+    [{customer: {companies: [{revenue: 1, revenueText: 1}]}}, {customer: {companies: [{revenue: 1, revenueText: 1}], n: 1}}],
+    [{customer: {companies: [{revenue: 1, Revenue: "x"}]}}, {customer: {companies: [{revenue: 1, Revenue: "x"}], n: 1}}],
+    [{customer: {companies: [{revenue: 1, nested: {revenue: "x"}}]}}, {customer: {companies: [{revenue: 1, nested: {revenue: "x"}}], n: 1}}],
+  ],
+}
+
+{
+  name: "a required member property may be missing as far as validation goes",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {name: "string", revenue: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: [{}]}}, {customer: {companies: [{}], n: 1}}],
+    [{customer: {companies: [{name: null, revenue: null}]}}, {customer: {companies: [{name: null, revenue: null}], n: 1}}],
+    [{customer: {companies: [{name: "a"}, {revenue: 2}]}}, {customer: {companies: [{name: "a"}, {revenue: 2}], n: 2}}],
+  ],
+}
+
+{
+  name: "a null at any level skips its validation",
+  policy: {
+    globals: {env: {limit: "number?"}},
+    models: {customer: {age: "number?", report: "report?", companies: "company[]?"}, report: {score: "number"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.known", value: "customer.age != null"}],
+  },
+  cases: [
+    [{customer: null, limit: null}, {customer: {known: false}, limit: null}, "bug: a null entity root swallows the computed write customer.known (as a null spine does in chapter 04); null should behave like a missing entity"],
+    [{customer: {report: null, companies: null}}, {customer: {report: null, companies: null, known: false}}],
+    [{customer: {report: {score: null}, companies: [null, {revenue: null}]}}, {customer: {report: {score: null}, companies: [null, {revenue: null}], known: false}}],
+    [{customer: {age: 3, companies: [null, {revenue: "x"}]}}, "!error: customer.companies[1].revenue"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The request itself. A non-object input is rejected (chapter 01), except null, which the
+// validator lets through.
+
+{
+  name: "a null input with a required read",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  cases: [
+    [null, "!error: MissingRequiredInputs", "bug: a null request passes validation and the required-input check (the check only walks objects), so the block runs and fails with ExpressionFailed on `null + 1`"],
+    [{}, "!error: MissingRequiredInputs"],
+    [{customer: {age: 1}}, {customer: {age: 1, next: 2}}],
+  ],
+}
+
+{
+  name: "a null input with only optional reads",
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{expression: "result", value: "customer.age ?? 0"}],
+  },
+  cases: [
+    [null, null, "question: a null request is accepted, the block runs, but nothing can be written into a null store, so the output is null instead of {result: 0}"],
+    [{}, {result: 0}],
+    [{customer: {}}, {customer: {}, result: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Root entity validation. Scalars of each type, arrays of each type, enum arrays, optional
+// modifiers on every kind.
+
+{
+  name: "every scalar kind at the root, valid values",
+  policy: {
+    models: {p: {n: "number", s: "string", b: "boolean", d: "date", e: "string(x|y)"}},
+    blocks: [{expression: "p.ok", value: "true"}],
+  },
+  cases: [
+    [{p: {n: 0, s: "", b: false, d: "2025-01-01", e: "x"}}, {p: {n: 0, s: "", b: false, d: date("2025-01-01"), e: "x", ok: true}}],
+    [{p: {n: -1.5, s: "1", b: true, d: "2025-01-01T10:00:00Z", e: "y"}}, {p: {n: -1.5, s: "1", b: true, d: date("2025-01-01T10:00:00Z"), e: "y", ok: true}}],
+    [{p: {}}, {p: {ok: true}}],
+    [{p: {n: 12345678901234567890123456}}, {p: {n: 12345678901234567890123456, ok: true}}],
+  ],
+}
+
+{
+  name: "every scalar kind at the root, wrong values",
+  policy: {
+    models: {p: {n: "number", s: "string", b: "boolean", d: "date", e: "string(x|y)"}},
+    blocks: [{expression: "p.ok", value: "true"}],
+  },
+  cases: [
+    [{p: {n: "0"}}, "!error: p.n"],
+    [{p: {s: 0}}, "!error: p.s"],
+    [{p: {b: "false"}}, "!error: p.b"],
+    [{p: {d: true}}, "!error: p.d"],
+    [{p: {e: "X"}}, "!error: p.e"],
+    [{p: {e: ["x"]}}, "!error: p.e"],
+    [{p: {n: {}}}, "!error: p.n"],
+    [{p: {s: {}}}, "!error: p.s"],
+  ],
+}
+
+{
+  name: "every array kind at the root",
+  policy: {
+    models: {p: {ns: "number[]?", ss: "string[]?", bs: "boolean[]?", ds: "date[]?", es: "string(x|y)[]?"}},
+    blocks: [{expression: "p.ok", value: "true"}],
+  },
+  cases: [
+    [{p: {ns: [1, 2], ss: ["a"], bs: [true], ds: ["2025-01-01"], es: ["x", "y", "x"]}}, {p: {ns: [1, 2], ss: ["a"], bs: [true], ds: [date("2025-01-01")], es: ["x", "y", "x"], ok: true}}],
+    [{p: {ns: [], ss: [], bs: [], ds: [], es: []}}, {p: {ns: [], ss: [], bs: [], ds: [], es: [], ok: true}}],
+    [{p: {ns: [null], ss: [null], bs: [null], ds: [null], es: [null]}}, {p: {ns: [null], ss: [null], bs: [null], ds: [null], es: [null], ok: true}}],
+    [{p: {ns: ["1"]}}, "!error: p.ns[0]"],
+    [{p: {ss: [1]}}, "!error: p.ss[0]"],
+    [{p: {bs: [1]}}, "!error: p.bs[0]"],
+    [{p: {ds: ["2025-02-30"]}}, "!error: p.ds[0]"],
+    [{p: {es: ["x", "z"]}}, "!error: p.es[1]"],
+    [{p: {es: "x"}}, "!error: p.es"],
+    [{p: {ns: {a: 1}}}, "!error: p.ns"],
+  ],
+}
+
+{
+  name: "a non-optional array is checked for presence only when read",
+  policy: {
+    models: {p: {ns: "number[]", ss: "string[]"}},
+    blocks: [{expression: "p.total", value: "sum(p.ns)"}],
+  },
+  cases: [
+    [{p: {ns: [1]}}, {p: {ns: [1], total: 1}}],
+    [{p: {ns: [1], ss: null}}, {p: {ns: [1], ss: null, total: 1}}],
+    [{p: {ss: ["a"]}}, "!error: MissingRequiredInputs"],
+    [{p: {ns: [1], ss: "a"}}, "!error: p.ss"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Member validation: every kind inside array members and inside a single relationship.
+
+{
+  name: "every kind inside array members",
+  policy: {
+    models: {
+      order: {lines: "line[]"},
+      line: {qty: "number", sku: "string", gift: "boolean?", shipped: "date?", kind: "string(goods|service)", tags: "string[]?"},
+    },
+    blocks: [{expression: "order.count", value: "len(order.lines)"}],
+  },
+  cases: [
+    [
+      {order: {lines: [{qty: 1, sku: "a", kind: "goods"}, {qty: 2, sku: "b", gift: true, shipped: "2025-03-01", kind: "service", tags: ["t"]}]}},
+      {order: {lines: [{qty: 1, sku: "a", kind: "goods"}, {qty: 2, sku: "b", gift: true, shipped: date("2025-03-01"), kind: "service", tags: ["t"]}], count: 2}},
+    ],
+    [{order: {lines: [{qty: "1", sku: "a", kind: "goods"}]}}, "!error: order.lines[0].qty"],
+    [{order: {lines: [{qty: 1, sku: 1, kind: "goods"}]}}, "!error: order.lines[0].sku"],
+    [{order: {lines: [{qty: 1, sku: "a", kind: "goods", gift: "yes"}]}}, "!error: order.lines[0].gift"],
+    [{order: {lines: [{qty: 1, sku: "a", kind: "goods", shipped: "soon"}]}}, "!error: order.lines[0].shipped"],
+    [{order: {lines: [{qty: 1, sku: "a", kind: "goods"}, {qty: 1, sku: "a", kind: "rental"}]}}, "!error: order.lines[1].kind"],
+    [{order: {lines: [{qty: 1, sku: "a", kind: "goods", tags: [1]}]}}, "!error: order.lines[0].tags[0]"],
+    [{order: {lines: [{qty: 1, sku: "a", kind: "goods", tags: "t"}]}}, "!error: order.lines[0].tags"],
+  ],
+}
+
+{
+  name: "every kind inside a single relationship",
+  policy: {
+    models: {
+      customer: {profile: "profile"},
+      profile: {score: "number", email: "string?", verified: "boolean?", since: "date?", band: "string(a|b)?", scores: "number[]?"},
+    },
+    blocks: [{expression: "customer.score", value: "customer.profile.score"}],
+  },
+  cases: [
+    [
+      {customer: {profile: {score: 1, email: "e", verified: false, since: "2020-01-01", band: "a", scores: [1, 2]}}},
+      {customer: {profile: {score: 1, email: "e", verified: false, since: date("2020-01-01"), band: "a", scores: [1, 2]}, score: 1}},
+    ],
+    [{customer: {profile: {score: "1"}}}, "!error: customer.profile.score"],
+    [{customer: {profile: {score: 1, email: 2}}}, "!error: customer.profile.email"],
+    [{customer: {profile: {score: 1, verified: 0}}}, "!error: customer.profile.verified"],
+    [{customer: {profile: {score: 1, since: 2020}}}, "!error: customer.profile.since"],
+    [{customer: {profile: {score: 1, band: "c"}}}, "!error: customer.profile.band"],
+    [{customer: {profile: {score: 1, scores: [1, "2"]}}}, "!error: customer.profile.scores[1]"],
+    [{customer: {profile: [{score: 1}]}}, "!error: customer.profile"],
+  ],
+}
+
+{
+  name: "members three levels deep are validated with the full path",
+  policy: {
+    models: {
+      customer: {accounts: "account[]"},
+      account: {owner: "owner"},
+      owner: {cards: "card[]"},
+      card: {limit: "number"},
+    },
+    blocks: [{expression: "customer.n", value: "len(customer.accounts)"}],
+  },
+  cases: [
+    [{customer: {accounts: [{owner: {cards: [{limit: 1}, {limit: 2}]}}]}}, {customer: {accounts: [{owner: {cards: [{limit: 1}, {limit: 2}]}}], n: 1}}],
+    [{customer: {accounts: [{owner: {cards: []}}, {owner: {cards: [{limit: 1}, {limit: "2"}]}}]}}, "!error: customer.accounts[1].owner.cards[1].limit"],
+    [{customer: {accounts: [{owner: {cards: {limit: 1}}}]}}, "!error: customer.accounts[0].owner.cards"],
+    [{customer: {accounts: [{owner: [{cards: []}]}]}}, "!error: customer.accounts[0].owner"],
+  ],
+}
+
+// A self-referencing entity (a tree) is validated recursively until the nesting limit of 32
+// entity levels.
+
+{
+  name: "a recursive entity is validated at every level",
+  policy: {
+    models: {tree: {root: "node"}, node: {v: "number", kids: "node[]?"}},
+    blocks: [{expression: "tree.top", value: "tree.root.v"}],
+  },
+  cases: [
+    [{tree: {root: {v: 1, kids: [{v: 2, kids: [{v: 3}]}]}}}, {tree: {root: {v: 1, kids: [{v: 2, kids: [{v: 3}]}]}, top: 1}}],
+    [{tree: {root: {v: 1, kids: [{v: "x"}]}}}, "!error: tree.root.kids[0].v"],
+    [{tree: {root: {v: 1, kids: [{v: 2, kids: [{v: 3, kids: [{v: true}]}]}]}}}, "!error: tree.root.kids[0].kids[0].kids[0].v"],
+    [{tree: {root: {v: 1, kids: [null, {v: 2}]}}}, {tree: {root: {v: 1, kids: [null, {v: 2}]}, top: 1}}],
+  ],
+}
+
+{
+  name: "entity nesting beyond the recursion limit is rejected",
+  policy: {
+    models: {tree: {root: "node"}, node: {v: "number?", next: "node?"}},
+    blocks: [{expression: "tree.has", value: "tree.root != null"}],
+  },
+  cases: [
+    [
+      {tree: {root: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {}}}}}}}}}}}}},
+      {tree: {root: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {}}}}}}}}}}}, has: true}},
+    ],
+    [
+      {tree: {root: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {next: {}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},
+      "!error: entity nesting within 32 levels",
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Relationships to a dictionary validate like an enum of the dictionary's values.
+
+{
+  name: "a dictionary-typed property validates against the dictionary values",
+  policy: {
+    dictionaries: {tier: ["gold", ["silver", "Silver tier"]]},
+    models: {customer: {tier: "tier", history: "tier[]?"}},
+    blocks: [{expression: "customer.gold", value: "customer.tier == 'gold'"}],
+  },
+  cases: [
+    [{customer: {tier: "gold"}}, {customer: {tier: "gold", gold: true}}],
+    [{customer: {tier: "silver", history: ["gold", "silver"]}}, {customer: {tier: "silver", history: ["gold", "silver"], gold: false}}],
+    [{customer: {tier: "Silver tier"}}, "!error: customer.tier"],
+    [{customer: {tier: "bronze"}}, "!error: one of 'gold', 'silver'"],
+    [{customer: {tier: 1}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "gold", history: ["gold", "x"]}}, "!error: customer.history[1]"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a dictionary-typed member property",
+  policy: {
+    dictionaries: {currency: ["EUR", "USD"]},
+    models: {invoice: {lines: "line[]"}, line: {amount: "number", currency: "currency"}},
+    blocks: [{expression: "invoice.n", value: "len(invoice.lines)"}],
+  },
+  cases: [
+    [{invoice: {lines: [{amount: 1, currency: "EUR"}, {amount: 2, currency: "USD"}]}}, {invoice: {lines: [{amount: 1, currency: "EUR"}, {amount: 2, currency: "USD"}], n: 2}}],
+    [{invoice: {lines: [{amount: 1, currency: "eur"}]}}, "!error: invoice.lines[0].currency"],
+    [{invoice: {lines: [{amount: 1}]}}, {invoice: {lines: [{amount: 1}], n: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// References: ids are validated wherever the reference sits (root property, array, member,
+// global), always against the top-level pool. The pool items are validated as entities.
+
+{
+  name: "reference arrays validate each id",
+  policy: {
+    models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "cart.n", value: "len(cart.items)"}],
+  },
+  cases: [
+    [{cart: {items: ["a", "b", "a"]}, product: [{id: "a", price: 1}, {id: "b", price: 2}]}, {cart: {items: [{id: "a", price: 1}, {id: "b", price: 2}, {id: "a", price: 1}], n: 3}, product: [{id: "a", price: 1}, {id: "b", price: 2}]}],
+    [{cart: {items: ["a", "c"]}, product: [{id: "a", price: 1}]}, "!error: cart.items[1]"],
+    [{cart: {items: ["a", 1]}, product: [{id: "a", price: 1}]}, "!error: cart.items[1]"],
+    [{cart: {items: "a"}, product: [{id: "a", price: 1}]}, "!error: cart.items"],
+    [{cart: {items: []}}, {cart: {items: [], n: 0}}],
+  ],
+}
+
+{
+  name: "a reference inside members is validated against the root pool",
+  policy: {
+    models: {order: {lines: "line[]"}, line: {sku: "&product", qty: "number"}, product: {id: "string"}},
+    blocks: [{expression: "order.n", value: "len(order.lines)"}],
+  },
+  cases: [
+    [{order: {lines: [{sku: "p1", qty: 1}, {sku: "p9", qty: 1}]}, product: [{id: "p1"}]}, "!error: order.lines[1].sku"],
+    [{order: {lines: [{sku: 1, qty: 1}]}, product: [{id: "p1"}]}, "!error: order.lines[0].sku"],
+    [{order: {lines: [{sku: "p1", qty: 1}]}}, "!error: 'p1' (not found)"],
+    [{order: {lines: [{qty: 1}]}}, {order: {lines: [{qty: 1}], n: 1}}],
+  ],
+}
+
+{
+  name: "pool items are validated as entities, including their relationships",
+  policy: {
+    models: {customer: {product: "&product?"}, product: {id: "string", vendor: "vendor?"}, vendor: {name: "string"}},
+    blocks: [{expression: "customer.has", value: "customer.product != null"}],
+  },
+  cases: [
+    [{customer: {}, product: [{id: "p1", vendor: {name: "v"}}]}, {customer: {has: false}, product: [{id: "p1", vendor: {name: "v"}}]}],
+    [{customer: {}, product: [{id: "p1", vendor: {name: 1}}]}, "!error: product[0].vendor.name"],
+    [{customer: {}, product: [{id: "p1", vendor: "v"}]}, "!error: product[0].vendor"],
+    [{customer: {}, product: [{id: "p1", other: 1}]}, {customer: {has: false}, product: [{id: "p1", other: 1}]}],
+  ],
+}
+
+{
+  name: "an unused pool is still validated",
+  policy: {
+    models: {customer: {product: "&product?", age: "number"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}, product: [{id: "p1", price: "free"}]}, "!error: product[0].price"],
+    [{customer: {age: 20}, product: {}}, "!error: array of product"],
+    [{customer: {age: 20}, product: null}, {customer: {age: 20, adult: true}, product: null}],
+    [{customer: {age: 20}, product: []}, {customer: {age: 20, adult: true}, product: []}],
+  ],
+}
+
+{
+  name: "an invalid id and an invalid pool item are reported together",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [{customer: {product: "zz"}, product: [{id: "p1", price: "x"}]}, "!error: customer.product"],
+    [{customer: {product: "zz"}, product: [{id: "p1", price: "x"}]}, "!error: product[0].price"],
+    [{customer: {product: "p1"}, product: [{id: "p1", price: "x"}]}, "!error: product[0].price"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Globals: relationship, array relationship and reference globals validate like entity
+// properties.
+
+{
+  name: "a global single relationship validates the related entity",
+  policy: {
+    globals: {env: {settings: "config?"}},
+    models: {config: {rate: "number", mode: "string(fast|slow)"}},
+    blocks: [{expression: "rate", value: "settings.rate ?? 1"}],
+  },
+  cases: [
+    [{settings: {rate: 2, mode: "fast"}}, {settings: {rate: 2, mode: "fast"}, rate: 2}],
+    [{}, {rate: 1}],
+    [{settings: {rate: "2"}}, "!error: settings.rate"],
+    [{settings: {rate: 2, mode: "medium"}}, "!error: settings.mode"],
+    [{settings: [{rate: 2}]}, "!error: settings"],
+  ],
+}
+
+{
+  name: "a global array relationship validates each member",
+  policy: {
+    globals: {env: {brackets: "bracket[]"}},
+    models: {bracket: {from: "number", rate: "number"}},
+    blocks: [{expression: "top", value: "max(map(brackets, #.rate))"}],
+  },
+  cases: [
+    [{brackets: [{from: 0, rate: 0.1}, {from: 100, rate: 0.2}]}, {brackets: [{from: 0, rate: 0.1}, {from: 100, rate: 0.2}], top: 0.2}],
+    [{brackets: [{from: 0, rate: 0.1}, {from: "100", rate: 0.2}]}, "!error: brackets[1].from"],
+    [{brackets: {from: 0, rate: 0.1}}, "!error: brackets"],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a global reference array validates every id",
+  policy: {
+    globals: {env: {allowed: "&product[]?"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [{expression: "n", value: "len(allowed ?? [])"}],
+  },
+  cases: [
+    [{allowed: ["p1"], product: [{id: "p1", price: 1}]}, {allowed: [{id: "p1", price: 1}], n: 1, product: [{id: "p1", price: 1}]}],
+    [{allowed: ["p1", "p2"], product: [{id: "p1", price: 1}]}, "!error: allowed[1]"],
+    [{allowed: [true], product: [{id: "p1", price: 1}]}, "!error: allowed[0]"],
+    [{product: [{id: "p1", price: 1}]}, {n: 0, product: [{id: "p1", price: 1}]}],
+  ],
+}
+
+{
+  name: "globals and entities share the top level without cross validation",
+  policy: {
+    globals: {env: {code: "string"}},
+    models: {customer: {code: "number"}},
+    blocks: [{expression: "both", value: "code + string(customer.code)"}],
+  },
+  cases: [
+    [{code: "A", customer: {code: 1}}, {code: "A", customer: {code: 1}, both: "A1"}],
+    [{code: 1, customer: {code: 1}}, "!error: InputValidationFailed"],
+    [{code: "A", customer: {code: "1"}}, "!error: customer.code"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Missing required inputs in depth: which paths the check sees and how it reports them.
+
+{
+  name: "missing inputs are reported with every missing path",
+  policy: {
+    globals: {env: {rate: "number"}},
+    models: {customer: {age: "number", report: "report"}, report: {score: "number"}},
+    blocks: [{expression: "customer.x", value: "customer.age * rate + customer.report.score"}],
+  },
+  cases: [
+    [{}, "!error: MissingRequiredInputs"],
+    [{customer: {report: {}}}, "!error: rate"],
+    [{customer: {report: {}}}, "!error: customer.age"],
+    [{customer: {age: 1, report: {}}, rate: 1}, "!error: customer.report.score"],
+    [{customer: {age: 1, report: {score: 2}}, rate: 3}, {customer: {age: 1, report: {score: 2}, x: 5}, rate: 3}],
+  ],
+}
+
+{
+  name: "a required member property is not checked before evaluation",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue ?? 0))"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}, {}]}}, {customer: {companies: [{revenue: 1}, {}], total: 1}}],
+    [{customer: {companies: [{}]}}, {customer: {companies: [{}], total: 0}}],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a required property below a present optional hop is checked",
+  policy: {
+    models: {customer: {report: "report?"}, report: {score: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.report.score ?? -1"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {score: -1}}],
+    [{customer: {report: null}}, {customer: {report: null, score: -1}}],
+    [{customer: {report: {score: 5}}}, {customer: {report: {score: 5}, score: 5}}],
+    [{customer: {report: {}}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "goals narrow the required-input check but not validation",
+  policy: {
+    models: {customer: {age: "number", tier: "string(a|b)"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.isA", value: "customer.tier == 'a'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, goals: ["customer.adult"], output: {customer: {age: 20, adult: true}}},
+    {input: {customer: {tier: "a"}}, goals: ["customer.isA"], output: {customer: {tier: "a", isA: true}}},
+    {input: {customer: {age: 20, tier: "z"}}, goals: ["customer.adult"], output: "!error: customer.tier"},
+    {input: {customer: {age: 20}}, output: "!error: customer.tier"},
+    {input: {customer: {tier: "b"}}, goals: ["customer.adult"], output: "!error: customer.age"},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Validation happens after date conversion and before reference hydration: the output keeps the
+// converted dates and the resolved references, an error output keeps nothing.
+
+{
+  name: "dates are converted in members, pools and globals",
+  policy: {
+    globals: {env: {asOf: "date"}},
+    models: {customer: {events: "event[]", fav: "&shop?"}, event: {at: "date"}, shop: {id: "string", opened: "date"}},
+    blocks: [{expression: "customer.n", value: "len(customer.events)"}],
+  },
+  cases: [
+    [
+      {asOf: "2025-03-20", customer: {events: [{at: "2025-01-01"}], fav: "s1"}, shop: [{id: "s1", opened: "2020-05-05"}]},
+      {asOf: date("2025-03-20"), customer: {events: [{at: date("2025-01-01")}], fav: {id: "s1", opened: date("2020-05-05")}, n: 1}, shop: [{id: "s1", opened: date("2020-05-05")}]},
+    ],
+    [{asOf: "2025-03-20", customer: {events: [{at: "2025-01-32"}]}}, "!error: customer.events[0].at"],
+    [{asOf: "2025-03-20", customer: {events: []}, shop: [{id: "s1", opened: "x"}]}, "!error: shop[0].opened"],
+    [{asOf: "x", customer: {events: []}}, "!error: asOf"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic request: a loan application with several error sources at once.
+
+{
+  name: "a loan application request validated as a whole",
+  policy: {
+    globals: {env: {baseRate: "number", region: "string(eu|us)"}},
+    models: {
+      application: {amount: "number", term: "number", purpose: "string(home|car|other)", applicants: "applicant[]"},
+      applicant: {income: "number", born: "date", employment: "string(employed|self|none)", employer: "&employer?"},
+      employer: {id: "string", rating: "number"},
+    },
+    blocks: [
+      {expression: "application.income", value: "sum(map(application.applicants, #.income))"},
+      {expression: "application.rate", value: "baseRate + (application.purpose == 'home' ? 0 : 1)"},
+      {expression: "application.ratio", value: "application.amount / application.income"},
+    ],
+  },
+  cases: [
+    [
+      {baseRate: 3, region: "eu", application: {amount: 1000, term: 12, purpose: "car", applicants: [{income: 400, born: "1990-01-01", employment: "employed", employer: "e1"}, {income: 600, born: "1992-02-02", employment: "self"}]}, employer: [{id: "e1", rating: 5}]},
+      {baseRate: 3, region: "eu", application: {amount: 1000, term: 12, purpose: "car", applicants: [{income: 400, born: date("1990-01-01"), employment: "employed", employer: {id: "e1", rating: 5}}, {income: 600, born: date("1992-02-02"), employment: "self"}], income: 1000, rate: 4, ratio: 1}, employer: [{id: "e1", rating: 5}]},
+      "bug: a reference inside a relationship member is validated but not hydrated (chapter 10), so applicants[0].employer stays the id \"e1\"",
+    ],
+    [{baseRate: 3, region: "eu", application: {amount: 1000, term: 12, purpose: "boat", applicants: []}}, "!error: application.purpose"],
+    [{baseRate: 3, region: "eu", application: {amount: 1000, term: 12, purpose: "home", applicants: [{income: 1, born: "1990-01-01", employment: "retired"}]}}, "!error: application.applicants[0].employment"],
+    [{baseRate: 3, region: "eu", application: {amount: 1000, term: 12, purpose: "home", applicants: [{income: 1, born: "1990-01-01", employment: "none", employer: "e9"}]}, employer: []}, "!error: application.applicants[0].employer"],
+    [{baseRate: "3", region: "mars", application: {amount: 1000, term: 12, purpose: "home", applicants: []}}, "!error: region"],
+    [{region: "eu", application: {term: 12, purpose: "home", applicants: []}}, "!error: MissingRequiredInputs"],
+    [{baseRate: 2, region: "us", application: {amount: 500, term: 6, purpose: "home", applicants: [{income: 250, born: "2000-12-31", employment: "none"}]}}, {baseRate: 2, region: "us", application: {amount: 500, term: 6, purpose: "home", applicants: [{income: 250, born: date("2000-12-31"), employment: "none"}], income: 250, rate: 2, ratio: 2}}],
+  ],
+}

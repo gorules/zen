@@ -1,0 +1,414 @@
+// Dictionaries and enum-typed properties. A dictionary is a named list of string values with
+// labels; a property typed with the dictionary's name (shorthand: the dictionary name as the type)
+// accepts only those values. Inline enums (`string(a|b)`) behave the same. At evaluation both are
+// plain strings: validation rejects values outside the set, labels never reach the output, and
+// computed (undeclared) properties are not checked against any set.
+
+// A dictionary-typed property: members pass, values compare as plain strings.
+{
+  name: "dictionary-typed property",
+  policy: {
+    dictionaries: {tier: [["VIP", "Very important"], ["STD", "Standard"]]},
+    models: {customer: {tier: "tier"}},
+    blocks: [{expression: "customer.isVip", value: "customer.tier == 'VIP'"}],
+  },
+  cases: [
+    [{customer: {tier: "VIP"}}, {customer: {tier: "VIP", isVip: true}}],
+    [{customer: {tier: "STD"}}, {customer: {tier: "STD", isVip: false}}],
+    [{customer: {tier: "GOLD"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "vip"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "Very important"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: ""}}, "!error: InputValidationFailed"],
+    [{customer: {tier: " VIP"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: 1}}, "!error: InputValidationFailed"],
+    [{customer: {tier: true}}, "!error: InputValidationFailed"],
+    [{customer: {tier: ["VIP"]}}, "!error: InputValidationFailed"],
+    [{customer: {tier: {value: "VIP"}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Labels are metadata only: the output keeps the value.
+{
+  name: "labels do not appear in the output",
+  policy: {
+    dictionaries: {status: [["A", "Active"], ["C", "Closed"]]},
+    models: {account: {status: "status"}},
+    blocks: [{expression: "account.copy", value: "account.status"}],
+  },
+  cases: [
+    [{account: {status: "A"}}, {account: {status: "A", copy: "A"}}],
+    [{account: {status: "C"}}, {account: {status: "C", copy: "C"}}],
+    [{account: {status: "Active"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionary entries without a separate label (label equals value).
+{
+  name: "dictionary with plain entries",
+  policy: {
+    dictionaries: {color: ["red", "green", "blue"]},
+    models: {item: {color: "color"}},
+    blocks: [{match: "item.warm", arms: [["item.color == 'red'", "true"], ["", "false"]]}],
+  },
+  cases: [
+    [{item: {color: "red"}}, {item: {color: "red", warm: true}}],
+    [{item: {color: "green"}}, {item: {color: "green", warm: false}}],
+    [{item: {color: "blue"}}, {item: {color: "blue", warm: false}}],
+    [{item: {color: "yellow"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionary values with spaces, punctuation and digits are matched exactly.
+{
+  name: "dictionary values are exact strings",
+  policy: {
+    dictionaries: {code: ["A-1", "b c", "007", "Ünï"]},
+    models: {row: {code: "code"}},
+    blocks: [{expression: "row.copy", value: "row.code + '!'"}],
+  },
+  cases: [
+    [{row: {code: "A-1"}}, {row: {code: "A-1", copy: "A-1!"}}],
+    [{row: {code: "b c"}}, {row: {code: "b c", copy: "b c!"}}],
+    [{row: {code: "007"}}, {row: {code: "007", copy: "007!"}}],
+    [{row: {code: "Ünï"}}, {row: {code: "Ünï", copy: "Ünï!"}}],
+    [{row: {code: 7}}, "!error: InputValidationFailed"],
+    [{row: {code: "7"}}, "!error: InputValidationFailed"],
+    [{row: {code: "bc"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Optional dictionary-typed property: null and missing are allowed.
+{
+  name: "optional dictionary property",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    models: {customer: {name: "string", tier: "tier?"}},
+    blocks: [{expression: "customer.label", value: "customer.tier ?? 'none'"}],
+  },
+  cases: [
+    [{customer: {name: "a", tier: "VIP"}}, {customer: {name: "a", tier: "VIP", label: "VIP"}}],
+    [{customer: {name: "a"}}, {customer: {name: "a", label: "none"}}],
+    [{customer: {name: "a", tier: null}}, {customer: {name: "a", tier: null, label: "none"}}],
+    [{customer: {name: "a", tier: "X"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Required dictionary property missing: a missing input once a block reads it.
+{
+  name: "required dictionary property missing",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    models: {customer: {name: "string", tier: "tier"}},
+    blocks: [{expression: "customer.isVip", value: "customer.tier == 'VIP'"}],
+  },
+  cases: [
+    [{customer: {name: "a", tier: "STD"}}, {customer: {name: "a", tier: "STD", isVip: false}}],
+    [{customer: {name: "a"}}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "a", tier: null}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Arrays of dictionary values: each element is checked, null elements are skipped.
+{
+  name: "dictionary-typed arrays",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    models: {customer: {tiers: "tier[]"}},
+    blocks: [
+      {expression: "customer.first", value: "customer.tiers[0]"},
+      {expression: "customer.vipCount", value: "count(customer.tiers, # == 'VIP')"},
+    ],
+  },
+  cases: [
+    [{customer: {tiers: ["VIP", "STD", "VIP"]}}, {customer: {tiers: ["VIP", "STD", "VIP"], first: "VIP", vipCount: 2}}],
+    [{customer: {tiers: []}}, {customer: {tiers: [], first: null, vipCount: 0}}],
+    [{customer: {tiers: ["STD", null]}}, {customer: {tiers: ["STD", null], first: "STD", vipCount: 0}}],
+    [{customer: {tiers: ["VIP", "GOLD"]}}, "!error: InputValidationFailed"],
+    [{customer: {tiers: [42]}}, "!error: InputValidationFailed"],
+    [{customer: {tiers: "VIP"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionary-typed globals.
+{
+  name: "dictionary-typed global",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    globals: {env: {defaultTier: "tier?"}},
+    models: {customer: {tier: "tier?"}},
+    blocks: [{expression: "customer.effective", value: "customer.tier ?? defaultTier ?? 'STD'"}],
+  },
+  cases: [
+    [{customer: {tier: "VIP"}, defaultTier: "STD"}, {customer: {tier: "VIP", effective: "VIP"}, defaultTier: "STD"}],
+    [{customer: {}, defaultTier: "VIP"}, {customer: {effective: "VIP"}, defaultTier: "VIP"}],
+    [{customer: {}}, {customer: {effective: "STD"}}],
+    [{customer: {}, defaultTier: "GOLD"}, "!error: InputValidationFailed"],
+    [{customer: {}, defaultTier: 1}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionary-typed property on relationship members: every member is validated.
+{
+  name: "dictionary-typed member property",
+  policy: {
+    dictionaries: {risk: ["low", "mid", "high"]},
+    models: {customer: {companies: "company[]"}, company: {risk: "risk"}},
+    blocks: [
+      {expression: "company.weight", value: "company.risk == 'high' ? 3 : company.risk == 'mid' ? 2 : 1"},
+      {expression: "customer.weight", value: "sum(map(customer.companies, #.weight))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{risk: "low"}, {risk: "high"}]}},
+      {customer: {companies: [{risk: "low", weight: 1}, {risk: "high", weight: 3}], weight: 4}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], weight: 0}}],
+    [{customer: {companies: [{risk: "mid"}, {risk: "extreme"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionary values feed a decision table.
+{
+  name: "decision table over a dictionary property",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD", "NEW"]},
+    models: {customer: {tier: "tier", spend: "number"}},
+    blocks: [
+      {table: "t", inputs: ["customer.tier", "customer.spend"], outputs: ["customer.discount"], rules: [
+        ["'VIP'", "", "0.2"],
+        ["'STD'", ">= 1000", "0.1"],
+        ["", "", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {tier: "VIP", spend: 0}}, {customer: {tier: "VIP", spend: 0, discount: 0.2}}],
+    [{customer: {tier: "STD", spend: 1000}}, {customer: {tier: "STD", spend: 1000, discount: 0.1}}],
+    [{customer: {tier: "STD", spend: 999}}, {customer: {tier: "STD", spend: 999, discount: 0}}],
+    [{customer: {tier: "NEW", spend: 5000}}, {customer: {tier: "NEW", spend: 5000, discount: 0}}],
+    [{customer: {tier: "OLD", spend: 5000}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A match over every dictionary value, with a default arm.
+{
+  name: "match over every dictionary value",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    models: {customer: {tier: "tier"}},
+    blocks: [{match: "customer.limit", arms: [["customer.tier == 'VIP'", "1000"], ["customer.tier == 'STD'", "100"], ["", "0"]]}],
+  },
+  cases: [
+    [{customer: {tier: "VIP"}}, {customer: {tier: "VIP", limit: 1000}}],
+    [{customer: {tier: "STD"}}, {customer: {tier: "STD", limit: 100}}],
+    [{customer: {tier: "X"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Computed properties are not checked against a dictionary, even when they hold dictionary-like
+// values.
+{
+  name: "computed values outside any dictionary",
+  policy: {
+    dictionaries: {tier: ["gold", "silver"]},
+    models: {customer: {score: "number"}},
+    blocks: [{expression: "customer.tier", value: "customer.score > 5 ? 'gold' : 'bronze'"}],
+  },
+  cases: [
+    [{customer: {score: 6}}, {customer: {score: 6, tier: "gold"}}],
+    [{customer: {score: 1}}, {customer: {score: 1, tier: "bronze"}}],
+    [{customer: {score: 5}}, {customer: {score: 5, tier: "bronze"}}],
+  ],
+}
+
+// A computed property copied from a dictionary-typed input stays a plain string.
+{
+  name: "dictionary values flow into computeds unchanged",
+  policy: {
+    dictionaries: {tier: [["VIP", "Very important"], ["STD", "Standard"]]},
+    models: {customer: {tier: "tier"}},
+    blocks: [
+      {expression: "customer.lower", value: "lower(customer.tier)"},
+      {expression: "customer.tiers", value: "[customer.tier, customer.tier]"},
+    ],
+  },
+  cases: [
+    [{customer: {tier: "VIP"}}, {customer: {tier: "VIP", lower: "vip", tiers: ["VIP", "VIP"]}}],
+    [{customer: {tier: "STD"}}, {customer: {tier: "STD", lower: "std", tiers: ["STD", "STD"]}}],
+  ],
+}
+
+// An input key named like a dictionary is plain data; dictionaries are not values in expressions.
+{
+  name: "dictionary names are not variables",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    blocks: [{expression: "echo", value: "tier"}],
+  },
+  cases: [
+    [{tier: "boom"}, {tier: "boom", echo: "boom"}],
+    [{tier: 1}, {tier: 1, echo: 1}],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// A dictionary with a single entry.
+{
+  name: "single-entry dictionary",
+  policy: {
+    dictionaries: {only: ["X"]},
+    models: {row: {v: "only"}},
+    blocks: [{expression: "row.ok", value: "row.v == 'X'"}],
+  },
+  cases: [
+    [{row: {v: "X"}}, {row: {v: "X", ok: true}}],
+    [{row: {v: "Y"}}, "!error: InputValidationFailed"],
+    [{row: {v: "x"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// An empty dictionary admits no value.
+{
+  name: "empty dictionary",
+  policy: {
+    dictionaries: {none: []},
+    models: {row: {v: "none?", n: "number"}},
+    blocks: [{expression: "row.double", value: "row.n * 2"}],
+  },
+  cases: [
+    [{row: {n: 1}}, {row: {n: 1, double: 2}}],
+    [{row: {n: 1, v: null}}, {row: {n: 1, v: null, double: 2}}],
+    [{row: {n: 1, v: "anything"}}, "!error: InputValidationFailed"],
+    [{row: {n: 1, v: ""}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A dictionary declared in an imported policy types properties in the importing policy.
+{
+  name: "dictionary from an imported policy",
+  policy: {
+    imports: ["shared"],
+    models: {customer: {tier: "tier"}},
+    blocks: [{expression: "customer.isVip", value: "customer.tier == 'VIP'"}],
+  },
+  policies: {shared: {dictionaries: {tier: ["VIP", "STD"]}}},
+  cases: [
+    [{customer: {tier: "VIP"}}, {customer: {tier: "VIP", isVip: true}}],
+    [{customer: {tier: "STD"}}, {customer: {tier: "STD", isVip: false}}],
+    [{customer: {tier: "GOLD"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Inline enums (`string(a|b)`).
+{
+  name: "inline enum property",
+  policy: {
+    models: {customer: {status: "string(active|closed)"}},
+    blocks: [{expression: "customer.open", value: "customer.status == 'active'"}],
+  },
+  cases: [
+    [{customer: {status: "active"}}, {customer: {status: "active", open: true}}],
+    [{customer: {status: "closed"}}, {customer: {status: "closed", open: false}}],
+    [{customer: {status: "Active"}}, "!error: InputValidationFailed"],
+    [{customer: {status: "pending"}}, "!error: InputValidationFailed"],
+    [{customer: {status: ""}}, "!error: InputValidationFailed"],
+    [{customer: {status: 0}}, "!error: InputValidationFailed"],
+    [{customer: {status: null}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Inline enum arrays and optional enums.
+{
+  name: "inline enum arrays and optionals",
+  policy: {
+    models: {user: {roles: "string(admin|editor|viewer)[]", plan: "string(free|pro)?"}},
+    blocks: [
+      {expression: "user.isAdmin", value: "'admin' in user.roles"},
+      {expression: "user.paid", value: "(user.plan ?? 'free') == 'pro'"},
+    ],
+  },
+  cases: [
+    [{user: {roles: ["admin", "viewer"], plan: "pro"}}, {user: {roles: ["admin", "viewer"], plan: "pro", isAdmin: true, paid: true}}],
+    [{user: {roles: []}}, {user: {roles: [], isAdmin: false, paid: false}}],
+    [{user: {roles: ["viewer"], plan: null}}, {user: {roles: ["viewer"], plan: null, isAdmin: false, paid: false}}],
+    [{user: {roles: ["root"]}}, "!error: InputValidationFailed"],
+    [{user: {roles: ["admin"], plan: "enterprise"}}, "!error: InputValidationFailed"],
+    [{user: {roles: "admin"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Inline enum on relationship members, used by a per-member match.
+{
+  name: "inline enum on members with a per-member match",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {region: "string(us|eu)", revenue: "number"}},
+    blocks: [
+      {match: "company.bonus", arms: [["company.region == 'us'", "company.revenue * 2"], ["company.region == 'eu'", "company.revenue * 3"], ["", "0"]]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{region: "us", revenue: 10}, {region: "eu", revenue: 10}]}},
+      {customer: {companies: [{region: "us", revenue: 10, bonus: 20}, {region: "eu", revenue: 10, bonus: 30}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+    [{customer: {companies: [{region: "apac", revenue: 10}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Inline enum global.
+{
+  name: "inline enum global with a table",
+  policy: {
+    globals: {env: {channel: "string(web|branch|phone)"}},
+    blocks: [
+      {table: "t", inputs: ["channel"], outputs: ["fee"], rules: [
+        ["'web'", "0"],
+        ["'branch'", "5"],
+        ["", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{channel: "web"}, {channel: "web", fee: 0}],
+    [{channel: "branch"}, {channel: "branch", fee: 5}],
+    [{channel: "phone"}, {channel: "phone", fee: 2}],
+    [{channel: "fax"}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Dictionaries and enums are checked before evaluation: every invalid field is reported at once,
+// and no block runs.
+{
+  name: "validation reports before any block runs",
+  policy: {
+    dictionaries: {tier: ["VIP", "STD"]},
+    models: {customer: {tier: "tier", status: "string(on|off)", n: "number"}},
+    blocks: [{expression: "customer.double", value: "customer.n * 2"}],
+  },
+  cases: [
+    [{customer: {tier: "VIP", status: "on", n: 1}}, {customer: {tier: "VIP", status: "on", n: 1, double: 2}}],
+    [{customer: {tier: "X", status: "on", n: 1}}, "!error: customer.tier"],
+    [{customer: {tier: "VIP", status: "x", n: 1}}, "!error: customer.status"],
+    [{customer: {tier: "X", status: "x", n: 1}}, "!error: customer.status"],
+    [{customer: {tier: "X", status: "x", n: 1}}, "!error: customer.tier"],
+    [{customer: {tier: "X", status: "on"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A property type naming neither an entity nor a dictionary is treated as a relationship to an
+// unknown entity: any object passes, scalars fail.
+{
+  name: "type naming no dictionary",
+  diagnostics: ["UNDEFINED_VARIABLE", "UNKNOWN_DATA_MODEL_TARGET"],
+  policy: {
+    models: {customer: {tier: "tierr"}},
+    blocks: [{expression: "customer.seen", value: "customer.tier != null"}],
+  },
+  cases: [
+    [{customer: {tier: "VIP"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: {anything: 1}}}, {customer: {tier: {anything: 1}, seen: true}}],
+  ],
+}

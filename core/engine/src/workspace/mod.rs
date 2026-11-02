@@ -91,6 +91,40 @@ impl Workspace {
         self.db.enhance_trace(req)
     }
 
+    pub fn evaluate_batch(
+        &self,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        self.db.evaluate_batch(requests)
+    }
+
+    pub fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+    ) -> Result<crate::compiled::ColumnarOutput<'a>, EvaluationError> {
+        self.db.evaluate_columns(policy_path, goals, columns)
+    }
+
+    #[cfg(feature = "driver")]
+    #[doc(hidden)]
+    pub fn evaluate_with_driver(
+        &self,
+        req: &EvaluateRequest,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        self.db.evaluate_with_driver(req)
+    }
+
+    #[cfg(feature = "driver")]
+    #[doc(hidden)]
+    pub fn enhance_trace_with_driver(
+        &self,
+        req: &EvaluateRequest,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        self.db.enhance_trace_with_driver(req)
+    }
+
     pub fn enhance_graph_trace(
         &self,
         document: &Arc<str>,
@@ -166,7 +200,7 @@ impl Workspace {
         self.db.unit(importer).members.contains(policy)
     }
 
-    pub(crate) fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {
+    pub fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {
         self.db.evaluation_diagnostics(&Arc::from(entry))
     }
 

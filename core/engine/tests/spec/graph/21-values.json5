@@ -1,0 +1,679 @@
+// Value semantics across nodes. Numbers are exact decimals end to end: a value read from the
+// request, computed by an expression, emitted by a table cell or passed into a sub-decision keeps
+// its precision. Results are assembled by merging node outputs, so a null-valued top-level key never
+// appears in a graph result (nested nulls and nulls inside arrays are kept). Evaluation time is
+// fixed at 2025-03-20T10:15:30Z.
+
+// ---------------------------------------------------------------------------------------------
+// Decimal precision through expressions.
+{
+  name: "decimals: classic binary-float traps are exact",
+  graph: {
+    nodes: [{expression: "calc", fields: {sum: "a + b", diff: "c - a", prod: "a * 3", third: "1 / 3 * 3"}}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2, c: 0.3}, {sum: 0.3, diff: 0.2, prod: 0.3, third: 0.9999999999999999999999999999}],
+    [{a: 1.1, b: 2.2, c: 3.3}, {sum: 3.3, diff: 2.2, prod: 3.3, third: 0.9999999999999999999999999999}],
+    [{a: 0.7, b: 0.1, c: 0.8}, {sum: 0.8, diff: 0.1, prod: 2.1, third: 0.9999999999999999999999999999}],
+  ],
+}
+
+{
+  name: "decimals: many fractional digits survive the request and the result",
+  graph: {},
+  cases: [
+    [{x: 0.1000000000000000000000000001}, {x: 0.1000000000000000000000000001}],
+    [{x: 3.1415926535897932384626433832}, {x: 3.1415926535897932384626433832}],
+    [{x: -0.0000000000000000000000000001}, {x: -0.0000000000000000000000000001}],
+  ],
+}
+
+{
+  name: "decimals: precision carries through chained expression nodes",
+  graph: {
+    nodes: [
+      {expression: "net", passThrough: true, fields: {net: "price * qty"}},
+      {expression: "tax", passThrough: true, fields: {tax: "net * rate"}},
+      {expression: "total", fields: {total: "net + tax", rounded: "round(net + tax, 2)"}},
+    ],
+  },
+  cases: [
+    [{price: 19.99, qty: 3, rate: 0.19}, {total: 71.3643, rounded: 71.36}],
+    [{price: 0.01, qty: 7, rate: 0.075}, {total: 0.07525, rounded: 0.08}],
+    [{price: 1000000.005, qty: 1, rate: 0}, {total: 1000000.005, rounded: 1000000.01}],
+  ],
+}
+
+{
+  name: "decimals: rounding helpers",
+  graph: {
+    nodes: [{expression: "calc", fields: {r: "round(x)", r2: "round(x, 2)", f: "floor(x)", c: "ceil(x)", t: "trunc(x)"}}],
+  },
+  cases: [
+    [{x: 2.5}, {r: 3, r2: 2.5, f: 2, c: 3, t: 2}],
+    [{x: -2.5}, {r: -3, r2: -2.5, f: -3, c: -2, t: -2}],
+    [{x: 1.005}, {r: 1, r2: 1.01, f: 1, c: 2, t: 1}],
+    [{x: 0}, {r: 0, r2: 0, f: 0, c: 0, t: 0}],
+  ],
+}
+
+{
+  name: "decimals: scale is kept when a value is passed through",
+  graph: {
+    nodes: [{expression: "calc", fields: {s: "string(x)", y: "x"}}],
+  },
+  cases: [
+    [{x: 1.10}, {s: "1.10", y: 1.1}],
+    [{x: 2.000}, {s: "2.000", y: 2}],
+    [{x: 100}, {s: "100", y: 100}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Decimal precision through decision tables.
+{
+  name: "decimals: table output cells are exact",
+  graph: {
+    nodes: [
+      {table: "rates", inputs: ["band"], outputs: ["rate", "fee"], rules: [
+        ["'a'", "0.015", "0.1 + 0.2"],
+        ["'b'", "0.0275", "1.23456789012345678901234567"],
+        ["", "0", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{band: "a"}, {rate: 0.015, fee: 0.3}],
+    [{band: "b"}, {rate: 0.0275, fee: 1.23456789012345678901234567}],
+    [{band: "z"}, {rate: 0, fee: 0}],
+  ],
+}
+
+{
+  name: "decimals: table input intervals compare exactly at boundaries",
+  graph: {
+    nodes: [
+      {table: "bands", inputs: ["score"], outputs: ["band"], rules: [
+        ["< 0.3", "'low'"],
+        ["[0.3..0.7)", "'mid'"],
+        [">= 0.7", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 0.29999999999999999999}, {band: "low"}],
+    [{score: 0.3}, {band: "mid"}],
+    [{score: 0.30}, {band: "mid"}],
+    [{score: 0.69999999999999999999}, {band: "mid"}],
+    [{score: 0.7}, {band: "high"}],
+    [{score: 1}, {band: "high"}],
+  ],
+}
+
+{
+  name: "decimals: a table equality cell matches regardless of scale",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount"], outputs: ["hit"], rules: [
+        ["1.5", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 1.5}, {hit: true}],
+    [{amount: 1.50}, {hit: true}],
+    [{amount: 1.500000}, {hit: true}],
+    [{amount: 1.5000001}, {hit: false}],
+    [{amount: "1.5"}, {hit: false}],
+  ],
+}
+
+{
+  name: "decimals: table output computed from input keeps precision",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["fee"], rules: [
+        ["'pct'", "amount * 0.035"],
+        ["'flat'", "2.50"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "pct", amount: 99.99}, {fee: 3.49965}],
+    [{kind: "pct", amount: 0.01}, {fee: 0.00035}],
+    [{kind: "flat", amount: 10}, {fee: 2.5}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Large and small magnitudes.
+{
+  name: "magnitudes: large integers stay exact",
+  graph: {
+    nodes: [{expression: "calc", fields: {plus: "x + 1", times: "x * 10", same: "x"}}],
+  },
+  cases: [
+    [{x: 9007199254740993}, {plus: 9007199254740994, times: 90071992547409930, same: 9007199254740993}],
+    [{x: 1000000000000000000000}, {plus: 1000000000000000000001, times: 10000000000000000000000, same: 1000000000000000000000}],
+    [{x: -9223372036854775808}, {plus: -9223372036854775807, times: -92233720368547758080, same: -9223372036854775808}],
+  ],
+}
+
+{
+  name: "magnitudes: tiny values stay exact",
+  graph: {
+    nodes: [{expression: "calc", fields: {double: "x * 2", isPos: "x > 0"}}],
+  },
+  cases: [
+    [{x: 0.000000000000000000000000001}, {double: 0.000000000000000000000000002, isPos: true}],
+    [{x: 0.0000001}, {double: 0.0000002, isPos: true}],
+    [{x: -0.0000001}, {double: -0.0000002, isPos: false}],
+  ],
+}
+
+{
+  name: "magnitudes: overflow in arithmetic is an error",
+  graph: {
+    nodes: [{expression: "calc", fields: {big: "x * x"}}],
+  },
+  cases: [
+    [{x: 1000000}, {big: 1000000000000}],
+    [{x: 10000000000000000000000000000}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "magnitudes: negative zero and zero",
+  graph: {
+    nodes: [{expression: "calc", fields: {eq: "x == 0", neg: "x < 0", v: "x"}}],
+  },
+  cases: [
+    [{x: 0}, {eq: true, neg: false, v: 0}],
+    [{x: -0}, {eq: true, neg: false, v: 0}],
+    [{x: 0.000}, {eq: true, neg: false, v: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Strings.
+{
+  name: "strings: unicode passes through unchanged",
+  graph: {},
+  cases: [
+    [{s: "Zürich"}, {s: "Zürich"}],
+    [{s: "東京"}, {s: "東京"}],
+    [{s: "emoji 🎉 ok"}, {s: "emoji 🎉 ok"}],
+    [{s: "مرحبا"}, {s: "مرحبا"}],
+    [{"ключ": "значение"}, {"ключ": "значение"}],
+  ],
+}
+
+{
+  name: "strings: unicode through expressions",
+  graph: {
+    nodes: [{expression: "calc", fields: {up: "upper(s)", n: "len(s)", greet: "'hi ' + s", has: "contains(s, 'ü')"}}],
+  },
+  cases: [
+    [{s: "zürich"}, {up: "ZÜRICH", n: 6, greet: "hi zürich", has: true}, "bug: len counts UTF-8 bytes instead of characters"],
+    [{s: "東京"}, {up: "東京", n: 2, greet: "hi 東京", has: false}, "bug: len counts UTF-8 bytes instead of characters"],
+    [{s: ""}, {up: "", n: 0, greet: "hi ", has: false}],
+  ],
+}
+
+{
+  name: "strings: unicode in table cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["city"], outputs: ["country"], rules: [
+        ["'Zürich'", "'Schweiz'"],
+        ["'東京'", "'日本'"],
+        ["'São Paulo', 'Rio'", "'Brasil'"],
+        ["", "'?'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{city: "Zürich"}, {country: "Schweiz"}],
+    [{city: "東京"}, {country: "日本"}],
+    [{city: "São Paulo"}, {country: "Brasil"}],
+    [{city: "Rio"}, {country: "Brasil"}],
+    [{city: "Zurich"}, {country: "?"}],
+  ],
+}
+
+{
+  name: "strings: escapes and whitespace are preserved",
+  graph: {
+    nodes: [{expression: "calc", fields: {copy: "s", trimmed: "trim(s)", n: "len(s)"}}],
+  },
+  cases: [
+    [{s: "  padded  "}, {copy: "  padded  ", trimmed: "padded", n: 10}],
+    [{s: "line1\nline2"}, {copy: "line1\nline2", trimmed: "line1\nline2", n: 11}],
+    [{s: "tab\there"}, {copy: "tab\there", trimmed: "tab\there", n: 8}],
+    [{s: "quote \" and \\ back"}, {copy: "quote \" and \\ back", trimmed: "quote \" and \\ back", n: 18}],
+  ],
+}
+
+{
+  name: "strings: a numeric-looking string is not a number",
+  graph: {
+    nodes: [{expression: "calc", fields: {isNum: "type(x) == 'number'", parsed: "number(x) + 1"}}],
+  },
+  cases: [
+    [{x: "41"}, {isNum: false, parsed: 42}],
+    [{x: "0.10"}, {isNum: false, parsed: 1.1}],
+    [{x: 41}, {isNum: true, parsed: 42}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Booleans.
+{
+  name: "booleans: pass through and compute",
+  graph: {
+    nodes: [{expression: "calc", fields: {notA: "not a", both: "a and b", either: "a or b", copy: "a"}}],
+  },
+  cases: [
+    [{a: true, b: true}, {notA: false, both: true, either: true, copy: true}],
+    [{a: true, b: false}, {notA: false, both: false, either: true, copy: true}],
+    [{a: false, b: false}, {notA: true, both: false, either: false, copy: false}],
+  ],
+}
+
+{
+  name: "booleans: false is kept in the result, unlike null",
+  graph: {
+    nodes: [{expression: "calc", fields: {f: "false", t: "true", n: "null", z: "0", e: "''"}}],
+  },
+  cases: [
+    [{}, {f: false, t: true, z: 0, e: ""}],
+    [{f: true}, {f: false, t: true, z: 0, e: ""}],
+  ],
+}
+
+{
+  name: "booleans: table cells match booleans strictly",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["flag"], outputs: ["r"], rules: [
+        ["true", "'yes'"],
+        ["false", "'no'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{flag: true}, {r: "yes"}],
+    [{flag: false}, {r: "no"}],
+    [{flag: "true"}, {r: "unknown"}],
+    [{flag: 1}, {r: "unknown"}],
+    [{flag: null}, {r: "unknown"}],
+    [{}, {r: "unknown"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates.
+{
+  name: "dates: d() values render as ISO text in the result",
+  graph: {
+    nodes: [{expression: "calc", fields: {a: "d('2024-01-01')", b: "d('2024-06-15T08:30:00Z')", c: "d('2024-06-15T08:30:00+02:00')"}}],
+  },
+  cases: [
+    [{}, {a: "2024-01-01T00:00:00Z", b: "2024-06-15T08:30:00Z", c: "2024-06-15T06:30:00Z"}],
+  ],
+}
+
+{
+  name: "dates: now is fixed in the suite",
+  graph: {
+    nodes: [{expression: "calc", fields: {now: "d()", nowLegacy: "date('now')", year: "d().year()", today: "d().isToday()"}}],
+  },
+  cases: [
+    [{}, {now: "2025-03-20T10:15:30Z", nowLegacy: 1742465730, year: 2025, today: true}],
+  ],
+}
+
+{
+  name: "dates: computed from request strings",
+  graph: {
+    nodes: [{expression: "calc", fields: {
+      age: "d().diff(d(dob), 'year')",
+      next: "d(start).add(1, 'month')",
+      weekday: "d(start).weekday()",
+      eom: "d(start).endOf('month')",
+    }}],
+  },
+  cases: [
+    [{dob: "1990-03-21", start: "2024-01-31"}, {age: 34, next: "2024-02-29T00:00:00Z", weekday: 3, eom: "2024-01-31T23:59:59Z"}],
+    [{dob: "1990-03-20", start: "2025-02-15"}, {age: 35, next: "2025-03-15T00:00:00Z", weekday: 6, eom: "2025-02-28T23:59:59Z"}],
+  ],
+}
+
+{
+  name: "dates: comparisons in table cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["d(expires)"], outputs: ["status"], rules: [
+        ["< d()", "'expired'"],
+        ["< d().add(30, 'd')", "'expiring'"],
+        ["", "'valid'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{expires: "2025-03-19"}, {status: "expired"}],
+    [{expires: "2025-03-20T10:15:29Z"}, {status: "expired"}],
+    [{expires: "2025-03-25"}, {status: "expiring"}],
+    [{expires: "2025-04-30"}, {status: "valid"}],
+  ],
+}
+
+{
+  name: "dates: a date flows between nodes as a date",
+  graph: {
+    nodes: [
+      {expression: "make", fields: {due: "d(start).add(14, 'd')"}},
+      {expression: "use", fields: {due: "due", late: "due < d()", month: "due.month()"}},
+    ],
+  },
+  cases: [
+    [{start: "2025-03-01"}, {due: "2025-03-15T00:00:00Z", late: true, month: 3}],
+    [{start: "2025-03-10"}, {due: "2025-03-24T00:00:00Z", late: false, month: 3}],
+    [{start: "2024-12-25"}, {due: "2025-01-08T00:00:00Z", late: true, month: 1}],
+  ],
+}
+
+{
+  name: "dates: an invalid date string is an Invalid date value, not null",
+  graph: {
+    nodes: [{expression: "calc", fields: {when: "d(s)", ok: "d(s) != null"}}],
+  },
+  cases: [
+    [{s: "2024-01-01"}, {when: "2024-01-01T00:00:00Z", ok: true}],
+    [{s: "garbage"}, {when: "Invalid date", ok: true}],
+  ],
+}
+
+{
+  name: "dates: date input values keep their source text",
+  graph: {},
+  cases: [
+    [{at: date("2024-03-15")}, {at: "2024-03-15"}],
+    [{at: date("2024-03-15T10:30:00+02:00")}, {at: "2024-03-15T10:30:00+02:00"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Null versus missing keys in results.
+{
+  name: "null: a null-valued request key is dropped from a pass-through result",
+  graph: {},
+  cases: [
+    [{a: null, b: 1}, {b: 1}],
+    [{a: null}, {}],
+    [{a: {b: null, c: 2}}, {a: {b: null, c: 2}}, "question: only top-level null-valued keys are dropped, nested ones survive the merge"],
+    [{a: {b: {c: null}}}, {a: {b: {c: null}}}, "question: only top-level null-valued keys are dropped, nested ones survive the merge"],
+  ],
+}
+
+{
+  name: "null: an expression producing null leaves the key out",
+  graph: {
+    nodes: [{expression: "calc", fields: {x: "missing", y: "1", z: "null"}}],
+  },
+  cases: [
+    [{}, {y: 1}],
+    [{missing: 5}, {x: 5, y: 1}],
+    [{missing: null}, {y: 1}],
+  ],
+}
+
+{
+  name: "null: null inside arrays is kept",
+  graph: {
+    nodes: [{expression: "calc", fields: {list: "[1, null, 3]", objs: "[{a: null}, {a: 1}]"}}],
+  },
+  cases: [
+    [{}, {list: [1, null, 3], objs: [{a: null}, {a: 1}]}],
+  ],
+}
+
+{
+  name: "null: a null output removes a pass-through key of the same name",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {secret: "null", extra: "1"}}],
+  },
+  cases: [
+    [{secret: "s", keep: 1}, {keep: 1, extra: 1}],
+    [{keep: 1}, {keep: 1, extra: 1}],
+  ],
+}
+
+{
+  name: "null: a later node can see a null written by an earlier field via $",
+  graph: {
+    nodes: [{expression: "calc", fields: {a: "null", b: "$.a == null", c: "a ?? 'default'"}}],
+  },
+  cases: [
+    [{}, {b: true, c: "default"}],
+    [{a: 5}, {b: true, c: 5}],
+  ],
+}
+
+{
+  name: "null: a table that matches no rule contributes nothing",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["r"], rules: [
+        ["1", "'one'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {r: "one"}],
+    [{x: 2}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "null: a table output cell that is empty leaves the key out",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["a", "b"], rules: [
+        ["1", "'a1'", ""],
+        ["2", "", "'b2'"],
+        ["", "null", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {a: "a1"}],
+    [{x: 2}, {b: "b2"}],
+    [{x: 3}, {}],
+  ],
+}
+
+{
+  name: "null: null versus missing as seen by expressions",
+  graph: {
+    nodes: [{expression: "calc", fields: {isNull: "x == null", t: "type(x)", coalesce: "x ?? 'fallback'"}}],
+  },
+  cases: [
+    [{x: null}, {isNull: true, t: "null", coalesce: "fallback"}],
+    [{}, {isNull: true, t: "null", coalesce: "fallback"}],
+    [{x: 0}, {isNull: false, t: "number", coalesce: 0}],
+    [{x: ""}, {isNull: false, t: "string", coalesce: ""}],
+    [{x: false}, {isNull: false, t: "bool", coalesce: false}],
+  ],
+}
+
+{
+  name: "null: a null sub-decision output field is dropped",
+  decisions: {
+    child: {nodes: [{expression: "calc", fields: {a: "x", b: "2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1}, {a: 1, b: 2}],
+    [{x: null}, {b: 2}],
+    [{}, {b: 2}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Empty objects and arrays in results.
+{
+  name: "empty: empty objects and arrays are kept",
+  graph: {
+    nodes: [{expression: "calc", fields: {o: "{}", a: "[]", nested: "{inner: {}}", list: "[[]]"}}],
+  },
+  cases: [
+    [{}, {o: {}, a: [], nested: {inner: {}}, list: [[]]}],
+  ],
+}
+
+{
+  name: "empty: empty request values pass through",
+  graph: {},
+  cases: [
+    [{o: {}, a: [], s: ""}, {o: {}, a: [], s: ""}],
+    [{deep: {x: {y: {}}}}, {deep: {x: {y: {}}}}],
+  ],
+}
+
+{
+  name: "empty: an expression node with no fields outputs an empty object",
+  graph: {
+    nodes: [{expression: "calc", fields: {}}],
+  },
+  cases: [
+    [{a: 1}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "empty: a collect table with no hits yields an empty list",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["r"], rules: [
+        ["> 10", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 50}, [{r: "big"}]],
+    [{x: 1}, []],
+  ],
+}
+
+{
+  name: "empty: a collect table under an output path yields an empty list key",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "hits", inputs: ["x"], outputs: ["r"], rules: [
+        ["> 10", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 50}, {hits: [{r: "big"}]}],
+    [{x: 1}, {hits: []}],
+  ],
+}
+
+{
+  name: "empty: merging an empty object over a key does not clear it",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {cfg: "{x: 1}"}},
+      {expression: "b", fields: {cfg: "{}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {cfg: {x: 1}}],
+  ],
+}
+
+{
+  name: "empty: merging an empty array over a key replaces it",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {list: "[1, 2]"}},
+      {expression: "b", fields: {list: "[]"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {list: [1, 2]}, "question: which of two parallel branches wins a conflicting key depends on the walk order; here the value of the first-listed branch survives"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Merging nested values.
+{
+  name: "merge: nested objects from parallel branches are deep-merged",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"customer.name": "name"}},
+      {expression: "b", fields: {"customer.tier": "'gold'", "customer.flags.vip": "true"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{name: "ann"}, {customer: {name: "ann", tier: "gold", flags: {vip: true}}}],
+    [{name: ""}, {customer: {name: "", tier: "gold", flags: {vip: true}}}],
+    [{}, {customer: {tier: "gold", flags: {vip: true}}}],
+  ],
+}
+
+{
+  name: "merge: dotted expression keys build nested objects",
+  graph: {
+    nodes: [{expression: "calc", fields: {"a.b.c": "1", "a.b.d": "2", "a.e": "'x'"}}],
+  },
+  cases: [
+    [{}, {a: {b: {c: 1, d: 2}, e: "x"}}],
+  ],
+}
+
+{
+  name: "merge: pass-through keeps request values the node does not overwrite",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {"order.total": "order.qty * order.price"}}],
+  },
+  cases: [
+    [{order: {qty: 2, price: 1.25, id: "o1"}}, {order: {qty: 2, price: 1.25, id: "o1", total: 2.5}}],
+    [{order: {qty: 0, price: 9}, other: [1]}, {order: {qty: 0, price: 9, total: 0}, other: [1]}],
+  ],
+}
+
+{
+  name: "merge: arrays are replaced, never concatenated",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {tags: "['new']"}}],
+  },
+  cases: [
+    [{tags: ["a", "b"]}, {tags: ["new"]}],
+    [{}, {tags: ["new"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The $root environment.
+{
+  name: "environment: $root holds the node input",
+  graph: {
+    nodes: [{expression: "calc", fields: {n: "len(keys($root))", hasA: "'a' in keys($root)"}}],
+  },
+  cases: [
+    {input: {a: 1, b: 2}, output: {n: 2, hasA: true}, note: "bug: $root also contains the internal $nodes key", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+    {input: {}, output: {n: 0, hasA: false}, note: "bug: $root also contains the internal $nodes key", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+  ],
+}

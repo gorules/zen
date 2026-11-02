@@ -29,6 +29,7 @@ use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
     Severity,
 };
+use zen_types::path::DotPath;
 
 const NODES_KEY: &str = "$nodes";
 
@@ -1221,6 +1222,14 @@ impl<'a> GraphAnalyzer<'a> {
                 ));
                 continue;
             }
+            if collect && matches!(content.hit_policy, DecisionTableHitPolicy::Collect) {
+                self.diagnostics.push(Diagnostic::warning(
+                    DiagnosticCode::InvalidWritePath,
+                    DiagnosticLocation::expression(self.path.clone(), node.id.clone(), col.id.clone(), None)
+                        .with_target(CursorTarget::DecisionTableHead { col: col.id.clone() }),
+                    format!("the collect marker on '{}' has no effect under the collect hit policy: each matched rule writes '{path}' as a single value", col.field),
+                ));
+            }
             let declared = self.declared_output_type(node, col);
             let mut cell_types: Vec<VariableType> = Vec::new();
             let mut has_null_cell = false;
@@ -1417,15 +1426,7 @@ impl<'a> GraphAnalyzer<'a> {
             return false;
         }
         let field = field.trim();
-        !written.iter().any(|w| {
-            let w = w.as_ref();
-            field == w
-                || field
-                    .strip_prefix(w)
-                    .is_some_and(|rest| rest.starts_with('.'))
-                || w.strip_prefix(field)
-                    .is_some_and(|rest| rest.starts_with('.'))
-        })
+        !written.iter().any(|w| DotPath::overlaps(field, w))
     }
 
     fn constraints_after(node: &DecisionNode, incoming: PathConstraints) -> PathConstraints {
@@ -2643,12 +2644,7 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn locate_nullable_sources(&mut self, topology: &GraphTopology) {
-        let covers = |written: &str, field: &str| {
-            field == written
-                || field
-                    .strip_prefix(written)
-                    .is_some_and(|rest| rest.starts_with('.'))
-        };
+        let covers = |written: &str, field: &str| DotPath::within(field, written);
         let writes = |node: &DecisionNode, field: &str| -> bool {
             let prefixed = |attrs: &TransformAttributes, key: &str| match &attrs.output_path {
                 Some(prefix) => format!("{prefix}.{key}"),

@@ -1,0 +1,633 @@
+// Closures inside expression nodes: map, filter, some, all, none, one, count, flatMap and the
+// aggregates sum/avg/min/max over request arrays, over arrays computed by earlier fields (`$`), and
+// over arrays produced by earlier nodes. Closure semantics themselves live in the expression spec;
+// these suites pin how closure results move through nodes, merges, pass-through and tables.
+
+// ---------------------------------------------------------------------------
+// map over request arrays of every element type.
+{
+  name: "map over request numbers",
+  graph: {nodes: [{expression: "calc", fields: {doubled: "map(xs, # * 2)", labels: "map(xs, `n${#}`)"}}]},
+  cases: [
+    [{xs: [1, 2, 3]}, {doubled: [2, 4, 6], labels: ["n1", "n2", "n3"]}],
+    [{xs: [0.1, -0.5]}, {doubled: [0.2, -1], labels: ["n0.1", "n-0.5"]}],
+    [{xs: [7]}, {doubled: [14], labels: ["n7"]}],
+    [{xs: []}, {doubled: [], labels: []}],
+    [{xs: [1.10]}, {doubled: [2.2], labels: ["n1.10"]}],
+  ],
+}
+
+{
+  name: "map over request strings",
+  graph: {nodes: [{expression: "calc", fields: {up: "map(names, upper(#))", sizes: "map(names, len(#))"}}]},
+  cases: [
+    [{names: ["ann", "bob"]}, {up: ["ANN", "BOB"], sizes: [3, 3]}],
+    [{names: [""]}, {up: [""], sizes: [0]}],
+    [{names: ["é"]}, {up: ["É"], sizes: [1]}, "bug: len counts UTF-8 bytes instead of characters (same as the expression spec)"],
+    [{names: []}, {up: [], sizes: []}],
+  ],
+}
+
+{
+  name: "map over request objects reading members",
+  graph: {nodes: [{expression: "calc", fields: {totals: "map(items, #.price * #.qty)", names: "map(items, #.name)"}}]},
+  cases: [
+    [{items: [{name: "a", price: 10, qty: 2}, {name: "b", price: 0.5, qty: 3}]}, {totals: [20, 1.5], names: ["a", "b"]}],
+    [{items: [{name: "a", price: 1, qty: 0}]}, {totals: [0], names: ["a"]}],
+    [{items: []}, {totals: [], names: []}],
+  ],
+}
+
+{
+  name: "map over objects with missing members yields nulls inside the array",
+  graph: {nodes: [{expression: "calc", fields: {names: "map(items, #.name)", safe: "map(items, #.name ?? '?')"}}]},
+  cases: [
+    [{items: [{name: "a"}, {}]}, {names: ["a", null], safe: ["a", "?"]}],
+    [{items: [{name: null}]}, {names: [null], safe: ["?"]}],
+    [{items: [{}, {}]}, {names: [null, null], safe: ["?", "?"]}],
+    [{items: [{name: "x"}]}, {names: ["x"], safe: ["x"]}],
+  ],
+}
+
+{
+  name: "map over an array holding nulls",
+  graph: {nodes: [{expression: "calc", fields: {kept: "map(xs, #)", filled: "map(xs, # ?? 0)", kinds: "map(xs, type(#))"}}]},
+  cases: [
+    [{xs: [1, null, 3]}, {kept: [1, null, 3], filled: [1, 0, 3], kinds: ["number", "null", "number"]}],
+    [{xs: [null]}, {kept: [null], filled: [0], kinds: ["null"]}],
+    [{xs: ["a", null]}, {kept: ["a", null], filled: ["a", 0], kinds: ["string", "null"]}],
+  ],
+}
+
+{
+  name: "map arithmetic over a null element is an error",
+  graph: {nodes: [{expression: "calc", fields: {out: "map(xs, # * 2)"}}]},
+  cases: [
+    [{xs: [1, 2]}, {out: [2, 4]}],
+    [{xs: [1, null]}, "!error"],
+    [{xs: [null]}, "!error"],
+    [{xs: ["a"]}, "!error"],
+  ],
+}
+
+{
+  name: "map over a missing or non-array input",
+  graph: {nodes: [{expression: "calc", fields: {out: "map(xs, #)"}}]},
+  cases: [
+    [{xs: [1]}, {out: [1]}],
+    [{}, "!error"],
+    [{xs: null}, "!error"],
+    [{xs: "abc"}, "!error"],
+    [{xs: {a: 1}}, "!error"],
+    [{xs: 5}, "!error"],
+  ],
+}
+
+{
+  name: "map guarded with ?? [] tolerates missing arrays",
+  graph: {nodes: [{expression: "calc", fields: {out: "map(xs ?? [], # + 1)", n: "len(xs ?? [])"}}]},
+  cases: [
+    [{xs: [1, 2]}, {out: [2, 3], n: 2}],
+    [{}, {out: [], n: 0}],
+    [{xs: null}, {out: [], n: 0}],
+    [{xs: []}, {out: [], n: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// filter: result keeps original elements, order preserved.
+{
+  name: "filter numbers by a request threshold",
+  graph: {nodes: [{expression: "calc", fields: {big: "filter(xs, # > limit)", n: "len($.big)"}}]},
+  cases: [
+    [{xs: [1, 5, 10], limit: 4}, {big: [5, 10], n: 2}],
+    [{xs: [1, 5, 10], limit: 10}, {big: [], n: 0}],
+    [{xs: [1, 5, 10], limit: -1}, {big: [1, 5, 10], n: 3}],
+    [{xs: [], limit: 0}, {big: [], n: 0}],
+    [{xs: [0.5, 0.25], limit: 0.3}, {big: [0.5], n: 1}],
+  ],
+}
+
+{
+  name: "filter objects keeps whole elements",
+  graph: {nodes: [{expression: "calc", fields: {active: "filter(users, #.active)"}}]},
+  cases: [
+    [{users: [{id: 1, active: true}, {id: 2, active: false}]}, {active: [{id: 1, active: true}]}],
+    [{users: [{id: 1, active: false}]}, {active: []}],
+    [{users: [{id: 1, active: true, tags: ["a"]}]}, {active: [{id: 1, active: true, tags: ["a"]}]}],
+    [{users: []}, {active: []}],
+  ],
+}
+
+{
+  name: "filter with a null-tolerant predicate",
+  graph: {nodes: [{expression: "calc", fields: {present: "filter(xs, # != null)", nulls: "count(xs, # == null)"}}]},
+  cases: [
+    [{xs: [1, null, 2, null]}, {present: [1, 2], nulls: 2}],
+    [{xs: [null]}, {present: [], nulls: 1}],
+    [{xs: []}, {present: [], nulls: 0}],
+    [{xs: ["a", false, 0]}, {present: ["a", false, 0], nulls: 0}],
+  ],
+}
+
+{
+  name: "filter on a missing member compares as null",
+  graph: {nodes: [{expression: "calc", fields: {gold: "filter(xs, #.tier == 'gold')", untiered: "filter(xs, #.tier == null)"}}]},
+  cases: [
+    [{xs: [{tier: "gold"}, {}, {tier: "silver"}]}, {gold: [{tier: "gold"}], untiered: [{}]}],
+    [{xs: [{tier: null}]}, {gold: [], untiered: [{tier: null}]}],
+    [{xs: [{n: 1}]}, {gold: [], untiered: [{n: 1}]}],
+  ],
+}
+
+{
+  name: "filter strings with string functions",
+  graph: {nodes: [{expression: "calc", fields: {a: "filter(words, startsWith(#, 'a'))", long: "filter(words, len(#) > 3)"}}]},
+  cases: [
+    [{words: ["apple", "bee", "avocado", "kiwi"]}, {a: ["apple", "avocado"], long: ["apple", "avocado", "kiwi"]}],
+    [{words: ["", "a"]}, {a: ["a"], long: []}],
+    [{words: []}, {a: [], long: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Quantifiers: some, all, none, one. On an empty array all and none are true, some and one false.
+{
+  name: "quantifiers over request numbers",
+  graph: {nodes: [{expression: "calc", fields: {
+    some: "some(xs, # > 10)",
+    all: "all(xs, # > 10)",
+    none: "none(xs, # > 10)",
+    one: "one(xs, # > 10)",
+  }}]},
+  cases: [
+    [{xs: [1, 20]}, {some: true, all: false, none: false, one: true}],
+    [{xs: [11, 20]}, {some: true, all: true, none: false, one: false}],
+    [{xs: [1, 2]}, {some: false, all: false, none: true, one: false}],
+    [{xs: [11]}, {some: true, all: true, none: false, one: true}],
+    [{xs: []}, {some: false, all: true, none: true, one: false}],
+    [{xs: [10]}, {some: false, all: false, none: true, one: false}],
+  ],
+}
+
+{
+  name: "quantifiers over objects",
+  graph: {nodes: [{expression: "calc", fields: {
+    anyBlocked: "some(accounts, #.status == 'blocked')",
+    allVerified: "all(accounts, #.verified)",
+    noneOverdue: "none(accounts, #.overdue > 0)",
+    onePrimary: "one(accounts, #.primary == true)",
+  }}]},
+  cases: [
+    [
+      {accounts: [{status: "ok", verified: true, overdue: 0, primary: true}, {status: "ok", verified: true, overdue: 0, primary: false}]},
+      {anyBlocked: false, allVerified: true, noneOverdue: true, onePrimary: true},
+    ],
+    [
+      {accounts: [{status: "blocked", verified: false, overdue: 5, primary: true}, {status: "ok", verified: true, overdue: 0, primary: true}]},
+      {anyBlocked: true, allVerified: false, noneOverdue: false, onePrimary: false},
+    ],
+    [{accounts: []}, {anyBlocked: false, allVerified: true, noneOverdue: true, onePrimary: false}],
+    [
+      {accounts: [{status: "ok", verified: true, overdue: 0}]},
+      {anyBlocked: false, allVerified: true, noneOverdue: true, onePrimary: false},
+    ],
+  ],
+}
+
+{
+  name: "quantifiers over strings with membership",
+  graph: {nodes: [{expression: "calc", fields: {
+    risky: "some(countries, # in ['XX', 'YY'])",
+    eu: "all(countries, # in eu)",
+    single: "one(countries, # == home)",
+  }}]},
+  cases: [
+    [{countries: ["DE", "FR"], eu: ["DE", "FR", "IT"], home: "DE"}, {risky: false, eu: true, single: true}],
+    [{countries: ["DE", "XX"], eu: ["DE"], home: "DE"}, {risky: true, eu: false, single: true}],
+    [{countries: ["DE", "DE"], eu: ["DE"], home: "DE"}, {risky: false, eu: true, single: false}],
+    [{countries: [], eu: [], home: "DE"}, {risky: false, eu: true, single: false}],
+  ],
+}
+
+{
+  name: "a quantifier result drives a switch",
+  graph: {
+    nodes: [
+      {expression: "flags", fields: {blocked: "some(items, #.blocked)"}},
+      {switch: "route", when: ["blocked", ""]},
+      {expression: "deny", fields: {decision: "'deny'"}},
+      {expression: "allow", fields: {decision: "'allow'"}},
+    ],
+    edges: ["input -> flags -> route", "route:0 -> deny -> output", "route:1 -> allow -> output"],
+  },
+  cases: [
+    [{items: [{blocked: false}, {blocked: true}]}, {decision: "deny"}],
+    [{items: [{blocked: false}]}, {decision: "allow"}],
+    [{items: []}, {decision: "allow"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// count and aggregates.
+{
+  name: "count with predicates over numbers and objects",
+  graph: {nodes: [{expression: "calc", fields: {neg: "count(xs, # < 0)", all: "count(xs, true)", none: "count(xs, false)"}}]},
+  cases: [
+    [{xs: [-1, 2, -3]}, {neg: 2, all: 3, none: 0}],
+    [{xs: []}, {neg: 0, all: 0, none: 0}],
+    [{xs: [0]}, {neg: 0, all: 1, none: 0}],
+    [{xs: [-0.01]}, {neg: 1, all: 1, none: 0}],
+  ],
+}
+
+{
+  name: "sum, avg, min and max over mapped members",
+  graph: {nodes: [{expression: "calc", fields: {
+    prices: "map(items, #.price)",
+    total: "sum($.prices)",
+    mean: "avg($.prices)",
+    low: "min($.prices)",
+    high: "max($.prices)",
+  }}]},
+  cases: [
+    [{items: [{price: 10}, {price: 20}, {price: 30}]}, {prices: [10, 20, 30], total: 60, mean: 20, low: 10, high: 30}],
+    [{items: [{price: 0.1}, {price: 0.2}]}, {prices: [0.1, 0.2], total: 0.3, mean: 0.15, low: 0.1, high: 0.2}],
+    [{items: [{price: -5}]}, {prices: [-5], total: -5, mean: -5, low: -5, high: -5}],
+  ],
+}
+
+{
+  name: "aggregates over an empty array",
+  graph: {nodes: [{expression: "calc", fields: {total: "sum(xs)", mean: "avg(xs)", low: "min(xs)", high: "max(xs)", n: "count(xs, true)"}}]},
+  cases: [
+    [{xs: []}, "!error", "question: avg/min/max of an empty array fail the whole node (expression spec asks the same); sum and count give 0"],
+    [{xs: [4]}, {total: 4, mean: 4, low: 4, high: 4, n: 1}],
+    [{xs: [1, 2]}, {total: 3, mean: 1.5, low: 1, high: 2, n: 2}],
+  ],
+}
+
+{
+  name: "sum over an array holding null is an error, coalescing first is not",
+  graph: {nodes: [{expression: "calc", fields: {safe: "sum(map(xs, # ?? 0))", raw: "sum(xs)"}}]},
+  cases: [
+    [{xs: [1, 2]}, {safe: 3, raw: 3}],
+    [{xs: [1, null]}, "!error"],
+    [{xs: []}, {safe: 0, raw: 0}],
+  ],
+}
+
+{
+  name: "sum of a filtered map",
+  graph: {nodes: [{expression: "calc", fields: {due: "sum(map(filter(lines, not #.paid), #.amount))"}}]},
+  cases: [
+    [{lines: [{amount: 10, paid: true}, {amount: 5, paid: false}, {amount: 2.5, paid: false}]}, {due: 7.5}],
+    [{lines: [{amount: 10, paid: true}]}, {due: 0}],
+    [{lines: []}, {due: 0}],
+    [{lines: [{amount: 0.1, paid: false}, {amount: 0.2, paid: false}]}, {due: 0.3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// flatMap and nested closures.
+{
+  name: "flatMap flattens one level of per-element arrays",
+  graph: {nodes: [{expression: "calc", fields: {tags: "flatMap(posts, #.tags)", n: "len($.tags)"}}]},
+  cases: [
+    [{posts: [{tags: ["a", "b"]}, {tags: ["c"]}]}, {tags: ["a", "b", "c"], n: 3}],
+    [{posts: [{tags: []}, {tags: ["x"]}]}, {tags: ["x"], n: 1}],
+    [{posts: []}, {tags: [], n: 0}],
+    [{posts: [{tags: [["deep"]]}]}, {tags: [["deep"]], n: 1}],
+  ],
+}
+
+{
+  name: "nested map over a matrix",
+  graph: {nodes: [{expression: "calc", fields: {scaled: "map(rows, map(#, # * 10))", sizes: "map(rows, len(#))"}}]},
+  cases: [
+    [{rows: [[1, 2], [3]]}, {scaled: [[10, 20], [30]], sizes: [2, 1]}],
+    [{rows: [[], [1]]}, {scaled: [[], [10]], sizes: [0, 1]}],
+    [{rows: []}, {scaled: [], sizes: []}],
+  ],
+}
+
+{
+  name: "nested closures with aliases read the outer element",
+  graph: {nodes: [{expression: "calc", fields: {
+    pairs: "map(orders as o, map(o.lines as l, o.id + ':' + l.sku))",
+    big: "filter(orders as o, some(o.lines as l, l.qty > o.limit))",
+  }}]},
+  cases: [
+    [
+      {orders: [{id: "a", limit: 1, lines: [{sku: "x", qty: 1}, {sku: "y", qty: 2}]}, {id: "b", limit: 5, lines: [{sku: "z", qty: 3}]}]},
+      {pairs: [["a:x", "a:y"], ["b:z"]], big: [{id: "a", limit: 1, lines: [{sku: "x", qty: 1}, {sku: "y", qty: 2}]}]},
+    ],
+    [{orders: [{id: "c", limit: 0, lines: []}]}, {pairs: [[]], big: []}],
+    [{orders: []}, {pairs: [], big: []}],
+  ],
+}
+
+{
+  name: "nested closures read request fields from outside the closure",
+  graph: {nodes: [{expression: "calc", fields: {
+    adjusted: "map(groups, map(#, # * rate))",
+    over: "count(groups, some(#, # > cap))",
+  }}]},
+  cases: [
+    [{groups: [[1, 2], [10]], rate: 2, cap: 5}, {adjusted: [[2, 4], [20]], over: 1}],
+    [{groups: [[1], [2]], rate: 0.5, cap: 0}, {adjusted: [[0.5], [1]], over: 2}],
+    [{groups: [], rate: 1, cap: 1}, {adjusted: [], over: 0}],
+  ],
+}
+
+{
+  name: "a closure reading an earlier field through $",
+  graph: {nodes: [{expression: "calc", fields: {
+    threshold: "avg(xs)",
+    above: "filter(xs, # > $.threshold)",
+    shifted: "map(xs, # - $.threshold)",
+  }}]},
+  cases: [
+    [{xs: [1, 2, 3]}, {threshold: 2, above: [3], shifted: [-1, 0, 1]}],
+    [{xs: [4, 4]}, {threshold: 4, above: [], shifted: [0, 0]}],
+    [{xs: [0, 10]}, {threshold: 5, above: [10], shifted: [-5, 5]}],
+  ],
+}
+
+{
+  name: "a closure building objects from elements and request fields",
+  graph: {nodes: [{expression: "calc", fields: {lines: "map(items, {sku: #.sku, total: #.qty * price, currency: currency})"}}]},
+  cases: [
+    [{items: [{sku: "a", qty: 2}], price: 3, currency: "EUR"}, {lines: [{sku: "a", total: 6, currency: "EUR"}]}],
+    [{items: [{sku: "a", qty: 1}, {sku: "b", qty: 0}], price: 1.5, currency: "USD"}, {lines: [{sku: "a", total: 1.5, currency: "USD"}, {sku: "b", total: 0, currency: "USD"}]}],
+    [{items: [], price: 1, currency: "EUR"}, {lines: []}],
+    [{items: [{sku: "a", qty: 1}], price: 1}, {lines: [{sku: "a", total: 1, currency: null}]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Closures over arrays produced by earlier nodes.
+{
+  name: "a downstream node maps over an upstream node's array",
+  graph: {
+    nodes: [
+      {expression: "prices", fields: {list: "map(items, #.price)"}},
+      {expression: "taxed", fields: {gross: "map(list, # * 1.2)", total: "sum(map(list, # * 1.2))"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 10}, {price: 5}]}, {gross: [12, 6], total: 18}],
+    [{items: []}, {gross: [], total: 0}],
+    [{items: [{price: 0.1}]}, {gross: [0.12], total: 0.12}],
+  ],
+}
+
+{
+  name: "a downstream node filters an upstream array through $nodes",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {scores: "map(people, #.score)"}},
+      {expression: "next", fields: {passing: "filter($nodes.base.scores, # >= 50)", allIn: "all($nodes.base.scores, # >= 0)"}},
+    ],
+  },
+  cases: [
+    [{people: [{score: 10}, {score: 60}, {score: 50}]}, {passing: [60, 50], allIn: true}],
+    [{people: [{score: -1}]}, {passing: [], allIn: false}],
+    [{people: []}, {passing: [], allIn: true}],
+  ],
+}
+
+{
+  name: "a downstream node closes over an upstream pass-through array",
+  graph: {
+    nodes: [
+      {expression: "enrich", passThrough: true, fields: {rate: "0.5"}},
+      {expression: "apply", fields: {out: "map(xs, # * rate)"}},
+    ],
+  },
+  cases: [
+    [{xs: [2, 4]}, {out: [1, 2]}],
+    [{xs: []}, {out: []}],
+    [{xs: [0.1]}, {out: [0.05]}],
+  ],
+}
+
+{
+  name: "arrays from two parallel branches combined after a join",
+  graph: {
+    nodes: [
+      {expression: "evens", fields: {e: "filter(xs, # % 2 == 0)"}},
+      {expression: "odds", fields: {o: "filter(xs, # % 2 == 1)"}},
+      {expression: "join", fields: {counts: "[len(e), len(o)]", all: "merge([e, o])"}},
+    ],
+    edges: ["input -> evens -> join", "input -> odds -> join", "join -> output"],
+  },
+  cases: [
+    [{xs: [1, 2, 3, 4]}, {counts: [2, 2], all: [2, 4, 1, 3]}],
+    [{xs: [1]}, {counts: [0, 1], all: [1]}],
+    [{xs: []}, {counts: [0, 0], all: []}],
+  ],
+}
+
+{
+  name: "a loop node output array aggregated by the next node",
+  graph: {
+    nodes: [
+      {expression: "line", executionMode: "loop", inputField: "items", outputPath: "lines", fields: {total: "price * qty"}},
+      {expression: "sum", fields: {grand: "sum(map(lines, #.total))", n: "len(lines)"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 1.5, qty: 2}]}, {grand: 9, n: 2}],
+    [{items: [{price: 1, qty: 1}]}, {grand: 1, n: 1}],
+    [{items: []}, {grand: 0, n: 0}],
+  ],
+}
+
+{
+  name: "a collect table's rows reduced by a closure",
+  graph: {
+    nodes: [
+      {table: "fees", hit: "collect", inputs: ["amount"], outputs: ["name", "fee"], rules: [
+        ["> 0", "'base'", "1"],
+        ["> 100", "'large'", "amount * 0.01"],
+        ["> 1000", "'huge'", "5"],
+      ], outputPath: "fees"},
+      {expression: "total", fields: {fee: "sum(map(fees, #.fee))", names: "map(fees, #.name)"}},
+    ],
+  },
+  cases: [
+    [{amount: 50}, {fee: 1, names: ["base"]}],
+    [{amount: 200}, {fee: 3, names: ["base", "large"]}],
+    [{amount: 2000}, {fee: 26, names: ["base", "large", "huge"]}],
+    [{amount: 0}, {fee: 0, names: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Closure results flowing into decision tables.
+{
+  name: "a count feeds a first-hit table",
+  graph: {
+    nodes: [
+      {expression: "stats", fields: {late: "count(payments, #.daysLate > 30)"}},
+      {table: "band", inputs: ["late"], outputs: ["risk"], rules: [
+        ["0", "'low'"],
+        ["[1..2]", "'medium'"],
+        ["", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{payments: []}, {risk: "low"}],
+    [{payments: [{daysLate: 10}, {daysLate: 31}]}, {risk: "medium"}],
+    [{payments: [{daysLate: 40}, {daysLate: 31}]}, {risk: "medium"}],
+    [{payments: [{daysLate: 40}, {daysLate: 31}, {daysLate: 99}]}, {risk: "high"}],
+    [{payments: [{daysLate: 30}]}, {risk: "low"}],
+  ],
+}
+
+{
+  name: "a boolean quantifier feeds a table column",
+  graph: {
+    nodes: [
+      {expression: "flags", fields: {anyMinor: "some(drivers, #.age < 18)", allLicensed: "all(drivers, #.licensed)"}},
+      {table: "eligible", inputs: ["anyMinor", "allLicensed"], outputs: ["ok", "reason"], rules: [
+        ["true", "", "false", "'minor driver'"],
+        ["", "false", "false", "'unlicensed'"],
+        ["", "", "true", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{drivers: [{age: 30, licensed: true}]}, {ok: true, reason: "ok"}],
+    [{drivers: [{age: 16, licensed: true}]}, {ok: false, reason: "minor driver"}],
+    [{drivers: [{age: 30, licensed: false}]}, {ok: false, reason: "unlicensed"}],
+    [{drivers: []}, {ok: true, reason: "ok"}],
+  ],
+}
+
+{
+  name: "a mapped array checked by table cells with membership",
+  graph: {
+    nodes: [
+      {expression: "codes", fields: {codes: "map(items, #.code)"}},
+      {table: "t", inputs: ["codes"], outputs: ["hasA"], rules: [
+        ["'A' in $", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{code: "A"}, {code: "B"}]}, {hasA: true}],
+    [{items: [{code: "B"}]}, {hasA: false}],
+    [{items: []}, {hasA: false}],
+  ],
+}
+
+{
+  name: "a table input column is a closure over the node input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["sum(map(items, #.qty))", "len(items)"], outputs: ["size"], rules: [
+        ["> 10", "", "'bulk'"],
+        ["", "> 3", "'many'"],
+        ["", "", "'small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 11}]}, {size: "bulk"}],
+    [{items: [{qty: 1}, {qty: 1}, {qty: 1}, {qty: 1}]}, {size: "many"}],
+    [{items: [{qty: 2}]}, {size: "small"}],
+    [{items: []}, {size: "small"}],
+  ],
+}
+
+{
+  name: "table output cells computed with closures",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["picked", "count"], rules: [
+        ["'cheap'", "filter(prices, # < 10)", "count(prices, # < 10)"],
+        ["'dear'", "filter(prices, # >= 10)", "count(prices, # >= 10)"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "cheap", prices: [5, 15, 9.99]}, {picked: [5, 9.99], count: 2}],
+    [{kind: "dear", prices: [5, 15, 10]}, {picked: [15, 10], count: 2}],
+    [{kind: "dear", prices: []}, {picked: [], count: 0}],
+    [{kind: "other", prices: [1]}, {}],
+  ],
+}
+
+{
+  name: "a table in a loop over a mapped array, summed afterwards",
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {lines: "map(items, {amount: #.price * #.qty})"}},
+      {table: "disc", executionMode: "loop", inputField: "lines", outputPath: "discounts", inputs: ["amount"], outputs: ["d"], rules: [
+        [">= 100", "amount * 0.1"],
+        ["", "0"],
+      ]},
+      {expression: "total", fields: {discount: "sum(map(discounts, #.d))"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 50, qty: 2}, {price: 10, qty: 1}]}, {discount: 10}],
+    [{items: [{price: 5, qty: 1}]}, {discount: 0}],
+    [{items: []}, {discount: 0}],
+    [{items: [{price: 200, qty: 1}, {price: 300, qty: 1}]}, {discount: 50}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Closures and pass-through / null results.
+{
+  name: "a closure field replacing an input array under pass-through",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {xs: "filter(xs, # > 0)"}}]},
+  cases: [
+    [{xs: [-1, 2, 3], keep: "k"}, {xs: [2, 3], keep: "k"}],
+    [{xs: [-1]}, {xs: []}],
+    [{xs: []}, {xs: []}],
+  ],
+}
+
+{
+  name: "a closure producing an array of nulls keeps the nulls",
+  graph: {nodes: [{expression: "calc", fields: {out: "map(xs, null)"}}]},
+  cases: [
+    [{xs: [1, 2]}, {out: [null, null]}],
+    [{xs: []}, {out: []}],
+  ],
+}
+
+{
+  name: "a closure result read with an index",
+  graph: {nodes: [{expression: "calc", fields: {first: "filter(xs, # > 1)[0]", last: "map(xs, # * 2)[len(xs) - 1]"}}]},
+  cases: [
+    [{xs: [1, 2, 3]}, {first: 2, last: 6}],
+    [{xs: [5]}, {first: 5, last: 10}],
+    [{xs: [1]}, {last: 2}],
+  ],
+}
+
+{
+  name: "a closure over a range literal",
+  graph: {nodes: [{expression: "calc", fields: {squares: "map([1..n], # * #)"}}]},
+  cases: [
+    [{n: 3}, {squares: [1, 4, 9]}],
+    [{n: 1}, {squares: [1]}],
+  ],
+}
+
+{
+  name: "closures over a mixed-type array with type guards",
+  graph: {nodes: [{expression: "calc", fields: {nums: "filter(xs, type(#) == 'number')", strs: "count(xs, type(#) == 'string')"}}]},
+  cases: [
+    [{xs: [1, "a", true, null, 2.5, {}]}, {nums: [1, 2.5], strs: 1}],
+    [{xs: ["a", "b"]}, {nums: [], strs: 2}],
+    [{xs: []}, {nums: [], strs: 0}],
+  ],
+}

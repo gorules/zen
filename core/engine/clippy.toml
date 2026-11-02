@@ -1,0 +1,11 @@
+disallowed-types = [
+    { path = "zen_expression::Isolate", reason = "default builds evaluate policies and graphs on the lane Session; the stack VM Isolate is driver-only" },
+    { path = "zen_expression::OpcodeCache", reason = "lane Programs replace the stack VM opcode cache outside the driver feature" },
+]
+disallowed-methods = [
+    { path = "zen_expression::Isolate::run_standard", reason = "use lane::Session::run_standard" },
+    { path = "zen_expression::Isolate::run_unary", reason = "use lane::Session::run_unary" },
+    { path = "zen_expression::Isolate::set_reference", reason = "use lane::Session::set_reference" },
+    { path = "zen_expression::Isolate::compile_standard", reason = "use lane::LaneProgram::compile_exact" },
+    { path = "zen_expression::Isolate::compile_unary", reason = "use lane::LaneProgram::compile_exact" },
+]

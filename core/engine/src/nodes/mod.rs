@@ -7,8 +7,11 @@ pub mod expression;
 mod extensions;
 pub mod function;
 pub mod input;
+#[cfg(feature = "driver")]
+mod isolate;
 pub mod output;
 mod result;
+#[cfg(feature = "driver")]
 pub(crate) mod transform_attributes;
 pub(crate) mod validator_cache;
 pub mod variable_json;
@@ -18,4 +21,4 @@ pub use definition::NodeHandler;
 pub(crate) use definition::{NodeDataType, TraceDataType};
 pub use extensions::NodeHandlerExtensions;
 pub use function::http_handler;
-pub use result::{NodeError, NodeRequest, NodeResponse, NodeResult};
+pub use result::{NodeError, NodeResponse, NodeResult};

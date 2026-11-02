@@ -1,0 +1,255 @@
+// Minimal reproductions for the generated chapters 33-35.
+//
+// The generated chapters differential-test the compiled policy engine (single, batch and
+// DecisionEngine) against the driver. Over chapters 33-35 (3,496 cases) and three further
+// scans of 150 suites each (seeds 910000, 920000 and 930000, about 9,500 cases, not kept) the
+// compiled engine produced no mismatch, so there is no compiled root cause to shrink here.
+//
+// What the generator did hit are policies that are refused before evaluation: candidates with
+// error diagnostics are regenerated, and the suites below are those refusals shrunk to their
+// root cause, with the output the policy is meant to produce. Not representable here: a
+// per-member block writing a filter over its own relationship (`item.peers = filter(o.items,
+// #.n > 0)` with a matching member) makes every member contain itself; the driver's result is
+// cyclic and the process aborts with a stack overflow, which the runner cannot survive.
+
+// --- An object-valued member computed read through `#` ----------------------------------------
+// A per-member expression writes an object; reading one of its fields directly on the member
+// type-checks, but reading it on `#` inside a closure over the relationship is reported as
+// UNDEFINED_VARIABLE and refuses the policy. The workspace path (diagnostics pinned) evaluates
+// it to the intended result, so only the type checker is wrong.
+
+{
+  name: "object member computed summed over the members",
+  policy: {
+    models: {o: {items: "item[]"}, item: {n: "number"}},
+    blocks: [
+      {expression: "item.info", value: "{a: item.n * 2}"},
+      {expression: "o.sum", value: "sum(map(o.items, #.info.a))"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{n: 1}, {n: 2}]}}, {o: {items: [{n: 1, info: {a: 2}}, {n: 2, info: {a: 4}}], sum: 6}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE]: the type checker does not see `info.a` on `#` although `item.info` is a member computed"],
+    [{o: {items: []}}, {o: {items: [], sum: 0}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for `#.info.a`"],
+    [{o: {items: [{n: -1.5}]}}, {o: {items: [{n: -1.5, info: {a: -3}}], sum: -3}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for `#.info.a`"],
+  ],
+}
+
+{
+  name: "object member computed field in a quantifier",
+  policy: {
+    models: {o: {items: "item[]"}, item: {n: "number"}},
+    blocks: [
+      {expression: "item.info", value: "{big: item.n > 10, n: item.n}"},
+      {expression: "o.anyBig", value: "some(o.items, #.info.big)"},
+      {expression: "o.bigCount", value: "count(o.items, #.info.big)"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{n: 20}, {n: 5}]}}, {o: {items: [{n: 20, info: {big: true, n: 20}}, {n: 5, info: {big: false, n: 5}}], anyBig: true, bigCount: 1}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for `#.info.big`"],
+    [{o: {items: [{n: 1}]}}, {o: {items: [{n: 1, info: {big: false, n: 1}}], anyBig: false, bigCount: 0}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for `#.info.big`"],
+    [{o: {items: []}}, {o: {items: [], anyBig: false, bigCount: 0}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for `#.info.big`"],
+  ],
+}
+
+// The same object read on the member itself is accepted.
+{
+  name: "object member computed read on the member",
+  policy: {
+    models: {o: {items: "item[]"}, item: {n: "number"}},
+    blocks: [
+      {expression: "item.info", value: "{a: item.n * 2}"},
+      {expression: "item.b", value: "item.info.a + 1"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{n: 1}, {n: 2}]}}, {o: {items: [{n: 1, info: {a: 2}, b: 3}, {n: 2, info: {a: 4}, b: 5}]}}],
+    [{o: {items: []}}, {o: {items: []}}],
+  ],
+}
+
+// A nested write path (`item.g.x`) read on `#` is accepted; only object values are lost.
+{
+  name: "nested member write path read through # in a closure",
+  policy: {
+    models: {o: {items: "item[]"}, item: {n: "number"}},
+    blocks: [
+      {expression: "item.g.x", value: "item.n * 2"},
+      {expression: "o.sum", value: "sum(map(o.items, #.g.x))"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{n: 1}, {n: 2}]}}, {o: {items: [{n: 1, g: {x: 2}}, {n: 2, g: {x: 4}}], sum: 6}}],
+    [{o: {items: []}}, {o: {items: [], sum: 0}}],
+  ],
+}
+
+// --- False cycles through a nested write group ------------------------------------------------
+// Two properties written under one group (`o.g.a`, `o.g.c`) where the second depends on the first
+// through a property outside the group (`o.g.a -> o.b -> o.g.c`) are reported as
+// CYCLIC_DEPENDENCY: the dependency analysis treats the group as one node. There is no cycle at
+// property level, and a direct chain inside the group (`o.g.c = o.g.a * 2`) is accepted.
+
+{
+  name: "nested group written before and after an outside property",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {expression: "o.g.a", value: "o.n + 1"},
+      {expression: "o.b", value: "o.g.a + 1"},
+      {expression: "o.g.c", value: "o.b * 2"},
+    ],
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1, g: {a: 2, c: 6}, b: 3}}, "bug: refused with CompilationErrors [CYCLIC_DEPENDENCY]: o.g.a -> o.b -> o.g.c has no cycle; the group o.g is treated as one node"],
+    [{o: {n: -1}}, {o: {n: -1, g: {a: 0, c: 2}, b: 1}}, "bug: false CYCLIC_DEPENDENCY through the group o.g"],
+    [{o: {n: 0.5}}, {o: {n: 0.5, g: {a: 1.5, c: 5}, b: 2.5}}, "bug: false CYCLIC_DEPENDENCY through the group o.g"],
+  ],
+}
+
+{
+  name: "nested top-level group written before and after an outside property",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {expression: "g.a", value: "o.n + 1"},
+      {expression: "b", value: "g.a + 1"},
+      {expression: "g.c", value: "b * 2"},
+    ],
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1}, g: {a: 2, c: 6}, b: 3}, "bug: refused with CompilationErrors [CYCLIC_DEPENDENCY]: g.a -> b -> g.c has no cycle"],
+    [{o: {n: 10}}, {o: {n: 10}, g: {a: 11, c: 24}, b: 12}, "bug: false CYCLIC_DEPENDENCY through the group g"],
+  ],
+}
+
+{
+  name: "nested member group written before and after an outside member property",
+  policy: {
+    models: {o: {items: "item[]"}, item: {n: "number"}},
+    blocks: [
+      {expression: "item.g.a", value: "item.n + 1"},
+      {expression: "item.b", value: "item.g.a + 1"},
+      {expression: "item.g.c", value: "item.b * 2"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{n: 1}, {n: 2}]}}, {o: {items: [{n: 1, g: {a: 2, c: 6}, b: 3}, {n: 2, g: {a: 3, c: 8}, b: 4}]}}, "bug: refused with CompilationErrors [CYCLIC_DEPENDENCY]: item.g.a -> item.b -> item.g.c has no cycle"],
+    [{o: {items: []}}, {o: {items: []}}, "bug: false CYCLIC_DEPENDENCY through the member group item.g"],
+  ],
+}
+
+{
+  name: "nested group written by a table, then by an expression downstream",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {table: "t", inputs: ["o.n"], outputs: ["o.g.a"], rules: [["> 0", "o.n + 1"], ["", "0"]]},
+      {expression: "o.b", value: "o.g.a + 1"},
+      {expression: "o.g.c", value: "o.b * 2"},
+    ],
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1, g: {a: 2, c: 6}, b: 3}}, "bug: refused with CompilationErrors [CYCLIC_DEPENDENCY]: o.g.a -> o.b -> o.g.c has no cycle"],
+    [{o: {n: -4}}, {o: {n: -4, g: {a: 0, c: 2}, b: 1}}, "bug: false CYCLIC_DEPENDENCY through the group o.g"],
+  ],
+}
+
+// Accepted neighbours: a direct chain inside one group, and the same chain over two groups.
+{
+  name: "nested group chained directly is accepted",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {expression: "o.g.a", value: "o.n + 1"},
+      {expression: "o.g.c", value: "o.g.a * 2"},
+    ],
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1, g: {a: 2, c: 4}}}],
+    [{o: {n: -1}}, {o: {n: -1, g: {a: 0, c: 0}}}],
+  ],
+}
+
+{
+  name: "the same chain over two groups is accepted",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {expression: "o.g.a", value: "o.n + 1"},
+      {expression: "o.b", value: "o.g.a + 1"},
+      {expression: "o.h.c", value: "o.b * 2"},
+    ],
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1, g: {a: 2}, b: 3, h: {c: 6}}}],
+    [{o: {n: 0}}, {o: {n: 0, g: {a: 1}, b: 2, h: {c: 4}}}],
+  ],
+}
+
+// --- Comparing a literal union with a literal outside it ---------------------------------------
+// A string computed from literals only (`o.f ? 'a' : 'b'`) is typed as the union of those
+// literals; comparing it with any other literal is reported as UNDEFINED_VARIABLE and refuses the
+// policy. The comparison is ordinary code (always false here, but the value is data-dependent in
+// real policies where an arm is added later), and the error code names no variable.
+
+{
+  name: "computed literal union compared with an outside literal",
+  policy: {
+    models: {o: {f: "boolean"}},
+    blocks: [
+      {expression: "o.k", value: "o.f ? 'a' : 'b'"},
+      {expression: "o.x", value: "o.k == 'c'"},
+      {expression: "o.y", value: "o.k != 'c'"},
+    ],
+  },
+  cases: [
+    [{o: {f: true}}, {o: {f: true, k: "a", x: false, y: true}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for comparing the literal union 'a'|'b' with 'c'"],
+    [{o: {f: false}}, {o: {f: false, k: "b", x: false, y: true}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for comparing the literal union 'a'|'b' with 'c'"],
+  ],
+}
+
+{
+  name: "inline literal union compared with an outside literal",
+  policy: {
+    models: {o: {f: "boolean", n: "number"}},
+    blocks: [
+      {expression: "o.x", value: "(o.f ? 'a' : 'b') == 'c' or o.n > 1"},
+    ],
+  },
+  cases: [
+    [{o: {f: true, n: 2}}, {o: {f: true, n: 2, x: true}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for comparing the literal union 'a'|'b' with 'c'"],
+    [{o: {f: false, n: 0}}, {o: {f: false, n: 0, x: false}}, "bug: refused with CompilationErrors [UNDEFINED_VARIABLE] for comparing the literal union 'a'|'b' with 'c'"],
+  ],
+}
+
+// Comparing with a member of the union is accepted.
+{
+  name: "literal union compared with one of its members",
+  policy: {
+    models: {o: {f: "boolean"}},
+    blocks: [
+      {expression: "o.k", value: "o.f ? 'a' : 'b'"},
+      {expression: "o.x", value: "o.k == 'a'"},
+    ],
+  },
+  cases: [
+    [{o: {f: true}}, {o: {f: true, k: "a", x: true}}],
+    [{o: {f: false}}, {o: {f: false, k: "b", x: false}}],
+  ],
+}
+
+// A declared enum compared with a value outside it is refused the same way. Flagging a typo
+// against a declared enum may be intended, but the code is UNDEFINED_VARIABLE.
+{
+  name: "declared enum compared with a value outside it",
+  policy: {
+    models: {o: {kind: "string(retail|corporate)"}},
+    blocks: [
+      {expression: "o.x", value: "o.kind != 'high'"},
+    ],
+  },
+  cases: [
+    [{o: {kind: "retail"}}, "!error: CompilationErrors [\"UNDEFINED_VARIABLE\"]", "question: an enum compared with a non-member literal is refused as UNDEFINED_VARIABLE; is an error meant here (likely typo), and with which code?"],
+    [{o: {kind: "corporate"}}, "!error: CompilationErrors [\"UNDEFINED_VARIABLE\"]", "question: enum vs non-member literal refused as UNDEFINED_VARIABLE"],
+  ],
+}

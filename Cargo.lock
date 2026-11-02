@@ -6057,6 +6057,7 @@ dependencies = [
  "nohash-hasher",
  "once_cell",
  "petgraph",
+ "recursive",
  "reqsign",
  "reqwest 0.12.28",
  "rquickjs",

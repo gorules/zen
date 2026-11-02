@@ -1,8 +1,9 @@
 use crate::nodes::variable_json::VariableJson;
-use ahash::HashMap;
+use ahash::{AHasher, HashMap};
 use anyhow::Context;
 use jsonschema::Validator;
 use serde_json::Value;
+use std::hash::Hasher;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Default, Debug)]
@@ -10,13 +11,15 @@ pub struct ValidatorCache {
     inner: Arc<RwLock<HashMap<u64, Arc<Validator<VariableJson>>>>>,
 }
 
-impl PartialEq for ValidatorCache {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
 impl ValidatorCache {
+    pub(crate) fn key(id: &str, name: &str, salt: u64) -> u64 {
+        let mut hasher = AHasher::default();
+        hasher.write(id.as_bytes());
+        hasher.write(name.as_bytes());
+        hasher.write_u64(salt);
+        hasher.finish()
+    }
+
     pub fn get(&self, key: u64) -> Option<Arc<Validator<VariableJson>>> {
         let read = self.inner.read().ok()?;
         read.get(&key).cloned()
@@ -36,15 +39,17 @@ impl ValidatorCache {
             .write()
             .ok()
             .context("Failed to acquire lock on validator cache")?;
-        let validator = Arc::new(
-            jsonschema::options_for::<VariableJson>()
-                .with_draft(jsonschema::Draft::Draft7)
-                .with_format("date", zen_expression::DateValue::is_text)
-                .with_format("date-time", zen_expression::DateValue::is_text)
-                .build(schema)?,
-        );
+        let validator = Arc::new(Self::build(schema)?);
         w_shared.insert(key, validator.clone());
 
         Ok(validator)
+    }
+
+    pub(crate) fn build(schema: &Value) -> anyhow::Result<Validator<VariableJson>> {
+        Ok(jsonschema::options_for::<VariableJson>()
+            .with_draft(jsonschema::Draft::Draft7)
+            .with_format("date", zen_expression::DateValue::is_text)
+            .with_format("date-time", zen_expression::DateValue::is_text)
+            .build(schema)?)
     }
 }

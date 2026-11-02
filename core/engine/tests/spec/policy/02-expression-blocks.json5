@@ -1,0 +1,675 @@
+// Expression blocks: `{key, value}` writes the value of one expression to one property path.
+//
+// The key is the computed property. The value is any expression over inputs and other computed
+// properties. A block runs once (singleton entities) and its result is written at the key,
+// whatever its type, including null. A runtime error in the expression fails the evaluation.
+// Each computed property has exactly one writer.
+
+// ---------------------------------------------------------------------------------------------
+// Result types: the written value keeps the type the expression produced.
+
+{
+  name: "a number result",
+  policy: {
+    models: {item: {price: "number", qty: "number"}},
+    blocks: [{expression: "item.total", value: "item.price * item.qty"}],
+  },
+  cases: [
+    [{item: {price: 2.5, qty: 4}}, {item: {price: 2.5, qty: 4, total: 10}}],
+    [{item: {price: 0, qty: 4}}, {item: {price: 0, qty: 4, total: 0}}],
+    [{item: {price: -1.25, qty: 3}}, {item: {price: -1.25, qty: 3, total: -3.75}}],
+    [{item: {price: 0.1, qty: 0.1}}, {item: {price: 0.1, qty: 0.1, total: 0.01}}],
+  ],
+}
+
+{
+  name: "a string result",
+  policy: {
+    models: {person: {first: "string", last: "string"}},
+    blocks: [{expression: "person.full", value: "person.first + ' ' + person.last"}],
+  },
+  cases: [
+    [{person: {first: "Ada", last: "Lovelace"}}, {person: {first: "Ada", last: "Lovelace", full: "Ada Lovelace"}}],
+    [{person: {first: "", last: ""}}, {person: {first: "", last: "", full: " "}}],
+    [{person: {first: "Zoë", last: "Ñ"}}, {person: {first: "Zoë", last: "Ñ", full: "Zoë Ñ"}}],
+  ],
+}
+
+{
+  name: "a boolean result",
+  policy: {
+    models: {person: {age: "number", member: "boolean"}},
+    blocks: [{expression: "person.eligible", value: "person.age >= 21 and person.member"}],
+  },
+  cases: [
+    [{person: {age: 21, member: true}}, {person: {age: 21, member: true, eligible: true}}],
+    [{person: {age: 21, member: false}}, {person: {age: 21, member: false, eligible: false}}],
+    [{person: {age: 20, member: true}}, {person: {age: 20, member: true, eligible: false}}],
+  ],
+}
+
+{
+  name: "an array result",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.doubled", value: "map(cart.prices, # * 2)"}],
+  },
+  cases: [
+    [{cart: {prices: [1, 2]}}, {cart: {prices: [1, 2], doubled: [2, 4]}}],
+    [{cart: {prices: []}}, {cart: {prices: [], doubled: []}}],
+    [{cart: {prices: [0.5]}}, {cart: {prices: [0.5], doubled: [1]}}],
+  ],
+}
+
+{
+  name: "an object result",
+  policy: {
+    models: {person: {first: "string", age: "number"}},
+    blocks: [{expression: "person.summary", value: "{name: person.first, adult: person.age >= 18}"}],
+  },
+  cases: [
+    [{person: {first: "Ann", age: 30}}, {person: {first: "Ann", age: 30, summary: {name: "Ann", adult: true}}}],
+    [{person: {first: "Bo", age: 3}}, {person: {first: "Bo", age: 3, summary: {name: "Bo", adult: false}}}],
+  ],
+}
+
+{
+  name: "a literal result does not depend on input",
+  policy: {
+    models: {person: {age: "number?"}},
+    blocks: [
+      {expression: "constants.n", value: "42"},
+      {expression: "constants.s", value: "'fixed'"},
+      {expression: "constants.b", value: "false"},
+      {expression: "constants.list", value: "[1, 2, 3]"},
+    ],
+  },
+  cases: [
+    [{}, {constants: {n: 42, s: "fixed", b: false, list: [1, 2, 3]}}],
+    [{person: {age: 1}}, {person: {age: 1}, constants: {n: 42, s: "fixed", b: false, list: [1, 2, 3]}}],
+  ],
+}
+
+{
+  name: "a date result",
+  policy: {
+    models: {loan: {start: "date", months: "number"}},
+    blocks: [{expression: "loan.endText", value: "d(loan.start).add(loan.months, 'month').format('%Y-%m-%d')"}],
+  },
+  cases: [
+    [{loan: {start: "2025-01-31", months: 1}}, {loan: {start: date("2025-01-31"), months: 1, endText: "2025-02-28"}}],
+    [{loan: {start: "2024-02-29", months: 12}}, {loan: {start: date("2024-02-29"), months: 12, endText: "2025-02-28"}}],
+    [{loan: {start: "2025-03-20", months: 0}}, {loan: {start: date("2025-03-20"), months: 0, endText: "2025-03-20"}}],
+  ],
+}
+
+{
+  name: "a result of mixed types is a compile error",
+  policy: {
+    models: {item: {kind: "string(n|s|b)"}},
+    blocks: [{expression: "item.v", value: "item.kind == 'n' ? 1 : item.kind == 's' ? 'one' : true"}],
+  },
+  cases: [
+    [{item: {kind: "n"}}, "!error"],
+    [{item: {kind: "s"}}, "!error"],
+  ],
+}
+
+{
+  name: "a result that is a value or null",
+  policy: {
+    models: {item: {kind: "string(n|s|b)"}},
+    blocks: [{expression: "item.v", value: "item.kind == 'n' ? 1 : item.kind == 's' ? 2 : null"}],
+  },
+  cases: [
+    [{item: {kind: "n"}}, {item: {kind: "n", v: 1}}],
+    [{item: {kind: "s"}}, {item: {kind: "s", v: 2}}],
+    [{item: {kind: "b"}}, {item: {kind: "b", v: null}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Null results: a null value is written as null (the key is present in the output).
+
+{
+  name: "a null literal is written as null",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.nothing", value: "null"}],
+  },
+  cases: [
+    [{item: {price: 1}}, {item: {price: 1, nothing: null}}],
+  ],
+}
+
+{
+  name: "a null result from an optional input is written",
+  policy: {
+    models: {item: {discount: "number?"}},
+    blocks: [{expression: "item.discountCopy", value: "item.discount"}],
+  },
+  cases: [
+    [{item: {}}, {item: {discountCopy: null}}],
+    [{item: {discount: null}}, {item: {discount: null, discountCopy: null}}],
+    [{item: {discount: 0}}, {item: {discount: 0, discountCopy: 0}}],
+  ],
+}
+
+{
+  name: "a conditional null result",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.premium", value: "item.price > 100 ? 'yes' : null"}],
+  },
+  cases: [
+    [{item: {price: 150}}, {item: {price: 150, premium: "yes"}}],
+    [{item: {price: 50}}, {item: {price: 50, premium: null}}],
+    [{item: {price: 100}}, {item: {price: 100, premium: null}}],
+  ],
+}
+
+{
+  name: "arithmetic on an optional input without a fallback is a compile error",
+  policy: {
+    models: {item: {discount: "number?"}},
+    blocks: [{expression: "item.half", value: "item.discount / 2"}],
+  },
+  cases: [
+    [{item: {discount: 10}}, "!error"],
+    [{item: {discount: null}}, "!error"],
+    [{item: {}}, "!error"],
+  ],
+}
+
+{
+  name: "a null-coalesced optional input",
+  policy: {
+    models: {item: {discount: "number?"}},
+    blocks: [{expression: "item.half", value: "(item.discount ?? 0) / 2"}],
+  },
+  cases: [
+    [{item: {discount: 10}}, {item: {discount: 10, half: 5}}],
+    [{item: {discount: null}}, {item: {discount: null, half: 0}}],
+    [{item: {}}, {item: {half: 0}}],
+  ],
+}
+
+{
+  name: "a read of an undeclared key of an extra input object",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.copy", value: "item.price"}],
+  },
+  cases: [
+    [{item: {price: 1, junk: 2}}, {item: {price: 1, junk: 2, copy: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Runtime errors: an expression that fails at runtime fails the whole evaluation
+// (ExpressionFailed); no partial output is returned.
+
+{
+  name: "division by zero gives null, not an error",
+  policy: {
+    models: {ratio: {a: "number", b: "number"}},
+    blocks: [{expression: "ratio.q", value: "ratio.a / ratio.b"}],
+  },
+  cases: [
+    [{ratio: {a: 1, b: 4}}, {ratio: {a: 1, b: 4, q: 0.25}}],
+    [{ratio: {a: 1, b: 0}}, {ratio: {a: 1, b: 0, q: null}}],
+    [{ratio: {a: 0, b: 0}}, {ratio: {a: 0, b: 0, q: null}}],
+    [{ratio: {a: -3, b: 2}}, {ratio: {a: -3, b: 2, q: -1.5}}],
+  ],
+}
+
+{
+  name: "a failing builtin call fails the evaluation",
+  policy: {
+    models: {data: {text: "string"}},
+    blocks: [{expression: "data.n", value: "number(data.text)"}],
+  },
+  cases: [
+    [{data: {text: "12.5"}}, {data: {text: "12.5", n: 12.5}}],
+    [{data: {text: "abc"}}, "!error"],
+    [{data: {text: ""}}, "!error"],
+    [{data: {text: "-0.5"}}, {data: {text: "-0.5", n: -0.5}}],
+  ],
+}
+
+{
+  name: "the runtime error names the failing block",
+  policy: {
+    models: {data: {text: "string"}},
+    blocks: [{id: "parse", expression: "data.n", value: "number(data.text)"}],
+  },
+  cases: [
+    [{data: {text: "abc"}}, "!error: parse"],
+    [{data: {text: "abc"}}, "!error: ExpressionFailed"],
+    [{data: {text: "7"}}, {data: {text: "7", n: 7}}],
+  ],
+}
+
+{
+  name: "an error in one block fails the evaluation even if other blocks succeed",
+  policy: {
+    models: {data: {text: "string", k: "number"}},
+    blocks: [
+      {expression: "data.double", value: "data.k * 2"},
+      {expression: "data.n", value: "number(data.text)"},
+    ],
+  },
+  cases: [
+    [{data: {text: "x", k: 1}}, "!error"],
+    [{data: {text: "1", k: 1}}, {data: {text: "1", k: 1, double: 2, n: 1}}],
+  ],
+}
+
+{
+  name: "an error in a block that feeds another block fails the evaluation",
+  policy: {
+    models: {data: {text: "string"}},
+    blocks: [
+      {expression: "data.n", value: "number(data.text)"},
+      {expression: "data.big", value: "data.n > 1"},
+    ],
+  },
+  cases: [
+    [{data: {text: "x"}}, "!error"],
+    [{data: {text: "1.5"}}, {data: {text: "1.5", n: 1.5, big: true}}],
+    [{data: {text: "0.5"}}, {data: {text: "0.5", n: 0.5, big: false}}],
+  ],
+}
+
+{
+  name: "an error in a branch that is not taken does not fail",
+  policy: {
+    models: {ratio: {a: "number", b: "number"}},
+    blocks: [{expression: "ratio.q", value: "ratio.b == 0 ? number('bad') : ratio.a / ratio.b"}],
+  },
+  cases: [
+    [{ratio: {a: 1, b: 0}}, "!error"],
+    [{ratio: {a: 1, b: 2}}, {ratio: {a: 1, b: 2, q: 0.5}}],
+    [{ratio: {a: 3, b: 3}}, {ratio: {a: 3, b: 3, q: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Compile errors: a policy with an invalid expression, an undefined read or a type mismatch has
+// error diagnostics and is not evaluated.
+
+{
+  name: "a syntax error is a compile error",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.bad", value: "item.price +"}],
+  },
+  cases: [
+    [{item: {price: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a read of an undeclared entity property is a compile error",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.copy", value: "item.cost"}],
+  },
+  cases: [
+    [{item: {price: 1}}, "!error"],
+    [{item: {price: 1, cost: 5}}, "!error"],
+  ],
+}
+
+{
+  name: "a read of an undeclared top-level name is a compile error",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [{expression: "item.copy", value: "missingThing"}],
+  },
+  cases: [
+    [{item: {price: 1}}, "!error"],
+    [{item: {price: 1}, missingThing: 3}, "!error"],
+  ],
+}
+
+{
+  name: "a type mismatch is a compile error",
+  policy: {
+    models: {item: {price: "number", name: "string"}},
+    blocks: [{expression: "item.bad", value: "item.price - item.name"}],
+  },
+  cases: [
+    [{item: {price: 1, name: "x"}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Writes to entity properties: the key is `entity.property`; the value lands on the entity
+// object from the input.
+
+{
+  name: "two blocks write two properties of one entity",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.highIncome", value: "customer.income > 50000"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, income: 60000}}, {customer: {age: 30, income: 60000, adult: true, highIncome: true}}],
+    [{customer: {age: 10, income: 0}}, {customer: {age: 10, income: 0, adult: false, highIncome: false}}],
+  ],
+}
+
+{
+  name: "blocks write properties of two different entities",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "order.large", value: "order.total > 100"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30}, order: {total: 200}}, {customer: {age: 30, adult: true}, order: {total: 200, large: true}}],
+    [{customer: {age: 3}, order: {total: 2}}, {customer: {age: 3, adult: false}, order: {total: 2, large: false}}],
+  ],
+}
+
+{
+  name: "a block on one entity reads another entity",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [{expression: "order.needsReview", value: "customer.age < 21 and order.total > 500"}],
+  },
+  cases: [
+    [{customer: {age: 19}, order: {total: 600}}, {customer: {age: 19}, order: {total: 600, needsReview: true}}],
+    [{customer: {age: 30}, order: {total: 600}}, {customer: {age: 30}, order: {total: 600, needsReview: false}}],
+    [{customer: {age: 19}, order: {total: 100}}, {customer: {age: 19}, order: {total: 100, needsReview: false}}],
+  ],
+}
+
+{
+  name: "a computed property of an entity with no other input",
+  policy: {
+    models: {customer: {age: "number"}, flags: {note: "string?"}},
+    blocks: [{expression: "flags.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 30}, flags: {}}, {customer: {age: 30}, flags: {adult: true}}],
+    [{customer: {age: 30}}, {customer: {age: 30}, flags: {adult: true}}],
+    [{customer: {age: 30}, flags: {note: "n"}}, {customer: {age: 30}, flags: {note: "n", adult: true}}],
+  ],
+}
+
+{
+  name: "a top-level computed property next to entity writes",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "decision", value: "customer.age >= 18 ? 'approve' : 'decline'"},
+      {expression: "customer.adult", value: "customer.age >= 18"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30}}, {customer: {age: 30, adult: true}, decision: "approve"}],
+    [{customer: {age: 3}}, {customer: {age: 3, adult: false}, decision: "decline"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reading other computed properties: a block that reads a computed property sees the value the
+// writing block produced, regardless of block order (see 03-dependencies).
+
+{
+  name: "a block reads a computed property of the same entity",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.label", value: "customer.adult ? 'adult' : 'minor'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 18}}, {customer: {age: 18, adult: true, label: "adult"}}],
+    [{customer: {age: 17}}, {customer: {age: 17, adult: false, label: "minor"}}],
+  ],
+}
+
+{
+  name: "a block reads a computed top-level property",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "rate", value: "order.net > 1000 ? 0.1 : 0.2"},
+      {expression: "order.tax", value: "order.net * rate"},
+    ],
+  },
+  cases: [
+    [{order: {net: 100}}, {order: {net: 100, tax: 20}, rate: 0.2}],
+    [{order: {net: 2000}}, {order: {net: 2000, tax: 200}, rate: 0.1}],
+  ],
+}
+
+{
+  name: "a block reads a computed object field",
+  policy: {
+    models: {person: {first: "string", age: "number"}},
+    blocks: [
+      {expression: "person.summary", value: "{name: person.first, adult: person.age >= 18}"},
+      {expression: "person.greeting", value: "person.summary.adult ? 'Hello ' + person.summary.name : 'Hi'"},
+    ],
+  },
+  cases: [
+    [{person: {first: "Ann", age: 30}}, {person: {first: "Ann", age: 30, summary: {name: "Ann", adult: true}, greeting: "Hello Ann"}}],
+    [{person: {first: "Bo", age: 3}}, {person: {first: "Bo", age: 3, summary: {name: "Bo", adult: false}, greeting: "Hi"}}],
+  ],
+}
+
+{
+  name: "a block reads a computed array",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [
+      {expression: "cart.expensive", value: "filter(cart.prices, # > 10)"},
+      {expression: "cart.expensiveCount", value: "len(cart.expensive)"},
+    ],
+  },
+  cases: [
+    [{cart: {prices: [5, 15, 25]}}, {cart: {prices: [5, 15, 25], expensive: [15, 25], expensiveCount: 2}}],
+    [{cart: {prices: []}}, {cart: {prices: [], expensive: [], expensiveCount: 0}}],
+  ],
+}
+
+{
+  name: "a computed null read by another block",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [
+      {expression: "item.badge", value: "item.price > 100 ? 'premium' : null"},
+      {expression: "item.label", value: "item.badge ?? 'standard'"},
+    ],
+  },
+  cases: [
+    [{item: {price: 150}}, {item: {price: 150, badge: "premium", label: "premium"}}],
+    [{item: {price: 50}}, {item: {price: 50, badge: null, label: "standard"}}],
+  ],
+}
+
+{
+  name: "a computed value hides a same-named undeclared input key",
+  policy: {
+    models: {item: {price: "number"}},
+    blocks: [
+      {expression: "item.badge", value: "item.price > 100 ? 'premium' : 'basic'"},
+      {expression: "item.label", value: "'[' + item.badge + ']'"},
+    ],
+  },
+  cases: [
+    [{item: {price: 150, badge: "input"}}, {item: {price: 150, badge: "premium", label: "[premium]"}}],
+    [{item: {price: 50, badge: null}}, {item: {price: 50, badge: "basic", label: "[basic]"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Duplicate writers: two blocks writing the same key is the DuplicateWriter compile error.
+
+{
+  name: "two expression blocks writing the same key",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.tier", value: "'a'"},
+      {expression: "customer.tier", value: "'b'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "two expression blocks writing the same top-level key",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "score", value: "customer.age"},
+      {expression: "score", value: "customer.age * 2"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 5}}, "!error"],
+  ],
+}
+
+{
+  name: "a duplicate writer with a reader in between",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.tier", value: "customer.age > 10 ? 'old' : 'young'"},
+      {expression: "customer.label", value: "'tier ' + customer.tier"},
+      {expression: "customer.tier", value: "'other'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 50}}, "!error"],
+  ],
+}
+
+{
+  name: "an expression and a match writing the same key",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.tier", value: "'a'"},
+      {match: "customer.tier", arms: [["customer.age > 10", "'b'"], ["", "'c'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 50}}, "!error"],
+  ],
+}
+
+{
+  name: "same leaf name under different entities is not a duplicate",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [
+      {expression: "customer.flag", value: "customer.age > 10"},
+      {expression: "order.flag", value: "order.total > 10"},
+      {expression: "flag", value: "customer.flag and order.flag"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 50}, order: {total: 50}}, {customer: {age: 50, flag: true}, order: {total: 50, flag: true}, flag: true}],
+    [{customer: {age: 5}, order: {total: 50}}, {customer: {age: 5, flag: false}, order: {total: 50, flag: true}, flag: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Self reference: a block reading its own key is a compile error (SelfReferencingWrite), not a
+// way to read the input value of that key.
+
+{
+  name: "a block reading its own key",
+  policy: {
+    models: {counter: {start: "number"}},
+    blocks: [{expression: "counter.value", value: "(counter.value ?? counter.start) + 1"}],
+  },
+  cases: [
+    [{counter: {start: 1}}, "!error"],
+    [{counter: {start: 1, value: 10}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expressions with closures, string interpolation and builtins are ordinary values.
+
+{
+  name: "closures over an input array",
+  policy: {
+    models: {order: {lines: "number[]"}},
+    blocks: [
+      {expression: "order.anyLarge", value: "some(order.lines, # > 100)"},
+      {expression: "order.allPositive", value: "all(order.lines, # > 0)"},
+      {expression: "order.count", value: "count(order.lines, # > 10)"},
+    ],
+  },
+  cases: [
+    [{order: {lines: [5, 50, 500]}}, {order: {lines: [5, 50, 500], anyLarge: true, allPositive: true, count: 2}}],
+    [{order: {lines: []}}, {order: {lines: [], anyLarge: false, allPositive: true, count: 0}}],
+    [{order: {lines: [-1]}}, {order: {lines: [-1], anyLarge: false, allPositive: false, count: 0}}],
+  ],
+}
+
+{
+  name: "a template string",
+  policy: {
+    models: {person: {first: "string", age: "number"}},
+    blocks: [{expression: "person.text", value: "`${person.first} is ${person.age}`"}],
+  },
+  cases: [
+    [{person: {first: "Ann", age: 30}}, {person: {first: "Ann", age: 30, text: "Ann is 30"}}],
+    [{person: {first: "", age: 0.5}}, {person: {first: "", age: 0.5, text: " is 0.5"}}],
+  ],
+}
+
+{
+  name: "math builtins",
+  policy: {
+    models: {n: {x: "number"}},
+    blocks: [
+      {expression: "n.r", value: "round(n.x)"},
+      {expression: "n.f", value: "floor(n.x)"},
+      {expression: "n.a", value: "abs(n.x)"},
+    ],
+  },
+  cases: [
+    [{n: {x: 2.5}}, {n: {x: 2.5, r: 3, f: 2, a: 2.5}}],
+    [{n: {x: -2.5}}, {n: {x: -2.5, r: -3, f: -3, a: 2.5}}],
+    [{n: {x: 0}}, {n: {x: 0, r: 0, f: 0, a: 0}}],
+  ],
+}
+
+{
+  name: "many independent blocks",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "s.a", value: "s.v + 1"},
+      {expression: "s.b", value: "s.v + 2"},
+      {expression: "s.c", value: "s.v + 3"},
+      {expression: "s.d", value: "s.v + 4"},
+      {expression: "s.e", value: "s.v + 5"},
+      {expression: "s.f", value: "s.v + 6"},
+    ],
+  },
+  cases: [
+    [{s: {v: 0}}, {s: {v: 0, a: 1, b: 2, c: 3, d: 4, e: 5, f: 6}}],
+    [{s: {v: -6}}, {s: {v: -6, a: -5, b: -4, c: -3, d: -2, e: -1, f: 0}}],
+    [{s: {v: 0.5}}, {s: {v: 0.5, a: 1.5, b: 2.5, c: 3.5, d: 4.5, e: 5.5, f: 6.5}}],
+  ],
+}

@@ -1,0 +1,512 @@
+// Realistic HR and public-sector decisions: weekly payroll from a per-shift loop with daily and
+// weekly overtime and a class switch whose unknown branch is a throwing function, leave accrual
+// by tenure with a request switch, benefits enrollment with a per-dependent eligibility loop and
+// a coverage tier, income tax where one bracket sub-decision is called twice (federal and state,
+// each under its own outputPath), a building permit with zoning, collected issues and a collect
+// switch of required inspections, and a small-business grant with dated grant history. Evaluation
+// time is fixed at Thursday 2025-03-20T10:15:30Z. Each suite is one decision exercised across
+// main paths, boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Payroll: a loop expression splits each shift into regular, overtime (over 8 h) and double time
+// (over 12 h), the weekly node moves regular hours over 40 into overtime, a switch prices exempt
+// and hourly staff (an unknown class reaches a function that throws), then withholding and net.
+{
+  name: "payroll: daily and weekly overtime, shift premiums and withholding",
+  graph: {
+    nodes: [
+      {input: "timesheet"},
+      {expression: "perShift", executionMode: "loop", inputField: "shifts", outputPath: "split", fields: {
+        regular: "min([hours, 8])",
+        overtime: "max([0, min([hours, 12]) - 8])",
+        double: "max([0, hours - 12])",
+        nightHours: "night == true ? hours : 0",
+        holidayHours: "holiday == true ? hours : 0",
+      }},
+      {expression: "weekly", passThrough: true, fields: {
+        "hours.regularDaily": "sum(map(split, #.regular))",
+        "hours.weeklyOver": "max([0, $.hours.regularDaily - 40])",
+        "hours.regular": "$.hours.regularDaily - $.hours.weeklyOver",
+        "hours.overtime": "sum(map(split, #.overtime)) + $.hours.weeklyOver",
+        "hours.double": "sum(map(split, #.double))",
+        "hours.night": "sum(map(split, #.nightHours))",
+        "hours.holiday": "sum(map(split, #.holidayHours))",
+      }},
+      {switch: "classGate", when: ["employee.class == 'exempt'", "employee.class == 'hourly'", ""]},
+      {expression: "exempt", fields: {gross: "employee.salaryWeekly", overtimePay: "0", premiums: "0"}},
+      {expression: "hourly", fields: {
+        base: "hours.regular * employee.rate",
+        overtimePay: "hours.overtime * employee.rate * 1.5 + hours.double * employee.rate * 2",
+        premiums: "hours.night * 1.25 + hours.holiday * employee.rate * 0.5",
+        gross: "$.base + $.overtimePay + $.premiums",
+      }},
+      {function: "unknownClass", source: """
+export const handler = async (input) => {
+  throw new Error('unknown employee class: ' + input.employee?.class);
+};
+"""},
+      {table: "withholding", passThrough: true, inputs: ["gross"], outputs: ["withholding"], rules: [
+        ["<= 500", "round(gross * 0.1, 2)"],
+        ["(500..1500]", "round(50 + (gross - 500) * 0.2, 2)"],
+        ["> 1500", "round(250 + (gross - 1500) * 0.3, 2)"],
+      ]},
+      {expression: "net", passThrough: true, fields: {net: "gross - withholding"}},
+      {output: "payslip"},
+    ],
+    edges: [
+      "timesheet -> perShift -> weekly",
+      "timesheet -> weekly -> classGate",
+      "classGate:0 -> exempt -> withholding",
+      "classGate:1 -> hourly -> withholding",
+      "classGate:2 -> unknownClass -> withholding",
+      "withholding -> net -> payslip",
+    ],
+  },
+  cases: [
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}]}, {base: 800, overtimePay: 0, premiums: 0, gross: 800, withholding: 110, net: 690}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 10}, {hours: 10}, {hours: 10}, {hours: 10}, {hours: 10}]}, {base: 800, overtimePay: 300, premiums: 0, gross: 1100, withholding: 170, net: 930}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}]}, {base: 800, overtimePay: 240, premiums: 0, gross: 1040, withholding: 158, net: 882}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 14}]}, {base: 160, overtimePay: 200, premiums: 0, gross: 360, withholding: 36, net: 324}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 12}]}, {base: 160, overtimePay: 120, premiums: 0, gross: 280, withholding: 28, net: 252}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8, night: true}, {hours: 8, night: true}, {hours: 8, night: true}]}, {base: 480, overtimePay: 0, premiums: 30, gross: 510, withholding: 52, net: 458}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8, holiday: true}]}, {base: 160, overtimePay: 0, premiums: 80, gross: 240, withholding: 24, net: 216}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8, holiday: true, night: true}]}, {base: 160, overtimePay: 0, premiums: 90, gross: 250, withholding: 25, net: 225}],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: 8, night: "yes"}]}, {base: 160, overtimePay: 0, premiums: 0, gross: 160, withholding: 16, net: 144}],
+    [{employee: {class: "hourly", rate: 20}, shifts: []}, {base: 0, overtimePay: 0, premiums: 0, gross: 0, withholding: 0, net: 0}],
+    // Withholding band edges: 500 is the top of the first band, 1500 the top of the second.
+    [{employee: {class: "hourly", rate: 12.5}, shifts: [{hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}]}, {base: 500, overtimePay: 0, premiums: 0, gross: 500, withholding: 50, net: 450}],
+    [{employee: {class: "hourly", rate: 37.5}, shifts: [{hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}, {hours: 8}]}, {base: 1500, overtimePay: 0, premiums: 0, gross: 1500, withholding: 250, net: 1250}],
+    [{employee: {class: "hourly", rate: 18.35}, shifts: [{hours: 8.5}, {hours: 8.5}, {hours: 8.5}, {hours: 8.5}, {hours: 8.5}]}, {base: 734, overtimePay: 68.8125, premiums: 0, gross: 802.8125, withholding: 110.56, net: 692.2525}],
+    [{employee: {class: "exempt", salaryWeekly: 2000}, shifts: [{hours: 12}, {hours: 12}, {hours: 12}, {hours: 12}, {hours: 12}]}, {gross: 2000, overtimePay: 0, premiums: 0, withholding: 400, net: 1600}],
+    [{employee: {class: "exempt", salaryWeekly: 1000}, shifts: []}, {gross: 1000, overtimePay: 0, premiums: 0, withholding: 150, net: 850}],
+    // Unknown or missing class: the default branch's function throws.
+    [{employee: {class: "contractor", rate: 50}, shifts: [{hours: 8}]}, "!error: unknown employee class: contractor"],
+    [{employee: {rate: 50}, shifts: [{hours: 8}]}, "!error: unknown employee class: undefined"],
+    // Missing rate, string hours, and an exempt employee without a salary (null gross).
+    [{employee: {class: "hourly"}, shifts: [{hours: 8}]}, "!error"],
+    [{employee: {class: "hourly", rate: 20}, shifts: [{hours: "8"}]}, "!error"],
+    [{employee: {class: "exempt"}, shifts: []}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Leave accrual: tenure and probation from the hire date, an accrual rate and balance cap by
+// status and tenure, the period's accrual capped (the excess is forfeited), then a request
+// switch whose pass-through branches mark the request and a final node settles the balance.
+{
+  name: "leave accrual: tenure rates, balance cap, probation and leave requests",
+  graph: {
+    nodes: [
+      {input: "employee"},
+      {expression: "tenure", passThrough: true, fields: {
+        "emp.years": "d().diff(d(hireDate), 'year')",
+        "emp.probation": "d().diff(d(hireDate), 'day') < 90",
+      }},
+      {table: "accrualRate", passThrough: true, inputs: ["status", "emp.years"], outputs: ["accrual.perPeriod", "accrual.cap"], rules: [
+        ["'part-time'", "", "round(4.62 * (fte ?? 0.5), 2)", "120"],
+        ["'full-time'", "< 3", "4.62", "160"],
+        ["'full-time'", "[3..10)", "6.16", "200"],
+        ["'full-time'", ">= 10", "7.69", "240"],
+      ]},
+      {expression: "accrue", passThrough: true, fields: {
+        "accrual.earned": "emp.probation ? 0 : accrual.perPeriod",
+        "accrual.newBalance": "min([balanceHours + $.accrual.earned, accrual.cap])",
+        "accrual.forfeited": "balanceHours + $.accrual.earned - $.accrual.newBalance",
+      }},
+      {switch: "requestGate", when: [
+        "request == null",
+        "request.hours > accrual.newBalance and request.allowNegative != true",
+        "some(blackout ?? [], not d(#).isBefore(d(request.start)) and not d(#).isAfter(d(request.end)))",
+        "",
+      ]},
+      {expression: "noRequest", passThrough: true, fields: {requestStatus: "'none'"}},
+      {expression: "insufficient", passThrough: true, fields: {requestStatus: "'denied: insufficient balance'"}},
+      {expression: "blackedOut", passThrough: true, fields: {requestStatus: "'denied: blackout period'"}},
+      {expression: "approve", passThrough: true, fields: {requestStatus: "'approved'", deducted: "request.hours"}},
+      {expression: "settle", fields: {
+        balance: "accrual.newBalance - (deducted ?? 0)",
+        earned: "accrual.earned",
+        forfeited: "accrual.forfeited",
+        requestStatus: "requestStatus",
+      }},
+      {output: "leave"},
+    ],
+    edges: [
+      "employee -> tenure -> accrualRate -> accrue -> requestGate",
+      "requestGate:0 -> noRequest -> settle",
+      "requestGate:1 -> insufficient -> settle",
+      "requestGate:2 -> blackedOut -> settle",
+      "requestGate:3 -> approve -> settle",
+      "settle -> leave",
+    ],
+  },
+  cases: [
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40}, {balance: 46.16, earned: 6.16, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2023-03-21", status: "full-time", balanceHours: 10}, {balance: 14.62, earned: 4.62, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2022-03-20", status: "full-time", balanceHours: 10}, {balance: 16.16, earned: 6.16, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2022-03-21", status: "full-time", balanceHours: 10}, {balance: 14.62, earned: 4.62, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2015-03-20", status: "full-time", balanceHours: 238}, {balance: 240, earned: 7.69, forfeited: 5.69, requestStatus: "none"}],
+    [{hireDate: "2015-03-20", status: "full-time", balanceHours: 250}, {balance: 240, earned: 7.69, forfeited: 17.69, requestStatus: "none"}],
+    // Probation is the first 90 days: nothing accrues on day 69, the full rate on day 90.
+    [{hireDate: "2025-01-10", status: "full-time", balanceHours: 0}, {balance: 0, earned: 0, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2024-12-20", status: "full-time", balanceHours: 0}, {balance: 4.62, earned: 4.62, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2019-06-01", status: "part-time", fte: 0.6, balanceHours: 50}, {balance: 52.77, earned: 2.77, forfeited: 0, requestStatus: "none"}],
+    [{hireDate: "2019-06-01", status: "part-time", balanceHours: 119}, {balance: 120, earned: 2.31, forfeited: 1.31, requestStatus: "none"}],
+    // Requests: approved within the balance (including exactly all of it), denied above it unless
+    // a negative balance is allowed, denied when a blackout day falls inside the request.
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 16, start: "2025-04-07", end: "2025-04-08"}}, {balance: 30.16, earned: 6.16, forfeited: 0, requestStatus: "approved"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 46.16, start: "2025-04-07", end: "2025-04-14"}}, {balance: 0, earned: 6.16, forfeited: 0, requestStatus: "approved"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 50, start: "2025-04-07", end: "2025-04-14"}}, {balance: 46.16, earned: 6.16, forfeited: 0, requestStatus: "denied: insufficient balance"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 50, start: "2025-04-07", end: "2025-04-14", allowNegative: true}}, {balance: -3.84, earned: 6.16, forfeited: 0, requestStatus: "approved"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 24, start: "2025-12-22", end: "2025-12-26"}, blackout: ["2025-12-24"]}, {balance: 46.16, earned: 6.16, forfeited: 0, requestStatus: "denied: blackout period"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 24, start: "2025-12-22", end: "2025-12-24"}, blackout: ["2025-12-24", "2025-12-31"]}, {balance: 46.16, earned: 6.16, forfeited: 0, requestStatus: "denied: blackout period"}],
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: 16, start: "2025-12-22", end: "2025-12-23"}, blackout: ["2025-12-24", "2025-12-31"]}, {balance: 30.16, earned: 6.16, forfeited: 0, requestStatus: "approved"}],
+    // A string request size errors the balance condition (false), passes the blackout check and
+    // is approved, then the deduction fails.
+    [{hireDate: "2020-01-15", status: "full-time", balanceHours: 40, request: {hours: "16", start: "2025-04-07", end: "2025-04-08"}}, "!error"],
+    // No accrual row for contractors, no hire date, no balance.
+    [{hireDate: "2020-01-15", status: "contractor", balanceHours: 40}, "!error"],
+    [{status: "full-time", balanceHours: 40}, "!error"],
+    [{hireDate: "2020-01-15", status: "full-time"}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Benefits enrollment: the enrollment window since the qualifying event, a loop table deciding
+// each dependent's eligibility (pass-through, so the request travels with the result), the
+// coverage tier from eligible dependents, premium and employer share tables, and the cost per
+// paycheck (26 a year).
+{
+  name: "benefits enrollment: event window, dependent eligibility, tier and paycheck cost",
+  graph: {
+    nodes: [
+      {input: "enrollment"},
+      {expression: "window", passThrough: true, fields: {
+        "enroll.daysSinceEvent": "d().diff(d(event.date), 'day')",
+        "enroll.windowDays": "event.type == 'open-enrollment' ? 14 : 30",
+        "enroll.open": "$.enroll.daysSinceEvent >= 0 and $.enroll.daysSinceEvent <= $.enroll.windowDays",
+      }},
+      {switch: "windowGate", when: ["not enroll.open", ""]},
+      {expression: "closed", fields: {status: "'window closed'", daysSinceEvent: "enroll.daysSinceEvent"}},
+      {table: "eligibility", executionMode: "loop", passThrough: true, inputField: "dependents", outputPath: "deps", inputs: ["relation", "age", "affidavit"], outputs: ["relation", "eligible", "reason"], rules: [
+        ["'spouse'", "", "", "relation", "true", "null"],
+        ["'partner'", "", "true", "relation", "true", "null"],
+        ["'partner'", "", "", "relation", "false", "'affidavit required'"],
+        ["'child'", "< 26", "", "relation", "true", "null"],
+        ["'child'", "", "", "relation", "false", "'child over 26'"],
+        ["", "", "", "relation", "false", "'not an eligible relation'"],
+      ]},
+      {expression: "tier", passThrough: true, fields: {
+        "cover.spouse": "some(deps, #.eligible and #.relation in ['spouse', 'partner'])",
+        "cover.children": "count(deps, #.eligible and #.relation == 'child')",
+        "cover.tier": "$.cover.spouse ? ($.cover.children > 0 ? 'family' : 'employee+spouse') : ($.cover.children > 0 ? 'employee+children' : 'employee')",
+      }},
+      {table: "premium", passThrough: true, inputs: ["plan", "cover.tier"], outputs: ["monthlyPremium"], rules: [
+        ["'hmo'", "'employee'", "400"],
+        ["'hmo'", "'employee+spouse'", "850"],
+        ["'hmo'", "'employee+children'", "750"],
+        ["'hmo'", "'family'", "1200"],
+        ["'ppo'", "'employee'", "550"],
+        ["'ppo'", "'employee+spouse'", "1150"],
+        ["'ppo'", "'employee+children'", "1000"],
+        ["'ppo'", "'family'", "1600"],
+      ]},
+      {table: "contribution", passThrough: true, inputs: ["employee.salary"], outputs: ["employerShare"], rules: [
+        ["< 40000", "0.9"],
+        ["[40000..100000)", "0.8"],
+        ["", "0.7"],
+      ]},
+      {expression: "cost", fields: {
+        status: "'enrolled'",
+        tier: "cover.tier",
+        monthlyPremium: "monthlyPremium",
+        employerPays: "round(monthlyPremium * employerShare, 2)",
+        employeePerPaycheck: "round((monthlyPremium - $.employerPays) * 12 / 26, 2)",
+        ineligible: "map(filter(deps, not #.eligible), #.reason)",
+      }},
+      {output: "election"},
+    ],
+    edges: [
+      "enrollment -> window -> windowGate",
+      "windowGate:0 -> closed -> election",
+      "windowGate:1 -> eligibility -> tier -> premium -> contribution -> cost -> election",
+    ],
+  },
+  cases: [
+    [{employee: {salary: 50000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "hmo", dependents: []}, {status: "enrolled", tier: "employee", monthlyPremium: 400, employerPays: 320, employeePerPaycheck: 36.92, ineligible: []}],
+    [{employee: {salary: 50000}, event: {type: "marriage", date: "2025-03-01"}, plan: "hmo", dependents: [{relation: "spouse", age: 33}]}, {status: "enrolled", tier: "employee+spouse", monthlyPremium: 850, employerPays: 680, employeePerPaycheck: 78.46, ineligible: []}],
+    [{employee: {salary: 50000}, event: {type: "birth", date: "2025-03-19"}, plan: "hmo", dependents: [{relation: "spouse", age: 33}, {relation: "child", age: 0}]}, {status: "enrolled", tier: "family", monthlyPremium: 1200, employerPays: 960, employeePerPaycheck: 110.77, ineligible: []}],
+    [{employee: {salary: 120000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "ppo", dependents: [{relation: "child", age: 25}, {relation: "child", age: 26}]}, {status: "enrolled", tier: "employee+children", monthlyPremium: 1000, employerPays: 700, employeePerPaycheck: 138.46, ineligible: ["child over 26"]}],
+    [{employee: {salary: 30000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "hmo", dependents: [{relation: "partner"}, {relation: "child", age: 5}]}, {status: "enrolled", tier: "employee+children", monthlyPremium: 750, employerPays: 675, employeePerPaycheck: 34.62, ineligible: ["affidavit required"]}],
+    [{employee: {salary: 30000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "hmo", dependents: [{relation: "partner", affidavit: true}, {relation: "child", age: 5}]}, {status: "enrolled", tier: "family", monthlyPremium: 1200, employerPays: 1080, employeePerPaycheck: 55.38, ineligible: []}],
+    [{employee: {salary: 100000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "ppo", dependents: [{relation: "parent", age: 70}]}, {status: "enrolled", tier: "employee", monthlyPremium: 550, employerPays: 385, employeePerPaycheck: 76.15, ineligible: ["not an eligible relation"]}],
+    [{employee: {salary: 39999.99}, event: {type: "new-hire", date: "2025-03-10"}, plan: "ppo", dependents: [{relation: "spouse"}, {relation: "spouse"}]}, {status: "enrolled", tier: "employee+spouse", monthlyPremium: 1150, employerPays: 1035, employeePerPaycheck: 53.08, ineligible: []}],
+    // Window edges: 30 days after a life event, 14 for open enrollment; events in the future
+    // are not open yet.
+    [{employee: {salary: 50000}, event: {type: "marriage", date: "2025-02-18"}, plan: "hmo", dependents: []}, {status: "enrolled", tier: "employee", monthlyPremium: 400, employerPays: 320, employeePerPaycheck: 36.92, ineligible: []}],
+    [{employee: {salary: 50000}, event: {type: "marriage", date: "2025-02-17"}, plan: "hmo", dependents: []}, {status: "window closed", daysSinceEvent: 31}],
+    [{employee: {salary: 50000}, event: {type: "open-enrollment", date: "2025-03-06"}, plan: "hmo", dependents: []}, {status: "enrolled", tier: "employee", monthlyPremium: 400, employerPays: 320, employeePerPaycheck: 36.92, ineligible: []}],
+    [{employee: {salary: 50000}, event: {type: "open-enrollment", date: "2025-03-05"}, plan: "hmo", dependents: []}, {status: "window closed", daysSinceEvent: 15}],
+    [{employee: {salary: 50000}, event: {type: "new-hire", date: "2025-03-25"}, plan: "hmo", dependents: []}, {status: "window closed", daysSinceEvent: -4}],
+    // A child without an age fails the age cell and lands on the over-26 row; a missing salary
+    // fails both range cells and gets the lowest share.
+    [{employee: {salary: 50000}, event: {type: "new-hire", date: "2025-03-10"}, plan: "hmo", dependents: [{relation: "child"}]}, {status: "enrolled", tier: "employee", monthlyPremium: 400, employerPays: 320, employeePerPaycheck: 36.92, ineligible: ["child over 26"]}],
+    [{employee: {}, event: {type: "new-hire", date: "2025-03-10"}, plan: "hmo", dependents: []}, {status: "enrolled", tier: "employee", monthlyPremium: 400, employerPays: 280, employeePerPaycheck: 55.38, ineligible: []}],
+    // No event date, no plan.
+    [{employee: {salary: 50000}, event: {type: "new-hire"}, plan: "hmo", dependents: []}, "!error"],
+    [{employee: {salary: 50000}, event: {type: "new-hire", date: "2025-03-10"}, dependents: []}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Income tax: the same bracket sub-decision is called twice, once with the federal taxable
+// income and brackets (chosen by filing status) and once with the state's, each under its own
+// outputPath; a child credit with a phase-out runs on a third branch, and all three join in the
+// settlement.
+{
+  name: "income tax: one bracket sub-decision for federal and state, child credit phase-out",
+  decisions: {
+    progressive: {
+      nodes: [
+        {expression: "tax", fields: {
+          tax: "round(sum(map(brackets, max([0, min([taxable, #.to ?? taxable]) - #.from]) * #.rate)), 2)",
+          marginal: "len(filter(brackets, taxable > #.from)) == 0 ? 0 : max(map(filter(brackets, taxable > #.from), #.rate))",
+        }},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "taxReturn"},
+      {table: "deduction", passThrough: true, inputs: ["filingStatus"], outputs: ["fed.standard", "fed.brackets"], rules: [
+        ["'single'", "14600", "[{from: 0, to: 11600, rate: 0.1}, {from: 11600, to: 47150, rate: 0.12}, {from: 47150, to: 100525, rate: 0.22}, {from: 100525, rate: 0.24}]"],
+        ["'married'", "29200", "[{from: 0, to: 23200, rate: 0.1}, {from: 23200, to: 94300, rate: 0.12}, {from: 94300, to: 201050, rate: 0.22}, {from: 201050, rate: 0.24}]"],
+        ["'head'", "21900", "[{from: 0, to: 16550, rate: 0.1}, {from: 16550, to: 63100, rate: 0.12}, {from: 63100, rate: 0.22}]"],
+      ]},
+      {expression: "fedPrep", fields: {
+        taxable: "max([0, income.wages + (income.other ?? 0) - max([fed.standard, itemized ?? 0])])",
+        brackets: "fed.brackets",
+      }},
+      {decision: "fedTax", key: "progressive", outputPath: "federal"},
+      {expression: "statePrep", fields: {
+        taxable: "max([0, income.wages + (income.other ?? 0) - 5000])",
+        brackets: "[{from: 0, to: 10000, rate: 0.02}, {from: 10000, to: 50000, rate: 0.045}, {from: 50000, rate: 0.06}]",
+      }},
+      {decision: "stateTax", key: "progressive", outputPath: "state"},
+      {table: "ctcThreshold", passThrough: true, inputs: ["filingStatus"], outputs: ["ctc.threshold"], rules: [
+        ["'married'", "400000"],
+        ["", "200000"],
+      ]},
+      {expression: "ctc", passThrough: true, fields: {
+        "ctc.amount": "max([0, (dependents ?? 0) * 2000 - ceil(max([0, income.wages + (income.other ?? 0) - ctc.threshold]) / 1000) * 50])",
+      }},
+      {expression: "settle", fields: {
+        federalTax: "max([0, federal.tax - ctc.amount])",
+        stateTax: "state.tax",
+        totalTax: "$.federalTax + $.stateTax",
+        withheld: "withheld ?? 0",
+        balance: "round($.withheld - $.totalTax, 2)",
+        outcome: "$.balance >= 0 ? 'refund' : 'owed'",
+        effectiveRate: "income.wages + (income.other ?? 0) == 0 ? 0 : round($.totalTax / (income.wages + (income.other ?? 0)) * 100, 1)",
+        marginal: "federal.marginal",
+      }},
+      {output: "assessment"},
+    ],
+    edges: [
+      "taxReturn -> deduction -> fedPrep -> fedTax -> settle",
+      "taxReturn -> statePrep -> stateTax -> settle",
+      "taxReturn -> ctcThreshold -> ctc -> settle",
+      "settle -> assessment",
+    ],
+  },
+  cases: [
+    [{filingStatus: "single", income: {wages: 60000}, withheld: 8000}, {federalTax: 5216, stateTax: 2300, totalTax: 7516, withheld: 8000, balance: 484, outcome: "refund", effectiveRate: 12.5, marginal: 0.12}],
+    [{filingStatus: "married", income: {wages: 120000, other: 5000}, dependents: 2, withheld: 9000}, {federalTax: 7182, stateTax: 6200, totalTax: 13382, withheld: 9000, balance: -4382, outcome: "owed", effectiveRate: 10.7, marginal: 0.22}],
+    [{filingStatus: "single", income: {wages: 10000}, withheld: 500}, {federalTax: 0, stateTax: 100, totalTax: 100, withheld: 500, balance: 400, outcome: "refund", effectiveRate: 1, marginal: 0}],
+    [{filingStatus: "head", income: {wages: 50000}, dependents: 1, withheld: 3000}, {federalTax: 1041, stateTax: 1775, totalTax: 2816, withheld: 3000, balance: 184, outcome: "refund", effectiveRate: 5.6, marginal: 0.12}],
+    [{filingStatus: "single", income: {wages: 230000}, dependents: 2, withheld: 50000}, {federalTax: 42238.5, stateTax: 12500, totalTax: 54738.5, withheld: 50000, balance: -4738.5, outcome: "owed", effectiveRate: 23.8, marginal: 0.24}],
+    [{filingStatus: "single", income: {wages: 60000}, itemized: 20000, withheld: 8000}, {federalTax: 4568, stateTax: 2300, totalTax: 6868, withheld: 8000, balance: 1132, outcome: "refund", effectiveRate: 11.4, marginal: 0.12}],
+    [{filingStatus: "single", income: {wages: 60000}, itemized: 10000, withheld: 8000}, {federalTax: 5216, stateTax: 2300, totalTax: 7516, withheld: 8000, balance: 484, outcome: "refund", effectiveRate: 12.5, marginal: 0.12}],
+    // One dollar over the phase-out threshold costs a full 50 step.
+    [{filingStatus: "single", income: {wages: 200001}, dependents: 1, withheld: 46288.8}, {federalTax: 35588.74, stateTax: 10700.06, totalTax: 46288.8, withheld: 46288.8, balance: 0, outcome: "refund", effectiveRate: 23.1, marginal: 0.24}],
+    [{filingStatus: "single", income: {wages: 40000}, dependents: 3}, {federalTax: 0, stateTax: 1325, totalTax: 1325, withheld: 0, balance: -1325, outcome: "owed", effectiveRate: 3.3, marginal: 0.12}],
+    [{filingStatus: "married", income: {wages: 0}}, {federalTax: 0, stateTax: 0, totalTax: 0, withheld: 0, balance: 0, outcome: "refund", effectiveRate: 0, marginal: 0}],
+    // Bracket edges: taxable income exactly at a bracket boundary keeps the lower marginal rate.
+    [{filingStatus: "single", income: {wages: 26200}, withheld: 2000}, {federalTax: 1160, stateTax: 704, totalTax: 1864, withheld: 2000, balance: 136, outcome: "refund", effectiveRate: 7.1, marginal: 0.1}],
+    [{filingStatus: "single", income: {wages: 26201}, withheld: 2000}, {federalTax: 1160.12, stateTax: 704.05, totalTax: 1864.17, withheld: 2000, balance: 135.83, outcome: "refund", effectiveRate: 7.1, marginal: 0.12}],
+    // Unknown filing status has no standard deduction; missing or string wages fail every branch.
+    [{filingStatus: "widow", income: {wages: 60000}}, "!error"],
+    [{filingStatus: "single", income: {}}, "!error"],
+    [{filingStatus: "single", income: {wages: "60000"}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Building permit: zoning by zone and project type, collected issues, a first-hit switch that
+// issues, refers single historic-review cases or rejects, valuation fees with an ADU waiver, and
+// a collect switch adding each required inspection before the permit is assembled.
+{
+  name: "building permit: zoning, issues, historic referral, fees and inspections",
+  graph: {
+    nodes: [
+      {input: "application"},
+      {table: "zoning", passThrough: true, inputs: ["project.zone", "project.type"], outputs: ["zoning.allowed", "zoning.maxHeight", "zoning.minSetback"], rules: [
+        ["'C1'", "'adu'", "false", "0", "0"],
+        ["'R1'", "'adu'", "true", "25", "5"],
+        ["", "'fence'", "true", "6", "0"],
+        ["", "'deck'", "true", "12", "3"],
+        ["'R1', 'R2'", "'addition'", "true", "35", "10"],
+        ["'C1'", "'addition'", "true", "60", "0"],
+        ["", "'demolition'", "true", "999", "0"],
+        ["", "", "false", "0", "0"],
+      ]},
+      {table: "issues", passThrough: true, inputs: [null], outputs: ["issues[]"], rules: [
+        ["not zoning.allowed", "'use not permitted in zone'"],
+        ["project.heightFt > zoning.maxHeight", "'exceeds height limit'"],
+        ["project.setbackFt < zoning.minSetback", "'setback too small'"],
+        ["project.historic == true and project.type in ['demolition', 'addition']", "'historic review required'"],
+        ["not (applicant.licensed == true or applicant.owner == true)", "'licensed contractor or owner-builder required'"],
+        ["", ""],
+      ]},
+      {switch: "route", when: ["len(issues) == 0", "len(issues) == 1 and issues[0] == 'historic review required'", ""]},
+      {expression: "historic", fields: {status: "'referred to historic commission'", issues: "issues"}},
+      {expression: "reject", fields: {status: "'rejected'", issues: "issues"}},
+      {table: "fees", passThrough: true, inputs: ["project.valuation"], outputs: ["fee.base"], rules: [
+        ["< 1000", "0"],
+        ["[1000..25000)", "75 + project.valuation * 0.01"],
+        ["[25000..100000)", "325 + (project.valuation - 25000) * 0.008"],
+        [">= 100000", "925 + (project.valuation - 100000) * 0.005"],
+      ]},
+      {switch: "inspections", hit: "collect", when: [
+        "project.type in ['addition', 'adu']",
+        "project.type in ['addition', 'adu', 'deck']",
+        "project.type == 'adu' or project.sqft > 500",
+        "",
+      ]},
+      {expression: "structural", fields: {"inspect.structural": "true"}},
+      {expression: "framing", fields: {"inspect.framing": "true"}},
+      {expression: "electrical", fields: {"inspect.electrical": "true"}},
+      {expression: "base", fields: {fee: "round(fee.base * (project.type == 'adu' ? 0.5 : 1), 2)"}},
+      {expression: "permit", fields: {status: "'issued'", fee: "fee", inspections: "inspect ?? {}"}},
+      {output: "decision"},
+    ],
+    edges: [
+      "application -> zoning -> issues -> route",
+      "route:1 -> historic -> decision",
+      "route:2 -> reject -> decision",
+      "route:0 -> fees -> inspections",
+      "inspections:0 -> structural -> permit",
+      "inspections:1 -> framing -> permit",
+      "inspections:2 -> electrical -> permit",
+      "inspections:3 -> base -> permit",
+      "permit -> decision",
+    ],
+  },
+  cases: [
+    [{project: {type: "addition", zone: "R1", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 15}, applicant: {licensed: true}}, {status: "issued", fee: 525, inspections: {structural: true, framing: true}}],
+    [{project: {type: "addition", zone: "R2", valuation: 50000, sqft: 600, heightFt: 35, setbackFt: 10}, applicant: {licensed: true}}, {status: "issued", fee: 525, inspections: {structural: true, framing: true, electrical: true}}],
+    [{project: {type: "adu", zone: "R1", valuation: 120000, sqft: 700, heightFt: 20, setbackFt: 5}, applicant: {owner: true}}, {status: "issued", fee: 512.5, inspections: {structural: true, framing: true, electrical: true}}],
+    [{project: {type: "addition", zone: "C1", valuation: 250000, sqft: 2000, heightFt: 50, setbackFt: 0}, applicant: {licensed: true}}, {status: "issued", fee: 1675, inspections: {structural: true, framing: true, electrical: true}}],
+    [{project: {type: "fence", zone: "R1", valuation: 800, heightFt: 6, setbackFt: 0}, applicant: {owner: true}}, {status: "issued", fee: 0, inspections: {}}],
+    [{project: {type: "deck", zone: "R2", valuation: 1000, sqft: 200, heightFt: 10, setbackFt: 3}, applicant: {owner: true}}, {status: "issued", fee: 85, inspections: {framing: true}}],
+    [{project: {type: "deck", zone: "R2", valuation: 999.99, sqft: 200, heightFt: 10, setbackFt: 3}, applicant: {owner: true}}, {status: "issued", fee: 0, inspections: {framing: true}}],
+    [{project: {type: "deck", zone: "R2", valuation: 25000, sqft: 501, heightFt: 12, setbackFt: 3}, applicant: {owner: true}}, {status: "issued", fee: 325, inspections: {framing: true, electrical: true}}],
+    [{project: {type: "deck", zone: "R2", valuation: 100000, sqft: 200, heightFt: 12, setbackFt: 3}, applicant: {owner: true}}, {status: "issued", fee: 925, inspections: {framing: true}}],
+    // Demolition without dimensions: the height and setback comparisons fail against null and
+    // raise no issue; the sqft condition fails too.
+    [{project: {type: "demolition", zone: "C1", valuation: 30000}, applicant: {licensed: true}}, {status: "issued", fee: 365, inspections: {}}],
+    // Rejections collect every issue in rule order.
+    [{project: {type: "adu", zone: "C1", valuation: 120000, sqft: 700, heightFt: 20, setbackFt: 5}, applicant: {owner: true}}, {status: "rejected", issues: ["use not permitted in zone", "exceeds height limit"]}],
+    [{project: {type: "adu", zone: "R2", valuation: 120000, sqft: 700, heightFt: 20, setbackFt: 5}, applicant: {owner: true}}, {status: "rejected", issues: ["use not permitted in zone", "exceeds height limit"]}],
+    [{project: {type: "fence", zone: "R1", valuation: 800, heightFt: 7, setbackFt: 0}, applicant: {owner: true}}, {status: "rejected", issues: ["exceeds height limit"]}],
+    [{project: {type: "deck", zone: "R1", valuation: 8000, heightFt: 10, setbackFt: 2}, applicant: {owner: true}}, {status: "rejected", issues: ["setback too small"]}],
+    [{project: {type: "addition", zone: "R1", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 15}, applicant: {licensed: false, owner: false}}, {status: "rejected", issues: ["licensed contractor or owner-builder required"]}],
+    [{project: {type: "addition", zone: "R1", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 15}}, {status: "rejected", issues: ["licensed contractor or owner-builder required"]}],
+    [{project: {type: "addition", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 15}, applicant: {licensed: true}}, {status: "rejected", issues: ["use not permitted in zone", "exceeds height limit"]}],
+    // Historic review alone is referred; with another issue the application is rejected.
+    [{project: {type: "addition", zone: "R1", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 15, historic: true}, applicant: {licensed: true}}, {status: "referred to historic commission", issues: ["historic review required"]}],
+    [{project: {type: "addition", zone: "R1", valuation: 50000, sqft: 400, heightFt: 20, setbackFt: 5, historic: true}, applicant: {licensed: true}}, {status: "rejected", issues: ["setback too small", "historic review required"]}],
+    [{project: {type: "deck", zone: "R1", valuation: 5000, sqft: 100, heightFt: 8, setbackFt: 4, historic: true}, applicant: {owner: true}}, {status: "issued", fee: 125, inspections: {framing: true}}],
+    // An approvable project without a valuation has no fee row and the fee step fails.
+    [{project: {type: "addition", zone: "R1", sqft: 400, heightFt: 20, setbackFt: 15}, applicant: {licensed: true}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Small-business grant: grants received in the last three years from a dated history, ordered
+// hard exclusions in a first-hit switch, collected priority points, an award band, and an award
+// floored to hundreds under the band maximum, the 50k lifetime cap and the remaining budget.
+// A missing headcount errors the size condition, which is then false: the exclusion is skipped.
+{
+  name: "small-business grant: history window, exclusions, priority points and award caps",
+  graph: {
+    nodes: [
+      {input: "application"},
+      {expression: "history", passThrough: true, fields: {
+        "hist.recent": "filter(priorGrants ?? [], d(#.date).isAfter(d().sub(3, 'year')))",
+        "hist.recentTotal": "sum(map($.hist.recent, #.amount))",
+      }},
+      {switch: "exclusions", when: [
+        "business.employees > 50 or business.revenue > 5000000",
+        "business.yearsOperating < 1",
+        "hist.recentTotal >= 50000",
+        "",
+      ]},
+      {expression: "notSmall", fields: {status: "'ineligible'", reason: "'not a small business'"}},
+      {expression: "tooNew", fields: {status: "'ineligible'", reason: "'operating less than a year'"}},
+      {expression: "capReached", fields: {status: "'ineligible'", reason: "'lifetime cap reached'"}},
+      {table: "scoring", passThrough: true, inputs: [null], outputs: ["points[]"], rules: [
+        ["business.county in ['Lake', 'Marsh', 'Pine']", "20"],
+        ["some(business.ownership ?? [], # in ['woman', 'veteran', 'minority'])", "15"],
+        ["business.employees <= 10", "10"],
+        ["business.revenue < 500000", "10"],
+        ["len(hist.recent) == 0", "5"],
+        ["", "0"],
+      ]},
+      {expression: "score", passThrough: true, fields: {score: "sum(points)"}},
+      {table: "band", passThrough: true, inputs: ["score"], outputs: ["award.pct", "award.max"], rules: [
+        [">= 40", "1", "25000"],
+        ["[25..40)", "0.75", "15000"],
+        ["[15..25)", "0.5", "10000"],
+        ["", "0", "0"],
+      ]},
+      {expression: "award", fields: {
+        amount: "floor(min([request.amount * award.pct, award.max, 50000 - hist.recentTotal, program.remainingBudget]) / 100) * 100",
+        status: "$.amount > 0 ? 'awarded' : 'not funded'",
+        score: "score",
+      }},
+      {output: "grant"},
+    ],
+    edges: [
+      "application -> history -> exclusions",
+      "exclusions:0 -> notSmall -> grant",
+      "exclusions:1 -> tooNew -> grant",
+      "exclusions:2 -> capReached -> grant",
+      "exclusions:3 -> scoring -> score -> band -> award -> grant",
+    ],
+  },
+  cases: [
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 20000, status: "awarded", score: 60}],
+    [{business: {employees: 10, revenue: 2000000, yearsOperating: 4, county: "Metro", ownership: []}, priorGrants: [{amount: 10000, date: "2023-06-01"}], request: {amount: 30000}, program: {remainingBudget: 1000000}}, {amount: 0, status: "not funded", score: 10}],
+    [{business: {employees: 10, revenue: 499999, yearsOperating: 2, county: "Metro", ownership: ["woman"]}, request: {amount: 40000}, program: {remainingBudget: 1000000}}, {amount: 25000, status: "awarded", score: 40}],
+    [{business: {employees: 12, revenue: 400000, yearsOperating: 2, county: "Pine"}, priorGrants: [{amount: 5000, date: "2024-01-10"}], request: {amount: 12345}, program: {remainingBudget: 1000000}}, {amount: 9200, status: "awarded", score: 30}],
+    [{business: {employees: 30, revenue: 900000, yearsOperating: 2, county: "Marsh"}, priorGrants: [{amount: 5000, date: "2024-01-10"}], request: {amount: 9999}, program: {remainingBudget: 1000000}}, {amount: 4900, status: "awarded", score: 20}],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, request: {amount: 20000}, program: {remainingBudget: 4250}}, {amount: 4200, status: "awarded", score: 60}],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, request: {amount: 20000}, program: {remainingBudget: 0}}, {amount: 0, status: "not funded", score: 60}],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, priorGrants: [{amount: 30000, date: "2023-01-01"}, {amount: 15000, date: "2024-06-30"}], request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 5000, status: "awarded", score: 55}],
+    // The three-year window: grants older than three years before the evaluation time drop out.
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, priorGrants: [{amount: 60000, date: "2022-03-19"}], request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 20000, status: "awarded", score: 60}],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, priorGrants: [{amount: 30000, date: "2023-01-01"}, {amount: 20000, date: "2025-01-15"}], request: {amount: 20000}, program: {remainingBudget: 1000000}}, {status: "ineligible", reason: "lifetime cap reached"}],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake"}, priorGrants: [{amount: 60000}], request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 20000, status: "awarded", score: 45}],
+    // Ordered exclusions.
+    [{business: {employees: 51, revenue: 300000, yearsOperating: 4}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {status: "ineligible", reason: "not a small business"}],
+    [{business: {employees: 5, revenue: 5000001, yearsOperating: 0.5}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {status: "ineligible", reason: "not a small business"}],
+    [{business: {employees: 50, revenue: 5000000, yearsOperating: 0.5}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {status: "ineligible", reason: "operating less than a year"}],
+    [{business: {employees: 50, revenue: 5000000, yearsOperating: 1, county: "lake", ownership: ["Veteran"]}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 0, status: "not funded", score: 5}],
+    // No headcount: the size exclusion and the headcount points are skipped.
+    [{business: {revenue: 300000, yearsOperating: 4, county: "Lake", ownership: ["veteran"]}, request: {amount: 20000}, program: {remainingBudget: 1000000}}, {amount: 20000, status: "awarded", score: 50}],
+    // No requested amount or no budget figure fails the award.
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake"}, program: {remainingBudget: 1000000}}, "!error"],
+    [{business: {employees: 8, revenue: 300000, yearsOperating: 4, county: "Lake"}, request: {amount: 20000}}, "!error"],
+  ],
+}

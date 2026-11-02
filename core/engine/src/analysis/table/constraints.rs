@@ -4,6 +4,7 @@ use zen_expression::intellisense::IntelliSense;
 
 use super::cell::Condition;
 use super::value_set::ValueSet;
+use zen_types::path::DotPath;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PathConstraints {
@@ -59,13 +60,8 @@ impl PathConstraints {
 
     pub(crate) fn without<'s>(mut self, written: impl IntoIterator<Item = &'s str>) -> Self {
         let written: Vec<&str> = written.into_iter().collect();
-        let overlaps = |a: &str, b: &str| {
-            a == b
-                || a.strip_prefix(b).is_some_and(|rest| rest.starts_with('.'))
-                || b.strip_prefix(a).is_some_and(|rest| rest.starts_with('.'))
-        };
         self.entries
-            .retain(|(path, _)| !written.iter().any(|w| overlaps(path, w)));
+            .retain(|(path, _)| !written.iter().any(|w| DotPath::overlaps(path, w)));
         self
     }
 }

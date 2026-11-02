@@ -5,19 +5,18 @@ use ahash::{HashMap, HashSet, HashSetExt};
 use zen_expression::variable::Variable;
 
 use crate::decision::Decision;
-use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::engine::EvaluationOptions;
 use crate::loader::DynamicLoader;
 use crate::model::{DecisionContent, GraphContent};
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
-use crate::workspace::types::{
-    Diagnostic, EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity,
-};
+use crate::workspace::types::{Diagnostic, EvaluationError as PolicyEvaluationError, Severity};
 use crate::workspace::Workspace;
 use crate::{CompileFailure, EvaluationError};
 
 pub(crate) async fn evaluate_policy(
+    policies: &crate::prepared::Policies,
     loader: &DynamicLoader,
     entry_key: &str,
     entry_content: Arc<DecisionContent>,
@@ -28,40 +27,30 @@ pub(crate) async fn evaluate_policy(
 
     let documents = collect_transitive_policies(loader, entry_path.clone(), entry_content).await?;
 
-    let mut workspace = Workspace::new();
-    for (path, doc) in documents {
-        workspace.set_policy_arc(path, doc);
-    }
-
-    let blocking_errors = workspace
-        .evaluation_diagnostics(&entry_path)
-        .into_iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    if blocking_errors > 0 {
+    let artifact = policies.artifact(&entry_path, documents, |documents| {
+        let mut workspace = Workspace::new();
+        for (path, doc) in documents {
+            workspace.set_policy_arc(path.clone(), doc.clone());
+        }
+        let blocked = workspace
+            .evaluation_diagnostics(&entry_path)
+            .into_iter()
+            .any(|d| d.severity == Severity::Error);
+        (!blocked).then(|| workspace.eval_artifact(&entry_path))
+    });
+    let Some(artifact) = artifact else {
         return Err(Box::new(EvaluationError::Policy(
             PolicyEvaluationError::CompilationErrors {
                 policy_path: entry_path.clone(),
             },
         )));
-    }
-
-    let request = EvaluateRequest {
-        policy_path: entry_path,
-        input,
-        goals: vec![],
-        trace: options.trace,
     };
 
-    let result = workspace
-        .evaluate(&request)
+    let result = artifact
+        .evaluate_entry(&entry_path, input, options.trace)
         .map_err(|e| Box::new(EvaluationError::Policy(e)))?;
 
-    Ok(DecisionGraphResponse {
-        performance: format!("{:.1?}", result.duration),
-        result: result.output,
-        trace: result.trace.map(EvaluationTrace::Policy),
-    })
+    Ok(DecisionGraphResponse::from(result))
 }
 
 async fn collect_transitive_policies(
@@ -95,7 +84,7 @@ async fn collect_transitive_policies(
             let next = loader
                 .load(import_path.as_ref())
                 .await
-                .map_err(|e| Box::<EvaluationError>::from(e))?;
+                .map_err(Box::<EvaluationError>::from)?;
             queue.push_back((import_path.clone(), next));
         }
 

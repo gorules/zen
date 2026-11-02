@@ -2,16 +2,13 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::variable::{Variable, VariableType};
-use zen_expression::Isolate;
+use zen_expression::variable::VariableType;
 
-use crate::workspace::types::{
-    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
-};
+use crate::workspace::types::{Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind};
 
 use crate::policy::ArcStrTrim;
 
-use super::context::{AnalysisContext, ExecutionContext, ExecutionError};
+use super::context::AnalysisContext;
 use super::{
     Block, BlockKind, BlockReadPlan, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -203,21 +200,6 @@ impl AssertionIr {
         }
     }
 
-    pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
-        let mut isolate = cx.isolate.borrow_mut();
-        let mut traces: Vec<ConditionTrace> = Vec::new();
-        let result = self.evaluate_conditions(&mut isolate, cx, &mut traces)?;
-
-        if !self.output.is_empty() {
-            cx.write(&self.output, Variable::Bool(result));
-        }
-
-        Ok(BlockTrace::Assertion {
-            result,
-            conditions: traces,
-        })
-    }
-
     pub(super) fn resolve_cursor(
         &self,
         cursor: &Cursor,
@@ -235,14 +217,9 @@ impl AssertionIr {
         }
     }
 
-    fn evaluate_conditions(
-        &self,
-        isolate: &mut Isolate,
-        cx: &ExecutionContext,
-        traces: &mut Vec<ConditionTrace>,
-    ) -> Result<bool, ExecutionError> {
+    pub(crate) fn fold(&self, results: &[bool]) -> bool {
         if self.conditions.is_empty() {
-            return Ok(false);
+            return false;
         }
 
         let mut stack: Vec<Frame> = Vec::new();
@@ -251,7 +228,7 @@ impl AssertionIr {
         let mut depth = 0u32;
         let mut combine_next = ConditionOperator::And;
 
-        for condition in &self.conditions {
+        for (condition, &cond_result) in self.conditions.iter().zip(results) {
             while condition.depth > depth {
                 stack.push(Frame {
                     acc,
@@ -271,17 +248,6 @@ impl AssertionIr {
                 depth -= 1;
             }
 
-            let cond_result = isolate
-                .run_standard(&condition.expression)
-                .map_err(|e| cx.expression_error(&condition.expression, e))?
-                .as_bool()
-                .unwrap_or(false);
-
-            traces.push(ConditionTrace {
-                id: condition.id.clone(),
-                result: cond_result,
-            });
-
             acc = if started {
                 combine_next.apply(acc, cond_result)
             } else {
@@ -295,7 +261,7 @@ impl AssertionIr {
             acc = frame.close(acc);
         }
 
-        Ok(acc)
+        acc
     }
 }
 

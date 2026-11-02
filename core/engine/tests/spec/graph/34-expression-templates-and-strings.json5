@@ -1,0 +1,683 @@
+// Strings across expression nodes: template strings over request values, `$` fields and upstream
+// node outputs, strings assembled from several nodes and branches, string functions applied to node
+// outputs, the conversions string(), number() and bool() between nodes, and numbers and dates
+// formatted into text. Function-level string semantics live in the expression spec; these suites
+// pin how text is built and carried through graphs.
+
+// ---------------------------------------------------------------------------
+// Template strings over request values of every type.
+{
+  name: "a template interpolating request scalars",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`${name} is ${age} (${active})`"}}]},
+  cases: [
+    [{name: "ann", age: 30, active: true}, {msg: "ann is 30 (true)"}],
+    [{name: "", age: 0, active: false}, {msg: " is 0 (false)"}],
+    [{name: "bob", age: 1.50, active: true}, {msg: "bob is 1.50 (true)"}],
+    [{name: "é😀", age: -0.25, active: false}, {msg: "é😀 is -0.25 (false)"}],
+  ],
+}
+
+{
+  name: "a template interpolating a missing value renders null",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`hello ${name}`", safe: "`hello ${name ?? 'guest'}`"}}]},
+  cases: [
+    [{name: "ann"}, {msg: "hello ann", safe: "hello ann"}],
+    [{}, {msg: "hello null", safe: "hello guest"}],
+    [{name: null}, {msg: "hello null", safe: "hello guest"}],
+  ],
+}
+
+{
+  name: "a template interpolating an array or object fails the node",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`v=${v}`"}}]},
+  cases: [
+    [{v: 1}, {msg: "v=1"}],
+    [{v: "s"}, {msg: "v=s"}],
+    [{v: [1]}, "!error"],
+    [{v: {a: 1}}, "!error"],
+    [{v: []}, "!error"],
+  ],
+}
+
+{
+  name: "a template over nested request members",
+  graph: {nodes: [{expression: "calc", fields: {addr: "`${address.street} ${address.no}, ${address.city}`"}}]},
+  cases: [
+    [{address: {street: "Main", no: 5, city: "Berlin"}}, {addr: "Main 5, Berlin"}],
+    [{address: {street: "Elm", city: "Paris"}}, {addr: "Elm null, Paris"}],
+    [{address: {}}, {addr: "null null, null"}],
+  ],
+}
+
+{
+  name: "a template with expressions inside the placeholders",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`${qty} x ${price} = ${qty * price}${qty > 1 ? ' (bulk)' : ''}`"}}]},
+  cases: [
+    [{qty: 2, price: 1.5}, {msg: "2 x 1.5 = 3.0 (bulk)"}],
+    [{qty: 1, price: 10}, {msg: "1 x 10 = 10"}],
+    [{qty: 0, price: 0.1}, {msg: "0 x 0.1 = 0"}],
+  ],
+}
+
+{
+  name: "a template with an arithmetic error fails the graph",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`total ${a + b}`"}}]},
+  cases: [
+    [{a: 1, b: 2}, {msg: "total 3"}],
+    [{a: 1}, "!error"],
+    [{a: "x", b: 1}, "!error"],
+    [{a: "x", b: "y"}, {msg: "total xy"}],
+  ],
+}
+
+{
+  name: "a template over a closure result",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`${len(items)} items, total ${sum(map(items, #.price))}`"}}]},
+  cases: [
+    [{items: [{price: 1}, {price: 2}]}, {msg: "2 items, total 3"}],
+    [{items: []}, {msg: "0 items, total 0"}],
+    [{items: [{price: 0.10}]}, {msg: "1 items, total 0.10"}],
+  ],
+}
+
+{
+  name: "templates inside a map build a list of strings",
+  graph: {nodes: [{expression: "calc", fields: {lines: "map(items, `${#.name}: ${#.qty}`)"}}]},
+  cases: [
+    [{items: [{name: "a", qty: 1}, {name: "b", qty: 2}]}, {lines: ["a: 1", "b: 2"]}],
+    [{items: [{name: "c"}]}, {lines: ["c: null"]}],
+    [{items: []}, {lines: []}],
+  ],
+}
+
+{
+  name: "nested template strings",
+  graph: {nodes: [{expression: "calc", fields: {msg: "`outer ${`inner ${x}`} end`"}}]},
+  cases: [
+    [{x: 1}, {msg: "outer inner 1 end"}, "bug: a template nested in an interpolation fails to parse (same as the expression spec)"],
+    [{x: "y"}, {msg: "outer inner y end"}, "bug: a template nested in an interpolation fails to parse (same as the expression spec)"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Templates over `$` fields and over upstream node outputs.
+{
+  name: "a template reads earlier fields through $",
+  graph: {nodes: [{expression: "calc", fields: {
+    net: "price * qty",
+    tax: "$.net * 0.2",
+    line: "`net ${$.net}, tax ${$.tax}, gross ${$.net + $.tax}`",
+  }}]},
+  cases: [
+    [{price: 10, qty: 2}, {net: 20, tax: 4, line: "net 20, tax 4.0, gross 24.0"}],
+    [{price: 1, qty: 1}, {net: 1, tax: 0.2, line: "net 1, tax 0.2, gross 1.2"}],
+  ],
+}
+
+{
+  name: "a template reads an upstream node's output",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "price * qty", currency: "currency ?? 'EUR'"}},
+      {expression: "text", fields: {summary: "`Total: ${total} ${currency}`"}},
+    ],
+  },
+  cases: [
+    [{price: 5, qty: 2, currency: "USD"}, {summary: "Total: 10 USD"}],
+    [{price: 0.5, qty: 3}, {summary: "Total: 1.5 EUR"}],
+  ],
+}
+
+{
+  name: "a template reads several nodes through $nodes",
+  graph: {
+    nodes: [
+      {expression: "who", fields: {name: "upper(name)"}},
+      {expression: "what", fields: {action: "$nodes.input.verb + 'ed'"}},
+      {expression: "say", fields: {line: "`${$nodes.who.name} ${$nodes.what.action} at ${$nodes.input.place}`"}},
+    ],
+  },
+  cases: [
+    [{name: "ann", verb: "jump", place: "home"}, {line: "ANN jumped at home"}],
+    [{name: "", verb: "", place: ""}, {line: " ed at "}],
+  ],
+}
+
+{
+  name: "a template reads a table output",
+  graph: {
+    nodes: [
+      {table: "tier", inputs: ["points"], outputs: ["tier", "discount"], rules: [
+        [">= 1000", "'gold'", "0.15"],
+        [">= 100", "'silver'", "0.05"],
+        ["", "'none'", "0"],
+      ]},
+      {expression: "text", fields: {msg: "`${upper(tier)} tier, ${discount * 100}% off`"}},
+    ],
+  },
+  cases: [
+    [{points: 1500}, {msg: "GOLD tier, 15.00% off"}],
+    [{points: 100}, {msg: "SILVER tier, 5.00% off"}],
+    [{points: 0}, {msg: "NONE tier, 0% off"}],
+  ],
+}
+
+{
+  name: "a template over a table that matched nothing",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["label"], rules: [["'a'", "'Alpha'"]]},
+      {expression: "text", fields: {msg: "`label=${label}`"}},
+    ],
+  },
+  cases: [
+    [{code: "a"}, {msg: "label=Alpha"}],
+    [{code: "b"}, {msg: "label=null"}],
+  ],
+}
+
+{
+  name: "table output cells written as templates",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["msg"], rules: [
+        ["'greet'", "`hello ${name}`"],
+        ["'bye'", "`bye ${name}, see you ${when ?? 'soon'}`"],
+        ["", "`unknown ${kind}`"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "greet", name: "ann"}, {msg: "hello ann"}],
+    [{kind: "bye", name: "bob", when: "monday"}, {msg: "bye bob, see you monday"}],
+    [{kind: "bye", name: "bob"}, {msg: "bye bob, see you soon"}],
+    [{kind: "x"}, {msg: "unknown x"}],
+  ],
+}
+
+{
+  name: "a template inside a loop node",
+  graph: {
+    nodes: [
+      {expression: "line", executionMode: "loop", inputField: "items", outputPath: "labels", fields: {label: "`#${id} ${name}`"}},
+    ],
+  },
+  cases: [
+    [{items: [{id: 1, name: "a"}, {id: 2, name: "b"}]}, {labels: [{label: "#1 a"}, {label: "#2 b"}]}],
+    [{items: []}, {labels: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Strings assembled from several nodes and branches.
+{
+  name: "concatenation across a chain of nodes",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {s: "first"}},
+      {expression: "b", fields: {s: "s + ' ' + $nodes.input.middle"}},
+      {expression: "c", fields: {full: "s + ' ' + $nodes.input.last", first: "$nodes.a.s"}},
+    ],
+  },
+  cases: [
+    [{first: "a", middle: "b", last: "c"}, {full: "a b c", first: "a"}],
+    [{first: "", middle: "", last: ""}, {full: "  ", first: ""}],
+    [{first: "x", middle: "y"}, "!error"],
+  ],
+}
+
+{
+  name: "concatenation of strings from parallel branches after a join",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {l: "upper(a)"}},
+      {expression: "right", fields: {r: "lower(b)"}},
+      {expression: "join", fields: {s: "l + '-' + r", n: "len(l + r)"}},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{a: "x", b: "Y"}, {s: "X-y", n: 2}],
+    [{a: "", b: ""}, {s: "-", n: 0}],
+    [{a: "Ab", b: "CD"}, {s: "AB-cd", n: 4}],
+  ],
+}
+
+{
+  name: "a string built incrementally by pass-through nodes",
+  graph: {
+    nodes: [
+      {expression: "one", passThrough: true, fields: {acc: "'a'"}},
+      {expression: "two", passThrough: true, fields: {acc: "acc + 'b'"}},
+      {expression: "three", passThrough: true, fields: {acc: "acc + 'c'", size: "len(acc + 'c')"}},
+    ],
+  },
+  cases: [
+    [{}, {acc: "abc", size: 3}],
+    [{acc: "zzz", x: 1}, {acc: "abc", size: 3, x: 1}],
+  ],
+}
+
+{
+  name: "a list of words built upstream read downstream",
+  graph: {
+    nodes: [
+      {expression: "words", fields: {ws: "map(filter(parts, len(#) > 0), upper(#))"}},
+      {expression: "use", fields: {first: "ws[0] ?? ''", hasA: "contains(ws, 'A')", lens: "map(ws, len(#))"}},
+    ],
+  },
+  cases: [
+    [{parts: ["a", "", "bc"]}, {first: "A", hasA: true, lens: [1, 2]}],
+    [{parts: ["x"]}, {first: "X", hasA: false, lens: [1]}],
+    [{parts: []}, {first: "", hasA: false, lens: []}],
+  ],
+}
+
+{
+  name: "a string concatenated with a number needs string()",
+  graph: {nodes: [{expression: "calc", fields: {a: "'n=' + string(n)", b: "string(n) + '!'"}}]},
+  cases: [
+    [{n: 1}, {a: "n=1", b: "1!"}],
+    [{n: 1.50}, {a: "n=1.50", b: "1.50!"}],
+    [{n: -2}, {a: "n=-2", b: "-2!"}],
+  ],
+}
+
+{
+  name: "a string concatenated with a raw number fails",
+  graph: {nodes: [{expression: "calc", fields: {a: "'n=' + n"}}]},
+  cases: [
+    [{n: "1"}, {a: "n=1"}],
+    [{n: 1}, "!error"],
+    [{n: 1.50}, "!error"],
+  ],
+}
+
+{
+  name: "a string concatenated with null or a boolean",
+  graph: {nodes: [{expression: "calc", fields: {out: "'v=' + v"}}]},
+  cases: [
+    [{v: "s"}, {out: "v=s"}],
+    [{v: true}, "!error"],
+    [{v: null}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// String functions over node outputs.
+{
+  name: "case and trim functions over an upstream string",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {raw: "'  ' + name + '  '"}},
+      {expression: "fn", fields: {trimmed: "trim(raw)", up: "upper(trim(raw))", low: "lower(raw)", size: "len(trim(raw))"}},
+    ],
+  },
+  cases: [
+    [{name: "Ann"}, {trimmed: "Ann", up: "ANN", low: "  ann  ", size: 3}],
+    [{name: ""}, {trimmed: "", up: "", low: "    ", size: 0}],
+    [{name: "a B"}, {trimmed: "a B", up: "A B", low: "  a b  ", size: 3}],
+  ],
+}
+
+{
+  name: "prefix, suffix and contains over an upstream string",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {email: "lower(email)"}},
+      {expression: "fn", fields: {
+        corp: "endsWith(email, '@corp.com')",
+        admin: "startsWith(email, 'admin')",
+        plus: "contains(email, '+')",
+      }},
+    ],
+  },
+  cases: [
+    [{email: "Admin@Corp.com"}, {corp: true, admin: true, plus: false}],
+    [{email: "ann+x@mail.com"}, {corp: false, admin: false, plus: true}],
+    [{email: ""}, {corp: false, admin: false, plus: false}],
+  ],
+}
+
+{
+  name: "split an upstream string and read the parts",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {code: "trim(code)"}},
+      {expression: "fn", fields: {parts: "split(code, '-')", country: "split(code, '-')[0]", n: "len(split(code, '-'))"}},
+    ],
+  },
+  cases: [
+    [{code: " DE-BY-123 "}, {parts: ["DE", "BY", "123"], country: "DE", n: 3}],
+    [{code: "FR"}, {parts: ["FR"], country: "FR", n: 1}],
+    [{code: ""}, {parts: [""], country: "", n: 1}],
+    [{code: "-"}, {parts: ["", ""], country: "", n: 2}],
+  ],
+}
+
+{
+  name: "matches and extract over an upstream value",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {ref: "upper(ref)"}},
+      {expression: "fn", fields: {valid: "matches(ref, '^[A-Z]{3}-[0-9]+$')", digits: "extract(ref, '([0-9]+)')"}},
+    ],
+  },
+  cases: [
+    [{ref: "abc-123"}, {valid: true, digits: ["123", "123"]}],
+    [{ref: "ab-1"}, {valid: false, digits: ["1", "1"]}],
+    [{ref: "xyz"}, {valid: false, digits: []}],
+  ],
+}
+
+{
+  name: "string functions over a missing upstream value fail",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {s: "v"}},
+      {expression: "fn", fields: {up: "upper(s)"}},
+    ],
+  },
+  cases: [
+    [{v: "a"}, {up: "A"}],
+    [{}, "!error"],
+    [{v: 1}, "!error"],
+  ],
+}
+
+{
+  name: "string comparisons drive a table",
+  graph: {
+    nodes: [
+      {expression: "norm", fields: {country: "upper(trim(country))"}},
+      {table: "t", inputs: ["country"], outputs: ["region"], rules: [
+        ["'DE', 'FR', 'IT'", "'EU'"],
+        ["'US'", "'NA'"],
+        ["", "'OTHER'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: " de "}, {region: "EU"}],
+    [{country: "us"}, {region: "NA"}],
+    [{country: "Fr"}, {region: "EU"}],
+    [{country: "jp"}, {region: "OTHER"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Conversions between nodes.
+{
+  name: "number() parses request strings for arithmetic downstream",
+  graph: {
+    nodes: [
+      {expression: "parse", fields: {amount: "number(amount)", qty: "number(qty)"}},
+      {expression: "calc", fields: {total: "amount * qty"}},
+    ],
+  },
+  cases: [
+    [{amount: "12.50", qty: "2"}, {total: 25}],
+    [{amount: " 1 ", qty: "0.5"}, {total: 0.5}],
+    [{amount: 3, qty: "1e1"}, {total: 30}],
+    [{amount: "abc", qty: "1"}, "!error"],
+    [{amount: "", qty: "1"}, "!error"],
+    [{qty: "1"}, "!error"],
+  ],
+}
+
+{
+  name: "number() over a boolean and over numbers",
+  graph: {nodes: [{expression: "calc", fields: {n: "number(v)"}}]},
+  cases: [
+    [{v: true}, {n: 1}],
+    [{v: false}, {n: 0}],
+    [{v: 2.50}, {n: 2.5}],
+    [{v: "-0.1"}, {n: -0.1}],
+  ],
+}
+
+{
+  name: "string() renders numbers with their scale",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {a: "x * 2", b: "x + 0.10"}},
+      {expression: "text", fields: {a: "string(a)", b: "string(b)"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {a: "2", b: "1.10"}],
+    [{x: 1.5}, {a: "3.0", b: "1.60"}],
+    [{x: 0}, {a: "0", b: "0.10"}],
+    [{x: -0.25}, {a: "-0.50", b: "-0.15"}],
+  ],
+}
+
+{
+  name: "string() of booleans, null and dates",
+  graph: {nodes: [{expression: "calc", fields: {b: "string(flag)", n: "string(missing)", d: "string(d(day))"}}]},
+  cases: [
+    [{flag: true, day: "2024-01-01"}, {b: "true", n: "null", d: "2024-01-01T00:00:00Z"}],
+    [{flag: false, day: "2023-06-15T12:30:00Z"}, {b: "false", n: "null", d: "2023-06-15T12:30:00Z"}],
+  ],
+}
+
+{
+  name: "string() of an array or object fails",
+  graph: {nodes: [{expression: "calc", fields: {s: "string(v)"}}]},
+  cases: [
+    [{v: 1}, {s: "1"}],
+    [{v: [1]}, "!error"],
+    [{v: {a: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a string round trip through number() and string()",
+  graph: {
+    nodes: [
+      {expression: "toNum", fields: {n: "number(s)"}},
+      {expression: "toStr", fields: {s: "string(n)", same: "string(n) == $nodes.input.s"}},
+    ],
+  },
+  cases: [
+    [{s: "42"}, {s: "42", same: true}],
+    [{s: "1.50"}, {s: "1.50", same: true}],
+    [{s: " 7 "}, {s: "7", same: false}],
+    [{s: "1e3"}, {s: "1000", same: false}],
+  ],
+}
+
+{
+  name: "bool() over numbers and booleans from upstream",
+  graph: {
+    nodes: [
+      {expression: "src", fields: {n: "count(xs, # > 0)"}},
+      {expression: "conv", fields: {any: "bool(n)", neg: "bool(n - n)"}},
+    ],
+  },
+  cases: [
+    [{xs: [1, 2]}, {any: true, neg: false}],
+    [{xs: [-1]}, {any: false, neg: false}],
+    [{xs: []}, {any: false, neg: false}],
+  ],
+}
+
+{
+  name: "bool() over request strings",
+  graph: {nodes: [{expression: "calc", fields: {b: "bool(s)"}}]},
+  cases: [
+    [{s: "true"}, {b: true}],
+    [{s: "false"}, {b: false}],
+    [{s: " true "}, {b: true}],
+    [{}, {b: false}],
+    [{s: "yes"}, {b: true}, "bug: non-empty strings other than true/false convert to false (inverted is_empty, see expression spec)"],
+    [{s: ""}, {b: false}, "bug: the empty string converts to true (inverted is_empty, see expression spec)"],
+  ],
+}
+
+{
+  name: "a converted value feeds a table input",
+  graph: {
+    nodes: [
+      {expression: "parse", fields: {age: "number(age)"}},
+      {table: "t", inputs: ["age"], outputs: ["group"], rules: [
+        ["< 18", "'minor'"],
+        ["[18..64]", "'adult'"],
+        ["", "'senior'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: "17"}, {group: "minor"}],
+    [{age: "18"}, {group: "adult"}],
+    [{age: "64.5"}, {group: "senior"}],
+    [{age: 30}, {group: "adult"}],
+  ],
+}
+
+{
+  name: "a string-typed number does not match a numeric table cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age"], outputs: ["group"], rules: [
+        ["< 18", "'minor'"],
+        ["'30'", "'string thirty'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 10}, {group: "minor"}],
+    [{age: "30"}, {group: "string thirty"}],
+    [{age: 30}, {group: "other"}],
+  ],
+}
+
+{
+  name: "isNumeric guards a conversion",
+  graph: {nodes: [{expression: "calc", fields: {n: "isNumeric(v) ? number(v) : 0"}}]},
+  cases: [
+    [{v: "12"}, {n: 12}],
+    [{v: "x"}, {n: 0}],
+    [{v: 5}, {n: 5}],
+    [{v: ""}, {n: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Formatting numbers into text.
+{
+  name: "rounded amounts rendered with a currency",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {gross: "round(net * 1.19, 2)"}},
+      {expression: "text", fields: {label: "`${gross} EUR`", plain: "string(gross)"}},
+    ],
+  },
+  cases: [
+    [{net: 10}, {label: "11.90 EUR", plain: "11.90"}],
+    [{net: 1}, {label: "1.19 EUR", plain: "1.19"}],
+    [{net: 0.01}, {label: "0.01 EUR", plain: "0.01"}],
+    [{net: 100}, {label: "119.00 EUR", plain: "119.00"}],
+  ],
+}
+
+{
+  name: "percentages rendered from a ratio",
+  graph: {nodes: [{expression: "calc", fields: {pct: "`${round(part / total * 100, 1)}%`"}}]},
+  cases: [
+    [{part: 1, total: 3}, {pct: "33.3%"}],
+    [{part: 1, total: 2}, {pct: "50.0%"}],
+    [{part: 0, total: 5}, {pct: "0%"}],
+    [{part: 2, total: 3}, {pct: "66.7%"}],
+  ],
+}
+
+{
+  name: "integers from floor, ceil and trunc rendered as text",
+  graph: {nodes: [{expression: "calc", fields: {f: "string(floor(v))", c: "string(ceil(v))", t: "`${trunc(v)}`"}}]},
+  cases: [
+    [{v: 1.5}, {f: "1", c: "2", t: "1"}],
+    [{v: -1.5}, {f: "-2", c: "-1", t: "-1"}],
+    [{v: 3}, {f: "3", c: "3", t: "3"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Formatting dates into text.
+{
+  name: "a date formatted in several patterns",
+  graph: {nodes: [{expression: "calc", fields: {
+    iso: "d(day).format('%Y-%m-%d')",
+    eu: "d(day).format('%d.%m.%Y')",
+    month: "d(day).format('%B %Y')",
+    time: "d(day).format('%H:%M')",
+  }}]},
+  cases: [
+    [{day: "2024-03-05T14:07:00Z"}, {iso: "2024-03-05", eu: "05.03.2024", month: "March 2024", time: "14:07"}],
+    [{day: "2023-12-31"}, {iso: "2023-12-31", eu: "31.12.2023", month: "December 2023", time: "00:00"}],
+    [{day: date('2020-02-29')}, {iso: "2020-02-29", eu: "29.02.2020", month: "February 2020", time: "00:00"}],
+  ],
+}
+
+{
+  name: "a date computed upstream formatted downstream",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {due: "d(issued).add(days, 'd')"}},
+      {expression: "text", fields: {msg: "`due on ${due.format('%Y-%m-%d')}`", raw: "`${due}`"}},
+    ],
+  },
+  cases: [
+    [{issued: "2024-01-30", days: 2}, {msg: "due on 2024-02-01", raw: "2024-02-01T00:00:00Z"}],
+    [{issued: "2024-02-28", days: 1}, {msg: "due on 2024-02-29", raw: "2024-02-29T00:00:00Z"}],
+    [{issued: "2023-12-31", days: 0}, {msg: "due on 2023-12-31", raw: "2023-12-31T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "the fixed evaluation time formatted",
+  graph: {nodes: [{expression: "calc", fields: {today: "d().format('%Y-%m-%d')", stamp: "`${d()}`"}}]},
+  cases: [
+    [{}, {today: "2025-03-20", stamp: "2025-03-20T10:15:30Z"}],
+  ],
+}
+
+{
+  name: "date parts concatenated into text",
+  graph: {nodes: [{expression: "calc", fields: {label: "`Q${d(day).quarter()} ${d(day).year()}`", dow: "d(day).format('%A')"}}]},
+  cases: [
+    [{day: "2024-01-15"}, {label: "Q1 2024", dow: "Monday"}],
+    [{day: "2024-11-30"}, {label: "Q4 2024", dow: "Saturday"}],
+  ],
+}
+
+{
+  name: "an invalid date string formatted",
+  graph: {nodes: [{expression: "calc", fields: {s: "d(day).format('%Y')"}}]},
+  cases: [
+    [{day: "2024-01-01"}, {s: "2024"}],
+    [{day: "not a date"}, {s: "Invalid date"}, "question: an invalid date formats to the text 'Invalid date' instead of failing (see 21-values)"],
+  ],
+}
+
+{
+  name: "a formatted date compared as text in a table",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {month: "d(day).format('%m')"}},
+      {table: "season", inputs: ["month"], outputs: ["season"], rules: [
+        ["'12', '01', '02'", "'winter'"],
+        ["'06', '07', '08'", "'summer'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-10"}, {season: "winter"}],
+    [{day: "2024-07-04"}, {season: "summer"}],
+    [{day: "2024-04-01"}, {season: "other"}],
+    [{day: "2023-12-25T23:00:00Z"}, {season: "winter"}],
+  ],
+}

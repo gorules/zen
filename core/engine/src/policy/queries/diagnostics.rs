@@ -9,6 +9,9 @@ use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
+use zen_types::path::DotPath;
+
+type Seen = (Arc<str>, Arc<str>, PropertyTypeIr, bool, bool);
 
 impl Db {
     pub fn compute_policy_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
@@ -108,12 +111,7 @@ impl Db {
         let unit = self.unit(path);
         let mut members: Vec<&Arc<str>> = unit.members.iter().collect();
         members.sort_by_key(|member| (*member != path, member.to_string()));
-        let covers = |written: &str, field: &str| {
-            field == written
-                || field
-                    .strip_prefix(written)
-                    .is_some_and(|rest| rest.starts_with('.'))
-        };
+        let covers = |written: &str, field: &str| DotPath::within(field, written);
         for diagnostic in out.iter_mut() {
             if !diagnostic.is_in(path) {
                 continue;
@@ -376,7 +374,7 @@ impl Db {
             let Some(rule) = rule_index.get(&block_ref) else {
                 continue;
             };
-            let write_scope = rule.write_scope(&classifier);
+            let write_scope = rule.write_scope(classifier);
 
             for read in &rule_analysis.reads {
                 if read.via_alias {
@@ -596,10 +594,7 @@ impl Db {
 
     fn data_model_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
-        let mut seen: HashMap<
-            (Option<Arc<str>>, Arc<str>),
-            (Arc<str>, Arc<str>, PropertyTypeIr, bool, bool),
-        > = HashMap::default();
+        let mut seen: HashMap<(Option<Arc<str>>, Arc<str>), Seen> = HashMap::default();
         let unit = self.unit(target);
         let all_dms = &unit.data_models;
         let known_entities: HashSet<Arc<str>> = all_dms

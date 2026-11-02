@@ -1,0 +1,507 @@
+// Input and output nodes: what enters a graph, what leaves it, and which nodes contribute to the result.
+
+// ---------------------------------------------------------------------------
+// input -> output passes the request through unchanged.
+{
+  name: "input -> output passes scalars through",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: "text"}, {a: "text"}],
+    [{a: true, b: false}, {a: true, b: false}],
+    [{a: 0}, {a: 0}],
+    [{a: -1.5}, {a: -1.5}],
+    [{a: 0.1000000000000000000000000001}, {a: 0.1000000000000000000000000001}],
+    [{a: ""}, {a: ""}],
+  ],
+}
+
+{
+  name: "input -> output passes nested structures through",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [{a: {b: {c: 1}}}, {a: {b: {c: 1}}}],
+    [{list: [1, 2, 3]}, {list: [1, 2, 3]}],
+    [{list: [{x: 1}, {x: 2}]}, {list: [{x: 1}, {x: 2}]}],
+    [{list: []}, {list: []}],
+    [{obj: {}}, {obj: {}}],
+    [{m: [[1, 2], [3]]}, {m: [[1, 2], [3]]}],
+    [{a: 1, b: "x", c: [true], d: {e: null}}, {a: 1, b: "x", c: [true], d: {e: null}}],
+  ],
+}
+
+{
+  name: "input -> output with an empty request",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [{}, {}],
+  ],
+}
+
+// Keys whose value is null sit at the top level of the request. The final result is assembled by
+// merging the ending nodes into an empty object with merge-patch semantics, which deletes top-level
+// null keys. Nested nulls survive because a nested object replaces a missing key wholesale.
+{
+  name: "null keys in the request",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [{a: null}, {}, "question: top-level null keys are dropped from the result while nested nulls survive"],
+    [{a: null, b: 1}, {b: 1}, "question: top-level null keys are dropped from the result while nested nulls survive"],
+    [{a: {b: null}}, {a: {b: null}}],
+    [{a: [null, 1]}, {a: [null, 1]}],
+    [{a: {b: {c: null}}, d: 2}, {a: {b: {c: null}}, d: 2}],
+  ],
+}
+
+{
+  name: "keys with special characters pass through",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [{"a.b": 1}, {"a.b": 1}],
+    [{"my key": "v"}, {"my key": "v"}],
+    [{"": 1}, {"": 1}],
+    [{"ключ": "значение"}, {"ключ": "значение"}],
+    [{"$x": 1}, {"$x": 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Non-object requests. Nodes receive the merge of their incoming data; a scalar incoming value is
+// not an object, so the next node sees an empty object. Arrays are kept as they are.
+{
+  name: "non-object requests through input -> output",
+  graph: {nodes: [{input: "request"}, {output: "response"}]},
+  cases: [
+    [5, {}, "question: a scalar request is replaced by an empty object instead of being returned or rejected"],
+    ["text", {}, "question: a scalar request is replaced by an empty object instead of being returned or rejected"],
+    [true, {}, "question: a scalar request is replaced by an empty object instead of being returned or rejected"],
+    [null, {}],
+    [[1, 2, 3], [1, 2, 3]],
+    [[], []],
+    [[{a: 1}], [{a: 1}]],
+  ],
+}
+
+{
+  name: "an expression node after a non-object request sees an empty object",
+  graph: {nodes: [{expression: "calc", fields: {kind: "type(a)", isNull: "a == null"}}]},
+  cases: [
+    [5, {kind: "null", isNull: true}],
+    ["x", {kind: "null", isNull: true}],
+    [null, {kind: "null", isNull: true}],
+    [{a: 1}, {kind: "number", isNull: false}],
+    [{a: "s"}, {kind: "string", isNull: false}],
+    [{}, {kind: "null", isNull: true}],
+  ],
+}
+
+{
+  name: "an expression node sees an array request through $nodes",
+  graph: {nodes: [{input: "request"}, {expression: "calc", fields: {n: "len($nodes.request)"}}, {output: "response"}]},
+  cases: [
+    [[1, 2, 3], {n: 3}],
+    [[], {n: 0}],
+    [["a"], {n: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Input node names: the input node publishes the request under its name in $nodes.
+{
+  name: "the input node is visible in $nodes under its name",
+  graph: {nodes: [{input: "request"}, {expression: "calc", fields: {x: "$nodes.request.a", same: "$nodes.request.a == a"}}, {output: "response"}]},
+  cases: [
+    [{a: 1}, {x: 1, same: true}],
+    [{a: "s"}, {x: "s", same: true}],
+    [{a: true}, {x: true, same: true}],
+    [{}, {same: true}],
+  ],
+}
+
+{
+  name: "an input node name with spaces is reachable with bracket access",
+  graph: {nodes: [{input: "my request"}, {expression: "calc", fields: {x: "$nodes['my request'].a"}}, {output: "response"}]},
+  cases: [
+    [{a: 1}, {x: 1}],
+    [{a: {b: 2}}, {x: {b: 2}}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "the input node id differs from its name",
+  graph: {nodes: [{input: "request", id: "in-1"}, {expression: "calc", fields: {byName: "$nodes.request.a", byId: "$nodes['in-1'].a"}}, {output: "response", id: "out-1"}]},
+  cases: [
+    [{a: 1}, {byName: 1}],
+    [{a: "x"}, {byName: "x"}],
+  ],
+}
+
+{
+  name: "output node name has no effect on the result",
+  graph: {nodes: [{input: "request"}, {output: "anything at all"}]},
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{response: 1}, {response: 1}],
+  ],
+}
+
+{
+  name: "$nodes is removed from the final result",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {x: "1"}}]},
+  cases: [
+    [{a: 1}, {a: 1, x: 1}],
+    [{"$nodes": {y: 1}, a: 1}, {a: 1, x: 1}, "question: a request key named $nodes is silently stripped from the result"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Graph shape: input count, cycles, edges to unknown nodes.
+{
+  name: "a graph with two input nodes is rejected",
+  graph: {
+    nodes: [{input: "a"}, {input: "b"}, {output: "response"}],
+    edges: ["a -> response", "b -> response"],
+  },
+  cases: [
+    [{x: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a graph with no input node is rejected",
+  graph: {
+    raw: {
+      nodes: [{id: "o", name: "response", type: "outputNode", content: {}}],
+      edges: [],
+    },
+  },
+  cases: [
+    [{x: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a cyclic graph is rejected",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1"}},
+      {expression: "b", fields: {y: "2"}},
+    ],
+    edges: ["input -> a -> b -> a", "b -> output"],
+  },
+  cases: [
+    [{x: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "an edge to an unknown node is rejected",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e1", sourceId: "i", targetId: "o"},
+        {id: "e2", sourceId: "i", targetId: "missing"},
+      ],
+    },
+  },
+  cases: [
+    [{x: 1}, "!error"],
+  ],
+}
+
+{
+  name: "a graph with only an input node returns the request",
+  graph: {raw: {nodes: [{id: "i", name: "request", type: "inputNode", content: {}}], edges: []}},
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{a: {b: [1]}}, {a: {b: [1]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Unconnected and dead-end nodes. Only nodes reachable from the input run. The result is the merge
+// of executed nodes without outgoing edges.
+{
+  name: "an unconnected output node: the input node is the ending node",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [],
+    },
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: "x", b: [1]}, {a: "x", b: [1]}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "an unconnected expression node never runs",
+  graph: {
+    nodes: [{expression: "orphan", fields: {boom: "1 + 'x'", y: "1"}}],
+    edges: ["input -> output"],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{a: "x"}, {a: "x"}],
+  ],
+}
+
+{
+  name: "an expression node that feeds into nothing is not part of a graph without output edges",
+  graph: {
+    nodes: [{expression: "calc", fields: {y: "a * 2"}}],
+    edges: ["input -> calc"],
+  },
+  cases: [
+    [{a: 1}, {y: 2}],
+    [{a: 0}, {y: 0}],
+    [{a: -3}, {y: -6}],
+  ],
+}
+
+{
+  name: "a node chain that never reaches an output node still produces the result",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {y: "a + 1"}},
+      {expression: "second", fields: {z: "y * 10"}},
+    ],
+    edges: ["input -> first -> second"],
+  },
+  cases: [
+    [{a: 1}, {z: 20}],
+    [{a: 0}, {z: 10}],
+  ],
+}
+
+{
+  name: "an unconnected expression node with input upstream of the chain",
+  graph: {
+    nodes: [
+      {expression: "used", fields: {y: "a"}},
+      {expression: "unused", fields: {z: "a"}},
+    ],
+    edges: ["input -> used -> output", "unused -> output"],
+  },
+  cases: [
+    [{a: 1}, {y: 1}, "question: a node with no incoming edges is executed as an unresolved dependency of the output node and contributes with an empty input; null keys get dropped"],
+  ],
+}
+
+// A dead-end branch (input -> side, side has no outgoing edge) next to input -> output. The walker
+// stops once the output node runs, so whether the dead end contributes depends on visiting order.
+{
+  name: "a dead-end branch listed before the output edge",
+  graph: {
+    nodes: [{expression: "side", fields: {side: "1"}}],
+    edges: ["input -> side", "input -> output"],
+  },
+  cases: [
+    [{a: 1}, {a: 1, side: 1}, "question: whether a dead-end node contributes to the result depends on edge order (listed after output it is skipped)"],
+    [{}, {side: 1}, "question: whether a dead-end node contributes to the result depends on edge order (listed after output it is skipped)"],
+    [{a: 2, side: 0}, {a: 2, side: 0}, "question: whether a dead-end node contributes depends on edge order, and on conflicts the output node wins over the dead end"],
+  ],
+}
+
+{
+  name: "a dead-end branch listed after the output edge",
+  graph: {
+    nodes: [{expression: "side", fields: {side: "1"}}],
+    edges: ["input -> output", "input -> side"],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a dead end that errors does not fail the graph when it is not visited",
+  graph: {
+    nodes: [{expression: "side", fields: {boom: "a + 'x' + true"}}],
+    edges: ["input -> output", "input -> side"],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: "s"}, {a: "s"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Multiple output nodes. The first output node reached ends the walk.
+{
+  name: "two outputs on two branches",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {side: "'left'"}},
+      {expression: "right", fields: {side: "'right'"}},
+      {output: "out1"},
+      {output: "out2"},
+    ],
+    edges: ["input -> left -> out1", "input -> right -> out2"],
+  },
+  cases: [
+    [{a: 1}, {side: "left"}],
+    [{}, {side: "left"}],
+  ],
+}
+
+{
+  name: "two outputs fed by the same node",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "a + 1"}},
+      {output: "out1"},
+      {output: "out2"},
+    ],
+    edges: ["input -> calc -> out1", "calc -> out2"],
+  },
+  cases: [
+    [{a: 1}, {y: 2}],
+    [{a: 10}, {y: 11}],
+  ],
+}
+
+{
+  name: "an output node directly after input and another after an expression",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "a + 1"}},
+      {output: "early"},
+      {output: "late"},
+    ],
+    edges: ["input -> early", "input -> calc -> late"],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: 5}, {a: 5}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Output node with several incoming edges merges them.
+{
+  name: "the output node merges disjoint branches",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {l: "a + 1"}},
+      {expression: "right", fields: {r: "a * 2"}},
+    ],
+    edges: ["input -> left -> output", "input -> right -> output"],
+  },
+  cases: [
+    [{a: 1}, {l: 2, r: 2}],
+    [{a: 3}, {l: 4, r: 6}],
+    [{a: 0}, {l: 1, r: 0}],
+  ],
+}
+
+{
+  name: "the output node merges nested objects from branches",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {"res.l": "a"}},
+      {expression: "right", fields: {"res.r": "b"}},
+    ],
+    edges: ["input -> left -> output", "input -> right -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {res: {l: 1, r: 2}}],
+    [{a: "x", b: [1]}, {res: {l: "x", r: [1]}}],
+    [{a: 1}, {res: {l: 1, r: null}}],
+  ],
+}
+
+{
+  name: "the output node receives input and an expression branch",
+  graph: {
+    nodes: [{expression: "calc", fields: {y: "a + 1"}}],
+    edges: ["input -> output", "input -> calc -> output"],
+  },
+  cases: [
+    [{a: 1}, {a: 1, y: 2}],
+    [{a: 1, y: 100}, {a: 1, y: 100}, "question: on conflicting keys the output node keeps the branch whose edge is listed first (the request here), not the computed value"],
+    [{a: 0, z: "keep"}, {a: 0, y: 1, z: "keep"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Schemas on input and output nodes validate the data at that point.
+{
+  name: "input schema accepts a valid request",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {age: {type: "number"}}, required: ["age"]}},
+      {output: "response"},
+    ],
+  },
+  cases: [
+    [{age: 20}, {age: 20}],
+    [{age: 0, other: "x"}, {age: 0, other: "x"}],
+    [{age: "20"}, "!error"],
+    [{}, "!error"],
+    [{age: true}, "!error"],
+  ],
+}
+
+{
+  name: "output schema validates the result",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a * 2"}},
+      {output: "response", schema: {type: "object", properties: {total: {type: "number", maximum: 100}}, required: ["total"]}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {total: 2}],
+    [{a: 50}, {total: 100}],
+    [{a: 51}, "!error"],
+  ],
+}
+
+{
+  name: "output schema rejects a missing required key",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a"}},
+      {output: "response", schema: {type: "object", required: ["total"]}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {total: 1}],
+    [{a: "x"}, {total: "x"}],
+    [{}, {}, "question: the schema sees {total: null} and passes, then the null key is dropped from the result"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Input data is not mutated across the graph: a downstream node sees the original request.
+{
+  name: "two consumers of the input see the same request",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"req.extra": "1", fromA: "req.v"}},
+      {expression: "b", fields: {fromB: "req", hasExtra: "req.extra != null"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{req: {v: 1}}, {req: {extra: 1}, fromA: 1, fromB: {v: 1}, hasExtra: false}],
+    [{req: {v: "x"}}, {req: {extra: 1}, fromA: "x", fromB: {v: "x"}, hasExtra: false}],
+  ],
+}

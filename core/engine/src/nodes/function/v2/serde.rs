@@ -13,6 +13,7 @@ use zen_types::rccell::RcCell;
 pub(crate) struct JsValue(pub(crate) Variable);
 
 impl<'js> FromJs<'js> for JsValue {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn from_js(ctx: &Ctx<'js>, v: QValue<'js>) -> rquickjs::Result<Self> {
         let computed_value = match v.type_of() {
             Type::Uninitialized | Type::Undefined | Type::Null => Variable::Null,
@@ -117,9 +118,26 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
         }
 
         let obj = base_js.into_object().or_throw(ctx)?;
-        let nodes_proxy: QValue<'js> = ctx.eval(
-            r#"
-            (() => {
+        let globals = ctx.globals();
+        let factory: rquickjs::Function<'js> =
+            match globals.get::<_, Option<rquickjs::Function<'js>>>("__zenNodesProxy")? {
+                Some(factory) => factory,
+                None => {
+                    let factory: rquickjs::Function<'js> = ctx.eval(Self::FACTORY)?;
+                    globals.set("__zenNodesProxy", factory.clone())?;
+                    factory
+                }
+            };
+        let nodes_proxy: QValue<'js> = factory.call(())?;
+
+        obj.set("$nodes", nodes_proxy)?;
+        Ok(obj.into_value())
+    }
+}
+
+impl JsValueWithNodes {
+    const FACTORY: &'static str = r#"
+            () => {
               const _data = { loaded: false, inner: null };
               const data = () => {
                 if (!_data.loaded) {
@@ -136,13 +154,8 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
                 ownKeys: () => Object.keys(data()),
                 getOwnPropertyDescriptor: (target, prop) => Object.getOwnPropertyDescriptor(data(), prop),
               });
-            })();
-        "#,
-        )?;
-
-        obj.set("$nodes", nodes_proxy)?;
-        Ok(obj.into_value())
-    }
+            }
+        "#;
 }
 
 pub(crate) struct JsConverter<'r, 'js> {
@@ -162,6 +175,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
         self.convert_with_cache(var)
     }
 
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn convert_with_cache(&mut self, var: &Variable) -> rquickjs::Result<QValue<'js>> {
         match var {
             Variable::Null => Ok(QValue::new_null(self.ctx.clone())),
@@ -214,6 +228,7 @@ pub(crate) mod rquickjs_conv {
     struct JsonValue(serde_json::Value);
 
     impl<'js> FromJs<'js> for JsonValue {
+        #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
         fn from_js(ctx: &Ctx<'js>, value: QValue<'js>) -> rquickjs::Result<Self> {
             let json_value = match value.type_of() {
                 Type::Uninitialized | Type::Undefined | Type::Null => serde_json::Value::Null,
@@ -287,6 +302,7 @@ pub(crate) mod rquickjs_conv {
     }
 
     impl<'js> IntoJs<'js> for JsonValue {
+        #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
         fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
             match self.0 {
                 serde_json::Value::Null => Ok(QValue::new_null(ctx.clone())),

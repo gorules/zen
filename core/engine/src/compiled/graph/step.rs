@@ -1,9 +1,10 @@
+use crate::compiled::content::Content;
 use crate::compiled::graph::schedule::Replay;
 use crate::compiled::graph::{CompiledGraph, Invalid};
+use crate::compiled::host::graph::graph::DecisionGraph;
 use crate::compiled::table::{Table, TableIr};
-use crate::decision_graph::graph::DecisionGraph;
 use crate::decision_graph::schema_dict;
-use crate::model::{DecisionNodeKind, GraphContent};
+use crate::model::DecisionNodeKind;
 use std::sync::{Arc, OnceLock};
 use zen_expression::lane::{LaneProgram, Programs, SourceInfo};
 use zen_expression::ExpressionKind;
@@ -180,7 +181,7 @@ impl Step {
 }
 
 impl CompiledGraph {
-    pub(super) fn compile(content: &GraphContent, eager: bool) -> Result<Self, Invalid> {
+    pub(super) fn compile(content: &Content, eager: bool) -> Result<Self, Invalid> {
         crate::compiled::switches::SWITCHES.compiled();
         let graph = DecisionGraph::build_graph(content).map_err(Invalid::Build)?;
         DecisionGraph::validate_graph(&graph).map_err(Invalid::Validation)?;

@@ -1,6 +1,6 @@
 use crate::compiled::core::segments::Children;
+use crate::compiled::policy::artifact::Artifact as EvalArtifact;
 use crate::policy::blocks::{Block, BlockKind, ConditionalReads};
-use crate::policy::evaluator::EvalArtifact;
 use crate::workspace::types::BlockRef;
 use ahash::{HashMap, HashSet};
 use std::sync::Arc;

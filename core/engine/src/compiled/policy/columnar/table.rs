@@ -1,9 +1,9 @@
 use super::{Chosen, Pass, Units};
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf, Literal};
+use crate::compiled::policy::blocks::TableSelection;
 use crate::compiled::policy::schedule::{Demand, Event};
+use crate::compiled::policy::site::Pick;
 use crate::compiled::table::{Matching, Picked, Table};
-use crate::policy::blocks::TableSelection;
-use crate::policy::host::Pick;
 use std::sync::Arc;
 use zen_expression::Variable;
 

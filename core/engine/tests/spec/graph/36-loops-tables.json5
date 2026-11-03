@@ -259,7 +259,7 @@
       {tier: "silver", reasons: ["over 10", "positive"]},
       {tier: "bronze", reasons: ["positive"]},
     ]}],
-    [{items: [{v: 0}, {v: 1}]}, {out: [{reasons: []}, {reasons: ["positive"], tier: "bronze"}]}],
+    {input: {items: [{v: 0}, {v: 1}]}, output: {out: [{reasons: []}, {reasons: ["positive"], tier: "bronze"}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
     [{items: []}, {out: []}],
   ],
 }
@@ -273,7 +273,7 @@
     ]}],
   },
   cases: [
-    [{items: [{id: 1, v: 20}, {id: 2, v: -1}]}, {items: [{flags: ["pos", "big"], id: 1, v: 20}, {flags: [], id: 2, v: -1}]}],
+    {input: {items: [{id: 1, v: 20}, {id: 2, v: -1}]}, output: {items: [{flags: ["pos", "big"], id: 1, v: 20}, {flags: [], id: 2, v: -1}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
     [{items: [{id: 3, v: 5, flags: ["old"]}]}, {items: [{id: 3, v: 5, flags: ["pos"]}]}],
   ],
 }

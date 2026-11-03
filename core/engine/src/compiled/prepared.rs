@@ -1,7 +1,8 @@
-use crate::decision::Decision;
+use crate::compiled::content::Content;
+use crate::compiled::decision::CompiledDecision;
+use crate::compiled::policy::artifact::Artifact as EvalArtifact;
 use crate::loader::DynamicLoader;
 use crate::model::GraphContent;
-use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
 use ahash::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,7 +15,7 @@ pub(crate) struct Prepared {
 #[derive(Debug)]
 struct Kept {
     source: Arc<GraphContent>,
-    ready: Arc<GraphContent>,
+    ready: Arc<Content>,
 }
 
 impl Prepared {
@@ -23,11 +24,11 @@ impl Prepared {
         key: &str,
         source: Arc<GraphContent>,
         loader: &DynamicLoader,
-    ) -> Arc<GraphContent> {
+    ) -> Arc<Content> {
         if let Some(ready) = self.kept(key, &source) {
             return ready;
         }
-        let ready = GraphContent::loaded(source.clone(), loader).await;
+        let ready = Content::loaded(Arc::new(Content::of(&source)), loader).await;
         if !ready.schemas_failed() {
             if let Ok(mut graphs) = self.graphs.lock() {
                 graphs.insert(
@@ -42,7 +43,7 @@ impl Prepared {
         ready
     }
 
-    fn kept(&self, key: &str, source: &Arc<GraphContent>) -> Option<Arc<GraphContent>> {
+    fn kept(&self, key: &str, source: &Arc<GraphContent>) -> Option<Arc<Content>> {
         let graphs = self.graphs.lock().ok()?;
         let kept = graphs.get(key)?;
         Arc::ptr_eq(&kept.source, source).then(|| kept.ready.clone())
@@ -51,7 +52,7 @@ impl Prepared {
 
 #[derive(Debug, Default)]
 pub(crate) struct Decisions {
-    decisions: Mutex<HashMap<Arc<str>, Arc<Decision>>>,
+    decisions: Mutex<HashMap<Arc<str>, Arc<CompiledDecision>>>,
 }
 
 impl Decisions {
@@ -59,8 +60,8 @@ impl Decisions {
         &self,
         key: &str,
         source: &Arc<GraphContent>,
-        build: impl FnOnce() -> Decision,
-    ) -> Arc<Decision> {
+        build: impl FnOnce() -> CompiledDecision,
+    ) -> Arc<CompiledDecision> {
         if let Ok(decisions) = self.decisions.lock() {
             if let Some(decision) = decisions.get(key) {
                 if decision.holds(source) {

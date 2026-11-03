@@ -78,13 +78,6 @@ pub enum EvaluationError {
 }
 
 impl EvaluationError {
-    pub fn policy(&self) -> Option<&crate::policy::EvaluationError> {
-        match self {
-            EvaluationError::Policy(error) => Some(error),
-            _ => None,
-        }
-    }
-
     pub fn serialize_with_mode<S>(
         &self,
         serializer: S,

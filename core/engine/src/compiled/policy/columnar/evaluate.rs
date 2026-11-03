@@ -1,11 +1,11 @@
 use super::output::{from_results, output};
 use super::{ByBlock, Fallback, Pass, Sheet};
+use crate::compiled::diagnostics::Paths;
+use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
 use crate::compiled::policy::entity::Entity;
 use crate::compiled::policy::{PolicyPlan, Rows};
 use crate::compiled::shred::{Shred, Shredder};
 use crate::compiled::ColumnarOutput;
-use crate::diagnostics::Paths;
-use crate::policy::evaluator::{EvalArtifact, Iteration};
 use crate::workspace::types::{EvaluateRequest, EvaluationError};
 use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;

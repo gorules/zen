@@ -300,48 +300,15 @@ async fn engine_graph_tests() {
                 .unwrap()
                 .result;
 
-            assert!(
-                Precision::same(&test_case.output, &result),
-                "Decision file: {file_name}.\nInput:\n {input:#?}\n{:?} != {result:?}",
-                test_case.output
+            assert_eq!(
+                test_case.output, result,
+                "Decision file: {file_name}.\nInput:\n {input:#?}"
             );
 
-            assert!(
-                Precision::same(&test_case.output, &result_compiled),
-                "Compiled decision file: {file_name}.\nInput:\n {input:#?}\n{:?} != {result_compiled:?}",
-                test_case.output
+            assert_eq!(
+                test_case.output, result_compiled,
+                "Compiled decision file: {file_name}.\nInput:\n {input:#?}"
             );
-        }
-    }
-}
-
-struct Precision;
-
-impl Precision {
-    fn same(expected: &Variable, actual: &Variable) -> bool {
-        if cfg!(feature = "arbitrary_precision") {
-            return expected == actual;
-        }
-        match (expected, actual) {
-            (Variable::Number(a), Variable::Number(b)) => {
-                let (a, b) = (
-                    rust_decimal::prelude::ToPrimitive::to_f64(a).unwrap_or(f64::NAN),
-                    rust_decimal::prelude::ToPrimitive::to_f64(b).unwrap_or(f64::NAN),
-                );
-                (a - b).abs() <= a.abs().max(b.abs()) * f64::EPSILON * 4.0
-            }
-            (Variable::Array(a), Variable::Array(b)) => {
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(a, b)| Self::same(a, b))
-            }
-            (Variable::Object(a), Variable::Object(b)) => {
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len()
-                    && a.iter().all(|(key, value)| {
-                        b.get(key).is_some_and(|other| Self::same(value, other))
-                    })
-            }
-            _ => expected == actual,
         }
     }
 }
@@ -352,10 +319,6 @@ fn mock_datetime() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
-#[cfg_attr(
-    not(feature = "arbitrary_precision"),
-    ignore = "snapshots record arbitrary-precision decimals"
-)]
 async fn engine_snapshot_tests() {
     mock_datetime();
 

@@ -1461,8 +1461,8 @@ impl Walk {
 #[cfg(test)]
 mod tests {
     use super::Purity;
-    use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
-    use crate::nodes::NodeHandlerExtensions;
+    use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
+    use crate::compiled::host::NodeHandlerExtensions;
     use zen_expression::Variable;
 
     #[test]
@@ -1716,7 +1716,7 @@ mod tests {
 
     #[test]
     fn denied_members_cover_the_script_realm() {
-        let runtime = crate::nodes::function::v1::runtime::create_runtime().unwrap();
+        let runtime = crate::compiled::host::function::v1::runtime::create_runtime().unwrap();
         let context = rquickjs::Context::full(&runtime).unwrap();
         let names: String = context.with(|ctx| {
             rquickjs::Module::evaluate(ctx.clone(), "main", "import 'internals';").unwrap().finish::<()>().unwrap();

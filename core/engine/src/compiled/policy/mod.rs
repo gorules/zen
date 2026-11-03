@@ -1,18 +1,23 @@
+pub(crate) mod artifact;
+pub(crate) mod blocks;
 mod columnar;
 mod entity;
 mod host;
 mod schedule;
+pub(crate) mod site;
 mod traced;
+pub(crate) mod validator;
 
 pub(crate) use host::Host;
 
 use crate::compiled::core::special::Specialized;
 use crate::compiled::leaf::Literal;
+use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
+use crate::compiled::policy::blocks::MatchSelection;
+use crate::compiled::policy::site::{HostState, InstanceSlot, Iterated, Pick, Picked};
 use crate::compiled::table::{Table, TableIr};
 use crate::policy::blocks::Block;
-use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr, MatchSelection};
-use crate::policy::evaluator::{EvalArtifact, Iteration};
-use crate::policy::host::{HostState, InstanceSlot, Iterated, Pick, Picked};
+use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr};
 use crate::workspace::types::BlockRef;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
 use schedule::{Blocks, Demand, End, Event, Replay, Segment};

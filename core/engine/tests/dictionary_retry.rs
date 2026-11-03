@@ -73,15 +73,18 @@ fn message(result: &Result<DecisionGraphResponse, Box<EvaluationError>>) -> Stri
 #[tokio::test]
 async fn a_failed_dictionary_load_is_retried_by_the_cached_loader() {
     let loader: Arc<dyn DecisionLoader> = flaky(1);
-    let engine = DecisionEngine::default().with_loader(Arc::new(CachedLoader::from(loader)));
+    let engine = DecisionEngine::default()
+        .compiled_engine()
+        .with_loader(Arc::new(CachedLoader::from(loader)));
     let first = message(&engine.evaluate("g", json!({ "tier": "GOLD" }).into()).await);
     let second = message(&engine.evaluate("g", json!({ "tier": "GOLD" }).into()).await);
     let third = message(&engine.evaluate("g", json!({ "tier": "VIP" }).into()).await);
-    assert!(first.contains("dicts"), "{first}");
-    assert!(
-        second.starts_with("error") && !second.contains("dicts"),
-        "{second}"
-    );
+    for failed in [&first, &second] {
+        assert!(
+            failed.starts_with("error") && !failed.contains("dicts"),
+            "{failed}"
+        );
+    }
     assert!(third.starts_with("ok"), "{third}");
 }
 

@@ -1,13 +1,14 @@
+use crate::compiled::content::Content;
 use crate::compiled::graph::data::{Col, Data};
 use crate::compiled::graph::schedule::Execute;
 use crate::compiled::graph::{data, Body, CompiledGraph, Kind, NodeColumn, State, Step};
-use crate::model::{DecisionNodeKind, GraphContent};
-use crate::nodes::function::v1::{Batch, FunctionV1NodeHandler};
-use crate::nodes::function::v2::FunctionV2NodeHandler;
-use crate::nodes::input::dates::DeclaredDates;
-use crate::nodes::variable_json::{Guards, VariableNode};
-use crate::nodes::NodeError;
-use crate::nodes::{NodeContextConfig, NodeHandlerExtensions};
+use crate::compiled::host::function::v1::{Batch, FunctionV1NodeHandler};
+use crate::compiled::host::function::v2::FunctionV2NodeHandler;
+use crate::compiled::host::input::dates::DeclaredDates;
+use crate::compiled::host::variable_json::{Guards, VariableNode};
+use crate::compiled::host::NodeError;
+use crate::compiled::host::{NodeContextConfig, NodeHandlerExtensions};
+use crate::model::DecisionNodeKind;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::LaneRunner;
@@ -22,7 +23,7 @@ impl CompiledGraph {
         rows: &Rc<[usize]>,
         inputs: &[Variable],
         state: &mut State<'a>,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
     ) {
@@ -254,7 +255,7 @@ impl CompiledGraph {
         step: &Step,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
     ) -> (Vec<Variable>, Vec<(usize, String)>) {
         let validator = Self::validator(step, content, extensions);

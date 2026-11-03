@@ -11,10 +11,10 @@ pub(crate) mod errors;
 mod schedule;
 mod schema;
 
+use crate::compiled::content::Content;
+use crate::compiled::host::graph::walker::StableDiDecisionGraph;
+use crate::compiled::host::NodeHandlerExtensions;
 use crate::decision_graph::graph::DecisionGraphResponse;
-use crate::decision_graph::walker::StableDiDecisionGraph;
-use crate::model::GraphContent;
-use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use schedule::Segment;
 use state::Completed;
@@ -41,17 +41,31 @@ pub struct CompiledGraph {
 
 pub struct CompiledPlan(Result<CompiledGraph, Invalid>);
 
-#[derive(Clone)]
 pub(crate) enum Invalid {
     Build(DecisionGraphValidationError),
     Validation(DecisionGraphValidationError),
 }
 
 impl Invalid {
+    fn duplicate(error: &DecisionGraphValidationError) -> DecisionGraphValidationError {
+        match error {
+            DecisionGraphValidationError::InvalidInputCount(count) => {
+                DecisionGraphValidationError::InvalidInputCount(*count)
+            }
+            DecisionGraphValidationError::InvalidOutputCount(count) => {
+                DecisionGraphValidationError::InvalidOutputCount(*count)
+            }
+            DecisionGraphValidationError::CyclicGraph => DecisionGraphValidationError::CyclicGraph,
+            DecisionGraphValidationError::MissingNode(node) => {
+                DecisionGraphValidationError::MissingNode(node.clone())
+            }
+        }
+    }
+
     pub(crate) fn evaluation(&self) -> Box<EvaluationError> {
         match self {
             Invalid::Build(error) | Invalid::Validation(error) => {
-                Box::new(EvaluationError::InvalidGraph(error.clone()))
+                Box::new(EvaluationError::InvalidGraph(Self::duplicate(error)))
             }
         }
     }
@@ -65,7 +79,7 @@ impl Invalid {
 
     pub(crate) fn source(&self) -> Box<dyn std::error::Error> {
         match self {
-            Invalid::Build(error) => Box::new(error.clone()),
+            Invalid::Build(error) => Box::new(Self::duplicate(error)),
             Invalid::Validation(_) => self.evaluation().to_string().into(),
         }
     }
@@ -81,11 +95,11 @@ impl Debug for CompiledPlan {
 }
 
 impl CompiledPlan {
-    pub fn compile(content: &GraphContent) -> Self {
+    pub fn compile(content: &Content) -> Self {
         Self(CompiledGraph::compile(content, true))
     }
 
-    pub(crate) fn hosted(content: &GraphContent) -> Self {
+    pub(crate) fn hosted(content: &Content) -> Self {
         Self(CompiledGraph::compile(content, false))
     }
 
@@ -136,7 +150,7 @@ impl CompiledGraph {
 
     pub(crate) async fn evaluate(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         inputs: &[Variable],
@@ -147,7 +161,7 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) async fn resumed(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         inputs: &[Variable],
@@ -188,7 +202,7 @@ impl CompiledGraph {
 
     pub(crate) async fn evaluate_one(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         input: Variable,

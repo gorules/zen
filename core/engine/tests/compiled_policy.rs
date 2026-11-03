@@ -9,7 +9,6 @@ mod support;
 
 use policies::{Anchor, Batch, Generated, PolicyCase};
 use policy_gen::{Gen, Rng};
-#[cfg(feature = "driver")]
 use serde_json::json;
 use serde_json::Value;
 use std::sync::Arc;
@@ -51,7 +50,6 @@ impl Differential {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn request(path: &str, input: &Value) -> EvaluateRequest {
         Self::with_goals(path, input, &[])
     }
@@ -157,9 +155,6 @@ impl Differential {
 
 #[test]
 fn compiled_policies_match_the_driver_on_fixtures() {
-    if Reference::unavailable("policy-fixtures") {
-        return;
-    }
     let mut differential = Differential::new(Reference::open("policy-fixtures"));
     for case in PolicyCase::load_all() {
         differential.run(&case.name, &case.workspace, &case.path, &case.inputs);
@@ -169,9 +164,6 @@ fn compiled_policies_match_the_driver_on_fixtures() {
 
 #[test]
 fn compiled_policies_match_the_driver_on_generated_documents() {
-    if Reference::unavailable("generated/policy") {
-        return;
-    }
     let mut differential = Differential::new(Reference::open("generated/policy"));
     for seed in 0..Generated::seeds() {
         let Some(ws) = Generated::workspace(seed) else {
@@ -254,7 +246,7 @@ impl Columnar {
             );
             let got = match output.errors[row]
                 .as_deref()
-                .and_then(zen_engine::EvaluationError::policy)
+                .and_then(support::policy_error)
             {
                 Some(error) => Err(Reference::debug(error)),
                 None => Ok(Built::normalized(output.row(row).to_value())),
@@ -269,7 +261,6 @@ impl Columnar {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 #[ignore]
 fn compiled_policy_throughput() {
@@ -434,7 +425,6 @@ async fn engine_batch_matches_single_evaluations() {
 }
 
 impl Anchor {
-    #[cfg(feature = "driver")]
     const PROGRAMS: [(&'static str, &'static str); 8] = [
         ("fee", "account.balance * customer.rate / 100 * (account.kind == 'loan' ? 2 : 1)"),
         ("label", "account.kind == 'savings' ? 'S' : (account.kind == 'checking' ? 'C' : 'L')"),
@@ -446,7 +436,6 @@ impl Anchor {
         ("eligible", "customer.age >= 18 and customer.risk != 'high'"),
     ];
 
-    #[cfg(feature = "driver")]
     const KEYS: [&'static str; 8] = [
         "account.fee",
         "account.label",
@@ -458,7 +447,6 @@ impl Anchor {
         "customer.eligible",
     ];
 
-    #[cfg(feature = "driver")]
     fn fused(
         columns: &zen_expression::lane::Columns,
         programs: &mut Vec<Option<zen_expression::lane::LaneProgram>>,
@@ -612,7 +600,7 @@ impl Anchor {
             );
             let got = match output.errors[row]
                 .as_deref()
-                .and_then(zen_engine::EvaluationError::policy)
+                .and_then(support::policy_error)
             {
                 Some(error) => Err(Reference::debug(error)),
                 None => Ok(Built::normalized(output.row(row).to_value())),
@@ -652,7 +640,6 @@ impl Anchor {
             .collect()
     }
 
-    #[cfg(feature = "driver")]
     fn floor(
         columns: &zen_expression::lane::Columns,
         programs: &mut Vec<Option<zen_expression::lane::LaneProgram>>,
@@ -843,7 +830,6 @@ impl Batch {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn policy_columnar_shredded_irregular_lists() {
     let mut values = Anchor::rows(96, 11);
@@ -914,7 +900,7 @@ fn policy_columnar_shredded_irregular_lists() {
                 .map(|r| Built::normalized(r.output.to_value()))
                 .map_err(|e| format!("{e:?}"));
             let got = match output.errors[row].as_deref() {
-                Some(error) => Err(match error.policy() {
+                Some(error) => Err(match support::policy_error(error) {
                     Some(error) => format!("{error:?}"),
                     None => format!("{error:?}"),
                 }),
@@ -941,7 +927,6 @@ fn policy_columnar_shredded_irregular_lists() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn policy_columnar_converts_declared_dates_without_hosting() {
     let policy = r#"{
@@ -994,7 +979,7 @@ fn policy_columnar_converts_declared_dates_without_hosting() {
                 .map(|r| Built::normalized(r.output.to_value()))
                 .map_err(|e| format!("{e:?}"));
             let got = match output.errors[row].as_deref() {
-                Some(error) => Err(match error.policy() {
+                Some(error) => Err(match support::policy_error(error) {
                     Some(error) => format!("{error:?}"),
                     None => format!("{error:?}"),
                 }),
@@ -1016,7 +1001,6 @@ fn policy_columnar_converts_declared_dates_without_hosting() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn policy_member_blocks_reading_their_own_list_match_the_driver() {
     let policies = [
@@ -1115,7 +1099,7 @@ fn policy_member_blocks_reading_their_own_list_match_the_driver() {
                     .map(|r| Built::normalized(r.output.to_value()))
                     .map_err(|e| format!("{e:?}"));
                 let got = match output.errors[row].as_deref() {
-                    Some(error) => Err(match error.policy() {
+                    Some(error) => Err(match support::policy_error(error) {
                         Some(error) => format!("{error:?}"),
                         None => format!("{error:?}"),
                     }),
@@ -1221,9 +1205,6 @@ fn policy_tables_match_coded_nulls_against_null_cells() {
 
 #[test]
 fn policy_anchor_is_fully_typed() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let batch = Anchor::base();
     let mut failures = Vec::new();
@@ -1245,9 +1226,6 @@ fn policy_anchor_is_fully_typed() {
 
 #[test]
 fn policy_typed_falls_back_per_unit() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let batch = Anchor::fallback();
     assert_ne!(batch.policy, Anchor::POLICY);
@@ -1271,9 +1249,6 @@ fn policy_typed_falls_back_per_unit() {
 
 #[test]
 fn policy_typed_fuses_lane_runs() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     assert_ne!(Anchor::fused_policy(), Anchor::POLICY);
     let ws = Anchor::workspace_with(&Anchor::fused_policy());
@@ -1309,9 +1284,6 @@ fn policy_typed_fuses_lane_runs() {
 
 #[test]
 fn policy_typed_member_tables_and_math() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let policy = Anchor::members_policy();
     assert!(policy.contains("account.band") && policy.contains("customer.square"));
@@ -1349,9 +1321,6 @@ fn policy_typed_member_tables_and_math() {
 
 #[test]
 fn policy_typed_lists_and_closures() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let batch = Anchor::lists();
     let mut failures = Vec::new();
@@ -1372,9 +1341,6 @@ fn policy_typed_lists_and_closures() {
 
 #[test]
 fn policy_typed_strings() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let [first, second] = Anchor::strings();
     let ws = first.workspace();
@@ -1402,9 +1368,6 @@ fn policy_typed_strings() {
 
 #[test]
 fn policy_typed_dates() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let [first, second] = Anchor::dates();
     let ws = first.workspace();
@@ -1432,9 +1395,6 @@ fn policy_typed_dates() {
 
 #[test]
 fn policy_typed_extremes() {
-    if Reference::unavailable("anchor") {
-        return;
-    }
     let reference = Reference::open("anchor");
     let [first, second] = Anchor::extremes();
     let ws = Anchor::workspace();
@@ -1504,7 +1464,7 @@ fn single_row_latency() {
             }),
         ),
     ];
-    if cfg!(feature = "driver") {
+    if true {
         results.push((
             "driver",
             Anchor::time(count, || {
@@ -1525,7 +1485,6 @@ fn single_row_latency() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 #[ignore]
 fn policy_anchor_throughput() {

@@ -12,7 +12,8 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::VariableType;
 
 use crate::workspace::types::{
-    Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
+    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
+    ExpressionKind, Span,
 };
 
 #[derive(Debug, Clone)]
@@ -23,12 +24,11 @@ pub struct WriteSite {
     pub contributing_expr_ids: HashSet<Arc<str>>,
 }
 
-pub(crate) use assertion::ConditionOperator;
 pub use assertion::{AssertionDoc, AssertionIr};
 pub(crate) use context::IntelliSenseSource;
 pub use context::{
-    AnalysisContext, AnalysisSummary, ExecutionError, ExpressionLocation, InstanceSource,
-    PropertyRead, SharedDeclaredPaths, SharedDictionaryTypes, SharedIntelliSense,
+    AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,
+    InstanceSource, PropertyRead, SharedDeclaredPaths, SharedDictionaryTypes, SharedIntelliSense,
     SharedPoisonedPaths, TableCheck, WriteTarget,
 };
 pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
@@ -220,6 +220,10 @@ pub enum BlockKind {
 }
 
 impl Block {
+    pub fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
+        self.kind.execute(cx)
+    }
+
     pub fn resolve_cursor(
         &self,
         cursor: &Cursor,
@@ -282,6 +286,15 @@ impl BlockKind {
             BlockKind::DecisionTable(d) => d.analyze(cx),
             BlockKind::Expression(e) => e.analyze(cx),
             BlockKind::Match(m) => m.analyze(cx),
+        }
+    }
+
+    pub fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
+        match self {
+            BlockKind::Assertion(a) => a.execute(cx),
+            BlockKind::DecisionTable(d) => d.execute(cx),
+            BlockKind::Expression(e) => e.execute(cx),
+            BlockKind::Match(m) => m.execute(cx),
         }
     }
 

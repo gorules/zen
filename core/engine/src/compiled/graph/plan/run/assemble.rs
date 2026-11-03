@@ -1,13 +1,13 @@
 use super::store::{Group, Origin, Store, View};
 use super::{Host, Run};
+use crate::compiled::content::Content;
 use crate::compiled::graph::columnar::Admitted;
 use crate::compiled::graph::plan::subgraphs::Subgraphs;
 use crate::compiled::graph::plan::Plan;
 use crate::compiled::graph::{ColumnarOutput, CompiledGraph, Completed, Kind};
+use crate::compiled::host::NodeHandlerExtensions;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
 use crate::compiled::output::OutputColumn;
-use crate::model::GraphContent;
-use crate::nodes::NodeHandlerExtensions;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};
@@ -177,7 +177,7 @@ impl<'a> Run<'_, 'a> {
                 .map(|(path, leaf)| (path, OutputColumn(CompiledGraph::cleaned(&leaf))))
                 .collect(),
             errors: store.errors.take(),
-            paths: crate::diagnostics::Paths {
+            paths: crate::compiled::diagnostics::Paths {
                 typed: store.counts.0,
                 laned: store.counts.1,
                 hosted: 0,
@@ -191,7 +191,7 @@ impl Plan {
     pub async fn evaluate<'a>(
         &self,
         graph: &CompiledGraph,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &'a Columns<'a>,

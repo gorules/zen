@@ -52,7 +52,7 @@ async fn compare(decision: &Decision, inputs: &[Value]) -> Vec<Value> {
 #[tokio::test]
 async fn promise_and_bigint_handlers_match_single_rows_in_a_batch() {
     let source = "export const handler = async (input) => { const all = await Promise.allSettled([Promise.reject(new Error('no')), Promise.resolve(input.n)]); const first = await Promise.race([new Promise((resolve) => resolve(input.n * 2))]); return { first, settled: all.map((s) => s.status), big: Number(BigInt(input.n) * 3n) }; };";
-    let decision = Decision::from(chain(vec![function("f", source)]));
+    let decision = Decision::from(chain(vec![function("f", source)])).compiled_engine();
     let out = compare(&decision, &[json!({ "n": 1 }), json!({ "n": 2 })]).await;
     assert_eq!(
         out[1],
@@ -73,7 +73,9 @@ async fn a_stateful_child_called_through_zen_evaluate_is_fresh_on_every_row() {
     .expect("child content");
     loader.add("counter", child);
     let source = "import zen from 'zen';\nexport const handler = async (input) => { const a = await zen.evaluate('counter', {}); const b = await zen.evaluate('counter', {}); return { a: a.result.n, b: b.result.n, v: input.v }; };";
-    let decision = Decision::from(chain(vec![function("f", source)])).with_loader(loader);
+    let decision = Decision::from(chain(vec![function("f", source)]))
+        .with_loader(loader)
+        .compiled_engine();
     let out = compare(&decision, &[json!({ "v": 1 }), json!({ "v": 2 })]).await;
     assert!(
         out.iter()
@@ -85,7 +87,7 @@ async fn a_stateful_child_called_through_zen_evaluate_is_fresh_on_every_row() {
 #[tokio::test]
 async fn globals_written_by_one_row_are_not_seen_by_the_next() {
     let source = "export const handler = async (input) => { const before = globalThis.specRows ?? 0; globalThis.specRows = before + 1; return { before }; };";
-    let decision = Decision::from(chain(vec![function("f", source)]));
+    let decision = Decision::from(chain(vec![function("f", source)])).compiled_engine();
     let out = compare(&decision, &[json!({}), json!({ "x": 1 })]).await;
     assert!(out.iter().all(|row| row["before"] == json!(0)), "{out:?}");
 }
@@ -96,7 +98,7 @@ async fn a_row_that_times_out_does_not_fail_its_neighbours_in_a_batch() {
         .function_timeout_millis
         .store(100, Ordering::Relaxed);
     let source = "export const handler = async (input) => { let i = 0; while (input.spin) { i++; } return { ok: true, i }; };";
-    let decision = Decision::from(chain(vec![function("f", source)]));
+    let decision = Decision::from(chain(vec![function("f", source)])).compiled_engine();
     let rows: Vec<Variable> = [
         json!({ "spin": false }),
         json!({ "spin": true }),

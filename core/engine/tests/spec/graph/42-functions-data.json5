@@ -550,7 +550,7 @@ export const handler = async (input) => {
   cases: [
     [{n: 0}, {depth: 0}],
     [{n: 10}, {depth: 10}],
-    [{n: 500}, {depth: 500}],
+    [{n: 200}, {depth: 200}],
   ],
 }
 

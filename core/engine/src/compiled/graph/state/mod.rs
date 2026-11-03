@@ -3,17 +3,17 @@ mod host;
 mod loops;
 
 use crate::compiled::bound::{Bound, Scopes};
+use crate::compiled::content::Content;
 use crate::compiled::graph::data::{Col, Data};
 use crate::compiled::graph::errors::RowErrors;
 use crate::compiled::graph::schedule::{End, Outcome, Replay, Segment};
 use crate::compiled::graph::step::StaticRead;
 use crate::compiled::graph::{data, CompiledGraph, Condition, Hit, Kind, Step};
+use crate::compiled::host::graph::walker::GraphWalker;
+use crate::compiled::host::NodeError;
+use crate::compiled::host::NodeHandlerExtensions;
 use crate::compiled::leaf::{Array, Leaf};
 use crate::decision_graph::cleaner::VariableCleaner;
-use crate::decision_graph::walker::GraphWalker;
-use crate::model::GraphContent;
-use crate::nodes::NodeError;
-use crate::nodes::NodeHandlerExtensions;
 use crate::{EvaluationError, ZEN_CONFIG};
 use petgraph::prelude::NodeIndex;
 use std::rc::Rc;
@@ -26,7 +26,7 @@ use zen_types::symbol::Symbol;
 pub(super) type NodeColumn<'a> = (Arc<str>, Leaf<'a>);
 
 pub(in crate::compiled::graph) struct Host<'r> {
-    pub(in crate::compiled::graph) content: &'r Arc<GraphContent>,
+    pub(in crate::compiled::graph) content: &'r Arc<Content>,
     pub(in crate::compiled::graph) extensions: &'r NodeHandlerExtensions,
     pub(in crate::compiled::graph) max_depth: u8,
 }

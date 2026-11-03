@@ -43,7 +43,9 @@ async fn graphs_and_sub_decisions_compile_once_while_the_loader_returns_the_same
     let loader = Arc::new(MemoryLoader::default());
     loader.add("parent", parent());
     loader.add("child", child(1));
-    let engine = DecisionEngine::default().with_loader(loader.clone());
+    let engine = DecisionEngine::default()
+        .compiled_engine()
+        .with_loader(loader.clone());
     let run = || async {
         engine
             .evaluate("parent", json!({ "x": 1 }).into())

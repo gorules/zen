@@ -18,15 +18,15 @@ pub fn census() -> Vec<(String, u64, u64, u128)> {
 }
 
 pub fn plan_verdict(decision: &Decision, columns: &Columns) -> Option<Result<(), String>> {
-    decision.plan_verdict(columns)
+    decision.compiled().plan_verdict(columns)
 }
 
 pub fn compiled_verdict(decision: &Decision) -> Option<Result<(), String>> {
-    decision.compiled_verdict()
+    decision.compiled().compiled_verdict()
 }
 
 pub fn degraded(decision: &Decision) -> Option<Vec<(String, String)>> {
-    decision.degraded().map(|nodes| {
+    decision.compiled().degraded().map(|nodes| {
         nodes
             .into_iter()
             .map(|(node, why)| (node.to_string(), why.to_string()))
@@ -44,4 +44,11 @@ pub fn set_typed(on: bool) {
 
 pub fn compilations() -> usize {
     crate::compiled::switches::SWITCHES.compilations()
+}
+
+pub fn evaluation_diagnostics(
+    workspace: &crate::Workspace,
+    entry: &str,
+) -> Vec<crate::workspace::Diagnostic> {
+    workspace.evaluation_diagnostics(entry)
 }

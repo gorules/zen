@@ -1,10 +1,10 @@
 use super::traced::Traced;
 use super::{CompiledGraph, Host, Nesting};
+use crate::compiled::content::Content;
 use crate::compiled::exact::graph::Row;
+use crate::compiled::host::{NodeError, NodeHandlerExtensions, NodeResponse, NodeResult};
 use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::LoaderError;
-use crate::model::GraphContent;
-use crate::nodes::{NodeError, NodeHandlerExtensions, NodeResponse, NodeResult};
 use crate::EvaluationError;
 use std::cell::{OnceCell, RefCell};
 use std::error::Error;
@@ -21,7 +21,7 @@ pub(crate) struct Call<'a> {
 }
 
 pub(crate) enum Load {
-    Graph(Arc<GraphContent>),
+    Graph(Arc<Content>),
     Kind(&'static str),
 }
 
@@ -43,7 +43,7 @@ impl Call<'_> {
         }
     }
 
-    pub(super) fn compiled(graph: &GraphContent) -> Result<&CompiledGraph, Box<dyn Error>> {
+    pub(super) fn compiled(graph: &Content) -> Result<&CompiledGraph, Box<dyn Error>> {
         let plan = graph
             .compiled_plan
             .as_deref()
@@ -60,10 +60,8 @@ impl Call<'_> {
     }
 
     #[allow(clippy::arc_with_non_send_sync)]
-    pub(super) fn sub_extensions(&self, content: &GraphContent) -> NodeHandlerExtensions {
+    pub(super) fn sub_extensions(&self, content: &Content) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
-            #[cfg(feature = "driver")]
-            compiled_cache: content.compiled_cache.clone(),
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
@@ -73,7 +71,7 @@ impl Call<'_> {
 
     pub(crate) async fn run(
         &self,
-        graph: &Arc<GraphContent>,
+        graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
     ) -> Result<Variable, Box<dyn Error>> {
@@ -107,7 +105,7 @@ impl Call<'_> {
 
     pub(crate) async fn traced(
         &self,
-        graph: &Arc<GraphContent>,
+        graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
     ) -> Result<TracedRun, Box<dyn Error>> {
@@ -126,7 +124,7 @@ impl Call<'_> {
     }
 
     pub(crate) async fn node(&self, row: Row<'_>, attributes: &TransformAttributes) -> NodeResult {
-        let loaded: RefCell<Option<Arc<GraphContent>>> = RefCell::new(None);
+        let loaded: RefCell<Option<Arc<Content>>> = RefCell::new(None);
         let loaded = &loaded;
         let id = row.id;
         let nodes = &row.nodes;

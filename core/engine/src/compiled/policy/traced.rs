@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use super::schedule::{Demand, End, Event};
 use super::{Host, PolicyPlan};
-use crate::policy::evaluator::{EvalArtifact, StoreOps};
-use crate::policy::host::Picked;
+use crate::compiled::policy::artifact::{Artifact as EvalArtifact, StoreOps};
+use crate::compiled::policy::site::Picked;
 use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult, Trace};
 
 impl PolicyPlan {
@@ -33,7 +33,7 @@ impl PolicyPlan {
         });
 
         if let Err(error) = outcome {
-            return Err(error.with_partial_trace(trace));
+            return Err(error.partially_traced(trace));
         }
 
         Ok(EvaluationResult {

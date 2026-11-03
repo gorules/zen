@@ -78,6 +78,8 @@ impl Report {
 struct Differential;
 
 impl Differential {
+    const INTENDED: &'static str = "compiled gives the intended result";
+
     fn limit() -> usize {
         std::env::var("SPEC_SHOW")
             .ok()
@@ -113,7 +115,12 @@ impl Differential {
             (Err(a), Err(b)) => a == b,
             _ => false,
         };
-        if case.engines.is_some() {
+        if let Some(engines) = &case.engines {
+            if engines.ends_with(Self::INTENDED) {
+                if let Some(failure) = suite.verdict(case, got) {
+                    out.push(format!("{failure} | {mode}"));
+                }
+            }
             return;
         }
         if !same {
@@ -181,7 +188,7 @@ impl Engines {
         let Ok(run) = GraphRun::new(suite) else {
             return;
         };
-        let verdict = match run.compiled.compiled_verdict() {
+        let verdict = match zen_engine::diagnostics::compiled_verdict(&run.compiled) {
             Some(Ok(())) => "compiled".to_string(),
             Some(Err(reason)) => format!("walker: {reason}"),
             None => "not compiled".to_string(),
@@ -419,7 +426,7 @@ impl Engines {
             );
             let got = match output.errors[row]
                 .as_deref()
-                .and_then(zen_engine::EvaluationError::policy)
+                .and_then(support::policy_error)
             {
                 Some(error) => Err(Reference::debug(error)),
                 None => Ok(Built::normalized(output.row(row).to_value())),
@@ -448,11 +455,12 @@ impl Engines {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "arbitrary_precision"),
+    ignore = "decimal expectations need arbitrary_precision"
+)]
 fn graph_spec_matches_walker() {
     support::switches();
-    if Reference::unavailable("spec-graph") {
-        return;
-    }
     Spec::prepare();
     let (suites, mut problems) = Spec::suites(Dialect::Graph);
     let reference = Reference::open("spec-graph");
@@ -486,9 +494,6 @@ fn graph_spec_matches_walker() {
 #[test]
 fn graph_engines_match_walker() {
     support::switches();
-    if Reference::unavailable("spec-graph") {
-        return;
-    }
     Spec::prepare();
     let (suites, problems) = Spec::suites(Dialect::Graph);
     let mut engines = Engines::new(Reference::open("spec-graph"));
@@ -522,9 +527,6 @@ fn graph_engines_match_walker() {
 #[test]
 fn policy_spec_matches_driver() {
     support::switches();
-    if Reference::unavailable("spec-policy") {
-        return;
-    }
     Spec::prepare();
     let (suites, mut problems) = Spec::suites(Dialect::Policy);
     let reference = Reference::open("spec-policy");
@@ -564,9 +566,6 @@ fn policy_spec_matches_driver() {
 #[test]
 fn policy_engines_match_driver() {
     support::switches();
-    if Reference::unavailable("spec-policy") {
-        return;
-    }
     Spec::prepare();
     let (suites, problems) = Spec::suites(Dialect::Policy);
     let mut engines = Engines::new(Reference::open("spec-policy"));

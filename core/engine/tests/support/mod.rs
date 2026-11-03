@@ -60,3 +60,20 @@ pub fn create_fs_loader() -> FilesystemLoader {
         root: test_data_root(),
     })
 }
+
+#[allow(dead_code)]
+pub fn policy_error(
+    error: &zen_engine::EvaluationError,
+) -> Option<&zen_engine::policy::EvaluationError> {
+    match error {
+        zen_engine::EvaluationError::Policy(error) => Some(error),
+        _ => None,
+    }
+}
+
+#[ctor::ctor(unsafe)]
+fn compiled_by_default() {
+    zen_engine::ZEN_CONFIG
+        .compiled
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+}

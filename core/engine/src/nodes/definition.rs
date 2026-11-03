@@ -1,10 +1,8 @@
 use crate::nodes::context::NodeContext;
 use crate::nodes::result::NodeResult;
-#[cfg(feature = "driver")]
 use crate::nodes::NodeError;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-#[cfg(feature = "driver")]
 use zen_types::decision::TransformAttributes;
 use zen_types::variable::ToVariable;
 
@@ -18,7 +16,6 @@ pub trait NodeHandler: Clone {
     type NodeData: NodeDataType;
     type TraceData: TraceDataType;
 
-    #[cfg(feature = "driver")]
     #[allow(unused_variables)]
     fn transform_attributes(
         &self,
@@ -27,7 +24,6 @@ pub trait NodeHandler: Clone {
         None
     }
 
-    #[cfg(feature = "driver")]
     #[allow(unused_variables)]
     fn after_transform_attributes(
         &self,

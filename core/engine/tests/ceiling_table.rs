@@ -817,9 +817,12 @@ impl Ceiling {
     async fn measure(label: &str, inputs_json: &[Value], runs: usize) {
         std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
         let fixture = Fixture::load();
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).compiled_engine();
         compiled.compile();
-        assert!(matches!(compiled.compiled_verdict(), Some(Ok(()))));
+        assert!(matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ));
         let walker = compiled.interpreted();
         let built = Built::new(inputs_json).unwrap();
         let rows = built.rows;
@@ -980,7 +983,7 @@ async fn traffic_profile_engine() {
             .map(|i| variants[i % variants.len()].clone())
             .collect(),
     };
-    let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+    let mut compiled = Decision::from(Arc::new(fixture.content.clone())).compiled_engine();
     compiled.compile();
     let built = Built::new(&inputs).unwrap();
     let columns = built.columns();

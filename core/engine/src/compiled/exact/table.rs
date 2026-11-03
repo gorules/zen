@@ -1,9 +1,10 @@
 use crate::compiled::exact::graph::{Ctx, Row};
-use crate::decision_graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
-use crate::nodes::decision_table::index::TableIndex;
-use crate::nodes::{NodeResponse, NodeResult};
-use crate::policy::blocks::{DecisionTableIr, ExecutionError, TableSelection};
-use crate::policy::host::Site;
+use crate::compiled::host::decision_table::index::TableIndex;
+use crate::compiled::host::graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
+use crate::compiled::host::{NodeResponse, NodeResult};
+use crate::compiled::policy::blocks::TableSelection;
+use crate::compiled::policy::site::Site;
+use crate::policy::blocks::{DecisionTableIr, ExecutionError};
 use crate::workspace::types::{BlockTrace, DecisionTableExtras};
 use ahash::{HashMap, HashSet};
 use base64::Engine as _;

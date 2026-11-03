@@ -5,10 +5,11 @@ use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
 use crate::compiled::leaf::{Array, Bits, Leaf, Store};
 use crate::compiled::lowered::Exports;
+use crate::compiled::policy::blocks::Operator;
 use crate::compiled::policy::schedule::{End, Event, Segment};
 use crate::compiled::policy::{Native, PolicyPlan};
 use crate::compiled::table::TableIr;
-use crate::policy::blocks::{AssertionIr, BlockKind, ConditionOperator, DecisionTableIr, MatchIr};
+use crate::policy::blocks::{AssertionIr, BlockKind, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -732,7 +733,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let last = ir.conditions.len().saturating_sub(1);
         !ir.conditions.is_empty()
             && ir.conditions.iter().enumerate().all(|(at, c)| {
-                c.depth == 0 && (at == last || matches!(c.operator, ConditionOperator::And))
+                c.depth == 0 && (at == last || Operator::of(&c.operator) == Operator::And)
             })
     }
 

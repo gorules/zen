@@ -30,7 +30,7 @@ fn decision() -> Decision {
         ]
     }))
     .expect("graph");
-    let mut decision = Decision::from(graph);
+    let mut decision = Decision::from(graph).compiled_engine();
     decision.compile();
     decision
 }

@@ -6,13 +6,14 @@ pub(crate) mod subgraphs;
 mod typed;
 mod view;
 
+use crate::compiled::content::Content;
 use crate::compiled::core::segments::Children;
 use crate::compiled::graph::call::Call;
 use crate::compiled::graph::schedule::{End, Outcome, Segment};
 use crate::compiled::graph::{Body, CompiledGraph, Condition, Kind, Step};
 use crate::compiled::leaf::Literal;
 use crate::compiled::table::Table;
-use crate::model::{DecisionNodeKind, GraphContent};
+use crate::model::DecisionNodeKind;
 use petgraph::prelude::NodeIndex;
 use refusal::{ChildRefusal, Hosted, Needs, Refusal};
 use std::sync::{Arc, OnceLock, RwLock};
@@ -167,7 +168,7 @@ pub(crate) struct ChildOp {
     pub view: Node,
     pub input: Node,
     pub nodes: Option<Vec<(Arc<str>, Ref)>>,
-    pub content: Arc<GraphContent>,
+    pub content: Arc<Content>,
     pub root: Arc<SegPlan>,
     pub layout: Arc<Layout>,
     pub keys: Vec<ChildKey>,
@@ -1032,7 +1033,7 @@ impl<'g> Builder<'g> {
         }
     }
 
-    fn validated(graph: &CompiledGraph, content: &GraphContent) -> bool {
+    fn validated(graph: &CompiledGraph, content: &Content) -> bool {
         graph
             .steps
             .iter()

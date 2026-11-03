@@ -2,19 +2,20 @@ use crate::nodes::definition::{NodeDataType, TraceDataType};
 use crate::nodes::extensions::NodeHandlerExtensions;
 use crate::nodes::function::v2::function::Function;
 use crate::nodes::result::{NodeResponse, NodeResult};
-use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::variable_json::{Guards, VariableNode};
 use crate::nodes::NodeError;
 use crate::ZEN_CONFIG;
-use ahash::HashSet;
+use ahash::{AHasher, HashSet};
 use jsonschema::ValidationError;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
+use std::hash::Hasher;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
+use zen_expression::Isolate;
 use zen_types::symbol::Symbol;
 use zen_types::variable::{ToVariable, Variable};
 
@@ -41,7 +42,16 @@ where
     TraceData: TraceDataType,
 {
     pub fn input_with_nodes(&self) -> Variable {
-        NodeContextBase::joined(&self.input, self.nodes.as_ref())
+        let Some(nodes) = &self.nodes else {
+            return self.input.shallow_clone();
+        };
+        let Variable::Object(object) = &self.input else {
+            return self.input.shallow_clone();
+        };
+
+        let mut map = object.borrow().clone();
+        map.insert(Variable::nodes_key(), nodes.clone());
+        Variable::from_object(map)
     }
 
     pub fn from_base(base: NodeContextBase, data: NodeData) -> Self {
@@ -52,10 +62,14 @@ where
             nodes: base.nodes,
             extensions: base.extensions,
             iteration: base.iteration,
-            trace: base.config.trace.then(Default::default),
+            trace: base.config.trace.then(|| Default::default()),
             node: data,
             config: base.config,
         }
+    }
+
+    pub fn isolate(&self) -> Isolate {
+        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
     }
 
     pub fn trace<Function>(&self, mutator: Function)
@@ -85,11 +99,11 @@ where
     where
         Error: Into<Box<dyn std::error::Error>>,
     {
-        NodeError::traced(
-            self.id.clone(),
-            self.trace.as_ref().map(|v| (*v.borrow()).to_variable()),
-            error,
-        )
+        NodeError {
+            node_id: self.id.clone(),
+            trace: self.trace.as_ref().map(|v| (*v.borrow()).to_variable()),
+            source: error.into(),
+        }
     }
 
     pub(crate) async fn function_runtime(&self) -> Result<&Function, NodeError> {
@@ -104,25 +118,6 @@ where
             .node_context(self)?;
         if validator.is_valid(VariableNode::new(value, &Guards::default())) {
             return Ok(());
-        }
-
-        {
-            let guards = Guards::default();
-            let mut first = None;
-            let mut nullable = false;
-            for error in validator.iter_errors(VariableNode::new(value, &guards)) {
-                if Self::nullable(value, &error.instance_path().to_string()) {
-                    nullable = true;
-                    break;
-                }
-                first.get_or_insert(error);
-            }
-            if !nullable {
-                return match first {
-                    Some(error) => Err(ValidationErrorJson::from(error)).node_context(self),
-                    None => Ok(()),
-                };
-            }
         }
 
         let current = value.deep_clone();
@@ -158,32 +153,6 @@ where
         match chosen < errors.len() {
             true => Err(errors.swap_remove(chosen)).node_context(self),
             false => Ok(()),
-        }
-    }
-
-    fn nullable(value: &Variable, pointer: &str) -> bool {
-        let segments: Vec<String> = pointer
-            .split('/')
-            .skip(1)
-            .map(|s| s.replace("~1", "/").replace("~0", "~"))
-            .collect();
-        match (Self::node_at(value, &segments), segments.split_last()) {
-            (None, _) => false,
-            (Some(Variable::Null), Some((_, parents))) => {
-                matches!(Self::node_at(value, parents), Some(Variable::Object(_)))
-            }
-            (Some(target), _) => Self::holds_null(&target),
-        }
-    }
-
-    fn holds_null(value: &Variable) -> bool {
-        match value {
-            Variable::Object(object) => object
-                .borrow()
-                .iter()
-                .any(|(_, field)| matches!(field, Variable::Null) || Self::holds_null(field)),
-            Variable::Array(array) => array.borrow().iter().any(Self::holds_null),
-            _ => false,
         }
     }
 
@@ -266,7 +235,11 @@ where
     }
 
     fn hash_node(&self) -> u64 {
-        ValidatorCache::key(&self.id, &self.name, self.config.validation_salt)
+        let mut hasher = AHasher::default();
+        hasher.write(self.id.as_bytes());
+        hasher.write(self.name.as_bytes());
+        hasher.write_u64(self.config.validation_salt);
+        hasher.finish()
     }
 }
 
@@ -352,18 +325,23 @@ pub struct NodeContextBase {
     pub trace: Option<RefCell<Variable>>,
 }
 
-impl NodeContextBase {
-    pub(crate) fn joined(input: &Variable, nodes: Option<&Variable>) -> Variable {
-        let Some(nodes) = nodes else {
-            return input.shallow_clone();
-        };
-        let Variable::Object(object) = input else {
-            return input.shallow_clone();
-        };
+pub(crate) fn make_isolate(
+    input: &Variable,
+    nodes: Option<&Variable>,
+    extensions: &NodeHandlerExtensions,
+) -> Isolate {
+    let mut isolate =
+        Isolate::with_environment(input.clone()).with_cache(extensions.compiled_cache.clone());
+    if let Some(nodes) = nodes {
+        isolate.set_local(Variable::nodes_key(), nodes.clone());
+    }
 
-        let mut map = object.borrow().clone();
-        map.insert(Variable::nodes_key(), nodes.clone());
-        Variable::from_object(map)
+    isolate
+}
+
+impl NodeContextBase {
+    pub fn isolate(&self) -> Isolate {
+        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
     }
 
     pub fn error<Error>(&self, error: Error) -> NodeResult
@@ -384,25 +362,47 @@ impl NodeContextBase {
     where
         Error: Into<Box<dyn std::error::Error>>,
     {
-        NodeError::traced(
-            self.id.clone(),
-            self.trace.as_ref().map(|t| t.borrow().to_variable()),
-            error,
-        )
+        NodeError {
+            node_id: self.id.clone(),
+            trace: self.trace.as_ref().map(|t| t.borrow().to_variable()),
+            source: error.into(),
+        }
     }
 
-    #[cfg(feature = "driver")]
     pub fn trace<Function>(&self, mutator: Function)
     where
         Function: FnOnce(&mut Variable),
     {
         if let Some(trace) = &self.trace {
-            mutator(&mut trace.borrow_mut());
+            mutator(&mut *trace.borrow_mut());
         }
     }
 }
 
-#[cfg(feature = "driver")]
+impl<NodeData, TraceData> From<NodeContext<NodeData, TraceData>> for NodeContextBase
+where
+    NodeData: NodeDataType,
+    TraceData: TraceDataType,
+{
+    fn from(value: NodeContext<NodeData, TraceData>) -> Self {
+        let trace = match value.config.trace {
+            true => Some(RefCell::new(Variable::Null)),
+            false => None,
+        };
+
+        Self {
+            id: value.id,
+            name: value.name,
+            input: value.input,
+            nodes: value.nodes,
+            extensions: value.extensions,
+            iteration: value.iteration,
+            config: value.config,
+            trace,
+        }
+    }
+}
+
 impl<T, E> NodeContextExt<T, NodeContextBase> for Result<T, E>
 where
     E: Into<Box<dyn std::error::Error>>,
@@ -422,7 +422,6 @@ where
     }
 }
 
-#[cfg(feature = "driver")]
 impl<T> NodeContextExt<T, NodeContextBase> for Option<T> {
     type Error = &'static str;
 

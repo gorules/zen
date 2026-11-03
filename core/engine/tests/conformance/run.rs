@@ -141,7 +141,6 @@ impl GraphRun {
     }
 
     pub async fn walker(&self, case: &Case) -> Result<Variable, String> {
-        Live::require_walker();
         Self::outcome(self.walker.evaluate(case.input.depth_clone(64)).await)
     }
 }
@@ -176,17 +175,17 @@ impl PolicyRun {
             }
             loader.add(key.as_str(), document(doc)?);
         }
-        let mut blocking: Vec<String> = workspace
-            .evaluation_diagnostics(Self::MAIN)
-            .into_iter()
-            .filter(|d| d.severity == Severity::Error)
-            .map(|d| {
-                serde_json::to_value(d.code)
-                    .ok()
-                    .and_then(|v| v.as_str().map(str::to_string))
-                    .unwrap_or_default()
-            })
-            .collect();
+        let mut blocking: Vec<String> =
+            zen_engine::diagnostics::evaluation_diagnostics(&workspace, Self::MAIN)
+                .into_iter()
+                .filter(|d| d.severity == Severity::Error)
+                .map(|d| {
+                    serde_json::to_value(d.code)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default()
+                })
+                .collect();
         blocking.sort();
         blocking.dedup();
         let engine = DecisionEngine::default().with_loader(loader);

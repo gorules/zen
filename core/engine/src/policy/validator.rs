@@ -9,7 +9,6 @@ use crate::policy::refs::RefPoolIndex;
 use crate::policy::MAX_RECURSION_DEPTH;
 use crate::workspace::db::Db;
 use crate::workspace::types::InputValidationError;
-use zen_types::symbol::Symbol;
 
 impl Db {
     pub(crate) fn input_schema(&self, policy_path: &str) -> InputSchema {
@@ -18,13 +17,11 @@ impl Db {
         let visible_dms = self.visible_data_models(policy_path);
         let (roots, ref_targets) =
             DataModelIr::classify_roots(visible_dms.iter().map(|dm| dm.as_ref()));
-        let dated = InputSchema::dated(&entities);
         InputSchema {
             entities,
             globals,
             roots,
             ref_targets,
-            dated,
             dictionaries: self.unit(policy_path).dictionaries.clone(),
         }
     }
@@ -75,7 +72,6 @@ pub(crate) struct InputSchema {
     globals: HashMap<Arc<str>, Property>,
     roots: HashSet<Arc<str>>,
     ref_targets: HashSet<Arc<str>>,
-    dated: HashSet<Arc<str>>,
     dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
 }
 
@@ -88,7 +84,6 @@ impl InputSchema {
             ref_pools: &ref_pools,
             errors: Vec::new(),
             depth: 0,
-            path: Vec::new(),
         };
 
         let Some(input_obj) = input.as_object() else {
@@ -107,15 +102,13 @@ impl InputSchema {
                 continue;
             }
             let key_str: &str = key.as_ref();
-            validator.path.push(Segment::Key(key.clone()));
             if self.ref_targets.contains(key_str) {
-                validator.validate_array_of_entity(val, key_str);
+                validator.validate_array_of_entity(val, key_str, key_str.to_string());
             } else if self.roots.contains(key_str) {
-                validator.validate_entity(val, key_str);
+                validator.validate_entity(val, key_str, key_str.to_string());
             } else if let Some(prop) = self.globals.get(key_str) {
-                validator.validate_global(val, prop);
+                validator.validate_global(val, prop, key_str.to_string());
             }
-            validator.path.pop();
         }
 
         validator.errors
@@ -123,29 +116,6 @@ impl InputSchema {
 }
 
 impl InputSchema {
-    fn dated(entities: &HashMap<Arc<str>, Arc<DataModelIr>>) -> HashSet<Arc<str>> {
-        let mut dated: HashSet<Arc<str>> = HashSet::default();
-        loop {
-            let before = dated.len();
-            for (name, model) in entities.iter() {
-                if dated.contains(name) {
-                    continue;
-                }
-                let any = model.properties.iter().any(|p| match &p.kind {
-                    PropertyTypeIr::Date => true,
-                    PropertyTypeIr::Relationship { target } => dated.contains(target),
-                    _ => false,
-                });
-                if any {
-                    dated.insert(name.clone());
-                }
-            }
-            if dated.len() == before {
-                return dated;
-            }
-        }
-    }
-
     pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
         DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
@@ -159,7 +129,7 @@ impl InputSchema {
     }
 
     fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
-        if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(entity) {
+        if depth >= MAX_RECURSION_DEPTH {
             return None;
         }
         let model = self.entities.get(entity)?;
@@ -190,78 +160,6 @@ impl InputSchema {
             false => convert_one(value),
         }
     }
-
-    pub(crate) fn has_dates(&self) -> bool {
-        !self.dated.is_empty()
-            || self
-                .globals
-                .values()
-                .any(|property| matches!(property.kind, PropertyTypeIr::Date))
-    }
-
-    pub(crate) fn dates_at(&self, path: &str) -> Option<DatesAt> {
-        let mut segments = path.split('.');
-        let first = segments.next()?;
-        let mut at = if self.ref_targets.contains(first) {
-            DatesAt::Items(Arc::from(first), 0)
-        } else if self.roots.contains(first) {
-            DatesAt::Entity(Arc::from(first), 0)
-        } else {
-            DatesAt::Property(self.globals.get(first)?.clone(), 0)
-        };
-        for segment in segments {
-            let (entity, depth) = match &at {
-                DatesAt::Entity(name, depth) | DatesAt::Items(name, depth) => {
-                    (name.clone(), *depth)
-                }
-                DatesAt::Property(property, depth) => match &property.kind {
-                    PropertyTypeIr::Relationship { target } => (target.clone(), *depth),
-                    _ => return None,
-                },
-            };
-            if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(&entity) {
-                return None;
-            }
-            let model = self.entities.get(&entity)?;
-            let property = model.properties.iter().find(|p| *p.name == *segment)?;
-            at = DatesAt::Property(property.clone(), depth + 1);
-        }
-        let dated = match &at {
-            DatesAt::Entity(name, depth) | DatesAt::Items(name, depth) => {
-                *depth < MAX_RECURSION_DEPTH && self.dated.contains(name)
-            }
-            DatesAt::Property(property, _) => match &property.kind {
-                PropertyTypeIr::Date => true,
-                PropertyTypeIr::Relationship { target } => {
-                    self.entities.contains_key(target) && self.dated.contains(target)
-                }
-                _ => false,
-            },
-        };
-        dated.then_some(at)
-    }
-
-    pub(crate) fn convert_at(&self, at: &DatesAt, value: &Variable) -> Option<Variable> {
-        match at {
-            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth),
-            DatesAt::Items(name, depth) => {
-                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, name, *depth))
-            }
-            DatesAt::Property(property, depth) => self.convert_property(value, property, *depth),
-        }
-    }
-}
-
-pub(crate) enum DatesAt {
-    Entity(Arc<str>, usize),
-    Items(Arc<str>, usize),
-    Property(Property, usize),
-}
-
-enum Segment {
-    Key(Symbol),
-    Name(Arc<str>),
-    Index(usize),
 }
 
 struct InputValidator<'a> {
@@ -270,53 +168,24 @@ struct InputValidator<'a> {
     ref_pools: &'a RefPoolIndex,
     errors: Vec<InputValidationError>,
     depth: usize,
-    path: Vec<Segment>,
 }
 
 impl InputValidator<'_> {
-    fn rendered(&self) -> String {
-        let mut out = String::new();
-        for (i, segment) in self.path.iter().enumerate() {
-            match segment {
-                Segment::Key(key) => {
-                    if i > 0 {
-                        out.push('.');
-                    }
-                    out.push_str(key.as_ref());
-                }
-                Segment::Name(name) => {
-                    out.push('.');
-                    out.push_str(name);
-                }
-                Segment::Index(index) => {
-                    out.push('[');
-                    out.push_str(&index.to_string());
-                    out.push(']');
-                }
-            }
-        }
-        out
-    }
-
-    fn fail(&mut self, expected: String, got: String) {
-        let path = self.rendered();
-        self.errors.push(InputValidationError {
-            path,
-            expected,
-            got,
-        });
-    }
-
-    fn validate_entity(&mut self, value: &Variable, entity_name: &str) {
+    fn validate_entity(&mut self, value: &Variable, entity_name: &str, path: String) {
         if self.depth >= MAX_RECURSION_DEPTH {
-            self.fail(
-                format!("entity nesting within {MAX_RECURSION_DEPTH} levels"),
-                "deeper".into(),
-            );
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("entity nesting within {MAX_RECURSION_DEPTH} levels"),
+                got: "deeper".into(),
+            });
             return;
         }
         let Some(obj) = value.as_object() else {
-            self.fail(format!("object ({entity_name})"), value.type_name().into());
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("object ({entity_name})"),
+                got: value.type_name().into(),
+            });
             return;
         };
         let Some(dm) = self.entities.get(entity_name) else {
@@ -336,60 +205,63 @@ impl InputValidator<'_> {
             else {
                 continue;
             };
-            self.path.push(Segment::Name(prop.name.clone()));
+            let child_path = format!("{path}.{}", prop.name);
             if prop.array {
-                self.validate_array_of_property(val, prop);
+                self.validate_array_of_property(val, prop, child_path);
             } else {
-                self.validate_kind(val, &prop.kind);
+                self.validate_kind(val, &prop.kind, child_path);
             }
-            self.path.pop();
         }
         self.depth -= 1;
     }
 
-    fn validate_global(&mut self, value: &Variable, prop: &Property) {
+    fn validate_global(&mut self, value: &Variable, prop: &Property, path: String) {
         if prop.array {
-            self.validate_array_of_property(value, prop);
+            self.validate_array_of_property(value, prop, path);
         } else {
-            self.validate_kind(value, &prop.kind);
+            self.validate_kind(value, &prop.kind, path);
         }
     }
 
-    fn validate_array_of_property(&mut self, value: &Variable, prop: &Property) {
+    fn validate_array_of_property(&mut self, value: &Variable, prop: &Property, path: String) {
         let Some(arr) = value.as_array() else {
-            self.fail(format!("array of {}", prop.kind), value.type_name().into());
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("array of {}", prop.kind),
+                got: value.type_name().into(),
+            });
             return;
         };
         for (i, item) in arr.borrow().iter().enumerate() {
             if matches!(item, Variable::Null) {
                 continue;
             }
-            self.path.push(Segment::Index(i));
-            self.validate_kind(item, &prop.kind);
-            self.path.pop();
+            self.validate_kind(item, &prop.kind, format!("{path}[{i}]"));
         }
     }
 
-    fn validate_array_of_entity(&mut self, value: &Variable, entity_name: &str) {
+    fn validate_array_of_entity(&mut self, value: &Variable, entity_name: &str, path: String) {
         let Some(arr) = value.as_array() else {
-            self.fail(format!("array of {entity_name}"), value.type_name().into());
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("array of {entity_name}"),
+                got: value.type_name().into(),
+            });
             return;
         };
         for (i, item) in arr.borrow().iter().enumerate() {
             if matches!(item, Variable::Null) {
                 continue;
             }
-            self.path.push(Segment::Index(i));
-            self.validate_entity(item, entity_name);
-            self.path.pop();
+            self.validate_entity(item, entity_name, format!("{path}[{i}]"));
         }
     }
 
-    fn validate_kind(&mut self, value: &Variable, kind: &PropertyTypeIr) {
+    fn validate_kind(&mut self, value: &Variable, kind: &PropertyTypeIr, path: String) {
         let ok = match kind {
             PropertyTypeIr::String => matches!(value, Variable::String(_)),
             PropertyTypeIr::Enum(values) => {
-                self.validate_enum(value, values);
+                self.validate_enum(value, values, path);
                 return;
             }
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
@@ -401,30 +273,35 @@ impl InputValidator<'_> {
                 other => zen_expression::DateValue::is(other),
             },
             PropertyTypeIr::Reference { target } => {
-                self.validate_reference(value, target);
+                self.validate_reference(value, target, path);
                 return;
             }
             PropertyTypeIr::Relationship { target } => {
                 if !self.entities.contains_key(target) {
                     if let Some(dict) = self.dictionaries.get(target) {
                         let values: Vec<Arc<str>> = dict.values().cloned().collect();
-                        self.validate_enum(value, &values);
+                        self.validate_enum(value, &values, path);
                         return;
                     }
                 }
-                self.validate_entity(value, target);
+                self.validate_entity(value, target, path);
                 return;
             }
         };
         if !ok {
-            self.fail(kind.to_string(), value.type_name().into());
+            self.errors.push(InputValidationError {
+                path,
+                expected: kind.to_string(),
+                got: value.type_name().into(),
+            });
         }
     }
 
-    fn validate_enum(&mut self, value: &Variable, values: &[Arc<str>]) {
+    fn validate_enum(&mut self, value: &Variable, values: &[Arc<str>], path: String) {
         let Some(s) = value.as_rc_str() else {
-            self.fail(
-                format!(
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!(
                     "one of {}",
                     values
                         .iter()
@@ -432,13 +309,14 @@ impl InputValidator<'_> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-                value.type_name().into(),
-            );
+                got: value.type_name().into(),
+            });
             return;
         };
         if !values.iter().any(|v| v.as_ref() == s.as_ref()) {
-            self.fail(
-                format!(
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!(
                     "one of {}",
                     values
                         .iter()
@@ -446,276 +324,26 @@ impl InputValidator<'_> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-                format!("'{s}'"),
-            );
+                got: format!("'{s}'"),
+            });
         }
     }
 
-    fn validate_reference(&mut self, value: &Variable, target: &Arc<str>) {
+    fn validate_reference(&mut self, value: &Variable, target: &Arc<str>, path: String) {
         let Some(id) = value.as_rc_str() else {
-            self.fail(
-                format!("reference id (string → {target})"),
-                value.type_name().into(),
-            );
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("reference id (string → {target})"),
+                got: value.type_name().into(),
+            });
             return;
         };
         if !self.ref_pools.contains(target, &id) {
-            self.fail(
-                format!("reference id present in '{target}' pool"),
-                format!("'{id}' (not found)"),
-            );
+            self.errors.push(InputValidationError {
+                path,
+                expected: format!("reference id present in '{target}' pool"),
+                got: format!("'{id}' (not found)"),
+            });
         }
-    }
-}
-
-struct Sureness<'s> {
-    schema: &'s InputSchema,
-    rows: usize,
-    sure: Vec<bool>,
-}
-
-impl Sureness<'_> {
-    fn number(column: &zen_expression::lane::Column) -> bool {
-        use zen_expression::lane::{Dictionary, Values};
-        matches!(
-            column.values,
-            Values::Dec(_)
-                | Values::Scaled { .. }
-                | Values::I64(_)
-                | Values::F64(_)
-                | Values::Dict {
-                    values: Dictionary::Scaled { .. },
-                    ..
-                }
-        )
-    }
-
-    fn string(column: &zen_expression::lane::Column) -> bool {
-        use zen_expression::lane::{Dictionary, Values};
-        matches!(
-            column.values,
-            Values::Utf8 { .. }
-                | Values::Text { .. }
-                | Values::LargeUtf8 { .. }
-                | Values::Strs(_)
-                | Values::Dict {
-                    values: Dictionary::Text { .. },
-                    ..
-                }
-        )
-    }
-
-    fn boolean(column: &zen_expression::lane::Column) -> bool {
-        use zen_expression::lane::{Dictionary, Values};
-        matches!(
-            column.values,
-            Values::Bool { .. }
-                | Values::Dict {
-                    values: Dictionary::Bool { .. },
-                    ..
-                }
-        )
-    }
-
-    fn scalar(
-        &self,
-        kind: &PropertyTypeIr,
-        column: &zen_expression::lane::Column,
-        at: usize,
-    ) -> bool {
-        if !column.valid(at) {
-            return true;
-        }
-        match kind {
-            PropertyTypeIr::Number => {
-                Self::number(column)
-                    || matches!(column.variable(at), Variable::Number(_) | Variable::Null)
-            }
-            PropertyTypeIr::String => {
-                Self::string(column)
-                    || matches!(column.variable(at), Variable::String(_) | Variable::Null)
-            }
-            PropertyTypeIr::Boolean => {
-                Self::boolean(column)
-                    || matches!(column.variable(at), Variable::Bool(_) | Variable::Null)
-            }
-            PropertyTypeIr::Enum(values) => match column.variable(at) {
-                Variable::Null => true,
-                Variable::String(s) => values.iter().any(|v| v.as_ref() == s.as_str()),
-                _ => false,
-            },
-            PropertyTypeIr::Relationship { target } => self.objects(target, column, at),
-            PropertyTypeIr::Date | PropertyTypeIr::Reference { .. } => false,
-        }
-    }
-
-    fn objects(&self, target: &str, column: &zen_expression::lane::Column, at: usize) -> bool {
-        use zen_expression::lane::Values;
-        if !self.schema.entities.contains_key(target) {
-            return false;
-        }
-        match column.values {
-            Values::Struct { fields, .. } => self.structs(target, fields, at),
-            _ => false,
-        }
-    }
-
-    fn structs(
-        &self,
-        target: &str,
-        fields: &[(&str, zen_expression::lane::Column)],
-        at: usize,
-    ) -> bool {
-        let Some(model) = self.schema.entities.get(target) else {
-            return false;
-        };
-        fields.iter().all(|(name, column)| {
-            match model.properties.iter().find(|p| p.name.as_ref() == *name) {
-                None => true,
-                Some(prop) => self.property(prop, column, at),
-            }
-        })
-    }
-
-    fn property(&self, prop: &Property, column: &zen_expression::lane::Column, at: usize) -> bool {
-        use zen_expression::lane::{Dictionary, Values};
-        if !column.valid(at) {
-            return true;
-        }
-        match prop.array {
-            false => self.scalar(&prop.kind, column, at),
-            true => {
-                let Values::List { child, .. } = column.values else {
-                    return false;
-                };
-                let Some((a, b)) = column.range(at) else {
-                    return true;
-                };
-                let child = match child {
-                    Dictionary::Column(child) => *child,
-                    other => other.column(),
-                };
-                (a..b).all(|item| self.scalar(&prop.kind, &child, item))
-            }
-        }
-    }
-
-    fn typed(&self, prop: &Property, column: &zen_expression::lane::Column) -> bool {
-        use zen_expression::lane::{Dictionary, Values};
-        match prop.array {
-            false => self.kinded(&prop.kind, column),
-            true => match column.values {
-                Values::List { child, .. } => {
-                    let child = match child {
-                        Dictionary::Column(child) => *child,
-                        other => other.column(),
-                    };
-                    self.kinded(&prop.kind, &child)
-                }
-                _ => false,
-            },
-        }
-    }
-
-    fn kinded(&self, kind: &PropertyTypeIr, column: &zen_expression::lane::Column) -> bool {
-        use zen_expression::lane::Values;
-        match kind {
-            PropertyTypeIr::Number => Self::number(column),
-            PropertyTypeIr::String => Self::string(column),
-            PropertyTypeIr::Boolean => Self::boolean(column),
-            PropertyTypeIr::Relationship { target } => {
-                match (column.values, self.schema.entities.get(target)) {
-                    (Values::Struct { fields, .. }, Some(model)) => {
-                        fields.iter().all(|(name, field)| {
-                            match model.properties.iter().find(|p| p.name.as_ref() == *name) {
-                                None => true,
-                                Some(prop) => self.typed(prop, field),
-                            }
-                        })
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn mark(&mut self, column: &zen_expression::lane::Column, test: impl Fn(&Self, usize) -> bool) {
-        for row in 0..self.rows {
-            if self.sure[row] && column.valid(row) && !test(self, row) {
-                self.sure[row] = false;
-            }
-        }
-    }
-
-    fn path(&mut self, path: &str, column: &zen_expression::lane::Column) -> Option<()> {
-        let segments: Vec<&str> = path.split('.').collect();
-        let (first, rest) = segments.split_first()?;
-        if self.schema.ref_targets.contains(*first) {
-            return None;
-        }
-        if self.schema.roots.contains(*first) {
-            let mut entity: Arc<str> = Arc::from(*first);
-            for (depth, segment) in rest.iter().enumerate() {
-                let model = self.schema.entities.get(&entity)?.clone();
-                let Some(prop) = model
-                    .properties
-                    .iter()
-                    .find(|p| p.name.as_ref() == *segment)
-                else {
-                    return Some(());
-                };
-                if depth + 1 == rest.len() {
-                    if !self.typed(prop, column) {
-                        self.mark(column, |s, row| s.property(prop, column, row));
-                    }
-                    return Some(());
-                }
-                match (&prop.kind, prop.array) {
-                    (PropertyTypeIr::Relationship { target }, false)
-                        if self.schema.entities.contains_key(target) =>
-                    {
-                        entity = target.clone()
-                    }
-                    _ => {
-                        self.mark(column, |_, _| false);
-                        return Some(());
-                    }
-                }
-            }
-            let target = entity.clone();
-            self.mark(column, |s, row| s.objects(&target, column, row));
-            return Some(());
-        }
-        if let Some(prop) = self.schema.globals.get(*first) {
-            match rest.is_empty() {
-                true if self.typed(prop, column) => {}
-                true => self.mark(column, |s, row| s.property(prop, column, row)),
-                false => self.mark(column, |_, _| false),
-            }
-        }
-        Some(())
-    }
-}
-
-impl InputSchema {
-    pub(crate) fn sure(&self, columns: &zen_expression::lane::Columns) -> Option<Vec<bool>> {
-        let dated_global = self.globals.values().any(|p| match &p.kind {
-            PropertyTypeIr::Date => true,
-            PropertyTypeIr::Relationship { target } => self.dated.contains(target),
-            _ => false,
-        });
-        if !self.dated.is_empty() || !self.ref_targets.is_empty() || dated_global {
-            return None;
-        }
-        let mut sureness = Sureness {
-            schema: self,
-            rows: columns.rows,
-            sure: vec![true; columns.rows],
-        };
-        for (path, column) in &columns.columns {
-            sureness.path(path, column)?;
-        }
-        Some(sureness.sure)
     }
 }

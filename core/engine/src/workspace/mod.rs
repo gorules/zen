@@ -37,11 +37,17 @@ use types::Global;
 
 pub struct Workspace {
     db: Db,
+    compiled: crate::compiled::policy::artifact::Artifacts,
+    engine: crate::compiled::Engine,
 }
 
 impl Workspace {
     pub fn new() -> Self {
-        Self { db: Db::new() }
+        Self {
+            db: Db::new(),
+            compiled: Default::default(),
+            engine: crate::compiled::Engine::Configured,
+        }
     }
 
     pub fn set_document(&mut self, path: impl Into<Arc<str>>, document: DecisionContent) {
@@ -81,6 +87,13 @@ impl Workspace {
     }
 
     pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
+        if self.engine.compiled() {
+            return crate::compiled::policy::artifact::Runtime::evaluate(
+                &self.db,
+                &self.compiled,
+                req,
+            );
+        }
         self.db.evaluate(req)
     }
 
@@ -88,6 +101,13 @@ impl Workspace {
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
+        if self.engine.compiled() {
+            return crate::compiled::policy::artifact::Runtime::enhance_trace(
+                &self.db,
+                &self.compiled,
+                req,
+            );
+        }
         self.db.enhance_trace(req)
     }
 
@@ -95,34 +115,54 @@ impl Workspace {
         &self,
         requests: &[EvaluateRequest],
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
-        self.db.evaluate_batch(requests)
+        crate::compiled::policy::artifact::Runtime::evaluate_batch(
+            &self.db,
+            &self.compiled,
+            requests,
+        )
     }
 
     pub fn evaluate_columns<'a>(
         &self,
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
-        columns: &'a zen_expression::lane::Columns<'a>,
-    ) -> Result<crate::compiled::ColumnarOutput<'a>, EvaluationError> {
-        self.db.evaluate_columns(policy_path, goals, columns)
+        columns: &'a crate::columns::Columns<'a>,
+    ) -> Result<crate::ColumnarOutput<'a>, EvaluationError> {
+        crate::compiled::policy::artifact::Runtime::evaluate_columns(
+            &self.db,
+            &self.compiled,
+            policy_path,
+            goals,
+            columns,
+        )
     }
 
-    #[cfg(feature = "driver")]
     #[doc(hidden)]
     pub fn evaluate_with_driver(
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
-        self.db.evaluate_with_driver(req)
+        self.db.evaluate(req)
     }
 
-    #[cfg(feature = "driver")]
     #[doc(hidden)]
     pub fn enhance_trace_with_driver(
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
-        self.db.enhance_trace_with_driver(req)
+        self.db.enhance_trace(req)
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Interpreted;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn compiled_engine(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Compiled;
+        self
     }
 
     pub fn enhance_graph_trace(
@@ -200,7 +240,7 @@ impl Workspace {
         self.db.unit(importer).members.contains(policy)
     }
 
-    pub fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {
+    pub(crate) fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {
         self.db.evaluation_diagnostics(&Arc::from(entry))
     }
 

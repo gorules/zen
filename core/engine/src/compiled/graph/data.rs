@@ -1,5 +1,5 @@
+use crate::compiled::host::graph::walker::GraphWalker;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf, Mask};
-use crate::decision_graph::walker::GraphWalker;
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;

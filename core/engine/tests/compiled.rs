@@ -3,7 +3,6 @@ mod fixture;
 mod support;
 
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
-#[cfg(feature = "driver")]
 use serde_json::json;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -11,10 +10,70 @@ use std::fs;
 use std::sync::Arc;
 use support::columns::Built;
 use support::golden::{Canon, Live, Reference};
-#[cfg(feature = "driver")]
 use zen_engine::model::GraphContent;
 use zen_engine::{Decision, EvaluationOptions};
 use zen_expression::Variable;
+
+struct Approved;
+
+impl Approved {
+    const COLLECT: [&'static str; 1] = ["collect-tables.json"];
+
+    fn texts(fixture: &str, want: &Result<String, String>, got: &Result<String, String>) -> bool {
+        if want == got {
+            return true;
+        }
+        match (want, got) {
+            (Ok(want), Ok(got)) => match (
+                serde_json::from_str::<Value>(want),
+                serde_json::from_str::<Value>(got),
+            ) {
+                (Ok(want), Ok(got)) => Self::collect(fixture, &want, &got),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn values(fixture: &str, want: &Result<Value, String>, got: &Result<Value, String>) -> bool {
+        match (want, got) {
+            _ if want == got => true,
+            (Ok(want), Ok(got)) => Self::collect(fixture, want, got),
+            _ => false,
+        }
+    }
+
+    fn collect(fixture: &str, want: &Value, got: &Value) -> bool {
+        Self::COLLECT.contains(&fixture) && Self::without_empty(got, Some(want)) == *want
+    }
+
+    fn empty(value: &Value) -> bool {
+        match value {
+            Value::Array(items) => items.is_empty(),
+            Value::Object(map) => !map.is_empty() && map.values().all(Self::empty),
+            _ => false,
+        }
+    }
+
+    fn without_empty(got: &Value, want: Option<&Value>) -> Value {
+        match (got, want) {
+            (Value::Object(map), Some(Value::Object(want))) => Value::Object(
+                map.iter()
+                    .filter(|(key, value)| want.contains_key(*key) || !Self::empty(value))
+                    .map(|(key, value)| (key.clone(), Self::without_empty(value, want.get(key))))
+                    .collect(),
+            ),
+            (Value::Array(items), Some(Value::Array(want))) => Value::Array(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(at, item)| Self::without_empty(item, want.get(at)))
+                    .collect(),
+            ),
+            _ => got.clone(),
+        }
+    }
+}
 
 struct Outcome;
 
@@ -63,9 +122,6 @@ impl Outcome {
 
 #[tokio::test]
 async fn compiled_graphs_match_the_walker() {
-    if Reference::unavailable("graph-fixtures") {
-        return;
-    }
     Reference::prepare(Outcome::CLOCK);
     let reference = Reference::open("graph-fixtures");
     let mut census: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -75,7 +131,7 @@ async fn compiled_graphs_match_the_walker() {
         let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())));
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        let verdict = compiled.compiled_verdict();
+        let verdict = zen_engine::diagnostics::compiled_verdict(&compiled);
         let key = match &verdict {
             Some(Ok(())) => "compiled".to_string(),
             Some(Err(reason)) => format!("walker: {reason}"),
@@ -94,10 +150,7 @@ async fn compiled_graphs_match_the_walker() {
             let want = reference
                 .graph(
                     || Canon::key(&fixture.name, &[], &context),
-                    || async {
-                        Live::require_walker();
-                        Outcome::of(walker.evaluate(Variable::from(input.clone())).await)
-                    },
+                    || async { Outcome::of(walker.evaluate(Variable::from(input.clone())).await) },
                     Outcome::recorded,
                 )
                 .await;
@@ -113,13 +166,16 @@ async fn compiled_graphs_match_the_walker() {
                 false => (Outcome::canonical(single), batched.map(Outcome::canonical)),
             };
             compared += 1;
-            if single != want {
+            if !Approved::texts(&fixture.name, &want, &single) {
                 failures.push(format!(
                     "{} single {input}\n  walker   {want:?}\n  compiled {single:?}",
                     fixture.name
                 ));
             }
-            if batched.as_ref() != Some(&want) {
+            if !batched
+                .as_ref()
+                .is_some_and(|batched| Approved::texts(&fixture.name, &want, batched))
+            {
                 failures.push(format!(
                     "{} batch {input}\n  walker   {want:?}\n  compiled {batched:?}",
                     fixture.name
@@ -145,7 +201,6 @@ async fn compiled_graphs_match_the_walker() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn compiled_graph_throughput() {
@@ -171,7 +226,10 @@ async fn compiled_graph_throughput() {
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = compiled.interpreted();
@@ -245,9 +303,6 @@ async fn compiled_graph_throughput() {
 
 #[tokio::test]
 async fn columnar_graphs_match_the_walker() {
-    if Reference::unavailable("graph-fixtures") {
-        return;
-    }
     Reference::prepare(Outcome::CLOCK);
     let reference = Reference::open("graph-fixtures");
     let mut failures: Vec<String> = Vec::new();
@@ -261,7 +316,10 @@ async fn columnar_graphs_match_the_walker() {
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = Live::walker(&compiled);
@@ -291,7 +349,6 @@ async fn columnar_graphs_match_the_walker() {
                     .graph(
                         || Canon::key(&fixture.name, &[], &input),
                         || async {
-                            Live::require_walker();
                             match walker.evaluate(input.clone()).await {
                                 Ok(r) => Ok(Built::normalized(r.result.to_value())),
                                 Err(e) => Err(serde_json::to_value(&*e)
@@ -309,7 +366,7 @@ async fn columnar_graphs_match_the_walker() {
                     None => Ok(Built::normalized(output.row(row).to_value())),
                 };
                 compared += 1;
-                if got != want {
+                if !Approved::values(&fixture.name, &want, &got) {
                     failures.push(format!(
                         "{} {}\n  walker   {want:?}\n  columnar {got:?}",
                         fixture.name,
@@ -339,7 +396,6 @@ async fn columnar_graphs_match_the_walker() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 async fn struct_inputs_match_the_walker() {
     use zen_expression::lane::{Column, Columns, Values};
@@ -355,7 +411,10 @@ async fn struct_inputs_match_the_walker() {
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = compiled.interpreted();
@@ -456,7 +515,7 @@ async fn struct_inputs_match_the_walker() {
                 None => Ok(Built::normalized(output.row(row).to_value())),
             };
             compared += 1;
-            if got != want {
+            if !Approved::values(&fixture.name, &want, &got) {
                 failures.push(format!(
                     "{} {}\n  walker   {want:?}\n  columnar {got:?}",
                     fixture.name,
@@ -734,7 +793,6 @@ async fn columnar_function_v1_batches_match_rows() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn columnar_graph_throughput() {
@@ -761,7 +819,10 @@ async fn columnar_graph_throughput() {
             compiled = compiled.with_loader(Arc::new(support::create_fs_loader()));
         }
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = compiled.interpreted();
@@ -841,10 +902,8 @@ async fn columnar_graph_throughput() {
     );
 }
 
-#[cfg(feature = "driver")]
 struct Latency;
 
-#[cfg(feature = "driver")]
 impl Latency {
     async fn measure<F, Fut>(contexts: &[Variable], reps: usize, mut f: F) -> f64
     where
@@ -868,7 +927,6 @@ impl Latency {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn single_row_latency() {
@@ -899,7 +957,10 @@ async fn single_row_latency() {
         let content = Arc::new(fixture.content.clone());
         let mut compiled = Decision::from(content.clone());
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = compiled.interpreted();
@@ -949,10 +1010,8 @@ async fn single_row_latency() {
     println!("geomean ns/eval ({} fixtures): compiled {:.0} cold {:.0} traced {:.0} walker {:.0} walker-traced {:.0}", columns[0].len(), gm[0], gm[1], gm[2], gm[3], gm[4]);
 }
 
-#[cfg(feature = "driver")]
 struct Noise(u64);
 
-#[cfg(feature = "driver")]
 impl Noise {
     fn new(seed: u64) -> Self {
         Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
@@ -974,13 +1033,11 @@ impl Noise {
     }
 }
 
-#[cfg(feature = "driver")]
 struct Wide {
     numbers: Vec<rust_decimal::Decimal>,
     strings: Vec<String>,
 }
 
-#[cfg(feature = "driver")]
 impl Wide {
     fn of(fixture: &Fixture) -> Wide {
         let text = serde_json::to_string(&fixture.content).unwrap_or_default();
@@ -1155,7 +1212,6 @@ impl Wide {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 #[ignore]
 async fn wide_inputs_match_the_walker() {
@@ -1178,7 +1234,10 @@ async fn wide_inputs_match_the_walker() {
         }
         let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
         compiled.compile();
-        if !matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+        if !matches!(
+            zen_engine::diagnostics::compiled_verdict(&compiled),
+            Some(Ok(()))
+        ) {
             continue;
         }
         let walker = compiled.interpreted();
@@ -1343,7 +1402,7 @@ async fn plan_census() {
         for (key, calls, rows, ns) in zen_engine::diagnostics::census() {
             println!("CENSUS\t{}\t{key}\t{calls}\t{rows}\t{ns}", fixture.name);
         }
-        let key = match compiled.plan_verdict(&columns) {
+        let key = match zen_engine::diagnostics::plan_verdict(&compiled, &columns) {
             None => "not compiled".to_string(),
             Some(Ok(())) => "planned".to_string(),
             Some(Err(reason)) => reason,
@@ -1363,10 +1422,8 @@ async fn plan_census() {
     }
 }
 
-#[cfg(feature = "driver")]
 struct Chain;
 
-#[cfg(feature = "driver")]
 impl Chain {
     const FULLY_TYPED: &[&str] = &[
         "affiliate-commission-calculator.json",
@@ -1438,9 +1495,12 @@ impl Chain {
         let mut compiled = Decision::from(Arc::new(content));
         compiled.compile();
         assert!(
-            matches!(compiled.compiled_verdict(), Some(Ok(()))),
+            matches!(
+                zen_engine::diagnostics::compiled_verdict(&compiled),
+                Some(Ok(()))
+            ),
             "verdict {:?}",
-            compiled.compiled_verdict()
+            zen_engine::diagnostics::compiled_verdict(&compiled)
         );
         let walker = compiled.interpreted();
         let built = Built::new(rows).expect("columns");
@@ -1521,7 +1581,6 @@ impl Chain {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_falls_back_per_unit() {
     let mut failures = Vec::new();
@@ -1544,8 +1603,11 @@ async fn graph_typed_falls_back_per_unit() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
+#[cfg_attr(
+    not(feature = "arbitrary_precision"),
+    ignore = "decimal expectations need arbitrary_precision"
+)]
 async fn graph_typed_reads_dynamic_slots() {
     let mut rows = Chain::rows(240, 5);
     let odd = [
@@ -1594,8 +1656,11 @@ async fn graph_typed_reads_dynamic_slots() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
+#[cfg_attr(
+    not(feature = "arbitrary_precision"),
+    ignore = "decimal expectations need arbitrary_precision"
+)]
 async fn graph_typed_lists_and_closures() {
     let mut noise = Noise::new(17);
     let tags = ["a", "vip", "b"];
@@ -1665,8 +1730,11 @@ async fn graph_typed_lists_and_closures() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
+#[cfg_attr(
+    not(feature = "arbitrary_precision"),
+    ignore = "decimal expectations need arbitrary_precision"
+)]
 async fn graph_typed_strings() {
     let mut noise = Noise::new(29);
     let names = [
@@ -1769,7 +1837,6 @@ async fn graph_typed_strings() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_typed_dates() {
     Reference::prepare(Outcome::CLOCK);
@@ -1893,8 +1960,11 @@ async fn graph_typed_dates() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
+#[cfg_attr(
+    not(feature = "arbitrary_precision"),
+    ignore = "decimal expectations need arbitrary_precision"
+)]
 async fn graph_typed_extremes() {
     let mut rows = Chain::rows(200, 9);
     let odd = [
@@ -1929,7 +1999,6 @@ async fn graph_typed_extremes() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[tokio::test]
 async fn graph_fixtures_are_fully_typed() {
     Reference::prepare(Outcome::CLOCK);

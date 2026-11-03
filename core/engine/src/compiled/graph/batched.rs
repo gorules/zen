@@ -1,9 +1,9 @@
 use super::call::{Call, Load};
 use super::{CompiledGraph, Host, Nesting, Step};
+use crate::compiled::content::Content;
+use crate::compiled::host::custom::{CustomDecisionNode, CustomNodeRequest};
+use crate::compiled::host::{NodeError, NodeHandlerExtensions};
 use crate::loader::LoaderError;
-use crate::model::GraphContent;
-use crate::nodes::custom::{CustomDecisionNode, CustomNodeRequest};
-use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::EvaluationError;
 use std::error::Error;
 use std::rc::Rc;
@@ -16,7 +16,7 @@ use zen_types::decision::{
 pub(crate) enum Failure {
     Loader(LoaderError),
     Kind(&'static str),
-    Compiled(Arc<GraphContent>),
+    Compiled(Arc<Content>),
 }
 
 impl Failure {
@@ -43,7 +43,7 @@ impl Failure {
     }
 
     pub(super) fn shared(self, step: &Step, key: &str) -> Rc<EvaluationError> {
-        Rc::new(NodeError::new(step.node.id.clone(), self.source(key)).into())
+        Rc::new(NodeError::new(step.node.id.clone(), self.source(key)).failure())
     }
 
     fn errors(
@@ -71,14 +71,14 @@ impl CompiledGraph {
     pub(super) async fn resolve(
         content: &DecisionNodeContent,
         extensions: &NodeHandlerExtensions,
-    ) -> Result<Arc<GraphContent>, Failure> {
+    ) -> Result<Arc<Content>, Failure> {
         Self::resolve_key(&content.key, extensions).await
     }
 
     pub(super) async fn resolve_key(
         key: &str,
         extensions: &NodeHandlerExtensions,
-    ) -> Result<Arc<GraphContent>, Failure> {
+    ) -> Result<Arc<Content>, Failure> {
         let call = Call {
             key,
             extensions,
@@ -99,7 +99,7 @@ impl CompiledGraph {
     pub(super) async fn batch(
         step: &Step,
         content: &DecisionNodeContent,
-        graph: &Arc<GraphContent>,
+        graph: &Arc<Content>,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
@@ -130,7 +130,7 @@ impl CompiledGraph {
     pub(super) async fn nested_results(
         step: &Step,
         content: &DecisionNodeContent,
-        graph: &Arc<GraphContent>,
+        graph: &Arc<Content>,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,

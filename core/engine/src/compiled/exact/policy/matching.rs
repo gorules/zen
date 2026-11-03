@@ -3,7 +3,8 @@ use std::sync::Arc;
 use zen_expression::variable::Variable;
 
 use super::Exact;
-use crate::policy::blocks::{ExecutionError, MatchIr, MatchSelection};
+use crate::compiled::policy::blocks::MatchSelection;
+use crate::policy::blocks::{ExecutionError, MatchIr};
 use crate::workspace::types::{BlockTrace, ConditionTrace};
 
 impl Exact<'_> {

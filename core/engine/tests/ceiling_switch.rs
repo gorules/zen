@@ -455,7 +455,10 @@ async fn ceiling_multi_switch() {
         .unwrap_or(1024);
     let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
     compiled.compile();
-    assert!(matches!(compiled.compiled_verdict(), Some(Ok(()))));
+    assert!(matches!(
+        zen_engine::diagnostics::compiled_verdict(&compiled),
+        Some(Ok(()))
+    ));
     let walker = compiled.interpreted();
     let variants = fixture.typed_variants();
     let inputs: Vec<Value> = (0..rows)

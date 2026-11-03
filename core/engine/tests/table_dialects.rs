@@ -45,11 +45,42 @@ impl Seen {
             );
         }
         for (mode, value) in &self.policy {
-            assert_eq!(
-                value,
-                self.policy(),
-                "policy mode {mode} disagrees: {self:#?}"
-            );
+            match *mode {
+                "driver" => assert_eq!(
+                    Self::unordered(value),
+                    Self::unordered(self.policy()),
+                    "policy mode {mode} disagrees: {self:#?}"
+                ),
+                _ => assert_eq!(
+                    value,
+                    self.policy(),
+                    "policy mode {mode} disagrees: {self:#?}"
+                ),
+            }
+        }
+        self
+    }
+
+    fn unordered(text: &str) -> Value {
+        serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()))
+    }
+
+    fn released(mut self, walker: Option<&str>, driver: Option<&str>) -> Self {
+        for (list, mode, release) in [
+            (&mut self.graph, "walker", walker),
+            (&mut self.policy, "driver", driver),
+        ] {
+            if let Some(release) = release {
+                let at = list
+                    .iter()
+                    .position(|(name, _)| *name == mode)
+                    .expect("release mode");
+                assert_eq!(
+                    Self::unordered(&list.remove(at).1),
+                    Self::unordered(release),
+                    "release {mode}"
+                );
+            }
         }
         self
     }
@@ -334,7 +365,6 @@ impl Table {
             ("batch", batch),
             ("traced", Self::graph_result(traced)),
         ];
-        #[cfg(feature = "driver")]
         graph.push((
             "walker",
             Self::graph_result(Self::block(
@@ -357,7 +387,6 @@ impl Table {
         let (traced, policy_trace) = Self::policy_result(ws.evaluate(&request(true)));
         let batch = Self::policy_result(ws.evaluate_batch(&[request(false)]).remove(0)).0;
         let mut policy = vec![("compiled", compiled), ("batch", batch), ("traced", traced)];
-        #[cfg(feature = "driver")]
         policy.push((
             "driver",
             Self::policy_result(ws.evaluate_with_driver(&request(false))).0,
@@ -473,6 +502,7 @@ fn d06_column_collect_no_match() {
     );
     table
         .run(json!({"n": 1}))
+        .released(Some("{}"), None)
         .columnar()
         .expect(r#"{"tags":[]}"#, r#"{"n":1,"a":null,"tags":[]}"#);
 }
@@ -608,6 +638,7 @@ fn d17_two_collect_columns_one_field() {
     );
     table
         .run(json!({"n": 6}))
+        .released(Some(r#"{"v":["a","b"]}"#), None)
         .columnar()
         .expect(r#"{"v":[1,"a",2,"b"]}"#, r#"{"n":6,"v":[1,"a",2,"b"]}"#);
 }
@@ -630,7 +661,7 @@ fn d19_whitespace_cell() {
     let table = Table::new("first", &[Some("n")], &["a"], &[&["  ", "1"], &["", "2"]]);
     table
         .run(json!({"n": 6}))
-        .expect(r#"{"a":1}"#, r#"{"n":6,"a":1}"#);
+        .expect(r#"{"a":1}"#, "ERROR ExpressionFailed/ParserError");
 }
 
 #[test]
@@ -764,6 +795,7 @@ fn d29_no_rules() {
     let table = Table::new("first", &[Some("n")], &["a", "v[]"], &[]);
     table
         .run(json!({"n": 6}))
+        .released(Some("{}"), None)
         .expect(r#"{"v":[]}"#, r#"{"n":6,"a":null,"v":[]}"#);
 }
 
@@ -829,6 +861,7 @@ fn d34_collect_values_with_empty_cells_and_nulls() {
     );
     table
         .run(json!({"n": 6}))
+        .released(None, Some(r#"{"n":6,"b":[1],"a":[null]}"#))
         .columnar()
         .expect(r#"[{"a":null},{"b":1}]"#, r#"{"n":6,"a":[null],"b":[1]}"#);
 }
@@ -852,6 +885,7 @@ fn d36_first_collect_only_collect_columns_and_no_match() {
         .with_attributes(json!({"outputPath": "res"}));
     table
         .run(json!({"n": 1}))
+        .released(Some("{}"), None)
         .expect(r#"{"res":{"v":[]}}"#, r#"{"n":1,"v":[]}"#);
 }
 

@@ -1,15 +1,16 @@
+use crate::compiled::content::Content;
 use crate::compiled::graph::call::Call;
 use crate::compiled::graph::CompiledGraph;
-use crate::model::{DecisionNodeKind, GraphContent};
-use crate::nodes::NodeHandlerExtensions;
+use crate::compiled::host::NodeHandlerExtensions;
+use crate::model::DecisionNodeKind;
 use std::sync::Arc;
 
 #[derive(Default)]
 pub(crate) struct Subgraphs {
-    graphs: Vec<(Arc<str>, Arc<GraphContent>)>,
+    graphs: Vec<(Arc<str>, Arc<Content>)>,
 }
 
-pub(crate) type Closure = Vec<(Arc<str>, Arc<GraphContent>)>;
+pub(crate) type Closure = Vec<(Arc<str>, Arc<Content>)>;
 
 impl Subgraphs {
     pub async fn resolve(graph: &CompiledGraph, extensions: &NodeHandlerExtensions) -> Subgraphs {
@@ -52,7 +53,7 @@ impl Subgraphs {
             .collect()
     }
 
-    pub fn get(&self, key: &str) -> Option<&Arc<GraphContent>> {
+    pub fn get(&self, key: &str) -> Option<&Arc<Content>> {
         self.graphs
             .iter()
             .find(|(k, _)| k.as_ref() == key)

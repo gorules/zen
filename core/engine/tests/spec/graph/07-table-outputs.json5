@@ -776,7 +776,7 @@
   cases: [
     [{n: 2}, {tags: ["a", "b"]}],
     [{n: 1}, {tags: ["a"]}],
-    [{n: 0}, {tags: []}],
+    {input: {n: 0}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
   ],
 }
 
@@ -793,7 +793,7 @@
   cases: [
     [{n: 2}, {r: {tags: ["b"]}}],
     [{n: 1}, {r: {tags: []}}],
-    [{n: 0}, {r: {tags: []}}],
+    {input: {n: 0}, output: {r: {tags: []}}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
   ],
 }
 
@@ -964,7 +964,7 @@
   },
   cases: [
     [{n: 2}, {s: "second", c: [2]}, "question: the first matched row is dropped entirely and the second row provides the scalars"],
-    [{n: 1}, {c: []}, "question: the only matched row is dropped, so the table produces only the empty collect list"],
+    {input: {n: 1}, output: {c: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7) (question: the only matched row is dropped, so the table produces only the empty collect list)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
   ],
 }
 
@@ -979,7 +979,7 @@
     ],
   },
   cases: [
-    [{}, {x: [1, "a", 2]}],
+    {input: {}, output: {x: [1, "a", 2]}, note: "bug: the walker keeps only the last duplicate collect column instead of interleaving them row by row (#16)", engines: "the release walker keeps only the last duplicate collect column; compiled gives the intended result"},
   ],
 }
 
@@ -1026,7 +1026,7 @@
   },
   cases: [
     [{n: 2, tags: ["old"]}, {n: 2, tags: ["a", "b"]}],
-    [{n: 0, tags: ["old"]}, {n: 0, tags: []}],
+    {input: {n: 0, tags: ["old"]}, output: {n: 0, tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
     [{n: 1}, {n: 1, tags: ["a"]}],
   ],
 }

@@ -336,7 +336,7 @@
     [{n: 5, v: "x"}, {k: 2, t: "array", tags: ["x"]}],
     [{n: 5, v: null}, {k: 2, t: "array", tags: [null]}],
     [{n: 5}, {k: 2, t: "array", tags: [null]}],
-    [{n: 0}, {k: "dflt", t: "array", tags: []}],
+    {input: {n: 0}, output: {k: "dflt", t: "array", tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
   ],
 }
 

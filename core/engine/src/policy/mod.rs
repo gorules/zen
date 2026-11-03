@@ -3,10 +3,7 @@ use std::sync::Arc;
 pub(crate) const MAX_RECURSION_DEPTH: usize = 32;
 
 pub(crate) mod blocks;
-#[cfg(feature = "driver")]
-pub(crate) mod driver;
 pub(crate) mod evaluator;
-pub(crate) mod host;
 pub(crate) mod ir;
 pub(crate) mod linter;
 pub(crate) mod queries;

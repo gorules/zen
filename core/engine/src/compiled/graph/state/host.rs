@@ -1,22 +1,23 @@
 use crate::compiled::bound::Bound;
+use crate::compiled::content::Content;
 use crate::compiled::exact::graph::Row;
 use crate::compiled::graph::data::{Col, Data, Layer};
 use crate::compiled::graph::{call, schema, Body, CompiledGraph, Step};
+use crate::compiled::host::custom::CustomNodeHandler;
+use crate::compiled::host::function::FunctionNodeHandler;
+use crate::compiled::host::graph::graph::DecisionGraph;
+use crate::compiled::host::input::InputNodeHandler;
+use crate::compiled::host::output::OutputNodeHandler;
+use crate::compiled::host::validator_cache::Validators;
+use crate::compiled::host::variable_json::{Guards, VariableJson, VariableNode};
+use crate::compiled::host::{NodeContextBase, NodeContextConfig, NodeHandlerExtensions};
+use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
 use crate::compiled::leaf;
 use crate::compiled::leaf::Mask;
 use crate::compiled::leaf::{Array, Leaf};
 use crate::compiled::table::TableOut;
-use crate::decision_graph::graph::DecisionGraph;
 use crate::loader::DynamicLoader;
-use crate::model::{DecisionNodeKind, GraphContent};
-use crate::nodes::custom::CustomNodeHandler;
-use crate::nodes::function::FunctionNodeHandler;
-use crate::nodes::input::InputNodeHandler;
-use crate::nodes::output::OutputNodeHandler;
-use crate::nodes::validator_cache::ValidatorCache;
-use crate::nodes::variable_json::{Guards, VariableJson, VariableNode};
-use crate::nodes::{NodeContextBase, NodeContextConfig, NodeHandlerExtensions};
-use crate::nodes::{NodeError, NodeResponse, NodeResult};
+use crate::model::DecisionNodeKind;
 use jsonschema::Validator;
 use std::sync::Arc;
 use zen_expression::lane::{LaneRunner, Programs};
@@ -29,7 +30,7 @@ impl CompiledGraph {
         step: &Step,
         data: &Data<'_>,
         nodes: &[Option<Variable>],
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
     ) -> Vec<(usize, String)> {
         if let Some(message) = Self::failure(content, &step.node) {
@@ -373,7 +374,7 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn validator(
         step: &Step,
-        content: &GraphContent,
+        content: &Content,
         extensions: &NodeHandlerExtensions,
     ) -> Option<(Arc<Validator<VariableJson>>, Arc<serde_json::Value>)> {
         let node = &step.node;
@@ -392,7 +393,7 @@ impl CompiledGraph {
                 _ => return None,
             },
         };
-        let key = ValidatorCache::key(&node.id, &node.name, salt);
+        let key = Validators::key(&node.id, &node.name, salt);
         let validator = extensions
             .validator_cache()
             .get_or_insert(key, &schema)
@@ -400,15 +401,15 @@ impl CompiledGraph {
         Some((validator, schema))
     }
 
-    fn failure<'c>(content: &'c GraphContent, node: &DecisionNode) -> Option<&'c Arc<str>> {
+    fn failure<'c>(content: &'c Content, node: &DecisionNode) -> Option<&'c Arc<str>> {
         content.schema_failures.as_ref()?.get(&node.id)
     }
 
     pub(crate) async fn schemas(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         loader: &DynamicLoader,
-    ) -> Arc<GraphContent> {
+    ) -> Arc<Content> {
         if !self.dictionaries || content.resolved_schemas.is_some() {
             return content.clone();
         }
@@ -419,7 +420,7 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn columnar_input(
         step: &Step,
-        content: &GraphContent,
+        content: &Content,
         extensions: &NodeHandlerExtensions,
     ) -> bool {
         match Self::validator(step, content, extensions) {
@@ -428,10 +429,7 @@ impl CompiledGraph {
         }
     }
 
-    pub(in crate::compiled::graph) fn unresolved(
-        content: &GraphContent,
-        node: &DecisionNode,
-    ) -> bool {
+    pub(in crate::compiled::graph) fn unresolved(content: &Content, node: &DecisionNode) -> bool {
         content
             .resolved_schemas
             .as_ref()
@@ -443,7 +441,7 @@ impl CompiledGraph {
         step: &Step,
         input: Variable,
         nodes: Option<Variable>,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
     ) -> Result<Variable, String> {
         let node = &step.node;
@@ -467,7 +465,7 @@ impl CompiledGraph {
         &self,
         step: &Step,
         mut base: NodeContextBase,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
     ) -> NodeResult {
         let node = &step.node;
         if let Some(message) = Self::failure(content, node) {

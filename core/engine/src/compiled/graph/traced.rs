@@ -1,13 +1,16 @@
 use super::schedule::{End, Outcome};
 use super::{CompiledGraph, Step};
-use crate::decision_graph::cleaner::VariableCleaner;
-use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
-use crate::decision_graph::tracer::{NodeTracer, SwitchStatementTrace, SwitchStatementTraceRow};
-use crate::decision_graph::walker::GraphWalker;
-use crate::model::{DecisionNodeKind, GraphContent};
-use crate::nodes::{
+use crate::compiled::content::Content;
+use crate::compiled::host::graph::tracer::{
+    NodeTracer, SwitchStatementTrace, SwitchStatementTraceRow,
+};
+use crate::compiled::host::graph::walker::GraphWalker;
+use crate::compiled::host::{
     NodeContextBase, NodeContextConfig, NodeError, NodeHandlerExtensions, NodeResponse, NodeResult,
 };
+use crate::decision_graph::cleaner::VariableCleaner;
+use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
+use crate::model::DecisionNodeKind;
 use crate::{DecisionGraphTrace, EvaluationError, ZEN_CONFIG};
 use ahash::HashMap;
 use petgraph::prelude::NodeIndex;
@@ -22,7 +25,7 @@ use zen_types::symbol::Symbol;
 
 pub(crate) struct Traced<'g> {
     pub(crate) graph: &'g CompiledGraph,
-    pub(crate) content: &'g Arc<GraphContent>,
+    pub(crate) content: &'g Arc<Content>,
     pub(crate) extensions: &'g NodeHandlerExtensions,
     pub(crate) max_depth: u8,
     pub(crate) iteration: u8,
@@ -161,7 +164,7 @@ impl Traced<'_> {
                 traces.map(|traces| traces.to_variable()),
                 error.source,
             )
-            .into(),
+            .failure(),
         )
     }
 

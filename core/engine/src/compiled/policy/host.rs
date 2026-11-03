@@ -5,9 +5,9 @@ use zen_expression::variable::Variable;
 use zen_expression::ExpressionKind;
 
 use crate::compiled::exact::policy::Exact;
+use crate::compiled::policy::artifact::Artifact as EvalArtifact;
+use crate::compiled::policy::site::{Evaluate, HostState, Pick, Picked, Site};
 use crate::policy::blocks::{Block, BlockKind, ExecutionError};
-use crate::policy::evaluator::EvalArtifact;
-use crate::policy::host::{Evaluate, HostState, Pick, Picked, Site};
 use crate::workspace::types::{BlockExecution, BlockRef, BlockTrace, EvaluationError};
 
 pub(crate) struct Host<'a> {

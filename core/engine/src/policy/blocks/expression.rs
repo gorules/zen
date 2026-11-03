@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::variable::VariableType;
+use zen_expression::variable::{Variable, VariableType};
 
-use crate::workspace::types::{Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind};
+use crate::workspace::types::{
+    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
+};
 
 use crate::policy::ArcStrTrim;
 
-use super::context::AnalysisContext;
+use super::context::{AnalysisContext, ExecutionContext, ExecutionError};
 use super::{
     Block, BlockKind, BlockReadPlan, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -135,6 +137,27 @@ impl ExpressionIr {
             Some(CursorTarget::ExpressionKey { id: None }),
             instance_source,
         );
+    }
+
+    pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
+        if self.key.is_empty() || self.value.is_empty() {
+            return Ok(BlockTrace::Expression {
+                property: self.key.clone(),
+                value: Variable::Null,
+            });
+        }
+
+        let mut isolate = cx.isolate.borrow_mut();
+        let result = isolate
+            .run_standard(&self.value)
+            .map_err(|e| cx.expression_error(&self.value, e))?;
+        let traced = cx.trace.then(|| result.deep_clone());
+        cx.write(&self.key, result);
+
+        Ok(BlockTrace::Expression {
+            property: self.key.clone(),
+            value: traced.unwrap_or(Variable::Null),
+        })
     }
 
     pub(super) fn resolve_cursor(

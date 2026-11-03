@@ -1,5 +1,7 @@
 use crate::compiled::core::segments::Children;
-use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph, WalkStep};
+use crate::compiled::host::graph::walker::{
+    GraphWalker, NodeData, StableDiDecisionGraph, WalkStep,
+};
 use crate::model::DecisionNodeKind;
 use petgraph::prelude::NodeIndex;
 use petgraph::Incoming;
@@ -97,7 +99,7 @@ impl<'a> Replay<'a> {
                 });
             }
             executed.push(nid);
-            walker.set_node_data(nid, NodeData::placeholder(node.name.as_ref()));
+            walker.set_node_data(nid, NodeData);
             if matches!(node.kind, DecisionNodeKind::OutputNode { .. }) {
                 break;
             }

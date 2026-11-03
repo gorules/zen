@@ -1,5 +1,5 @@
 use super::Row;
-use crate::nodes::{NodeError, NodeResponse, NodeResult};
+use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
 use std::future::Future;
 use std::ops::Deref;
 use zen_expression::Variable;

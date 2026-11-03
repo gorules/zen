@@ -1,7 +1,7 @@
+use crate::compiled::diagnostics::Paths;
 use crate::compiled::output::OutputColumn;
 use crate::compiled::shred::Shredder;
 use crate::compiled::ColumnarOutput;
-use crate::diagnostics::Paths;
 use crate::workspace::types::{EvaluationError, EvaluationResult};
 use std::rc::Rc;
 use std::sync::Arc;

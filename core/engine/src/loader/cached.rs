@@ -25,7 +25,7 @@ fn compiled(content: Arc<DecisionContent>) -> Arc<DecisionContent> {
     let DecisionContent::Graph(graph) = content.as_ref() else {
         return content;
     };
-    if graph.is_compiled() {
+    if graph.compiled_cache.is_some() {
         return content;
     }
 
@@ -34,29 +34,18 @@ fn compiled(content: Arc<DecisionContent>) -> Arc<DecisionContent> {
     Arc::new(DecisionContent::Graph(Arc::new(owned)))
 }
 
-async fn prepared(
-    loader: &DynamicLoader,
-    content: Arc<DecisionContent>,
-) -> (Arc<DecisionContent>, Arc<DecisionContent>) {
+async fn prepared(loader: &DynamicLoader, content: Arc<DecisionContent>) -> Arc<DecisionContent> {
     let DecisionContent::Graph(graph) = content.as_ref() else {
-        return (content.clone(), content);
+        return content;
     };
-    if graph.is_compiled() && graph.resolved_schemas.is_some() && !graph.schemas_failed() {
-        return (content.clone(), content);
+    if graph.compiled_cache.is_some() && graph.resolved_schemas.is_some() {
+        return content;
     }
 
     let mut owned = (**graph).clone();
     owned.compile();
-    let resolved = owned.resolve_schemas(loader).await;
-    let kept = match resolved {
-        Ok(()) => None,
-        Err(_) => Some(Arc::new(DecisionContent::Graph(Arc::new(
-            owned.without_failed_schemas(),
-        )))),
-    };
-    let current = Arc::new(DecisionContent::Graph(Arc::new(owned)));
-    let kept = kept.unwrap_or_else(|| current.clone());
-    (current, kept)
+    let _ = owned.resolve_schemas(loader).await;
+    Arc::new(DecisionContent::Graph(Arc::new(owned)))
 }
 
 impl DecisionLoader for CachedLoader {
@@ -76,13 +65,13 @@ impl DecisionLoader for CachedLoader {
                 None => self.loader.load(key).await?,
             };
 
-            let (decision_content, kept) = prepared(&self.loader, loaded).await;
+            let decision_content = prepared(&self.loader, loaded).await;
             let unchanged = cached
                 .as_ref()
-                .is_some_and(|content| Arc::ptr_eq(content, &kept));
+                .is_some_and(|content| Arc::ptr_eq(content, &decision_content));
             if !unchanged {
                 if let Ok(mut cache) = self.cache.write() {
-                    cache.insert(key.to_string(), kept);
+                    cache.insert(key.to_string(), decision_content.clone());
                 }
             }
             Ok(decision_content)

@@ -1,7 +1,7 @@
 use super::{Ctx, Row};
-use crate::decision_graph::tracer::ExpressionNodeTraceItem;
-use crate::nodes::expression::ExpressionNodeTrace;
-use crate::nodes::NodeResult;
+use crate::compiled::host::expression::ExpressionNodeTrace;
+use crate::compiled::host::graph::tracer::ExpressionNodeTraceItem;
+use crate::compiled::host::NodeResult;
 use std::rc::Rc;
 use zen_expression::variable::Variable;
 use zen_types::decision::ExpressionNodeContent;

@@ -1,4 +1,3 @@
-use crate::compiled::CompiledPlan;
 use crate::decision_graph::schema_dict;
 use crate::loader::DynamicLoader;
 use crate::nodes::decision_table::index::TableIndex;
@@ -8,8 +7,7 @@ use crate::policy::PolicyDocument;
 use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
-
-type ResolvedSchemas = HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>;
+use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 
 #[derive(Clone, Debug, Serialize)]
@@ -100,7 +98,7 @@ impl From<Arc<PolicyDocument>> for PolicyContent {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphContent {
     pub nodes: Vec<Arc<DecisionNode>>,
@@ -110,32 +108,19 @@ pub struct GraphContent {
     pub imports: Vec<Arc<str>>,
 
     #[serde(skip)]
-    #[cfg(feature = "driver")]
-    pub compiled_cache: Option<Arc<zen_expression::OpcodeCache>>,
+    pub compiled_cache: Option<Arc<OpcodeCache>>,
 
     #[serde(skip)]
     pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
 
     #[serde(skip)]
-    pub resolved_schemas: Option<Arc<ResolvedSchemas>>,
+    pub resolved_schemas: Option<Arc<HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>>>,
 
     #[serde(skip)]
     pub(crate) validator_cache: ValidatorCache,
 
     #[serde(skip)]
     pub(crate) dt_indexes: Option<Arc<HashMap<Arc<str>, TableIndex>>>,
-
-    #[serde(skip)]
-    pub(crate) compiled_plan: Option<Arc<CompiledPlan>>,
-
-    #[serde(skip)]
-    pub(crate) schema_failures: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
-}
-
-impl PartialEq for GraphContent {
-    fn eq(&self, other: &Self) -> bool {
-        self.nodes == other.nodes && self.edges == other.edges && self.imports == other.imports
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -143,60 +128,78 @@ impl PartialEq for GraphContent {
 pub struct PolicyContent(pub Arc<PolicyDocument>);
 
 impl GraphContent {
-    pub fn compiled_verdict(&self) -> Option<Result<(), String>> {
-        self.compiled_plan.as_deref().map(CompiledPlan::verdict)
-    }
-}
-
-impl GraphContent {
-    pub(crate) fn prepare(&mut self) -> Arc<CompiledPlan> {
+    pub fn compile(&mut self) {
         self.compile_functions();
         self.build_dt_indexes();
-        match &self.compiled_plan {
-            Some(plan) => plan.clone(),
-            None => {
-                let plan = Arc::new(CompiledPlan::compile(self));
-                self.compiled_plan = Some(plan.clone());
-                plan
+        if self.compiled_cache.is_some() {
+            return;
+        }
+
+        let mut sources: Vec<(Arc<str>, ExpressionKind)> = Vec::new();
+        for node in &self.nodes {
+            match &node.kind {
+                DecisionNodeKind::ExpressionNode { content } => {
+                    for expr in content.expressions.iter() {
+                        if !expr.key.is_empty() && !expr.value.is_empty() {
+                            sources.push((expr.value.clone(), ExpressionKind::Standard));
+                        }
+                    }
+                }
+                DecisionNodeKind::DecisionTableNode { content } => {
+                    for rule in content.rules.iter() {
+                        for input in content.inputs.iter() {
+                            let Some(rule_value) = rule.get(&input.id) else {
+                                continue;
+                            };
+
+                            let kind = if input.field.is_some() {
+                                ExpressionKind::Unary
+                            } else {
+                                ExpressionKind::Standard
+                            };
+
+                            sources.push((rule_value.clone(), kind));
+                        }
+
+                        for output in content.outputs.iter() {
+                            let Some(rule_value) = rule.get(&output.id) else {
+                                continue;
+                            };
+
+                            sources.push((rule_value.clone(), ExpressionKind::Standard));
+                        }
+                    }
+                }
+                _ => {}
             }
         }
-    }
 
-    pub(crate) fn hosted(&self) -> (GraphContent, Arc<CompiledPlan>) {
-        let mut owned = self.clone();
-        let plan = Arc::new(CompiledPlan::hosted(&owned));
-        owned.compiled_plan = Some(plan.clone());
-        (owned, plan)
-    }
+        let mut cache: OpcodeCache = OpcodeCache::new();
+        let mut isolate = Isolate::new();
 
-    pub(crate) async fn loaded(
-        graph: Arc<GraphContent>,
-        loader: &DynamicLoader,
-    ) -> Arc<GraphContent> {
-        if graph.compiled_plan.is_some()
-            && graph.resolved_schemas.is_some()
-            && !graph.schemas_failed()
-        {
-            return graph;
+        for (source, kind) in &sources {
+            let map = match kind {
+                ExpressionKind::Standard => &mut cache.standard,
+                ExpressionKind::Unary => &mut cache.unary,
+            };
+            if map.contains_key(source) {
+                continue;
+            }
+
+            let result = match kind {
+                ExpressionKind::Standard => isolate
+                    .compile_standard(source)
+                    .map(|e| e.bytecode().to_vec()),
+                ExpressionKind::Unary => {
+                    isolate.compile_unary(source).map(|e| e.bytecode().to_vec())
+                }
+            };
+            if let Ok(bytecode) = result {
+                map.insert(source.clone(), Arc::from(bytecode));
+            }
         }
-        let mut owned = (*graph).clone();
-        owned.prepare();
-        let _ = owned.resolve_schemas(loader).await;
-        Arc::new(owned)
-    }
 
-    pub fn compile(&mut self) {
-        self.prepare();
-        #[cfg(feature = "driver")]
-        self.build_opcode_cache();
-    }
-
-    pub(crate) fn is_compiled(&self) -> bool {
-        #[cfg(feature = "driver")]
-        if self.compiled_cache.is_none() {
-            return false;
-        }
-        self.compiled_plan.is_some()
+        self.compiled_cache.replace(Arc::new(cache));
     }
 
     fn build_dt_indexes(&mut self) {
@@ -220,7 +223,7 @@ impl GraphContent {
     }
 
     pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
-        if self.resolved_schemas.is_some() && !self.schemas_failed() {
+        if self.resolved_schemas.is_some() {
             return Ok(());
         }
 
@@ -238,75 +241,20 @@ impl GraphContent {
             }
         }
 
-        let mut resolved = HashMap::with_capacity(referencing.len());
-        let mut failures = HashMap::new();
-        let mut first = None;
-        if !referencing.is_empty() {
-            let dictionaries = schema_dict::load_import_dictionaries(loader, &self.imports).await;
-            for (id, schema) in referencing {
-                match dictionaries
-                    .as_ref()
-                    .map_err(Clone::clone)
-                    .and_then(|dictionaries| schema_dict::resolve_schema(&schema, dictionaries))
-                {
-                    Ok((value, salt)) => {
-                        resolved.insert(id, (Arc::new(value), salt));
-                    }
-                    Err(message) => {
-                        failures.insert(id, Arc::from(message.as_str()));
-                        first.get_or_insert(message);
-                    }
-                }
-            }
-        }
-
-        self.resolved_schemas = Some(Arc::new(resolved));
-        self.schema_failures = Some(Arc::new(failures));
-        first.map_or(Ok(()), Err)
-    }
-
-    pub(crate) fn schemas_failed(&self) -> bool {
-        self.schema_failures
-            .as_ref()
-            .is_some_and(|failures| !failures.is_empty())
-    }
-
-    pub(crate) fn without_failed_schemas(&self) -> Self {
-        let mut kept = self.clone();
-        if kept.schemas_failed() {
-            kept.resolved_schemas = None;
-            kept.schema_failures = None;
-        }
-        kept
-    }
-
-    #[cfg(feature = "driver")]
-    pub(crate) async fn validation_schema(
-        &self,
-        loader: &DynamicLoader,
-        node_id: &str,
-        schema: Option<&serde_json::Value>,
-    ) -> Result<Option<(Arc<serde_json::Value>, u64)>, String> {
-        let Some(schema) = schema else {
-            return Ok(None);
-        };
-        if let Some(message) = self
-            .schema_failures
-            .as_ref()
-            .and_then(|failures| failures.get(node_id))
-        {
-            return Err(message.to_string());
-        }
-        if let Some(resolved) = &self.resolved_schemas {
-            return Ok(resolved.get(node_id).cloned());
-        }
-        if !schema_dict::schema_references_dictionary(schema) {
-            return Ok(None);
+        if referencing.is_empty() {
+            self.resolved_schemas = Some(Arc::new(HashMap::new()));
+            return Ok(());
         }
 
         let dictionaries = schema_dict::load_import_dictionaries(loader, &self.imports).await?;
-        schema_dict::resolve_schema(schema, &dictionaries)
-            .map(|resolved| Some((Arc::new(resolved.0), resolved.1)))
+        let mut resolved = HashMap::with_capacity(referencing.len());
+        for (id, schema) in referencing {
+            let (value, salt) = schema_dict::resolve_schema(&schema, &dictionaries)?;
+            resolved.insert(id, (Arc::new(value), salt));
+        }
+
+        self.resolved_schemas = Some(Arc::new(resolved));
+        Ok(())
     }
 
     fn compile_functions(&mut self) {

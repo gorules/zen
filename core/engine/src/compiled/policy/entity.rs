@@ -1,7 +1,7 @@
 use crate::compiled::core::list::Frame;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
+use crate::compiled::policy::artifact::Artifact as EvalArtifact;
 use crate::compiled::shred::{Normalizer, Shred};
-use crate::policy::evaluator::EvalArtifact;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Column, Columns, Dictionary, Values};

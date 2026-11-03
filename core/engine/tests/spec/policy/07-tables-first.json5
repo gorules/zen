@@ -99,8 +99,8 @@
     ]}],
   },
   cases: [
-    [{order: {amount: 20}}, {order: {amount: 20, label: "big"}}],
-    [{order: {amount: 1}}, {order: {amount: 1, label: "any"}}],
+    [{order: {amount: 20}}, {order: {amount: 20, label: "big"}}, "bug: whitespace-only cells fail to parse; treating them as wildcards needs the policy analysis change (#14)"],
+    [{order: {amount: 1}}, {order: {amount: 1, label: "any"}}, "bug: whitespace-only cells fail to parse; treating them as wildcards needs the policy analysis change (#14)"],
   ],
 }
 

@@ -5,10 +5,12 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
+use zen_expression::{Isolate, OpcodeCache};
 
 use crate::model::{DecisionContent, PolicyContent};
 use crate::policy::blocks::{
-    Block, BlockReadPlan, IntelliSenseSource, PropertyRead, ReadFlattener, SharedIntelliSense,
+    Block, BlockKind, BlockReadPlan, IntelliSenseSource, PropertyRead, ReadFlattener,
+    SharedIntelliSense,
 };
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::ir::{
@@ -57,18 +59,12 @@ pub(crate) struct DepFrame {
     views: Vec<(Arc<str>, ReadView)>,
 }
 
-type ParsedEntry = (Arc<PolicyDocument>, Arc<ParsedPolicy>);
-type ShallowEntry = (Arc<ParsedPolicy>, Arc<Vec<RuleShallowAnalysis>>);
-type UnitEntry = (Vec<Arc<ParsedPolicy>>, Arc<Unit>);
-type GraphEntry = (GraphDeps, Arc<GraphAnalysis>);
-type Components = (Vec<Vec<Arc<str>>>, HashMap<Arc<str>, usize>);
-
 #[derive(Default)]
 pub(crate) struct PolicyDerivedCache {
-    parsed: RefCell<HashMap<Arc<str>, ParsedEntry>>,
-    shallow: RefCell<HashMap<Arc<str>, ShallowEntry>>,
-    units: RefCell<HashMap<Vec<Arc<str>>, UnitEntry>>,
-    graphs: RefCell<HashMap<Arc<str>, GraphEntry>>,
+    parsed: RefCell<HashMap<Arc<str>, (Arc<PolicyDocument>, Arc<ParsedPolicy>)>>,
+    shallow: RefCell<HashMap<Arc<str>, (Arc<ParsedPolicy>, Arc<Vec<RuleShallowAnalysis>>)>>,
+    units: RefCell<HashMap<Vec<Arc<str>>, (Vec<Arc<ParsedPolicy>>, Arc<Unit>)>>,
+    graphs: RefCell<HashMap<Arc<str>, (GraphDeps, Arc<GraphAnalysis>)>>,
 }
 
 impl PolicyDerivedCache {
@@ -178,8 +174,7 @@ pub struct Unit {
     pub execution_order: Vec<PropertyPath>,
     pub computed_instances: HashMap<Arc<str>, InstanceTarget>,
     enriched_once: OnceCell<Arc<EnrichedState>>,
-    #[cfg(feature = "driver")]
-    opcode_cache: OnceCell<Arc<zen_expression::OpcodeCache>>,
+    opcode_cache: OnceCell<Arc<OpcodeCache>>,
     pub data_models: Vec<DataModelEntry>,
     pub entities: HashMap<Arc<str>, Arc<DataModelIr>>,
     pub dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
@@ -654,8 +649,7 @@ impl Db {
         )
     }
 
-    #[cfg(feature = "driver")]
-    pub(crate) fn opcode_cache_of_unit(&self, unit: &Unit) -> Arc<zen_expression::OpcodeCache> {
+    pub(crate) fn opcode_cache_of_unit(&self, unit: &Unit) -> Arc<OpcodeCache> {
         unit.opcode_cache
             .get_or_init(|| {
                 let snap = self.snapshot();
@@ -668,7 +662,7 @@ impl Db {
                         for loc in rule.kind.expressions(&rule.id) {
                             sources.push((loc.source, loc.kind));
                         }
-                        if let crate::policy::blocks::BlockKind::DecisionTable(dt) = &rule.kind {
+                        if let BlockKind::DecisionTable(dt) = &rule.kind {
                             for col in &dt.inputs {
                                 if let Some(field) =
                                     col.field.as_ref().filter(|f| !f.as_ref().is_empty())
@@ -680,8 +674,8 @@ impl Db {
                     }
                 }
 
-                let mut cache = zen_expression::OpcodeCache::new();
-                let mut isolate = zen_expression::Isolate::new();
+                let mut cache = OpcodeCache::new();
+                let mut isolate = Isolate::new();
                 for (source, kind) in &sources {
                     let map = match kind {
                         ExpressionKind::Standard => &mut cache.standard,
@@ -714,7 +708,6 @@ impl Db {
         }
 
         let unit = self.unit(policy);
-        #[cfg(feature = "driver")]
         let opcode_cache = self.opcode_cache_of_unit(&unit);
         let input_schema = self.input_schema(policy);
         let eval_graph = EvalGraph::from_graph(&unit.dep_graph);
@@ -791,16 +784,11 @@ impl Db {
             reference_fields: unit.reference_fields.clone(),
             data_model_paths: unit.data_model_paths.clone(),
             classifier: unit.classifier.clone(),
-            #[cfg(feature = "driver")]
             opcode_cache,
             rule_by_ref: snap.rule_by_ref.clone(),
             input_schema,
             reads,
             read_plans,
-            compiled: Default::default(),
-            goal_plans: Default::default(),
-            requirements: Default::default(),
-            programs: Default::default(),
         });
         snap.eval_artifacts
             .borrow_mut()
@@ -921,7 +909,7 @@ impl Snapshot {
     fn compute_components(
         import_graph: &ImportGraph,
         all_parsed: &HashMap<Arc<str>, Arc<ParsedPolicy>>,
-    ) -> Components {
+    ) -> (Vec<Vec<Arc<str>>>, HashMap<Arc<str>, usize>) {
         let mut seen: HashSet<Arc<str>> = HashSet::default();
         let mut components: Vec<Vec<Arc<str>>> = Vec::new();
         let mut sorted: Vec<&Arc<str>> = all_parsed.keys().collect();
@@ -1043,7 +1031,6 @@ impl Snapshot {
             execution_order,
             computed_instances,
             enriched_once: OnceCell::new(),
-            #[cfg(feature = "driver")]
             opcode_cache: OnceCell::new(),
             data_models,
             entities,

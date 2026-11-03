@@ -1,4 +1,4 @@
-use crate::EvaluationError;
+use crate::model::DecisionNode;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -12,6 +12,13 @@ pub struct NodeResponse {
     pub trace_data: Option<Variable>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct NodeRequest {
+    pub input: Variable,
+    pub iteration: u8,
+    pub node: Arc<DecisionNode>,
+}
+
 pub type NodeResult = Result<NodeResponse, NodeError>;
 
 #[derive(Debug, Error)]
@@ -19,34 +26,6 @@ pub struct NodeError {
     pub node_id: Arc<str>,
     pub trace: Option<Variable>,
     pub source: Box<dyn std::error::Error>,
-}
-
-impl NodeError {
-    pub fn new(node_id: Arc<str>, source: impl Into<Box<dyn std::error::Error>>) -> Self {
-        Self::traced(node_id, None, source)
-    }
-
-    pub fn traced(
-        node_id: Arc<str>,
-        trace: Option<Variable>,
-        source: impl Into<Box<dyn std::error::Error>>,
-    ) -> Self {
-        Self {
-            node_id,
-            trace,
-            source: source.into(),
-        }
-    }
-}
-
-impl From<NodeError> for EvaluationError {
-    fn from(error: NodeError) -> Self {
-        EvaluationError::NodeError {
-            node_id: error.node_id,
-            trace: error.trace,
-            source: error.source,
-        }
-    }
 }
 
 impl Display for NodeError {

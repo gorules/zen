@@ -48,6 +48,7 @@ criterion = { workspace = true, features = ["async_tokio"] }
 insta = { version = "1.43", features = ["yaml", "redactions"] }
 toml = "0.8"
 mimalloc = "0.1.52"
+ctor = "1.0.13"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 recursive = { workspace = true }
@@ -68,22 +69,9 @@ name = "engine"
 
 [features]
 default = []
-driver = []
 bindgen = ["rquickjs/bindgen"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]
 
 [[test]]
 name = "golden"
 required-features = ["arbitrary_precision"]
-
-[[test]]
-name = "ceiling_lists"
-required-features = ["driver"]
-
-[[test]]
-name = "ceiling_switch"
-required-features = ["driver"]
-
-[[test]]
-name = "ceiling_table"
-required-features = ["driver"]

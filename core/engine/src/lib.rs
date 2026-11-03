@@ -121,14 +121,6 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
-#![cfg_attr(
-    not(feature = "driver"),
-    deny(clippy::disallowed_types, clippy::disallowed_methods)
-)]
-#![cfg_attr(
-    feature = "driver",
-    allow(clippy::disallowed_types, clippy::disallowed_methods)
-)]
 
 mod analysis;
 mod compiled;
@@ -141,17 +133,16 @@ pub mod loader;
 pub mod model;
 pub mod nodes;
 pub mod policy;
-mod prepared;
 pub mod workspace;
 
+pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[doc(hidden)]
-pub mod diagnostics;
+pub use compiled::diagnostics;
 
 pub mod columns {
     pub use zen_expression::lane::{Column, Columns, Dictionary, Values};
 }
-
-pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;

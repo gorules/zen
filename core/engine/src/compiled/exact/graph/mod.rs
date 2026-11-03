@@ -2,8 +2,8 @@ mod expression;
 mod transform;
 
 use crate::compiled::exact::RowTable;
-use crate::nodes::decision_table::index::TableIndex;
-use crate::nodes::{NodeError, NodeResponse, NodeResult};
+use crate::compiled::host::decision_table::index::TableIndex;
+use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
 use std::future::Future;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};

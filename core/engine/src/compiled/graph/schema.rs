@@ -1,7 +1,7 @@
 use crate::compiled::graph::data::{Data, Shape};
+use crate::compiled::host::validator_cache::Validators;
+use crate::compiled::host::variable_json::{Guards, VariableJson, VariableNode};
 use crate::compiled::leaf::{Bits, Leaf};
-use crate::nodes::validator_cache::ValidatorCache;
-use crate::nodes::variable_json::{Guards, VariableJson, VariableNode};
 use jsonschema::Validator;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -70,7 +70,7 @@ impl Exact {
     fn compile(schema: &Value) -> Option<Self> {
         match ObjectSchema::scoped(schema) || Self::drafted(schema) {
             true => None,
-            false => ValidatorCache::build(schema).ok().map(Exact),
+            false => Validators::build(schema).ok().map(Exact),
         }
     }
 

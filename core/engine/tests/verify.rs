@@ -1,4 +1,3 @@
-#![cfg(feature = "driver")]
 #[allow(dead_code)]
 mod support;
 
@@ -342,7 +341,7 @@ fn policy_columnar_entities_keep_field_order() {
 }
 
 #[test]
-fn policy_driver_collects_in_output_order() {
+fn policy_collects_in_output_order() {
     let ws = Policies::workspace(json!({ "blocks": [
         { "id": "dm", "type": "dataModel", "props": { "data": {
             "name": "order",
@@ -378,16 +377,24 @@ fn policy_driver_collects_in_output_order() {
     let output = Policies::text(ws.evaluate(&request));
     let log = writes(ws.enhance_trace(&request).unwrap());
     assert_eq!(log, ["order.a", "order.b", "order.c", "order.d", "order.e"]);
+    let unordered = |text: &str| serde_json::from_str::<Value>(text).ok();
+    let mut driver_log = writes(ws.enhance_trace_with_driver(&request).unwrap());
+    driver_log.sort();
+    assert_eq!(driver_log, log);
+    assert_eq!(
+        unordered(&Policies::text(ws.evaluate_with_driver(&request))),
+        unordered(&output)
+    );
     for run in 0..32 {
         assert_eq!(
-            Policies::text(ws.evaluate_with_driver(&request)),
+            Policies::text(ws.evaluate(&request)),
             output,
-            "run {run}: driver output order"
+            "run {run}: output order"
         );
         assert_eq!(
-            writes(ws.enhance_trace_with_driver(&request).unwrap()),
+            writes(ws.enhance_trace(&request).unwrap()),
             log,
-            "run {run}: driver write log order"
+            "run {run}: write log order"
         );
     }
 }

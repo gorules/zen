@@ -8,10 +8,9 @@ use zen_expression::IsolateError;
 use zen_types::rccell::RcCell;
 use zen_types::symbol::Symbol;
 
-use crate::policy::blocks::{
-    Block, BlockKind, BlockReadPlan, ExecutionError, MatchSelection, PropertyRead, TableSelection,
-};
-use crate::policy::evaluator::{EvalArtifact, Iteration};
+use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
+use crate::compiled::policy::blocks::{MatchSelection, TableIndexes, TableSelection};
+use crate::policy::blocks::{Block, BlockKind, BlockReadPlan, ExecutionError, PropertyRead};
 use crate::workspace::types::{BlockExecution, BlockRef, BlockTrace, EvaluationError, WriteTrace};
 
 pub(crate) struct Site<'a> {
@@ -22,6 +21,7 @@ pub(crate) struct Site<'a> {
     pub(crate) extras: bool,
     pub(crate) write_log: Option<&'a RefCell<Vec<WriteTrace>>>,
     pub(crate) env_mirror: Option<&'a Variable>,
+    pub(crate) indexes: &'a TableIndexes,
 }
 
 impl Site<'_> {
@@ -259,18 +259,8 @@ impl<'a> HostState<'a> {
         }
     }
 
-    #[cfg(feature = "driver")]
-    pub(crate) fn artifact(&self) -> &'a EvalArtifact {
-        self.artifact
-    }
-
     pub(crate) fn executions(self) -> Vec<BlockExecution> {
         self.executions
-    }
-
-    #[cfg(feature = "driver")]
-    pub(crate) fn writers_of_longest_prefix(&self, prop: &str) -> &'a [BlockRef] {
-        self.artifact.writers_of_longest_prefix(prop)
     }
 
     pub(crate) fn env(&self) -> &Variable {
@@ -378,7 +368,7 @@ impl<'a> HostState<'a> {
     }
 
     fn site<'s>(
-        &self,
+        &'s self,
         store: &'s Variable,
         owner: &'s BlockRef,
         rule: &'s Block,
@@ -393,6 +383,7 @@ impl<'a> HostState<'a> {
             extras: self.extras,
             write_log,
             env_mirror,
+            indexes: &self.artifact.indexes,
         }
     }
 
@@ -429,7 +420,7 @@ impl<'a> HostState<'a> {
             let trace_policy_path =
                 (&owner.policy_path != self.entry).then(|| owner.policy_path.clone());
             let operand_values =
-                Block::operand_values(self.extras, self.reads_for(owner), self.store);
+                Block::observed_operands(self.extras, self.reads_for(owner), self.store);
             let reads = self.execution_reads(owner, &pick);
             self.executions.push(BlockExecution {
                 block_id: rule.id.clone(),
@@ -571,7 +562,7 @@ impl<'a> HostState<'a> {
             };
             let operand_values = match (&result, self.trace) {
                 (Ok(_), true) => {
-                    Block::operand_values(self.extras, self.reads_for(owner), &phase.scoped)
+                    Block::observed_operands(self.extras, self.reads_for(owner), &phase.scoped)
                 }
                 _ => HashMap::default(),
             };
@@ -624,7 +615,7 @@ impl<'a> HostState<'a> {
 }
 
 impl Block {
-    fn operand_values(
+    fn observed_operands(
         extras: bool,
         reads: &[PropertyRead],
         store: &Variable,

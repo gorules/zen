@@ -5,8 +5,9 @@ mod matching;
 use zen_expression::lane::Session;
 
 use crate::compiled::exact::RowTable;
-use crate::policy::blocks::{Block, BlockKind, DecisionTableIr, ExecutionError, TableSelection};
-use crate::policy::host::Site;
+use crate::compiled::policy::blocks::TableSelection;
+use crate::compiled::policy::site::Site;
+use crate::policy::blocks::{Block, BlockKind, DecisionTableIr, ExecutionError};
 use crate::workspace::types::BlockTrace;
 
 pub(crate) struct Exact<'e> {
@@ -30,8 +31,13 @@ impl Exact<'_> {
         &mut self,
         ir: &DecisionTableIr,
     ) -> Result<TableSelection, ExecutionError> {
-        RowTable::new(self.session, &ir.inputs, ir.table_index(), Some(self.site))
-            .select(ir, self.site.extras)
+        RowTable::new(
+            self.session,
+            &ir.inputs,
+            self.site.indexes.of(ir).as_ref().as_ref(),
+            Some(self.site),
+        )
+        .select(ir, self.site.extras)
     }
 
     pub(crate) fn commit_table(

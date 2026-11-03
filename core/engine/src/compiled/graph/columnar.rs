@@ -1,16 +1,16 @@
+use crate::compiled::content::Content;
+use crate::compiled::diagnostics::Paths;
 use crate::compiled::graph::data::{Data, Layer};
 use crate::compiled::graph::plan::PlanOutcome;
 use crate::compiled::graph::CompiledGraph;
+use crate::compiled::host::input::dates::DeclaredDates;
+use crate::compiled::host::{NodeError, NodeHandlerExtensions};
 use crate::compiled::leaf::Bits;
 use crate::compiled::leaf::Leaf;
 use crate::compiled::leaf::Mask;
 use crate::compiled::output::OutputColumn;
 use crate::compiled::shred::{Normalizer, Shredder};
 use crate::decision_graph::cleaner::{VariableCleaner, ZEN_RESERVED_PROPERTIES};
-use crate::diagnostics::Paths;
-use crate::model::GraphContent;
-use crate::nodes::input::dates::DeclaredDates;
-use crate::nodes::{NodeError, NodeHandlerExtensions};
 use crate::EvaluationError;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -124,7 +124,7 @@ impl CompiledGraph {
 
     async fn planned_input<'a>(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         columns: &Columns<'_>,
     ) -> Option<Admitted<'a>> {
@@ -150,7 +150,7 @@ impl CompiledGraph {
                 .map(|(row, message)| {
                     (
                         row,
-                        Rc::new(NodeError::new(step.node.id.clone(), message).into()),
+                        Rc::new(NodeError::new(step.node.id.clone(), message).failure()),
                     )
                 })
                 .collect(),
@@ -227,7 +227,7 @@ impl CompiledGraph {
 
     pub(crate) async fn evaluate_columns<'a>(
         &self,
-        content: &Arc<GraphContent>,
+        content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &'a Columns<'a>,

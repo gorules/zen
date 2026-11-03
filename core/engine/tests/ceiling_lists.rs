@@ -658,7 +658,10 @@ async fn ceiling_product_listing_scoring() {
     let (content, variants) = Fixture::load();
     let mut compiled = Decision::from(Arc::new(content));
     compiled.compile();
-    assert!(matches!(compiled.compiled_verdict(), Some(Ok(()))));
+    assert!(matches!(
+        zen_engine::diagnostics::compiled_verdict(&compiled),
+        Some(Ok(()))
+    ));
     let walker = compiled.interpreted();
     let options = EvaluationOptions::default();
     let sets: Vec<(&str, Vec<Value>)> = vec![

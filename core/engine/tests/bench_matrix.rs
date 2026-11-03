@@ -1,4 +1,3 @@
-#![cfg(feature = "driver")]
 #![allow(dead_code)]
 
 mod conformance;

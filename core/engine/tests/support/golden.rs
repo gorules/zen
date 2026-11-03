@@ -34,7 +34,7 @@ impl Outcome {
         match result {
             Ok(response) => Outcome::Ok(Canon::variable(&response.result)),
             Err(error) => Outcome::Err {
-                debug: error.to_string(),
+                debug: Canon::unaddressed(&error.to_string()),
                 value: Canon::value(serde_json::to_value(&**error).unwrap_or(Value::Null)),
             },
         }
@@ -51,7 +51,7 @@ impl Outcome {
                     .unwrap_or(Value::Null),
             )),
             Err(error) => Outcome::Err {
-                debug: error.to_string(),
+                debug: Canon::unaddressed(&error.to_string()),
                 value: Canon::redacted(
                     error
                         .serialize_with_mode(serde_json::value::Serializer, mode)
@@ -392,8 +392,25 @@ impl Canon {
                     .map(|v| Self::bounded(v, redact, depth + 1))
                     .collect(),
             ),
+            Value::String(text) => Value::String(Self::unaddressed(&text)),
             other => other,
         }
+    }
+
+    pub fn unaddressed(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(at) = rest.find("(0x") {
+            out.push_str(&rest[..at + 3]);
+            let tail = &rest[at + 3..];
+            let digits = tail
+                .find(|c: char| !c.is_ascii_hexdigit())
+                .unwrap_or(tail.len());
+            out.push('~');
+            rest = &tail[digits..];
+        }
+        out.push_str(rest);
+        out
     }
 
     pub fn tagged(variable: &Variable, out: &mut String) {
@@ -858,23 +875,10 @@ impl Golden {
 pub struct Live;
 
 impl Live {
-    pub const GRAPH: &'static str = "live graph references need the driver feature";
-
-    #[cfg(feature = "driver")]
     pub fn walker(decision: &Decision) -> Decision {
         decision.interpreted()
     }
 
-    #[cfg(not(feature = "driver"))]
-    pub fn walker(decision: &Decision) -> Decision {
-        decision.clone()
-    }
-
-    pub fn require_walker() {
-        assert!(cfg!(feature = "driver"), "{}", Self::GRAPH);
-    }
-
-    #[cfg(feature = "driver")]
     pub fn policy(
         ws: &PolicyWorkspace,
         req: &EvaluateRequest,
@@ -882,28 +886,11 @@ impl Live {
         ws.evaluate_with_driver(req)
     }
 
-    #[cfg(feature = "driver")]
     pub fn enhanced(
         ws: &PolicyWorkspace,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, PolicyError> {
         ws.enhance_trace_with_driver(req)
-    }
-
-    #[cfg(not(feature = "driver"))]
-    pub fn policy(
-        _: &PolicyWorkspace,
-        _: &EvaluateRequest,
-    ) -> Result<EvaluationResult, PolicyError> {
-        panic!("live policy references need the driver feature")
-    }
-
-    #[cfg(not(feature = "driver"))]
-    pub fn enhanced(
-        _: &PolicyWorkspace,
-        _: &EvaluateRequest,
-    ) -> Result<EvaluationResult, PolicyError> {
-        panic!("live policy references need the driver feature")
     }
 }
 
@@ -913,20 +900,7 @@ pub enum Reference {
 }
 
 impl Reference {
-    const DEFAULT: &'static str =
-        if cfg!(feature = "driver") || !cfg!(feature = "arbitrary_precision") {
-            "live"
-        } else {
-            "recorded"
-        };
-    pub fn unavailable(corpus: &str) -> bool {
-        let unavailable = !cfg!(feature = "driver") && !Self::recorded();
-        if unavailable {
-            eprintln!("{corpus}: skipped, references need the driver feature (live) or arbitrary_precision (recorded goldens)");
-        }
-        unavailable
-    }
-
+    const DEFAULT: &'static str = "live";
     pub fn recorded() -> bool {
         std::env::var("GOLDEN_REFERENCE").unwrap_or_else(|_| Self::DEFAULT.to_string())
             == "recorded"

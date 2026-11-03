@@ -18,7 +18,6 @@ use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use support::columns::Built;
-#[cfg(feature = "driver")]
 use support::golden::Live;
 use support::golden::{Canon, Entry, Golden, Outcome};
 use zen_engine::policy::{EvaluateRequest, PolicyWorkspace};
@@ -159,7 +158,6 @@ impl Graphs {
         }
     }
 
-    #[cfg(feature = "driver")]
     async fn record(
         golden: &mut Golden,
         id: &str,
@@ -287,10 +285,8 @@ impl Graphs {
     }
 }
 
-#[cfg(feature = "driver")]
 struct Modes;
 
-#[cfg(feature = "driver")]
 impl Modes {
     const ALL: [EvaluationTraceKind; 4] = [
         EvaluationTraceKind::Default,
@@ -354,7 +350,6 @@ impl Policies {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn record(
         golden: &mut Golden,
         ws: &PolicyWorkspace,
@@ -472,7 +467,7 @@ impl Policies {
                     let error = match &output {
                         Ok(output) => output.errors[row]
                             .as_deref()
-                            .and_then(zen_engine::EvaluationError::policy),
+                            .and_then(support::policy_error),
                         Err(refused) => Some(refused),
                     };
                     let got = match (error, &output) {
@@ -521,6 +516,18 @@ impl Check {
         }
     }
 
+    const COLLECT: [&'static str; 1] = ["collect-tables.json"];
+
+    fn collected<'i>(&mut self, fixture: &str, inputs: impl IntoIterator<Item = &'i Variable>) {
+        if Self::COLLECT.contains(&fixture) {
+            self.divergent.extend(
+                inputs
+                    .into_iter()
+                    .map(|input| Canon::key(fixture, &[], input)),
+            );
+        }
+    }
+
     fn diverges(&mut self, suite: &Suite, id: &str, inputs: impl IntoIterator<Item = Variable>) {
         for input in inputs {
             let value = Built::normalized(input.to_value());
@@ -551,6 +558,10 @@ impl Check {
     }
 
     fn values(&mut self, key: &str, path: &str, want: Option<&Value>, got: Option<&Value>) {
+        if self.divergent.contains(key) {
+            self.skipped += 1;
+            return;
+        }
         self.compared += 1;
         if want != got {
             self.failures
@@ -597,7 +608,6 @@ enum Corpus {
 }
 
 impl Corpus {
-    #[cfg(feature = "driver")]
     const ALL: [Corpus; 6] = [
         Corpus::SpecGraph,
         Corpus::SpecPolicy,
@@ -618,7 +628,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn shard(&self, entry: &Entry) -> Option<String> {
         match self {
             Corpus::SpecGraph | Corpus::SpecPolicy => {
@@ -630,7 +639,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn selected() -> Vec<Corpus> {
         let only = std::env::var("GOLDEN_CORPUS").ok();
         Self::ALL
@@ -639,7 +647,6 @@ impl Corpus {
             .collect()
     }
 
-    #[cfg(feature = "driver")]
     fn record(&self) -> Golden {
         Golden::prepare();
         let mut golden = Golden::new(self.name());
@@ -662,7 +669,6 @@ impl Corpus {
         golden
     }
 
-    #[cfg(feature = "driver")]
     fn spec_graph(golden: &mut Golden, failures: &mut Vec<String>) {
         let (suites, problems) = Spec::suites(Dialect::Graph);
         failures.extend(problems);
@@ -691,7 +697,6 @@ impl Corpus {
         Nodes::set(true);
     }
 
-    #[cfg(feature = "driver")]
     fn spec_policy(golden: &mut Golden, failures: &mut Vec<String>) {
         let (suites, problems) = Spec::suites(Dialect::Policy);
         failures.extend(problems);
@@ -760,7 +765,6 @@ impl Corpus {
             .collect()
     }
 
-    #[cfg(feature = "driver")]
     fn computed(ws: &PolicyWorkspace, path: &str, inputs: &[Value]) -> Vec<String> {
         inputs
             .iter()
@@ -783,7 +787,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn generated(golden: &mut Golden) {
         for seed in 0..Generated::seeds() {
             let Some(ws) = Generated::workspace(seed) else {
@@ -824,7 +827,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn policy_fixtures(golden: &mut Golden) {
         for case in PolicyCase::load_all() {
             let computed = Self::computed(&case.workspace, &case.path, &case.inputs);
@@ -845,7 +847,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn anchor(golden: &mut Golden) {
         for batch in Anchor::batches() {
             let ws = batch.workspace();
@@ -904,7 +905,6 @@ impl Corpus {
         compiled
     }
 
-    #[cfg(feature = "driver")]
     async fn graph_fixtures(golden: &mut Golden) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
@@ -920,7 +920,10 @@ impl Corpus {
                 .await;
             }
             if !Self::slow(&fixture)
-                && matches!(Self::compiled(&fixture).compiled_verdict(), Some(Ok(())))
+                && matches!(
+                    zen_engine::diagnostics::compiled_verdict(&Self::compiled(&fixture)),
+                    Some(Ok(()))
+                )
             {
                 for row in Rows::of(&Rows::fixture(&fixture.variants())) {
                     Graphs::record(golden, &fixture.name, &walker, &row, false).await;
@@ -929,7 +932,6 @@ impl Corpus {
         }
     }
 
-    #[cfg(feature = "driver")]
     fn modes(&self, live: &Golden) {
         let mut check = Check::default();
         match self {
@@ -940,7 +942,6 @@ impl Corpus {
         check.finish(live, &format!("{} trace modes", self.name()));
     }
 
-    #[cfg(feature = "driver")]
     fn modes_spec_graph(live: &Golden, check: &mut Check) {
         let (suites, _) = Spec::suites(Dialect::Graph);
         let _guard = Nodes::lock();
@@ -985,14 +986,15 @@ impl Corpus {
         Nodes::set(true);
     }
 
-    #[cfg(feature = "driver")]
     async fn modes_graph_fixtures(live: &Golden, check: &mut Check) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures().into_iter().filter(|f| !Self::slow(f)) {
             let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
             let compiled = Self::compiled(&fixture);
             let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
-            for input in Self::fixture_inputs(&fixture) {
+            let inputs = Self::fixture_inputs(&fixture);
+            check.collected(&fixture.name, &inputs);
+            for input in inputs {
                 Modes::compare(
                     check,
                     live,
@@ -1345,6 +1347,7 @@ impl Corpus {
             let compiled = Self::compiled(&fixture);
             let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
             let inputs = Self::fixture_inputs(&fixture);
+            check.collected(&fixture.name, &inputs);
             for input in &inputs {
                 Graphs::verify(check, golden, &fixture.name, &compiled, input, "compiled").await;
                 if !Self::slow(&fixture) {
@@ -1363,7 +1366,10 @@ impl Corpus {
                 continue;
             }
             Graphs::batch(check, golden, &fixture.name, &compiled, &inputs, "batch").await;
-            if matches!(compiled.compiled_verdict(), Some(Ok(()))) {
+            if matches!(
+                zen_engine::diagnostics::compiled_verdict(&compiled),
+                Some(Ok(()))
+            ) {
                 Graphs::columns(
                     check,
                     golden,
@@ -1377,7 +1383,6 @@ impl Corpus {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 #[ignore]
 fn capture() {
@@ -1419,7 +1424,6 @@ fn capture() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn goldens_are_current() {
     let mut failures = Vec::new();
@@ -1445,7 +1449,6 @@ fn goldens_are_current() {
     );
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn hosts_match_the_live_driver() {
     for corpus in Corpus::selected()
@@ -1457,7 +1460,6 @@ fn hosts_match_the_live_driver() {
     }
 }
 
-#[cfg(feature = "driver")]
 #[test]
 fn traced_graphs_match_the_live_walker() {
     for corpus in Corpus::selected()

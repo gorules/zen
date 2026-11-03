@@ -1,4 +1,4 @@
-use crate::nodes::NodeError;
+use crate::compiled::host::NodeError;
 use crate::EvaluationError;
 use ahash::HashMap;
 use std::rc::Rc;
@@ -97,14 +97,14 @@ impl RowErrors<Box<EvaluationError>> {
     pub fn fault(&mut self, row: usize, error: NodeError) {
         self.set(
             row,
-            Box::new(NodeError::new(error.node_id, error.source).into()),
+            Box::new(NodeError::new(error.node_id, error.source).failure()),
         );
     }
 
     pub fn fail(&mut self, row: usize, node: &DecisionNode, message: String) {
         self.set(
             row,
-            Box::new(NodeError::new(node.id.clone(), message).into()),
+            Box::new(NodeError::new(node.id.clone(), message).failure()),
         );
     }
 }
@@ -158,7 +158,7 @@ impl SharedErrors {
             rows: RowErrors::new(rows),
             known: HashMap::default(),
             last: None,
-            deferral: Rc::new(EvaluationError::from(NodeError::new(
+            deferral: Rc::new(NodeError::failure(NodeError::new(
                 Arc::from(""),
                 Failure(Rc::from("deferred")),
             ))),
@@ -180,7 +180,7 @@ impl SharedErrors {
             .known
             .entry((node.id.clone(), message.clone()))
             .or_insert_with(|| {
-                Rc::new(EvaluationError::from(NodeError::new(
+                Rc::new(NodeError::failure(NodeError::new(
                     node.id.clone(),
                     Failure(message.clone()),
                 )))
@@ -198,7 +198,7 @@ impl SharedErrors {
         if self.ok(row) {
             self.rows.set(
                 row,
-                Rc::new(NodeError::new(error.node_id, error.source).into()),
+                Rc::new(NodeError::new(error.node_id, error.source).failure()),
             );
         }
     }

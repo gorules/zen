@@ -1,0 +1,24 @@
+use crate::compiled::host::definition::NodeHandler;
+use crate::compiled::host::result::NodeResult;
+use crate::compiled::host::NodeContext;
+use zen_types::decision::OutputNodeContent;
+use zen_types::variable::Variable;
+
+#[derive(Debug, Clone)]
+pub struct OutputNodeHandler;
+
+pub type OutputNodeData = OutputNodeContent;
+pub type OutputNodeTrace = Variable;
+
+impl NodeHandler for OutputNodeHandler {
+    type NodeData = OutputNodeData;
+    type TraceData = OutputNodeTrace;
+
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+        if let Some(json_schema) = &ctx.node.schema {
+            ctx.validate(json_schema, &ctx.input)?;
+        };
+
+        ctx.success(ctx.input.clone())
+    }
+}

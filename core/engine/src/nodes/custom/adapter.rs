@@ -19,10 +19,11 @@ pub struct NoopCustomNode;
 impl CustomNodeAdapter for NoopCustomNode {
     fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult>>> {
         Box::pin(async move {
-            Err(NodeError::new(
-                request.node.id.clone(),
-                "Custom node handler not provided".to_string(),
-            ))
+            Err(NodeError {
+                trace: None,
+                node_id: request.node.id.clone(),
+                source: "Custom node handler not provided".to_string().into(),
+            })
         })
     }
 }

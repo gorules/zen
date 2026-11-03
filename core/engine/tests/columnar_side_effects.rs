@@ -43,7 +43,13 @@ impl CustomNodeAdapter for Counting {
                 .is_some_and(|x| x.to_value().as_i64().is_some_and(|x| x % 2 == 1));
             let output = match request.node.kind.as_ref() {
                 "array" => Variable::from(json!([1, 2])),
-                "flaky" if odd => return Err(NodeError::new(request.node.id.clone(), "odd row")),
+                "flaky" if odd => {
+                    return Err(NodeError {
+                        node_id: request.node.id.clone(),
+                        trace: None,
+                        source: "odd row".into(),
+                    })
+                }
                 "flaky" => Variable::from(json!([1, 2])),
                 _ => Variable::from(json!({ "seen": true })),
             };
@@ -206,7 +212,8 @@ impl Scenario {
         ))
         .with_adapter(Arc::new(Counting(counts.clone())))
         .with_http_handler(Some(Arc::new(Http(counts.clone()))))
-        .with_loader(Arc::new(Loads(counts.clone(), memory)));
+        .with_loader(Arc::new(Loads(counts.clone(), memory)))
+        .compiled_engine();
         decision.compile();
         decision
     }
@@ -262,7 +269,6 @@ impl Scenario {
             let _ = decision.evaluate(context.clone()).await;
         }
         out.insert("single", counts.take());
-        #[cfg(feature = "driver")]
         {
             let walker = decision.interpreted();
             for context in &contexts {

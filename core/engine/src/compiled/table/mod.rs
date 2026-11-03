@@ -13,7 +13,7 @@ pub(crate) use dispatch::Dispatch;
 pub(crate) use first::First;
 use fused::FusedCells;
 use profile::{Empty, Resolve};
-pub(crate) use profile::{Profile, Rows, TableIr};
+pub(crate) use profile::{Profile, TableIr};
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;

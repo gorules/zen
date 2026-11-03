@@ -1,0 +1,1268 @@
+// Rows of one suite whose fields change type from case to case.
+//
+// The compiled engine evaluates a suite's cases as one batch and as columns: a field that is a
+// number in every row becomes a decimal column, strings a text column, booleans a bit column,
+// and anything mixed (or nested values, or arrays) an untyped column. Null and missing cells are
+// both absent in a column. These suites keep one decision fixed and vary the type of the same
+// field across rows, so each node kind meets every value type in the same batch. The expected
+// results are the single-row semantics: a row's result never depends on its neighbours.
+
+// --- Expressions over a field of varying type ---------------------------------------------
+
+{
+  name: "type() of one field across every value type",
+  graph: {
+    nodes: [{expression: "e", fields: {t: "type(v)"}}],
+  },
+  cases: [
+    [{v: 1}, {t: "number"}],
+    [{v: -2.5}, {t: "number"}],
+    [{v: "a"}, {t: "string"}],
+    [{v: ""}, {t: "string"}],
+    [{v: true}, {t: "bool"}],
+    [{v: false}, {t: "bool"}],
+    [{v: null}, {t: "null"}],
+    [{}, {t: "null"}],
+    [{v: [1, 2]}, {t: "array"}],
+    [{v: []}, {t: "array"}],
+    [{v: {a: 1}}, {t: "object"}],
+    [{v: {}}, {t: "object"}],
+  ],
+}
+
+{
+  name: "a numeric field with null and missing rows, defaulted with ??",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "(v ?? 0) * 2"}}],
+  },
+  cases: [
+    [{v: 1}, {r: 2}],
+    [{v: 2.5}, {r: 5}],
+    [{v: null}, {r: 0}],
+    [{}, {r: 0}],
+    [{v: 0}, {r: 0}],
+    [{v: -3}, {r: -6}],
+    [{v: 0.1}, {r: 0.2}],
+    [{v: 12345678901234567890.5}, {r: 24691357802469135781}],
+    [{v: 1.000}, {r: 2}],
+  ],
+}
+
+{
+  name: "a numeric field read without a default errors only on the rows where it is absent",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "v + 1"}}],
+  },
+  cases: [
+    [{v: 1}, {r: 2}],
+    [{v: null}, "!error"],
+    [{v: 41}, {r: 42}],
+    [{}, "!error"],
+    [{v: -1}, {r: 0}],
+    [{v: 0.5}, {r: 1.5}],
+  ],
+}
+
+{
+  name: "a numeric field that is sometimes a numeric string",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "isNumeric(v) ? number(v) * 10 : -1"}}],
+  },
+  cases: [
+    [{v: 1}, {r: 10}],
+    [{v: "2"}, {r: 20}],
+    [{v: "2.5"}, {r: 25}],
+    [{v: "x"}, {r: -1}],
+    [{v: ""}, {r: -1}],
+    [{v: true}, {r: -1}],
+    [{v: null}, {r: -1}],
+    [{}, {r: -1}],
+    [{v: 0.01}, {r: 0.1}],
+  ],
+}
+
+{
+  name: "arithmetic on a field that is a number in some rows and a string in others",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "v * 2"}}],
+  },
+  cases: [
+    [{v: 3}, {r: 6}],
+    [{v: "3"}, "!error"],
+    [{v: 4}, {r: 8}],
+    [{v: true}, "!error"],
+    [{v: [1]}, "!error"],
+    [{v: {a: 1}}, "!error"],
+    [{v: -0.5}, {r: -1}],
+  ],
+}
+
+{
+  name: "+ adds numbers and concatenates strings, row by row",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {r: 3}],
+    [{a: "x", b: "y"}, {r: "xy"}],
+    [{a: 1, b: "y"}, "!error"],
+    [{a: "x", b: 2}, "!error"],
+    [{a: 0.1, b: 0.2}, {r: 0.3}],
+    [{a: "", b: ""}, {r: ""}],
+    [{a: true, b: 1}, "!error"],
+    [{a: null, b: 1}, "!error"],
+  ],
+}
+
+{
+  name: "equality against a number literal across value types",
+  graph: {
+    nodes: [{expression: "e", fields: {eq: "v == 1", ne: "v != 1"}}],
+  },
+  cases: [
+    [{v: 1}, {eq: true, ne: false}],
+    [{v: 1.0}, {eq: true, ne: false}],
+    [{v: "1"}, {eq: false, ne: true}],
+    [{v: true}, {eq: false, ne: true}],
+    [{v: null}, {eq: false, ne: true}],
+    [{}, {eq: false, ne: true}],
+    [{v: [1]}, {eq: false, ne: true}],
+    [{v: {a: 1}}, {eq: false, ne: true}],
+    [{v: 2}, {eq: false, ne: true}],
+  ],
+}
+
+{
+  name: "equality against a string literal across value types",
+  graph: {
+    nodes: [{expression: "e", fields: {eq: "v == 'a'"}}],
+  },
+  cases: [
+    [{v: "a"}, {eq: true}],
+    [{v: "A"}, {eq: false}],
+    [{v: ""}, {eq: false}],
+    [{v: 1}, {eq: false}],
+    [{v: false}, {eq: false}],
+    [{v: null}, {eq: false}],
+    [{}, {eq: false}],
+    [{v: ["a"]}, {eq: false}],
+  ],
+}
+
+{
+  name: "membership in a mixed literal list across value types",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "v in [1, 'a', true]"}}],
+  },
+  cases: [
+    [{v: 1}, {r: true}],
+    [{v: "a"}, {r: true}],
+    [{v: true}, {r: true}],
+    [{v: false}, {r: false}],
+    [{v: "1"}, {r: false}],
+    [{v: 2}, {r: false}],
+    [{v: null}, {r: false}],
+    [{}, {r: false}],
+  ],
+}
+
+{
+  name: "len() over strings and arrays in one field",
+  graph: {
+    nodes: [{expression: "e", fields: {n: "len(v)"}}],
+  },
+  cases: [
+    [{v: "abc"}, {n: 3}],
+    [{v: [1, 2]}, {n: 2}],
+    [{v: ""}, {n: 0}],
+    [{v: []}, {n: 0}],
+    [{v: "żółw"}, {n: 4}, "bug: len counts UTF-8 bytes (7) instead of characters, as in the expression spec"],
+    [{v: ["a", "b", "c", "d"]}, {n: 4}],
+    [{v: 12}, "!error"],
+    [{v: true}, "!error"],
+  ],
+}
+
+{
+  name: "string() converts every scalar type",
+  graph: {
+    nodes: [{expression: "e", fields: {s: "string(v)"}}],
+  },
+  cases: [
+    [{v: 1}, {s: "1"}],
+    [{v: -2.5}, {s: "-2.5"}],
+    [{v: "x"}, {s: "x"}],
+    [{v: true}, {s: "true"}],
+    [{v: false}, {s: "false"}],
+    [{v: null}, {s: "null"}],
+    [{}, {s: "null"}],
+    [{v: 0}, {s: "0"}],
+  ],
+}
+
+{
+  name: "a ternary on a boolean field with missing and non-boolean rows",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "v == true ? 'yes' : 'no'"}}],
+  },
+  cases: [
+    [{v: true}, {r: "yes"}],
+    [{v: false}, {r: "no"}],
+    [{v: null}, {r: "no"}],
+    [{}, {r: "no"}],
+    [{v: 1}, {r: "no"}],
+    [{v: "true"}, {r: "no"}],
+    [{v: true}, {r: "yes"}],
+  ],
+}
+
+{
+  name: "logical operators on a boolean field with gaps",
+  graph: {
+    nodes: [{expression: "e", fields: {both: "(a ?? false) and (b ?? false)", either: "(a ?? false) or (b ?? false)"}}],
+  },
+  cases: [
+    [{a: true, b: true}, {both: true, either: true}],
+    [{a: true, b: false}, {both: false, either: true}],
+    [{a: false}, {both: false, either: false}],
+    [{b: true}, {both: false, either: true}],
+    [{}, {both: false, either: false}],
+    [{a: null, b: null}, {both: false, either: false}],
+    [{a: false, b: false}, {both: false, either: false}],
+  ],
+}
+
+{
+  name: "member access on a field that is sometimes an object",
+  graph: {
+    nodes: [{expression: "e", fields: {x: "v.x", has: "v.x != null"}}],
+  },
+  cases: [
+    [{v: {x: 1}}, {has: true, x: 1}],
+    [{v: {x: "s"}}, {has: true, x: "s"}],
+    [{v: {y: 1}}, {has: false}],
+    [{v: {}}, {has: false}],
+    [{v: null}, {has: false}],
+    [{}, {has: false}],
+    [{v: {x: [1, 2]}}, {has: true, x: [1, 2]}],
+    [{v: {x: {deep: true}}}, {has: true, x: {deep: true}}],
+  ],
+}
+
+{
+  name: "copying a field of any type through an expression keeps its value",
+  graph: {
+    nodes: [{expression: "e", fields: {copy: "v"}}],
+  },
+  cases: [
+    [{v: 1}, {copy: 1}],
+    [{v: "a"}, {copy: "a"}],
+    [{v: true}, {copy: true}],
+    [{v: false}, {copy: false}],
+    [{v: [1, "a", null]}, {copy: [1, "a", null]}],
+    [{v: {k: [1]}}, {copy: {k: [1]}}],
+    [{v: null}, {}],
+    [{}, {}],
+    [{v: 0}, {copy: 0}],
+    [{v: ""}, {copy: ""}],
+  ],
+}
+
+{
+  name: "pass-through keeps a heterogeneous field untouched next to a computed one",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {t: "type(v)"}}],
+  },
+  cases: [
+    [{v: 1}, {v: 1, t: "number"}],
+    [{v: "x"}, {v: "x", t: "string"}],
+    [{v: [true]}, {v: [true], t: "array"}],
+    [{v: {a: {b: 1}}}, {v: {a: {b: 1}}, t: "object"}],
+    [{v: false}, {v: false, t: "bool"}],
+    [{}, {t: "null"}],
+  ],
+}
+
+{
+  name: "numbers of different scale and magnitude in one column",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "round(v, 1)", gt: "v > 1"}}],
+  },
+  cases: [
+    [{v: 1}, {r: 1, gt: false}],
+    [{v: 1.05}, {r: 1.1, gt: true}],
+    [{v: 1.04}, {r: 1, gt: true}],
+    [{v: -1.05}, {r: -1.1, gt: false}],
+    [{v: 0.000001}, {r: 0, gt: false}],
+    [{v: 1000000000000}, {r: 1000000000000, gt: true}],
+    [{v: 1.00}, {r: 1, gt: false}],
+    [{v: 99.99}, {r: 100, gt: true}],
+  ],
+}
+
+{
+  name: "ordering a field across numbers, strings and absent values",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "v > 5"}}],
+  },
+  cases: [
+    [{v: 6}, {r: true}],
+    [{v: 5}, {r: false}],
+    [{v: "6"}, "!error"],
+    [{v: null}, "!error"],
+    [{}, "!error"],
+    [{v: true}, "!error"],
+    [{v: 5.0001}, {r: true}],
+  ],
+}
+
+// --- Decision tables over a field of varying type -----------------------------------------
+
+{
+  name: "first-hit table: rules for every value type of one field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 10", "'big number'"],
+        ["'gold'", "'gold'"],
+        ["true", "'true'"],
+        ["null", "'null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 11}, {r: "big number"}],
+    [{v: 10}, {r: "other"}],
+    [{v: "gold"}, {r: "gold"}],
+    [{v: "silver"}, {r: "other"}],
+    [{v: true}, {r: "true"}],
+    [{v: false}, {r: "other"}],
+    [{v: null}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{v: [11]}, {r: "other"}],
+    [{v: {a: 1}}, {r: "other"}],
+    [{v: "11"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "first-hit table: a numeric range column meeting strings and booleans",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["band"], rules: [
+        ["[0..50)", "'low'"],
+        ["[50..80)", "'mid'"],
+        [">= 80", "'high'"],
+        ["", "'invalid'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 0}, {band: "low"}],
+    [{score: 49.99}, {band: "low"}],
+    [{score: 50}, {band: "mid"}],
+    [{score: 80}, {band: "high"}],
+    [{score: -1}, {band: "invalid"}],
+    [{score: "90"}, {band: "invalid"}],
+    [{score: true}, {band: "invalid"}],
+    [{score: null}, {band: "invalid"}],
+    [{}, {band: "invalid"}],
+    [{score: [50]}, {band: "invalid"}],
+  ],
+}
+
+{
+  name: "first-hit table: a string enum column meeting numbers and missing rows",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier"], outputs: ["discount"], rules: [
+        ["'gold', 'platinum'", "0.2"],
+        ["'silver'", "0.1"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, {discount: 0.2}],
+    [{tier: "platinum"}, {discount: 0.2}],
+    [{tier: "silver"}, {discount: 0.1}],
+    [{tier: "Gold"}, {discount: 0}],
+    [{tier: 1}, {discount: 0}],
+    [{tier: false}, {discount: 0}],
+    [{tier: null}, {discount: 0}],
+    [{}, {discount: 0}],
+    [{tier: ["gold"]}, {discount: 0}],
+  ],
+}
+
+{
+  name: "first-hit table: two input columns of mixed types",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b"], outputs: ["r"], rules: [
+        ["> 0", "'x'", "'num-x'"],
+        ["'k'", "> 0", "'k-num'"],
+        ["true", "", "'bool'"],
+        ["", "", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 1, b: "x"}, {r: "num-x"}],
+    [{a: 1, b: "y"}, {r: "none"}],
+    [{a: "k", b: 3}, {r: "k-num"}],
+    [{a: "k", b: "3"}, {r: "none"}],
+    [{a: true, b: 1}, {r: "bool"}],
+    [{a: true}, {r: "bool"}],
+    [{b: "x"}, {r: "none"}],
+    [{}, {r: "none"}],
+    [{a: 0, b: "x"}, {r: "none"}],
+    [{a: null, b: null}, {r: "none"}],
+  ],
+}
+
+{
+  name: "first-hit table: output cells echo the input of any type",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["out"], rules: [
+        ["'copy'", "v"],
+        ["'type'", "type(v)"],
+        ["", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "copy", v: 1}, {out: 1}],
+    [{kind: "copy", v: "s"}, {out: "s"}],
+    [{kind: "copy", v: [1, 2]}, {out: [1, 2]}],
+    [{kind: "copy", v: {a: 1}}, {out: {a: 1}}],
+    [{kind: "copy", v: false}, {out: false}],
+    [{kind: "copy"}, {}],
+    [{kind: "type", v: "s"}, {out: "string"}],
+    [{kind: "type", v: 2}, {out: "number"}],
+    [{kind: "other", v: 2}, {}],
+  ],
+}
+
+{
+  name: "first-hit table: $-cells testing the type of the field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["type($) == 'number' and $ > 0", "'positive'"],
+        ["type($) == 'string' and len($) > 0", "'text'"],
+        ["type($) == 'array'", "'list of ' + string(len($))"],
+        ["type($) == 'object'", "'object'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 3}, {r: "positive"}],
+    [{v: -3}, {r: "other"}],
+    [{v: "a"}, {r: "text"}],
+    [{v: ""}, {r: "other"}],
+    [{v: [1, 2, 3]}, {r: "list of 3"}],
+    [{v: []}, {r: "list of 0"}],
+    [{v: {}}, {r: "object"}],
+    [{v: true}, {r: "other"}],
+    [{v: null}, {r: "other"}],
+    [{}, {r: "other"}],
+  ],
+}
+
+{
+  name: "collect table: rules for several types all evaluated per row",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["m"], rules: [
+        ["> 0", "'positive'"],
+        ["'a', 'b'", "'letter'"],
+        ["true", "'true'"],
+        ["$ != null", "'present'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 1}, [{m: "positive"}, {m: "present"}, {m: "any"}]],
+    [{v: "a"}, [{m: "letter"}, {m: "present"}, {m: "any"}]],
+    [{v: true}, [{m: "true"}, {m: "present"}, {m: "any"}]],
+    [{v: false}, [{m: "present"}, {m: "any"}]],
+    [{v: null}, [{m: "any"}]],
+    [{}, [{m: "any"}]],
+    [{v: [1]}, [{m: "present"}, {m: "any"}]],
+    [{v: -1}, [{m: "present"}, {m: "any"}]],
+    [{v: "c"}, [{m: "present"}, {m: "any"}]],
+  ],
+}
+
+{
+  name: "collect table with a typed output column fed values of other types",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        [">= 0", "n"],
+        ["", "'seen'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{v: 1}, {v: "seen"}]],
+    [{n: 0}, [{v: 0}, {v: "seen"}]],
+    [{n: -1}, [{v: "seen"}]],
+    [{n: "1"}, [{v: "seen"}]],
+    [{}, [{v: "seen"}]],
+    [{n: 2.75}, [{v: 2.75}, {v: "seen"}]],
+  ],
+}
+
+{
+  name: "per-column collect over a field of mixed types",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["first", "all[]"], rules: [
+        ["> 1", "'gt1'", "'gt1'"],
+        ["> 0", "'gt0'", "'gt0'"],
+        ["'x'", "'x'", "'x'"],
+        ["", "'any'", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 2}, {first: "gt1", all: ["gt1", "gt0", "any"]}],
+    [{v: 1}, {first: "gt0", all: ["gt0", "any"]}],
+    [{v: "x"}, {first: "x", all: ["x", "any"]}],
+    [{v: "y"}, {first: "any", all: ["any"]}],
+    [{v: true}, {first: "any", all: ["any"]}],
+    [{}, {first: "any", all: ["any"]}],
+  ],
+}
+
+// --- Switches over a field of varying type ------------------------------------------------
+
+{
+  name: "first switch routing on the type of a field",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["type(v) == 'number'", "type(v) == 'string'", "type(v) == 'bool'", ""]},
+      {expression: "num", fields: {r: "v * 2"}},
+      {expression: "str", fields: {r: "upper(v)"}},
+      {expression: "bool", fields: {r: "not v"}},
+      {expression: "other", fields: {r: "type(v)"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> num -> output",
+      "s:1 -> str -> output",
+      "s:2 -> bool -> output",
+      "s:3 -> other -> output",
+    ],
+  },
+  cases: [
+    [{v: 2}, {r: 4}],
+    [{v: "ab"}, {r: "AB"}],
+    [{v: true}, {r: false}],
+    [{v: false}, {r: true}],
+    [{v: null}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{v: [1]}, {r: "array"}],
+    [{v: {a: 1}}, {r: "object"}],
+    [{v: -0.5}, {r: -1}],
+    [{v: ""}, {r: ""}],
+  ],
+}
+
+{
+  name: "first switch whose numeric condition errors on non-numbers falls through",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["v > 10", "v == 'vip'", ""]},
+      {expression: "big", fields: {r: "'big'"}},
+      {expression: "vip", fields: {r: "'vip'"}},
+      {expression: "rest", fields: {r: "'rest'"}},
+    ],
+    edges: ["input -> s", "s:0 -> big -> output", "s:1 -> vip -> output", "s:2 -> rest -> output"],
+  },
+  cases: [
+    [{v: 11}, {r: "big"}],
+    [{v: 10}, {r: "rest"}],
+    [{v: "vip"}, {r: "vip"}],
+    [{v: "11"}, {r: "rest"}],
+    [{v: true}, {r: "rest"}],
+    [{v: null}, {r: "rest"}],
+    [{}, {r: "rest"}],
+    [{v: [11]}, {r: "rest"}],
+  ],
+}
+
+{
+  name: "collect switch: branches for overlapping type tests",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["v != null", "isNumeric(string(v))", "len(string(v)) > 2"]},
+      {expression: "a", fields: {present: "true"}},
+      {expression: "b", fields: {numeric: "true"}},
+      {expression: "c", fields: {long: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+  },
+  cases: [
+    [{v: 1}, {present: true, numeric: true}],
+    [{v: 1234}, {present: true, numeric: true, long: true}],
+    [{v: "12"}, {present: true, numeric: true}],
+    [{v: "abc"}, {present: true, long: true}],
+    [{v: true}, {present: true, long: true}],
+    [{v: null}, {long: true}],
+    [{}, {long: true}],
+    [{v: ""}, {present: true}],
+  ],
+}
+
+// --- Several fields changing type independently -------------------------------------------
+
+{
+  name: "two fields, each typed in some rows and mixed in others",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {
+        a: "type(x) == 'number' ? x : 0",
+        b: "type(y) == 'string' ? y : 'none'",
+        both: "type(x) + '/' + type(y)",
+      }},
+    ],
+  },
+  cases: [
+    [{x: 1, y: "a"}, {a: 1, b: "a", both: "number/string"}],
+    [{x: 2, y: "b"}, {a: 2, b: "b", both: "number/string"}],
+    [{x: "1", y: 2}, {a: 0, b: "none", both: "string/number"}],
+    [{x: 3}, {a: 3, b: "none", both: "number/null"}],
+    [{y: "c"}, {a: 0, b: "c", both: "null/string"}],
+    [{x: true, y: false}, {a: 0, b: "none", both: "bool/bool"}],
+    [{x: [1], y: {}}, {a: 0, b: "none", both: "array/object"}],
+    [{}, {a: 0, b: "none", both: "null/null"}],
+  ],
+}
+
+{
+  name: "a chain whose second node reads a field the first node types differently per row",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {mid: "n > 0 ? n : 'neg'"}},
+      {expression: "second", fields: {r: "type(mid) == 'number' ? mid + 1 : mid + '!'"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: 2}],
+    [{n: -1}, {r: "neg!"}],
+    [{n: 5.5}, {r: 6.5}],
+    [{n: 0}, {r: "neg!"}],
+    [{n: 100}, {r: 101}],
+  ],
+}
+
+{
+  name: "a table producing a number in some rows and a string in others, read downstream",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "n * 10"],
+        ["0", "'zero'"],
+        ["", "false"],
+      ]},
+      {expression: "e", fields: {t: "type(v)", v: "v"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {t: "number", v: 10}],
+    [{n: 0}, {t: "string", v: "zero"}],
+    [{n: -1}, {t: "bool", v: false}],
+    [{n: 0.5}, {t: "number", v: 5}],
+    [{}, {t: "bool", v: false}],
+    [{n: "x"}, {t: "bool", v: false}],
+  ],
+}
+
+{
+  name: "arrays of uniform and mixed element types in one field",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {
+        n: "len(v)",
+        first: "v[0]",
+        types: "map(v, type(#))",
+      }},
+    ],
+  },
+  cases: [
+    [{v: [1, 2, 3]}, {n: 3, first: 1, types: ["number", "number", "number"]}],
+    [{v: ["a", "b"]}, {n: 2, first: "a", types: ["string", "string"]}],
+    [{v: [true, false]}, {n: 2, first: true, types: ["bool", "bool"]}],
+    [{v: [1, "a", true, null]}, {n: 4, first: 1, types: ["number", "string", "bool", "null"]}],
+    [{v: [{a: 1}, [2]]}, {n: 2, first: {a: 1}, types: ["object", "array"]}],
+    [{v: []}, {n: 0, types: []}],
+    [{v: [0.5]}, {n: 1, first: 0.5, types: ["number"]}],
+  ],
+}
+
+{
+  name: "sum over arrays of numbers with empty and absent rows",
+  graph: {
+    nodes: [{expression: "e", fields: {s: "sum(v ?? [])", c: "count(v ?? [], # > 1)"}}],
+  },
+  cases: [
+    [{v: [1, 2, 3]}, {s: 6, c: 2}],
+    [{v: []}, {s: 0, c: 0}],
+    [{}, {s: 0, c: 0}],
+    [{v: null}, {s: 0, c: 0}],
+    [{v: [0.1, 0.2]}, {s: 0.3, c: 0}],
+    [{v: [-5, 10]}, {s: 5, c: 1}],
+    [{v: [100]}, {s: 100, c: 1}],
+  ],
+}
+
+{
+  name: "string arrays with membership tests, including empty strings and arrays",
+  graph: {
+    nodes: [{expression: "e", fields: {vip: "'vip' in (tags ?? [])", n: "len(tags ?? [])"}}],
+  },
+  cases: [
+    [{tags: ["vip", "new"]}, {vip: true, n: 2}],
+    [{tags: ["new"]}, {vip: false, n: 1}],
+    [{tags: []}, {vip: false, n: 0}],
+    [{tags: [""]}, {vip: false, n: 1}],
+    [{}, {vip: false, n: 0}],
+    [{tags: ["VIP"]}, {vip: false, n: 1}],
+    [{tags: ["a", "b", "c", "vip"]}, {vip: true, n: 4}],
+  ],
+}
+
+{
+  name: "boolean arrays: all/some/none across rows",
+  graph: {
+    nodes: [{expression: "e", fields: {all: "all(flags, #)", some: "some(flags, #)", none: "none(flags, #)"}}],
+  },
+  cases: [
+    [{flags: [true, true]}, {all: true, some: true, none: false}],
+    [{flags: [true, false]}, {all: false, some: true, none: false}],
+    [{flags: [false]}, {all: false, some: false, none: true}],
+    [{flags: []}, {all: true, some: false, none: true}],
+    [{flags: [false, false, false]}, {all: false, some: false, none: true}],
+  ],
+}
+
+{
+  name: "a field holding a date string in some rows and garbage in others",
+  graph: {
+    nodes: [{expression: "e", fields: {y: "isNumeric(v) ? -1 : dateString(date(v))"}}],
+  },
+  cases: [
+    [{v: "2024-01-15"}, {y: "2024-01-15 00:00:00"}],
+    [{v: "2024-02-29"}, {y: "2024-02-29 00:00:00"}],
+    [{v: "not a date"}, "!error"],
+    [{v: 5}, {y: -1}],
+    [{v: "2023-12-31"}, {y: "2023-12-31 00:00:00"}],
+  ],
+}
+
+// --- Long suites: a mostly typed column with odd rows at irregular positions ---------------
+// Cycled three times these cross the 64-row word boundary of the column bitmaps, and the
+// stray rows sit at different offsets within each word.
+
+{
+  name: "long: a mostly numeric column with strings, nulls and booleans scattered in",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {r: "type(v) == 'number' ? v * 3 : 'skip:' + type(v)"}},
+    ],
+  },
+  cases: [
+    [{v: 1}, {r: 3}],
+    [{v: 2}, {r: 6}],
+    [{v: 3}, {r: 9}],
+    [{v: "4"}, {r: "skip:string"}],
+    [{v: 5}, {r: 15}],
+    [{v: 6.5}, {r: 19.5}],
+    [{v: 7}, {r: 21}],
+    [{v: null}, {r: "skip:null"}],
+    [{v: 9}, {r: 27}],
+    [{v: 10}, {r: 30}],
+    [{v: 11}, {r: 33}],
+    [{v: 12}, {r: 36}],
+    [{v: true}, {r: "skip:bool"}],
+    [{v: 14}, {r: 42}],
+    [{v: 15}, {r: 45}],
+    [{}, {r: "skip:null"}],
+    [{v: 17}, {r: 51}],
+    [{v: -18}, {r: -54}],
+    [{v: 19}, {r: 57}],
+    [{v: 20}, {r: 60}],
+    [{v: [21]}, {r: "skip:array"}],
+    [{v: 22}, {r: 66}],
+    [{v: 0.23}, {r: 0.69}],
+  ],
+}
+
+{
+  name: "long: a mostly numeric column feeding a table, erroring rows only where a string appears",
+  graph: {
+    nodes: [
+      {expression: "e", passThrough: true, fields: {d: "v * 2"}},
+      {table: "t", inputs: ["d"], outputs: ["band"], rules: [
+        ["< 10", "'low'"],
+        ["[10..30]", "'mid'"],
+        ["", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 1}, {band: "low"}],
+    [{v: 5}, {band: "mid"}],
+    [{v: 15}, {band: "mid"}],
+    [{v: 16}, {band: "high"}],
+    [{v: "x"}, "!error"],
+    [{v: 0}, {band: "low"}],
+    [{v: 4.99}, {band: "low"}],
+    [{v: 100}, {band: "high"}],
+    [{v: -100}, {band: "low"}],
+    [{v: 7}, {band: "mid"}],
+    [{v: null}, "!error"],
+    [{v: 8}, {band: "mid"}],
+    [{v: 2}, {band: "low"}],
+    [{v: 3}, {band: "low"}],
+    [{v: 9}, {band: "mid"}],
+    [{v: 10}, {band: "mid"}],
+    [{v: 11}, {band: "mid"}],
+    [{v: 12}, {band: "mid"}],
+    [{v: 13}, {band: "mid"}],
+    [{v: 14}, {band: "mid"}],
+    [{v: 6}, {band: "mid"}],
+    [{v: false}, "!error"],
+  ],
+}
+
+{
+  name: "long: a mostly string column with numbers and booleans scattered in, through a switch",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["startsWith(string(v), 'a')", "v == 1", ""]},
+      {expression: "a", fields: {r: "'a:' + v"}},
+      {expression: "one", fields: {r: "'one'"}},
+      {expression: "rest", fields: {r: "'rest:' + string(v)"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> one -> output", "s:2 -> rest -> output"],
+  },
+  cases: [
+    [{v: "apple"}, {r: "a:apple"}],
+    [{v: "banana"}, {r: "rest:banana"}],
+    [{v: "avocado"}, {r: "a:avocado"}],
+    [{v: 1}, {r: "one"}],
+    [{v: "cherry"}, {r: "rest:cherry"}],
+    [{v: ""}, {r: "rest:"}],
+    [{v: "a"}, {r: "a:a"}],
+    [{v: "Apple"}, {r: "rest:Apple"}],
+    [{v: true}, {r: "rest:true"}],
+    [{v: "apricot"}, {r: "a:apricot"}],
+    [{v: 2}, {r: "rest:2"}],
+    [{v: "äpfel"}, {r: "rest:äpfel"}],
+    [{v: "almond"}, {r: "a:almond"}],
+    [{}, {r: "rest:null"}],
+    [{v: "date"}, {r: "rest:date"}],
+    [{v: "acorn"}, {r: "a:acorn"}],
+    [{v: "elder"}, {r: "rest:elder"}],
+    [{v: "fig"}, {r: "rest:fig"}],
+    [{v: "anise"}, {r: "a:anise"}],
+    [{v: null}, {r: "rest:null"}],
+    [{v: "grape"}, {r: "rest:grape"}],
+    [{v: "1"}, {r: "rest:1"}],
+  ],
+}
+
+{
+  name: "long: a boolean column with null and missing rows in a collect table",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["ok", "n"], outputs: ["r"], rules: [
+        ["true", "", "'ok'"],
+        ["false", "", "'not ok'"],
+        ["", "> 2", "'big'"],
+        ["null", "", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{ok: true, n: 1}, [{r: "ok"}]],
+    [{ok: false, n: 3}, [{r: "not ok"}, {r: "big"}]],
+    [{ok: true, n: 3}, [{r: "ok"}, {r: "big"}]],
+    [{n: 3}, [{r: "big"}, {r: "unknown"}]],
+    [{ok: null, n: 0}, [{r: "unknown"}]],
+    [{ok: false}, [{r: "not ok"}]],
+    [{ok: true}, [{r: "ok"}]],
+    [{}, [{r: "unknown"}]],
+    [{ok: true, n: 2}, [{r: "ok"}]],
+    [{ok: false, n: 2.5}, [{r: "not ok"}, {r: "big"}]],
+    [{ok: true, n: 100}, [{r: "ok"}, {r: "big"}]],
+    [{ok: false, n: -1}, [{r: "not ok"}]],
+    [{ok: true, n: "9"}, [{r: "ok"}]],
+    [{ok: "true", n: 1}, []],
+    [{ok: 1, n: 5}, [{r: "big"}]],
+    [{ok: false, n: 0}, [{r: "not ok"}]],
+    [{ok: true, n: 0}, [{r: "ok"}]],
+    [{ok: false, n: 99}, [{r: "not ok"}, {r: "big"}]],
+    [{ok: true, n: 3}, [{r: "ok"}, {r: "big"}]],
+    [{ok: null}, [{r: "unknown"}]],
+    [{ok: true, n: 4}, [{r: "ok"}, {r: "big"}]],
+    [{ok: false, n: 4}, [{r: "not ok"}, {r: "big"}]],
+  ],
+}
+
+// --- Access on values of the wrong shape ---------------------------------------------------
+
+{
+  name: "member and index access on a field that is a scalar in some rows",
+  graph: {
+    nodes: [{expression: "e", fields: {x: "v.x", i: "v[0]"}}],
+  },
+  cases: [
+    [{v: {x: 1}}, {x: 1}],
+    [{v: [9, 8]}, {i: 9}],
+    [{v: 5}, {}],
+    [{v: "str"}, {i: "s"}],
+    [{v: true}, {}],
+    [{v: null}, {}],
+    [{}, {}],
+    [{v: []}, {}],
+    [{v: ""}, {}],
+  ],
+}
+
+{
+  name: "contains() on a field that is a string in some rows and an array in others",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "contains(v, 'a')"}}],
+  },
+  cases: [
+    [{v: "banana"}, {r: true}],
+    [{v: "xyz"}, {r: false}],
+    [{v: ["a", "b"]}, {r: true}],
+    [{v: ["b"]}, {r: false}],
+    [{v: []}, {r: false}],
+    [{v: ""}, {r: false}],
+    [{v: "A"}, {r: false}],
+    [{v: [1, "a"]}, {r: true}],
+  ],
+}
+
+{
+  name: "string ordering mixed with number ordering in one field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["$ == 'm'", "'m'"],
+        ["type($) == 'string' and $ < 'm'", "'before m'"],
+        ["type($) == 'string' and $ > 'm'", "'after m'"],
+        ["type($) == 'number' and $ < 0", "'negative'"],
+        ["", "'rest'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "a"}, {r: "rest"}, "question: strings have no ordering in the expression language, so the cell errors and the rule falls through"],
+    [{v: "m"}, {r: "m"}],
+    [{v: "z"}, {r: "rest"}, "question: strings have no ordering in the expression language, so the cell errors and the rule falls through"],
+    [{v: "M"}, {r: "rest"}, "question: strings have no ordering in the expression language, so the cell errors and the rule falls through"],
+    [{v: -1}, {r: "negative"}],
+    [{v: 1}, {r: "rest"}],
+    [{v: "ma"}, {r: "rest"}, "question: strings have no ordering in the expression language, so the cell errors and the rule falls through"],
+    [{}, {r: "rest"}],
+  ],
+}
+
+{
+  name: "negative zero, tiny and huge decimals in one column",
+  graph: {
+    nodes: [{expression: "e", fields: {zero: "v == 0", pos: "v > 0", s: "v + 0"}}],
+  },
+  cases: [
+    [{v: 0}, {zero: true, pos: false, s: 0}],
+    [{v: -0}, {zero: true, pos: false, s: 0}],
+    [{v: 0.0000000000000000000000000001}, {zero: false, pos: true, s: 0.0000000000000000000000000001}],
+    [{v: -0.0000000000000000000000000001}, {zero: false, pos: false, s: -0.0000000000000000000000000001}],
+    [{v: 79228162514264337593543950335}, {zero: false, pos: true, s: 79228162514264337593543950335}],
+    [{v: -79228162514264337593543950335}, {zero: false, pos: false, s: -79228162514264337593543950335}],
+    [{v: 1.5}, {zero: false, pos: true, s: 1.5}],
+  ],
+}
+
+{
+  name: "an output column whose type differs per rule, collected",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "n"],
+        ["> 1", "'two+'"],
+        ["> 2", "true"],
+        ["> 3", "[n]"],
+        ["> 4", "{n: n}"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, []],
+    [{n: 1}, [{v: 1}]],
+    [{n: 2}, [{v: 2}, {v: "two+"}]],
+    [{n: 3}, [{v: 3}, {v: "two+"}, {v: true}]],
+    [{n: 4}, [{v: 4}, {v: "two+"}, {v: true}, {v: [4]}]],
+    [{n: 5}, [{v: 5}, {v: "two+"}, {v: true}, {v: [5]}, {v: {n: 5}}]],
+    [{}, []],
+  ],
+}
+
+// --- Whole inputs that are not objects -----------------------------------------------------
+
+{
+  name: "the whole input is a scalar, an array or null in some rows",
+  graph: {
+    nodes: [{expression: "e", fields: {t: "type(v)", v: "v"}}],
+  },
+  cases: [
+    [{v: 1}, {t: "number", v: 1}],
+    [5, {t: "null"}],
+    ["s", {t: "null"}],
+    [[1, 2], "!error", "question: with an array request the expression environment is the array, and reading a field of it errors instead of giving null"],
+    [null, {t: "null"}],
+    [true, {t: "null"}],
+    [{v: "x"}, {t: "string", v: "x"}],
+    [{}, {t: "null"}],
+  ],
+}
+
+{
+  name: "a non-object input passes straight through an empty graph",
+  graph: {},
+  cases: [
+    [{a: 1}, {a: 1}],
+    [5, {}, "question: a scalar request is replaced by an empty object, as in 01-input-output"],
+    ["s", {}, "question: a scalar request is replaced by an empty object, as in 01-input-output"],
+    [[1, {a: 2}], [1, {a: 2}]],
+    [true, {}, "question: a scalar request is replaced by an empty object, as in 01-input-output"],
+    [{b: [1]}, {b: [1]}],
+  ],
+}
+
+// --- Date strings in a text column --------------------------------------------------------
+
+{
+  name: "date comparisons on a text column with unparseable and absent rows",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["since"], outputs: ["r"], rules: [
+        ["d($) < d('2024-01-01')", "'old'"],
+        ["d($) >= d('2024-01-01')", "'new'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{since: "2023-06-01"}, {r: "old"}],
+    [{since: "2024-01-01"}, {r: "new"}],
+    [{since: "2025-03-20T10:00:00Z"}, {r: "new"}],
+    [{since: "garbage"}, {r: "old"}, "question: an invalid or null date orders before every valid date instead of erroring (see the expression spec), so the cell matches"],
+    [{since: ""}, {r: "old"}, "question: an invalid or null date orders before every valid date instead of erroring (see the expression spec), so the cell matches"],
+    [{}, {r: "old"}, "question: an invalid or null date orders before every valid date instead of erroring (see the expression spec), so the cell matches"],
+    [{since: "2023-12-31T23:59:59Z"}, {r: "old"}],
+    [{since: 1700000000}, {r: "old"}],
+  ],
+}
+
+// --- $nodes across rows that ran different nodes -------------------------------------------
+
+{
+  name: "$nodes of a branch that ran for some rows and not for others",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "pos", fields: {v: "n * 2"}},
+      {expression: "neg", fields: {v: "'neg'"}},
+      {expression: "join", fields: {fromPos: "$nodes.pos.v", fromNeg: "$nodes.neg.v", t: "type($nodes.pos)"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> join", "s:1 -> neg -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 1}, {fromPos: 2, t: "object"}],
+    [{n: -1}, {fromNeg: "neg", t: "null"}],
+    [{n: 2.5}, {fromPos: 5, t: "object"}],
+    [{}, {fromNeg: "neg", t: "null"}],
+    [{n: 0}, {fromNeg: "neg", t: "null"}],
+    [{n: "x"}, {fromNeg: "neg", t: "null"}],
+    [{n: 100}, {fromPos: 200, t: "object"}],
+  ],
+}
+
+{
+  name: "collect switch: one key written with a different type by each taken branch",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a == true", "b == true"]},
+      {expression: "ea", fields: {v: "1", fromA: "true"}},
+      {expression: "eb", fields: {v: "'one'", fromB: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> ea -> output", "s:1 -> eb -> output"],
+  },
+  cases: [
+    [{a: true}, {v: 1, fromA: true}],
+    [{b: true}, {v: "one", fromB: true}],
+    [{a: true, b: true}, {v: 1, fromA: true, fromB: true}],
+    [{}, {}],
+    [{a: false, b: true}, {v: "one", fromB: true}],
+    [{a: true, b: false}, {v: 1, fromA: true}],
+  ],
+}
+
+{
+  name: "an expression field referencing earlier fields of varying type through $",
+  graph: {
+    nodes: [{expression: "e", fields: [
+      ["k", "type(v) == 'number' ? v : len(string(v))"],
+      ["d", "$.k * 2"],
+      ["s", "string($.d) + ':' + type(v)"],
+    ]}],
+  },
+  cases: [
+    [{v: 3}, {k: 3, d: 6, s: "6:number"}],
+    [{v: "abcd"}, {k: 4, d: 8, s: "8:string"}],
+    [{v: true}, {k: 4, d: 8, s: "8:bool"}],
+    [{}, {k: 4, d: 8, s: "8:null"}],
+    [{v: 0.5}, {k: 0.5, d: 1, s: "1.0:number"}],
+    [{v: ""}, {k: 0, d: 0, s: "0:string"}],
+  ],
+}
+
+// --- Arrays of one element type with empty and missing rows --------------------------------
+// When every present cell of a field is an array of strings, numbers or booleans, the list
+// layout stores the elements in one shared child buffer with per-row offsets.
+
+{
+  name: "lists of strings: indexing, slicing and membership per row",
+  graph: {
+    nodes: [{expression: "e", fields: {
+      first: "tags[0]",
+      last: "len(tags) > 0 ? tags[len(tags) - 1] : null",
+      rest: "tags[1:]",
+      vip: "'vip' in tags",
+      n: "len(tags)",
+    }}],
+  },
+  cases: [
+    [{tags: ["vip", "new"]}, {first: "vip", last: "new", rest: ["new"], vip: true, n: 2}],
+    [{tags: ["a"]}, {first: "a", last: "a", rest: [], vip: false, n: 1}],
+    [{tags: []}, {rest: [], vip: false, n: 0}, "bug: an open-ended slice of an empty array errors (implicit end len-1 is -1), as in the expression spec"],
+    [{tags: ["", "vip", ""]}, {first: "", last: "", rest: ["vip", ""], vip: true, n: 3}],
+    [{tags: ["żółw", "日本"]}, {first: "żółw", last: "日本", rest: ["日本"], vip: false, n: 2}],
+    [{tags: ["x", "y", "z", "vip", "w"]}, {first: "x", last: "w", rest: ["y", "z", "vip", "w"], vip: true, n: 5}],
+  ],
+}
+
+{
+  name: "lists of strings, missing in some rows, through a collect table",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["tags"], outputs: ["r"], rules: [
+        ["'vip' in $", "'vip'"],
+        ["len($) == 0", "'empty'"],
+        ["some($, startsWith(#, 'x'))", "'x-tag'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tags: ["vip"]}, [{r: "vip"}, {r: "any"}]],
+    [{tags: []}, [{r: "empty"}, {r: "any"}]],
+    [{tags: ["xa", "vip"]}, [{r: "vip"}, {r: "x-tag"}, {r: "any"}]],
+    [{tags: ["b"]}, [{r: "any"}]],
+    [{}, [{r: "any"}]],
+    [{tags: ["x"]}, [{r: "x-tag"}, {r: "any"}]],
+  ],
+}
+
+{
+  name: "lists of numbers: aggregates and element access per row",
+  graph: {
+    nodes: [{expression: "e", fields: {
+      s: "sum(xs)",
+      mx: "max(xs)",
+      first: "xs[0]",
+      doubled: "map(xs, # * 2)",
+      big: "filter(xs, # > 10)",
+      has5: "5 in xs",
+    }}],
+  },
+  cases: [
+    [{xs: [1, 2, 3]}, {s: 6, mx: 3, first: 1, doubled: [2, 4, 6], big: [], has5: false}],
+    [{xs: [5, 15.5]}, {s: 20.5, mx: 15.5, first: 5, doubled: [10, 31], big: [15.5], has5: true}],
+    [{xs: [-1.25, 0.001]}, {s: -1.249, mx: 0.001, first: -1.25, doubled: [-2.5, 0.002], big: [], has5: false}],
+    [{xs: [100]}, {s: 100, mx: 100, first: 100, doubled: [200], big: [100], has5: false}],
+    [{xs: [5.0, 5]}, {s: 10, mx: 5, first: 5, doubled: [10, 10], big: [], has5: true}],
+    [{xs: [0, 0, 0, 0, 0, 0, 0, 0, 11]}, {s: 11, mx: 11, first: 0, doubled: [0, 0, 0, 0, 0, 0, 0, 0, 22], big: [11], has5: false}],
+  ],
+}
+
+{
+  name: "lists of numbers with empty and missing rows, defaulted",
+  graph: {
+    nodes: [{expression: "e", fields: {s: "sum(xs ?? [])", n: "len(xs ?? [])", avg: "len(xs ?? []) > 0 ? avg(xs) : null"}}],
+  },
+  cases: [
+    [{xs: [2, 4]}, {s: 6, n: 2, avg: 3}],
+    [{xs: []}, {s: 0, n: 0}],
+    [{}, {s: 0, n: 0}],
+    [{xs: [1]}, {s: 1, n: 1, avg: 1}],
+    [{xs: null}, {s: 0, n: 0}],
+    [{xs: [0.1, 0.2, 0.3]}, {s: 0.6, n: 3, avg: 0.2}],
+    [{xs: [12345678901234567890, 1]}, {s: 12345678901234567891, n: 2, avg: 6172839450617283945.5}],
+  ],
+}
+
+{
+  name: "lists of booleans with empty and missing rows",
+  graph: {
+    nodes: [{expression: "e", fields: {any: "some(flags ?? [], #)", n: "count(flags ?? [], #)", first: "(flags ?? [])[0]"}}],
+  },
+  cases: [
+    [{flags: [true, false]}, {any: true, n: 1, first: true}],
+    [{flags: [false, false]}, {any: false, n: 0, first: false}],
+    [{flags: []}, {any: false, n: 0}],
+    [{}, {any: false, n: 0}],
+    [{flags: [false, false, true, true, true]}, {any: true, n: 3, first: false}],
+    [{flags: [true]}, {any: true, n: 1, first: true}],
+  ],
+}
+
+{
+  name: "a list column copied out unchanged, next to a scalar column",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {n: "len(xs)"}}],
+  },
+  cases: [
+    [{xs: [1, 2], k: "a"}, {xs: [1, 2], k: "a", n: 2}],
+    [{xs: [], k: "b"}, {xs: [], k: "b", n: 0}],
+    [{xs: [0.5]}, {xs: [0.5], n: 1}],
+    [{xs: [3, 3, 3], k: ""}, {xs: [3, 3, 3], k: "", n: 3}],
+  ],
+}
+
+{
+  name: "a list field that holds numbers in some rows and strings in others",
+  graph: {
+    nodes: [{expression: "e", fields: {t: "map(xs, type(#))", n: "len(xs)"}}],
+  },
+  cases: [
+    [{xs: [1, 2]}, {t: ["number", "number"], n: 2}],
+    [{xs: ["a"]}, {t: ["string"], n: 1}],
+    [{xs: []}, {t: [], n: 0}],
+    [{xs: [true]}, {t: ["bool"], n: 1}],
+    [{xs: [1, "a"]}, {t: ["number", "string"], n: 2}],
+  ],
+}

@@ -1,0 +1,229 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request",
+   "content": {
+    "schema": "{\"type\": \"object\", \"required\": [\"customer\"], \"properties\": {\"customer\": {\"type\": \"object\", \"required\": [\"age\", \"tier\"], \"additionalProperties\": false, \"properties\": {\"age\": {\"type\": \"integer\"}, \"tier\": {\"type\": \"string\", \"enum\": [\"gold\", \"silver\"]}, \"name\": {\"type\": \"string\"}, \"active\": {\"type\": \"boolean\"}, \"tags\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"address\": {\"type\": \"object\", \"properties\": {\"zip\": {\"type\": \"string\"}, \"floor\": {\"type\": \"number\"}}}}}, \"order\": {\"type\": \"object\", \"properties\": {\"total\": {\"type\": \"number\"}}}, \"note\": {\"title\": \"free\"}}}"
+   }
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Calc",
+   "content": {
+    "passThrough": true,
+    "expressions": [
+     {
+      "id": "a",
+      "key": "doubled",
+      "value": "customer.age * 2"
+     },
+     {
+      "id": "b",
+      "key": "vip",
+      "value": "customer.tier == 'gold'"
+     }
+    ]
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "e1",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold",
+     "name": "A",
+     "active": true,
+     "tags": [
+      "x",
+      "y"
+     ],
+     "address": {
+      "zip": "1",
+      "floor": 2.5
+     }
+    },
+    "order": {
+     "total": 10
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "silver"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30.5,
+     "tier": "gold"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "bronze"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "tier": "gold"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold",
+     "extra": 1
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": "30",
+     "tier": "gold"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold",
+     "active": "yes"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold",
+     "tags": [
+      "x",
+      1
+     ]
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold",
+     "address": {
+      "zip": 5
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold"
+    },
+    "order": {
+     "total": "x"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 30,
+     "tier": "gold"
+    },
+    "note": {
+     "anything": [
+      1,
+      2
+     ]
+    }
+   }
+  },
+  {
+   "input": {
+    "order": {
+     "total": 1
+    }
+   }
+  },
+  {
+   "input": {}
+  },
+  {
+   "input": {
+    "customer": null
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": null,
+     "tier": "gold"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 4.0,
+     "tier": "gold"
+    }
+   }
+  }
+ ]
+}

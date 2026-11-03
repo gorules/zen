@@ -1,0 +1,930 @@
+// Dates in policies. A `date` property accepts any text the date parser reads (RFC 3339, ISO
+// date, `YYYY-MM-DD HH:MM[:SS]`, slash and compact forms, year-month and year); the value is
+// converted to a date before evaluation and keeps its source text, so an input date (or a plain
+// copy of it) is written back exactly as it came in. A date computed by an operation is written
+// in its full RFC 3339 form. Evaluation time is fixed at 2025-03-20T10:15:30Z, time zone UTC.
+// Chapters 01 and 17 cover the basics (formats rejected, age from a birth date, a table over a
+// date column); this chapter goes wider.
+
+// ---------------------------------------------------------------------------------------------
+// Accepted text shapes. Every shape the date parser reads is a valid `date` input; the output
+// keeps the text unchanged.
+
+{
+  name: "a date property accepts every parseable text shape",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.year", value: "event.at.year()"},
+      {expression: "event.day", value: "event.at.day()"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20"}}, {event: {at: "2025-03-20", year: 2025, day: 20}}],
+    [{event: {at: "2025-03-20 14:30"}}, {event: {at: "2025-03-20 14:30", year: 2025, day: 20}}],
+    [{event: {at: "2025-03-20 14:30:45"}}, {event: {at: "2025-03-20 14:30:45", year: 2025, day: 20}}],
+    [{event: {at: "2025-03-20T14:30:45Z"}}, {event: {at: "2025-03-20T14:30:45Z", year: 2025, day: 20}}],
+    [{event: {at: "2025-03-20T14:30:45.123Z"}}, {event: {at: "2025-03-20T14:30:45.123Z", year: 2025, day: 20}}],
+    [{event: {at: "2025-03-20T14:30"}}, {event: {at: "2025-03-20T14:30", year: 2025, day: 20}}],
+    [{event: {at: "2025/03/20"}}, {event: {at: "2025/03/20", year: 2025, day: 20}}],
+    [{event: {at: "20250320"}}, {event: {at: "20250320", year: 2025, day: 20}}],
+    [{event: {at: "2025-03"}}, {event: {at: "2025-03", year: 2025, day: 1}}],
+    [{event: {at: "2025"}}, {event: {at: "2025", year: 2025, day: 1}}],
+  ],
+}
+
+{
+  name: "an offset in the input names an instant shown in the evaluation zone",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.day", value: "event.at.day()"},
+      {expression: "event.hour", value: "event.at.hour()"},
+      {expression: "event.utc", value: "event.at.format('%Y-%m-%dT%H:%M')"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20T23:30:00-02:00"}}, {event: {at: "2025-03-20T23:30:00-02:00", day: 21, hour: 1, utc: "2025-03-21T01:30"}}],
+    [{event: {at: "2025-03-20T01:00:00+02:00"}}, {event: {at: "2025-03-20T01:00:00+02:00", day: 19, hour: 23, utc: "2025-03-19T23:00"}}],
+    [{event: {at: "2025-03-20T12:00:00+00:00"}}, {event: {at: "2025-03-20T12:00:00+00:00", day: 20, hour: 12, utc: "2025-03-20T12:00"}}],
+    [{event: {at: "2025-03-20T12:00:00Z"}}, {event: {at: "2025-03-20T12:00:00Z", day: 20, hour: 12, utc: "2025-03-20T12:00"}}],
+  ],
+}
+
+{
+  name: "malformed date text is rejected before evaluation",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [{expression: "event.year", value: "event.at.year()"}],
+  },
+  cases: [
+    [{event: {at: "2025-02-30"}}, "!error: InputValidationFailed"],
+    [{event: {at: "2025-13-01"}}, "!error: InputValidationFailed"],
+    [{event: {at: "2025-03-20 24:00"}}, "!error: InputValidationFailed"],
+    [{event: {at: "2025-03-20 12:60"}}, "!error: InputValidationFailed"],
+    [{event: {at: "20-03-2025"}}, "!error: InputValidationFailed"],
+    [{event: {at: "03/20/2025"}}, "!error: InputValidationFailed"],
+    [{event: {at: "2025-03-20T"}}, "!error: InputValidationFailed"],
+    [{event: {at: "today"}}, "!error: InputValidationFailed"],
+    [{event: {at: "Europe/Berlin"}}, "!error: InputValidationFailed"],
+    [{event: {at: "March 20, 2025"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "non-string date values are rejected",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [{expression: "event.year", value: "event.at.year()"}],
+  },
+  cases: [
+    [{event: {at: 1742465730000}}, "!error: InputValidationFailed"],
+    [{event: {at: 0}}, "!error: InputValidationFailed"],
+    [{event: {at: false}}, "!error: InputValidationFailed"],
+    [{event: {at: ["2025-03-20"]}}, "!error: InputValidationFailed"],
+    [{event: {at: {date: "2025-03-20"}}}, "!error: InputValidationFailed"],
+    [{event: {at: "2025-03-20"}}, {event: {at: "2025-03-20", year: 2025}}],
+  ],
+}
+
+{
+  name: "leap days validate only in leap years",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [{expression: "event.next", value: "event.at.add(1, 'day').format('%m-%d')"}],
+  },
+  cases: [
+    [{event: {at: "2024-02-29"}}, {event: {at: "2024-02-29", next: "03-01"}}],
+    [{event: {at: "2000-02-29"}}, {event: {at: "2000-02-29", next: "03-01"}}],
+    [{event: {at: "2023-02-29"}}, "!error: InputValidationFailed"],
+    [{event: {at: "1900-02-29"}}, "!error: InputValidationFailed"],
+    [{event: {at: "2023-02-28"}}, {event: {at: "2023-02-28", next: "03-01"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Output form. A plain copy of an input date keeps the source text; anything that builds a new
+// date (d(), add, startOf, ...) writes the full RFC 3339 form in the evaluation zone.
+
+{
+  name: "copies keep the source text, operations write the full form",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.copy", value: "event.at"},
+      {expression: "event.wrapped", value: "d(event.at)"},
+      {expression: "event.plusZero", value: "event.at.add(0, 'day')"},
+      {expression: "event.dayStart", value: "event.at.startOf('day')"},
+    ],
+  },
+  cases: [
+    [
+      {event: {at: "2025-03-20"}},
+      {event: {at: "2025-03-20", copy: "2025-03-20", wrapped: "2025-03-20T00:00:00Z", plusZero: "2025-03-20T00:00:00Z", dayStart: "2025-03-20T00:00:00Z"}},
+    ],
+    [
+      {event: {at: "2025-03-20 14:30"}},
+      {event: {at: "2025-03-20 14:30", copy: "2025-03-20 14:30", wrapped: "2025-03-20T14:30:00Z", plusZero: "2025-03-20T14:30:00Z", dayStart: "2025-03-20T00:00:00Z"}},
+    ],
+    [
+      {event: {at: "20250320"}},
+      {event: {at: "20250320", copy: "20250320", wrapped: "2025-03-20T00:00:00Z", plusZero: "2025-03-20T00:00:00Z", dayStart: "2025-03-20T00:00:00Z"}},
+    ],
+    [
+      {event: {at: "2025-03-20T23:30:00-02:00"}},
+      {event: {at: "2025-03-20T23:30:00-02:00", copy: "2025-03-20T23:30:00-02:00", wrapped: "2025-03-21T01:30:00Z", plusZero: "2025-03-21T01:30:00Z", dayStart: "2025-03-21T00:00:00Z"}},
+    ],
+  ],
+}
+
+{
+  name: "dates inside computed objects and lists",
+  policy: {
+    models: {event: {start: "date", end: "date"}},
+    blocks: [
+      {expression: "event.span", value: "{from: event.start, to: event.end}"},
+      {expression: "event.both", value: "[event.start, event.end]"},
+      {expression: "event.shifted", value: "{from: event.start.add(1, 'day')}"},
+    ],
+  },
+  cases: [
+    [
+      {event: {start: "2025-01-01", end: "2025-01-31"}},
+      {event: {start: "2025-01-01", end: "2025-01-31", span: {from: "2025-01-01", to: "2025-01-31"}, both: ["2025-01-01", "2025-01-31"], shifted: {from: "2025-01-02T00:00:00Z"}}},
+    ],
+    [
+      {event: {start: "2025-01-01T08:00:00Z", end: "2025/02/01"}},
+      {event: {start: "2025-01-01T08:00:00Z", end: "2025/02/01", span: {from: "2025-01-01T08:00:00Z", to: "2025/02/01"}, both: ["2025-01-01T08:00:00Z", "2025/02/01"], shifted: {from: "2025-01-02T08:00:00Z"}}},
+    ],
+  ],
+}
+
+{
+  name: "date literals and now in computed values",
+  policy: {
+    models: {event: {name: "string"}},
+    blocks: [
+      {expression: "event.now", value: "d()"},
+      {expression: "event.fixed", value: "d('2025-12-31')"},
+      {expression: "event.today", value: "d().startOf('day')"},
+      {expression: "event.label", value: "event.name + ' @ ' + d().format('%Y-%m-%d')"},
+    ],
+  },
+  cases: [
+    [{event: {name: "a"}}, {event: {name: "a", now: "2025-03-20T10:15:30Z", fixed: "2025-12-31T00:00:00Z", today: "2025-03-20T00:00:00Z", label: "a @ 2025-03-20"}}],
+    [{event: {name: ""}}, {event: {name: "", now: "2025-03-20T10:15:30Z", fixed: "2025-12-31T00:00:00Z", today: "2025-03-20T00:00:00Z", label: " @ 2025-03-20"}}],
+  ],
+}
+
+{
+  name: "formatting dates into strings",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.iso", value: "event.at.format('%Y-%m-%d')"},
+      {expression: "event.time", value: "event.at.format('%H:%M:%S')"},
+      {expression: "event.long", value: "event.at.format('%d %B %Y')"},
+      {expression: "event.weekday", value: "event.at.format('%A')"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20"}}, {event: {at: "2025-03-20", iso: "2025-03-20", time: "00:00:00", long: "20 March 2025", weekday: "Thursday"}}],
+    [{event: {at: "2025-12-25 18:05:09"}}, {event: {at: "2025-12-25 18:05:09", iso: "2025-12-25", time: "18:05:09", long: "25 December 2025", weekday: "Thursday"}}],
+    [{event: {at: "2000-01-01T00:00:00Z"}}, {event: {at: "2000-01-01T00:00:00Z", iso: "2000-01-01", time: "00:00:00", long: "01 January 2000", weekday: "Saturday"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Comparisons. Dates compare by instant, whatever text shape they came in.
+
+{
+  name: "dates in different shapes compare by instant",
+  policy: {
+    models: {pair: {a: "date", b: "date"}},
+    blocks: [
+      {expression: "pair.eq", value: "pair.a == pair.b"},
+      {expression: "pair.lt", value: "pair.a < pair.b"},
+      {expression: "pair.gte", value: "pair.a >= pair.b"},
+    ],
+  },
+  cases: [
+    [{pair: {a: "2025-03-20", b: "2025-03-20T00:00:00Z"}}, {pair: {a: "2025-03-20", b: "2025-03-20T00:00:00Z", eq: true, lt: false, gte: true}}],
+    [{pair: {a: "2025-03-20", b: "20250320"}}, {pair: {a: "2025-03-20", b: "20250320", eq: true, lt: false, gte: true}}],
+    [{pair: {a: "2025-03-20T02:00:00+02:00", b: "2025-03-20"}}, {pair: {a: "2025-03-20T02:00:00+02:00", b: "2025-03-20", eq: true, lt: false, gte: true}}],
+    [{pair: {a: "2025-03-20", b: "2025-03-20 00:00:01"}}, {pair: {a: "2025-03-20", b: "2025-03-20 00:00:01", eq: false, lt: true, gte: false}}],
+    [{pair: {a: "2025-03", b: "2025-02-28"}}, {pair: {a: "2025-03", b: "2025-02-28", eq: false, lt: false, gte: true}}],
+    [{pair: {a: "2024", b: "2025"}}, {pair: {a: "2024", b: "2025", eq: false, lt: true, gte: false}}],
+  ],
+}
+
+{
+  name: "unit-aware comparisons",
+  policy: {
+    models: {pair: {a: "date", b: "date"}},
+    blocks: [
+      {expression: "pair.sameDay", value: "pair.a.isSame(pair.b, 'day')"},
+      {expression: "pair.sameMonth", value: "pair.a.isSame(pair.b, 'month')"},
+      {expression: "pair.beforeDay", value: "pair.a.isBefore(pair.b, 'day')"},
+      {expression: "pair.afterYear", value: "pair.a.isAfter(pair.b, 'year')"},
+    ],
+  },
+  cases: [
+    [{pair: {a: "2025-03-20 08:00", b: "2025-03-20 23:00"}}, {pair: {a: "2025-03-20 08:00", b: "2025-03-20 23:00", sameDay: true, sameMonth: true, beforeDay: false, afterYear: false}}],
+    [{pair: {a: "2025-03-19 23:59", b: "2025-03-20 00:00"}}, {pair: {a: "2025-03-19 23:59", b: "2025-03-20 00:00", sameDay: false, sameMonth: true, beforeDay: true, afterYear: false}}],
+    [{pair: {a: "2026-01-01", b: "2025-12-31"}}, {pair: {a: "2026-01-01", b: "2025-12-31", sameDay: false, sameMonth: false, beforeDay: false, afterYear: true}}],
+    [{pair: {a: "2025-02-28", b: "2025-03-01"}}, {pair: {a: "2025-02-28", b: "2025-03-01", sameDay: false, sameMonth: false, beforeDay: true, afterYear: false}}],
+  ],
+}
+
+{
+  name: "comparing with the fixed evaluation time",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.past", value: "event.at < d()"},
+      {expression: "event.today", value: "event.at.isSame(d(), 'day')"},
+      {expression: "event.thisMonth", value: "event.at.isSame(d(), 'month')"},
+      {expression: "event.inDays", value: "event.at.diff(d().startOf('day'), 'day')"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20T10:15:29Z"}}, {event: {at: "2025-03-20T10:15:29Z", past: true, today: true, thisMonth: true, inDays: 0}}],
+    [{event: {at: "2025-03-20T10:15:31Z"}}, {event: {at: "2025-03-20T10:15:31Z", past: false, today: true, thisMonth: true, inDays: 0}}],
+    [{event: {at: "2025-03-19"}}, {event: {at: "2025-03-19", past: true, today: false, thisMonth: true, inDays: -1}}],
+    [{event: {at: "2025-04-01"}}, {event: {at: "2025-04-01", past: false, today: false, thisMonth: false, inDays: 12}}],
+    [{event: {at: "2024-03-20"}}, {event: {at: "2024-03-20", past: true, today: false, thisMonth: false, inDays: -365}}],
+  ],
+}
+
+{
+  name: "a date between two bounds",
+  policy: {
+    models: {policy: {start: "date", end: "date", claim: "date"}},
+    blocks: [
+      {expression: "policy.covered", value: "policy.claim >= policy.start and policy.claim <= policy.end"},
+      {expression: "policy.inRange", value: "policy.claim in [policy.start..policy.end]"},
+    ],
+  },
+  cases: [
+    [{policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-06-15"}}, {policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-06-15", covered: true, inRange: true}}],
+    [{policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-01-01"}}, {policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-01-01", covered: true, inRange: true}}],
+    [{policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-12-31"}}, {policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-12-31", covered: true, inRange: true}}],
+    [{policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-12-31 00:00:01"}}, {policy: {start: "2025-01-01", end: "2025-12-31", claim: "2025-12-31 00:00:01", covered: false, inRange: false}}],
+    [{policy: {start: "2025-01-01", end: "2025-12-31", claim: "2024-12-31"}}, {policy: {start: "2025-01-01", end: "2025-12-31", claim: "2024-12-31", covered: false, inRange: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arithmetic. add/sub with a unit or a duration string, diff in units, start/end of units.
+
+{
+  name: "adding and subtracting with units",
+  policy: {
+    models: {loan: {start: "date"}},
+    blocks: [
+      {expression: "loan.firstDue", value: "loan.start.add(1, 'month')"},
+      {expression: "loan.maturity", value: "loan.start.add(5, 'year')"},
+      {expression: "loan.grace", value: "loan.start.add(14, 'day')"},
+      {expression: "loan.notice", value: "loan.start.sub(2, 'week')"},
+    ],
+  },
+  cases: [
+    [{loan: {start: "2025-01-15"}}, {loan: {start: "2025-01-15", firstDue: "2025-02-15T00:00:00Z", maturity: "2030-01-15T00:00:00Z", grace: "2025-01-29T00:00:00Z", notice: "2025-01-01T00:00:00Z"}}],
+    [{loan: {start: "2025-01-31"}}, {loan: {start: "2025-01-31", firstDue: "2025-02-28T00:00:00Z", maturity: "2030-01-31T00:00:00Z", grace: "2025-02-14T00:00:00Z", notice: "2025-01-17T00:00:00Z"}}],
+    [{loan: {start: "2024-12-20 09:30"}}, {loan: {start: "2024-12-20 09:30", firstDue: "2025-01-20T09:30:00Z", maturity: "2029-12-20T09:30:00Z", grace: "2025-01-03T09:30:00Z", notice: "2024-12-06T09:30:00Z"}}],
+    [{loan: {start: "2024-03-01"}}, {loan: {start: "2024-03-01", firstDue: "2024-04-01T00:00:00Z", maturity: "2029-03-01T00:00:00Z", grace: "2024-03-15T00:00:00Z", notice: "2024-02-16T00:00:00Z"}}],
+  ],
+}
+
+{
+  name: "an input number of days drives the shift",
+  policy: {
+    models: {invoice: {issued: "date", terms: "number"}},
+    blocks: [
+      {expression: "invoice.due", value: "invoice.issued.add(invoice.terms, 'day')"},
+      {expression: "invoice.overdue", value: "invoice.due < d()"},
+    ],
+  },
+  cases: [
+    [{invoice: {issued: "2025-02-01", terms: 30}}, {invoice: {issued: "2025-02-01", terms: 30, due: "2025-03-03T00:00:00Z", overdue: true}}],
+    [{invoice: {issued: "2025-03-01", terms: 30}}, {invoice: {issued: "2025-03-01", terms: 30, due: "2025-03-31T00:00:00Z", overdue: false}}],
+    [{invoice: {issued: "2025-03-20", terms: 0}}, {invoice: {issued: "2025-03-20", terms: 0, due: "2025-03-20T00:00:00Z", overdue: true}}],
+    [{invoice: {issued: "2025-04-01", terms: -15}}, {invoice: {issued: "2025-04-01", terms: -15, due: "2025-03-17T00:00:00Z", overdue: true}}],
+    [{invoice: {issued: "2025-03-20"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "duration strings from input",
+  policy: {
+    models: {plan: {start: "date", term: "string"}},
+    blocks: [{expression: "plan.end", value: "plan.start.add(plan.term)"}],
+  },
+  cases: [
+    [{plan: {start: "2025-01-01", term: "30d"}}, {plan: {start: "2025-01-01", term: "30d", end: "2025-01-31T00:00:00Z"}}],
+    [{plan: {start: "2025-01-01", term: "1y"}}, {plan: {start: "2025-01-01", term: "1y", end: "2026-01-01T00:00:00Z"}}],
+    [{plan: {start: "2025-01-01", term: "1M"}}, {plan: {start: "2025-01-01", term: "1M", end: "2025-02-01T00:00:00Z"}}],
+    [{plan: {start: "2025-01-01", term: "2h 30m"}}, {plan: {start: "2025-01-01", term: "2h 30m", end: "2025-01-01T02:30:00Z"}}],
+    [{plan: {start: "2025-01-01", term: "1q"}}, {plan: {start: "2025-01-01", term: "1q", end: "2025-04-01T00:00:00Z"}}],
+    [{plan: {start: "2025-01-01", term: "soon"}}, "!error"],
+  ],
+}
+
+{
+  name: "differences in several units",
+  policy: {
+    models: {stay: {checkIn: "date", checkOut: "date"}},
+    blocks: [
+      {expression: "stay.nights", value: "stay.checkOut.diff(stay.checkIn, 'day')"},
+      {expression: "stay.hours", value: "stay.checkOut.diff(stay.checkIn, 'hour')"},
+      {expression: "stay.months", value: "stay.checkOut.diff(stay.checkIn, 'month')"},
+    ],
+  },
+  cases: [
+    [{stay: {checkIn: "2025-03-01", checkOut: "2025-03-08"}}, {stay: {checkIn: "2025-03-01", checkOut: "2025-03-08", nights: 7, hours: 168, months: 0}}],
+    [{stay: {checkIn: "2025-03-01 15:00", checkOut: "2025-03-02 11:00"}}, {stay: {checkIn: "2025-03-01 15:00", checkOut: "2025-03-02 11:00", nights: 0, hours: 20, months: 0}}],
+    [{stay: {checkIn: "2025-01-31", checkOut: "2025-03-01"}}, {stay: {checkIn: "2025-01-31", checkOut: "2025-03-01", nights: 29, hours: 696, months: 1}}],
+    [{stay: {checkIn: "2025-03-08", checkOut: "2025-03-01"}}, {stay: {checkIn: "2025-03-08", checkOut: "2025-03-01", nights: -7, hours: -168, months: 0}}],
+    [{stay: {checkIn: "2024-02-28", checkOut: "2024-03-01"}}, {stay: {checkIn: "2024-02-28", checkOut: "2024-03-01", nights: 2, hours: 48, months: 0}}],
+  ],
+}
+
+{
+  name: "start and end of a period",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.monthStart", value: "event.at.startOf('month')"},
+      {expression: "event.monthEnd", value: "event.at.endOf('month').format('%Y-%m-%d')"},
+      {expression: "event.yearStart", value: "event.at.startOf('year')"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20 14:30"}}, {event: {at: "2025-03-20 14:30", monthStart: "2025-03-01T00:00:00Z", monthEnd: "2025-03-31", yearStart: "2025-01-01T00:00:00Z"}}],
+    [{event: {at: "2024-02-10"}}, {event: {at: "2024-02-10", monthStart: "2024-02-01T00:00:00Z", monthEnd: "2024-02-29", yearStart: "2024-01-01T00:00:00Z"}}],
+    [{event: {at: "2025-02-10"}}, {event: {at: "2025-02-10", monthStart: "2025-02-01T00:00:00Z", monthEnd: "2025-02-28", yearStart: "2025-01-01T00:00:00Z"}}],
+    [{event: {at: "2025-12-31T23:59:59Z"}}, {event: {at: "2025-12-31T23:59:59Z", monthStart: "2025-12-01T00:00:00Z", monthEnd: "2025-12-31", yearStart: "2025-01-01T00:00:00Z"}}],
+  ],
+}
+
+{
+  name: "a computed date feeds later blocks",
+  policy: {
+    models: {subscription: {started: "date", months: "number"}},
+    blocks: [
+      {expression: "subscription.renews", value: "subscription.started.add(subscription.months, 'month')"},
+      {expression: "subscription.daysLeft", value: "subscription.renews.diff(d().startOf('day'), 'day')"},
+      {expression: "subscription.expiringSoon", value: "subscription.daysLeft >= 0 and subscription.daysLeft <= 30"},
+      {expression: "subscription.renewYear", value: "subscription.renews.year()"},
+    ],
+  },
+  cases: [
+    [{subscription: {started: "2024-04-01", months: 12}}, {subscription: {started: "2024-04-01", months: 12, renews: "2025-04-01T00:00:00Z", daysLeft: 12, expiringSoon: true, renewYear: 2025}}],
+    [{subscription: {started: "2024-04-01", months: 24}}, {subscription: {started: "2024-04-01", months: 24, renews: "2026-04-01T00:00:00Z", daysLeft: 377, expiringSoon: false, renewYear: 2026}}],
+    [{subscription: {started: "2024-03-01", months: 12}}, {subscription: {started: "2024-03-01", months: 12, renews: "2025-03-01T00:00:00Z", daysLeft: -19, expiringSoon: false, renewYear: 2025}}],
+    [{subscription: {started: "2025-03-20", months: 0}}, {subscription: {started: "2025-03-20", months: 0, renews: "2025-03-20T00:00:00Z", daysLeft: 0, expiringSoon: true, renewYear: 2025}}],
+  ],
+}
+
+{
+  name: "date parts",
+  policy: {
+    models: {event: {at: "date"}},
+    blocks: [
+      {expression: "event.parts", value: "[event.at.year(), event.at.month(), event.at.day(), event.at.hour(), event.at.minute(), event.at.second()]"},
+      {expression: "event.weekday", value: "event.at.weekday()"},
+      {expression: "event.quarter", value: "event.at.quarter()"},
+      {expression: "event.dayOfYear", value: "event.at.dayOfYear()"},
+    ],
+  },
+  cases: [
+    [{event: {at: "2025-03-20 14:30:45"}}, {event: {at: "2025-03-20 14:30:45", parts: [2025, 3, 20, 14, 30, 45], weekday: 4, quarter: 1, dayOfYear: 79}}],
+    [{event: {at: "2025-12-31"}}, {event: {at: "2025-12-31", parts: [2025, 12, 31, 0, 0, 0], weekday: 3, quarter: 4, dayOfYear: 365}}],
+    [{event: {at: "2024-12-31"}}, {event: {at: "2024-12-31", parts: [2024, 12, 31, 0, 0, 0], weekday: 2, quarter: 4, dayOfYear: 366}}],
+    [{event: {at: "2025-03-23"}}, {event: {at: "2025-03-23", parts: [2025, 3, 23, 0, 0, 0], weekday: 7, quarter: 1, dayOfYear: 82}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optional dates. Missing and null read as null; `??` supplies a default date.
+
+{
+  name: "an optional date defaults to now",
+  policy: {
+    models: {order: {placed: "date?"}},
+    blocks: [
+      {expression: "order.effective", value: "order.placed ?? d()"},
+      {expression: "order.year", value: "(order.placed ?? d()).year()"},
+    ],
+  },
+  cases: [
+    [{order: {}}, {order: {effective: "2025-03-20T10:15:30Z", year: 2025}}],
+    [{order: {placed: null}}, {order: {placed: null, effective: "2025-03-20T10:15:30Z", year: 2025}}],
+    [{order: {placed: "2020-06-01"}}, {order: {placed: "2020-06-01", effective: "2020-06-01", year: 2020}}],
+    [{order: {placed: "2020-06-01T12:00:00Z"}}, {order: {placed: "2020-06-01T12:00:00Z", effective: "2020-06-01T12:00:00Z", year: 2020}}],
+  ],
+}
+
+{
+  name: "an optional end date: open-ended ranges",
+  policy: {
+    models: {contract: {start: "date", end: "date?"}},
+    blocks: [
+      {expression: "contract.open", value: "contract.end == null"},
+      {expression: "contract.active", value: "contract.start <= d() and (contract.end ?? d()) >= d()"},
+    ],
+  },
+  cases: [
+    [{contract: {start: "2025-01-01"}}, {contract: {start: "2025-01-01", open: true, active: true}}],
+    [{contract: {start: "2025-01-01", end: null}}, {contract: {start: "2025-01-01", end: null, open: true, active: true}}],
+    [{contract: {start: "2025-01-01", end: "2025-02-01"}}, {contract: {start: "2025-01-01", end: "2025-02-01", open: false, active: false}}],
+    [{contract: {start: "2025-01-01", end: "2025-12-31"}}, {contract: {start: "2025-01-01", end: "2025-12-31", open: false, active: true}}],
+    [{contract: {start: "2025-04-01"}}, {contract: {start: "2025-04-01", open: true, active: false}}],
+    [{contract: {end: "2025-12-31"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a null check does not narrow an optional date inside `or`",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {contract: {start: "date", end: "date?"}},
+    blocks: [{expression: "contract.active", value: "contract.start <= d() and (contract.end == null or contract.end >= d())"}],
+  },
+  cases: [
+    {input: {contract: {start: "2025-01-01"}}, output: {contract: {start: "2025-01-01", active: true}}, note: "question: the type checker reports TYPE_MISMATCH for `end >= d()` although `end == null or` guards it, so DecisionEngine refuses the policy"},
+    [{contract: {start: "2025-01-01", end: "2025-02-01"}}, {contract: {start: "2025-01-01", end: "2025-02-01", active: false}}],
+    [{contract: {start: "2025-01-01", end: "2025-12-31"}}, {contract: {start: "2025-01-01", end: "2025-12-31", active: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Date arrays: every item is converted; closures see dates.
+
+{
+  name: "closures over a date array",
+  policy: {
+    models: {customer: {logins: "date[]"}},
+    blocks: [
+      {expression: "customer.recent", value: "count(customer.logins, #.isAfter(d().sub(7, 'day')))"},
+      {expression: "customer.years", value: "map(customer.logins, #.year())"},
+      {expression: "customer.anyToday", value: "some(customer.logins, #.isSame(d(), 'day'))"},
+    ],
+  },
+  cases: [
+    [{customer: {logins: []}}, {customer: {logins: [], recent: 0, years: [], anyToday: false}}],
+    [{customer: {logins: ["2025-03-19", "2025-03-01", "2024-12-31"]}}, {customer: {logins: ["2025-03-19", "2025-03-01", "2024-12-31"], recent: 1, years: [2025, 2025, 2024], anyToday: false}}],
+    [{customer: {logins: ["2025-03-20 08:00", "2025-03-14T00:00:00Z"]}}, {customer: {logins: ["2025-03-20 08:00", "2025-03-14T00:00:00Z"], recent: 2, years: [2025, 2025], anyToday: true}}],
+    [{customer: {logins: ["2025-03-20", "bad"]}}, "!error: InputValidationFailed"],
+    [{customer: {logins: "2025-03-20"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "filtering a date array keeps the source text",
+  policy: {
+    models: {customer: {logins: "date[]"}},
+    blocks: [
+      {expression: "customer.thisYear", value: "filter(customer.logins, #.year() == 2025)"},
+      {expression: "customer.first", value: "customer.logins[0]"},
+    ],
+  },
+  cases: [
+    [{customer: {logins: ["2025-01-02", "2024-05-05", "2025/03/01"]}}, {customer: {logins: ["2025-01-02", "2024-05-05", "2025/03/01"], thisYear: ["2025-01-02", "2025/03/01"], first: "2025-01-02"}}],
+    [{customer: {logins: ["2024-05-05"]}}, {customer: {logins: ["2024-05-05"], thisYear: [], first: "2024-05-05"}}],
+    [{customer: {logins: []}}, {customer: {logins: [], thisYear: [], first: null}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates on related entities: members of an array relationship, single relationships, nested
+// relationships and referenced pool entities are all converted.
+
+{
+  name: "per-member date arithmetic",
+  policy: {
+    models: {loan: {installments: "installment[]"}, installment: {due: "date", amount: "number"}},
+    blocks: [
+      {expression: "installment.daysLate", value: "max([0, d().startOf('day').diff(installment.due, 'day')])"},
+      {expression: "installment.penalty", value: "installment.daysLate * 0.5"},
+      {expression: "loan.penalties", value: "sum(map(loan.installments, #.penalty))"},
+    ],
+  },
+  cases: [
+    [{loan: {installments: []}}, {loan: {installments: [], penalties: 0}}],
+    [
+      {loan: {installments: [{due: "2025-03-10", amount: 100}, {due: "2025-04-10", amount: 100}]}},
+      {loan: {installments: [{due: "2025-03-10", amount: 100, daysLate: 10, penalty: 5}, {due: "2025-04-10", amount: 100, daysLate: 0, penalty: 0}], penalties: 5}},
+    ],
+    [
+      {loan: {installments: [{due: "2025-02-20", amount: 1}, {due: "2025-03-19 23:00", amount: 1}]}},
+      {loan: {installments: [{due: "2025-02-20", amount: 1, daysLate: 28, penalty: 14}, {due: "2025-03-19 23:00", amount: 1, daysLate: 0, penalty: 0}], penalties: 14}},
+    ],
+    [{loan: {installments: [{due: "never", amount: 1}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a member compares its date with a parent date",
+  policy: {
+    models: {project: {deadline: "date", tasks: "task[]"}, task: {done: "date"}},
+    blocks: [
+      {expression: "task.late", value: "task.done > project.deadline"},
+      {expression: "project.lateCount", value: "count(project.tasks, #.late)"},
+    ],
+  },
+  cases: [
+    [
+      {project: {deadline: "2025-03-31", tasks: [{done: "2025-03-30"}, {done: "2025-04-02"}, {done: "2025-03-31"}]}},
+      {project: {deadline: "2025-03-31", tasks: [{done: "2025-03-30", late: false}, {done: "2025-04-02", late: true}, {done: "2025-03-31", late: false}], lateCount: 1}},
+    ],
+    [
+      {project: {deadline: "2025-03-31T12:00:00Z", tasks: [{done: "2025-03-31 12:00:01"}]}},
+      {project: {deadline: "2025-03-31T12:00:00Z", tasks: [{done: "2025-03-31 12:00:01", late: true}], lateCount: 1}},
+    ],
+    [{project: {deadline: "2025-03-31", tasks: []}}, {project: {deadline: "2025-03-31", tasks: [], lateCount: 0}}],
+  ],
+}
+
+{
+  name: "dates on a nested single relationship are converted",
+  policy: {
+    models: {customer: {account: "account"}, account: {owner: "person"}, person: {born: "date"}},
+    blocks: [{expression: "customer.ownerAge", value: "d().diff(customer.account.owner.born, 'year')"}],
+  },
+  cases: [
+    [{customer: {account: {owner: {born: "1990-05-01"}}}}, {customer: {account: {owner: {born: "1990-05-01"}}, ownerAge: 34}}],
+    [{customer: {account: {owner: {born: "2000-03-20"}}}}, {customer: {account: {owner: {born: "2000-03-20"}}, ownerAge: 25}}],
+    [{customer: {account: {owner: {born: "2000-03-21"}}}}, {customer: {account: {owner: {born: "2000-03-21"}}, ownerAge: 24}}],
+    [{customer: {account: {owner: {born: "x"}}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "dates on referenced pool entities are converted",
+  policy: {
+    models: {booking: {room: "&room"}, room: {id: "string", availableFrom: "date"}},
+    blocks: [
+      {expression: "booking.ready", value: "booking.room.availableFrom <= d()"},
+      {expression: "booking.from", value: "booking.room.availableFrom"},
+    ],
+  },
+  cases: [
+    [
+      {booking: {room: "r1"}, room: [{id: "r1", availableFrom: "2025-01-01"}, {id: "r2", availableFrom: "2026-01-01"}]},
+      {booking: {room: {id: "r1", availableFrom: "2025-01-01"}, ready: true, from: "2025-01-01"}, room: [{id: "r1", availableFrom: "2025-01-01"}, {id: "r2", availableFrom: "2026-01-01"}]},
+    ],
+    [
+      {booking: {room: "r2"}, room: [{id: "r1", availableFrom: "2025-01-01"}, {id: "r2", availableFrom: "2026-01-01"}]},
+      {booking: {room: {id: "r2", availableFrom: "2026-01-01"}, ready: false, from: "2026-01-01"}, room: [{id: "r1", availableFrom: "2025-01-01"}, {id: "r2", availableFrom: "2026-01-01"}]},
+    ],
+    [{booking: {room: "r1"}, room: [{id: "r1", availableFrom: "soon"}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "earliest and latest member dates",
+  policy: {
+    models: {customer: {orders: "order[]"}, order: {placed: "date"}},
+    blocks: [
+      {expression: "customer.firstOrder", value: "len(customer.orders) == 0 ? null : min(map(customer.orders, #.placed))"},
+      {expression: "customer.lastOrder", value: "len(customer.orders) == 0 ? null : max(map(customer.orders, #.placed))"},
+      {expression: "customer.ordersThisYear", value: "count(customer.orders, #.placed.year() == d().year())"},
+    ],
+  },
+  cases: [
+    [{customer: {orders: []}}, {customer: {orders: [], firstOrder: null, lastOrder: null, ordersThisYear: 0}}],
+    [
+      {customer: {orders: [{placed: "2025-02-01"}, {placed: "2023-07-04"}, {placed: "2025-03-01"}]}},
+      {customer: {orders: [{placed: "2025-02-01"}, {placed: "2023-07-04"}, {placed: "2025-03-01"}], firstOrder: "2023-07-04", lastOrder: "2025-03-01", ordersThisYear: 2}},
+    ],
+    [
+      {customer: {orders: [{placed: "2025-01-01T10:00:00Z"}, {placed: "2025-01-01 09:00"}]}},
+      {customer: {orders: [{placed: "2025-01-01T10:00:00Z"}, {placed: "2025-01-01 09:00"}], firstOrder: "2025-01-01 09:00", lastOrder: "2025-01-01T10:00:00Z", ordersThisYear: 2}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Global dates: top-level date properties, read by bare name.
+
+{
+  name: "a global as-of date replaces now",
+  policy: {
+    globals: {context: {asOf: "date"}},
+    models: {customer: {born: "date"}},
+    blocks: [
+      {expression: "customer.age", value: "asOf.diff(customer.born, 'year')"},
+      {expression: "customer.adult", value: "customer.age >= 18"},
+    ],
+  },
+  cases: [
+    [{asOf: "2025-01-01", customer: {born: "2007-01-01"}}, {asOf: "2025-01-01", customer: {born: "2007-01-01", age: 18, adult: true}}],
+    [{asOf: "2024-12-31", customer: {born: "2007-01-01"}}, {asOf: "2024-12-31", customer: {born: "2007-01-01", age: 17, adult: false}}],
+    [{asOf: "2030-06-01T00:00:00Z", customer: {born: "2007-01-01"}}, {asOf: "2030-06-01T00:00:00Z", customer: {born: "2007-01-01", age: 23, adult: true}}],
+    [{customer: {born: "2007-01-01"}}, "!error: MissingRequiredInputs"],
+    [{asOf: "now", customer: {born: "2007-01-01"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional global date falls back to now",
+  policy: {
+    globals: {context: {asOf: "date?"}},
+    models: {offer: {expires: "date"}},
+    blocks: [{expression: "offer.valid", value: "offer.expires >= (asOf ?? d())"}],
+  },
+  cases: [
+    [{offer: {expires: "2025-03-21"}}, {offer: {expires: "2025-03-21", valid: true}}],
+    [{offer: {expires: "2025-03-19"}}, {offer: {expires: "2025-03-19", valid: false}}],
+    [{asOf: "2025-03-01", offer: {expires: "2025-03-19"}}, {asOf: "2025-03-01", offer: {expires: "2025-03-19", valid: true}}],
+    [{asOf: null, offer: {expires: "2025-03-19"}}, {asOf: null, offer: {expires: "2025-03-19", valid: false}}],
+    [{asOf: 5, offer: {expires: "2025-03-19"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a global holiday list",
+  policy: {
+    globals: {calendar: {holidays: "date[]"}},
+    models: {shipment: {ships: "date"}},
+    blocks: [
+      {expression: "shipment.onHoliday", value: "some(holidays, #.isSame(shipment.ships, 'day'))"},
+      {expression: "shipment.weekend", value: "shipment.ships.weekday() >= 6"},
+      {expression: "shipment.businessDay", value: "not shipment.onHoliday and not shipment.weekend"},
+    ],
+  },
+  cases: [
+    [{holidays: ["2025-12-25", "2025-12-26"], shipment: {ships: "2025-12-25 10:00"}}, {holidays: ["2025-12-25", "2025-12-26"], shipment: {ships: "2025-12-25 10:00", onHoliday: true, weekend: false, businessDay: false}}],
+    [{holidays: ["2025-12-25"], shipment: {ships: "2025-12-24"}}, {holidays: ["2025-12-25"], shipment: {ships: "2025-12-24", onHoliday: false, weekend: false, businessDay: true}}],
+    [{holidays: [], shipment: {ships: "2025-03-22"}}, {holidays: [], shipment: {ships: "2025-03-22", onHoliday: false, weekend: true, businessDay: false}}],
+    [{holidays: ["xmas"], shipment: {ships: "2025-03-22"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "computed global dates",
+  policy: {
+    globals: {context: {period: "string(month|quarter|year)"}},
+    blocks: [
+      {expression: "periodStart", value: "d().startOf(period)"},
+      {expression: "periodEnd", value: "d().endOf(period).format('%Y-%m-%d')"},
+    ],
+  },
+  cases: [
+    [{period: "month"}, {period: "month", periodStart: "2025-03-01T00:00:00Z", periodEnd: "2025-03-31"}],
+    [{period: "quarter"}, {period: "quarter", periodStart: "2025-01-01T00:00:00Z", periodEnd: "2025-03-31"}],
+    [{period: "year"}, {period: "year", periodStart: "2025-01-01T00:00:00Z", periodEnd: "2025-12-31"}],
+    [{period: "week"}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates in tables. Cells compare the column's date with date literals; output cells may
+// produce dates.
+
+{
+  name: "a table with date equality and range cells",
+  policy: {
+    models: {order: {placed: "date"}},
+    blocks: [{table: "t", inputs: ["order.placed"], outputs: ["order.promo"], rules: [
+      ["d('2025-11-28')", "'black friday'"],
+      ["[d('2025-12-01')..d('2025-12-24')]", "'advent'"],
+      [">= d('2025-12-25')", "'post'"],
+      ["", "'none'"],
+    ]}],
+  },
+  cases: [
+    [{order: {placed: "2025-11-28"}}, {order: {placed: "2025-11-28", promo: "black friday"}}],
+    [{order: {placed: "2025-11-28 13:00"}}, {order: {placed: "2025-11-28 13:00", promo: "none"}}],
+    [{order: {placed: "2025-12-01"}}, {order: {placed: "2025-12-01", promo: "advent"}}],
+    [{order: {placed: "2025-12-24"}}, {order: {placed: "2025-12-24", promo: "advent"}}],
+    [{order: {placed: "2025-12-24 18:00"}}, {order: {placed: "2025-12-24 18:00", promo: "none"}}],
+    [{order: {placed: "2026-01-05"}}, {order: {placed: "2026-01-05", promo: "post"}}],
+    [{order: {placed: "2025-06-01"}}, {order: {placed: "2025-06-01", promo: "none"}}],
+  ],
+}
+
+{
+  name: "a table over a date expression column",
+  policy: {
+    models: {customer: {born: "date"}},
+    blocks: [{table: "t", inputs: ["d().diff(customer.born, 'year')"], outputs: ["customer.band"], rules: [
+      ["< 18", "'minor'"],
+      ["[18..64]", "'adult'"],
+      ["", "'senior'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {born: "2010-01-01"}}, {customer: {born: "2010-01-01", band: "minor"}}],
+    [{customer: {born: "2007-03-20"}}, {customer: {born: "2007-03-20", band: "adult"}}],
+    [{customer: {born: "2007-03-21"}}, {customer: {born: "2007-03-21", band: "minor"}}],
+    [{customer: {born: "1960-03-21"}}, {customer: {born: "1960-03-21", band: "adult"}}],
+    [{customer: {born: "1960-03-20"}}, {customer: {born: "1960-03-20", band: "senior"}}],
+  ],
+}
+
+{
+  name: "table output cells produce dates",
+  policy: {
+    models: {claim: {filed: "date", severity: "string(low|high)"}},
+    blocks: [{table: "t", inputs: ["claim.severity"], outputs: ["claim.reviewBy", "claim.window"], rules: [
+      ["'high'", "claim.filed.add(2, 'day')", "'2d'"],
+      ["'low'", "claim.filed.add(1, 'month')", "'1M'"],
+    ]}],
+  },
+  cases: [
+    [{claim: {filed: "2025-03-20", severity: "high"}}, {claim: {filed: "2025-03-20", severity: "high", reviewBy: "2025-03-22T00:00:00Z", window: "2d"}}],
+    [{claim: {filed: "2025-01-31", severity: "low"}}, {claim: {filed: "2025-01-31", severity: "low", reviewBy: "2025-02-28T00:00:00Z", window: "1M"}}],
+    [{claim: {filed: "2025-12-31 23:00", severity: "high"}}, {claim: {filed: "2025-12-31 23:00", severity: "high", reviewBy: "2026-01-02T23:00:00Z", window: "2d"}}],
+  ],
+}
+
+{
+  name: "a table output cell copying an input date keeps its text",
+  policy: {
+    models: {order: {placed: "date", shipped: "date?"}},
+    blocks: [{table: "t", inputs: ["order.shipped"], outputs: ["order.lastEvent"], rules: [
+      ["null", "order.placed"],
+      ["", "order.shipped"],
+    ]}],
+  },
+  cases: [
+    [{order: {placed: "2025-03-01"}}, {order: {placed: "2025-03-01", lastEvent: "2025-03-01"}}],
+    [{order: {placed: "2025-03-01", shipped: null}}, {order: {placed: "2025-03-01", shipped: null, lastEvent: "2025-03-01"}}],
+    [{order: {placed: "2025-03-01", shipped: "2025-03-04 09:00"}}, {order: {placed: "2025-03-01", shipped: "2025-03-04 09:00", lastEvent: "2025-03-04 09:00"}}],
+  ],
+}
+
+{
+  name: "a per-member table over member dates",
+  policy: {
+    models: {fleet: {vehicles: "vehicle[]"}, vehicle: {inspected: "date"}},
+    blocks: [
+      {table: "t", inputs: ["vehicle.inspected"], outputs: ["vehicle.status"], rules: [
+        ["< d().sub(1, 'year')", "'overdue'"],
+        ["< d().sub(11, 'month')", "'due soon'"],
+        ["", "'ok'"],
+      ]},
+      {expression: "fleet.overdue", value: "count(fleet.vehicles, #.status == 'overdue')"},
+    ],
+  },
+  cases: [
+    [{fleet: {vehicles: []}}, {fleet: {vehicles: [], overdue: 0}}],
+    [
+      {fleet: {vehicles: [{inspected: "2024-01-01"}, {inspected: "2024-04-01"}, {inspected: "2025-01-01"}]}},
+      {fleet: {vehicles: [{inspected: "2024-01-01", status: "overdue"}, {inspected: "2024-04-01", status: "due soon"}, {inspected: "2025-01-01", status: "ok"}], overdue: 1}},
+    ],
+    [
+      {fleet: {vehicles: [{inspected: "2024-03-20T10:15:29Z"}, {inspected: "2024-03-20T10:15:30Z"}]}},
+      {fleet: {vehicles: [{inspected: "2024-03-20T10:15:29Z", status: "overdue"}, {inspected: "2024-03-20T10:15:30Z", status: "due soon"}], overdue: 1}},
+    ],
+  ],
+}
+
+{
+  name: "a collect table gathers date-based flags",
+  policy: {
+    models: {applicant: {born: "date", employedSince: "date"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["applicant.born", "applicant.employedSince"], outputs: ["applicant.flags[]"], rules: [
+      ["> d().sub(18, 'year')", "", "'underage'"],
+      ["", "> d().sub(6, 'month')", "'new job'"],
+      ["", "> d()", "'future employment'"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {born: "1990-01-01", employedSince: "2020-01-01"}}, {applicant: {born: "1990-01-01", employedSince: "2020-01-01", flags: []}}],
+    [{applicant: {born: "2010-01-01", employedSince: "2025-01-01"}}, {applicant: {born: "2010-01-01", employedSince: "2025-01-01", flags: ["underage", "new job"]}}],
+    [{applicant: {born: "1990-01-01", employedSince: "2025-06-01"}}, {applicant: {born: "1990-01-01", employedSince: "2025-06-01", flags: ["new job", "future employment"]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates in matches and assertions.
+
+{
+  name: "a match bands a date",
+  policy: {
+    models: {member: {joined: "date"}},
+    blocks: [{match: "member.level", arms: [
+      ["member.joined <= d().sub(10, 'year')", "'platinum'"],
+      ["member.joined <= d().sub(5, 'year')", "'gold'"],
+      ["member.joined <= d().sub(1, 'year')", "'silver'"],
+      ["", "'new'"],
+    ]}],
+  },
+  cases: [
+    [{member: {joined: "2010-01-01"}}, {member: {joined: "2010-01-01", level: "platinum"}}],
+    [{member: {joined: "2015-03-20T10:15:30Z"}}, {member: {joined: "2015-03-20T10:15:30Z", level: "platinum"}}],
+    [{member: {joined: "2015-03-20T10:15:31Z"}}, {member: {joined: "2015-03-20T10:15:31Z", level: "gold"}}],
+    [{member: {joined: "2023-01-01"}}, {member: {joined: "2023-01-01", level: "silver"}}],
+    [{member: {joined: "2025-01-01"}}, {member: {joined: "2025-01-01", level: "new"}}],
+  ],
+}
+
+{
+  name: "match arms produce dates",
+  policy: {
+    models: {ticket: {opened: "date", priority: "string(p1|p2|p3)"}},
+    blocks: [{match: "ticket.slaDeadline", arms: [
+      ["ticket.priority == 'p1'", "ticket.opened.add(4, 'hour')"],
+      ["ticket.priority == 'p2'", "ticket.opened.add(1, 'day')"],
+      ["", "ticket.opened"],
+    ]}],
+  },
+  cases: [
+    [{ticket: {opened: "2025-03-20 08:00", priority: "p1"}}, {ticket: {opened: "2025-03-20 08:00", priority: "p1", slaDeadline: "2025-03-20T12:00:00Z"}}],
+    [{ticket: {opened: "2025-03-20 08:00", priority: "p2"}}, {ticket: {opened: "2025-03-20 08:00", priority: "p2", slaDeadline: "2025-03-21T08:00:00Z"}}],
+    [{ticket: {opened: "2025-03-20 08:00", priority: "p3"}}, {ticket: {opened: "2025-03-20 08:00", priority: "p3", slaDeadline: "2025-03-20 08:00"}}],
+  ],
+}
+
+{
+  name: "a match over a computed date",
+  policy: {
+    models: {ticket: {opened: "date", hours: "number"}},
+    blocks: [
+      {expression: "ticket.deadline", value: "ticket.opened.add(ticket.hours, 'hour')"},
+      {match: "ticket.state", arms: [
+        ["ticket.deadline < d()", "'breached'"],
+        ["ticket.deadline.isSame(d(), 'day')", "'due today'"],
+        ["", "'on track'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{ticket: {opened: "2025-03-19 08:00", hours: 24}}, {ticket: {opened: "2025-03-19 08:00", hours: 24, deadline: "2025-03-20T08:00:00Z", state: "breached"}}],
+    [{ticket: {opened: "2025-03-19 08:00", hours: 30}}, {ticket: {opened: "2025-03-19 08:00", hours: 30, deadline: "2025-03-20T14:00:00Z", state: "due today"}}],
+    [{ticket: {opened: "2025-03-19 08:00", hours: 48}}, {ticket: {opened: "2025-03-19 08:00", hours: 48, deadline: "2025-03-21T08:00:00Z", state: "on track"}}],
+  ],
+}
+
+{
+  name: "an assertion over date conditions",
+  policy: {
+    models: {passport: {issued: "date", expires: "date"}},
+    blocks: [{assertion: "passport.valid", conditions: [
+      "passport.issued <= d()",
+      "passport.expires > d().add(6, 'month')",
+      "passport.expires.diff(passport.issued, 'year') <= 10",
+    ]}],
+  },
+  cases: [
+    [{passport: {issued: "2020-01-01", expires: "2030-01-01"}}, {passport: {issued: "2020-01-01", expires: "2030-01-01", valid: true}}],
+    [{passport: {issued: "2020-01-01", expires: "2025-08-01"}}, {passport: {issued: "2020-01-01", expires: "2025-08-01", valid: false}}],
+    [{passport: {issued: "2025-04-01", expires: "2035-04-01"}}, {passport: {issued: "2025-04-01", expires: "2035-04-01", valid: false}}],
+    [{passport: {issued: "2015-01-01", expires: "2030-01-01"}}, {passport: {issued: "2015-01-01", expires: "2030-01-01", valid: false}}],
+    [{passport: {issued: "2020-01-01", expires: "2025-09-20T10:15:31Z"}}, {passport: {issued: "2020-01-01", expires: "2025-09-20T10:15:31Z", valid: true}}],
+  ],
+}
+
+{
+  name: "an or-group assertion with optional dates",
+  policy: {
+    models: {account: {closed: "date?", lastLogin: "date?"}},
+    blocks: [{assertion: "account.dormant", conditions: [
+      ["or", "account.closed != null"],
+      ["and", "account.lastLogin == null"],
+    ]}],
+  },
+  cases: [
+    [{account: {}}, {account: {dormant: true}}],
+    [{account: {closed: "2025-01-01"}}, {account: {closed: "2025-01-01", dormant: true}}],
+    [{account: {lastLogin: "2025-03-01"}}, {account: {lastLogin: "2025-03-01", dormant: false}}],
+    [{account: {closed: null, lastLogin: null}}, {account: {closed: null, lastLogin: null, dormant: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic combination: rental pricing over a date range.
+
+{
+  name: "rental pricing over a date range",
+  policy: {
+    globals: {pricing: {dailyRate: "number", weekendSurcharge: "number"}},
+    models: {rental: {pickup: "date", dropoff: "date", promoCode: "string?"}},
+    blocks: [
+      {expression: "rental.days", value: "max([1, rental.dropoff.diff(rental.pickup, 'day')])"},
+      {expression: "rental.startsOnWeekend", value: "rental.pickup.weekday() >= 6"},
+      {expression: "rental.leadDays", value: "rental.pickup.diff(d().startOf('day'), 'day')"},
+      {match: "rental.earlyBird", arms: [["rental.leadDays >= 30", "0.1"], ["", "0"]]},
+      {expression: "rental.price", value: "round(rental.days * dailyRate * (1 - rental.earlyBird) + (rental.startsOnWeekend ? weekendSurcharge : 0), 2)"},
+      {expression: "rental.returnBy", value: "rental.pickup.add(rental.days, 'day')"},
+    ],
+  },
+  cases: [
+    [
+      {dailyRate: 40, weekendSurcharge: 15, rental: {pickup: "2025-03-21", dropoff: "2025-03-24"}},
+      {dailyRate: 40, weekendSurcharge: 15, rental: {pickup: "2025-03-21", dropoff: "2025-03-24", days: 3, startsOnWeekend: false, leadDays: 1, earlyBird: 0, price: 120, returnBy: "2025-03-24T00:00:00Z"}},
+    ],
+    [
+      {dailyRate: 40, weekendSurcharge: 15, rental: {pickup: "2025-05-03", dropoff: "2025-05-10"}},
+      {dailyRate: 40, weekendSurcharge: 15, rental: {pickup: "2025-05-03", dropoff: "2025-05-10", days: 7, startsOnWeekend: true, leadDays: 44, earlyBird: 0.1, price: 267, returnBy: "2025-05-10T00:00:00Z"}},
+    ],
+    [
+      {dailyRate: 33.33, weekendSurcharge: 0, rental: {pickup: "2025-03-20 09:00", dropoff: "2025-03-20 17:00", promoCode: "X"}},
+      {dailyRate: 33.33, weekendSurcharge: 0, rental: {pickup: "2025-03-20 09:00", dropoff: "2025-03-20 17:00", promoCode: "X", days: 1, startsOnWeekend: false, leadDays: 0, earlyBird: 0, price: 33.33, returnBy: "2025-03-21T09:00:00Z"}},
+    ],
+    [{dailyRate: 40, weekendSurcharge: 15, rental: {pickup: "2025-03-21"}}, "!error: MissingRequiredInputs"],
+  ],
+}

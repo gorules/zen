@@ -1,0 +1,529 @@
+// Merging loop results: passThrough of the node input around a loop result, nested outputPath
+// writes, several loops over the same array, loop results joined with other branches, and empty
+// or null arrays flowing through several loop nodes. Graph merges are deep for objects, replace
+// arrays and scalars wholesale, and drop keys whose incoming value is null.
+
+// --- passThrough: the loop result merged into the node input -------------------------------------
+{
+  name: "passThrough loop result replaces an existing scalar at outputPath",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "result", executionMode: "loop", passThrough: true, fields: {v: "x"}}],
+  },
+  cases: [
+    [{items: [{x: 1}], result: 5}, {items: [{x: 1}], result: [{x: 1, v: 1}]}],
+    [{items: [{x: 1}], result: "old"}, {items: [{x: 1}], result: [{x: 1, v: 1}]}],
+    [{items: [], result: true}, {items: [], result: []}],
+  ],
+}
+
+{
+  name: "passThrough loop result replaces an existing object at outputPath",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "result", executionMode: "loop", passThrough: true, fields: {v: "x"}}],
+  },
+  cases: [
+    [{items: [{x: 1}], result: {keep: 1}}, {items: [{x: 1}], result: [{x: 1, v: 1}]}],
+    [{items: [], result: {keep: 1}}, {items: [], result: []}],
+  ],
+}
+
+{
+  name: "passThrough loop result replaces a longer existing array, not merged index-wise",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "result", executionMode: "loop", passThrough: true, fields: {v: "x"}}],
+  },
+  cases: [
+    [{items: [{x: 1}], result: [{a: 1}, {a: 2}, {a: 3}]}, {items: [{x: 1}], result: [{x: 1, v: 1}]}],
+    [{items: [], result: [1, 2]}, {items: [], result: []}],
+    [{items: [{x: 1}, {x: 2}], result: [{v: 0, keep: true}]}, {items: [{x: 1}, {x: 2}], result: [{x: 1, v: 1}, {x: 2, v: 2}]}],
+  ],
+}
+
+{
+  name: "passThrough keeps unrelated input fields of every type",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", passThrough: true, fields: {v: "$root"}}],
+  },
+  cases: [
+    [{items: [1], s: "a", n: 1.5, b: false, o: {p: {q: 1}}, a: [1, [2]]}, {items: [1], s: "a", n: 1.5, b: false, o: {p: {q: 1}}, a: [1, [2]], out: [{v: 1}]}],
+    [{items: [], z: 0}, {items: [], z: 0, out: []}],
+  ],
+}
+
+{
+  name: "passThrough drops null-valued input keys at the top level",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", passThrough: true, fields: {v: "$root"}}],
+  },
+  cases: [
+    [{items: [1], gone: null, kept: 1}, {items: [1], kept: 1, out: [{v: 1}]}, "question: top-level null keys are dropped from the result while nested nulls survive (chapter 01)"],
+    [{items: [], gone: null}, {items: [], out: []}, "question: top-level null keys are dropped from the result while nested nulls survive (chapter 01)"],
+  ],
+}
+
+{
+  name: "passThrough loop over a filtered view leaves the original array intact",
+  graph: {
+    nodes: [{expression: "each", inputField: "filter(items, #.on)", outputPath: "items", executionMode: "loop", passThrough: true, fields: {seen: "true"}}],
+  },
+  cases: [
+    [{items: [{id: 1, on: true}, {id: 2, on: false}]}, {items: [{id: 1, on: true, seen: true}]}],
+    [{items: [{id: 2, on: false}]}, {items: []}],
+  ],
+}
+
+{
+  name: "passThrough loop does not mutate the input seen by a parallel branch",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {x: "x * 100"}},
+      {expression: "orig", fields: {origSum: "sum(map(items, #.x))"}},
+    ],
+    edges: ["input -> each -> output", "input -> orig -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {items: [{x: 100}, {x: 200}], origSum: 3}],
+    [{items: []}, {items: [], origSum: 0}],
+  ],
+}
+
+{
+  name: "passThrough loop does not mutate the input seen by a later node",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {x: "x * 100"}},
+      {expression: "after", passThrough: true, fields: {now: "sum(map(items, #.x))", before: "sum(map($nodes.input.items, #.x))"}},
+    ],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {items: [{x: 100}, {x: 200}], now: 300, before: 3}],
+    [{items: [{x: 0.5}]}, {items: [{x: 50}], now: 50, before: 0.5}],
+  ],
+}
+
+// --- Nested outputPath ----------------------------------------------------------------------------
+{
+  name: "loop writes a deep outputPath and creates the spine",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "report.sections.lines", executionMode: "loop", fields: {v: "x"}}],
+  },
+  cases: [
+    [{items: [{x: 1}]}, {report: {sections: {lines: [{v: 1}]}}}],
+    [{items: []}, {report: {sections: {lines: []}}}],
+  ],
+}
+
+{
+  name: "deep outputPath with passThrough merges into existing siblings",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "report.sections.lines", executionMode: "loop", passThrough: true, fields: {v: "x"}}],
+  },
+  cases: [
+    [{items: [{x: 1}], report: {title: "t", sections: {head: "h"}}}, {items: [{x: 1}], report: {title: "t", sections: {head: "h", lines: [{x: 1, v: 1}]}}}],
+    [{items: [], report: {sections: {lines: [{old: true}]}}}, {items: [], report: {sections: {lines: []}}}],
+    [{items: [{x: 2}], report: "flat"}, {items: [{x: 2}], report: {sections: {lines: [{x: 2, v: 2}]}}}],
+  ],
+}
+
+{
+  name: "outputPath through the source array's own parent",
+  graph: {
+    nodes: [{expression: "each", inputField: "order.lines", outputPath: "order.priced", executionMode: "loop", passThrough: true, fields: {total: "p * q"}}],
+  },
+  cases: [
+    [{order: {id: 1, lines: [{p: 2, q: 3}]}}, {order: {id: 1, lines: [{p: 2, q: 3}], priced: [{p: 2, q: 3, total: 6}]}}],
+    [{order: {id: 2, lines: []}}, {order: {id: 2, lines: [], priced: []}}],
+  ],
+}
+
+{
+  name: "two loops write sibling nested paths that merge at the output",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "xs", outputPath: "res.as", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "b", inputField: "xs", outputPath: "res.bs", executionMode: "loop", fields: {w: "$root * 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{xs: [1, 2]}, {res: {as: [{v: 1}, {v: 2}], bs: [{w: 2}, {w: 4}]}}],
+    [{xs: []}, {res: {as: [], bs: []}}],
+  ],
+}
+
+{
+  name: "loop writing a nested path next to an expression writing its parent",
+  graph: {
+    nodes: [
+      {expression: "lines", inputField: "items", outputPath: "report.lines", executionMode: "loop", fields: {v: "x"}},
+      {expression: "meta", fields: {"report.count": "len(items)", "report.title": "'r'"}},
+    ],
+    edges: ["input -> lines -> output", "input -> meta -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {report: {lines: [{v: 1}, {v: 2}], count: 2, title: "r"}}],
+    [{items: []}, {report: {lines: [], count: 0, title: "r"}}],
+  ],
+}
+
+// --- Two loops over the same array --------------------------------------------------------------
+{
+  name: "two parallel loops over the same array into different paths",
+  graph: {
+    nodes: [
+      {expression: "net", inputField: "items", outputPath: "net", executionMode: "loop", fields: {v: "price"}},
+      {expression: "gross", inputField: "items", outputPath: "gross", executionMode: "loop", fields: {v: "price * 1.25"}},
+    ],
+    edges: ["input -> net -> output", "input -> gross -> output"],
+  },
+  cases: [
+    [{items: [{price: 4}, {price: 8}]}, {net: [{v: 4}, {v: 8}], gross: [{v: 5}, {v: 10}]}],
+    [{items: []}, {net: [], gross: []}],
+    [{items: [{price: 0}]}, {net: [{v: 0}], gross: [{v: 0}]}],
+  ],
+}
+
+{
+  name: "two sequential passThrough loops over the same array accumulate fields",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {a: "x + 1"}},
+      {expression: "b", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {b: "a * 2"}},
+    ],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {items: [{x: 1, a: 2, b: 4}, {x: 2, a: 3, b: 6}]}],
+    [{items: []}, {items: []}],
+  ],
+}
+
+{
+  name: "two parallel passThrough loops writing back to the same array",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {a: "true"}},
+      {expression: "b", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {b: "true"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{items: [{id: 1}]}, {items: [{id: 1, a: true}]}, "question: two branches writing the same array path do not combine per index; one branch's array wins whole (see chapter 13)"],
+    [{items: [{id: 1}, {id: 2}]}, {items: [{id: 1, a: true}, {id: 2, a: true}]}, "question: two branches writing the same array path do not combine per index; one branch's array wins whole (see chapter 13)"],
+  ],
+}
+
+{
+  name: "parallel expression and table loops over the same array, zipped downstream",
+  graph: {
+    nodes: [
+      {expression: "names", inputField: "items", outputPath: "names", executionMode: "loop", fields: {n: "upper(name)"}},
+      {table: "tiers", inputField: "items", outputPath: "tiers", executionMode: "loop", inputs: ["score"], outputs: ["t"], rules: [[">= 50", "'hi'"], ["", "'lo'"]]},
+      {expression: "zip", fields: {labels: "map(names, #.n)", tiers: "map(tiers, #.t)"}},
+    ],
+    edges: ["input -> names -> zip", "input -> tiers -> zip", "zip -> output"],
+  },
+  cases: [
+    [{items: [{name: "a", score: 60}, {name: "b", score: 10}]}, {labels: ["A", "B"], tiers: ["hi", "lo"]}],
+    [{items: []}, {labels: [], tiers: []}],
+  ],
+}
+
+{
+  name: "same array looped by an expression node and a sub-decision",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {sq: "v * v"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "e", inputField: "items", outputPath: "plus", executionMode: "loop", fields: {p: "v + 1"}},
+      {decision: "d", key: "child", inputField: "items", outputPath: "squares", executionMode: "loop"},
+    ],
+    edges: ["input -> e -> output", "input -> d -> output"],
+  },
+  cases: [
+    [{items: [{v: 2}, {v: 3}]}, {plus: [{p: 3}, {p: 4}], squares: [{sq: 4}, {sq: 9}]}],
+    [{items: []}, {plus: [], squares: []}],
+  ],
+}
+
+// --- Loop results joined with other branches -----------------------------------------------------
+{
+  name: "loop branch and scalar branch join at a downstream node",
+  graph: {
+    nodes: [
+      {expression: "lines", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {t: "p * q"}},
+      {expression: "fee", fields: {fee: "fee ?? 0"}},
+      {expression: "total", fields: {total: "sum(map(lines, #.t)) + fee"}},
+    ],
+    edges: ["input -> lines -> total", "input -> fee -> total", "total -> output"],
+  },
+  cases: [
+    [{items: [{p: 2, q: 2}], fee: 1}, {total: 5}],
+    [{items: [], fee: 3}, {total: 3}],
+    [{items: [{p: 1, q: 1}, {p: 1, q: 1}]}, {total: 2}],
+  ],
+}
+
+{
+  name: "switch branches: a loop on one side, a constant on the other, joined",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'each'", ""]},
+      {expression: "each", inputField: "items", outputPath: "res", executionMode: "loop", fields: {v: "x"}},
+      {expression: "bulk", fields: {res: "[{v: 'bulk'}]"}},
+      {expression: "count", fields: {n: "len(res)"}},
+    ],
+    edges: ["input -> s", "s:0 -> each -> count", "s:1 -> bulk -> count", "count -> output"],
+  },
+  cases: [
+    [{mode: "each", items: [{x: 1}, {x: 2}]}, {n: 2}],
+    [{mode: "bulk", items: [{x: 1}, {x: 2}]}, {n: 1}],
+    [{mode: "each", items: []}, {n: 0}],
+  ],
+}
+
+{
+  name: "collect switch runs two loops whose results merge",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["len(a) > 0", "len(b) > 0"]},
+      {expression: "la", inputField: "a", outputPath: "ra", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "lb", inputField: "b", outputPath: "rb", executionMode: "loop", fields: {v: "$root"}},
+    ],
+    edges: ["input -> s", "s:0 -> la -> output", "s:1 -> lb -> output"],
+  },
+  cases: [
+    [{a: [1], b: [2]}, {ra: [{v: 1}], rb: [{v: 2}]}],
+    [{a: [1], b: []}, {ra: [{v: 1}]}],
+    [{a: [], b: [2, 3]}, {rb: [{v: 2}, {v: 3}]}],
+    [{a: [], b: []}, {}],
+  ],
+}
+
+{
+  name: "a branch writing null next to a loop result in a join",
+  graph: {
+    nodes: [
+      {expression: "lines", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {v: "x"}},
+      {expression: "clear", fields: {lines: "null", other: "1"}},
+      {expression: "join", passThrough: true, fields: {has: "lines != null"}},
+    ],
+    edges: ["input -> lines -> join", "input -> clear -> join", "join -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}]}, {lines: [{v: 1}], other: 1, has: true}, "question: the join merges its incoming branches in order and a null value deletes the key; here the null branch merges first and the loop array lands after it, so the outcome depends on branch order"],
+    [{items: []}, {lines: [], other: 1, has: true}, "question: the join merges its incoming branches in order and a null value deletes the key; here the null branch merges first and the loop array lands after it, so the outcome depends on branch order"],
+  ],
+}
+
+{
+  name: "loop without outputPath joined with an object branch at the output",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", executionMode: "loop", fields: {v: "x"}},
+      {expression: "meta", fields: {count: "len(items)"}},
+    ],
+    edges: ["input -> each -> output", "input -> meta -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}]}, [{v: 1}], "question: a bare array and an object meet at the output; a top-level array replaces the merged object, so the loop array wins and the object branch is lost"],
+    [{items: []}, [], "question: a bare array and an object meet at the output; a top-level array replaces the merged object, so the loop array wins and the object branch is lost"],
+  ],
+}
+
+{
+  name: "loop result and its input both reach the output",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "x * 2"}},
+    ],
+    edges: ["input -> each -> output", "input -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}], k: "a"}, {items: [{x: 1}], k: "a", out: [{v: 2}]}],
+    [{items: [], out: "old"}, {items: [], out: []}],
+  ],
+}
+
+{
+  name: "join node reads both loops and the original input",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "items", outputPath: "doubled", executionMode: "loop", fields: {v: "x * 2"}},
+      {expression: "b", inputField: "items", outputPath: "halved", executionMode: "loop", fields: {v: "x / 2"}},
+      {expression: "j", fields: {pairs: "map(doubled, #.v)", halves: "map(halved, #.v)", n: "len($nodes.input.items)"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{items: [{x: 2}, {x: 4}]}, {pairs: [4, 8], halves: [1, 2], n: 2}],
+    [{items: []}, {pairs: [], halves: [], n: 0}],
+  ],
+}
+
+// --- Empty and null arrays across several loop nodes -------------------------------------------------
+{
+  name: "empty array through a chain of three loop nodes of different kinds",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {v: "v"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "e", inputField: "items", outputPath: "s1", executionMode: "loop", fields: {v: "x"}},
+      {table: "t", inputField: "s1", outputPath: "s2", executionMode: "loop", inputs: ["v"], outputs: ["v"], rules: [["", "v"]]},
+      {decision: "d", key: "child", inputField: "s2", outputPath: "s3", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: []}, {s3: []}],
+    [{items: [{x: 1}, {x: 2}]}, {s3: [{v: 1}, {v: 2}]}],
+    [{items: [{x: "a"}]}, {s3: [{v: "a"}]}],
+  ],
+}
+
+{
+  name: "a null array fails the loop even when other loops are empty",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "as", outputPath: "ra", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "b", inputField: "bs", outputPath: "rb", executionMode: "loop", fields: {v: "$root"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{as: [], bs: []}, {ra: [], rb: []}],
+    [{as: [], bs: null}, "!error"],
+    [{as: null, bs: []}, "!error"],
+    [{as: [1]}, "!error"],
+  ],
+}
+
+{
+  name: "inputField with ?? [] tolerates null and missing arrays",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "as ?? []", outputPath: "ra", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "b", inputField: "bs ?? []", outputPath: "rb", executionMode: "loop", fields: {v: "$root"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{as: null}, {ra: [], rb: []}],
+    [{}, {ra: [], rb: []}],
+    [{as: [1], bs: [2]}, {ra: [{v: 1}], rb: [{v: 2}]}],
+  ],
+}
+
+{
+  name: "null items through two chained loops",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "items", outputPath: "s1", executionMode: "loop", fields: {v: "$root.x"}},
+      {expression: "b", inputField: "s1", outputPath: "s2", executionMode: "loop", fields: {w: "v ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{items: [null, {x: 1}]}, {s2: [{w: "none"}, {w: 1}]}],
+    [{items: [null]}, {s2: [{w: "none"}]}],
+    [{items: [{}]}, {s2: [{w: "none"}]}],
+  ],
+}
+
+{
+  name: "first-hit table nulls flow into a later loop as null items",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", outputPath: "s1", executionMode: "loop", inputs: ["v"], outputs: ["v"], rules: [["> 0", "v"]]},
+      {expression: "b", inputField: "s1", outputPath: "s2", executionMode: "loop", fields: {matched: "$root != null"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: -1}]}, {s2: [{matched: true}, {matched: false}]}],
+    [{items: [{v: -1}]}, {s2: [{matched: false}]}],
+    [{items: []}, {s2: []}],
+  ],
+}
+
+{
+  name: "collect table yielding empty arrays per item feeds a flattening loop",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputField: "items", outputPath: "s1", executionMode: "loop", inputs: ["v"], outputs: ["tag"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]},
+      {expression: "b", inputField: "flatten(s1)", outputPath: "s2", executionMode: "loop", fields: {t: "tag"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: -1}, {v: -2}]}, {s2: []}],
+    [{items: [{v: 20}, {v: -1}, {v: 5}]}, {s2: [{t: "pos"}, {t: "big"}, {t: "pos"}]}],
+    [{items: []}, {s2: []}],
+  ],
+}
+
+{
+  name: "empty loop results with passThrough keep the rest of the input",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "as", outputPath: "as", executionMode: "loop", passThrough: true, fields: {v: "1"}},
+      {expression: "b", inputField: "bs", outputPath: "bs", executionMode: "loop", passThrough: true, fields: {v: "2"}},
+    ],
+  },
+  cases: [
+    [{as: [], bs: [], id: 1}, {as: [], bs: [], id: 1}],
+    [{as: [{}], bs: [], id: 2}, {as: [{v: 1}], bs: [], id: 2}],
+    [{as: [], bs: [{k: 1}], id: 3}, {as: [], bs: [{k: 1, v: 2}], id: 3}],
+  ],
+}
+
+{
+  name: "loop result fields that are null stay inside the array",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "x", n: "null"}}],
+  },
+  cases: [
+    [{items: [{x: 1}, {}]}, {out: [{v: 1, n: null}, {v: null, n: null}]}],
+    [{items: [{x: null}]}, {out: [{v: null, n: null}]}],
+  ],
+}
+
+// --- Larger merges ----------------------------------------------------------------------------------
+{
+  name: "sub-decision loop with passThrough into a nested path joined with a summary branch",
+  decisions: {
+    line: {nodes: [{expression: "l", fields: {total: "price * qty"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "lines", key: "line", inputField: "order.lines", outputPath: "order.lines", executionMode: "loop", passThrough: true},
+      {expression: "summary", fields: {"order.count": "len(order.lines)", "order.currency": "order.currency ?? 'EUR'"}},
+      {expression: "final", passThrough: true, fields: {"order.total": "sum(map(order.lines, #.total))"}},
+    ],
+    edges: ["input -> lines -> final", "input -> summary -> final", "final -> output"],
+  },
+  cases: [
+    [
+      {order: {id: 1, lines: [{price: 2, qty: 3}, {price: 1, qty: 1}]}},
+      {order: {id: 1, lines: [{price: 2, qty: 3, total: 6}, {price: 1, qty: 1, total: 1}], count: 2, currency: "EUR", total: 7}},
+    ],
+    [{order: {id: 2, lines: [], currency: "NOK"}}, {order: {id: 2, lines: [], count: 0, currency: "NOK", total: 0}}],
+    [
+      {order: {id: 3, lines: [{price: 0.1, qty: 3}]}},
+      {order: {id: 3, lines: [{price: 0.1, qty: 3, total: 0.3}], count: 1, currency: "EUR", total: 0.3}},
+    ],
+  ],
+}
+
+{
+  name: "loop over 50 generated items joined with a parallel aggregate",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "map([1..50], {n: #})", outputPath: "rows", executionMode: "loop", fields: {even: "n % 2 == 0", n: "n"}},
+      {expression: "agg", fields: {expected: "sum(map([1..50], #))"}},
+      {expression: "check", fields: {sum: "sum(map(rows, #.n))", evens: "len(filter(rows, #.even))", expected: "expected", last: "rows[49].n"}},
+    ],
+    edges: ["input -> each -> check", "input -> agg -> check", "check -> output"],
+  },
+  cases: [
+    [{}, {sum: 1275, evens: 25, expected: 1275, last: 50}],
+    [{rows: "ignored"}, {sum: 1275, evens: 25, expected: 1275, last: 50}],
+  ],
+}

@@ -1,8 +1,29 @@
+pub mod columns;
+#[allow(dead_code)]
+pub mod golden;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 use zen_engine::model::{DecisionContent, GraphContent};
+
+#[allow(dead_code)]
+pub struct Switches {
+    pub typed: bool,
+    pub census: bool,
+}
+
+#[allow(dead_code)]
+pub fn switches() -> Switches {
+    let switches = Switches {
+        typed: std::env::var("ZEN_TYPED").map_or(true, |v| v.trim() != "0"),
+        census: std::env::var("ZEN_CENSUS").is_ok(),
+    };
+    zen_engine::diagnostics::set_typed(switches.typed);
+    zen_engine::diagnostics::set_census(switches.census);
+    switches
+}
 
 #[allow(dead_code)]
 pub fn test_data_root() -> String {
@@ -38,4 +59,14 @@ pub fn create_fs_loader() -> FilesystemLoader {
     FilesystemLoader::new(FilesystemLoaderOptions {
         root: test_data_root(),
     })
+}
+
+#[allow(dead_code)]
+pub fn policy_error(
+    error: &zen_engine::EvaluationError,
+) -> Option<&zen_engine::policy::EvaluationError> {
+    match error {
+        zen_engine::EvaluationError::Policy(error) => Some(error),
+        _ => None,
+    }
 }

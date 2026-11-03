@@ -1,0 +1,847 @@
+// Assertion blocks in larger policies: deeply grouped conditions (depth 1 to 3), long mixed
+// `and`/`or` chains, assertions that read computed values and relationship aggregates, and
+// per-member assertions. Chapter 06 covers the basics. Reminder of the fold: a condition's
+// operator joins it to the NEXT condition, conditions fold strictly left to right, and a run
+// of conditions at a deeper depth is folded on its own, joined to what came before by the
+// operator of the condition before the run. Truth-table suites state the intended formula in
+// their name.
+
+// ---------------------------------------------------------------------------
+// Depth-3 nesting. Each suite's name is the intended boolean formula; cases cover the full
+// truth table (or a fixed sample of it for five variables).
+// ---------------------------------------------------------------------------
+
+{
+  name: "`p and (q or (r and (s or t)))`: three nested groups",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p", 0], ["or", "x.q", 1], ["and", "x.r", 2], ["or", "x.s", 3], ["or", "x.t", 3]]}],
+  },
+  cases: [
+    [{x: {p: false, q: false, r: true, s: false, t: true}}, {x: {p: false, q: false, r: true, s: false, t: true, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: true, t: false}}, {x: {p: false, q: true, r: true, s: true, t: false, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: false, t: false}}, {x: {p: true, q: false, r: true, s: false, t: false, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: true, t: true}}, {x: {p: false, q: false, r: false, s: true, t: true, ok: false}}],
+    [{x: {p: true, q: true, r: true, s: true, t: false}}, {x: {p: true, q: true, r: true, s: true, t: false, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true, t: false}}, {x: {p: true, q: true, r: false, s: true, t: false, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true, t: true}}, {x: {p: true, q: true, r: false, s: true, t: true, ok: true}}],
+  ],
+}
+
+{
+  name: "`((p or q) and r) or s`: the formula opens at depth 2",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 2], ["and", "x.q", 2], ["or", "x.r", 1], ["or", "x.s", 0]]}],
+  },
+  cases: [
+    [{x: {p: false, q: true, r: false, s: true}}, {x: {p: false, q: true, r: false, s: true, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: false}}, {x: {p: true, q: false, r: true, s: false, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: true}}, {x: {p: true, q: true, r: true, s: true, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: false}}, {x: {p: true, q: true, r: true, s: false, ok: true}}],
+    [{x: {p: false, q: true, r: true, s: false}}, {x: {p: false, q: true, r: true, s: false, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: true}}, {x: {p: true, q: false, r: true, s: true, ok: true}}],
+    [{x: {p: true, q: false, r: false, s: true}}, {x: {p: true, q: false, r: false, s: true, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true}}, {x: {p: true, q: true, r: false, s: true, ok: true}}],
+  ],
+}
+
+{
+  name: "`(((p and q) or r) and s)`: everything inside nested groups, from depth 3 down",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p", 3], ["or", "x.q", 3], ["and", "x.r", 2], ["and", "x.s", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, q: true, r: true, s: false}}, {x: {p: true, q: true, r: true, s: false, ok: false}}],
+    [{x: {p: true, q: false, r: false, s: false}}, {x: {p: true, q: false, r: false, s: false, ok: false}}],
+    [{x: {p: false, q: false, r: false, s: true}}, {x: {p: false, q: false, r: false, s: true, ok: false}}],
+    [{x: {p: false, q: true, r: false, s: false}}, {x: {p: false, q: true, r: false, s: false, ok: false}}],
+    [{x: {p: false, q: false, r: true, s: true}}, {x: {p: false, q: false, r: true, s: true, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: false}}, {x: {p: true, q: true, r: false, s: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false}}, {x: {p: false, q: true, r: true, s: false, ok: false}}],
+    [{x: {p: true, q: true, r: true, s: true}}, {x: {p: true, q: true, r: true, s: true, ok: true}}],
+  ],
+}
+
+{
+  name: "`p or (q and (r or (s and t)))`: dropping from depth 3 to the end closes every group",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 0], ["and", "x.q", 1], ["or", "x.r", 2], ["and", "x.s", 3], ["and", "x.t", 3]]}],
+  },
+  cases: [
+    [{x: {p: false, q: true, r: true, s: true, t: true}}, {x: {p: false, q: true, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: true, s: true, t: false}}, {x: {p: false, q: false, r: true, s: true, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false, t: true}}, {x: {p: false, q: true, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: false, t: false}}, {x: {p: false, q: false, r: false, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: false, r: false, s: true, t: false}}, {x: {p: false, q: false, r: false, s: true, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: false, s: true, t: true}}, {x: {p: false, q: true, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: true, t: true}}, {x: {p: true, q: true, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true, t: true}}, {x: {p: true, q: true, r: false, s: true, t: true, ok: true}}],
+  ],
+}
+
+{
+  name: "`(p and (q or (r and s))) or t`: depth 3 straight back to 0",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p", 1], ["or", "x.q", 2], ["and", "x.r", 3], ["or", "x.s", 3], ["or", "x.t", 0]]}],
+  },
+  cases: [
+    [{x: {p: true, q: false, r: true, s: true, t: false}}, {x: {p: true, q: false, r: true, s: true, t: false, ok: true}}],
+    [{x: {p: false, q: false, r: true, s: true, t: true}}, {x: {p: false, q: false, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: false, s: false, t: true}}, {x: {p: true, q: false, r: false, s: false, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: true, t: true}}, {x: {p: false, q: false, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: true, t: false}}, {x: {p: true, q: true, r: true, s: true, t: false, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true, t: false}}, {x: {p: true, q: true, r: false, s: true, t: false, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: false, t: false}}, {x: {p: true, q: true, r: true, s: false, t: false, ok: true}}],
+  ],
+}
+
+{
+  name: "`p and ((q or r) and s)`: a group that starts with a deeper group",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p", 0], ["or", "x.q", 2], ["and", "x.r", 2], ["and", "x.s", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, q: false, r: false, s: false}}, {x: {p: true, q: false, r: false, s: false, ok: false}}],
+    [{x: {p: false, q: false, r: false, s: false}}, {x: {p: false, q: false, r: false, s: false, ok: false}}],
+    [{x: {p: true, q: true, r: true, s: true}}, {x: {p: true, q: true, r: true, s: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: true}}, {x: {p: false, q: false, r: false, s: true, ok: false}}],
+    [{x: {p: true, q: true, r: true, s: false}}, {x: {p: true, q: true, r: true, s: false, ok: false}}],
+    [{x: {p: true, q: false, r: false, s: true}}, {x: {p: true, q: false, r: false, s: true, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: false}}, {x: {p: true, q: false, r: true, s: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false}}, {x: {p: false, q: true, r: true, s: false, ok: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Sibling groups separated by a shallower condition, and depth going down then up again.
+// ---------------------------------------------------------------------------
+
+{
+  name: "`(p or q) and r and (s or t)`: two depth-1 groups around a depth-0 condition",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 1], ["and", "x.q", 1], ["and", "x.r", 0], ["or", "x.s", 1], ["and", "x.t", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, q: false, r: true, s: true, t: true}}, {x: {p: true, q: false, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: true, t: false}}, {x: {p: true, q: true, r: false, s: true, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false, t: false}}, {x: {p: false, q: true, r: true, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: false, s: true, t: true}}, {x: {p: false, q: true, r: false, s: true, t: true, ok: false}}],
+    [{x: {p: false, q: false, r: true, s: false, t: true}}, {x: {p: false, q: false, r: true, s: false, t: true, ok: false}}],
+    [{x: {p: true, q: false, r: false, s: true, t: false}}, {x: {p: true, q: false, r: false, s: true, t: false, ok: false}}],
+    [{x: {p: true, q: true, r: false, s: false, t: true}}, {x: {p: true, q: true, r: false, s: false, t: true, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+  ],
+}
+
+{
+  name: "`p or (q and r or s and t)`: one group folds left inside, `((q and r) or s) and t`",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 0], ["and", "x.q", 1], ["or", "x.r", 1], ["and", "x.s", 1], ["and", "x.t", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, q: true, r: false, s: true, t: true}}, {x: {p: true, q: true, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: false, s: true, t: true}}, {x: {p: true, q: false, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: true, s: true, t: true}}, {x: {p: false, q: false, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: true, r: true, s: false, t: true}}, {x: {p: true, q: true, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: true, t: true}}, {x: {p: false, q: false, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: true, r: true, s: false, t: true}}, {x: {p: false, q: true, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: true, s: false, t: false}}, {x: {p: false, q: false, r: true, s: false, t: false, ok: false}}],
+  ],
+}
+
+{
+  name: "`p or (q and r) or (s and t)`: the second conjunction nests one level deeper",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 0], ["and", "x.q", 1], ["or", "x.r", 1], ["and", "x.s", 2], ["and", "x.t", 2]]}],
+  },
+  cases: [
+    [{x: {p: true, q: true, r: false, s: true, t: false}}, {x: {p: true, q: true, r: false, s: true, t: false, ok: true}}],
+    [{x: {p: false, q: true, r: false, s: false, t: false}}, {x: {p: false, q: true, r: false, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false, t: false}}, {x: {p: false, q: true, r: true, s: false, t: false, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: true, t: true}}, {x: {p: true, q: false, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: true, s: true, t: true}}, {x: {p: false, q: false, r: true, s: true, t: true, ok: true}}],
+    [{x: {p: false, q: true, r: true, s: false, t: true}}, {x: {p: false, q: true, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: false, t: true}}, {x: {p: false, q: false, r: false, s: false, t: true, ok: false}}],
+  ],
+}
+
+{
+  name: "`p and ((q or (r and s)) and t)`: back from depth 2 to 1 continues the same group",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p", 0], ["or", "x.q", 1], ["and", "x.r", 2], ["and", "x.s", 2], ["and", "x.t", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, q: true, r: true, s: false, t: true}}, {x: {p: true, q: true, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: true, r: true, s: true, t: true}}, {x: {p: false, q: true, r: true, s: true, t: true, ok: false}}],
+    [{x: {p: false, q: false, r: false, s: true, t: false}}, {x: {p: false, q: false, r: false, s: true, t: false, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: true, t: false}}, {x: {p: true, q: false, r: true, s: true, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: true, s: false, t: false}}, {x: {p: false, q: true, r: true, s: false, t: false, ok: false}}],
+    [{x: {p: true, q: true, r: false, s: false, t: false}}, {x: {p: true, q: true, r: false, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: false, r: false, s: false, t: false}}, {x: {p: false, q: false, r: false, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: false, r: true, s: true, t: false}}, {x: {p: false, q: false, r: true, s: true, t: false, ok: false}}],
+  ],
+}
+
+{
+  name: "`((p or (q and r)) and s) or t`: a depth-2 group closes back into its depth-1 group",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean", s: "boolean", t: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p", 1], ["and", "x.q", 2], ["and", "x.r", 2], ["or", "x.s", 1], ["or", "x.t", 1]]}],
+  },
+  cases: [
+    [{x: {p: false, q: false, r: false, s: true, t: true}}, {x: {p: false, q: false, r: false, s: true, t: true, ok: true}}],
+    [{x: {p: true, q: false, r: true, s: true, t: false}}, {x: {p: true, q: false, r: true, s: true, t: false, ok: true}}],
+    [{x: {p: false, q: true, r: true, s: false, t: false}}, {x: {p: false, q: true, r: true, s: false, t: false, ok: false}}],
+    [{x: {p: true, q: false, r: true, s: false, t: true}}, {x: {p: true, q: false, r: true, s: false, t: true, ok: true}}],
+    [{x: {p: false, q: false, r: false, s: true, t: false}}, {x: {p: false, q: false, r: false, s: true, t: false, ok: false}}],
+    [{x: {p: true, q: true, r: false, s: true, t: false}}, {x: {p: true, q: true, r: false, s: true, t: false, ok: true}}],
+    [{x: {p: true, q: true, r: false, s: false, t: false}}, {x: {p: true, q: true, r: false, s: false, t: false, ok: false}}],
+    [{x: {p: false, q: true, r: false, s: false, t: true}}, {x: {p: false, q: true, r: false, s: false, t: true, ok: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Long mixed chains over comparisons (no groups): strict left fold.
+// ---------------------------------------------------------------------------
+{
+  name: "`a and b or c and d or e` folds as `(((a and b) or c) and d) or e`",
+  policy: {
+    models: {x: {a: "number", b: "number", c: "number", d: "number", e: "number"}},
+    blocks: [{assertion: "x.ok", conditions: [
+      ["and", "x.a > 0"],
+      ["or", "x.b > 0"],
+      ["and", "x.c > 0"],
+      ["or", "x.d > 0"],
+      "x.e > 0",
+    ]}],
+  },
+  cases: [
+    [{x: {a: 1, b: 1, c: 0, d: 0, e: 0}}, {x: {a: 1, b: 1, c: 0, d: 0, e: 0, ok: false}}],
+    [{x: {a: 1, b: 1, c: 0, d: 1, e: 0}}, {x: {a: 1, b: 1, c: 0, d: 1, e: 0, ok: true}}],
+    [{x: {a: 0, b: 0, c: 1, d: 1, e: 0}}, {x: {a: 0, b: 0, c: 1, d: 1, e: 0, ok: true}}],
+    [{x: {a: 0, b: 0, c: 1, d: 0, e: 0}}, {x: {a: 0, b: 0, c: 1, d: 0, e: 0, ok: false}}],
+    [{x: {a: 0, b: 0, c: 0, d: 0, e: 0.5}}, {x: {a: 0, b: 0, c: 0, d: 0, e: 0.5, ok: true}}],
+    [{x: {a: -1, b: 5, c: -1, d: 5, e: -1}}, {x: {a: -1, b: 5, c: -1, d: 5, e: -1, ok: false}}],
+  ],
+}
+
+{
+  name: "six `or` conditions then one `and`: `(a or b or c or d or e) and f`",
+  policy: {
+    models: {x: {tags: "string[]", vip: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [
+      ["or", "'a' in x.tags"],
+      ["or", "'b' in x.tags"],
+      ["or", "'c' in x.tags"],
+      ["or", "'d' in x.tags"],
+      ["and", "'e' in x.tags"],
+      "x.vip",
+    ]}],
+  },
+  cases: [
+    [{x: {tags: ["c"], vip: true}}, {x: {tags: ["c"], vip: true, ok: true}}],
+    [{x: {tags: ["e"], vip: true}}, {x: {tags: ["e"], vip: true, ok: true}}],
+    [{x: {tags: ["a", "e"], vip: false}}, {x: {tags: ["a", "e"], vip: false, ok: false}}],
+    [{x: {tags: ["z"], vip: true}}, {x: {tags: ["z"], vip: true, ok: false}}],
+    [{x: {tags: [], vip: true}}, {x: {tags: [], vip: true, ok: false}}],
+  ],
+}
+
+{
+  name: "a condition holding its own `and`/`or` expression is one operand of the fold",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p"], "x.q or x.r and false"]}],
+  },
+  cases: [
+    [{x: {p: true, q: false, r: true}}, {x: {p: true, q: false, r: true, ok: true}}],
+    [{x: {p: false, q: true, r: false}}, {x: {p: false, q: true, r: false, ok: true}}],
+    [{x: {p: false, q: false, r: true}}, {x: {p: false, q: false, r: true, ok: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Degenerate groups: single-condition groups, empty conditions inside groups.
+// ---------------------------------------------------------------------------
+{
+  name: "a single-condition group is the same as no group: `p and (q) or r`",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean", r: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p"], ["or", "x.q", 1], "x.r"]}],
+  },
+  cases: [
+    [{x: {p: true, q: true, r: false}}, {x: {p: true, q: true, r: false, ok: true}}],
+    [{x: {p: false, q: true, r: false}}, {x: {p: false, q: true, r: false, ok: false}}],
+    [{x: {p: false, q: false, r: true}}, {x: {p: false, q: false, r: true, ok: true}}],
+  ],
+}
+
+{
+  name: "an empty condition inside a group is skipped, its depth with it",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p"], ["or", "", 1], ["and", "  ", 2], "x.q"]}],
+  },
+  cases: [
+    [{x: {p: true, q: true}}, {x: {p: true, q: true, ok: true}}],
+    [{x: {p: true, q: false}}, {x: {p: true, q: false, ok: false}}],
+    [{x: {p: false, q: true}}, {x: {p: false, q: true, ok: false}}],
+  ],
+}
+
+{
+  name: "an operator on a skipped empty condition is lost: `p or ''` then `q` joins with `and`",
+  policy: {
+    models: {x: {p: "boolean", q: "boolean"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p"], ["or", ""], "x.q"]}],
+  },
+  cases: [
+    [{x: {p: true, q: false}}, {x: {p: true, q: false, ok: false}}],
+    [{x: {p: false, q: true}}, {x: {p: false, q: true, ok: false}}],
+    [{x: {p: true, q: true}}, {x: {p: true, q: true, ok: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Null, non-boolean and failing conditions inside groups.
+// ---------------------------------------------------------------------------
+{
+  name: "a null condition inside an `or` group counts as false",
+  policy: {
+    models: {x: {p: "boolean", n: "boolean?"}},
+    blocks: [{assertion: "x.ok", conditions: [["and", "x.p"], ["or", "x.n", 1], ["or", "x.n == null", 1]]}],
+  },
+  cases: [
+    [{x: {p: true, n: true}}, {x: {p: true, n: true, ok: true}}],
+    [{x: {p: true, n: false}}, {x: {p: true, n: false, ok: false}}],
+    [{x: {p: true, n: null}}, {x: {p: true, n: null, ok: true}}],
+    [{x: {p: true}}, {x: {p: true, ok: true}}],
+    [{x: {p: false}}, {x: {p: false, ok: false}}],
+  ],
+}
+
+{
+  name: "a non-boolean condition inside a deep group counts as false",
+  policy: {
+    models: {x: {p: "boolean", n: "number", s: "string"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p"], ["or", "x.n", 2], ["or", "x.s", 2]]}],
+  },
+  cases: [
+    [{x: {p: true, n: 1, s: "true"}}, {x: {p: true, n: 1, s: "true", ok: true}}],
+    [{x: {p: false, n: 1, s: "true"}}, {x: {p: false, n: 1, s: "true", ok: false}}],
+    [{x: {p: false, n: 0, s: ""}}, {x: {p: false, n: 0, s: "", ok: false}}],
+  ],
+}
+
+{
+  name: "a failing condition at depth 3 fails the evaluation even when the fold is decided",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {p: "boolean", s: "string"}},
+    blocks: [{assertion: "x.ok", conditions: [["or", "x.p"], ["and", "x.p", 1], ["and", "x.p", 2], ["and", "x.s * 2 > 0", 3]]}],
+  },
+  cases: [
+    [{x: {p: true, s: "a"}}, "!error: ExpressionFailed"],
+    [{x: {p: false, s: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "optional number inside a guarded group condition",
+  policy: {
+    models: {x: {limit: "number?", amount: "number"}},
+    blocks: [{assertion: "x.ok", conditions: [
+      ["and", "x.amount > 0"],
+      ["or", "x.limit == null", 1],
+      ["or", "(x.limit ?? 0) >= x.amount", 1],
+    ]}],
+  },
+  cases: [
+    [{x: {amount: 10, limit: 20}}, {x: {amount: 10, limit: 20, ok: true}}],
+    [{x: {amount: 10, limit: 5}}, {x: {amount: 10, limit: 5, ok: false}}],
+    [{x: {amount: 10, limit: null}}, {x: {amount: 10, limit: null, ok: true}}],
+    [{x: {amount: 10}}, {x: {amount: 10, ok: true}}],
+    [{x: {amount: 0}}, {x: {amount: 0, ok: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Assertions reading computed values.
+// ---------------------------------------------------------------------------
+{
+  name: "grouped conditions read an expression, a match and a table output",
+  policy: {
+    models: {order: {amount: "number", qty: "number", country: "string"}},
+    blocks: [
+      {assertion: "order.autoApprove", conditions: [
+        ["and", "order.total < 5000"],
+        ["or", "order.region == 'domestic'", 1],
+        ["and", "order.risk == 'low'", 2],
+        ["and", "order.qty < 100", 2],
+      ]},
+      {expression: "order.total", value: "order.amount * order.qty"},
+      {match: "order.region", arms: [["order.country == 'DE'", "'domestic'"], ["", "'foreign'"]]},
+      {table: "risk", inputs: ["order.country"], outputs: ["order.risk"], rules: [["'XX', 'YY'", "'high'"], ["", "'low'"]]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 10, qty: 10, country: "DE"}}, {order: {amount: 10, qty: 10, country: "DE", total: 100, region: "domestic", risk: "low", autoApprove: true}}],
+    [{order: {amount: 10, qty: 10, country: "FR"}}, {order: {amount: 10, qty: 10, country: "FR", total: 100, region: "foreign", risk: "low", autoApprove: true}}],
+    [{order: {amount: 1, qty: 200, country: "FR"}}, {order: {amount: 1, qty: 200, country: "FR", total: 200, region: "foreign", risk: "low", autoApprove: false}}],
+    [{order: {amount: 1, qty: 1, country: "XX"}}, {order: {amount: 1, qty: 1, country: "XX", total: 1, region: "foreign", risk: "high", autoApprove: false}}],
+    [{order: {amount: 100, qty: 50, country: "DE"}}, {order: {amount: 100, qty: 50, country: "DE", total: 5000, region: "domestic", risk: "low", autoApprove: false}}],
+  ],
+}
+
+{
+  name: "an assertion over two other assertions in a group",
+  policy: {
+    models: {applicant: {age: "number", income: "number", guarantor: "boolean"}},
+    blocks: [
+      {assertion: "applicant.adult", conditions: ["applicant.age >= 18"]},
+      {assertion: "applicant.solvent", conditions: [["or", "applicant.income >= 30000"], "applicant.guarantor"]},
+      {assertion: "applicant.approved", conditions: [["and", "applicant.adult"], ["or", "applicant.solvent", 1], ["or", "applicant.age >= 65", 1]]},
+    ],
+  },
+  cases: [
+    [{applicant: {age: 30, income: 40000, guarantor: false}}, {applicant: {age: 30, income: 40000, guarantor: false, adult: true, solvent: true, approved: true}}],
+    [{applicant: {age: 30, income: 0, guarantor: true}}, {applicant: {age: 30, income: 0, guarantor: true, adult: true, solvent: true, approved: true}}],
+    [{applicant: {age: 30, income: 0, guarantor: false}}, {applicant: {age: 30, income: 0, guarantor: false, adult: true, solvent: false, approved: false}}],
+    [{applicant: {age: 70, income: 0, guarantor: false}}, {applicant: {age: 70, income: 0, guarantor: false, adult: true, solvent: false, approved: true}}],
+    [{applicant: {age: 17, income: 99999, guarantor: true}}, {applicant: {age: 17, income: 99999, guarantor: true, adult: false, solvent: true, approved: false}}],
+  ],
+}
+
+{
+  name: "assertion reads a nested field of a computed object",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [
+      {expression: "order.pricing", value: "{net: order.amount, tax: order.amount * 0.2, flags: order.amount > 100 ? ['large'] : []}"},
+      {assertion: "order.reviewable", conditions: [["or", "order.pricing.tax > 50"], "'large' in order.pricing.flags"]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 300}}, {order: {amount: 300, pricing: {net: 300, tax: 60, flags: ["large"]}, reviewable: true}}],
+    [{order: {amount: 200}}, {order: {amount: 200, pricing: {net: 200, tax: 40, flags: ["large"]}, reviewable: true}}],
+    [{order: {amount: 50}}, {order: {amount: 50, pricing: {net: 50, tax: 10, flags: []}, reviewable: false}}],
+  ],
+}
+
+{
+  name: "assertion reads a collected table array",
+  policy: {
+    models: {user: {age: "number", country: "string", verified: "boolean"}},
+    blocks: [
+      {table: "flags", inputs: ["user.age", "user.country"], outputs: ["user.flags[]"], rules: [
+        ["< 18", "", "'minor'"],
+        ["", "'XX'", "'sanctioned'"],
+      ]},
+      {assertion: "user.allowed", conditions: [
+        ["and", "not ('sanctioned' in user.flags)"],
+        ["or", "len(user.flags) == 0", 1],
+        ["or", "user.verified", 1],
+      ]},
+    ],
+  },
+  cases: [
+    [{user: {age: 30, country: "DE", verified: false}}, {user: {age: 30, country: "DE", verified: false, flags: [], allowed: true}}],
+    [{user: {age: 10, country: "DE", verified: true}}, {user: {age: 10, country: "DE", verified: true, flags: ["minor"], allowed: true}}],
+    [{user: {age: 10, country: "DE", verified: false}}, {user: {age: 10, country: "DE", verified: false, flags: ["minor"], allowed: false}}],
+    [{user: {age: 30, country: "XX", verified: true}}, {user: {age: 30, country: "XX", verified: true, flags: ["sanctioned"], allowed: false}}],
+  ],
+}
+
+{
+  name: "an assertion feeds a table and a match",
+  policy: {
+    models: {loan: {amount: "number", score: "number"}},
+    blocks: [
+      {assertion: "loan.prime", conditions: [["and", "loan.score >= 700"], "loan.amount <= 50000"]},
+      {table: "rate", inputs: ["loan.prime", "loan.amount"], outputs: ["loan.rate"], rules: [
+        ["true", "< 10000", "0.03"],
+        ["true", "", "0.035"],
+        ["false", "", "0.08"],
+      ]},
+      {match: "loan.channel", arms: [["loan.prime", "'online'"], ["", "'branch'"]]},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 5000, score: 750}}, {loan: {amount: 5000, score: 750, prime: true, rate: 0.03, channel: "online"}}],
+    [{loan: {amount: 20000, score: 700}}, {loan: {amount: 20000, score: 700, prime: true, rate: 0.035, channel: "online"}}],
+    [{loan: {amount: 60000, score: 800}}, {loan: {amount: 60000, score: 800, prime: false, rate: 0.08, channel: "branch"}}],
+    [{loan: {amount: 100, score: 699}}, {loan: {amount: 100, score: 699, prime: false, rate: 0.08, channel: "branch"}}],
+  ],
+}
+
+{
+  name: "goal on an assertion pulls only its own computed inputs",
+  policy: {
+    models: {x: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "x.sum", value: "x.a + x.b"},
+      {expression: "x.product", value: "x.a * x.b"},
+      {assertion: "x.sumPositive", conditions: [["or", "x.sum > 0"], "x.a == 0"]},
+      {assertion: "x.productPositive", conditions: ["x.product > 0"]},
+    ],
+  },
+  cases: [
+    {input: {x: {a: 2, b: 3}}, goals: ["x.sumPositive"], output: {x: {a: 2, b: 3, sum: 5, sumPositive: true}}},
+    {input: {x: {a: -2, b: 1}}, goals: ["x.productPositive"], output: {x: {a: -2, b: 1, product: -2, productPositive: false}}},
+    {input: {x: {a: 0, b: -1}}, output: {x: {a: 0, b: -1, sum: -1, product: 0, sumPositive: true, productPositive: false}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Assertions over relationship aggregates.
+// ---------------------------------------------------------------------------
+{
+  name: "aggregates over member input fields, including empty arrays",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", active: "boolean"}},
+    blocks: [
+      {assertion: "customer.allActive", conditions: ["all(customer.companies, #.active)"]},
+      {assertion: "customer.anyLarge", conditions: ["some(customer.companies, #.revenue > 1000)"]},
+      {assertion: "customer.noLosses", conditions: ["none(customer.companies, #.revenue < 0)"]},
+      {assertion: "customer.diversified", conditions: [["and", "count(customer.companies, #.active) >= 2"], "sum(map(customer.companies, #.revenue)) > 500"]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 2000, active: true}, {revenue: 10, active: true}]}},
+      {customer: {companies: [{revenue: 2000, active: true}, {revenue: 10, active: true}], allActive: true, anyLarge: true, noLosses: true, diversified: true}},
+    ],
+    [
+      {customer: {companies: [{revenue: -5, active: false}, {revenue: 600, active: true}]}},
+      {customer: {companies: [{revenue: -5, active: false}, {revenue: 600, active: true}], allActive: false, anyLarge: false, noLosses: false, diversified: false}},
+    ],
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], allActive: true, anyLarge: false, noLosses: true, diversified: false}},
+    ],
+    [
+      {customer: {companies: [{revenue: 300, active: true}, {revenue: 300, active: true}, {revenue: -1, active: false}]}},
+      {customer: {companies: [{revenue: 300, active: true}, {revenue: 300, active: true}, {revenue: -1, active: false}], allActive: false, anyLarge: false, noLosses: false, diversified: true}},
+    ],
+  ],
+}
+
+{
+  name: "aggregates without a neutral element: `avg` guarded inside one condition, `max` of an empty list fails",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {assertion: "customer.highAverage", conditions: ["len(customer.companies) > 0 and avg(map(customer.companies, #.revenue)) > 100"]},
+      {assertion: "customer.peakOver", conditions: ["(max(map(customer.companies, #.revenue)) ?? 0) > 1000"]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 50}, {revenue: 250}]}}, {customer: {companies: [{revenue: 50}, {revenue: 250}], highAverage: true, peakOver: false}}],
+    [{customer: {companies: [{revenue: 5000}, {revenue: -5000}]}}, {customer: {companies: [{revenue: 5000}, {revenue: -5000}], highAverage: false, peakOver: true}}],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "grouped aggregate conditions over member computeds",
+  policy: {
+    models: {portfolio: {minLoans: "number", loans: "loan[]"}, loan: {amount: "number", daysLate: "number"}},
+    blocks: [
+      {assertion: "loan.performing", conditions: ["loan.daysLate <= 30"]},
+      {expression: "loan.exposure", value: "loan.performing ? loan.amount : loan.amount * 2"},
+      {assertion: "portfolio.healthy", conditions: [
+        ["and", "len(portfolio.loans) >= portfolio.minLoans"],
+        ["or", "all(portfolio.loans, #.performing)", 1],
+        ["and", "count(portfolio.loans, not #.performing) == 1", 2],
+        ["and", "sum(map(portfolio.loans, #.exposure)) < 10000", 2],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {portfolio: {minLoans: 1, loans: [{amount: 100, daysLate: 0}, {amount: 200, daysLate: 10}]}},
+      {portfolio: {minLoans: 1, healthy: true, loans: [{amount: 100, daysLate: 0, performing: true, exposure: 100}, {amount: 200, daysLate: 10, performing: true, exposure: 200}]}},
+    ],
+    [
+      {portfolio: {minLoans: 1, loans: [{amount: 100, daysLate: 60}, {amount: 200, daysLate: 0}]}},
+      {portfolio: {minLoans: 1, healthy: true, loans: [{amount: 100, daysLate: 60, performing: false, exposure: 200}, {amount: 200, daysLate: 0, performing: true, exposure: 200}]}},
+    ],
+    [
+      {portfolio: {minLoans: 1, loans: [{amount: 6000, daysLate: 60}]}},
+      {portfolio: {minLoans: 1, healthy: false, loans: [{amount: 6000, daysLate: 60, performing: false, exposure: 12000}]}},
+    ],
+    [
+      {portfolio: {minLoans: 1, loans: [{amount: 1, daysLate: 31}, {amount: 1, daysLate: 31}]}},
+      {portfolio: {minLoans: 1, healthy: false, loans: [{amount: 1, daysLate: 31, performing: false, exposure: 2}, {amount: 1, daysLate: 31, performing: false, exposure: 2}]}},
+    ],
+    [
+      {portfolio: {minLoans: 3, loans: [{amount: 1, daysLate: 0}]}},
+      {portfolio: {minLoans: 3, healthy: false, loans: [{amount: 1, daysLate: 0, performing: true, exposure: 1}]}},
+    ],
+    [{portfolio: {minLoans: 0, loans: []}}, {portfolio: {minLoans: 0, healthy: true, loans: []}}],
+  ],
+}
+
+{
+  name: "assertion over two relationship arrays",
+  policy: {
+    models: {customer: {accounts: "account[]", loans: "loan[]"}, account: {balance: "number"}, loan: {outstanding: "number"}},
+    blocks: [
+      {expression: "customer.assets", value: "sum(map(customer.accounts, #.balance))"},
+      {expression: "customer.debt", value: "sum(map(customer.loans, #.outstanding))"},
+      {assertion: "customer.creditworthy", conditions: [
+        ["or", "len(customer.loans) == 0"],
+        ["and", "customer.assets >= customer.debt", 1],
+        ["and", "none(customer.accounts, #.balance < 0)", 1],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {accounts: [{balance: -10}], loans: []}},
+      {customer: {accounts: [{balance: -10}], loans: [], assets: -10, debt: 0, creditworthy: true}},
+    ],
+    [
+      {customer: {accounts: [{balance: 500}, {balance: 600}], loans: [{outstanding: 1000}]}},
+      {customer: {accounts: [{balance: 500}, {balance: 600}], loans: [{outstanding: 1000}], assets: 1100, debt: 1000, creditworthy: true}},
+    ],
+    [
+      {customer: {accounts: [{balance: 5000}, {balance: -1}], loans: [{outstanding: 1}]}},
+      {customer: {accounts: [{balance: 5000}, {balance: -1}], loans: [{outstanding: 1}], assets: 4999, debt: 1, creditworthy: false}},
+    ],
+    [
+      {customer: {accounts: [], loans: [{outstanding: 0.01}]}},
+      {customer: {accounts: [], loans: [{outstanding: 0.01}], assets: 0, debt: 0.01, creditworthy: false}},
+    ],
+  ],
+}
+
+{
+  name: "aggregate over a filtered and mapped member list",
+  policy: {
+    models: {cart: {items: "item[]"}, item: {category: "string", price: "number", qty: "number"}},
+    blocks: [{assertion: "cart.freeShipping", conditions: [
+      ["or", "sum(map(filter(cart.items, #.category != 'gift card'), #.price * #.qty)) >= 50"],
+      "some(cart.items, #.category == 'furniture')",
+    ]}],
+  },
+  cases: [
+    [{cart: {items: [{category: "book", price: 20, qty: 3}]}}, {cart: {items: [{category: "book", price: 20, qty: 3}], freeShipping: true}}],
+    [{cart: {items: [{category: "gift card", price: 100, qty: 1}, {category: "book", price: 5, qty: 1}]}}, {cart: {items: [{category: "gift card", price: 100, qty: 1}, {category: "book", price: 5, qty: 1}], freeShipping: false}}],
+    [{cart: {items: [{category: "furniture", price: 1, qty: 1}]}}, {cart: {items: [{category: "furniture", price: 1, qty: 1}], freeShipping: true}}],
+    [{cart: {items: []}}, {cart: {items: [], freeShipping: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Assertions on relationship members.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member assertion with a depth-2 group",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", employees: "number", public: "boolean"}},
+    blocks: [{assertion: "company.eligible", conditions: [
+      ["and", "company.revenue > 0"],
+      ["or", "company.public", 1],
+      ["and", "company.employees >= 10", 2],
+      ["and", "company.revenue >= 1000000", 2],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {revenue: 1, employees: 0, public: true},
+        {revenue: 1000000, employees: 10, public: false},
+        {revenue: 999999, employees: 50, public: false},
+        {revenue: 0, employees: 50, public: true},
+      ]}},
+      {customer: {companies: [
+        {revenue: 1, employees: 0, public: true, eligible: true},
+        {revenue: 1000000, employees: 10, public: false, eligible: true},
+        {revenue: 999999, employees: 50, public: false, eligible: false},
+        {revenue: 0, employees: 50, public: true, eligible: false},
+      ]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+{
+  name: "per-member assertion reads a parent input and a parent computed",
+  policy: {
+    models: {customer: {country: "string", companies: "company[]"}, company: {country: "string", revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {assertion: "company.material", conditions: [
+        ["or", "company.country != customer.country"],
+        "company.revenue * 4 >= customer.total",
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {country: "DE", companies: [{country: "DE", revenue: 10}, {country: "FR", revenue: 10}, {country: "DE", revenue: 80}]}},
+      {customer: {country: "DE", total: 100, companies: [
+        {country: "DE", revenue: 10, material: false},
+        {country: "FR", revenue: 10, material: true},
+        {country: "DE", revenue: 80, material: true},
+      ]}},
+    ],
+    [
+      {customer: {country: "DE", companies: [{country: "DE", revenue: 0}]}},
+      {customer: {country: "DE", total: 0, companies: [{country: "DE", revenue: 0, material: true}]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member assertion through the member's single relationship",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {address: "address"}, address: {country: "string", verified: "boolean"}},
+    blocks: [{assertion: "company.addressOk", conditions: [["and", "company.address.verified"], "company.address.country != 'XX'"]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{address: {country: "DE", verified: true}}, {address: {country: "XX", verified: true}}, {address: {country: "DE", verified: false}}]}},
+      {customer: {companies: [
+        {address: {country: "DE", verified: true}, addressOk: true},
+        {address: {country: "XX", verified: true}, addressOk: false},
+        {address: {country: "DE", verified: false}, addressOk: false},
+      ]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member assertions chained, then counted by the parent",
+  policy: {
+    models: {order: {lines: "line[]"}, line: {qty: "number", price: "number", stock: "number"}},
+    blocks: [
+      {assertion: "line.inStock", conditions: ["line.stock >= line.qty"]},
+      {assertion: "line.valid", conditions: [["and", "line.inStock"], ["and", "line.qty > 0"], "line.price >= 0"]},
+      {assertion: "order.shippable", conditions: [["and", "len(order.lines) > 0"], "all(order.lines, #.valid)"]},
+      {expression: "order.invalidCount", value: "count(order.lines, not #.valid)"},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{qty: 1, price: 5, stock: 1}, {qty: 2, price: 0, stock: 10}]}},
+      {order: {shippable: true, invalidCount: 0, lines: [{qty: 1, price: 5, stock: 1, inStock: true, valid: true}, {qty: 2, price: 0, stock: 10, inStock: true, valid: true}]}},
+    ],
+    [
+      {order: {lines: [{qty: 3, price: 5, stock: 2}, {qty: 0, price: 1, stock: 5}, {qty: 1, price: -1, stock: 5}]}},
+      {order: {shippable: false, invalidCount: 3, lines: [
+        {qty: 3, price: 5, stock: 2, inStock: false, valid: false},
+        {qty: 0, price: 1, stock: 5, inStock: true, valid: false},
+        {qty: 1, price: -1, stock: 5, inStock: true, valid: false},
+      ]}},
+    ],
+    [{order: {lines: []}}, {order: {shippable: false, invalidCount: 0, lines: []}}],
+  ],
+}
+
+{
+  name: "per-member assertion writes a nested path",
+  policy: {
+    models: {team: {members: "member[]"}, member: {age: "number", certified: "boolean"}},
+    blocks: [
+      {assertion: "member.checks.adult", conditions: ["member.age >= 18"]},
+      {assertion: "member.checks.canLead", conditions: [["and", "member.checks.adult"], "member.certified"]},
+    ],
+  },
+  cases: [
+    [
+      {team: {members: [{age: 30, certified: true}, {age: 16, certified: true}, {age: 40, certified: false}]}},
+      {team: {members: [
+        {age: 30, certified: true, checks: {adult: true, canLead: true}},
+        {age: 16, certified: true, checks: {adult: false, canLead: false}},
+        {age: 40, certified: false, checks: {adult: true, canLead: false}},
+      ]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member assertion on an optional member field",
+  policy: {
+    models: {team: {members: "member[]"}, member: {score: "number?"}},
+    blocks: [{assertion: "member.passed", conditions: [["and", "member.score != null"], "(member.score ?? 0) >= 50"]}],
+  },
+  cases: [
+    [
+      {team: {members: [{score: 50}, {score: 49}, {score: null}, {}]}},
+      {team: {members: [{score: 50, passed: true}, {score: 49, passed: false}, {score: null, passed: false}, {passed: false}]}},
+    ],
+  ],
+}
+
+{
+  name: "a per-member condition failing on one member fails the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {team: {members: "member[]"}, member: {score: "number?"}},
+    blocks: [{assertion: "member.passed", conditions: ["member.score >= 50"]}],
+  },
+  cases: [
+    [{team: {members: [{score: 70}, {score: 1}]}}, {team: {members: [{score: 70, passed: true}, {score: 1, passed: false}]}}],
+    [{team: {members: [{score: 70}, {score: null}]}}, "!error: ExpressionFailed"],
+    [{team: {members: [{}]}}, "!error: ExpressionFailed"],
+    [{team: {members: []}}, {team: {members: []}}],
+  ],
+}
+
+{
+  name: "goal on a parent assertion runs the member assertions it aggregates",
+  policy: {
+    models: {team: {members: "member[]"}, member: {age: "number"}},
+    blocks: [
+      {assertion: "member.adult", conditions: ["member.age >= 18"]},
+      {assertion: "member.senior", conditions: ["member.age >= 65"]},
+      {assertion: "team.allAdults", conditions: ["all(team.members, #.adult)"]},
+    ],
+  },
+  cases: [
+    {input: {team: {members: [{age: 20}, {age: 70}]}}, goals: ["team.allAdults"], output: {team: {allAdults: true, members: [{age: 20, adult: true}, {age: 70, adult: true}]}}},
+    {input: {team: {members: [{age: 10}]}}, goals: ["team.allAdults"], output: {team: {allAdults: false, members: [{age: 10, adult: false}]}}},
+    {input: {team: {members: [{age: 10}]}}, output: {team: {allAdults: false, members: [{age: 10, adult: false, senior: false}]}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// A realistic grouped rule set.
+// ---------------------------------------------------------------------------
+{
+  name: "KYC: verified and ((resident and adult) or (business and (registered or listed)))",
+  policy: {
+    models: {party: {verified: "boolean", type: "string(person|business)", resident: "boolean", age: "number", registered: "boolean", listed: "boolean"}},
+    blocks: [{assertion: "party.accepted", conditions: [
+      ["and", "party.verified"],
+      ["and", "party.type == 'person'", 1],
+      ["and", "party.resident", 1],
+      ["or", "party.age >= 18", 1],
+      ["and", "party.type == 'business'", 2],
+      ["or", "party.registered", 3],
+      ["or", "party.listed", 3],
+    ]}],
+  },
+  cases: [
+    [{party: {verified: true, type: "person", resident: true, age: 30, registered: false, listed: false}}, {party: {verified: true, type: "person", resident: true, age: 30, registered: false, listed: false, accepted: true}}],
+    [{party: {verified: true, type: "person", resident: false, age: 30, registered: true, listed: true}}, {party: {verified: true, type: "person", resident: false, age: 30, registered: true, listed: true, accepted: false}}],
+    [{party: {verified: true, type: "business", resident: false, age: 0, registered: true, listed: false}}, {party: {verified: true, type: "business", resident: false, age: 0, registered: true, listed: false, accepted: true}}],
+    [{party: {verified: true, type: "business", resident: true, age: 50, registered: false, listed: false}}, {party: {verified: true, type: "business", resident: true, age: 50, registered: false, listed: false, accepted: false}}],
+    [{party: {verified: false, type: "person", resident: true, age: 30, registered: true, listed: true}}, {party: {verified: false, type: "person", resident: true, age: 30, registered: true, listed: true, accepted: false}}],
+  ],
+}

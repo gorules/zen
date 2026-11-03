@@ -1,0 +1,863 @@
+use crate::compiled::policy::blocks::TableIndexes;
+use crate::compiled::policy::validator::InputSchema;
+use crate::compiled::policy::{Host, PolicyPlan};
+use crate::policy::evaluator::EvalArtifact;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use zen_expression::variable::Variable;
+
+use zen_expression::lane::{Bits, Programs};
+
+use crate::policy::blocks::Block;
+use crate::policy::ir::PropertyPath;
+use crate::policy::queries::dependency::{DataModelPaths, WriteScope};
+use crate::policy::queries::scope::{EntityForm, ReferenceField};
+use crate::policy::refs::RefPoolIndex;
+use crate::workspace::db::Db;
+use crate::workspace::types::{
+    BlockRef, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
+};
+use zen_types::path::DotPath;
+
+pub(crate) struct Artifact {
+    base: Arc<EvalArtifact>,
+    pub(crate) input_schema: InputSchema,
+    compiled: OnceLock<Arc<PolicyPlan>>,
+    goal_plans: Mutex<HashMap<Vec<Arc<str>>, Arc<PolicyPlan>>>,
+    requirements: OnceLock<Requirements>,
+    programs: OnceLock<Arc<Programs>>,
+    pub(crate) indexes: TableIndexes,
+}
+
+impl Deref for Artifact {
+    type Target = EvalArtifact;
+
+    fn deref(&self) -> &EvalArtifact {
+        &self.base
+    }
+}
+
+impl Artifact {
+    pub(crate) fn new(base: Arc<EvalArtifact>, input_schema: InputSchema) -> Self {
+        Self {
+            base,
+            input_schema,
+            compiled: OnceLock::new(),
+            goal_plans: Mutex::new(HashMap::new()),
+            requirements: OnceLock::new(),
+            programs: OnceLock::new(),
+            indexes: TableIndexes::default(),
+        }
+    }
+
+    pub(crate) fn base(&self) -> &Arc<EvalArtifact> {
+        &self.base
+    }
+}
+
+pub(crate) type Iteration = (Arc<str>, Arc<str>, Option<Arc<str>>);
+
+pub(crate) struct Requirements {
+    order: Vec<PropertyPath>,
+    goals: Vec<Arc<str>>,
+    checks: Vec<Requirement>,
+}
+
+struct Requirement {
+    path: PropertyPath,
+    primary: Probe,
+    alternate: Option<Probe>,
+}
+
+struct Probe {
+    segments: Vec<Arc<str>>,
+    optional: Vec<bool>,
+    prefixes: Vec<String>,
+}
+
+impl Probe {
+    fn new(paths: &DataModelPaths, path: &str) -> Self {
+        let segments: Vec<Arc<str>> = path.split('.').map(Arc::from).collect();
+        let prefixes = (0..segments.len())
+            .map(|i| {
+                segments[..=i]
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(".")
+            })
+            .collect();
+        Self {
+            segments,
+            optional: paths.optional_steps(path),
+            prefixes,
+        }
+    }
+
+    fn missing(&self, input: &Variable) -> bool {
+        let mut current = input.shallow_clone();
+        for (i, segment) in self.segments.iter().enumerate() {
+            if current.as_object().is_none() {
+                return false;
+            }
+            let next = current
+                .as_object()
+                .and_then(|o| o.borrow().get_str(segment).map(Variable::shallow_clone));
+            match next {
+                Some(Variable::Null) | None => return !self.optional[i..].iter().any(|o| *o),
+                Some(v) => current = v,
+            }
+        }
+        false
+    }
+}
+
+struct Steps<'p> {
+    probe: &'p Probe,
+    steps: Vec<(Option<usize>, Vec<usize>)>,
+}
+
+impl<'p> Steps<'p> {
+    fn new(probe: &'p Probe, columns: &zen_expression::lane::Columns) -> Self {
+        let steps = probe
+            .prefixes
+            .iter()
+            .map(|path| {
+                let exact = columns
+                    .columns
+                    .iter()
+                    .position(|(p, _)| *p == path.as_str());
+                let under = columns
+                    .columns
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (p, _))| DotPath::under(p, path))
+                    .map(|(at, _)| at)
+                    .collect();
+                (exact, under)
+            })
+            .collect();
+        Self { probe, steps }
+    }
+
+    fn coded(column: &zen_expression::lane::Column) -> Option<usize> {
+        use zen_expression::lane::{Dictionary, Values};
+        match column.values {
+            Values::Dict {
+                values:
+                    values @ (Dictionary::Text { .. }
+                    | Dictionary::Scaled { .. }
+                    | Dictionary::Bool { .. }),
+                ..
+            } => Some(values.len()),
+            _ => None,
+        }
+    }
+
+    fn held(column: &zen_expression::lane::Column, row: usize) -> bool {
+        use zen_expression::lane::Values;
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { .. }, Some(len)) => {
+                column.valid(row) && column.code(row).is_some_and(|key| key < len)
+            }
+            (Values::Any(_) | Values::Dict { .. }, _) => {
+                column.valid(row) && !matches!(column.variable(row), Variable::Null)
+            }
+            _ => column.valid(row),
+        }
+    }
+
+    fn solid(column: &zen_expression::lane::Column, rows: usize) -> bool {
+        use zen_expression::lane::Values;
+        let full = column
+            .validity
+            .is_none_or(|(bits, offset)| Self::ones(bits, offset, rows));
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { keys, .. }, Some(len)) => {
+                full && keys.get(..rows).is_some_and(|keys| {
+                    keys.iter()
+                        .all(|&key| usize::try_from(key).is_ok_and(|key| key < len))
+                })
+            }
+            (values, _) => full && !matches!(values, Values::Any(_) | Values::Dict { .. }),
+        }
+    }
+
+    fn ones(bits: &[u64], offset: usize, rows: usize) -> bool {
+        (0..rows.div_ceil(64)).all(|w| {
+            let take = (rows - (w << 6)).min(64);
+            let mask = match take {
+                64 => u64::MAX,
+                _ => (1u64 << take) - 1,
+            };
+            Bits::word(bits, offset + (w << 6), take) & mask == mask
+        })
+    }
+
+    fn always(&self, columns: &zen_expression::lane::Columns) -> bool {
+        let rows = columns.rows;
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                return Self::solid(column, rows)
+                    && (i + 1 == self.steps.len()
+                        || !matches!(column.values, zen_expression::lane::Values::Struct { .. }));
+            }
+            if !under
+                .iter()
+                .any(|at| Self::solid(&columns.columns[*at].1, rows))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn missing(&self, columns: &zen_expression::lane::Columns, row: usize) -> bool {
+        let absent = |i: usize| !self.probe.optional[i..].iter().any(|o| *o);
+        for (i, (exact, under)) in self.steps.iter().enumerate() {
+            if let Some(at) = exact {
+                let column = &columns.columns[*at].1;
+                if !Self::held(column, row) {
+                    return absent(i);
+                }
+                if i + 1 == self.steps.len() {
+                    return false;
+                }
+                let nested = matches!(
+                    column.values,
+                    zen_expression::lane::Values::Any(_)
+                        | zen_expression::lane::Values::Struct { .. }
+                );
+                let value = if nested {
+                    column.variable(row)
+                } else {
+                    Variable::Null
+                };
+                return match value {
+                    Variable::Object(_) => Probe {
+                        segments: self.probe.segments[i + 1..].to_vec(),
+                        optional: self.probe.optional[i + 1..].to_vec(),
+                        prefixes: Vec::new(),
+                    }
+                    .missing(&column.variable(row)),
+                    _ => false,
+                };
+            }
+            if !under
+                .iter()
+                .any(|at| Self::held(&columns.columns[*at].1, row))
+            {
+                return absent(i);
+            }
+        }
+        false
+    }
+}
+
+impl Requirement {
+    fn missing(&self, input: &Variable) -> bool {
+        if !self.primary.missing(input) {
+            return false;
+        }
+        self.alternate
+            .as_ref()
+            .is_none_or(|alternate| alternate.missing(input))
+    }
+}
+
+pub(crate) struct Artifacts {
+    kept: std::cell::RefCell<HashMap<Arc<str>, Arc<Artifact>>>,
+}
+
+impl Default for Artifacts {
+    fn default() -> Self {
+        Self {
+            kept: std::cell::RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+impl Artifacts {
+    pub(crate) fn get(&self, db: &Db, policy: &str) -> Arc<Artifact> {
+        let base = db.eval_artifact(policy);
+        if let Some(kept) = self.kept.borrow().get(policy) {
+            if Arc::ptr_eq(kept.base(), &base) {
+                return kept.clone();
+            }
+        }
+        let artifact = Arc::new(Artifact::new(base, InputSchema::of(db, policy)));
+        self.kept
+            .borrow_mut()
+            .insert(Arc::from(policy), artifact.clone());
+        artifact
+    }
+}
+
+pub(crate) struct Runtime;
+
+impl Runtime {
+    pub(crate) fn evaluate(
+        db: &Db,
+        artifacts: &Artifacts,
+        req: &EvaluateRequest,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        if db.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
+        if db.raw_policy(&req.policy_path).is_none() {
+            return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
+        }
+        Self::check_imports_resolved(db, &req.policy_path)?;
+        artifacts.get(db, &req.policy_path).evaluate(req, false)
+    }
+
+    pub(crate) fn enhance_trace(
+        db: &Db,
+        artifacts: &Artifacts,
+        req: &EvaluateRequest,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        if db.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
+        if db.raw_policy(&req.policy_path).is_none() {
+            return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
+        }
+        Self::check_imports_resolved(db, &req.policy_path)?;
+        let mut req = req.clone();
+        req.trace = true;
+        artifacts.get(db, &req.policy_path).evaluate(&req, true)
+    }
+
+    pub(crate) fn evaluate_columns<'a>(
+        db: &Db,
+        artifacts: &Artifacts,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a zen_expression::lane::Columns<'a>,
+    ) -> Result<crate::compiled::ColumnarOutput<'a>, EvaluationError> {
+        let probe = EvaluateRequest {
+            policy_path: policy_path.clone(),
+            input: Variable::Null,
+            goals: goals.to_vec(),
+            trace: false,
+        };
+        Self::check_evaluable(db, &probe)?;
+        let artifact = artifacts.get(db, policy_path);
+        Ok(artifact
+            .plan(goals)
+            .evaluate_columns(&artifact, policy_path, goals, columns))
+    }
+
+    pub(crate) fn evaluate_batch(
+        db: &Db,
+        artifacts: &Artifacts,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
+            (0..requests.len()).map(|_| None).collect();
+        let mut groups: Vec<(Arc<str>, Vec<usize>)> = Vec::new();
+        for (index, request) in requests.iter().enumerate() {
+            match Self::check_evaluable(db, request) {
+                Err(error) => results[index] = Some(Err(error)),
+                Ok(()) => match groups.iter_mut().find(|(p, _)| *p == request.policy_path) {
+                    Some((_, members)) => members.push(index),
+                    None => groups.push((request.policy_path.clone(), vec![index])),
+                },
+            }
+        }
+        for (path, members) in groups {
+            let artifact = artifacts.get(db, &path);
+            let batch: Vec<EvaluateRequest> =
+                members.iter().map(|&i| requests[i].clone()).collect();
+            for (index, result) in members.into_iter().zip(artifact.evaluate_batch(&batch)) {
+                results[index] = Some(result);
+            }
+        }
+        results
+            .into_iter()
+            .map(|r| r.unwrap_or_else(|| Err(EvaluationError::PolicyNotFound(Arc::from("")))))
+            .collect()
+    }
+
+    pub(crate) fn check_evaluable(db: &Db, req: &EvaluateRequest) -> Result<(), EvaluationError> {
+        if db.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
+        if db.raw_policy(&req.policy_path).is_none() {
+            return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
+        }
+        Self::check_imports_resolved(db, &req.policy_path)
+    }
+
+    fn check_imports_resolved(db: &Db, entry: &Arc<str>) -> Result<(), EvaluationError> {
+        let mut visited: HashSet<Arc<str>> = HashSet::new();
+        let mut queue: Vec<Arc<str>> = vec![entry.clone()];
+        visited.insert(entry.clone());
+
+        while let Some(path) = queue.pop() {
+            let Some(parsed) = db.parsed(&path) else {
+                continue;
+            };
+            for import in parsed.policy.imports() {
+                if db.raw_policy(import).is_none() {
+                    return Err(EvaluationError::ImportNotFound {
+                        policy_path: path,
+                        import: import.clone(),
+                    });
+                }
+                if visited.insert(import.clone()) {
+                    queue.push(import.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Artifact {
+    pub(crate) fn evaluate_entry(
+        &self,
+        key: &str,
+        input: Variable,
+        trace: bool,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        let request = EvaluateRequest {
+            policy_path: Arc::from(key),
+            input,
+            goals: Vec::new(),
+            trace,
+        };
+        self.evaluate(&request, false)
+    }
+
+    pub(crate) fn evaluate(
+        &self,
+        req: &EvaluateRequest,
+        extras: bool,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        let plan = self.plan(&req.goals);
+        if !req.trace && !extras {
+            if let Some(result) = plan.evaluate(self, std::slice::from_ref(req)).pop() {
+                return result;
+            }
+        }
+        plan.traced(self, req, extras)
+    }
+
+    const GOAL_PLANS: usize = 32;
+
+    fn plan(&self, goals: &[Arc<str>]) -> Arc<PolicyPlan> {
+        if goals.is_empty() {
+            return self
+                .compiled
+                .get_or_init(|| {
+                    Arc::new(PolicyPlan::compile(
+                        self,
+                        self.eval_graph.terminal_sinks(&self.members),
+                    ))
+                })
+                .clone();
+        }
+        if let Some(plan) = self
+            .goal_plans
+            .lock()
+            .ok()
+            .and_then(|p| p.get(goals).cloned())
+        {
+            return plan;
+        }
+        let plan = Arc::new(PolicyPlan::compile(self, goals.to_vec()));
+        if let Ok(mut plans) = self.goal_plans.lock() {
+            if plans.len() >= Self::GOAL_PLANS {
+                plans.clear();
+            }
+            plans.insert(goals.to_vec(), plan.clone());
+        }
+        plan
+    }
+
+    pub(crate) fn evaluate_batch(
+        &self,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        let owned: Vec<EvaluateRequest> = requests
+            .iter()
+            .map(|request| EvaluateRequest {
+                input: request.input.deep_clone(),
+                ..request.clone()
+            })
+            .collect();
+        let requests = owned.as_slice();
+        let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
+            (0..requests.len()).map(|_| None).collect();
+        let mut groups: Vec<(&[Arc<str>], Vec<usize>)> = Vec::new();
+        for (index, request) in requests.iter().enumerate() {
+            match request.trace {
+                true => {
+                    results[index] = Some(self.plan(&request.goals).traced(self, request, false))
+                }
+                false => match groups
+                    .iter_mut()
+                    .find(|(g, _)| *g == request.goals.as_slice())
+                {
+                    Some((_, members)) => members.push(index),
+                    None => groups.push((&request.goals, vec![index])),
+                },
+            }
+        }
+        for (goals, members) in groups {
+            let batch: Vec<EvaluateRequest> =
+                members.iter().map(|&i| requests[i].clone()).collect();
+            for (index, result) in members
+                .into_iter()
+                .zip(self.plan(goals).evaluate(self, &batch))
+            {
+                results[index] = Some(result);
+            }
+        }
+        results.into_iter().flatten().collect()
+    }
+
+    pub(crate) fn prepare(
+        &self,
+        req: &EvaluateRequest,
+    ) -> Result<(Variable, Vec<PropertyPath>), EvaluationError> {
+        let input = self
+            .input_schema
+            .convert_dates(&req.input)
+            .unwrap_or_else(|| req.input.clone());
+        self.validate_request(req, &input)?;
+
+        let store = input.depth_clone(1);
+        let ref_targets: HashSet<Arc<str>> = self
+            .reference_fields
+            .iter()
+            .map(|f| f.target.clone())
+            .collect();
+        let pool_index = RefPoolIndex::from_input(&store, ref_targets);
+        store.hydrate_references(&self.reference_fields, &pool_index);
+
+        let order_to_run = self.compute_order_to_run(req, &store)?;
+        Ok((store, order_to_run))
+    }
+
+    fn validate_request(
+        &self,
+        req: &EvaluateRequest,
+        input: &Variable,
+    ) -> Result<(), EvaluationError> {
+        for goal in &req.goals {
+            if !self.eval_graph.contains(goal) {
+                return Err(EvaluationError::GoalNotFound(goal.clone()));
+            }
+        }
+        let validation_errors = self.input_schema.validate(input);
+        if !validation_errors.is_empty() {
+            return Err(EvaluationError::InputValidationFailed {
+                errors: validation_errors,
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn sure(
+        &self,
+        columns: &zen_expression::lane::Columns,
+        goals: &[Arc<str>],
+    ) -> Option<Vec<bool>> {
+        if !goals.is_empty() || !self.reference_fields.is_empty() {
+            return None;
+        }
+        let mut sure = self.input_schema.sure(columns)?;
+        for check in &self.requirements().checks {
+            let primary = Steps::new(&check.primary, columns);
+            if primary.always(columns) {
+                continue;
+            }
+            let alternate = check.alternate.as_ref().map(|a| Steps::new(a, columns));
+            if alternate.as_ref().is_some_and(|a| a.always(columns)) {
+                continue;
+            }
+            for (row, sure) in sure.iter_mut().enumerate() {
+                if *sure
+                    && primary.missing(columns, row)
+                    && alternate.as_ref().is_none_or(|a| a.missing(columns, row))
+                {
+                    *sure = false;
+                }
+            }
+        }
+        Some(sure)
+    }
+
+    fn requirements(&self) -> &Requirements {
+        self.requirements.get_or_init(|| {
+            let visible = &self.members;
+            let order: Vec<PropertyPath> = self
+                .execution_order
+                .iter()
+                .filter(|path| {
+                    self.eval_graph
+                        .writer_for(path)
+                        .is_some_and(|o| visible.contains(&o.policy_path))
+                })
+                .cloned()
+                .collect();
+            let goals = self.eval_graph.terminal_sinks(visible);
+            let entity_form = EntityForm::new(&self.entity_sources);
+            let checks = self
+                .eval_graph
+                .reachable_input_paths(&goals, visible)
+                .into_iter()
+                .filter(|p| {
+                    !entity_form
+                        .rewrite(p)
+                        .is_some_and(|entity| self.eval_graph.written_at(&entity, visible))
+                })
+                .map(|path| {
+                    let alternate = path.split_once('.').and_then(|(entity, rest)| {
+                        let src = self.entity_sources.get(entity)?;
+                        Some(Probe::new(
+                            &self.data_model_paths,
+                            &format!("{}.{}", src.path, rest),
+                        ))
+                    });
+                    Requirement {
+                        primary: Probe::new(&self.data_model_paths, &path),
+                        alternate,
+                        path,
+                    }
+                })
+                .collect();
+            Requirements {
+                order,
+                goals,
+                checks,
+            }
+        })
+    }
+
+    fn compute_order_to_run(
+        &self,
+        req: &EvaluateRequest,
+        input: &Variable,
+    ) -> Result<Vec<PropertyPath>, EvaluationError> {
+        if req.goals.is_empty() {
+            let requirements = self.requirements();
+            let mut missing: Vec<PropertyPath> = requirements
+                .checks
+                .iter()
+                .filter(|check| check.missing(input))
+                .map(|check| check.path.clone())
+                .collect();
+            if !missing.is_empty() {
+                missing.sort();
+                return Err(EvaluationError::MissingRequiredInputs {
+                    goals: requirements.goals.clone(),
+                    missing,
+                });
+            }
+            return Ok(requirements.order.clone());
+        }
+
+        let visible = &self.members;
+        let visible_order: Vec<PropertyPath> = self
+            .execution_order
+            .iter()
+            .filter(|path| {
+                self.eval_graph
+                    .writer_for(path)
+                    .is_some_and(|o| visible.contains(&o.policy_path))
+            })
+            .cloned()
+            .collect();
+
+        let goals = match req.goals.is_empty() {
+            true => self.eval_graph.terminal_sinks(visible),
+            false => req.goals.clone(),
+        };
+        let entity_form = EntityForm::new(&self.entity_sources);
+        let mut missing: Vec<PropertyPath> = self
+            .eval_graph
+            .reachable_input_paths(&goals, visible)
+            .into_iter()
+            .filter(|p| {
+                !entity_form
+                    .rewrite(p)
+                    .is_some_and(|entity| self.eval_graph.written_at(&entity, visible))
+            })
+            .filter(|p| self.input_missing(input, p))
+            .collect();
+        if !missing.is_empty() {
+            missing.sort();
+            return Err(EvaluationError::MissingRequiredInputs { goals, missing });
+        }
+
+        if req.goals.is_empty() {
+            return Ok(visible_order);
+        }
+
+        let reachable = self.eval_graph.reachable_from(&req.goals);
+
+        Ok(visible_order
+            .iter()
+            .filter(|p| reachable.contains(*p))
+            .cloned()
+            .collect())
+    }
+
+    fn input_missing(&self, input: &Variable, path: &str) -> bool {
+        if !self.path_missing(input, path) {
+            return false;
+        }
+        let Some((entity, rest)) = path.split_once('.') else {
+            return true;
+        };
+        match self.entity_sources.get(entity) {
+            Some(src) => self.path_missing(input, &format!("{}.{}", src.path, rest)),
+            None => true,
+        }
+    }
+
+    fn path_missing(&self, input: &Variable, path: &str) -> bool {
+        let optional = self.data_model_paths.optional_steps(path);
+        let mut current = input.shallow_clone();
+        for (i, segment) in path.split('.').enumerate() {
+            if current.as_object().is_none() {
+                return false;
+            }
+            match current.dot(segment) {
+                Some(Variable::Null) | None => return !optional[i..].iter().any(|o| *o),
+                Some(v) => current = v,
+            }
+        }
+        false
+    }
+}
+
+impl Artifact {
+    pub(crate) fn iteration(&self, rule: &Block) -> Option<Iteration> {
+        match rule.write_scope(&self.classifier) {
+            WriteScope::Entity(entity) => self
+                .entity_sources
+                .get(entity.as_ref())
+                .map(|src| (entity, src.path.clone(), src.owner.clone())),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn programs(&self) -> Arc<Programs> {
+        self.programs
+            .get_or_init(|| {
+                Arc::new(Host::programs(
+                    self.rule_by_ref
+                        .iter()
+                        .filter(|(owner, _)| self.members.contains(&owner.policy_path))
+                        .map(|(_, rule)| rule.as_ref()),
+                ))
+            })
+            .clone()
+    }
+
+    pub(crate) fn writers_of_longest_prefix(&self, prop: &str) -> &[BlockRef] {
+        let graph = &self.eval_graph;
+        let direct = graph.demand_writers_for(prop);
+        if !direct.is_empty() {
+            return direct;
+        }
+        let mut end = prop.len();
+        while let Some(dot) = prop[..end].rfind('.') {
+            let owners = graph.demand_writers_for(&prop[..dot]);
+            if !owners.is_empty() {
+                return owners;
+            }
+            end = dot;
+        }
+        &[]
+    }
+}
+
+pub(crate) trait StoreOps {
+    fn hydrate_references(&self, reference_fields: &[ReferenceField], pool_index: &RefPoolIndex);
+    fn snapshot(&self, order: &[PropertyPath]) -> HashMap<Arc<str>, Variable>;
+}
+
+impl StoreOps for Variable {
+    fn hydrate_references(&self, reference_fields: &[ReferenceField], pool_index: &RefPoolIndex) {
+        for field in reference_fields {
+            let Some(lookup) = pool_index.pool_for(field.target.as_ref()) else {
+                continue;
+            };
+            let Some(ref_var) = self.dot(field.path.as_ref()) else {
+                continue;
+            };
+
+            if field.array {
+                let Some(ref_arr) = ref_var.as_array() else {
+                    continue;
+                };
+                let mut borrowed = ref_arr.borrow_mut();
+                for slot in borrowed.iter_mut() {
+                    if let Some(id) = slot.as_rc_str() {
+                        if let Some(obj) = lookup.get(&id) {
+                            *slot = obj.shallow_clone();
+                        }
+                    }
+                }
+            } else if let Some(id) = ref_var.as_rc_str() {
+                if let Some(obj) = lookup.get(&id) {
+                    self.dot_insert(field.path.as_ref(), obj.shallow_clone());
+                }
+            }
+        }
+    }
+
+    fn snapshot(&self, order: &[PropertyPath]) -> HashMap<Arc<str>, Variable> {
+        let mut props = HashMap::new();
+        for path in order {
+            if let Some(val) = self.dot(path) {
+                props.insert(path.clone(), val.deep_clone());
+            }
+        }
+        props
+    }
+}
+
+impl EvaluationError {
+    pub(crate) fn partially_traced(self, trace: Option<Trace>) -> Self {
+        match (self, trace) {
+            (
+                EvaluationError::ExpressionFailed {
+                    policy_path,
+                    block_id,
+                    expression,
+                    source,
+                    ..
+                },
+                Some(trace),
+            ) => EvaluationError::ExpressionFailed {
+                policy_path,
+                block_id,
+                expression,
+                source,
+                partial_trace: Some(Box::new(trace)),
+            },
+            (other, _) => other,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EvalArtifact;
+
+    const fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn eval_artifact_is_send_sync() {
+        assert_send_sync::<EvalArtifact>();
+    }
+}

@@ -1,0 +1,799 @@
+// Data models and the input.
+//
+// A data model declares the INPUT shape of an entity. The entity's root key in the request is the
+// model name (`customer: {...}`). Declared properties are inputs: they are validated against their
+// declared type, read by blocks, and returned unchanged in the output. Computed properties are the
+// ones written by blocks; they are never declared. Writing to a declared property is the
+// `InputOverride` compile error.
+
+// ---------------------------------------------------------------------------------------------
+// Input passes through: every input value is returned in the output, computed values are added
+// next to it.
+
+{
+  name: "declared inputs pass through next to a computed property",
+  policy: {
+    models: {customer: {name: "string", age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {name: "Ann", age: 30}}, {customer: {name: "Ann", age: 30, adult: true}}],
+    [{customer: {name: "Bob", age: 17}}, {customer: {name: "Bob", age: 17, adult: false}}],
+    [{customer: {name: "", age: 0}}, {customer: {name: "", age: 0, adult: false}}],
+    [{customer: {name: "Zed", age: 18}}, {customer: {name: "Zed", age: 18, adult: true}}],
+    [{customer: {name: "Neg", age: -1}}, {customer: {name: "Neg", age: -1, adult: false}}],
+  ],
+}
+
+{
+  name: "a declared property no block reads still passes through",
+  policy: {
+    models: {customer: {name: "string", age: "number", note: "string?"}},
+    blocks: [{expression: "customer.label", value: "customer.name"}],
+  },
+  cases: [
+    [{customer: {name: "Ann", age: 30}}, {customer: {name: "Ann", age: 30, label: "Ann"}}],
+    [{customer: {name: "Ann", age: 30, note: "vip"}}, {customer: {name: "Ann", age: 30, note: "vip", label: "Ann"}}],
+    [{customer: {name: "Ann", note: "x"}}, {customer: {name: "Ann", note: "x", label: "Ann"}}],
+  ],
+}
+
+{
+  name: "undeclared keys on an entity pass through",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20, extra: "x"}}, {customer: {age: 20, extra: "x", adult: true}}],
+    [{customer: {age: 20, extra: {deep: [1, 2]}}}, {customer: {age: 20, extra: {deep: [1, 2]}, adult: true}}],
+    [{customer: {age: 20, extra: null}}, {customer: {age: 20, extra: null, adult: true}}],
+    [{customer: {age: 5, age2: 50}}, {customer: {age: 5, age2: 50, adult: false}}],
+  ],
+}
+
+{
+  name: "extra top-level input keys pass through",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}, meta: {source: "web"}}, {customer: {age: 20, adult: true}, meta: {source: "web"}}],
+    [{customer: {age: 20}, flag: true, n: 1}, {customer: {age: 20, adult: true}, flag: true, n: 1}],
+    [{customer: {age: 20}, list: [1, "a", null]}, {customer: {age: 20, adult: true}, list: [1, "a", null]}],
+    [{customer: {age: 20}, nothing: null}, {customer: {age: 20, adult: true}, nothing: null}],
+  ],
+}
+
+{
+  name: "a policy with only a data model returns the input",
+  policy: {
+    models: {customer: {age: "number", name: "string?"}},
+    blocks: [],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20}}],
+    [{customer: {age: 20, name: "Ann"}}, {customer: {age: 20, name: "Ann"}}],
+    [{}, {}],
+    [{other: 1}, {other: 1}],
+  ],
+}
+
+{
+  name: "a policy with no blocks at all returns the input",
+  policy: {blocks: []},
+  cases: [
+    [{}, {}],
+    [{a: 1}, {a: 1}],
+    [{a: {b: [1, 2, {c: null}]}}, {a: {b: [1, 2, {c: null}]}}],
+  ],
+}
+
+{
+  name: "an undeclared entity root key passes through untouched",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}, company: {age: "not validated"}}, {customer: {age: 20, adult: true}, company: {age: "not validated"}}],
+    [{customer: {age: 20}, Customer: {age: "x"}}, {customer: {age: 20, adult: true}, Customer: {age: "x"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Declared vs undeclared: a computed property is written by a block and must NOT be declared in
+// the data model. Declaring it turns the write into a write to an input (`InputOverride`), which
+// is a compile error. Evaluation of a policy with compile errors is refused.
+
+{
+  name: "declaring a computed property as optional input is an InputOverride error",
+  policy: {
+    models: {customer: {age: "number", adult: "boolean?"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error"],
+    [{customer: {age: 20, adult: false}}, "!error"],
+  ],
+}
+
+{
+  name: "declaring a computed property as required input is an InputOverride error",
+  policy: {
+    models: {customer: {age: "number", adult: "boolean"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error"],
+    [{customer: {age: 20, adult: true}}, "!error"],
+  ],
+}
+
+{
+  name: "writing a declared input property is an InputOverride error",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.age", value: "5"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error"],
+    [{customer: {}}, "!error"],
+  ],
+}
+
+{
+  name: "writing below a declared scalar property is an InputOverride error",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.age.months", value: "1"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error"],
+  ],
+}
+
+{
+  name: "an undeclared computed property sits next to declared ones",
+  policy: {
+    models: {customer: {age: "number", vip: "boolean?"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, adult: true}}],
+    [{customer: {age: 20, vip: true}}, {customer: {age: 20, vip: true, adult: true}}],
+    [{customer: {age: 10, vip: false}}, {customer: {age: 10, vip: false, adult: false}}],
+  ],
+}
+
+{
+  name: "an undeclared input key with the computed property's name is overwritten",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20, adult: false}}, {customer: {age: 20, adult: true}}],
+    [{customer: {age: 10, adult: "yes"}}, {customer: {age: 10, adult: false}}],
+    [{customer: {age: 10, adult: null}}, {customer: {age: 10, adult: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Required vs optional properties. A required property that a block needs must be present and
+// not null; the evaluation fails with MissingRequiredInputs before any block runs. An optional
+// property may be missing or null, and reads of it give null.
+
+{
+  name: "a missing required property read by a block is an error",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {other: 1}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: 18}}, {customer: {age: 18, adult: true}}],
+  ],
+}
+
+{
+  name: "a missing entity root with a required read is an error",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{}, "!error: MissingRequiredInputs"],
+    [{customer: null}, "!error: MissingRequiredInputs"],
+    [{other: {age: 20}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a missing required property that no block reads is not an error",
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, adult: true}}],
+    [{customer: {age: 20, name: null}}, {customer: {age: 20, name: null, adult: true}}],
+    [{customer: {age: 20, name: "Ann"}}, {customer: {age: 20, name: "Ann", adult: true}}],
+  ],
+}
+
+{
+  name: "every missing required read is reported",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.age + customer.income"}],
+  },
+  cases: [
+    [{customer: {}}, "!error: customer.age"],
+    [{customer: {}}, "!error: customer.income"],
+    [{customer: {age: 1}}, "!error: customer.income"],
+    [{customer: {income: 1}}, "!error: customer.age"],
+    [{customer: {age: 1, income: 2}}, {customer: {age: 1, income: 2, score: 3}}],
+  ],
+}
+
+{
+  name: "an optional property may be missing or null",
+  policy: {
+    models: {customer: {nickname: "string?"}},
+    blocks: [{expression: "customer.display", value: "customer.nickname ?? 'anonymous'"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {display: "anonymous"}}],
+    [{customer: {nickname: null}}, {customer: {nickname: null, display: "anonymous"}}],
+    [{customer: {nickname: "Al"}}, {customer: {nickname: "Al", display: "Al"}}],
+    [{customer: {nickname: ""}}, {customer: {nickname: "", display: ""}}],
+  ],
+}
+
+{
+  name: "a read of a missing optional property gives null",
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.copy", value: "customer.score"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {copy: null}}],
+    [{customer: {score: null}}, {customer: {score: null, copy: null}}],
+    [{customer: {score: 7}}, {customer: {score: 7, copy: 7}}],
+    [{customer: {score: 0}}, {customer: {score: 0, copy: 0}}],
+  ],
+}
+
+{
+  name: "an optional entity root may be missing when only optional properties are read",
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "result", value: "customer.score ?? -1"}],
+  },
+  cases: [
+    [{customer: {score: 3}}, {customer: {score: 3}, result: 3}],
+    [{customer: {}}, {customer: {}, result: -1}],
+    [{}, {result: -1}],
+  ],
+}
+
+{
+  name: "required and optional properties mixed",
+  policy: {
+    models: {order: {total: "number", discount: "number?"}},
+    blocks: [{expression: "order.due", value: "order.total - (order.discount ?? 0)"}],
+  },
+  cases: [
+    [{order: {total: 100}}, {order: {total: 100, due: 100}}],
+    [{order: {total: 100, discount: 15}}, {order: {total: 100, discount: 15, due: 85}}],
+    [{order: {total: 100, discount: null}}, {order: {total: 100, discount: null, due: 100}}],
+    [{order: {discount: 15}}, "!error: MissingRequiredInputs"],
+    [{order: {total: 0.1, discount: 0.3}}, {order: {total: 0.1, discount: 0.3, due: -0.2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Wrong input types. A present, non-null value must have the declared type, also for properties
+// that no block reads. The whole input is validated before evaluation.
+
+{
+  name: "a number property rejects other types",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: "20"}}, "!error: InputValidationFailed"],
+    [{customer: {age: true}}, "!error: InputValidationFailed"],
+    [{customer: {age: [20]}}, "!error: InputValidationFailed"],
+    [{customer: {age: {value: 20}}}, "!error: InputValidationFailed"],
+    [{customer: {age: 20.5}}, {customer: {age: 20.5, adult: true}}],
+  ],
+}
+
+{
+  name: "a string property rejects other types",
+  policy: {
+    models: {customer: {name: "string"}},
+    blocks: [{expression: "customer.greeting", value: "'Hi ' + customer.name"}],
+  },
+  cases: [
+    [{customer: {name: 1}}, "!error: InputValidationFailed"],
+    [{customer: {name: false}}, "!error: InputValidationFailed"],
+    [{customer: {name: ["Ann"]}}, "!error: InputValidationFailed"],
+    [{customer: {name: "Ann"}}, {customer: {name: "Ann", greeting: "Hi Ann"}}],
+    [{customer: {name: ""}}, {customer: {name: "", greeting: "Hi "}}],
+  ],
+}
+
+{
+  name: "a boolean property rejects other types",
+  policy: {
+    models: {customer: {active: "boolean"}},
+    blocks: [{expression: "customer.status", value: "customer.active ? 'on' : 'off'"}],
+  },
+  cases: [
+    [{customer: {active: "true"}}, "!error: InputValidationFailed"],
+    [{customer: {active: 1}}, "!error: InputValidationFailed"],
+    [{customer: {active: 0}}, "!error: InputValidationFailed"],
+    [{customer: {active: true}}, {customer: {active: true, status: "on"}}],
+    [{customer: {active: false}}, {customer: {active: false, status: "off"}}],
+  ],
+}
+
+{
+  name: "a wrong type on a property no block reads is still rejected",
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20, name: 5}}, "!error: InputValidationFailed"],
+    [{customer: {age: 20, name: "ok"}}, {customer: {age: 20, name: "ok", adult: true}}],
+  ],
+}
+
+{
+  name: "the validation error names the path and expected type",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: "x"}}, "!error: customer.age"],
+  ],
+}
+
+{
+  name: "an entity root that is not an object is rejected",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: 5}, "!error: InputValidationFailed"],
+    [{customer: "Ann"}, "!error: InputValidationFailed"],
+    [{customer: [{age: 20}]}, "!error: InputValidationFailed"],
+    [{customer: true}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an input that is not an object is rejected",
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{expression: "result", value: "1"}],
+  },
+  cases: [
+    [[1, 2], "!error: InputValidationFailed"],
+    [5, "!error: InputValidationFailed"],
+    ["text", "!error: InputValidationFailed"],
+    [{}, {result: 1}],
+  ],
+}
+
+{
+  name: "null input values skip validation",
+  policy: {
+    models: {customer: {age: "number?", name: "string?", tags: "string[]?"}},
+    blocks: [{expression: "customer.known", value: "customer.age != null"}],
+  },
+  cases: [
+    [{customer: {age: null, name: null, tags: null}}, {customer: {age: null, name: null, tags: null, known: false}}],
+    [{customer: {age: 1, name: null}}, {customer: {age: 1, name: null, known: true}}],
+  ],
+}
+
+{
+  name: "undeclared entity keys are not validated",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20, whatever: [1, "two", {three: 3}]}}, {customer: {age: 20, whatever: [1, "two", {three: 3}], adult: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enum strings: `string(a|b|c)`. Only the listed values are accepted; matching is exact
+// (case-sensitive, no trimming).
+
+{
+  name: "an enum property accepts listed values",
+  policy: {
+    models: {customer: {tier: "string(gold|silver|bronze)"}},
+    blocks: [{expression: "customer.premium", value: "customer.tier == 'gold'"}],
+  },
+  cases: [
+    [{customer: {tier: "gold"}}, {customer: {tier: "gold", premium: true}}],
+    [{customer: {tier: "silver"}}, {customer: {tier: "silver", premium: false}}],
+    [{customer: {tier: "bronze"}}, {customer: {tier: "bronze", premium: false}}],
+  ],
+}
+
+{
+  name: "an enum property rejects other values",
+  policy: {
+    models: {customer: {tier: "string(gold|silver|bronze)"}},
+    blocks: [{expression: "customer.premium", value: "customer.tier == 'gold'"}],
+  },
+  cases: [
+    [{customer: {tier: "platinum"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "Gold"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: " gold"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: ""}}, "!error: InputValidationFailed"],
+    [{customer: {tier: 1}}, "!error: InputValidationFailed"],
+    [{customer: {tier: true}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional enum may be missing or null",
+  policy: {
+    models: {customer: {tier: "string(gold|silver)?"}},
+    blocks: [{expression: "customer.label", value: "customer.tier ?? 'none'"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {label: "none"}}],
+    [{customer: {tier: null}}, {customer: {tier: null, label: "none"}}],
+    [{customer: {tier: "silver"}}, {customer: {tier: "silver", label: "silver"}}],
+    [{customer: {tier: "bronze"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an enum array validates each item",
+  policy: {
+    models: {customer: {roles: "string(admin|user)[]"}},
+    blocks: [{expression: "customer.isAdmin", value: "'admin' in customer.roles"}],
+  },
+  cases: [
+    [{customer: {roles: ["admin", "user"]}}, {customer: {roles: ["admin", "user"], isAdmin: true}}],
+    [{customer: {roles: ["user"]}}, {customer: {roles: ["user"], isAdmin: false}}],
+    [{customer: {roles: []}}, {customer: {roles: [], isAdmin: false}}],
+    [{customer: {roles: ["user", "root"]}}, "!error: InputValidationFailed"],
+    [{customer: {roles: "admin"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates. A `date` property accepts a date string (ISO date or date-time) and is converted to a
+// date value before evaluation; the output carries the date value.
+
+{
+  name: "a date property is read as a date",
+  policy: {
+    models: {customer: {birth: "date"}},
+    blocks: [{expression: "customer.year", value: "d(customer.birth).year()"}],
+  },
+  cases: [
+    [{customer: {birth: "2000-05-17"}}, {customer: {birth: date("2000-05-17"), year: 2000}}],
+    [{customer: {birth: "1999-12-31"}}, {customer: {birth: date("1999-12-31"), year: 1999}}],
+    [{customer: {birth: "2024-02-29T10:00:00Z"}}, {customer: {birth: date("2024-02-29T10:00:00Z"), year: 2024}}],
+  ],
+}
+
+{
+  name: "a date property supports date comparison against now",
+  policy: {
+    models: {contract: {ends: "date"}},
+    blocks: [{expression: "contract.expired", value: "d(contract.ends) < d()"}],
+  },
+  cases: [
+    [{contract: {ends: "2025-03-19"}}, {contract: {ends: date("2025-03-19"), expired: true}}],
+    [{contract: {ends: "2025-03-21"}}, {contract: {ends: date("2025-03-21"), expired: false}}],
+    [{contract: {ends: "2030-01-01"}}, {contract: {ends: date("2030-01-01"), expired: false}}],
+  ],
+}
+
+{
+  name: "a date property rejects non-date strings and other types",
+  policy: {
+    models: {contract: {ends: "date"}},
+    blocks: [{expression: "contract.expired", value: "d(contract.ends) < d()"}],
+  },
+  cases: [
+    [{contract: {ends: "not a date"}}, "!error: InputValidationFailed"],
+    [{contract: {ends: 20250101}}, "!error: InputValidationFailed"],
+    [{contract: {ends: true}}, "!error: InputValidationFailed"],
+    [{contract: {ends: "2025-13-45"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional date may be missing or null",
+  policy: {
+    models: {contract: {ends: "date?"}},
+    blocks: [{expression: "contract.open", value: "contract.ends == null"}],
+  },
+  cases: [
+    [{contract: {}}, {contract: {open: true}}],
+    [{contract: {ends: null}}, {contract: {ends: null, open: true}}],
+    [{contract: {ends: "2025-01-01"}}, {contract: {ends: date("2025-01-01"), open: false}}],
+  ],
+}
+
+{
+  name: "an empty date string is accepted",
+  policy: {
+    models: {contract: {ends: "date?"}},
+    blocks: [{expression: "contract.has", value: "contract.ends != null"}],
+  },
+  cases: [
+    [{contract: {ends: ""}}, {contract: {ends: "", has: true}}, "question: the validator accepts an empty date string and passes it through as a string, so it is neither a date nor null"],
+  ],
+}
+
+{
+  name: "a date array converts every item",
+  policy: {
+    models: {customer: {visits: "date[]"}},
+    blocks: [{expression: "customer.count", value: "len(customer.visits)"}],
+  },
+  cases: [
+    [{customer: {visits: ["2025-01-01", "2025-02-01"]}}, {customer: {visits: [date("2025-01-01"), date("2025-02-01")], count: 2}}],
+    [{customer: {visits: []}}, {customer: {visits: [], count: 0}}],
+    [{customer: {visits: ["2025-01-01", "nope"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arrays of primitives: `number[]`, `string[]`, `boolean[]`. The value must be an array; each
+// non-null item must have the element type.
+
+{
+  name: "a number array is read whole",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.total", value: "sum(cart.prices)"}],
+  },
+  cases: [
+    [{cart: {prices: [1, 2, 3]}}, {cart: {prices: [1, 2, 3], total: 6}}],
+    [{cart: {prices: []}}, {cart: {prices: [], total: 0}}],
+    [{cart: {prices: [0.1, 0.2]}}, {cart: {prices: [0.1, 0.2], total: 0.3}}],
+    [{cart: {prices: [-5]}}, {cart: {prices: [-5], total: -5}}],
+  ],
+}
+
+{
+  name: "a number array rejects wrong item types and non-arrays",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.total", value: "sum(cart.prices)"}],
+  },
+  cases: [
+    [{cart: {prices: [1, "2"]}}, "!error: InputValidationFailed"],
+    [{cart: {prices: 5}}, "!error: InputValidationFailed"],
+    [{cart: {prices: "1,2"}}, "!error: InputValidationFailed"],
+    [{cart: {prices: {a: 1}}}, "!error: InputValidationFailed"],
+    [{cart: {prices: [[1]]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a missing required array is an error",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.count", value: "len(cart.prices)"}],
+  },
+  cases: [
+    [{cart: {}}, "!error: MissingRequiredInputs"],
+    [{cart: {prices: null}}, "!error: MissingRequiredInputs"],
+    [{cart: {prices: []}}, {cart: {prices: [], count: 0}}],
+  ],
+}
+
+{
+  name: "an optional array may be missing",
+  policy: {
+    models: {cart: {prices: "number[]?"}},
+    blocks: [{expression: "cart.count", value: "len(cart.prices ?? [])"}],
+  },
+  cases: [
+    [{cart: {}}, {cart: {count: 0}}],
+    [{cart: {prices: null}}, {cart: {prices: null, count: 0}}],
+    [{cart: {prices: [4, 5]}}, {cart: {prices: [4, 5], count: 2}}],
+  ],
+}
+
+{
+  name: "null items inside a primitive array are accepted",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.count", value: "len(cart.prices)"}],
+  },
+  cases: [
+    [{cart: {prices: [1, null, 3]}}, {cart: {prices: [1, null, 3], count: 3}}],
+    [{cart: {prices: [null]}}, {cart: {prices: [null], count: 1}}],
+  ],
+}
+
+{
+  name: "a string array is read with membership",
+  policy: {
+    models: {customer: {tags: "string[]"}},
+    blocks: [{expression: "customer.vip", value: "'vip' in customer.tags"}],
+  },
+  cases: [
+    [{customer: {tags: ["vip", "new"]}}, {customer: {tags: ["vip", "new"], vip: true}}],
+    [{customer: {tags: ["new"]}}, {customer: {tags: ["new"], vip: false}}],
+    [{customer: {tags: []}}, {customer: {tags: [], vip: false}}],
+    [{customer: {tags: [1]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a boolean array is reduced",
+  policy: {
+    models: {checks: {results: "boolean[]"}},
+    blocks: [{expression: "checks.allPassed", value: "all(checks.results, #)"}],
+  },
+  cases: [
+    [{checks: {results: [true, true]}}, {checks: {results: [true, true], allPassed: true}}],
+    [{checks: {results: [true, false]}}, {checks: {results: [true, false], allPassed: false}}],
+    [{checks: {results: []}}, {checks: {results: [], allPassed: true}}],
+    [{checks: {results: ["true"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Several entities in one input. Each root model is its own top-level key.
+
+{
+  name: "two root entities are read side by side",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [{expression: "order.allowed", value: "customer.age >= 18 and order.total < 1000"}],
+  },
+  cases: [
+    [{customer: {age: 20}, order: {total: 10}}, {customer: {age: 20}, order: {total: 10, allowed: true}}],
+    [{customer: {age: 17}, order: {total: 10}}, {customer: {age: 17}, order: {total: 10, allowed: false}}],
+    [{customer: {age: 20}, order: {total: 1000}}, {customer: {age: 20}, order: {total: 1000, allowed: false}}],
+    [{customer: {age: 20}}, "!error: MissingRequiredInputs"],
+    [{order: {total: 10}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "each root entity is validated independently",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [{expression: "order.big", value: "order.total > 100"}],
+  },
+  cases: [
+    [{customer: {age: "x"}, order: {total: 200}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1}, order: {total: 200}}, {customer: {age: 1}, order: {total: 200, big: true}}],
+    [{order: {total: 200}}, {order: {total: 200, big: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numbers are exact decimals end to end.
+
+{
+  name: "decimal inputs keep their precision",
+  policy: {
+    models: {account: {balance: "number", rate: "number"}},
+    blocks: [{expression: "account.interest", value: "account.balance * account.rate"}],
+  },
+  cases: [
+    [{account: {balance: 1000.10, rate: 0.015}}, {account: {balance: 1000.1, rate: 0.015, interest: 15.0015}}],
+    [{account: {balance: 0.1, rate: 3}}, {account: {balance: 0.1, rate: 3, interest: 0.3}}],
+    [{account: {balance: 123456789012345678, rate: 1}}, {account: {balance: 123456789012345678, rate: 1, interest: 123456789012345678}}],
+    [{account: {balance: -2.5, rate: -2}}, {account: {balance: -2.5, rate: -2, interest: 5}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Computed properties of entities that are not in the input. A block writing `x.y` where `x` is not
+// a declared entity creates a new top-level object.
+
+{
+  name: "a computed root object is created when absent",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "result.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20}, result: {adult: true}}],
+    [{customer: {age: 2}}, {customer: {age: 2}, result: {adult: false}}],
+  ],
+}
+
+{
+  name: "a top-level computed value is written at the root",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20}, adult: true}],
+    [{customer: {age: 2}, adult: "stale"}, {customer: {age: 2}, adult: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Global data models: their properties are top-level input keys (the model name is not part of
+// the path). They follow the same required/optional and type rules as entity properties.
+
+{
+  name: "global properties are top-level inputs",
+  policy: {
+    globals: {settings: {taxRate: "number", currency: "string?"}},
+    models: {order: {net: "number"}},
+    blocks: [{expression: "order.gross", value: "order.net * (1 + taxRate)"}],
+  },
+  cases: [
+    [{taxRate: 0.2, order: {net: 100}}, {taxRate: 0.2, order: {net: 100, gross: 120}}],
+    [{taxRate: 0, order: {net: 100}}, {taxRate: 0, order: {net: 100, gross: 100}}],
+    [{taxRate: 0.2, currency: "EUR", order: {net: 10}}, {taxRate: 0.2, currency: "EUR", order: {net: 10, gross: 12}}],
+    [{order: {net: 100}}, "!error: MissingRequiredInputs"],
+    [{taxRate: null, order: {net: 100}}, "!error: MissingRequiredInputs"],
+    [{taxRate: "0.2", order: {net: 100}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional global may be missing",
+  policy: {
+    globals: {settings: {limit: "number?"}},
+    blocks: [{expression: "effectiveLimit", value: "limit ?? 100"}],
+  },
+  cases: [
+    [{}, {effectiveLimit: 100}],
+    [{limit: null}, {limit: null, effectiveLimit: 100}],
+    [{limit: 5}, {limit: 5, effectiveLimit: 5}],
+    [{limit: "5"}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "global enum, date and array properties are validated",
+  policy: {
+    globals: {env: {region: "string(eu|us)", today: "date", holidays: "date[]?"}},
+    blocks: [{expression: "isEu", value: "region == 'eu'"}],
+  },
+  cases: [
+    [{region: "eu", today: "2025-03-20"}, {region: "eu", today: date("2025-03-20"), isEu: true}],
+    [{region: "us", today: "2025-03-20", holidays: ["2025-12-25"]}, {region: "us", today: date("2025-03-20"), holidays: [date("2025-12-25")], isEu: false}],
+    [{region: "apac", today: "2025-03-20"}, "!error: InputValidationFailed"],
+    [{region: "eu", today: "tomorrow"}, "!error: InputValidationFailed"],
+    [{region: "eu", today: "2025-03-20", holidays: "2025-12-25"}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "writing a declared global is an InputOverride error",
+  policy: {
+    globals: {settings: {taxRate: "number"}},
+    blocks: [{expression: "taxRate", value: "0.5"}],
+  },
+  cases: [
+    [{taxRate: 0.2}, "!error"],
+  ],
+}

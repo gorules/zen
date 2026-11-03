@@ -22,6 +22,8 @@ pub struct DecisionEngine {
     adapter: DynamicCustomNode,
     http_handler: DynamicHttpHandler,
     compiled: Arc<ArcSwapOption<CompiledSet>>,
+    caches: Arc<crate::compiled::engine::Caches>,
+    engine: crate::compiled::Engine,
 }
 
 impl Debug for DecisionEngine {
@@ -100,6 +102,8 @@ impl Default for DecisionEngine {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
+            caches: Default::default(),
+            engine: crate::compiled::Engine::Configured,
         }
     }
 }
@@ -111,24 +115,29 @@ impl DecisionEngine {
             adapter,
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
+            caches: Default::default(),
+            engine: crate::compiled::Engine::Configured,
         }
     }
 
     pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
         self.adapter = adapter;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
     pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
         self.loader = loader;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
     pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
         self.http_handler = http_handler;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
@@ -139,6 +148,7 @@ impl DecisionEngine {
     {
         self.loader = Arc::new(ClosureLoader::new(loader));
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
@@ -148,6 +158,9 @@ impl DecisionEngine {
         };
 
         let set = CompiledSet::build_sync(&self.loader, &keys);
+        if self.engine.compiled() {
+            self.caches.compile(&self.loader, &keys);
+        }
 
         let failures = set.failures().to_vec();
         self.compiled.store(Some(Arc::new(set)));
@@ -185,6 +198,18 @@ impl DecisionEngine {
         K: AsRef<str>,
     {
         let key_str = key.as_ref();
+        if self.engine.compiled() {
+            return self
+                .caches
+                .evaluate(&self.parts(), key_str, context, options)
+                .await?;
+        }
+        if self.engine.scopes() {
+            return crate::compiled::Engine::interpreting(
+                self.evaluate_with_opts(key_str, context, options),
+            )
+            .await;
+        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
@@ -233,6 +258,18 @@ impl DecisionEngine {
         K: AsRef<str>,
     {
         let key_str = key.as_ref();
+        if self.engine.compiled() {
+            return self
+                .caches
+                .evaluate_serialized(&self.parts(), key_str, context, options)
+                .await;
+        }
+        if self.engine.scopes() {
+            return crate::compiled::Engine::interpreting(
+                self.evaluate_serialized(key_str, context, options),
+            )
+            .await;
+        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 match entry {
@@ -304,6 +341,40 @@ impl DecisionEngine {
         }
     }
 
+    pub async fn evaluate_batch<K>(
+        &self,
+        key: K,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>>
+    where
+        K: AsRef<str>,
+    {
+        self.caches
+            .evaluate_batch(&self.parts(), key.as_ref(), contexts, options)
+            .await
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Interpreted;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn compiled_engine(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Compiled;
+        self
+    }
+
+    fn parts(&self) -> crate::compiled::engine::Parts<'_> {
+        crate::compiled::engine::Parts {
+            loader: &self.loader,
+            adapter: &self.adapter,
+            http_handler: &self.http_handler,
+        }
+    }
+
     fn decision_from_graph_arc(&self, content: Arc<DecisionContent>) -> Decision {
         let graph: Arc<GraphContent> = match Arc::try_unwrap(content) {
             Ok(DecisionContent::Graph(g)) => g,
@@ -325,6 +396,7 @@ impl DecisionEngine {
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
             .with_http_handler(self.http_handler.clone())
+            .with_engine(self.engine)
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation

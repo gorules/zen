@@ -8,7 +8,7 @@ use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
 use std::cell::OnceCell;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use zen_expression::variable::Variable;
 
 /// Represents a JDM decision which can be evaluated
@@ -18,6 +18,8 @@ pub struct Decision {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
     http_handler: DynamicHttpHandler,
+    compiled: OnceLock<Arc<crate::compiled::decision::CompiledDecision>>,
+    engine: crate::compiled::Engine,
 }
 
 impl From<GraphContent> for Decision {
@@ -27,6 +29,8 @@ impl From<GraphContent> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
+            compiled: OnceLock::new(),
+            engine: crate::compiled::Engine::Configured,
         }
     }
 }
@@ -38,6 +42,8 @@ impl From<Arc<GraphContent>> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
+            compiled: OnceLock::new(),
+            engine: crate::compiled::Engine::Configured,
         }
     }
 }
@@ -45,16 +51,19 @@ impl From<Arc<GraphContent>> for Decision {
 impl Decision {
     pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
         self.loader = loader;
+        self.compiled = OnceLock::new();
         self
     }
 
     pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
         self.adapter = adapter;
+        self.compiled = OnceLock::new();
         self
     }
 
     pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
         self.http_handler = http_handler;
+        self.compiled = OnceLock::new();
         self
     }
 
@@ -72,6 +81,9 @@ impl Decision {
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        if self.engine.compiled() {
+            return self.compiled().evaluate_with_opts(context, options).await;
+        }
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             content: self.content.clone(),
             max_depth: options.max_depth,
@@ -134,5 +146,58 @@ impl Decision {
     pub fn compile(&mut self) -> () {
         let cm = Arc::make_mut(&mut self.content);
         cm.compile();
+        self.compiled = OnceLock::new();
+        if self.engine.compiled() {
+            self.compiled().compile();
+        }
+    }
+
+    pub async fn evaluate_batch(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        self.compiled().evaluate_batch(contexts, options).await
+    }
+
+    pub async fn evaluate_columns<'a>(
+        &self,
+        columns: &'a crate::columns::Columns<'a>,
+        options: EvaluationOptions,
+    ) -> crate::ColumnarOutput<'a> {
+        self.compiled().evaluate_columns(columns, options).await
+    }
+
+    pub(crate) fn with_engine(mut self, engine: crate::compiled::Engine) -> Self {
+        self.engine = engine;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(&self) -> Self {
+        Self {
+            engine: crate::compiled::Engine::Interpreted,
+            ..self.clone()
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn compiled_engine(&self) -> Self {
+        Self {
+            engine: crate::compiled::Engine::Compiled,
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn compiled(&self) -> &crate::compiled::decision::CompiledDecision {
+        self.compiled.get_or_init(|| {
+            Arc::new(crate::compiled::decision::CompiledDecision::new(
+                self.content.clone(),
+                self.loader.clone(),
+                self.adapter.clone(),
+                self.http_handler.clone(),
+                Default::default(),
+            ))
+        })
     }
 }

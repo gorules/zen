@@ -1,0 +1,686 @@
+// Output node schemas.
+//
+// An output node with a schema validates what reaches it (the merge of its incoming edges) after
+// the nodes before it ran; a failure is a `NodeError` of the output node naming the failing path.
+// The same null-retry rule as on the input node applies, so a null-valued key counts as absent
+// for every keyword except `required`. An output schema never converts values (format date does
+// not make dates). Chapter 19 covers the basics; this chapter pins output schemas on branching
+// graphs (only the branches that reach the output are checked, a branch that fails the schema
+// fails only the rows routed to it), several output nodes, non-object results, computed values
+// near the keyword boundaries, date values produced upstream, and output schemas of
+// sub-decisions in single, loop and nested calls.
+
+// ---------------------------------------------------------------------------------------------
+// Switches: the schema checks whichever branch reached the output.
+{
+  name: "switch: one branch conforms, the other does not",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["kind == 'a'", ""]},
+      {expression: "good", fields: {price: "base * 2", label: "'A'"}},
+      {expression: "bad", fields: {price: "'n/a'", label: "'B'"}},
+      {output: "response", schema: {type: "object", required: ["price", "label"], properties: {price: {type: "number"}, label: {type: "string"}}}},
+    ],
+    edges: ["input -> route", "route:0 -> good -> response", "route:1 -> bad -> response"],
+  },
+  cases: [
+    [{kind: "a", base: 5}, {price: 10, label: "A"}],
+    [{kind: "a", base: 0}, {price: 0, label: "A"}],
+    [{kind: "b", base: 5}, "!error: /price"],
+    [{base: 5}, "!error: /price"],
+    [{kind: "a", base: -1.5}, {price: -3, label: "A"}],
+  ],
+}
+
+{
+  name: "switch: a failing branch that is not taken never reaches the schema",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["amount > 1000", ""]},
+      {expression: "review", fields: {status: "'review'", reviewer: "null"}},
+      {expression: "auto", fields: {status: "'approved'"}},
+      {output: "response", schema: {type: "object", required: ["status"], properties: {status: {enum: ["approved", "review"]}, reviewer: {type: "string"}}}},
+    ],
+    edges: ["input -> route", "route:0 -> review -> response", "route:1 -> auto -> response"],
+  },
+  cases: [
+    [{amount: 10}, {status: "approved"}],
+    [{amount: 1000}, {status: "approved"}],
+    [{amount: 1001}, {status: "review"}],
+    [{}, {status: "approved"}],
+  ],
+}
+
+{
+  name: "switch: collect mode merges branches before the schema runs",
+  graph: {
+    nodes: [
+      {switch: "checks", hit: "collect", when: ["age != null", "income != null"]},
+      {expression: "ageCheck", fields: {ageOk: "age >= 18"}},
+      {expression: "incomeCheck", fields: {incomeOk: "income >= 1000"}},
+      {output: "response", schema: {type: "object", required: ["ageOk", "incomeOk"], properties: {ageOk: {type: "boolean"}, incomeOk: {type: "boolean"}}}},
+    ],
+    edges: ["input -> checks", "checks:0 -> ageCheck -> response", "checks:1 -> incomeCheck -> response"],
+  },
+  cases: [
+    [{age: 20, income: 5000}, {ageOk: true, incomeOk: true}],
+    [{age: 17, income: 10}, {ageOk: false, incomeOk: false}],
+    [{age: 20}, "!error: incomeOk"],
+    [{income: 5000}, "!error: ageOk"],
+    [{}, {}, "question: when no branch reaches the output node its required-key schema never runs and the graph returns an empty result"],
+  ],
+}
+
+{
+  name: "switch: no branch matches and the output is never reached",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["kind == 'a'"]},
+      {expression: "a", fields: {x: "1"}},
+      {output: "response", schema: {type: "object", required: ["x"]}},
+    ],
+    edges: ["input -> route", "route:0 -> a -> response"],
+  },
+  cases: [
+    [{kind: "a"}, {x: 1}],
+    [{kind: "b"}, {}, "question: when no branch reaches the output node its required-key schema never runs and the graph returns an empty result"],
+    [{}, {}, "question: when no branch reaches the output node its required-key schema never runs and the graph returns an empty result"],
+  ],
+}
+
+{
+  name: "switch: a discriminated output schema per branch shape",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["method == 'card'", "method == 'bank'", ""]},
+      {expression: "card", fields: {method: "'card'", last4: "number"}},
+      {expression: "bank", fields: {method: "'bank'", iban: "iban"}},
+      {expression: "other", fields: {method: "method"}},
+      {output: "response", schema: {type: "object", required: ["method"], oneOf: [
+        {properties: {method: {const: "card"}}, required: ["last4"]},
+        {properties: {method: {const: "bank"}}, required: ["iban"]},
+      ]}},
+    ],
+    edges: ["input -> route", "route:0 -> card -> response", "route:1 -> bank -> response", "route:2 -> other -> response"],
+  },
+  cases: [
+    [{method: "card", number: "4444"}, {method: "card", last4: "4444"}],
+    [{method: "bank", iban: "DE001"}, {method: "bank", iban: "DE001"}],
+    [{method: "bank"}, {method: "bank"}, "question: the bank branch writes {iban: null}, which satisfies `required` in the oneOf, then the null key is dropped from the result"],
+    [{method: "card"}, {method: "card"}, "question: the card branch writes {last4: null}, which satisfies `required` in the oneOf, then the null key is dropped from the result"],
+    [{method: "cash"}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "switch: branches through tables, only the table without a default can miss",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["segment == 'retail'", ""]},
+      {table: "retail", inputs: ["score"], outputs: ["limit"], rules: [
+        [">= 700", "5000"],
+        ["", "1000"],
+      ]},
+      {table: "business", inputs: ["score"], outputs: ["limit"], rules: [
+        [">= 700", "50000"],
+        ["[600..700)", "10000"],
+      ]},
+      {output: "response", schema: {type: "object", required: ["limit"], properties: {limit: {type: "integer", minimum: 1000}}}},
+    ],
+    edges: ["input -> route", "route:0 -> retail -> response", "route:1 -> business -> response"],
+  },
+  cases: [
+    [{segment: "retail", score: 750}, {limit: 5000}],
+    [{segment: "retail", score: 100}, {limit: 1000}],
+    [{segment: "retail"}, {limit: 1000}],
+    [{segment: "business", score: 750}, {limit: 50000}],
+    [{segment: "business", score: 650}, {limit: 10000}],
+    [{segment: "business", score: 500}, "!error: limit"],
+    [{segment: "business"}, "!error: limit"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Several output nodes: the first one reached ends the walk.
+{
+  name: "several outputs: each switch branch has its own output schema",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["type == 'person'", ""]},
+      {expression: "person", fields: {name: "name", age: "age"}},
+      {expression: "company", fields: {name: "name", vat: "vat"}},
+      {output: "personOut", schema: {type: "object", required: ["name", "age"], properties: {age: {type: "integer", minimum: 0}}}},
+      {output: "companyOut", schema: {type: "object", required: ["name", "vat"], properties: {vat: {type: "string", pattern: "^[A-Z]{2}"}}}},
+    ],
+    edges: ["input -> route", "route:0 -> person -> personOut", "route:1 -> company -> companyOut"],
+  },
+  cases: [
+    [{type: "person", name: "ann", age: 30}, {name: "ann", age: 30}],
+    [{type: "person", name: "ann", age: -1}, "!error: /age"],
+    [{type: "person", name: "ann"}, "!error: age"],
+    [{type: "company", name: "acme", vat: "DE123"}, {name: "acme", vat: "DE123"}],
+    [{type: "company", name: "acme", vat: "123"}, "!error: /vat"],
+    [{type: "company", name: "acme", age: 5}, "!error: vat"],
+  ],
+}
+
+{
+  name: "several outputs: collect switch reaching two outputs",
+  graph: {
+    nodes: [
+      {switch: "fan", hit: "collect", when: ["true", "true"]},
+      {expression: "first", fields: {n: "1"}},
+      {expression: "second", fields: {n: "'two'"}},
+      {output: "out1", schema: {type: "object", properties: {n: {type: "number"}}}},
+      {output: "out2", schema: {type: "object", properties: {n: {type: "number"}}}},
+    ],
+    edges: ["input -> fan", "fan:0 -> first -> out1", "fan:1 -> second -> out2"],
+  },
+  cases: [
+    [{}, {n: 1}],
+    [{x: 1}, {n: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Joins: the schema sees the merge of every incoming edge.
+{
+  name: "joins: parallel branches complete the required set together",
+  graph: {
+    nodes: [
+      {expression: "risk", fields: {risk: "(score ?? 1000) < 500 ? 'high' : 'low'"}},
+      {table: "price", inputs: ["plan"], outputs: ["price"], rules: [
+        ["'basic'", "10"],
+        ["'pro'", "25"],
+      ]},
+      {output: "response", schema: {type: "object", additionalProperties: false, required: ["risk", "price"], properties: {risk: {enum: ["low", "high"]}, price: {type: "number"}}}},
+    ],
+    edges: ["input -> risk -> response", "input -> price -> response"],
+  },
+  cases: [
+    [{score: 700, plan: "basic"}, {risk: "low", price: 10}],
+    [{score: 100, plan: "pro"}, {risk: "high", price: 25}],
+    [{score: 100, plan: "enterprise"}, "!error: price"],
+    [{plan: "basic"}, {risk: "low", price: 10}],
+  ],
+}
+
+{
+  name: "joins: an input edge straight to the output leaks request keys",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a + b"}},
+      {output: "response", schema: {type: "object", additionalProperties: false, properties: {total: {type: "number"}, a: {type: "number"}, b: {type: "number"}}}},
+    ],
+    edges: ["input -> calc -> response", "input -> response"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, c: 3}, "!error: NodeError"],
+    [{a: 1, b: 2, c: null}, {a: 1, b: 2, total: 3}],
+  ],
+}
+
+{
+  name: "joins: $nodes is not visible to the output schema",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {seen: "$nodes.input.a"}},
+      {output: "response", schema: {type: "object", additionalProperties: false, properties: {seen: {}}}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {seen: 1}],
+    [{a: "x"}, {seen: "x"}],
+    [{}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Non-object results.
+{
+  name: "non-object: a collect table output validated as an array",
+  graph: {
+    nodes: [
+      {table: "hits", hit: "collect", inputs: ["score"], outputs: ["code"], rules: [
+        ["> 10", "'A'"],
+        ["> 20", "'B'"],
+        ["> 30", "1"],
+      ]},
+      {output: "response", schema: {type: "array", maxItems: 2, items: {type: "object", required: ["code"], properties: {code: {type: "string"}}}}},
+    ],
+  },
+  cases: [
+    [{score: 15}, [{code: "A"}]],
+    [{score: 25}, [{code: "A"}, {code: "B"}]],
+    [{score: 5}, []],
+    [{score: 35}, "!error: NodeError"],
+  ],
+}
+
+// A scalar node result becomes {} (chapter 16), so the output schema sees an empty object.
+{
+  name: "non-object: a function returning a scalar reaches the schema as an empty object",
+  graph: {
+    nodes: [
+      {function: "f", source: """
+export const handler = async (input) => input.value;
+"""},
+      {output: "response", schema: {type: "number", minimum: 0}},
+    ],
+  },
+  cases: [
+    [{value: 5}, "!error: is not of type"],
+    [{value: 0}, "!error: is not of type"],
+    [{value: "5"}, "!error: is not of type"],
+  ],
+}
+
+{
+  name: "non-object: an object schema rejects an array result",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["y"], rules: [["", "1"]]},
+      {output: "response", schema: {type: "object"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, "!error: NodeError"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Computed values near keyword boundaries.
+{
+  name: "computed: decimal arithmetic against multipleOf and maximum",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a + b", share: "a / b"}},
+      {output: "response", schema: {type: "object", properties: {total: {type: "number", multipleOf: 0.1, maximum: 1}, share: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {total: 0.3, share: 0.5}],
+    [{a: 0.5, b: 0.5}, {total: 1, share: 1}],
+    [{a: 0.7, b: 0.4}, "!error: /total"],
+    [{a: 0.05, b: 0.1}, "!error: /total"],
+  ],
+}
+
+{
+  name: "computed: integer type on division and rounding results",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {half: "n / 2", rounded: "round(n / 3)", floored: "floor(n / 3)"}},
+      {output: "response", schema: {type: "object", properties: {half: {type: "integer"}, rounded: {type: "integer"}, floored: {type: "integer"}}}},
+    ],
+  },
+  cases: [
+    [{n: 4}, {half: 2, rounded: 1, floored: 1}],
+    [{n: 10}, {half: 5, rounded: 3, floored: 3}],
+    [{n: 0}, {half: 0, rounded: 0, floored: 0}],
+    [{n: 5}, "!error: /half"],
+  ],
+}
+
+{
+  name: "computed: strings built by templates against length and pattern",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {ref: "`${prefix}-${id}`"}},
+      {output: "response", schema: {type: "object", required: ["ref"], properties: {ref: {type: "string", pattern: "^[A-Z]{2}-[0-9]+$", maxLength: 8}}}},
+    ],
+  },
+  cases: [
+    [{prefix: "AB", id: 1}, {ref: "AB-1"}],
+    [{prefix: "AB", id: 12345}, {ref: "AB-12345"}],
+    [{prefix: "AB", id: 123456}, "!error: /ref"],
+    [{prefix: "ab", id: 1}, "!error: /ref"],
+    [{prefix: "AB"}, "!error: /ref"],
+  ],
+}
+
+{
+  name: "computed: a null computed value counts as absent",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {discount: "vip == true ? 0.1 : null", total: "price"}},
+      {output: "response", schema: {type: "object", required: ["total"], properties: {discount: {type: "number", exclusiveMinimum: 0}, total: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{vip: true, price: 10}, {discount: 0.1, total: 10}],
+    [{vip: false, price: 10}, {total: 10}],
+    [{price: 10}, {total: 10}],
+    [{vip: true}, "!error: /total"],
+  ],
+}
+
+{
+  name: "computed: arrays from map and filter against item schemas",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {totals: "map(lines, #.qty * #.price)", big: "filter(lines, #.qty > 5)"}},
+      {output: "response", schema: {type: "object", properties: {
+        totals: {type: "array", items: {type: "number", minimum: 0}},
+        big: {type: "array", maxItems: 1},
+      }}},
+    ],
+  },
+  cases: [
+    [{lines: [{qty: 1, price: 2}, {qty: 3, price: 4}]}, {totals: [2, 12], big: []}],
+    [{lines: [{qty: 6, price: 1}]}, {totals: [6], big: [{qty: 6, price: 1}]}],
+    [{lines: [{qty: 1, price: -2}]}, "!error: /totals/0"],
+    [{lines: [{qty: 6, price: 1}, {qty: 7, price: 1}]}, "!error: /big"],
+    [{lines: []}, {totals: [], big: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Date values reaching an output schema.
+{
+  name: "dates: computed dates satisfy string and date formats",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {due: "d(start).add(30, 'd')", day: "d(start).format('%Y-%m-%d')"}},
+      {output: "response", schema: {type: "object", required: ["due", "day"], properties: {
+        due: {type: "string", format: "date-time"},
+        day: {type: "string", format: "date"},
+      }}},
+    ],
+  },
+  cases: [
+    [{start: "2025-01-01"}, {due: "2025-01-31T00:00:00Z", day: "2025-01-01"}],
+    [{start: "2024-02-15T12:00:00Z"}, {due: "2024-03-16T12:00:00Z", day: "2024-02-15"}],
+  ],
+}
+
+{
+  name: "dates: declared input dates validated again on the output",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["day"], properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", passThrough: true, fields: {next: "day.add(1, 'd')"}},
+      {output: "response", schema: {type: "object", additionalProperties: false, required: ["day", "next"], properties: {
+        day: {type: "string", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        next: {type: "string", format: "date-time"},
+      }}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {day: "2024-01-31", next: "2024-02-01T00:00:00Z"}],
+    [{day: "2024-12-31"}, {day: "2024-12-31", next: "2025-01-01T00:00:00Z"}],
+    [{day: "2024/12/31"}, "!error: /day"],
+    [{day: "20241231"}, "!error: /day"],
+  ],
+}
+
+{
+  name: "dates: a date value against a non-string type fails",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {at: "d(raw)"}},
+      {output: "response", schema: {type: "object", properties: {at: {type: "object"}}}},
+    ],
+  },
+  cases: [
+    [{raw: "2024-01-01"}, "!error: /at"],
+    [{raw: "2024-01-01T10:00:00Z"}, "!error: /at"],
+  ],
+}
+
+{
+  name: "dates: an enum of date texts compares with the rendered text",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {same: "day", moved: "day.add(0, 'd')"}},
+      {output: "response", schema: {type: "object", properties: {
+        same: {enum: ["2024-01-01", "2024-06-01"]},
+        moved: {enum: ["2024-01-01T00:00:00Z"]},
+      }}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-01"}, {same: "2024-01-01", moved: "2024-01-01T00:00:00Z"}],
+    [{day: "2024-06-01"}, "!error: /moved"],
+    [{day: "2024/01/01"}, "!error: /same"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sub-decisions.
+{
+  name: "sub-decision: the child's output schema fails only the rows that break it",
+  decisions: {
+    child: {nodes: [
+      {table: "grade", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 75", "'B'"],
+        [">= 50", "'C'"],
+      ]},
+      {output: "out", schema: {type: "object", required: ["grade"], properties: {grade: {enum: ["A", "B", "C"]}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "result"}],
+  },
+  cases: [
+    [{score: 95}, {result: {grade: "A"}}],
+    [{score: 80}, {result: {grade: "B"}}],
+    [{score: 50}, {result: {grade: "C"}}],
+    [{score: 49}, "!error: grade"],
+    [{}, "!error: grade"],
+  ],
+}
+
+{
+  name: "sub-decision: loop items where one item fails the child's output schema",
+  decisions: {
+    child: {nodes: [
+      {expression: "e", fields: {net: "gross - fee"}},
+      {output: "out", schema: {type: "object", required: ["net"], properties: {net: {type: "number", minimum: 0}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "payments", executionMode: "loop", outputPath: "nets"}],
+  },
+  cases: [
+    [{payments: [{gross: 10, fee: 1}, {gross: 5, fee: 5}]}, {nets: [{net: 9}, {net: 0}]}],
+    [{payments: []}, {nets: []}],
+    [{payments: [{gross: 10, fee: 1}, {gross: 1, fee: 2}]}, "!error: /net"],
+    [{payments: [{gross: 10}]}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "sub-decision: parent and child output schemas both apply",
+  decisions: {
+    child: {nodes: [
+      {expression: "e", fields: {score: "x * 10"}},
+      {output: "out", schema: {type: "object", properties: {score: {type: "number", maximum: 100}}}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {output: "response", schema: {type: "object", required: ["score"], properties: {score: {type: "number", minimum: 10}}}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {score: 10}],
+    [{x: 10}, {score: 100}],
+    [{x: 11}, "!error: /score"],
+    [{x: 0.5}, "!error: /score"],
+    [{x: 0}, "!error: /score"],
+  ],
+}
+
+{
+  name: "sub-decision: a child output schema on a branch that is not taken",
+  decisions: {
+    strict: {nodes: [
+      {expression: "e", fields: {v: "'x'"}},
+      {output: "out", schema: {type: "object", properties: {v: {type: "number"}}}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {switch: "route", when: ["useStrict == true", ""]},
+      {decision: "call", key: "strict"},
+      {expression: "plain", fields: {v: "1"}},
+    ],
+    edges: ["input -> route", "route:0 -> call -> output", "route:1 -> plain -> output"],
+  },
+  cases: [
+    [{}, {v: 1}],
+    [{useStrict: false}, {v: 1}],
+    [{useStrict: true}, "!error: /v"],
+  ],
+}
+
+{
+  name: "sub-decision: two levels deep, the innermost output schema fails",
+  decisions: {
+    inner: {nodes: [
+      {expression: "e", fields: {code: "upper(raw)"}},
+      {output: "out", schema: {type: "object", required: ["code"], properties: {code: {type: "string", minLength: 3}}}},
+    ]},
+    middle: {nodes: [
+      {decision: "callInner", key: "inner", outputPath: "inner"},
+      {output: "out", schema: {type: "object", required: ["inner"]}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "callMiddle", key: "middle"}],
+  },
+  cases: [
+    [{raw: "abc"}, {inner: {code: "ABC"}}],
+    [{raw: "abcd"}, {inner: {code: "ABCD"}}],
+    [{raw: "ab"}, "!error: /code"],
+  ],
+}
+
+{
+  name: "sub-decision: child output schema with a date it produced",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", required: ["start"], properties: {start: {type: "string", format: "date"}}}},
+      {expression: "e", fields: {end: "start.add(months, 'M')"}},
+      {output: "out", schema: {type: "object", required: ["end"], properties: {end: {type: "string", format: "date-time"}}}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", outputPath: "term", passThrough: true},
+      {expression: "after", fields: {endYear: "year(d(term.end))", kind: "type(term.end)"}},
+    ],
+  },
+  cases: [
+    [{start: "2024-01-31", months: 1}, {endYear: 2024, kind: "date"}, "question: a date produced inside the child crosses back to the parent as a date value, while the request sent into a child is normalized to text"],
+    [{start: "2024-11-30", months: 2}, {endYear: 2025, kind: "date"}, "question: a date produced inside the child crosses back to the parent as a date value, while the request sent into a child is normalized to text"],
+    [{start: "2024-11-30"}, "!error: NodeError"],
+    [{start: "x", months: 1}, "!error: /start"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rows with different outcomes in one suite, for the batch and columnar engines.
+{
+  name: "mixed rows: a pre-check-shaped output schema over many row shapes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {id: "id", score: "points * weight", tier: "points > 50 ? 'gold' : (points > 10 ? 'silver' : tierHint)"}},
+      {output: "response", schema: {type: "object", required: ["id", "score"], additionalProperties: false, properties: {
+        id: {type: "string"},
+        score: {type: "number"},
+        tier: {type: "string", enum: ["gold", "silver", "bronze"]},
+      }}},
+    ],
+  },
+  cases: [
+    [{id: "a", points: 60, weight: 1}, {id: "a", score: 60, tier: "gold"}],
+    [{id: "b", points: 20, weight: 0.5}, {id: "b", score: 10, tier: "silver"}],
+    [{id: "c", points: 5, weight: 2, tierHint: "bronze"}, {id: "c", score: 10, tier: "bronze"}],
+    [{id: "d", points: 5, weight: 2}, {id: "d", score: 10}],
+    [{id: "e", points: 5, weight: 2, tierHint: "tin"}, "!error: /tier"],
+    [{id: 7, points: 5, weight: 2}, "!error: /id"],
+    [{points: 5, weight: 2}, "!error: id"],
+  ],
+}
+
+{
+  name: "mixed rows: output schema with nested objects and arrays",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {"summary.count": "len(items)", "summary.max": "len(items) > 0 ? max(items) : null", "summary.items": "items"}},
+      {output: "response", schema: {type: "object", required: ["summary"], properties: {summary: {type: "object", required: ["count"], properties: {
+        count: {type: "integer", maximum: 3},
+        max: {type: "number"},
+        items: {type: "array", items: {type: "number"}},
+      }}}}},
+    ],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {summary: {count: 3, max: 3, items: [1, 2, 3]}}],
+    [{items: []}, {summary: {count: 0, max: null, items: []}}],
+    [{items: [5]}, {summary: {count: 1, max: 5, items: [5]}}],
+    [{items: [1, 2, 3, 4]}, "!error: /summary/count"],
+    [{items: ["a"]}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Parent and child graphs whose input/output nodes share ids and names but not schemas.
+{
+  name: "same node names: parent and child input schemas are kept apart",
+  decisions: {
+    child: {nodes: [
+      {input: "request", schema: {type: "object", required: ["code"], properties: {code: {type: "string"}}}},
+      {expression: "calc", fields: {code: "code"}},
+      {output: "response", schema: {type: "object", properties: {code: {type: "string", minLength: 2}}}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["n"], properties: {n: {type: "number"}}}},
+      {expression: "prep", fields: {code: "string(n)"}},
+      {decision: "call", key: "child"},
+      {output: "response", schema: {type: "object", required: ["code"], properties: {code: {type: "string", maxLength: 3}}}},
+    ],
+  },
+  cases: [
+    [{n: 12}, {code: "12"}],
+    [{n: 123}, {code: "123"}],
+    [{n: 1}, "!error: /code"],
+    [{n: 1234}, "!error: /code"],
+    [{n: "12"}, "!error: /n"],
+    [{}, "!error: n"],
+  ],
+}
+
+{
+  name: "same node names: one child called from two decision nodes",
+  decisions: {
+    child: {nodes: [
+      {input: "request", schema: {type: "object", required: ["v"], properties: {v: {type: "integer", minimum: 0}}}},
+      {expression: "calc", fields: {w: "v * 2"}},
+      {output: "response", schema: {type: "object", properties: {w: {type: "integer", maximum: 100}}}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "left", key: "child", inputField: "a", outputPath: "l"},
+      {decision: "right", key: "child", inputField: "b", outputPath: "r"},
+    ],
+    edges: ["input -> left -> output", "input -> right -> output"],
+  },
+  cases: [
+    [{a: {v: 1}, b: {v: 2}}, {l: {w: 2}, r: {w: 4}}],
+    [{a: {v: 0}, b: {v: 50}}, {l: {w: 0}, r: {w: 100}}],
+    [{a: {v: 1}, b: {v: 51}}, "!error: /w"],
+    [{a: {v: -1}, b: {v: 1}}, "!error: /v"],
+    [{a: {v: 1}, b: {}}, "!error: v"],
+  ],
+}

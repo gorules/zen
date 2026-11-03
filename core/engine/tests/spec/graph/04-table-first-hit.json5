@@ -1,0 +1,855 @@
+// Decision tables, first hit policy.
+//
+// A first-hit table evaluates rules top to bottom and returns the outputs of the first rule
+// whose input cells all pass. An empty input cell matches anything. Output cells are standard
+// expressions; an empty output cell leaves its field out. When no rule matches, the node
+// produces null, which the output node turns into an empty object.
+
+// --- Rule order ---------------------------------------------------------------------------
+
+{
+  name: "first hit: the first matching rule wins even when later rules also match",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 80", "'B'"],
+        [">= 70", "'C'"],
+        ["", "'F'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 95}, {grade: "A"}],
+    [{score: 90}, {grade: "A"}],
+    [{score: 89.99}, {grade: "B"}],
+    [{score: 80}, {grade: "B"}],
+    [{score: 70}, {grade: "C"}],
+    [{score: 69}, {grade: "F"}],
+    [{score: -5}, {grade: "F"}],
+    [{}, {grade: "F"}],
+  ],
+}
+
+{
+  name: "first hit: a catch-all placed first shadows every later rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [
+        ["", "'any'"],
+        [">= 90", "'A'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 95}, {grade: "any"}],
+    [{score: 1}, {grade: "any"}],
+    [{score: null}, {grade: "any"}],
+    [{}, {grade: "any"}],
+  ],
+}
+
+{
+  name: "first hit: overlapping ranges resolve by order, not by specificity",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["band"], rules: [
+        ["[0..100]", "'wide'"],
+        ["[40..60]", "'narrow'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 50}, {band: "wide"}],
+    [{n: 0}, {band: "wide"}],
+    [{n: 100}, {band: "wide"}],
+    [{n: 101}, {}],
+  ],
+}
+
+// --- No match -------------------------------------------------------------------------------
+
+{
+  name: "first hit: no matching rule yields an empty result",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age"], outputs: ["tier"], rules: [
+        ["> 18", "'adult'"],
+        ["< 5", "'toddler'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 20}, {tier: "adult"}],
+    [{age: 3}, {tier: "toddler"}],
+    [{age: 10}, {}],
+    [{age: 18}, {}],
+    [{age: 5}, {}],
+  ],
+}
+
+{
+  name: "first hit: a table with no rules yields an empty result",
+  graph: {
+    nodes: [{table: "t", inputs: ["a"], outputs: ["b"], rules: []}],
+  },
+  cases: [
+    [{a: 1}, {}],
+    [{}, {}],
+    [{a: "x", b: 2}, {}],
+  ],
+}
+
+{
+  name: "first hit: no match with passThrough keeps the input unchanged",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["age"], outputs: ["tier"], rules: [
+        ["> 18", "'adult'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 20}, {age: 20, tier: "adult"}],
+    [{age: 10}, {age: 10}],
+    [{age: 10, tier: "old"}, {age: 10, tier: "old"}],
+    [{age: 30, tier: "old"}, {age: 30, tier: "adult"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "first hit: no match with outputPath writes null under the path, which the merge drops",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "result", inputs: ["age"], outputs: ["tier"], rules: [
+        ["> 18", "'adult'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 20}, {result: {tier: "adult"}}],
+    [{age: 10}, {}],
+  ],
+}
+
+{
+  name: "first hit: no match feeding a downstream expression gives it an empty input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age"], outputs: ["tier"], rules: [["> 18", "'adult'"]]},
+      {expression: "e", fields: {hasTier: "tier != null", tierOr: "tier ?? 'none'", ageSeen: "age ?? 'gone'"}},
+    ],
+  },
+  cases: [
+    [{age: 20}, {hasTier: true, tierOr: "adult", ageSeen: "gone"}],
+    [{age: 10}, {hasTier: false, tierOr: "none", ageSeen: "gone"}],
+  ],
+}
+
+// --- Wildcards ------------------------------------------------------------------------------
+
+{
+  name: "first hit: empty input cells are wildcards per column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country", "age"], outputs: ["rate"], rules: [
+        ["'US'", "> 65", "1"],
+        ["'US'", "", "2"],
+        ["", "> 65", "3"],
+        ["", "", "4"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", age: 70}, {rate: 1}],
+    [{country: "US", age: 30}, {rate: 2}],
+    [{country: "DE", age: 70}, {rate: 3}],
+    [{country: "DE", age: 30}, {rate: 4}],
+    [{country: "US"}, {rate: 2}],
+    [{age: 70}, {rate: 3}],
+    [{}, {rate: 4}],
+  ],
+}
+
+{
+  name: "first hit: a wildcard matches null, missing and values of every type",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["hit"], rules: [["", "true"]]},
+    ],
+  },
+  cases: [
+    [{v: 1}, {hit: true}],
+    [{v: "s"}, {hit: true}],
+    [{v: false}, {hit: true}],
+    [{v: null}, {hit: true}],
+    [{v: [1, 2]}, {hit: true}],
+    [{v: {a: 1}}, {hit: true}],
+    [{}, {hit: true}],
+  ],
+}
+
+{
+  name: "first hit: a rule whose input cells are all empty always matches",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["", "", "", "'all-empty'"],
+        ["1", "2", "3", "'specific'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2, c: 3}, {r: "all-empty"}],
+    [{}, {r: "all-empty"}],
+    [{a: "x"}, {r: "all-empty"}],
+  ],
+}
+
+{
+  name: "first hit: a table with no input columns matches its first rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "b"], rules: [
+        ["1", "'one'"],
+        ["2", "'two'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: 1, b: "one"}],
+    [{a: 99}, {a: 1, b: "one"}],
+  ],
+}
+
+// --- Multiple input columns -----------------------------------------------------------------
+
+{
+  name: "first hit: all input cells of a rule must pass (conjunction)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier", "amount", "active"], outputs: ["discount"], rules: [
+        ["'gold'", "> 1000", "true", "0.2"],
+        ["'gold'", "", "true", "0.1"],
+        ["'silver'", "> 1000", "true", "0.05"],
+        ["", "", "false", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", amount: 2000, active: true}, {discount: 0.2}],
+    [{tier: "gold", amount: 500, active: true}, {discount: 0.1}],
+    [{tier: "silver", amount: 2000, active: true}, {discount: 0.05}],
+    [{tier: "silver", amount: 500, active: true}, {}],
+    [{tier: "gold", amount: 2000, active: false}, {discount: 0}],
+    [{tier: "bronze", amount: 1, active: false}, {discount: 0}],
+    [{tier: "gold", amount: 2000}, {}],
+  ],
+}
+
+{
+  name: "first hit: the same field may appear in two input columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n", "n"], outputs: ["band"], rules: [
+        [">= 10", "< 20", "'teens'"],
+        [">= 20", "< 30", "'twenties'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 15}, {band: "teens"}],
+    [{n: 10}, {band: "teens"}],
+    [{n: 20}, {band: "twenties"}],
+    [{n: 30}, {band: "other"}],
+    [{n: 5}, {band: "other"}],
+  ],
+}
+
+{
+  name: "first hit: nested dotted input fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["customer.address.country", "order.total"], outputs: ["shipping"], rules: [
+        ["'US'", "> 100", "0"],
+        ["'US'", "", "10"],
+        ["", "", "25"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {address: {country: "US"}}, order: {total: 150}}, {shipping: 0}],
+    [{customer: {address: {country: "US"}}, order: {total: 50}}, {shipping: 10}],
+    [{customer: {address: {country: "FR"}}, order: {total: 150}}, {shipping: 25}],
+    [{customer: {address: {}}, order: {total: 150}}, {shipping: 25}],
+    [{customer: {}}, {shipping: 25}],
+    [{customer: null}, {shipping: 25}],
+    [{}, {shipping: 25}],
+  ],
+}
+
+{
+  name: "first hit: indexed input field into an array",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["items[0].sku"], outputs: ["first"], rules: [
+        ["'A'", "'alpha'"],
+        ["'B'", "'beta'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{sku: "A"}, {sku: "B"}]}, {first: "alpha"}],
+    [{items: [{sku: "B"}]}, {first: "beta"}],
+    [{items: []}, {first: "unknown"}],
+    [{}, {first: "unknown"}],
+  ],
+}
+
+// --- Outputs ----------------------------------------------------------------------------------
+
+{
+  name: "first hit: several output columns, empty output cells are omitted",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["a", "b", "c"], rules: [
+        ["'full'", "1", "2", "3"],
+        ["'partial'", "1", "", "3"],
+        ["'none'", "", "", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "full"}, {a: 1, b: 2, c: 3}],
+    [{kind: "partial"}, {a: 1, c: 3}],
+    [{kind: "none"}, {}],
+    [{kind: "other"}, {}],
+  ],
+}
+
+{
+  name: "first hit: a matched rule with only empty outputs is still a hit (stops the search)",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["x"], outputs: ["y"], rules: [
+        ["> 0", ""],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {x: 1}],
+    [{x: -1}, {x: -1, y: "fallback"}],
+  ],
+}
+
+{
+  name: "first hit: dotted output fields build nested objects",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["plan"], outputs: ["limits.users", "limits.storage.gb", "meta.plan"], rules: [
+        ["'pro'", "50", "100", "plan"],
+        ["", "5", "1", "'free'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{plan: "pro"}, {limits: {users: 50, storage: {gb: 100}}, meta: {plan: "pro"}}],
+    [{plan: "basic"}, {limits: {users: 5, storage: {gb: 1}}, meta: {plan: "free"}}],
+    [{}, {limits: {users: 5, storage: {gb: 1}}, meta: {plan: "free"}}],
+  ],
+}
+
+{
+  name: "first hit: two output columns writing into the same parent object merge",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["r.a", "r.b", "r.c.d"], rules: [
+        ["1", "'x'", "true"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: {a: 1, b: "x", c: {d: true}}}],
+    [{r: {z: 1}}, {r: {a: 1, b: "x", c: {d: true}}}],
+  ],
+}
+
+{
+  name: "first hit: output values of every type",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["v"], rules: [
+        ["'num'", "1.50"],
+        ["'neg'", "-3"],
+        ["'str'", "'text'"],
+        ["'dq'", "\"double\""],
+        ["'bool'", "false"],
+        ["'null'", "null"],
+        ["'arr'", "[1, 'a', true]"],
+        ["'obj'", "{x: 1, y: {z: 'deep'}}"],
+        ["'empty'", "''"],
+      ]},
+    ],
+  },
+  cases: [
+    [{k: "num"}, {v: 1.5}],
+    [{k: "neg"}, {v: -3}],
+    [{k: "str"}, {v: "text"}],
+    [{k: "dq"}, {v: "double"}],
+    [{k: "bool"}, {v: false}],
+    [{k: "null"}, {}],
+    [{k: "arr"}, {v: [1, "a", true]}],
+    [{k: "obj"}, {v: {x: 1, y: {z: "deep"}}}],
+    [{k: "empty"}, {v: ""}],
+  ],
+}
+
+{
+  name: "first hit: a null output cell is a merge-patch delete, it removes the key from the pass-through input",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["v"], rules: [["null"]]},
+    ],
+  },
+  cases: [
+    [{}, {}],
+    [{v: 5}, {}],
+    [{v: 5, w: 1}, {w: 1}],
+  ],
+}
+
+{
+  name: "first hit: decimals in outputs keep exact precision",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["", "n * 0.1 + 0.2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: 0.3}],
+    [{n: 3}, {r: 0.5}],
+    [{n: 0.1}, {r: 0.21}],
+    [{n: 12345678901234567890}, {r: 1234567890123456789.2}],
+  ],
+}
+
+// --- Cell value kinds ------------------------------------------------------------------------
+
+{
+  name: "first hit: numeric equality cells, integer and decimal forms are equal",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["1", "'one'"],
+        ["2.5", "'two and a half'"],
+        ["-1", "'minus one'"],
+        ["0", "'zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: "one"}],
+    [{n: 1.0}, {r: "one"}],
+    [{n: 2.50}, {r: "two and a half"}],
+    [{n: -1}, {r: "minus one"}],
+    [{n: 0}, {r: "zero"}],
+    [{n: -0}, {r: "zero"}],
+    [{n: 3}, {}],
+    [{n: "1"}, {}],
+    [{n: true}, {}],
+  ],
+}
+
+{
+  name: "first hit: string cells are case sensitive and exact",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["'Gold'", "1"],
+        ["\"silver\"", "2"],
+        ["''", "3"],
+        ["' padded '", "4"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "Gold"}, {r: 1}],
+    [{s: "gold"}, {}],
+    [{s: "silver"}, {r: 2}],
+    [{s: ""}, {r: 3}],
+    [{s: " padded "}, {r: 4}],
+    [{s: "padded"}, {}],
+    [{s: 1}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "first hit: boolean cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["flag"], outputs: ["r"], rules: [
+        ["true", "'yes'"],
+        ["false", "'no'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{flag: true}, {r: "yes"}],
+    [{flag: false}, {r: "no"}],
+    [{flag: null}, {r: "unknown"}],
+    [{flag: "true"}, {r: "unknown"}],
+    [{flag: 1}, {r: "unknown"}],
+    [{flag: 0}, {r: "unknown"}],
+    [{}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "first hit: date cells compare date-string inputs through d()",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["d"], outputs: ["era"], rules: [
+        ["d($) < d('2000-01-01')", "'old'"],
+        ["d($) >= d('2000-01-01') and d($) <= d('2020-12-31')", "'mid'"],
+        ["> d('2020-12-31')", "'new'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{d: "1999-12-31"}, {era: "old"}],
+    [{d: "2000-01-01"}, {era: "mid"}],
+    [{d: "2010-06-15"}, {era: "mid"}],
+    [{d: "2020-12-31"}, {era: "mid"}],
+    [{d: "2021-01-01"}, {era: "new"}],
+    [{d: "2021-01-01T08:00:00Z"}, {era: "new"}],
+    [{d: date('2010-06-15')}, {era: "mid"}],
+    [{d: null}, {era: "old"}, "question: d(null) is an invalid date that orders before every valid date, so a null input lands in the first `<` band instead of matching nothing"],
+  ],
+}
+
+{
+  name: "first hit: date cells using d() and a reference to $",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["since"], outputs: ["recent"], rules: [
+        ["d($).isAfter(d('2025-01-01'))", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{since: "2025-03-01"}, {recent: true}],
+    [{since: "2024-12-31"}, {recent: false}],
+    [{since: "2025-01-01"}, {recent: false}],
+  ],
+}
+
+{
+  name: "first hit: number cell against a numeric string input does not coerce",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 5", "'big'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 6}, {r: "big"}],
+    [{n: "6"}, {r: "other"}],
+    [{n: null}, {r: "other"}],
+    [{n: [6]}, {r: "other"}],
+  ],
+}
+
+// --- Large tables (eight or more rules use an equality index for some columns) --------------
+
+{
+  name: "first hit: large enum table matches the right row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["state"], outputs: ["region"], rules: [
+        ["'CA'", "'west'"],
+        ["'OR'", "'west'"],
+        ["'WA'", "'west'"],
+        ["'NY'", "'east'"],
+        ["'NJ'", "'east'"],
+        ["'MA'", "'east'"],
+        ["'TX'", "'south'"],
+        ["'FL'", "'south'"],
+        ["'IL', 'OH'", "'midwest'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{state: "CA"}, {region: "west"}],
+    [{state: "WA"}, {region: "west"}],
+    [{state: "MA"}, {region: "east"}],
+    [{state: "FL"}, {region: "south"}],
+    [{state: "IL"}, {region: "midwest"}],
+    [{state: "OH"}, {region: "midwest"}],
+    [{state: "ZZ"}, {region: "other"}],
+    [{state: "ca"}, {region: "other"}],
+    [{state: null}, {region: "other"}],
+    [{state: 5}, {region: "other"}],
+    [{}, {region: "other"}],
+  ],
+}
+
+{
+  name: "first hit: large table keeps first-hit order when an earlier non-equality rule also matches",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["1", "'r0'"],
+        ["2", "'r1'"],
+        ["> 100", "'r2-range'"],
+        ["3", "'r3'"],
+        ["150", "'r4-shadowed'"],
+        ["4", "'r5'"],
+        ["5", "'r6'"],
+        ["6", "'r7'"],
+        ["200", "'r8-shadowed'"],
+        ["", "'default'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: 1}, {r: "r0"}],
+    [{code: 3}, {r: "r3"}],
+    [{code: 150}, {r: "r2-range"}],
+    [{code: 200}, {r: "r2-range"}],
+    [{code: 6}, {r: "r7"}],
+    [{code: 6.0}, {r: "r7"}],
+    [{code: 7}, {r: "default"}],
+    [{code: "3"}, {r: "default"}],
+    [{}, {r: "default"}],
+  ],
+}
+
+{
+  name: "first hit: large table with two indexed columns intersects them",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country", "vip"], outputs: ["fee"], rules: [
+        ["'US'", "true", "0"],
+        ["'US'", "false", "5"],
+        ["'DE'", "true", "1"],
+        ["'DE'", "false", "6"],
+        ["'FR'", "true", "2"],
+        ["'FR'", "false", "7"],
+        ["'JP'", "", "8"],
+        ["", "true", "9"],
+        ["", "", "10"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", vip: true}, {fee: 0}],
+    [{country: "US", vip: false}, {fee: 5}],
+    [{country: "DE", vip: false}, {fee: 6}],
+    [{country: "FR", vip: true}, {fee: 2}],
+    [{country: "JP", vip: true}, {fee: 8}],
+    [{country: "JP"}, {fee: 8}],
+    [{country: "IT", vip: true}, {fee: 9}],
+    [{country: "IT", vip: false}, {fee: 10}],
+    [{country: "US"}, {fee: 10}],
+    [{vip: true}, {fee: 9}],
+    [{}, {fee: 10}],
+  ],
+}
+
+{
+  name: "first hit: large boolean and numeric table with mixed cell shapes",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n", "b"], outputs: ["r"], rules: [
+        ["1, 2", "true", "'a'"],
+        ["3", "true", "'b'"],
+        ["[4..6]", "", "'c'"],
+        ["7", "false", "'d'"],
+        ["8", "", "'e'"],
+        ["!= 9", "false", "'f'"],
+        ["9", "", "'g'"],
+        ["10", "true", "'h'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1, b: true}, {r: "a"}],
+    [{n: 2, b: true}, {r: "a"}],
+    [{n: 2, b: false}, {r: "f"}],
+    [{n: 3, b: true}, {r: "b"}],
+    [{n: 5, b: false}, {r: "c"}],
+    [{n: 4.5}, {r: "c"}],
+    [{n: 7, b: false}, {r: "d"}],
+    [{n: 8, b: true}, {r: "e"}],
+    [{n: 9, b: false}, {r: "g"}],
+    [{n: 10, b: true}, {r: "h"}],
+    [{n: 10, b: false}, {r: "f"}],
+    [{n: 11, b: true}, {}],
+    [{n: null, b: false}, {r: "f"}],
+  ],
+}
+
+{
+  name: "first hit: a large table with no matching rule yields an empty result",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["v"], rules: [
+        ["'a'", "1"], ["'b'", "2"], ["'c'", "3"], ["'d'", "4"],
+        ["'e'", "5"], ["'f'", "6"], ["'g'", "7"], ["'h'", "8"],
+        ["'i'", "9"], ["'j'", "10"], ["'k'", "11"], ["'l'", "12"],
+      ]},
+    ],
+  },
+  cases: [
+    [{k: "a"}, {v: 1}],
+    [{k: "h"}, {v: 8}],
+    [{k: "l"}, {v: 12}],
+    [{k: "m"}, {}],
+    [{k: ""}, {}],
+    [{}, {}],
+  ],
+}
+
+// --- Interaction with other nodes ----------------------------------------------------------
+
+{
+  name: "first hit: reads values computed by an upstream expression node",
+  graph: {
+    nodes: [
+      {expression: "calc", passThrough: true, fields: {bmi: "weight / (height * height)"}},
+      {table: "t", inputs: ["bmi"], outputs: ["category"], rules: [
+        ["< 18.5", "'under'"],
+        ["[18.5..25)", "'normal'"],
+        ["[25..30)", "'over'"],
+        ["", "'obese'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{weight: 50, height: 1.8}, {category: "under"}],
+    [{weight: 70, height: 1.75}, {category: "normal"}],
+    [{weight: 85, height: 1.75}, {category: "over"}],
+    [{weight: 120, height: 1.7}, {category: "obese"}],
+  ],
+}
+
+{
+  name: "first hit: two tables in sequence, the second reads the first's output",
+  graph: {
+    nodes: [
+      {table: "risk", passThrough: true, inputs: ["score"], outputs: ["risk"], rules: [
+        ["< 500", "'high'"],
+        ["< 700", "'medium'"],
+        ["", "'low'"],
+      ]},
+      {table: "rate", inputs: ["risk", "amount"], outputs: ["rate"], rules: [
+        ["'high'", "", "0.15"],
+        ["'medium'", "> 10000", "0.09"],
+        ["'medium'", "", "0.1"],
+        ["'low'", "", "0.05"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 400, amount: 1}, {rate: 0.15}],
+    [{score: 600, amount: 20000}, {rate: 0.09}],
+    [{score: 600, amount: 100}, {rate: 0.1}],
+    [{score: 800}, {rate: 0.05}],
+  ],
+}
+
+{
+  name: "first hit: inputField scopes the table to a nested object",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "applicant", inputs: ["age", "income"], outputs: ["eligible"], rules: [
+        [">= 18", ">= 30000", "true"],
+        ["", "", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{applicant: {age: 30, income: 50000}}, {eligible: true}],
+    [{applicant: {age: 17, income: 50000}}, {eligible: false}],
+    [{applicant: {age: 30}}, {eligible: false}],
+    [{age: 30, income: 50000, applicant: {}}, {eligible: false}],
+  ],
+}
+
+{
+  name: "first hit: loop execution mode runs the table per array element",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", executionMode: "loop", outputPath: "results", inputs: ["qty"], outputs: ["size"], rules: [
+        ["> 10", "'bulk'"],
+        ["", "'single'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 20}, {qty: 1}]}, {results: [{size: "bulk"}, {size: "single"}]}],
+    [{items: []}, {results: []}],
+    [{items: [{qty: 11}]}, {results: [{size: "bulk"}]}],
+    [{items: "nope"}, "!error"],
+  ],
+}
+
+{
+  name: "first hit: loop mode where some elements match no rule",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", executionMode: "loop", outputPath: "results", inputs: ["qty"], outputs: ["size"], rules: [
+        ["> 10", "'bulk'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 20}, {qty: 1}]}, {results: [{size: "bulk"}, null]}, "question: unmatched elements in loop mode become null entries rather than {} or being dropped"],
+    [{items: [{qty: 1}]}, {results: [null]}, "question: unmatched elements in loop mode become null entries rather than {} or being dropped"],
+  ],
+}
+
+{
+  name: "first hit: two tables in parallel merge their outputs at the output node",
+  graph: {
+    nodes: [
+      {table: "a", inputs: ["x"], outputs: ["fromA"], rules: [["> 0", "'pos'"], ["", "'nonpos'"]]},
+      {table: "b", inputs: ["x"], outputs: ["fromB"], rules: [["< 0", "'neg'"]]},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {fromA: "pos"}],
+    [{x: -1}, {fromA: "nonpos", fromB: "neg"}],
+    [{x: 0}, {fromA: "nonpos"}],
+  ],
+}
+
+{
+  name: "first hit: table output overrides the same key when merged with passThrough",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["status"], outputs: ["status", "changed"], rules: [
+        ["'new'", "'open'", "true"],
+        ["", "status", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{status: "new"}, {status: "open", changed: true}],
+    [{status: "done"}, {status: "done", changed: false}],
+    [{status: "new", other: 1}, {status: "open", changed: true, other: 1}],
+  ],
+}

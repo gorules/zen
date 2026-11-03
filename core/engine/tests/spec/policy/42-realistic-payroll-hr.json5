@@ -1,0 +1,664 @@
+// Realistic payroll and HR policies: timesheets with overtime and weekend premiums, net pay with
+// pension, benefits, progressive tax and garnishments, leave balances with request states,
+// approval routing by referenced staff, a department payroll run against globals, and bonuses
+// by referenced grades with goals. Each suite combines several block kinds over related
+// entities and runs valid, boundary, missing and invalid data. Evaluation time is fixed at
+// 2025-03-20T10:15:30Z (a Thursday); 2025-03-01 is a Saturday.
+
+// --- Timesheets and overtime -------------------------------------------------------------------
+// Per-entry weekend and long-shift flags (weekday 6 and 7 are the weekend), per-kind hour sums
+// on the employee, overtime above the contract, an overtime multiplier table where managers are
+// first-hit exempt, and pay components rounded separately.
+
+{
+  name: "timesheets with overtime and weekend premiums",
+  policy: {
+    models: {
+      employee: {grade: "string(staff|senior|manager)", hourlyRate: "number", contractHours: "number", entries: "entry[]"},
+      entry: {date: "date", hours: "number", kind: "string(work|sick|vacation|holiday)"},
+    },
+    blocks: [
+      {expression: "entry.weekend", value: "entry.date.weekday() >= 6"},
+      {expression: "entry.long", value: "entry.hours > 10"},
+      {expression: "employee.worked", value: "sum(map(filter(employee.entries, #.kind == 'work'), #.hours))"},
+      {expression: "employee.weekendHours", value: "sum(map(filter(employee.entries, #.kind == 'work' and #.weekend), #.hours))"},
+      {expression: "employee.paidLeave", value: "sum(map(filter(employee.entries, #.kind in ['vacation', 'holiday']), #.hours))"},
+      {expression: "employee.sickHours", value: "sum(map(filter(employee.entries, #.kind == 'sick'), #.hours))"},
+      {expression: "employee.overtime", value: "max([employee.worked - employee.contractHours, 0])"},
+      {table: "otRate", inputs: ["employee.grade", "employee.overtime"], outputs: ["employee.otRate"], rules: [
+        ["'manager'", "", "1"],
+        ["", "> 20", "2"],
+        ["", "", "1.5"],
+      ]},
+      {expression: "employee.basePay", value: "round((min([employee.worked, employee.contractHours]) + employee.paidLeave) * employee.hourlyRate, 2)"},
+      {expression: "employee.otPay", value: "round(employee.overtime * employee.hourlyRate * employee.otRate, 2)"},
+      {expression: "employee.weekendPremium", value: "round(employee.weekendHours * employee.hourlyRate * 0.25, 2)"},
+      {expression: "employee.sickPay", value: "round(employee.sickHours * employee.hourlyRate * 0.8, 2)"},
+      {expression: "employee.gross", value: "employee.basePay + employee.otPay + employee.weekendPremium + employee.sickPay"},
+      {match: "employee.flag", arms: [
+        ["employee.overtime > 40", "'overtime-breach'"],
+        ["some(employee.entries, #.long)", "'long-shift'"],
+        ["", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 16, entries: [{date: "2025-03-03", hours: 8, kind: "work"}, {date: "2025-03-04", hours: 8, kind: "work"}]}},
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 16, entries: [
+        {date: "2025-03-03", hours: 8, kind: "work", weekend: false, long: false},
+        {date: "2025-03-04", hours: 8, kind: "work", weekend: false, long: false},
+      ], worked: 16, weekendHours: 0, paidLeave: 0, sickHours: 0, overtime: 0, otRate: 1.5, basePay: 320, otPay: 0, weekendPremium: 0, sickPay: 0, gross: 320, flag: "ok"}},
+    ],
+    [
+      {employee: {grade: "senior", hourlyRate: 30, contractHours: 16, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work"},
+        {date: "2025-03-04", hours: 11, kind: "work"},
+        {date: "2025-03-08", hours: 6, kind: "work"},
+      ]}},
+      {employee: {grade: "senior", hourlyRate: 30, contractHours: 16, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work", weekend: false, long: false},
+        {date: "2025-03-04", hours: 11, kind: "work", weekend: false, long: true},
+        {date: "2025-03-08", hours: 6, kind: "work", weekend: true, long: false},
+      ], worked: 27, weekendHours: 6, paidLeave: 0, sickHours: 0, overtime: 11, otRate: 1.5, basePay: 480, otPay: 495, weekendPremium: 45, sickPay: 0, gross: 1020, flag: "long-shift"}},
+    ],
+    // Managers get straight time for overtime, even above 20 hours.
+    [
+      {employee: {grade: "manager", hourlyRate: 50, contractHours: 8, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work"},
+        {date: "2025-03-04", hours: 10, kind: "work"},
+        {date: "2025-03-05", hours: 10, kind: "work"},
+      ]}},
+      {employee: {grade: "manager", hourlyRate: 50, contractHours: 8, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work", weekend: false, long: false},
+        {date: "2025-03-04", hours: 10, kind: "work", weekend: false, long: false},
+        {date: "2025-03-05", hours: 10, kind: "work", weekend: false, long: false},
+      ], worked: 30, weekendHours: 0, paidLeave: 0, sickHours: 0, overtime: 22, otRate: 1, basePay: 400, otPay: 1100, weekendPremium: 0, sickPay: 0, gross: 1500, flag: "ok"}},
+    ],
+    // A casual worker with no contract hours: every hour is overtime, above 20 at double rate.
+    [
+      {employee: {grade: "staff", hourlyRate: 15, contractHours: 0, entries: [
+        {date: "2025-03-01", hours: 9, kind: "work"},
+        {date: "2025-03-02", hours: 9, kind: "work"},
+        {date: "2025-03-03", hours: 5, kind: "work"},
+      ]}},
+      {employee: {grade: "staff", hourlyRate: 15, contractHours: 0, entries: [
+        {date: "2025-03-01", hours: 9, kind: "work", weekend: true, long: false},
+        {date: "2025-03-02", hours: 9, kind: "work", weekend: true, long: false},
+        {date: "2025-03-03", hours: 5, kind: "work", weekend: false, long: false},
+      ], worked: 23, weekendHours: 18, paidLeave: 0, sickHours: 0, overtime: 23, otRate: 2, basePay: 0, otPay: 690, weekendPremium: 67.5, sickPay: 0, gross: 757.5, flag: "ok"}},
+    ],
+    [
+      {employee: {grade: "staff", hourlyRate: 22.5, contractHours: 24, entries: [
+        {date: "2025-03-10", hours: 8, kind: "vacation"},
+        {date: "2025-03-11", hours: 8, kind: "holiday"},
+        {date: "2025-03-12", hours: 7.5, kind: "sick"},
+        {date: "2025-03-13", hours: 8, kind: "work"},
+      ]}},
+      {employee: {grade: "staff", hourlyRate: 22.5, contractHours: 24, entries: [
+        {date: "2025-03-10", hours: 8, kind: "vacation", weekend: false, long: false},
+        {date: "2025-03-11", hours: 8, kind: "holiday", weekend: false, long: false},
+        {date: "2025-03-12", hours: 7.5, kind: "sick", weekend: false, long: false},
+        {date: "2025-03-13", hours: 8, kind: "work", weekend: false, long: false},
+      ], worked: 8, weekendHours: 0, paidLeave: 16, sickHours: 7.5, overtime: 0, otRate: 1.5, basePay: 540, otPay: 0, weekendPremium: 0, sickPay: 135, gross: 675, flag: "ok"}},
+    ],
+    [
+      {employee: {grade: "senior", hourlyRate: 10, contractHours: 0, entries: [
+        {date: "2025-03-03", hours: 9, kind: "work"},
+        {date: "2025-03-04", hours: 9, kind: "work"},
+        {date: "2025-03-05", hours: 9, kind: "work"},
+        {date: "2025-03-06", hours: 9, kind: "work"},
+        {date: "2025-03-07", hours: 9, kind: "work"},
+      ]}},
+      {employee: {grade: "senior", hourlyRate: 10, contractHours: 0, entries: [
+        {date: "2025-03-03", hours: 9, kind: "work", weekend: false, long: false},
+        {date: "2025-03-04", hours: 9, kind: "work", weekend: false, long: false},
+        {date: "2025-03-05", hours: 9, kind: "work", weekend: false, long: false},
+        {date: "2025-03-06", hours: 9, kind: "work", weekend: false, long: false},
+        {date: "2025-03-07", hours: 9, kind: "work", weekend: false, long: false},
+      ], worked: 45, weekendHours: 0, paidLeave: 0, sickHours: 0, overtime: 45, otRate: 2, basePay: 0, otPay: 900, weekendPremium: 0, sickPay: 0, gross: 900, flag: "overtime-breach"}},
+    ],
+    // Exactly 20 overtime hours stay at time and a half; 10 hours is not a long shift.
+    [
+      {employee: {grade: "staff", hourlyRate: 10, contractHours: 10, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work"},
+        {date: "2025-03-04", hours: 10, kind: "work"},
+        {date: "2025-03-05", hours: 10, kind: "work"},
+      ]}},
+      {employee: {grade: "staff", hourlyRate: 10, contractHours: 10, entries: [
+        {date: "2025-03-03", hours: 10, kind: "work", weekend: false, long: false},
+        {date: "2025-03-04", hours: 10, kind: "work", weekend: false, long: false},
+        {date: "2025-03-05", hours: 10, kind: "work", weekend: false, long: false},
+      ], worked: 30, weekendHours: 0, paidLeave: 0, sickHours: 0, overtime: 20, otRate: 1.5, basePay: 100, otPay: 300, weekendPremium: 0, sickPay: 0, gross: 400, flag: "ok"}},
+    ],
+    [
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 40, entries: []}},
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 40, entries: [], worked: 0, weekendHours: 0, paidLeave: 0, sickHours: 0, overtime: 0, otRate: 1.5, basePay: 0, otPay: 0, weekendPremium: 0, sickPay: 0, gross: 0, flag: "ok"}},
+    ],
+    // Weekend vacation earns no weekend premium; weekend work does.
+    [
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 8, entries: [{date: "2025-03-15", hours: 8, kind: "vacation"}, {date: "2025-03-16", hours: 12, kind: "work"}]}},
+      {employee: {grade: "staff", hourlyRate: 20, contractHours: 8, entries: [
+        {date: "2025-03-15", hours: 8, kind: "vacation", weekend: true, long: false},
+        {date: "2025-03-16", hours: 12, kind: "work", weekend: true, long: true},
+      ], worked: 12, weekendHours: 12, paidLeave: 8, sickHours: 0, overtime: 4, otRate: 1.5, basePay: 320, otPay: 120, weekendPremium: 60, sickPay: 0, gross: 500, flag: "long-shift"}},
+    ],
+    [{employee: {grade: "staff", hourlyRate: 20, contractHours: 8, entries: [{date: "2025-03-03", hours: 8, kind: "training"}]}}, "!error: InputValidationFailed"],
+    [{employee: {grade: "staff", hourlyRate: 20, contractHours: 8, entries: [{date: "2025-03-03", kind: "work"}]}}, "!error: ExpressionFailed"],
+    [{employee: {grade: "intern", hourlyRate: 20, contractHours: 8, entries: []}}, "!error: InputValidationFailed"],
+    [{employee: {grade: "staff", hourlyRate: 20, entries: []}}, "!error: MissingRequiredInputs"],
+    [{employee: {grade: "staff", hourlyRate: 20, contractHours: 8, entries: [{date: "03/03/2025", hours: 8, kind: "work"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Net pay -----------------------------------------------------------------------------------
+// Pre-tax and post-tax benefits split by a member flag, pension as a percentage, a progressive
+// tax table with two outputs (rate and relief) and a reduced table that wins first, capped union
+// dues, an optional garnishment, a payability assertion and a release match. Goals compute only
+// the requested deduction.
+
+{
+  name: "net pay with deductions and progressive tax",
+  policy: {
+    models: {
+      employee: {gross: "number", pensionPct: "number", unionMember: "boolean", taxTable: "string(standard|reduced)", garnishment: "number?", benefits: "benefit[]"},
+      benefit: {kind: "string(health|dental|gym|transit)", monthlyCost: "number", pretax: "boolean"},
+    },
+    blocks: [
+      {expression: "employee.pretaxBenefits", value: "sum(map(filter(employee.benefits, #.pretax), #.monthlyCost))"},
+      {expression: "employee.postTaxBenefits", value: "sum(map(filter(employee.benefits, not #.pretax), #.monthlyCost))"},
+      {expression: "employee.pension", value: "round(employee.gross * employee.pensionPct / 100, 2)"},
+      {expression: "employee.taxable", value: "max([employee.gross - employee.pension - employee.pretaxBenefits, 0])"},
+      {table: "tax", inputs: ["employee.taxTable", "employee.taxable"], outputs: ["employee.taxRate", "employee.relief"], rules: [
+        ["'reduced'", "", "0.15", "0"],
+        ["", "<= 3000", "0.2", "0"],
+        ["", "<= 6000", "0.3", "300"],
+        ["", "", "0.4", "900"],
+      ]},
+      {expression: "employee.tax", value: "max([round(employee.taxable * employee.taxRate - employee.relief, 2), 0])"},
+      {expression: "employee.unionDues", value: "employee.unionMember ? min([round(employee.gross * 0.01, 2), 40]) : 0"},
+      {expression: "employee.net", value: "round(employee.gross - employee.pension - employee.pretaxBenefits - employee.tax - employee.unionDues - employee.postTaxBenefits - (employee.garnishment ?? 0), 2)"},
+      {assertion: "employee.payable", conditions: ["employee.net >= 0", "employee.pensionPct <= 15"]},
+      {match: "employee.status", arms: [
+        ["not employee.payable", "'hold'"],
+        ["employee.net < employee.gross * 0.5", "'review'"],
+        ["", "'release'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {employee: {gross: 2500, pensionPct: 5, unionMember: false, taxTable: "standard", benefits: []}},
+      {employee: {gross: 2500, pensionPct: 5, unionMember: false, taxTable: "standard", benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 125, taxable: 2375, taxRate: 0.2, relief: 0, tax: 475, unionDues: 0, net: 1900, payable: true, status: "release"}},
+    ],
+    [
+      {employee: {gross: 5000, pensionPct: 6, unionMember: true, taxTable: "standard", benefits: [{kind: "health", monthlyCost: 200, pretax: true}, {kind: "gym", monthlyCost: 50, pretax: false}]}},
+      {employee: {gross: 5000, pensionPct: 6, unionMember: true, taxTable: "standard", benefits: [{kind: "health", monthlyCost: 200, pretax: true}, {kind: "gym", monthlyCost: 50, pretax: false}],
+        pretaxBenefits: 200, postTaxBenefits: 50, pension: 300, taxable: 4500, taxRate: 0.3, relief: 300, tax: 1050, unionDues: 40, net: 3360, payable: true, status: "release"}},
+    ],
+    // Top bracket and a garnishment push net pay under half of gross.
+    [
+      {employee: {gross: 10000, pensionPct: 10, unionMember: true, taxTable: "standard", garnishment: 1500, benefits: [
+        {kind: "health", monthlyCost: 300, pretax: true},
+        {kind: "dental", monthlyCost: 100, pretax: true},
+        {kind: "transit", monthlyCost: 80, pretax: false},
+      ]}},
+      {employee: {gross: 10000, pensionPct: 10, unionMember: true, taxTable: "standard", garnishment: 1500, benefits: [
+        {kind: "health", monthlyCost: 300, pretax: true},
+        {kind: "dental", monthlyCost: 100, pretax: true},
+        {kind: "transit", monthlyCost: 80, pretax: false},
+      ], pretaxBenefits: 400, postTaxBenefits: 80, pension: 1000, taxable: 8600, taxRate: 0.4, relief: 900, tax: 2540, unionDues: 40, net: 4440, payable: true, status: "review"}},
+    ],
+    [
+      {employee: {gross: 3000, pensionPct: 0, unionMember: true, taxTable: "reduced", benefits: []}},
+      {employee: {gross: 3000, pensionPct: 0, unionMember: true, taxTable: "reduced", benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 0, taxable: 3000, taxRate: 0.15, relief: 0, tax: 450, unionDues: 30, net: 2520, payable: true, status: "release"}},
+    ],
+    // Bracket edges are inclusive.
+    [
+      {employee: {gross: 3000, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: []}},
+      {employee: {gross: 3000, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 0, taxable: 3000, taxRate: 0.2, relief: 0, tax: 600, unionDues: 0, net: 2400, payable: true, status: "release"}},
+    ],
+    [
+      {employee: {gross: 6000, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: []}},
+      {employee: {gross: 6000, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 0, taxable: 6000, taxRate: 0.3, relief: 300, tax: 1500, unionDues: 0, net: 4500, payable: true, status: "release"}},
+    ],
+    [
+      {employee: {gross: 1000, pensionPct: 0, unionMember: false, taxTable: "standard", garnishment: 900, benefits: []}},
+      {employee: {gross: 1000, pensionPct: 0, unionMember: false, taxTable: "standard", garnishment: 900, benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 0, taxable: 1000, taxRate: 0.2, relief: 0, tax: 200, unionDues: 0, net: -100, payable: false, status: "hold"}},
+    ],
+    [
+      {employee: {gross: 2000, pensionPct: 20, unionMember: false, taxTable: "standard", benefits: []}},
+      {employee: {gross: 2000, pensionPct: 20, unionMember: false, taxTable: "standard", benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 400, taxable: 1600, taxRate: 0.2, relief: 0, tax: 320, unionDues: 0, net: 1280, payable: false, status: "hold"}},
+    ],
+    // Pre-tax benefits above gross: taxable income is floored at zero, net pay is negative.
+    [
+      {employee: {gross: 100, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [{kind: "health", monthlyCost: 150, pretax: true}]}},
+      {employee: {gross: 100, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [{kind: "health", monthlyCost: 150, pretax: true}], pretaxBenefits: 150, postTaxBenefits: 0, pension: 0, taxable: 0, taxRate: 0.2, relief: 0, tax: 0, unionDues: 0, net: -50, payable: false, status: "hold"}},
+    ],
+    [
+      {employee: {gross: 1234.56, pensionPct: 3.5, unionMember: true, taxTable: "standard", garnishment: null, benefits: []}},
+      {employee: {gross: 1234.56, pensionPct: 3.5, unionMember: true, taxTable: "standard", garnishment: null, benefits: [], pretaxBenefits: 0, postTaxBenefits: 0, pension: 43.21, taxable: 1191.35, taxRate: 0.2, relief: 0, tax: 238.27, unionDues: 12.35, net: 940.73, payable: true, status: "release"}},
+    ],
+    {input: {employee: {gross: 4000, pensionPct: 7.5}}, goals: ["employee.pension"], output: {employee: {gross: 4000, pensionPct: 7.5, pension: 300}}},
+    {input: {employee: {gross: 6000, unionMember: true}}, goals: ["employee.unionDues"], output: {employee: {gross: 6000, unionMember: true, unionDues: 40}}},
+    {input: {employee: {gross: 6000}}, goals: ["employee.unionDues"], output: "!error: MissingRequiredInputs"},
+    [{employee: {gross: 1, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [{kind: "pet", monthlyCost: 1, pretax: true}]}}, "!error: InputValidationFailed"],
+    [{employee: {gross: 1, pensionPct: 0, unionMember: false, taxTable: "standard", benefits: [{kind: "gym", monthlyCost: 1}]}}, "!error: ExpressionFailed"],
+    [{employee: {gross: 1, pensionPct: 0, unionMember: false, benefits: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Leave balances ----------------------------------------------------------------------------
+// Entitlement from a tenure and full-time table, per-request day counts (inclusive) and a
+// three-state match over an optional approval flag, balances with a carry-over cap, a booking
+// assertion with a probation period, and an alert match.
+
+{
+  name: "leave balances and request states",
+  policy: {
+    models: {
+      employee: {hired: "date", fullTime: "boolean", carryOver: "number", requests: "request[]"},
+      request: {kind: "string(vacation|sick|parental|unpaid)", start: "date", end: "date", approved: "boolean?"},
+    },
+    blocks: [
+      {expression: "employee.tenureYears", value: "d().diff(employee.hired, 'year')"},
+      {expression: "employee.onProbation", value: "d().diff(employee.hired, 'month') < 6"},
+      {table: "entitlement", inputs: ["employee.tenureYears", "employee.fullTime"], outputs: ["employee.annualDays"], rules: [
+        [">= 10", "true", "30"],
+        [">= 5", "true", "27"],
+        ["", "true", "25"],
+        ["", "false", "15"],
+      ]},
+      {expression: "request.days", value: "request.end.diff(request.start, 'day') + 1"},
+      {match: "request.state", arms: [
+        ["request.approved == true", "'approved'"],
+        ["request.approved == false", "'rejected'"],
+        ["", "'pending'"],
+      ]},
+      {expression: "employee.vacationTaken", value: "sum(map(filter(employee.requests, #.kind == 'vacation' and #.state == 'approved'), #.days))"},
+      {expression: "employee.vacationPending", value: "sum(map(filter(employee.requests, #.kind == 'vacation' and #.state == 'pending'), #.days))"},
+      {expression: "employee.sickDays", value: "sum(map(filter(employee.requests, #.kind == 'sick' and #.state != 'rejected'), #.days))"},
+      {expression: "employee.balance", value: "employee.annualDays + min([employee.carryOver, 5]) - employee.vacationTaken"},
+      {assertion: "employee.canBookMore", conditions: ["employee.balance - employee.vacationPending > 0", "not employee.onProbation"]},
+      {match: "employee.alert", arms: [
+        ["employee.balance - employee.vacationPending < 0", "'overbooked'"],
+        ["employee.sickDays > 10", "'sick-review'"],
+        ["employee.balance >= 25", "'encourage-leave'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {employee: {hired: "2015-01-01", fullTime: true, carryOver: 3, requests: [{kind: "vacation", start: "2025-02-03", end: "2025-02-07", approved: true}]}},
+      {employee: {hired: "2015-01-01", fullTime: true, carryOver: 3, requests: [
+        {kind: "vacation", start: "2025-02-03", end: "2025-02-07", approved: true, days: 5, state: "approved"},
+      ], tenureYears: 10, onProbation: false, annualDays: 30, vacationTaken: 5, vacationPending: 0, sickDays: 0, balance: 28, canBookMore: true, alert: "encourage-leave"}},
+    ],
+    // Five years exactly; carry-over capped at 5; a null approval is pending.
+    [
+      {employee: {hired: "2020-03-20", fullTime: true, carryOver: 10, requests: [
+        {kind: "vacation", start: "2025-01-06", end: "2025-01-17", approved: true},
+        {kind: "vacation", start: "2025-06-01", end: "2025-06-14", approved: null},
+        {kind: "sick", start: "2025-02-10", end: "2025-02-11", approved: true},
+      ]}},
+      {employee: {hired: "2020-03-20", fullTime: true, carryOver: 10, requests: [
+        {kind: "vacation", start: "2025-01-06", end: "2025-01-17", approved: true, days: 12, state: "approved"},
+        {kind: "vacation", start: "2025-06-01", end: "2025-06-14", approved: null, days: 14, state: "pending"},
+        {kind: "sick", start: "2025-02-10", end: "2025-02-11", approved: true, days: 2, state: "approved"},
+      ], tenureYears: 5, onProbation: false, annualDays: 27, vacationTaken: 12, vacationPending: 14, sickDays: 2, balance: 20, canBookMore: true, alert: "none"}},
+    ],
+    [
+      {employee: {hired: "2024-12-01", fullTime: false, carryOver: 0, requests: []}},
+      {employee: {hired: "2024-12-01", fullTime: false, carryOver: 0, requests: [], tenureYears: 0, onProbation: true, annualDays: 15, vacationTaken: 0, vacationPending: 0, sickDays: 0, balance: 15, canBookMore: false, alert: "none"}},
+    ],
+    // A request without `approved` is pending and overbooks the balance.
+    [
+      {employee: {hired: "2018-01-01", fullTime: true, carryOver: 0, requests: [
+        {kind: "vacation", start: "2025-03-03", end: "2025-03-21", approved: true},
+        {kind: "vacation", start: "2025-07-01", end: "2025-07-14"},
+      ]}},
+      {employee: {hired: "2018-01-01", fullTime: true, carryOver: 0, requests: [
+        {kind: "vacation", start: "2025-03-03", end: "2025-03-21", approved: true, days: 19, state: "approved"},
+        {kind: "vacation", start: "2025-07-01", end: "2025-07-14", days: 14, state: "pending"},
+      ], tenureYears: 7, onProbation: false, annualDays: 27, vacationTaken: 19, vacationPending: 14, sickDays: 0, balance: 8, canBookMore: false, alert: "overbooked"}},
+    ],
+    // Part-time with long tenure; rejected requests do not count, pending sick days do.
+    [
+      {employee: {hired: "2010-01-01", fullTime: false, carryOver: 2, requests: [
+        {kind: "vacation", start: "2025-04-01", end: "2025-04-10", approved: false},
+        {kind: "sick", start: "2025-01-01", end: "2025-01-15", approved: false},
+        {kind: "sick", start: "2025-02-01", end: "2025-02-11", approved: null},
+      ]}},
+      {employee: {hired: "2010-01-01", fullTime: false, carryOver: 2, requests: [
+        {kind: "vacation", start: "2025-04-01", end: "2025-04-10", approved: false, days: 10, state: "rejected"},
+        {kind: "sick", start: "2025-01-01", end: "2025-01-15", approved: false, days: 15, state: "rejected"},
+        {kind: "sick", start: "2025-02-01", end: "2025-02-11", approved: null, days: 11, state: "pending"},
+      ], tenureYears: 15, onProbation: false, annualDays: 15, vacationTaken: 0, vacationPending: 0, sickDays: 11, balance: 17, canBookMore: true, alert: "sick-review"}},
+    ],
+    // Probation ends at six full months; parental and unpaid leave do not touch the balance.
+    [
+      {employee: {hired: "2024-09-20", fullTime: true, carryOver: 5, requests: [
+        {kind: "parental", start: "2025-01-01", end: "2025-03-31", approved: true},
+        {kind: "unpaid", start: "2025-04-01", end: "2025-04-01"},
+      ]}},
+      {employee: {hired: "2024-09-20", fullTime: true, carryOver: 5, requests: [
+        {kind: "parental", start: "2025-01-01", end: "2025-03-31", approved: true, days: 90, state: "approved"},
+        {kind: "unpaid", start: "2025-04-01", end: "2025-04-01", days: 1, state: "pending"},
+      ], tenureYears: 0, onProbation: false, annualDays: 25, vacationTaken: 0, vacationPending: 0, sickDays: 0, balance: 30, canBookMore: true, alert: "encourage-leave"}},
+    ],
+    [
+      {employee: {hired: "2024-09-21", fullTime: true, carryOver: 0, requests: []}},
+      {employee: {hired: "2024-09-21", fullTime: true, carryOver: 0, requests: [], tenureYears: 0, onProbation: true, annualDays: 25, vacationTaken: 0, vacationPending: 0, sickDays: 0, balance: 25, canBookMore: false, alert: "encourage-leave"}},
+    ],
+    // A negative carry-over is a debt from last year; a zero balance books nothing more.
+    [
+      {employee: {hired: "2016-01-01", fullTime: true, carryOver: -2, requests: [{kind: "vacation", start: "2025-01-01", end: "2025-01-25", approved: true}]}},
+      {employee: {hired: "2016-01-01", fullTime: true, carryOver: -2, requests: [
+        {kind: "vacation", start: "2025-01-01", end: "2025-01-25", approved: true, days: 25, state: "approved"},
+      ], tenureYears: 9, onProbation: false, annualDays: 27, vacationTaken: 25, vacationPending: 0, sickDays: 0, balance: 0, canBookMore: false, alert: "none"}},
+    ],
+    // An end before the start is not rejected by the model: the request counts negative days.
+    [
+      {employee: {hired: "2015-01-01", fullTime: true, carryOver: 0, requests: [{kind: "vacation", start: "2025-05-10", end: "2025-05-01", approved: null}]}},
+      {employee: {hired: "2015-01-01", fullTime: true, carryOver: 0, requests: [
+        {kind: "vacation", start: "2025-05-10", end: "2025-05-01", approved: null, days: -8, state: "pending"},
+      ], tenureYears: 10, onProbation: false, annualDays: 30, vacationTaken: 0, vacationPending: -8, sickDays: 0, balance: 30, canBookMore: true, alert: "encourage-leave"}},
+    ],
+    [{employee: {hired: "2015-01-01", fullTime: true, carryOver: 0, requests: [{kind: "sabbatical", start: "2025-05-01", end: "2025-05-10"}]}}, "!error: InputValidationFailed"],
+    [{employee: {hired: "2015-01-01", fullTime: true, carryOver: 0, requests: [{kind: "vacation", start: "2025-05-01", end: "2025-05-10", approved: "yes"}]}}, "!error: InputValidationFailed"],
+    [{employee: {hired: "2015-01-01", fullTime: true, requests: []}}, "!error: MissingRequiredInputs"],
+    [{employee: {hired: "2015-01-01", fullTime: true, carryOver: 0, requests: [{kind: "vacation", start: "2025-05-01"}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Approval routing --------------------------------------------------------------------------
+// The requester is a reference into a staff pool. Required approvals come from an amount and
+// category table; approvals are members read through closures that compare against the
+// referenced requester; a six-arm routing match covers rejection, self-approval, auto-approval
+// within the requester's limit, completion and escalation after 14 days.
+
+{
+  name: "expense approval routing by referenced staff",
+  policy: {
+    models: {
+      request: {amount: "number", category: "string(travel|training|equipment|software)", submitted: "date", requester: "&staff", approvals: "approval[]"},
+      staff: {id: "string", level: "number", approvalLimit: "number"},
+      approval: {by: "string", decision: "string(approve|reject)"},
+    },
+    blocks: [
+      {expression: "request.ageDays", value: "d().diff(request.submitted, 'day')"},
+      {table: "required", inputs: ["request.amount", "request.category"], outputs: ["request.requiredApprovals"], rules: [
+        ["> 10000", "", "3"],
+        ["> 1000", "", "2"],
+        ["", "'equipment', 'software'", "2"],
+        ["", "", "1"],
+      ]},
+      {expression: "request.approvalCount", value: "count(request.approvals, #.decision == 'approve' and #.by != request.requester.id)"},
+      {expression: "request.rejected", value: "some(request.approvals, #.decision == 'reject')"},
+      {expression: "request.selfApproved", value: "some(request.approvals, #.by == request.requester.id and #.decision == 'approve')"},
+      {expression: "request.withinLimit", value: "request.amount <= request.requester.approvalLimit"},
+      {expression: "request.missingApprovals", value: "max([request.requiredApprovals - request.approvalCount, 0])"},
+      {match: "request.status", arms: [
+        ["request.rejected", "'rejected'"],
+        ["request.selfApproved", "'invalid'"],
+        ["request.withinLimit and request.requiredApprovals <= 1", "'auto-approved'"],
+        ["request.approvalCount >= request.requiredApprovals", "'approved'"],
+        ["request.ageDays > 14", "'escalate'"],
+        ["", "'pending'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {request: {amount: 300, category: "travel", submitted: "2025-03-19", requester: "ann", approvals: []}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+      {request: {amount: 300, category: "travel", submitted: "2025-03-19", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [],
+        ageDays: 1, requiredApprovals: 1, approvalCount: 0, rejected: false, selfApproved: false, withinLimit: true, missingApprovals: 1, status: "auto-approved"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+    ],
+    [
+      {request: {amount: 2500, category: "training", submitted: "2025-03-10", requester: "ann", approvals: [{by: "bob", decision: "approve"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+      {request: {amount: 2500, category: "training", submitted: "2025-03-10", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [{by: "bob", decision: "approve"}],
+        ageDays: 10, requiredApprovals: 2, approvalCount: 1, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 1, status: "pending"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+    ],
+    [
+      {request: {amount: 2500, category: "training", submitted: "2025-03-01", requester: "ann", approvals: [{by: "bob", decision: "approve"}, {by: "cy", decision: "approve"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+      {request: {amount: 2500, category: "training", submitted: "2025-03-01", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [{by: "bob", decision: "approve"}, {by: "cy", decision: "approve"}],
+        ageDays: 19, requiredApprovals: 2, approvalCount: 2, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 0, status: "approved"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+    ],
+    [
+      {request: {amount: 2500, category: "training", submitted: "2025-03-05", requester: "ann", approvals: [{by: "bob", decision: "approve"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+      {request: {amount: 2500, category: "training", submitted: "2025-03-05", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [{by: "bob", decision: "approve"}],
+        ageDays: 15, requiredApprovals: 2, approvalCount: 1, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 1, status: "escalate"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+    ],
+    // Equipment always needs two approvals, even within the requester's limit.
+    [
+      {request: {amount: 800, category: "equipment", submitted: "2025-03-20", requester: "bob", approvals: []}, staff: [{id: "bob", level: 2, approvalLimit: 5000}]},
+      {request: {amount: 800, category: "equipment", submitted: "2025-03-20", requester: {id: "bob", level: 2, approvalLimit: 5000}, approvals: [],
+        ageDays: 0, requiredApprovals: 2, approvalCount: 0, rejected: false, selfApproved: false, withinLimit: true, missingApprovals: 2, status: "pending"}, staff: [{id: "bob", level: 2, approvalLimit: 5000}]},
+    ],
+    // A requester approving their own request invalidates it and is not counted.
+    [
+      {request: {amount: 4000, category: "software", submitted: "2025-03-18", requester: "bob", approvals: [{by: "bob", decision: "approve"}, {by: "cy", decision: "approve"}]}, staff: [{id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+      {request: {amount: 4000, category: "software", submitted: "2025-03-18", requester: {id: "bob", level: 2, approvalLimit: 5000}, approvals: [{by: "bob", decision: "approve"}, {by: "cy", decision: "approve"}],
+        ageDays: 2, requiredApprovals: 2, approvalCount: 1, rejected: false, selfApproved: true, withinLimit: true, missingApprovals: 1, status: "invalid"}, staff: [{id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+    ],
+    [
+      {request: {amount: 20000, category: "travel", submitted: "2025-02-01", requester: "cy", approvals: [{by: "ann", decision: "approve"}, {by: "bob", decision: "reject"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+      {request: {amount: 20000, category: "travel", submitted: "2025-02-01", requester: {id: "cy", level: 3, approvalLimit: 50000}, approvals: [{by: "ann", decision: "approve"}, {by: "bob", decision: "reject"}],
+        ageDays: 47, requiredApprovals: 3, approvalCount: 1, rejected: true, selfApproved: false, withinLimit: true, missingApprovals: 2, status: "rejected"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}, {id: "cy", level: 3, approvalLimit: 50000}]},
+    ],
+    // Amount thresholds are strict: 1000 needs one approval, 10000 two.
+    [
+      {request: {amount: 1000, category: "travel", submitted: "2025-03-06", requester: "ann", approvals: [{by: "bob", decision: "approve"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+      {request: {amount: 1000, category: "travel", submitted: "2025-03-06", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [{by: "bob", decision: "approve"}],
+        ageDays: 14, requiredApprovals: 1, approvalCount: 1, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 0, status: "approved"}, staff: [{id: "ann", level: 1, approvalLimit: 500}, {id: "bob", level: 2, approvalLimit: 5000}]},
+    ],
+    [
+      {request: {amount: 10000, category: "travel", submitted: "2025-03-06", requester: "bob", approvals: []}, staff: [{id: "bob", level: 2, approvalLimit: 5000}]},
+      {request: {amount: 10000, category: "travel", submitted: "2025-03-06", requester: {id: "bob", level: 2, approvalLimit: 5000}, approvals: [],
+        ageDays: 14, requiredApprovals: 2, approvalCount: 0, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 2, status: "pending"}, staff: [{id: "bob", level: 2, approvalLimit: 5000}]},
+    ],
+    // An approval without `by` reads null: it differs from the requester and counts.
+    [
+      {request: {amount: 3000, category: "training", submitted: "2025-03-20", requester: "ann", approvals: [{decision: "approve"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}]},
+      {request: {amount: 3000, category: "training", submitted: "2025-03-20", requester: {id: "ann", level: 1, approvalLimit: 500}, approvals: [{decision: "approve"}],
+        ageDays: 0, requiredApprovals: 2, approvalCount: 1, rejected: false, selfApproved: false, withinLimit: false, missingApprovals: 1, status: "pending"}, staff: [{id: "ann", level: 1, approvalLimit: 500}]},
+    ],
+    [{request: {amount: 1, category: "travel", submitted: "2025-03-20", requester: "zed", approvals: []}, staff: [{id: "ann", level: 1, approvalLimit: 500}]}, "!error: InputValidationFailed"],
+    [{request: {amount: 1, category: "travel", submitted: "2025-03-20", requester: "ann", approvals: [{by: "bob", decision: "maybe"}]}, staff: [{id: "ann", level: 1, approvalLimit: 500}]}, "!error: InputValidationFailed"],
+    [{request: {category: "travel", submitted: "2025-03-20", requester: "ann", approvals: []}, staff: [{id: "ann", level: 1, approvalLimit: 500}]}, "!error: MissingRequiredInputs"],
+    [{request: {amount: 1, category: "meals", submitted: "2025-03-20", requester: "ann", approvals: []}, staff: [{id: "ann", level: 1, approvalLimit: 500}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Department payroll run --------------------------------------------------------------------
+// Globals hold the employer tax rate and the minimum wage. Employees are salaried or hourly with
+// optional rates; a per-employee `[]` table collects issues only for active employees; the
+// department totals active pay, adds employer tax, lists blocking employees, asserts the budget
+// and decides the run status.
+
+{
+  name: "department payroll run against globals",
+  policy: {
+    globals: {payroll: {employerTaxRate: "number", minimumWage: "number"}},
+    models: {
+      department: {name: "string", budget: "number", employees: "employee[]"},
+      employee: {name: "string", payType: "string(salary|hourly)", salary: "number?", hourlyRate: "number?", hours: "number?", active: "boolean"},
+    },
+    blocks: [
+      {expression: "employee.gross", value: "employee.payType == 'salary' ? round((employee.salary ?? 0) / 12, 2) : round((employee.hourlyRate ?? 0) * (employee.hours ?? 0), 2)"},
+      {expression: "employee.effectiveRate", value: "employee.payType == 'hourly' ? (employee.hourlyRate ?? 0) : round((employee.salary ?? 0) / 1950, 2)"},
+      {expression: "employee.missingRate", value: "employee.payType == 'salary' ? employee.salary == null : employee.hourlyRate == null"},
+      {expression: "employee.belowMinimum", value: "not employee.missingRate and employee.effectiveRate < minimumWage"},
+      {table: "issues", inputs: ["employee.missingRate", "employee.belowMinimum", "employee.active"], outputs: ["employee.issues[]"], rules: [
+        ["true", "", "true", "'missing-rate'"],
+        ["", "true", "true", "'below-minimum'"],
+      ]},
+      {expression: "department.headcount", value: "count(department.employees, #.active)"},
+      {expression: "department.payroll", value: "sum(map(filter(department.employees, #.active), #.gross))"},
+      {expression: "department.employerTax", value: "round(department.payroll * employerTaxRate, 2)"},
+      {expression: "department.cost", value: "department.payroll + department.employerTax"},
+      {expression: "department.blockedBy", value: "map(filter(department.employees, len(#.issues) > 0), #.name)"},
+      {assertion: "department.withinBudget", conditions: ["department.cost <= department.budget"]},
+      {match: "department.runStatus", arms: [
+        ["len(department.blockedBy) > 0", "'blocked'"],
+        ["department.headcount == 0", "'empty'"],
+        ["not department.withinBudget", "'over-budget'"],
+        ["", "'ready'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 20000, employees: [
+        {name: "ann", payType: "salary", salary: 60000, active: true},
+        {name: "bob", payType: "hourly", hourlyRate: 20, hours: 160, active: true},
+      ]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 20000, employees: [
+        {name: "ann", payType: "salary", salary: 60000, active: true, gross: 5000, effectiveRate: 30.77, missingRate: false, belowMinimum: false, issues: []},
+        {name: "bob", payType: "hourly", hourlyRate: 20, hours: 160, active: true, gross: 3200, effectiveRate: 20, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 2, payroll: 8200, employerTax: 1148, cost: 9348, blockedBy: [], withinBudget: true, runStatus: "ready"}},
+    ],
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 5000, employees: [
+        {name: "ann", payType: "salary", salary: 30000, active: true},
+        {name: "bob", payType: "hourly", hours: 100, active: true},
+      ]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 5000, employees: [
+        {name: "ann", payType: "salary", salary: 30000, active: true, gross: 2500, effectiveRate: 15.38, missingRate: false, belowMinimum: false, issues: []},
+        {name: "bob", payType: "hourly", hours: 100, active: true, gross: 0, effectiveRate: 0, missingRate: true, belowMinimum: false, issues: ["missing-rate"]},
+      ], headcount: 2, payroll: 2500, employerTax: 350, cost: 2850, blockedBy: ["bob"], withinBudget: true, runStatus: "blocked"}},
+    ],
+    // An inactive employee with a missing rate raises no issue; blocking wins over the budget.
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "shop", budget: 1000, employees: [
+        {name: "cy", payType: "hourly", hourlyRate: 12, hours: 80, active: true},
+        {name: "dee", payType: "hourly", active: false},
+      ]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "shop", budget: 1000, employees: [
+        {name: "cy", payType: "hourly", hourlyRate: 12, hours: 80, active: true, gross: 960, effectiveRate: 12, missingRate: false, belowMinimum: true, issues: ["below-minimum"]},
+        {name: "dee", payType: "hourly", active: false, gross: 0, effectiveRate: 0, missingRate: true, belowMinimum: false, issues: []},
+      ], headcount: 1, payroll: 960, employerTax: 134.4, cost: 1094.4, blockedBy: ["cy"], withinBudget: false, runStatus: "blocked"}},
+    ],
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "hq", budget: 5000, employees: [{name: "ann", payType: "salary", salary: 60000, active: true}]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "hq", budget: 5000, employees: [
+        {name: "ann", payType: "salary", salary: 60000, active: true, gross: 5000, effectiveRate: 30.77, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 1, payroll: 5000, employerTax: 700, cost: 5700, blockedBy: [], withinBudget: false, runStatus: "over-budget"}},
+    ],
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "hq", budget: 5700, employees: [{name: "ann", payType: "salary", salary: 60000, active: true}]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "hq", budget: 5700, employees: [
+        {name: "ann", payType: "salary", salary: 60000, active: true, gross: 5000, effectiveRate: 30.77, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 1, payroll: 5000, employerTax: 700, cost: 5700, blockedBy: [], withinBudget: true, runStatus: "ready"}},
+    ],
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "new", budget: 0, employees: []}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "new", budget: 0, employees: [], headcount: 0, payroll: 0, employerTax: 0, cost: 0, blockedBy: [], withinBudget: true, runStatus: "empty"}},
+    ],
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "old", budget: 0, employees: [{name: "ann", payType: "salary", salary: 50000, active: false}]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "old", budget: 0, employees: [
+        {name: "ann", payType: "salary", salary: 50000, active: false, gross: 4166.67, effectiveRate: 25.64, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 0, payroll: 0, employerTax: 0, cost: 0, blockedBy: [], withinBudget: true, runStatus: "empty"}},
+    ],
+    // A salary of exactly the minimum wage times 1950 hours is not below it.
+    [
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 10000, employees: [{name: "eve", payType: "salary", salary: 29250, active: true}]}},
+      {employerTaxRate: 0.14, minimumWage: 15, department: {name: "ops", budget: 10000, employees: [
+        {name: "eve", payType: "salary", salary: 29250, active: true, gross: 2437.5, effectiveRate: 15, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 1, payroll: 2437.5, employerTax: 341.25, cost: 2778.75, blockedBy: [], withinBudget: true, runStatus: "ready"}},
+    ],
+    [
+      {employerTaxRate: 0.1, minimumWage: 15, department: {name: "ops", budget: 100, employees: [{name: "fay", payType: "hourly", hourlyRate: 18, hours: null, active: true}]}},
+      {employerTaxRate: 0.1, minimumWage: 15, department: {name: "ops", budget: 100, employees: [
+        {name: "fay", payType: "hourly", hourlyRate: 18, hours: null, active: true, gross: 0, effectiveRate: 18, missingRate: false, belowMinimum: false, issues: []},
+      ], headcount: 1, payroll: 0, employerTax: 0, cost: 0, blockedBy: [], withinBudget: true, runStatus: "ready"}},
+    ],
+    [{employerTaxRate: 0.14, minimumWage: 15, department: {name: "x", budget: 1, employees: [{name: "a", payType: "commission", active: true}]}}, "!error: InputValidationFailed"],
+    [{employerTaxRate: 0.14, department: {name: "x", budget: 1, employees: []}}, "!error: MissingRequiredInputs"],
+    [{employerTaxRate: 0.14, minimumWage: 15, department: {name: "x", budget: 1, employees: [{name: "a", payType: "salary", salary: 1000}]}}, "!error: ExpressionFailed"],
+    [{employerTaxRate: 0.14, minimumWage: 15, department: {name: "x", budget: 1, employees: [{name: "a", payType: "salary", salary: "50k", active: true}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Bonus by referenced grade -----------------------------------------------------------------
+// A weighted target score with each achievement capped at 150%, months served capped at 12 for
+// proration, a rating factor match, the bonus capped by the referenced grade and scaled by a
+// company payout global, and an eligibility assertion. Goals evaluate single cones.
+
+{
+  name: "bonus by referenced grade with targets",
+  policy: {
+    globals: {company: {payoutFactor: "number"}},
+    models: {
+      employee: {grade: "&grade", salary: "number", rating: "string(exceeds|meets|below)", startDate: "date", targets: "target[]"},
+      grade: {id: "string", bonusPct: "number", cap: "number"},
+      target: {weight: "number", achieved: "number"},
+    },
+    blocks: [
+      {expression: "employee.score", value: "sum(map(employee.targets, #.weight * min([#.achieved, 1.5]))) / max([sum(map(employee.targets, #.weight)), 1])"},
+      {expression: "employee.monthsServed", value: "min([d().diff(employee.startDate, 'month'), 12])"},
+      {match: "employee.ratingFactor", arms: [
+        ["employee.rating == 'exceeds'", "1.25"],
+        ["employee.rating == 'meets'", "1"],
+        ["", "0"],
+      ]},
+      {expression: "employee.bonus", value: "round(min([employee.salary * employee.grade.bonusPct * employee.score * employee.ratingFactor * payoutFactor * employee.monthsServed / 12, employee.grade.cap]), 2)"},
+      {assertion: "employee.eligible", conditions: ["employee.rating != 'below'", "employee.monthsServed >= 3"]},
+      {expression: "employee.payout", value: "employee.eligible ? employee.bonus : 0"},
+    ],
+  },
+  cases: [
+    [
+      {payoutFactor: 1, employee: {grade: "G1", salary: 50000, rating: "meets", startDate: "2020-01-01", targets: [{weight: 1, achieved: 1}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}, {id: "G2", bonusPct: 0.1, cap: 10000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G1", bonusPct: 0.05, cap: 3000}, salary: 50000, rating: "meets", startDate: "2020-01-01", targets: [{weight: 1, achieved: 1}],
+        score: 1, monthsServed: 12, ratingFactor: 1, bonus: 2500, eligible: true, payout: 2500}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}, {id: "G2", bonusPct: 0.1, cap: 10000}]},
+    ],
+    [
+      {payoutFactor: 1, employee: {grade: "G2", salary: 120000, rating: "exceeds", startDate: "2019-06-01", targets: [{weight: 2, achieved: 1.2}, {weight: 1, achieved: 0.6}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}, {id: "G2", bonusPct: 0.1, cap: 10000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G2", bonusPct: 0.1, cap: 10000}, salary: 120000, rating: "exceeds", startDate: "2019-06-01", targets: [{weight: 2, achieved: 1.2}, {weight: 1, achieved: 0.6}],
+        score: 1, monthsServed: 12, ratingFactor: 1.25, bonus: 10000, eligible: true, payout: 10000}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}, {id: "G2", bonusPct: 0.1, cap: 10000}]},
+    ],
+    // Achievement above 150% is capped; three months served is just eligible.
+    [
+      {payoutFactor: 1, employee: {grade: "G1", salary: 60000, rating: "meets", startDate: "2024-12-01", targets: [{weight: 1, achieved: 2}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G1", bonusPct: 0.05, cap: 3000}, salary: 60000, rating: "meets", startDate: "2024-12-01", targets: [{weight: 1, achieved: 2}],
+        score: 1.5, monthsServed: 3, ratingFactor: 1, bonus: 1125, eligible: true, payout: 1125}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+    ],
+    [
+      {payoutFactor: 1, employee: {grade: "G1", salary: 60000, rating: "meets", startDate: "2025-01-01", targets: [{weight: 1, achieved: 1}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G1", bonusPct: 0.05, cap: 3000}, salary: 60000, rating: "meets", startDate: "2025-01-01", targets: [{weight: 1, achieved: 1}],
+        score: 1, monthsServed: 2, ratingFactor: 1, bonus: 500, eligible: false, payout: 0}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+    ],
+    [
+      {payoutFactor: 1, employee: {grade: "G1", salary: 60000, rating: "below", startDate: "2015-01-01", targets: [{weight: 1, achieved: 1}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G1", bonusPct: 0.05, cap: 3000}, salary: 60000, rating: "below", startDate: "2015-01-01", targets: [{weight: 1, achieved: 1}],
+        score: 1, monthsServed: 12, ratingFactor: 0, bonus: 0, eligible: false, payout: 0}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+    ],
+    [
+      {payoutFactor: 1, employee: {grade: "G1", salary: 60000, rating: "exceeds", startDate: "2015-01-01", targets: []}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+      {payoutFactor: 1, employee: {grade: {id: "G1", bonusPct: 0.05, cap: 3000}, salary: 60000, rating: "exceeds", startDate: "2015-01-01", targets: [],
+        score: 0, monthsServed: 12, ratingFactor: 1.25, bonus: 0, eligible: true, payout: 0}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]},
+    ],
+    [
+      {payoutFactor: 0.8, employee: {grade: "G2", salary: 80000, rating: "meets", startDate: "2010-01-01", targets: [{weight: 3, achieved: 0.9}, {weight: 1, achieved: 1.1}]}, grade: [{id: "G2", bonusPct: 0.1, cap: 10000}]},
+      {payoutFactor: 0.8, employee: {grade: {id: "G2", bonusPct: 0.1, cap: 10000}, salary: 80000, rating: "meets", startDate: "2010-01-01", targets: [{weight: 3, achieved: 0.9}, {weight: 1, achieved: 1.1}],
+        score: 0.95, monthsServed: 12, ratingFactor: 1, bonus: 6080, eligible: true, payout: 6080}, grade: [{id: "G2", bonusPct: 0.1, cap: 10000}]},
+    ],
+    {
+      input: {employee: {targets: [{weight: 1, achieved: 0.5}, {weight: 1, achieved: 1.5}]}},
+      goals: ["employee.score"],
+      output: {employee: {targets: [{weight: 1, achieved: 0.5}, {weight: 1, achieved: 1.5}], score: 1}},
+    },
+    {
+      input: {employee: {rating: "meets", startDate: "2025-01-15"}},
+      goals: ["employee.eligible"],
+      output: {employee: {rating: "meets", startDate: "2025-01-15", monthsServed: 2, eligible: false}},
+    },
+    [{payoutFactor: 1, employee: {grade: "G9", salary: 1, rating: "meets", startDate: "2020-01-01", targets: []}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]}, "!error: InputValidationFailed"],
+    [{payoutFactor: 1, employee: {grade: "G1", salary: 1, rating: "great", startDate: "2020-01-01", targets: []}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]}, "!error: InputValidationFailed"],
+    [{employee: {grade: "G1", salary: 1, rating: "meets", startDate: "2020-01-01", targets: []}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]}, "!error: MissingRequiredInputs"],
+    [{payoutFactor: 1, employee: {grade: "G1", salary: 1, rating: "meets", startDate: "2020-01-01", targets: [{weight: 1}]}, grade: [{id: "G1", bonusPct: 0.05, cap: 3000}]}, "!error: ExpressionFailed"],
+  ],
+}

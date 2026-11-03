@@ -1,0 +1,581 @@
+// Realistic billing policies: invoice lines with discounts and tax classes, credits, dunning
+// stages, usage metering, account aging, proration, and currency conversion by reference with
+// nested write paths and goals. Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Invoice lines, discounts and tax ------------------------------------------------------------
+// Per-line computeds, a per-line tax table whose first input reads the parent invoice, nested
+// totals (`invoice.totals.*`) aggregated from the lines, and B2B reverse charge against a global
+// seller country.
+
+{
+  name: "invoice lines with discounts and tax",
+  policy: {
+    globals: {seller: {sellerCountry: "string"}},
+    models: {
+      invoice: {customerType: "string(b2b|b2c)", country: "string", lines: "line[]"},
+      line: {sku: "string", qty: "number", unitPrice: "number", taxClass: "string(standard|reduced|exempt)", discountPct: "number?"},
+    },
+    blocks: [
+      {expression: "line.gross", value: "line.qty * line.unitPrice"},
+      {expression: "line.discount", value: "round(line.gross * (line.discountPct ?? 0) / 100, 2)"},
+      {expression: "line.net", value: "line.gross - line.discount"},
+      {table: "taxRate", inputs: ["invoice.country", "line.taxClass"], outputs: ["line.taxRate"], rules: [
+        ["", "'exempt'", "0"],
+        ["'NO'", "'standard'", "0.25"],
+        ["'NO'", "'reduced'", "0.15"],
+        ["'DE'", "'standard'", "0.19"],
+        ["'DE'", "'reduced'", "0.07"],
+        ["", "", "0.2"],
+      ]},
+      {expression: "line.tax", value: "round(line.net * line.taxRate, 2)"},
+      {expression: "invoice.reverseCharge", value: "invoice.customerType == 'b2b' and invoice.country != sellerCountry"},
+      {expression: "invoice.totals.net", value: "sum(map(invoice.lines, #.net))"},
+      {expression: "invoice.totals.tax", value: "sum(map(invoice.lines, #.tax))"},
+      {expression: "invoice.totals.taxDue", value: "invoice.reverseCharge ? 0 : invoice.totals.tax"},
+      {expression: "invoice.totals.gross", value: "invoice.totals.net + invoice.totals.taxDue"},
+      {match: "invoice.note", arms: [
+        ["invoice.reverseCharge", "'VAT reverse charged'"],
+        ["invoice.totals.net == 0", "'nothing to invoice'"],
+        ["", "'standard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [{sku: "a", qty: 2, unitPrice: 100, taxClass: "standard"}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "a", qty: 2, unitPrice: 100, taxClass: "standard", gross: 200, discount: 0, net: 200, taxRate: 0.25, tax: 50},
+      ], reverseCharge: false, totals: {net: 200, tax: 50, taxDue: 50, gross: 250}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "a", qty: 3, unitPrice: 19.99, taxClass: "standard", discountPct: 10},
+        {sku: "b", qty: 1, unitPrice: 50, taxClass: "reduced"},
+        {sku: "c", qty: 1, unitPrice: 30, taxClass: "exempt"},
+      ]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "a", qty: 3, unitPrice: 19.99, taxClass: "standard", discountPct: 10, gross: 59.97, discount: 6, net: 53.97, taxRate: 0.25, tax: 13.49},
+        {sku: "b", qty: 1, unitPrice: 50, taxClass: "reduced", gross: 50, discount: 0, net: 50, taxRate: 0.15, tax: 7.5},
+        {sku: "c", qty: 1, unitPrice: 30, taxClass: "exempt", gross: 30, discount: 0, net: 30, taxRate: 0, tax: 0},
+      ], reverseCharge: false, totals: {net: 133.97, tax: 20.99, taxDue: 20.99, gross: 154.96}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2b", country: "DE", lines: [{sku: "a", qty: 10, unitPrice: 100, taxClass: "standard", discountPct: 5}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2b", country: "DE", lines: [
+        {sku: "a", qty: 10, unitPrice: 100, taxClass: "standard", discountPct: 5, gross: 1000, discount: 50, net: 950, taxRate: 0.19, tax: 180.5},
+      ], reverseCharge: true, totals: {net: 950, tax: 180.5, taxDue: 0, gross: 950}, note: "VAT reverse charged"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2b", country: "NO", lines: [{sku: "a", qty: 1, unitPrice: 100, taxClass: "reduced"}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2b", country: "NO", lines: [
+        {sku: "a", qty: 1, unitPrice: 100, taxClass: "reduced", gross: 100, discount: 0, net: 100, taxRate: 0.15, tax: 15},
+      ], reverseCharge: false, totals: {net: 100, tax: 15, taxDue: 15, gross: 115}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "US", lines: [{sku: "a", qty: 1, unitPrice: 10, taxClass: "standard"}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "US", lines: [
+        {sku: "a", qty: 1, unitPrice: 10, taxClass: "standard", gross: 10, discount: 0, net: 10, taxRate: 0.2, tax: 2},
+      ], reverseCharge: false, totals: {net: 10, tax: 2, taxDue: 2, gross: 12}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: []}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [], reverseCharge: false, totals: {net: 0, tax: 0, taxDue: 0, gross: 0}, note: "nothing to invoice"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "DE", lines: [{sku: "free", qty: 1, unitPrice: 9.99, taxClass: "reduced", discountPct: 100}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "DE", lines: [
+        {sku: "free", qty: 1, unitPrice: 9.99, taxClass: "reduced", discountPct: 100, gross: 9.99, discount: 9.99, net: 0, taxRate: 0.07, tax: 0},
+      ], reverseCharge: false, totals: {net: 0, tax: 0, taxDue: 0, gross: 0}, note: "nothing to invoice"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [{sku: "hours", qty: 1.5, unitPrice: 80, taxClass: "standard", discountPct: null}]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "hours", qty: 1.5, unitPrice: 80, taxClass: "standard", discountPct: null, gross: 120, discount: 0, net: 120, taxRate: 0.25, tax: 30},
+      ], reverseCharge: false, totals: {net: 120, tax: 30, taxDue: 30, gross: 150}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    // A return line with negative quantity offsets the sale, tax included.
+    [
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "a", qty: 2, unitPrice: 100, taxClass: "standard"},
+        {sku: "a-return", qty: -1, unitPrice: 100, taxClass: "standard"},
+      ]}},
+      {sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [
+        {sku: "a", qty: 2, unitPrice: 100, taxClass: "standard", gross: 200, discount: 0, net: 200, taxRate: 0.25, tax: 50},
+        {sku: "a-return", qty: -1, unitPrice: 100, taxClass: "standard", gross: -100, discount: 0, net: -100, taxRate: 0.25, tax: -25},
+      ], reverseCharge: false, totals: {net: 100, tax: 25, taxDue: 25, gross: 125}, note: "standard"}}, "bug: invoice.note reads invoice.totals.net, and the unread sibling writes invoice.totals.tax/taxDue/gross are then not run as terminal goals, together with line.taxRate and line.tax that feed them; they vanish from the output",
+    ],
+    [{sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [{sku: "a", qty: 1, unitPrice: 1, taxClass: "zero"}]}}, "!error: InputValidationFailed"],
+    [{sellerCountry: "NO", invoice: {customerType: "b2g", country: "NO", lines: []}}, "!error: InputValidationFailed"],
+    [{sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO", lines: [{sku: "a", qty: 1, taxClass: "standard"}]}}, "!error: ExpressionFailed"],
+    [{invoice: {customerType: "b2c", country: "NO", lines: []}}, "!error: MissingRequiredInputs"],
+    [{sellerCountry: "NO", invoice: {customerType: "b2c", country: "NO"}}, "!error: MissingRequiredInputs"],
+    [{sellerCountry: "NO", invoice: {country: "NO", lines: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// The root cause in isolation: a block that reads one nested computed (`a.t.x`) hides the
+// unread sibling under the same parent (`a.t.y`) from the terminal goals, so it never runs.
+// Asking for it as a goal still works.
+{
+  name: "a read of one nested computed hides its unread sibling",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {match: "a.n", arms: [["a.t.x == 1", "'one'"], ["", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: "one"}}, "bug: a.t.y is a terminal write, but because a.n reads a.t.x it is not evaluated and is missing from the output"],
+    [{a: {v: 5}}, {a: {v: 5, t: {x: 6, y: 7}, n: "other"}}, "bug: a.t.y is a terminal write, but because a.n reads a.t.x it is not evaluated and is missing from the output"],
+    {input: {a: {v: 1}}, goals: ["a.t.y"], output: {a: {v: 1, t: {y: 3}}}},
+    {input: {a: {v: 1}}, goals: ["a.n", "a.t.y"], output: {a: {v: 1, t: {x: 2, y: 3}, n: "other"}}},
+  ],
+}
+
+// --- Credits -------------------------------------------------------------------------------------
+// Credits are members with an optional expiry (none means never). Promotional credit is capped
+// at 20% of the invoice, other credits apply in full, the excess carries forward.
+
+{
+  name: "credits applied to an invoice",
+  policy: {
+    models: {
+      invoice: {total: "number", credits: "credit[]"},
+      credit: {kind: "string(refund|goodwill|promo)", amount: "number", expires: "date?"},
+    },
+    blocks: [
+      {expression: "credit.usable", value: "(credit.expires ?? d('9999-12-31')) >= d()"},
+      {expression: "invoice.promoCap", value: "round(invoice.total * 0.2, 2)"},
+      {expression: "invoice.promoCredit", value: "min([invoice.promoCap, sum(map(filter(invoice.credits, #.usable and #.kind == 'promo'), #.amount))])"},
+      {expression: "invoice.otherCredit", value: "sum(map(filter(invoice.credits, #.usable and #.kind != 'promo'), #.amount))"},
+      {expression: "invoice.applied", value: "min([invoice.total, invoice.promoCredit + invoice.otherCredit])"},
+      {expression: "invoice.amountDue", value: "invoice.total - invoice.applied"},
+      {expression: "invoice.carryForward", value: "invoice.otherCredit - max([invoice.applied - invoice.promoCredit, 0])"},
+      {match: "invoice.status", arms: [
+        ["invoice.total == 0", "'zero-invoice'"],
+        ["invoice.amountDue == 0", "'settled-by-credit'"],
+        ["invoice.applied > 0", "'partially-credited'"],
+        ["", "'payable'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {invoice: {total: 100, credits: []}},
+      {invoice: {total: 100, credits: [], promoCap: 20, promoCredit: 0, otherCredit: 0, applied: 0, amountDue: 100, carryForward: 0, status: "payable"}},
+    ],
+    [
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 30}]}},
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 30, usable: true}], promoCap: 20, promoCredit: 0, otherCredit: 30, applied: 30, amountDue: 70, carryForward: 0, status: "partially-credited"}},
+    ],
+    // Promo credit beyond the cap is lost, not carried forward.
+    [
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 50}]}},
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 50, usable: true}], promoCap: 20, promoCredit: 20, otherCredit: 0, applied: 20, amountDue: 80, carryForward: 0, status: "partially-credited"}},
+    ],
+    [
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 80}, {kind: "goodwill", amount: 40}]}},
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 80, usable: true}, {kind: "goodwill", amount: 40, usable: true}], promoCap: 20, promoCredit: 0, otherCredit: 120, applied: 100, amountDue: 0, carryForward: 20, status: "settled-by-credit"}},
+    ],
+    [
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 15}, {kind: "refund", amount: 90}]}},
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 15, usable: true}, {kind: "refund", amount: 90, usable: true}], promoCap: 20, promoCredit: 15, otherCredit: 90, applied: 100, amountDue: 0, carryForward: 5, status: "settled-by-credit"}},
+    ],
+    // A date-only expiry of today is midnight and already past; a later time today is still usable.
+    [
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 50, expires: "2025-03-19"}, {kind: "goodwill", amount: 5, expires: "2025-03-20"}]}},
+      {invoice: {total: 100, credits: [{kind: "refund", amount: 50, expires: "2025-03-19", usable: false}, {kind: "goodwill", amount: 5, expires: "2025-03-20", usable: false}], promoCap: 20, promoCredit: 0, otherCredit: 0, applied: 0, amountDue: 100, carryForward: 0, status: "payable"}},
+    ],
+    [
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 10, expires: "2025-03-20T23:59:59Z"}, {kind: "refund", amount: 1, expires: null}]}},
+      {invoice: {total: 100, credits: [{kind: "promo", amount: 10, expires: "2025-03-20T23:59:59Z", usable: true}, {kind: "refund", amount: 1, expires: null, usable: true}], promoCap: 20, promoCredit: 10, otherCredit: 1, applied: 11, amountDue: 89, carryForward: 0, status: "partially-credited"}},
+    ],
+    [
+      {invoice: {total: 0, credits: [{kind: "refund", amount: 10}]}},
+      {invoice: {total: 0, credits: [{kind: "refund", amount: 10, usable: true}], promoCap: 0, promoCredit: 0, otherCredit: 10, applied: 0, amountDue: 0, carryForward: 10, status: "zero-invoice"}},
+    ],
+    [
+      {invoice: {total: 49.99, credits: [{kind: "promo", amount: 15}]}},
+      {invoice: {total: 49.99, credits: [{kind: "promo", amount: 15, usable: true}], promoCap: 10, promoCredit: 10, otherCredit: 0, applied: 10, amountDue: 39.99, carryForward: 0, status: "partially-credited"}},
+    ],
+    [{invoice: {total: 10, credits: [{kind: "voucher", amount: 1}]}}, "!error: InputValidationFailed"],
+    [{invoice: {total: 10, credits: [{kind: "refund", amount: 1, expires: "soon"}]}}, "!error: InputValidationFailed"],
+    [{invoice: {total: 10, credits: [{kind: "refund"}]}}, "!error"],
+    [{invoice: {credits: []}}, "!error: MissingRequiredInputs"],
+    [{invoice: {total: 10}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Dunning -------------------------------------------------------------------------------------
+// Days overdue from the due date, a stage match that holds disputed invoices and payment plans
+// (an optional flag on a single relationship), a late-fee table with a computed cell, a `collect`
+// table of actions keyed on the stage and the reminder count.
+
+{
+  name: "dunning stages, fees and actions",
+  policy: {
+    models: {
+      invoice: {due: "date", amount: "number", paid: "number", disputed: "boolean", reminders: "number", customer: "customer"},
+      customer: {vip: "boolean", paymentPlan: "boolean?"},
+    },
+    blocks: [
+      {expression: "invoice.outstanding", value: "invoice.amount - invoice.paid"},
+      {expression: "invoice.daysOverdue", value: "invoice.outstanding <= 0 ? 0 : max([d().diff(invoice.due, 'day'), 0])"},
+      {match: "invoice.stage", arms: [
+        ["invoice.outstanding <= 0", "'paid'"],
+        ["invoice.disputed or (invoice.customer.paymentPlan ?? false)", "'hold'"],
+        ["invoice.daysOverdue == 0", "'current'"],
+        ["invoice.daysOverdue <= 14", "'reminder'"],
+        ["invoice.daysOverdue <= 30", "'second-notice'"],
+        ["invoice.daysOverdue <= 60 or invoice.customer.vip", "'final-notice'"],
+        ["", "'collections'"],
+      ]},
+      {table: "fees", inputs: ["invoice.stage", "invoice.customer.vip"], outputs: ["invoice.lateFee"], rules: [
+        ["'second-notice'", "false", "15"],
+        ["'final-notice'", "false", "max([40, round(invoice.outstanding * 0.02, 2)])"],
+        ["'collections'", "", "round(invoice.outstanding * 0.1, 2)"],
+        ["", "", "0"],
+      ]},
+      {table: "actions", hit: "collect", inputs: ["invoice.stage", "invoice.reminders"], outputs: ["invoice.actions"], rules: [
+        ["'reminder', 'second-notice', 'final-notice'", "< 3", "'send-email'"],
+        ["'final-notice'", "", "'send-letter'"],
+        ["'collections'", "", "'refer-agency'"],
+        ["'second-notice', 'final-notice', 'collections'", ">= 3", "'call-customer'"],
+        ["'hold'", "", "'pause-dunning'"],
+      ]},
+      {expression: "invoice.totalDue", value: "invoice.outstanding + invoice.lateFee"},
+    ],
+  },
+  cases: [
+    [
+      {invoice: {due: "2025-04-01", amount: 100, paid: 0, disputed: false, reminders: 0, customer: {vip: false}}},
+      {invoice: {due: "2025-04-01", amount: 100, paid: 0, disputed: false, reminders: 0, customer: {vip: false}, outstanding: 100, daysOverdue: 0, stage: "current", lateFee: 0, actions: [], totalDue: 100}},
+    ],
+    [
+      {invoice: {due: "2025-03-10", amount: 100, paid: 0, disputed: false, reminders: 0, customer: {vip: false}}},
+      {invoice: {due: "2025-03-10", amount: 100, paid: 0, disputed: false, reminders: 0, customer: {vip: false}, outstanding: 100, daysOverdue: 10, stage: "reminder", lateFee: 0, actions: ["send-email"], totalDue: 100}},
+    ],
+    [
+      {invoice: {due: "2025-03-06", amount: 100, paid: 0, disputed: false, reminders: 1, customer: {vip: false}}},
+      {invoice: {due: "2025-03-06", amount: 100, paid: 0, disputed: false, reminders: 1, customer: {vip: false}, outstanding: 100, daysOverdue: 14, stage: "reminder", lateFee: 0, actions: ["send-email"], totalDue: 100}},
+    ],
+    [
+      {invoice: {due: "2025-03-05", amount: 100, paid: 0, disputed: false, reminders: 1, customer: {vip: false}}},
+      {invoice: {due: "2025-03-05", amount: 100, paid: 0, disputed: false, reminders: 1, customer: {vip: false}, outstanding: 100, daysOverdue: 15, stage: "second-notice", lateFee: 15, actions: ["send-email"], totalDue: 115}},
+    ],
+    [
+      {invoice: {due: "2025-02-01", amount: 3000, paid: 0, disputed: false, reminders: 3, customer: {vip: false}}},
+      {invoice: {due: "2025-02-01", amount: 3000, paid: 0, disputed: false, reminders: 3, customer: {vip: false}, outstanding: 3000, daysOverdue: 47, stage: "final-notice", lateFee: 60, actions: ["send-letter", "call-customer"], totalDue: 3060}},
+    ],
+    [
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: false, reminders: 4, customer: {vip: false}}},
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: false, reminders: 4, customer: {vip: false}, outstanding: 500, daysOverdue: 109, stage: "collections", lateFee: 50, actions: ["refer-agency", "call-customer"], totalDue: 550}},
+    ],
+    // VIP customers stop at final notice and pay no late fee.
+    [
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: false, reminders: 2, customer: {vip: true}}},
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: false, reminders: 2, customer: {vip: true}, outstanding: 500, daysOverdue: 109, stage: "final-notice", lateFee: 0, actions: ["send-email", "send-letter"], totalDue: 500}},
+    ],
+    [
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: true, reminders: 4, customer: {vip: false}}},
+      {invoice: {due: "2024-12-01", amount: 500, paid: 0, disputed: true, reminders: 4, customer: {vip: false}, outstanding: 500, daysOverdue: 109, stage: "hold", lateFee: 0, actions: ["pause-dunning"], totalDue: 500}},
+    ],
+    [
+      {invoice: {due: "2025-01-01", amount: 200, paid: 50, disputed: false, reminders: 0, customer: {vip: false, paymentPlan: true}}},
+      {invoice: {due: "2025-01-01", amount: 200, paid: 50, disputed: false, reminders: 0, customer: {vip: false, paymentPlan: true}, outstanding: 150, daysOverdue: 78, stage: "hold", lateFee: 0, actions: ["pause-dunning"], totalDue: 150}},
+    ],
+    [
+      {invoice: {due: "2025-01-01", amount: 200, paid: 50, disputed: false, reminders: 0, customer: {vip: false, paymentPlan: null}}},
+      {invoice: {due: "2025-01-01", amount: 200, paid: 50, disputed: false, reminders: 0, customer: {vip: false, paymentPlan: null}, outstanding: 150, daysOverdue: 78, stage: "collections", lateFee: 15, actions: ["refer-agency"], totalDue: 165}},
+    ],
+    [
+      {invoice: {due: "2024-01-01", amount: 100, paid: 100, disputed: false, reminders: 5, customer: {vip: false}}},
+      {invoice: {due: "2024-01-01", amount: 100, paid: 100, disputed: false, reminders: 5, customer: {vip: false}, outstanding: 0, daysOverdue: 0, stage: "paid", lateFee: 0, actions: [], totalDue: 0}},
+    ],
+    [
+      {invoice: {due: "2024-01-01", amount: 100, paid: 120, disputed: true, reminders: 0, customer: {vip: true}}},
+      {invoice: {due: "2024-01-01", amount: 100, paid: 120, disputed: true, reminders: 0, customer: {vip: true}, outstanding: -20, daysOverdue: 0, stage: "paid", lateFee: 0, actions: [], totalDue: -20}},
+    ],
+    [
+      {invoice: {due: "2025-02-18", amount: 1000, paid: 400, disputed: false, reminders: 0, customer: {vip: false}}},
+      {invoice: {due: "2025-02-18", amount: 1000, paid: 400, disputed: false, reminders: 0, customer: {vip: false}, outstanding: 600, daysOverdue: 30, stage: "second-notice", lateFee: 15, actions: ["send-email"], totalDue: 615}},
+    ],
+    [
+      {invoice: {due: "2025-01-19", amount: 1000, paid: 0, disputed: false, reminders: 0, customer: {vip: false}}},
+      {invoice: {due: "2025-01-19", amount: 1000, paid: 0, disputed: false, reminders: 0, customer: {vip: false}, outstanding: 1000, daysOverdue: 60, stage: "final-notice", lateFee: 40, actions: ["send-email", "send-letter"], totalDue: 1040}},
+    ],
+    [{invoice: {due: "2025-01-19", amount: 1000, paid: 0, disputed: false, reminders: 0}}, "!error: MissingRequiredInputs"],
+    [{invoice: {due: "19.01.2025", amount: 1000, paid: 0, disputed: false, reminders: 0, customer: {vip: false}}}, "!error: InputValidationFailed"],
+    [{invoice: {due: "2025-01-19", amount: 1000, paid: 0, disputed: false, reminders: 0, customer: {vip: "no"}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Usage metering ------------------------------------------------------------------------------
+// A plan table with four scalar outputs, overage beyond the included units, a free first seat,
+// an annual discount and an upgrade suggestion.
+
+{
+  name: "usage metering with plan tiers",
+  policy: {
+    models: {subscription: {plan: "string(starter|growth|scale)", usage: "number", seats: "number", annual: "boolean"}},
+    blocks: [
+      {table: "plan", inputs: ["subscription.plan"], outputs: ["subscription.fee", "subscription.included", "subscription.unitPrice", "subscription.seatPrice"], rules: [
+        ["'starter'", "0", "1000", "0.01", "0"],
+        ["'growth'", "49", "10000", "0.008", "10"],
+        ["'scale'", "299", "100000", "0.005", "8"],
+      ]},
+      {expression: "subscription.overage", value: "max([subscription.usage - subscription.included, 0])"},
+      {expression: "subscription.usageCharge", value: "round(subscription.overage * subscription.unitPrice, 2)"},
+      {expression: "subscription.seatCharge", value: "max([subscription.seats - 1, 0]) * subscription.seatPrice"},
+      {expression: "subscription.subtotal", value: "subscription.fee + subscription.usageCharge + subscription.seatCharge"},
+      {expression: "subscription.discount", value: "subscription.annual ? round(subscription.subtotal * 0.15, 2) : 0"},
+      {expression: "subscription.total", value: "subscription.subtotal - subscription.discount"},
+      {match: "subscription.suggestion", arms: [
+        ["subscription.plan == 'starter' and subscription.usageCharge > 49", "'upgrade to growth'"],
+        ["subscription.plan == 'growth' and subscription.usageCharge > 250", "'upgrade to scale'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {subscription: {plan: "starter", usage: 500, seats: 1, annual: false}},
+      {subscription: {plan: "starter", usage: 500, seats: 1, annual: false, fee: 0, included: 1000, unitPrice: 0.01, seatPrice: 0, overage: 0, usageCharge: 0, seatCharge: 0, subtotal: 0, discount: 0, total: 0, suggestion: "none"}},
+    ],
+    [
+      {subscription: {plan: "starter", usage: 7000, seats: 3, annual: false}},
+      {subscription: {plan: "starter", usage: 7000, seats: 3, annual: false, fee: 0, included: 1000, unitPrice: 0.01, seatPrice: 0, overage: 6000, usageCharge: 60, seatCharge: 0, subtotal: 60, discount: 0, total: 60, suggestion: "upgrade to growth"}},
+    ],
+    [
+      {subscription: {plan: "starter", usage: 5900, seats: 1, annual: false}},
+      {subscription: {plan: "starter", usage: 5900, seats: 1, annual: false, fee: 0, included: 1000, unitPrice: 0.01, seatPrice: 0, overage: 4900, usageCharge: 49, seatCharge: 0, subtotal: 49, discount: 0, total: 49, suggestion: "none"}},
+    ],
+    [
+      {subscription: {plan: "growth", usage: 10000, seats: 5, annual: true}},
+      {subscription: {plan: "growth", usage: 10000, seats: 5, annual: true, fee: 49, included: 10000, unitPrice: 0.008, seatPrice: 10, overage: 0, usageCharge: 0, seatCharge: 40, subtotal: 89, discount: 13.35, total: 75.65, suggestion: "none"}},
+    ],
+    [
+      {subscription: {plan: "growth", usage: 50000, seats: 1, annual: false}},
+      {subscription: {plan: "growth", usage: 50000, seats: 1, annual: false, fee: 49, included: 10000, unitPrice: 0.008, seatPrice: 10, overage: 40000, usageCharge: 320, seatCharge: 0, subtotal: 369, discount: 0, total: 369, suggestion: "upgrade to scale"}},
+    ],
+    // Half-cent amounts round away from zero; zero seats is not a negative seat charge.
+    [
+      {subscription: {plan: "scale", usage: 123457, seats: 0, annual: true}},
+      {subscription: {plan: "scale", usage: 123457, seats: 0, annual: true, fee: 299, included: 100000, unitPrice: 0.005, seatPrice: 8, overage: 23457, usageCharge: 117.29, seatCharge: 0, subtotal: 416.29, discount: 62.44, total: 353.85, suggestion: "none"}},
+    ],
+    [
+      {subscription: {plan: "starter", usage: 1000.4, seats: 1, annual: true}},
+      {subscription: {plan: "starter", usage: 1000.4, seats: 1, annual: true, fee: 0, included: 1000, unitPrice: 0.01, seatPrice: 0, overage: 0.4, usageCharge: 0, seatCharge: 0, subtotal: 0, discount: 0, total: 0, suggestion: "none"}},
+    ],
+    [{subscription: {plan: "enterprise", usage: 1, seats: 1, annual: false}}, "!error: InputValidationFailed"],
+    [{subscription: {plan: "growth", seats: 1, annual: false}}, "!error: MissingRequiredInputs"],
+    [{subscription: {plan: "growth", usage: 1, seats: 1, annual: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Account aging -------------------------------------------------------------------------------
+// Invoices as members bucketed by a per-invoice table with range cells, account aggregates
+// including an object literal of bucket sums, utilization of a credit limit and a credit-hold
+// assertion made of `or` conditions.
+
+{
+  name: "account aging and credit hold",
+  policy: {
+    models: {
+      account: {name: "string", creditLimit: "number", invoices: "invoice[]"},
+      invoice: {number: "string", amount: "number", paid: "number", due: "date"},
+    },
+    blocks: [
+      {expression: "invoice.open", value: "invoice.amount - invoice.paid"},
+      {expression: "invoice.overdueDays", value: "invoice.open > 0 ? max([d().diff(invoice.due, 'day'), 0]) : 0"},
+      {table: "bucket", inputs: ["invoice.open", "invoice.overdueDays"], outputs: ["invoice.bucket"], rules: [
+        ["<= 0", "", "'closed'"],
+        ["", "0", "'current'"],
+        ["", "[1..30]", "'1-30'"],
+        ["", "[31..90]", "'31-90'"],
+        ["", "", "'90+'"],
+      ]},
+      {expression: "account.balance", value: "sum(map(account.invoices, #.open))"},
+      {expression: "account.overdue", value: "sum(map(filter(account.invoices, #.overdueDays > 0), #.open))"},
+      {expression: "account.aging", value: "{current: sum(map(filter(account.invoices, #.bucket == 'current'), #.open)), d30: sum(map(filter(account.invoices, #.bucket == '1-30'), #.open)), d90: sum(map(filter(account.invoices, #.bucket == '31-90'), #.open)), d90plus: sum(map(filter(account.invoices, #.bucket == '90+'), #.open))}"},
+      {expression: "account.oldest", value: "len(account.invoices) == 0 ? 0 : max(map(account.invoices, #.overdueDays))"},
+      {expression: "account.utilization", value: "account.creditLimit > 0 ? round(account.balance / account.creditLimit, 4) : 0"},
+      {assertion: "account.creditHold", conditions: [["or", "account.oldest > 90"], ["or", "account.utilization > 1"], "account.overdue > 5000"]},
+      {expression: "account.openNumbers", value: "map(filter(account.invoices, #.bucket != 'closed'), #.number)"},
+    ],
+  },
+  cases: [
+    [
+      {account: {name: "a", creditLimit: 1000, invoices: []}},
+      {account: {name: "a", creditLimit: 1000, invoices: [], balance: 0, overdue: 0, aging: {current: 0, d30: 0, d90: 0, d90plus: 0}, oldest: 0, utilization: 0, creditHold: false, openNumbers: []}},
+    ],
+    [
+      {account: {name: "b", creditLimit: 5000, invoices: [{number: "I1", amount: 1000, paid: 0, due: "2025-04-01"}, {number: "I2", amount: 500, paid: 500, due: "2025-01-01"}]}},
+      {account: {name: "b", creditLimit: 5000, invoices: [
+        {number: "I1", amount: 1000, paid: 0, due: "2025-04-01", open: 1000, overdueDays: 0, bucket: "current"},
+        {number: "I2", amount: 500, paid: 500, due: "2025-01-01", open: 0, overdueDays: 0, bucket: "closed"},
+      ], balance: 1000, overdue: 0, aging: {current: 1000, d30: 0, d90: 0, d90plus: 0}, oldest: 0, utilization: 0.2, creditHold: false, openNumbers: ["I1"]}},
+    ],
+    [
+      {account: {name: "c", creditLimit: 10000, invoices: [
+        {number: "I1", amount: 2000, paid: 500, due: "2025-03-01"},
+        {number: "I2", amount: 3000, paid: 0, due: "2025-01-01"},
+        {number: "I3", amount: 400, paid: 0, due: "2024-11-01"},
+      ]}},
+      {account: {name: "c", creditLimit: 10000, invoices: [
+        {number: "I1", amount: 2000, paid: 500, due: "2025-03-01", open: 1500, overdueDays: 19, bucket: "1-30"},
+        {number: "I2", amount: 3000, paid: 0, due: "2025-01-01", open: 3000, overdueDays: 78, bucket: "31-90"},
+        {number: "I3", amount: 400, paid: 0, due: "2024-11-01", open: 400, overdueDays: 139, bucket: "90+"},
+      ], balance: 4900, overdue: 4900, aging: {current: 0, d30: 1500, d90: 3000, d90plus: 400}, oldest: 139, utilization: 0.49, creditHold: true, openNumbers: ["I1", "I2", "I3"]}},
+    ],
+    [
+      {account: {name: "d", creditLimit: 1000, invoices: [{number: "I1", amount: 1500, paid: 0, due: "2025-04-01"}]}},
+      {account: {name: "d", creditLimit: 1000, invoices: [
+        {number: "I1", amount: 1500, paid: 0, due: "2025-04-01", open: 1500, overdueDays: 0, bucket: "current"},
+      ], balance: 1500, overdue: 0, aging: {current: 1500, d30: 0, d90: 0, d90plus: 0}, oldest: 0, utilization: 1.5, creditHold: true, openNumbers: ["I1"]}},
+    ],
+    [
+      {account: {name: "e", creditLimit: 100000, invoices: [{number: "I1", amount: 6000, paid: 0, due: "2025-03-01"}]}},
+      {account: {name: "e", creditLimit: 100000, invoices: [
+        {number: "I1", amount: 6000, paid: 0, due: "2025-03-01", open: 6000, overdueDays: 19, bucket: "1-30"},
+      ], balance: 6000, overdue: 6000, aging: {current: 0, d30: 6000, d90: 0, d90plus: 0}, oldest: 19, utilization: 0.06, creditHold: true, openNumbers: ["I1"]}},
+    ],
+    // Bucket edges: 30 days is 1-30, 31 is 31-90, 90 is still 31-90 and does not trigger a hold;
+    // an invoice due earlier today is current.
+    [
+      {account: {name: "f", creditLimit: 0, invoices: [
+        {number: "A", amount: 100, paid: 0, due: "2025-02-18"},
+        {number: "B", amount: 100, paid: 0, due: "2025-02-17"},
+        {number: "C", amount: 100, paid: 0, due: "2024-12-20"},
+        {number: "D", amount: 100, paid: 0, due: "2025-03-20"},
+      ]}},
+      {account: {name: "f", creditLimit: 0, invoices: [
+        {number: "A", amount: 100, paid: 0, due: "2025-02-18", open: 100, overdueDays: 30, bucket: "1-30"},
+        {number: "B", amount: 100, paid: 0, due: "2025-02-17", open: 100, overdueDays: 31, bucket: "31-90"},
+        {number: "C", amount: 100, paid: 0, due: "2024-12-20", open: 100, overdueDays: 90, bucket: "31-90"},
+        {number: "D", amount: 100, paid: 0, due: "2025-03-20", open: 100, overdueDays: 0, bucket: "current"},
+      ], balance: 400, overdue: 300, aging: {current: 100, d30: 100, d90: 200, d90plus: 0}, oldest: 90, utilization: 0, creditHold: false, openNumbers: ["A", "B", "C", "D"]}},
+    ],
+    [
+      {account: {name: "g", creditLimit: 300, invoices: [{number: "X", amount: 100, paid: 150, due: "2020-01-01"}, {number: "Y", amount: 250.5, paid: 0, due: "2025-03-19"}]}},
+      {account: {name: "g", creditLimit: 300, invoices: [
+        {number: "X", amount: 100, paid: 150, due: "2020-01-01", open: -50, overdueDays: 0, bucket: "closed"},
+        {number: "Y", amount: 250.5, paid: 0, due: "2025-03-19", open: 250.5, overdueDays: 1, bucket: "1-30"},
+      ], balance: 200.5, overdue: 250.5, aging: {current: 0, d30: 250.5, d90: 0, d90plus: 0}, oldest: 1, utilization: 0.6683, creditHold: false, openNumbers: ["Y"]}},
+    ],
+    [{account: {name: "x", creditLimit: 1, invoices: [{number: "I", amount: 1, paid: 0, due: "2025-02-30"}]}}, "!error: InputValidationFailed"],
+    [{account: {name: "x", invoices: []}}, "!error: MissingRequiredInputs"],
+    [{account: {name: "x", creditLimit: 1, invoices: [{number: "I", amount: 1, due: "2025-01-01"}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Proration -----------------------------------------------------------------------------------
+// A mid-period plan change: day counts from dates, the remaining fraction rounded to four places,
+// credit for the old price and charge for the new one, and the direction of the change.
+
+{
+  name: "proration on a plan change",
+  policy: {
+    models: {change: {periodStart: "date", periodEnd: "date", changedOn: "date", oldPrice: "number", newPrice: "number"}},
+    blocks: [
+      {expression: "change.periodDays", value: "change.periodEnd.diff(change.periodStart, 'day')"},
+      {expression: "change.remainingDays", value: "max([change.periodEnd.diff(change.changedOn, 'day'), 0])"},
+      {expression: "change.fraction", value: "change.periodDays > 0 ? round(change.remainingDays / change.periodDays, 4) : 0"},
+      {expression: "change.credit", value: "round(change.oldPrice * change.fraction, 2)"},
+      {expression: "change.charge", value: "round(change.newPrice * change.fraction, 2)"},
+      {expression: "change.net", value: "change.charge - change.credit"},
+      {match: "change.kind", arms: [["change.net > 0", "'upgrade'"], ["change.net < 0", "'downgrade'"], ["", "'no-change'"]]},
+    ],
+  },
+  cases: [
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-04-01", changedOn: "2025-03-17", oldPrice: 31, newPrice: 62}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-04-01", changedOn: "2025-03-17", oldPrice: 31, newPrice: 62, periodDays: 31, remainingDays: 15, fraction: 0.4839, credit: 15, charge: 30, net: 15, kind: "upgrade"}},
+    ],
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16", oldPrice: 100, newPrice: 40}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16", oldPrice: 100, newPrice: 40, periodDays: 30, remainingDays: 15, fraction: 0.5, credit: 50, charge: 20, net: -30, kind: "downgrade"}},
+    ],
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16", oldPrice: 10, newPrice: 10}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16", oldPrice: 10, newPrice: 10, periodDays: 30, remainingDays: 15, fraction: 0.5, credit: 5, charge: 5, net: 0, kind: "no-change"}},
+    ],
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-04-05", oldPrice: 10, newPrice: 99}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-04-05", oldPrice: 10, newPrice: 99, periodDays: 30, remainingDays: 0, fraction: 0, credit: 0, charge: 0, net: 0, kind: "no-change"}},
+    ],
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-01", oldPrice: 20, newPrice: 50}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-01", oldPrice: 20, newPrice: 50, periodDays: 30, remainingDays: 30, fraction: 1, credit: 20, charge: 50, net: 30, kind: "upgrade"}},
+    ],
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-01", changedOn: "2025-03-01", oldPrice: 20, newPrice: 50}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-01", changedOn: "2025-03-01", oldPrice: 20, newPrice: 50, periodDays: 0, remainingDays: 0, fraction: 0, credit: 0, charge: 0, net: 0, kind: "no-change"}},
+    ],
+    [
+      {change: {periodStart: "2024-02-01", periodEnd: "2024-03-01", changedOn: "2024-02-15", oldPrice: 29, newPrice: 58}},
+      {change: {periodStart: "2024-02-01", periodEnd: "2024-03-01", changedOn: "2024-02-15", oldPrice: 29, newPrice: 58, periodDays: 29, remainingDays: 15, fraction: 0.5172, credit: 15, charge: 30, net: 15, kind: "upgrade"}},
+    ],
+    // A change at noon leaves 14.5 days, counted as 14 whole days.
+    [
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16T12:00:00Z", oldPrice: 30, newPrice: 60}},
+      {change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-16T12:00:00Z", oldPrice: 30, newPrice: 60, periodDays: 30, remainingDays: 14, fraction: 0.4667, credit: 14, charge: 28, net: 14, kind: "upgrade"}},
+    ],
+    [{change: {periodStart: "2025-03-01", periodEnd: "2025-03-32", changedOn: "2025-03-01", oldPrice: 1, newPrice: 1}}, "!error: InputValidationFailed"],
+    [{change: {periodStart: "2025-03-01", periodEnd: "2025-03-31", changedOn: "2025-03-01", newPrice: 1}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Currency conversion with nested paths and goals ---------------------------------------------
+// The invoice currency is a reference into a pool carrying the rate and the number of decimals;
+// converted amounts are written under `invoice.local.*`. Goals pick a nested leaf or a sibling.
+
+{
+  name: "currency conversion with nested outputs and goals",
+  policy: {
+    models: {
+      invoice: {amount: "number", fees: "number?", currency: "&currency"},
+      currency: {id: "string", rate: "number", decimals: "number"},
+    },
+    blocks: [
+      {expression: "invoice.local.amount", value: "round(invoice.amount * invoice.currency.rate, invoice.currency.decimals)"},
+      {expression: "invoice.local.fees", value: "round((invoice.fees ?? 0) * invoice.currency.rate, invoice.currency.decimals)"},
+      {expression: "invoice.local.total", value: "invoice.local.amount + invoice.local.fees"},
+      {expression: "invoice.label", value: "invoice.currency.id + ' ' + string(invoice.amount)"},
+    ],
+  },
+  cases: [
+    [
+      {invoice: {amount: 100, currency: "EUR"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+      {invoice: {amount: 100, currency: {id: "EUR", rate: 11.5, decimals: 2}, local: {amount: 1150, fees: 0, total: 1150}, label: "EUR 100"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+    ],
+    [
+      {invoice: {amount: 12345, fees: 100, currency: "JPY"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}, {id: "JPY", rate: 0.0712, decimals: 0}]},
+      {invoice: {amount: 12345, fees: 100, currency: {id: "JPY", rate: 0.0712, decimals: 0}, local: {amount: 879, fees: 7, total: 886}, label: "JPY 12345"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}, {id: "JPY", rate: 0.0712, decimals: 0}]},
+    ],
+    [
+      {invoice: {amount: 19.99, fees: null, currency: "USD"}, currency: [{id: "USD", rate: 10.555, decimals: 2}]},
+      {invoice: {amount: 19.99, fees: null, currency: {id: "USD", rate: 10.555, decimals: 2}, local: {amount: 210.99, fees: 0, total: 210.99}, label: "USD 19.99"}, currency: [{id: "USD", rate: 10.555, decimals: 2}]},
+    ],
+    {
+      input: {invoice: {amount: 100, currency: "EUR"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+      goals: ["invoice.label"],
+      output: {invoice: {amount: 100, currency: {id: "EUR", rate: 11.5, decimals: 2}, label: "EUR 100"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+    },
+    {
+      input: {invoice: {amount: 2, fees: 1, currency: "EUR"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+      goals: ["invoice.local.total"],
+      output: {invoice: {amount: 2, fees: 1, currency: {id: "EUR", rate: 11.5, decimals: 2}, local: {amount: 23, fees: 11.5, total: 34.5}}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+    },
+    {
+      input: {invoice: {amount: 2, fees: 1, currency: "EUR"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+      goals: ["invoice.local.fees"],
+      output: {invoice: {amount: 2, fees: 1, currency: {id: "EUR", rate: 11.5, decimals: 2}, local: {fees: 11.5}}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]},
+    },
+    [{invoice: {amount: 1, currency: "GBP"}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]}, "!error: InputValidationFailed"],
+    [{invoice: {amount: 1, currency: "EUR"}, currency: [{id: "EUR", rate: "11.5", decimals: 2}]}, "!error: InputValidationFailed"],
+    [{invoice: {amount: 1}, currency: [{id: "EUR", rate: 11.5, decimals: 2}]}, "!error: MissingRequiredInputs"],
+  ],
+}

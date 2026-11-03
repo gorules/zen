@@ -1,0 +1,237 @@
+use super::store::Entries;
+use super::Run;
+use crate::compiled::bound::{Bound, Outs};
+use crate::compiled::core::exec::Dedup;
+use crate::compiled::graph::plan::{LaneOp, Program, SegPlan};
+use crate::compiled::graph::{Body, CompiledGraph, Condition, Kind};
+use crate::compiled::leaf::{Array, Leaf, Records};
+use std::rc::Rc;
+use std::sync::Arc;
+use zen_expression::lane::{Column, Columns, LaneProgram};
+
+impl<'a> Run<'_, 'a> {
+    fn program<'g>(
+        graph: &'g CompiledGraph,
+        op: &'g LaneOp,
+    ) -> Option<(&'g LaneProgram, Entries<'g>)> {
+        if let Some(own) = &op.own {
+            return Some((&own.program, Some(&own.entries)));
+        }
+        let step = graph.step_at(op.node)?;
+        match (&step.kind, op.program) {
+            (
+                Kind::Node {
+                    body:
+                        Body::Expression {
+                            program, entries, ..
+                        },
+                    ..
+                },
+                Program::Expression,
+            ) => Some((program, Some(entries))),
+            (Kind::Node { transform, .. }, Program::Field) => transform
+                .input_field
+                .as_ref()
+                .map(|(program, _)| (program, None)),
+            (Kind::Switch { conditions, .. }, Program::Condition(index)) => {
+                match conditions.get(index) {
+                    Some((_, Condition::Program(program))) => Some((program, None)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn lane(
+        &mut self,
+        seg: &SegPlan,
+        op: &LaneOp,
+        positions: Option<&Rc<[usize]>>,
+        report: bool,
+    ) {
+        let Some((program, entries)) = Self::program(self.graph, op) else {
+            return;
+        };
+        let rows = self.store.rows;
+        let leaves: Vec<Leaf<'a>> = op
+            .reads
+            .iter()
+            .map(|(_, r)| self.store.value(seg, *r))
+            .collect();
+        let held: Vec<Option<Rc<Records<'a>>>> = match Records::LANE_VIEW {
+            true => leaves.iter().map(Leaf::records).collect(),
+            false => Vec::new(),
+        };
+        let parts: Vec<Option<Vec<(&str, Column)>>> = match held.iter().any(Option::is_some) {
+            true => held.iter().map(|r| r.as_ref().map(|r| r.parts())).collect(),
+            false => Vec::new(),
+        };
+        let items: Vec<Option<Column>> = held
+            .iter()
+            .zip(&parts)
+            .map(|(r, p)| Some(r.as_ref()?.item(p.as_ref()?)))
+            .collect();
+        let mut columns = Columns::new(rows);
+        columns.columns.reserve_exact(op.reads.len());
+        for (at, ((key, _), leaf)) in op.reads.iter().zip(&leaves).enumerate() {
+            let view = match (
+                held.get(at).and_then(Option::as_ref),
+                items.get(at).and_then(Option::as_ref),
+            ) {
+                (Some(record), Some(item)) => record.list(item),
+                _ => leaf.column(),
+            };
+            columns = columns.column(key.as_ref(), view);
+        }
+        let program = match (op.specialized.get(), self.settled) {
+            (Some(special), _) => special.as_ref().unwrap_or(program),
+            (None, true) => op
+                .specialized
+                .get_or_init(|| program.specialize_columns(&columns).ok())
+                .as_ref()
+                .unwrap_or(program),
+            (None, false) => program,
+        };
+        let scopes = Bound::blank(rows);
+        let mut outs = Outs::take();
+        let mut failures = std::mem::take(&mut self.failures);
+        failures.clear();
+        let local = positions.map_or(rows, |p| p.len());
+        let single = [positions.and_then(|p| p.first().copied()).unwrap_or(0)];
+        let uniform = op.uniform && local > 1;
+        let keyed = match op.stable && !uniform {
+            true => {
+                let hints: Vec<Option<(Rc<[i32]>, usize)>> = op
+                    .reads
+                    .iter()
+                    .map(|(_, r)| {
+                        self.store
+                            .hints
+                            .iter()
+                            .find(|(slot, _, _)| *slot == r.slot)
+                            .map(|(_, codes, size)| (codes.clone(), *size))
+                    })
+                    .collect();
+                Dedup::distinct(&leaves, &hints, positions, rows)
+            }
+            false => None,
+        };
+        let subset = match (uniform, &keyed) {
+            (true, _) => Some(&single[..]),
+            (false, Some((reps, _))) => Some(&reps[..]),
+            (false, None) => positions.map(|p| p.as_ref()),
+        };
+        self.runner.evaluate_sites(
+            program,
+            scopes.slice(),
+            &columns,
+            &op.bound,
+            subset,
+            &mut outs,
+            |row, stage, _| failures.push((row, stage)),
+        );
+        if uniform {
+            let stages: Vec<usize> = failures.iter().map(|(_, stage)| *stage).collect();
+            failures = stages
+                .into_iter()
+                .flat_map(|stage| (0..local).map(move |at| (at, stage)))
+                .collect();
+        }
+        if let (Some((reps, ids)), false) = (&keyed, failures.is_empty()) {
+            let mut stages: Vec<Vec<usize>> = vec![Vec::new(); reps.len()];
+            failures
+                .iter()
+                .for_each(|&(rep, stage)| stages[rep].push(stage));
+            failures = ids
+                .iter()
+                .enumerate()
+                .flat_map(|(at, id)| stages[*id as usize].iter().map(move |&stage| (at, stage)))
+                .collect();
+        }
+        for (slot, out) in op.outs.iter().zip(outs.iter_mut()) {
+            let array = Array::from_output(out);
+            let leaf = match (uniform, &keyed) {
+                (true, _) => match Self::templated(&array, local) {
+                    Some(leaf) => leaf,
+                    None => array
+                        .broadcast(local)
+                        .map_or_else(|| Leaf::nulls(local), Leaf::typed),
+                },
+                (false, Some((_, ids))) => Leaf::typed(array.expand(ids)),
+                (false, None) => Leaf::typed(array),
+            };
+            let leaf = self.store.place(leaf, positions);
+            self.store.slots[*slot as usize] = Some(leaf);
+        }
+        let graph = self.graph;
+        match (report, op.program, graph.step_at(op.node), entries) {
+            (true, Program::Field, Some(step), _) => {
+                if let Some((source, _)) = Self::program(graph, op) {
+                    self.fielded(step, source, &columns, positions, &failures);
+                }
+            }
+            (true, _, Some(step), Some(entries)) => {
+                self.report(entries, step, positions, &failures)
+            }
+            _ => {}
+        }
+        self.failures = failures;
+    }
+
+    fn fielded(
+        &mut self,
+        step: &crate::compiled::graph::Step,
+        source: &LaneProgram,
+        columns: &Columns,
+        positions: Option<&Rc<[usize]>>,
+        failures: &[(usize, usize)],
+    ) {
+        for &(at, _) in failures {
+            let row = positions.map_or(at, |p| p.get(at).copied().unwrap_or(at));
+            if !self.store.errors.ok(row) {
+                continue;
+            }
+            let scope = zen_expression::Scope::new(columns.row(row));
+            let message = match self
+                .runner
+                .evaluate(source, std::slice::from_ref(&scope))
+                .into_iter()
+                .next()
+            {
+                Some(Err(e)) => crate::compiled::exact::Failure::input(e),
+                _ => crate::compiled::exact::Failure::EXPRESSION.to_string(),
+            };
+            self.store.errors.fail(row, &step.node, Rc::from(message));
+        }
+    }
+
+    fn report(
+        &mut self,
+        entries: &[(Arc<str>, Arc<str>)],
+        step: &crate::compiled::graph::Step,
+        positions: Option<&Rc<[usize]>>,
+        failures: &[(usize, usize)],
+    ) {
+        let mut messages: Vec<Option<Rc<str>>> = vec![None; entries.len().max(1)];
+        for &(at, stage) in failures {
+            let row = positions.map_or(at, |p| p.get(at).copied().unwrap_or(at));
+            if !self.store.errors.ok(row) {
+                continue;
+            }
+            let message = messages.get_mut(stage).map(|m| {
+                m.get_or_insert_with(|| {
+                    let source = entries
+                        .get(stage)
+                        .map(|(_, v)| v.as_ref())
+                        .unwrap_or_default();
+                    Rc::from(crate::compiled::exact::Failure::expression(source))
+                })
+                .clone()
+            });
+            self.store
+                .errors
+                .fail(row, &step.node, message.unwrap_or_else(|| Rc::from("")));
+        }
+    }
+}

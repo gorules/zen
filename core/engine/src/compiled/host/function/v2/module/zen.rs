@@ -1,0 +1,223 @@
+use crate::compiled::call::{Call, Load};
+use crate::compiled::host::custom::DynamicCustomNode;
+use crate::compiled::host::function::v2::error::{FunctionResult, ResultExt};
+use crate::compiled::host::function::v2::listener::{RuntimeEvent, RuntimeListener};
+use crate::compiled::host::function::v2::module::export_default;
+use crate::compiled::host::function::v2::serde::JsValue;
+use crate::compiled::host::NodeHandlerExtensions;
+use crate::decision_graph::graph::DecisionGraphResponse;
+use crate::loader::DynamicLoader;
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::prelude::{Async, Func, Opt};
+use rquickjs::{CatchResultExt, Ctx, Function, Object};
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Instant;
+
+use crate::compiled::host::function::http_handler::DynamicHttpHandler;
+
+pub(crate) struct ZenListener {
+    pub prepared: std::sync::Arc<crate::compiled::prepared::Prepared>,
+    pub loader: DynamicLoader,
+    pub custom_node: DynamicCustomNode,
+    pub http_handler: DynamicHttpHandler,
+}
+
+impl ZenListener {
+    async fn call<'js>(
+        ctx: &Ctx<'js>,
+        key: &str,
+        context: JsValue,
+        extensions: NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+    ) -> rquickjs::Result<DecisionGraphResponse> {
+        let start = Instant::now();
+        let call = Call {
+            key,
+            extensions: &extensions,
+            max_depth,
+            iteration,
+        };
+        let graph = match call.load().await.or_throw(ctx)? {
+            Load::Graph(graph) => graph,
+            Load::Kind(kind) => {
+                return Err(rquickjs::Exception::throw_message(
+                    ctx,
+                    &format!("decision '{key}' is a {kind}, expected graph"),
+                ))
+            }
+        };
+        let result = call
+            .run(&graph, context.0, None)
+            .await
+            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+        Ok(DecisionGraphResponse {
+            performance: format!("{:.1?}", start.elapsed()),
+            result,
+            trace: None,
+        })
+    }
+
+    async fn walk<'js>(
+        ctx: &Ctx<'js>,
+        key: &str,
+        context: JsValue,
+        extensions: NodeHandlerExtensions,
+        max_depth: u8,
+        iteration: u8,
+    ) -> rquickjs::Result<DecisionGraphResponse> {
+        let call = Call {
+            key,
+            extensions: &extensions,
+            max_depth,
+            iteration,
+        };
+        let graph = match call.load().await.or_throw(ctx)? {
+            Load::Graph(graph) => graph,
+            Load::Kind(kind) => {
+                return Err(rquickjs::Exception::throw_message(
+                    ctx,
+                    &format!("decision '{key}' is a {kind}, expected graph"),
+                ))
+            }
+        };
+        call.traced(&graph, context.0, None)
+            .await
+            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?
+            .or_throw(ctx)
+    }
+}
+
+impl RuntimeListener for ZenListener {
+    fn on_event<'js>(
+        &self,
+        ctx: Ctx<'js>,
+        event: RuntimeEvent,
+    ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
+        let prepared = self.prepared.clone();
+        let loader = self.loader.clone();
+        let custom_node = self.custom_node.clone();
+        let http_handler = self.http_handler.clone();
+
+        Box::pin(async move {
+            if event != RuntimeEvent::Startup {
+                return Ok(());
+            };
+
+            ctx.globals()
+                .set(
+                    "__evaluate",
+                    Func::from(Async(
+                        move |ctx: Ctx<'js>,
+                              key: String,
+                              context: JsValue,
+                              opts: Opt<Object<'js>>| {
+                            let prepared = prepared.clone();
+                            let loader = loader.clone();
+                            let custom_node = custom_node.clone();
+                            let http_handler = http_handler.clone();
+
+                            async move {
+                                let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
+
+                                let iteration: u8 = config.get("iteration").or_throw(&ctx)?;
+                                let max_depth: u8 = config.get("maxDepth").or_throw(&ctx)?;
+                                let trace = opts
+                                    .0
+                                    .map(|opt| opt.get::<_, bool>("trace").unwrap_or_default())
+                                    .unwrap_or_default();
+
+                                let extensions = NodeHandlerExtensions {
+                                    loader: loader.clone(),
+                                    custom_node: custom_node.clone(),
+                                    http_handler: http_handler.clone(),
+                                    prepared: prepared.clone(),
+                                    ..Default::default()
+                                };
+                                let response = match trace {
+                                    true => {
+                                        Self::walk(
+                                            &ctx, &key, context, extensions, max_depth, iteration,
+                                        )
+                                        .await?
+                                    }
+                                    false => {
+                                        Self::call(
+                                            &ctx, &key, context, extensions, max_depth, iteration,
+                                        )
+                                        .await?
+                                    }
+                                };
+                                let k = serde_json::to_value(response).or_throw(&ctx)?.into();
+
+                                return rquickjs::Result::Ok(JsValue(k));
+                            }
+                        },
+                    )),
+                )
+                .catch(&ctx)?;
+
+            Ok(())
+        })
+    }
+}
+
+fn evaluate_expression<'js>(
+    ctx: Ctx<'js>,
+    expression: String,
+    context: JsValue,
+) -> rquickjs::Result<JsValue> {
+    let s = zen_expression::evaluate_expression(expression.as_str(), context.0).or_throw(&ctx)?;
+
+    Ok(JsValue(s))
+}
+
+fn evaluate_unary_expression<'js>(
+    ctx: Ctx<'js>,
+    expression: String,
+    context: JsValue,
+) -> rquickjs::Result<bool> {
+    let s =
+        zen_expression::evaluate_unary_expression(expression.as_str(), context.0).or_throw(&ctx)?;
+
+    Ok(s)
+}
+
+fn evaluate<'js>(
+    ctx: Ctx<'js>,
+    key: String,
+    context: JsValue,
+    opts: Opt<Object<'js>>,
+) -> rquickjs::Result<rquickjs::Value<'js>> {
+    let s: Function = ctx.globals().get("__evaluate").or_throw(&ctx)?;
+    let result: rquickjs::Value = s.call((key, context, opts)).or_throw(&ctx)?;
+    Ok(result)
+}
+
+pub struct ZenModule;
+
+impl ModuleDef for ZenModule {
+    fn declare<'js>(decl: &Declarations<'js>) -> rquickjs::Result<()> {
+        decl.declare("evaluateExpression")?;
+        decl.declare("evaluateUnaryExpression")?;
+        decl.declare("evaluate")?;
+
+        decl.declare("default")?;
+
+        Ok(())
+    }
+
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> rquickjs::Result<()> {
+        export_default(ctx, exports, |default| {
+            default.set("evaluateExpression", Func::from(evaluate_expression))?;
+            default.set(
+                "evaluateUnaryExpression",
+                Func::from(evaluate_unary_expression),
+            )?;
+            default.set("evaluate", Func::from(evaluate))?;
+
+            Ok(())
+        })
+    }
+}

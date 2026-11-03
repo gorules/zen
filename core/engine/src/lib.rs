@@ -123,6 +123,7 @@
 #![allow(clippy::module_inception)]
 
 mod analysis;
+mod compiled;
 mod config;
 mod decision;
 mod decision_graph;
@@ -136,6 +137,14 @@ pub mod workspace;
 
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[doc(hidden)]
+pub use compiled::diagnostics;
+
+pub mod columns {
+    pub use zen_expression::lane::{Column, Columns, Dictionary, Values};
+}
+
+pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use decision_graph::{

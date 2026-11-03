@@ -1,0 +1,409 @@
+// Global-scope data models: their properties live at the top level of the input (the model name
+// only groups them). Blocks read globals by bare name and may write new top-level properties.
+// As with entities, declared globals are inputs; computed globals stay undeclared.
+
+// Reading a global number from an entity block.
+{
+  name: "entity block reads a global",
+  policy: {
+    globals: {settings: {rate: "number"}},
+    models: {customer: {amount: "number"}},
+    blocks: [{expression: "customer.fee", value: "customer.amount * rate"}],
+  },
+  cases: [
+    [{customer: {amount: 2}, rate: 3}, {customer: {amount: 2, fee: 6}, rate: 3}],
+    [{customer: {amount: 2}, rate: 0.5}, {customer: {amount: 2, fee: 1}, rate: 0.5}],
+    [{customer: {amount: 0}, rate: -1}, {customer: {amount: 0, fee: 0}, rate: -1}],
+    [{customer: {amount: 2}}, "!error: MissingRequiredInputs"],
+    [{customer: {amount: 2}, rate: null}, "!error: MissingRequiredInputs"],
+    [{customer: {amount: 2}, rate: "3"}, "!error: InputValidationFailed"],
+  ],
+}
+
+// The model name is not part of the path: nesting under it is not the global.
+{
+  name: "globals are not nested under the model name",
+  policy: {
+    globals: {settings: {rate: "number?"}},
+    blocks: [{expression: "effective", value: "rate ?? 1"}],
+  },
+  cases: [
+    [{rate: 4}, {rate: 4, effective: 4}],
+    [{settings: {rate: 4}}, {settings: {rate: 4}, effective: 1}],
+    [{}, {effective: 1}],
+    [{rate: null}, {rate: null, effective: 1}],
+  ],
+}
+
+// A policy with only globals: computed globals written at the top level.
+{
+  name: "global-only policy writes top-level computeds",
+  policy: {
+    globals: {settings: {rate: "number", base: "number"}},
+    blocks: [
+      {expression: "double", value: "rate * 2"},
+      {expression: "total", value: "base + double"},
+    ],
+  },
+  cases: [
+    [{rate: 3, base: 1}, {rate: 3, base: 1, double: 6, total: 7}],
+    [{rate: 0, base: 0}, {rate: 0, base: 0, double: 0, total: 0}],
+    [{rate: 1.5, base: -1}, {rate: 1.5, base: -1, double: 3, total: 2}],
+    [{rate: 1}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Match and table blocks on globals.
+{
+  name: "match block on a global",
+  policy: {
+    globals: {env: {country: "string"}},
+    blocks: [{match: "region", arms: [["country == 'US'", "'na'"], ["country in ['DE', 'FR']", "'eu'"], ["", "'other'"]]}],
+  },
+  cases: [
+    [{country: "US"}, {country: "US", region: "na"}],
+    [{country: "FR"}, {country: "FR", region: "eu"}],
+    [{country: "JP"}, {country: "JP", region: "other"}],
+    [{country: ""}, {country: "", region: "other"}],
+  ],
+}
+
+{
+  name: "table block on globals",
+  policy: {
+    globals: {env: {score: "number", segment: "string"}},
+    blocks: [
+      {table: "t", inputs: ["score", "segment"], outputs: ["limit"], rules: [
+        [">= 700", "'retail'", "5000"],
+        [">= 700", "", "10000"],
+        ["", "", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 750, segment: "retail"}, {score: 750, segment: "retail", limit: 5000}],
+    [{score: 750, segment: "corp"}, {score: 750, segment: "corp", limit: 10000}],
+    [{score: 699, segment: "retail"}, {score: 699, segment: "retail", limit: 0}],
+    [{score: 700, segment: "x"}, {score: 700, segment: "x", limit: 10000}],
+  ],
+}
+
+// Globals of every primitive type are validated.
+{
+  name: "global type validation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    globals: {env: {n: "number?", s: "string?", b: "boolean?", d: "date?"}},
+    blocks: [{expression: "seen", value: "[n, s, b] "}],
+  },
+  cases: [
+    [{n: 1, s: "x", b: true}, {n: 1, s: "x", b: true, seen: [1, "x", true]}],
+    [{}, {seen: [null, null, null]}],
+    [{n: "1"}, "!error: InputValidationFailed"],
+    [{s: 1}, "!error: InputValidationFailed"],
+    [{b: "true"}, "!error: InputValidationFailed"],
+    [{d: "nope"}, "!error: InputValidationFailed"],
+    [{d: 5}, "!error: InputValidationFailed"],
+    [{d: "2024-01-31"}, {d: date("2024-01-31"), seen: [null, null, null]}],
+  ],
+}
+
+// Date globals are converted to dates before evaluation.
+{
+  name: "date global",
+  policy: {
+    globals: {env: {asOf: "date"}},
+    models: {customer: {born: "date"}},
+    blocks: [{expression: "customer.age", value: "year(asOf) - year(customer.born)"}],
+  },
+  cases: [
+    [
+      {asOf: "2025-01-01", customer: {born: "2000-06-01"}},
+      {asOf: date("2025-01-01"), customer: {born: date("2000-06-01"), age: 25}},
+    ],
+    [
+      {asOf: "2025-07-01", customer: {born: "1999-12-31"}},
+      {asOf: date("2025-07-01"), customer: {born: date("1999-12-31"), age: 26}},
+    ],
+    [
+      {asOf: "2024-02-29", customer: {born: "2024-01-01"}},
+      {asOf: date("2024-02-29"), customer: {born: date("2024-01-01"), age: 0}},
+    ],
+    [{asOf: "2024-02-30", customer: {born: "2024-01-01"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Array globals.
+{
+  name: "array globals",
+  policy: {
+    globals: {env: {blocked: "string[]", weights: "number[]"}},
+    models: {customer: {country: "string"}},
+    blocks: [
+      {expression: "customer.blocked", value: "customer.country in blocked"},
+      {expression: "weightSum", value: "sum(weights)"},
+    ],
+  },
+  cases: [
+    [
+      {blocked: ["RU", "KP"], weights: [1, 2], customer: {country: "KP"}},
+      {blocked: ["RU", "KP"], weights: [1, 2], customer: {country: "KP", blocked: true}, weightSum: 3},
+    ],
+    [
+      {blocked: [], weights: [], customer: {country: "US"}},
+      {blocked: [], weights: [], customer: {country: "US", blocked: false}, weightSum: 0},
+    ],
+    [{blocked: "RU", weights: [], customer: {country: "US"}}, "!error: InputValidationFailed"],
+    [{blocked: [1], weights: [], customer: {country: "US"}}, "!error: InputValidationFailed"],
+    [{blocked: [], weights: ["1"], customer: {country: "US"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Enum globals.
+{
+  name: "enum global",
+  policy: {
+    globals: {env: {channel: "string(web|branch)"}},
+    blocks: [{expression: "online", value: "channel == 'web'"}],
+  },
+  cases: [
+    [{channel: "web"}, {channel: "web", online: true}],
+    [{channel: "branch"}, {channel: "branch", online: false}],
+    [{channel: "phone"}, "!error: InputValidationFailed"],
+    [{channel: 1}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A computed global read by an entity block and an entity computed read by a global block.
+{
+  name: "globals and entities feed each other",
+  policy: {
+    globals: {env: {baseRate: "number"}},
+    models: {customer: {vip: "boolean", amount: "number"}},
+    blocks: [
+      {expression: "rate", value: "baseRate * 2"},
+      {expression: "customer.fee", value: "customer.vip ? 0 : customer.amount * rate"},
+      {expression: "summary", value: "'fee=' + string(customer.fee)"},
+    ],
+  },
+  cases: [
+    [
+      {baseRate: 1, customer: {vip: false, amount: 10}},
+      {baseRate: 1, rate: 2, customer: {vip: false, amount: 10, fee: 20}, summary: "fee=20"},
+    ],
+    [
+      {baseRate: 1, customer: {vip: true, amount: 10}},
+      {baseRate: 1, rate: 2, customer: {vip: true, amount: 10, fee: 0}, summary: "fee=0"},
+    ],
+    [
+      {baseRate: 2, customer: {vip: false, amount: 3}},
+      {baseRate: 2, rate: 4, customer: {vip: false, amount: 3, fee: 12}, summary: "fee=12"},
+    ],
+  ],
+}
+
+// Globals read inside per-member blocks.
+{
+  name: "per-member blocks read globals",
+  policy: {
+    globals: {env: {threshold: "number"}},
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > threshold"},
+      {expression: "bigCount", value: "count(customer.companies, #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {threshold: 100, customer: {companies: [{revenue: 50}, {revenue: 200}]}},
+      {threshold: 100, customer: {companies: [{revenue: 50, big: false}, {revenue: 200, big: true}]}, bigCount: 1},
+    ],
+    [
+      {threshold: 10, customer: {companies: [{revenue: 50}, {revenue: 200}]}},
+      {threshold: 10, customer: {companies: [{revenue: 50, big: true}, {revenue: 200, big: true}]}, bigCount: 2},
+    ],
+    [
+      {threshold: 0, customer: {companies: []}},
+      {threshold: 0, customer: {companies: []}, bigCount: 0},
+    ],
+  ],
+}
+
+// A global relationship: the global property holds an entity, and blocks on that entity run on it.
+{
+  name: "global relationship property",
+  policy: {
+    globals: {env: {applicant: "person"}},
+    models: {person: {age: "number"}},
+    blocks: [
+      {expression: "person.adult", value: "person.age >= 18"},
+      {expression: "eligible", value: "applicant.adult"},
+    ],
+  },
+  cases: [
+    [{applicant: {age: 30}}, {applicant: {age: 30, adult: true}, eligible: true}],
+    [{applicant: {age: 3}}, {applicant: {age: 3, adult: false}, eligible: false}],
+    [{applicant: {age: "x"}}, "!error: InputValidationFailed"],
+    [{applicant: 5}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A global array relationship: per-member blocks run over the global array.
+{
+  name: "global array relationship",
+  policy: {
+    globals: {env: {applicants: "person[]"}},
+    models: {person: {age: "number"}},
+    blocks: [
+      {expression: "person.adult", value: "person.age >= 18"},
+      {expression: "adults", value: "count(applicants, #.adult)"},
+    ],
+  },
+  cases: [
+    [
+      {applicants: [{age: 30}, {age: 10}]},
+      {applicants: [{age: 30, adult: true}, {age: 10, adult: false}], adults: 1},
+    ],
+    [{applicants: []}, {applicants: [], adults: 0}],
+    [
+      {applicants: [{age: 18}]},
+      {applicants: [{age: 18, adult: true}], adults: 1},
+    ],
+  ],
+}
+
+// A global reference resolved against the pool.
+{
+  name: "global reference property",
+  policy: {
+    globals: {env: {plan: "&product"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [{expression: "price", value: "plan.price"}],
+  },
+  cases: [
+    [{plan: "p1", product: [{id: "p1", price: 9}]}, {plan: {id: "p1", price: 9}, price: 9, product: [{id: "p1", price: 9}]}],
+    [{plan: "p2", product: [{id: "p1", price: 9}, {id: "p2", price: 1}]}, {plan: {id: "p2", price: 1}, price: 1, product: [{id: "p1", price: 9}, {id: "p2", price: 1}]}],
+    [{plan: "zz", product: [{id: "p1", price: 9}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Two global models: their properties share the same top-level namespace.
+{
+  name: "two global models",
+  policy: {
+    globals: {a: {x: "number"}, b: {y: "number"}},
+    blocks: [{expression: "sum", value: "x + y"}],
+  },
+  cases: [
+    [{x: 1, y: 2}, {x: 1, y: 2, sum: 3}],
+    [{x: -1, y: 1}, {x: -1, y: 1, sum: 0}],
+    [{x: 1}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Unknown top-level input keys pass through.
+{
+  name: "unknown top-level keys pass through",
+  policy: {
+    globals: {env: {rate: "number"}},
+    blocks: [{expression: "double", value: "rate * 2"}],
+  },
+  cases: [
+    [{rate: 1, extra: "keep", nested: {a: [1]}}, {rate: 1, extra: "keep", nested: {a: [1]}, double: 2}],
+    [{rate: 2, double: 99}, {rate: 2, double: 4}],
+  ],
+}
+
+// Goals on a global computed.
+{
+  name: "goals on global computeds",
+  policy: {
+    globals: {env: {rate: "number", other: "number"}},
+    blocks: [
+      {expression: "double", value: "rate * 2"},
+      {expression: "triple", value: "other * 3"},
+    ],
+  },
+  cases: [
+    {input: {rate: 2, other: 1}, goals: ["double"], output: {rate: 2, other: 1, double: 4}},
+    {input: {rate: 2}, goals: ["double"], output: {rate: 2, double: 4}},
+    {input: {rate: 2, other: 1}, goals: ["triple"], output: {rate: 2, other: 1, triple: 3}},
+    {input: {rate: 2, other: 1}, goals: ["nope"], output: "!error: GoalNotFound"},
+  ],
+}
+
+// Writing a declared global: an InputOverride diagnostic, and the block is dropped at evaluation.
+{
+  name: "declared global written by a block",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    globals: {env: {rate: "number", label: "string?"}},
+    blocks: [{expression: "label", value: "'rate ' + string(rate)"}],
+  },
+  cases: [
+    [
+      {rate: 3},
+      {rate: 3},
+      "question: writing a declared global is an InputOverride error diagnostic; evaluation silently drops the block instead of refusing the policy",
+    ],
+    {
+      input: {rate: 3},
+      goals: ["label"],
+      output: "!error: GoalNotFound",
+      note: "question: a declared-and-written global is not a goal, so naming it fails with GoalNotFound",
+    },
+  ],
+}
+
+// Optional global missing with a default in a nested expression.
+{
+  name: "optional globals with defaults",
+  policy: {
+    globals: {env: {discount: "number?", tags: "string[]?"}},
+    models: {order: {total: "number"}},
+    blocks: [
+      {expression: "order.net", value: "order.total * (1 - (discount ?? 0))"},
+      {expression: "order.tagged", value: "len(tags ?? []) > 0"},
+    ],
+  },
+  cases: [
+    [{order: {total: 100}}, {order: {total: 100, net: 100, tagged: false}}],
+    [{order: {total: 100}, discount: 0.1, tags: ["a"]}, {order: {total: 100, net: 90, tagged: true}, discount: 0.1, tags: ["a"]}],
+    [{order: {total: 100}, discount: null, tags: null}, {order: {total: 100, net: 100, tagged: false}, discount: null, tags: null}],
+    [{order: {total: 100}, tags: []}, {order: {total: 100, net: 100, tagged: false}, tags: []}],
+  ],
+}
+
+// Nested computed globals: the write path creates the parent object.
+{
+  name: "nested computed global paths",
+  policy: {
+    globals: {env: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "totals.sum", value: "a + b"},
+      {expression: "totals.diff", value: "a - b"},
+      {expression: "report", value: "totals.sum * 2"},
+    ],
+  },
+  cases: [
+    [{a: 3, b: 1}, {a: 3, b: 1, totals: {sum: 4, diff: 2}, report: 8}, "bug: totals.diff is dropped: once totals.sum is read by another block, the sibling nested write is no longer a terminal sink and never runs (same on entity paths like c.totals.diff)"],
+    [{a: 0, b: 0}, {a: 0, b: 0, totals: {sum: 0, diff: 0}, report: 0}, "bug: totals.diff is dropped: once totals.sum is read by another block, the sibling nested write is no longer a terminal sink and never runs (same on entity paths like c.totals.diff)"],
+    {input: {a: 3, b: 1}, goals: ["totals.diff", "report"], output: {a: 3, b: 1, totals: {sum: 4, diff: 2}, report: 8}},
+    [{a: -1, b: 2.5}, {a: -1, b: 2.5, totals: {sum: 1.5, diff: -3.5}, report: 3}, "bug: totals.diff is dropped: once totals.sum is read by another block, the sibling nested write is no longer a terminal sink and never runs (same on entity paths like c.totals.diff)"],
+  ],
+}
+
+// A global and an entity property with the same name are different paths.
+{
+  name: "global and entity property with the same name",
+  policy: {
+    globals: {env: {limit: "number"}},
+    models: {customer: {limit: "number"}},
+    blocks: [{expression: "customer.effective", value: "min([customer.limit, limit])"}],
+  },
+  cases: [
+    [{limit: 100, customer: {limit: 50}}, {limit: 100, customer: {limit: 50, effective: 50}}],
+    [{limit: 10, customer: {limit: 50}}, {limit: 10, customer: {limit: 50, effective: 10}}],
+    [{customer: {limit: 50}}, "!error: MissingRequiredInputs"],
+  ],
+}

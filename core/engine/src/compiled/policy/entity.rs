@@ -1,0 +1,362 @@
+use crate::compiled::core::list::Frame;
+use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
+use crate::compiled::policy::artifact::Artifact as EvalArtifact;
+use crate::compiled::shred::{Normalizer, Shred};
+use std::rc::Rc;
+use std::sync::Arc;
+use zen_expression::lane::{Column, Columns, Dictionary, Values};
+use zen_expression::Variable;
+use zen_types::path::DotPath;
+use zen_types::symbol::Symbol;
+use zen_types::variable::VariableMap;
+
+pub(super) struct Field<'a> {
+    pub name: Arc<str>,
+    pub leaf: Leaf<'a>,
+    pub present: Option<Rc<[u64]>>,
+    pub input: bool,
+}
+
+pub(super) struct Entity<'a> {
+    pub name: Arc<str>,
+    pub path: Arc<str>,
+    pub owner: Option<Arc<str>>,
+    pub entry: usize,
+    pub frame: Frame,
+    pub fields: Vec<Field<'a>>,
+    pub active: bool,
+    pub hosted: Option<Rc<[usize]>>,
+    cache: Option<Vec<Variable>>,
+}
+
+impl<'a> Entity<'a> {
+    pub fn sure(
+        artifact: &EvalArtifact,
+        columns: &Columns,
+        entities: &[Entity],
+        goals: &[Arc<str>],
+    ) -> Option<Vec<bool>> {
+        let shredded: Vec<&Entity> = entities
+            .iter()
+            .filter(|entity| entity.hosted.is_some())
+            .collect();
+        if shredded.is_empty() {
+            return artifact.sure(columns, goals);
+        }
+        let parts: Vec<Vec<(&str, Column)>> = shredded
+            .iter()
+            .map(|entity| {
+                entity
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.as_ref(), field.leaf.column()))
+                    .collect()
+            })
+            .collect();
+        let items: Vec<Column> = parts
+            .iter()
+            .zip(&shredded)
+            .map(|(fields, entity)| {
+                Column::new(Values::Struct {
+                    fields,
+                    len: entity.frame.children,
+                })
+            })
+            .collect();
+        let lists: Vec<(usize, Column)> = items
+            .iter()
+            .zip(&shredded)
+            .map(|(item, entity)| {
+                (
+                    entity.entry,
+                    Column {
+                        values: Values::List {
+                            offsets: &entity.frame.offsets,
+                            child: Dictionary::Column(item),
+                        },
+                        validity: entity.frame.validity.as_deref().map(|bits| (bits, 0)),
+                    },
+                )
+            })
+            .collect();
+        let mut replaced = Columns::new(columns.rows);
+        for (index, (path, column)) in columns.columns.iter().enumerate() {
+            let column = lists
+                .iter()
+                .find(|(entry, _)| *entry == index)
+                .map_or(*column, |(_, list)| *list);
+            replaced = replaced.column(path, column);
+        }
+        artifact.sure(&replaced, goals)
+    }
+
+    pub fn new(
+        name: Arc<str>,
+        path: Arc<str>,
+        owner: Option<Arc<str>>,
+        entry: usize,
+        list: Column<'a>,
+    ) -> Option<Self> {
+        let Values::List {
+            offsets,
+            child: Dictionary::Column(child),
+        } = list.values
+        else {
+            return None;
+        };
+        let Values::Struct { fields, len } = child.values else {
+            return None;
+        };
+        if Bits::partial(child.validity, len).is_some() {
+            return None;
+        }
+        let fields = fields
+            .iter()
+            .map(|(name, column)| Field {
+                name: Arc::from(*name),
+                leaf: Normalizer::lean(*column, len),
+                present: None,
+                input: true,
+            })
+            .collect();
+        let rows = offsets.len().saturating_sub(1);
+        let validity = Bits::partial(list.validity, rows);
+        Some(Self {
+            name,
+            path,
+            owner,
+            entry,
+            frame: Frame {
+                offsets: Rc::from(offsets),
+                validity: validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows))),
+                children: len,
+            },
+            fields,
+            active: true,
+            hosted: None,
+            cache: None,
+        })
+    }
+
+    pub fn shredded(
+        name: Arc<str>,
+        path: Arc<str>,
+        owner: Option<Arc<str>>,
+        entry: usize,
+        shred: Shred,
+    ) -> Self {
+        let fields = shred
+            .fields
+            .into_iter()
+            .map(|(name, array)| Field {
+                name,
+                leaf: Leaf::typed(array),
+                present: None,
+                input: true,
+            })
+            .collect();
+        Self {
+            name,
+            path,
+            owner,
+            entry,
+            frame: shred.frame,
+            fields,
+            active: true,
+            hosted: Some(shred.hosted),
+            cache: None,
+        }
+    }
+
+    pub fn field(&self, name: &str) -> Option<usize> {
+        self.fields.iter().rposition(|f| f.name.as_ref() == name)
+    }
+
+    pub fn flat(&self) -> bool {
+        self.fields.iter().all(|f| !f.name.contains('.'))
+    }
+
+    pub fn overlaps(&self, name: &str) -> bool {
+        self.fields.iter().any(|f| DotPath::nested(&f.name, name))
+    }
+
+    fn present(field: &Field, child: usize) -> bool {
+        match field.input {
+            true => field.leaf.valid_at(child) || !matches!(field.leaf.get(child), Variable::Null),
+            false => field
+                .present
+                .as_ref()
+                .is_none_or(|bits| Bits::get(bits, child)),
+        }
+    }
+
+    fn held(field: &Field, children: usize) -> Vec<u64> {
+        let mut bits = field.leaf.validity(children);
+        Bits::trim(&mut bits, children);
+        let full = bits.iter().map(|w| w.count_ones() as usize).sum::<usize>() == children;
+        if !full {
+            for child in 0..children {
+                if !Bits::get(&bits, child) && !matches!(field.leaf.get(child), Variable::Null) {
+                    Bits::set(&mut bits, child, true);
+                }
+            }
+        }
+        bits
+    }
+
+    pub fn view(&self, field: usize) -> Leaf<'a> {
+        let field = &self.fields[field];
+        match &field.present {
+            Some(bits) => Leaf::masked(field.leaf.clone(), bits),
+            None => field.leaf.clone(),
+        }
+    }
+
+    fn object(&self, child: usize) -> Variable {
+        let present = self
+            .fields
+            .iter()
+            .filter(|field| Self::present(field, child))
+            .map(|field| {
+                let value = match field.leaf.get(child) {
+                    value @ (Variable::Object(_) | Variable::Array(_)) => {
+                        value.depth_clone(usize::MAX)
+                    }
+                    other => other,
+                };
+                (field, value)
+            });
+        if self.fields.iter().any(|field| field.name.contains('.')) {
+            let object = Variable::empty_object();
+            for (field, value) in present {
+                object.dot_insert(&field.name, value);
+            }
+            return object;
+        }
+        let mut map = VariableMap::with_capacity(self.fields.len());
+        for (field, value) in present {
+            map.insert(Symbol::from(field.name.as_ref()), value);
+        }
+        Variable::from_object(map)
+    }
+
+    pub fn materialize(&mut self) {
+        if self.cache.is_none() {
+            self.cache = Some(
+                (0..self.frame.children)
+                    .map(|child| self.object(child))
+                    .collect(),
+            );
+        }
+    }
+
+    pub fn cached(&self) -> bool {
+        self.cache.is_some()
+    }
+
+    pub fn records(&self, rows: usize) -> Leaf<'a> {
+        let offsets: Vec<i32> = self
+            .frame
+            .offsets
+            .get(..=rows)
+            .map_or_else(Vec::new, <[i32]>::to_vec);
+        let valid = match &self.frame.validity {
+            Some(bits) => Bits::window(bits, 0, rows),
+            None => Bits::ones(rows),
+        };
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| {
+                let present: Rc<[u64]> = match (&field.present, field.input) {
+                    (Some(bits), _) => bits.clone(),
+                    (None, false) => Bits::ones(self.frame.children).into(),
+                    (None, true) => Self::held(field, self.frame.children).into(),
+                };
+                (
+                    Symbol::from(field.name.as_ref()),
+                    field.leaf.clone(),
+                    present,
+                )
+            })
+            .collect();
+        Leaf::Records(Rc::new(crate::compiled::leaf::Records::new(
+            rows, offsets, valid, fields, None,
+        )))
+    }
+
+    pub fn compose(&self, row: usize) -> Option<Variable> {
+        let (a, b) = self.frame.range(row)?;
+        Some(Variable::from_array(match &self.cache {
+            Some(cache) => cache[a..b].iter().map(Variable::shallow_clone).collect(),
+            None => (a..b).map(|child| self.object(child)).collect(),
+        }))
+    }
+
+    pub fn write(&mut self, name: Arc<str>, leaf: Leaf<'a>, kids: &Rc<[usize]>) {
+        if let Some(cache) = &self.cache {
+            let key = Symbol::from(name.as_ref());
+            for (local, &child) in kids.iter().enumerate() {
+                match (cache.get(child), name.contains('.')) {
+                    (Some(object), true) => {
+                        object.dot_insert(&name, leaf.get(local));
+                    }
+                    (Some(Variable::Object(map)), false) => {
+                        map.borrow_mut().insert(key.clone(), leaf.get(local));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let total = self.frame.children;
+        let full = kids.len() == total;
+        let (leaf, present) = match full {
+            true => (leaf, None),
+            false => {
+                let mut bits = vec![0u64; total.div_ceil(64)];
+                kids.iter()
+                    .for_each(|&child| Bits::set(&mut bits, child, true));
+                (
+                    Leaf::scattered(leaf, kids.clone(), total),
+                    Some(Rc::from(bits)),
+                )
+            }
+        };
+        let fresh = Field {
+            name,
+            leaf,
+            present,
+            input: false,
+        };
+        match (self.field(&fresh.name), full) {
+            (None, _) => self.fields.push(fresh),
+            (Some(at), true) => self.fields[at] = fresh,
+            (Some(at), false) => {
+                let old = &self.fields[at];
+                let (new_column, old_column) = (fresh.leaf.column(), old.leaf.column());
+                let mut builder = ColumnBuilder::with_capacity(total);
+                let mut bits = vec![0u64; total.div_ceil(64)];
+                for child in 0..total {
+                    match (Self::present(&fresh, child), Self::present(old, child)) {
+                        (true, _) => {
+                            builder.push_cell(&new_column, child);
+                            Bits::set(&mut bits, child, true);
+                        }
+                        (false, true) => {
+                            builder.push_cell(&old_column, child);
+                            Bits::set(&mut bits, child, true);
+                        }
+                        (false, false) => builder.push_null(),
+                    }
+                }
+                let merged = Field {
+                    name: fresh.name.clone(),
+                    leaf: Leaf::typed(builder.finish()),
+                    present: Some(bits.into()),
+                    input: false,
+                };
+                self.fields[at] = merged;
+            }
+        }
+    }
+}

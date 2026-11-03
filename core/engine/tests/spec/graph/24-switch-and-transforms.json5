@@ -1,0 +1,813 @@
+// Switches combined with the node transforms: loop execution mode, sub-decisions,
+// passThrough, inputField and outputPath on the nodes of a branch, and switches living
+// inside sub-decisions (called once or per item). A switch itself has no transforms: it
+// hands its merged input unchanged to the chosen branches.
+
+// ---------------------------------------------------------------------------------------
+// A switch choosing between loop nodes: each branch iterates a different array, or the
+// same array with a different body.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "branches choose between two loop bodies over the same array",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'net'", ""]},
+      {expression: "net", inputField: "lines", outputPath: "out", executionMode: "loop", fields: {v: "price * qty"}},
+      {expression: "gross", inputField: "lines", outputPath: "out", executionMode: "loop", fields: {v: "price * qty * 1.2"}},
+    ],
+    edges: ["input -> s", "s:0 -> net -> output", "s:1 -> gross -> output"],
+  },
+  cases: [
+    [{mode: "net", lines: [{price: 10, qty: 2}, {price: 5, qty: 1}]}, {out: [{v: 20}, {v: 5}]}],
+    [{mode: "gross", lines: [{price: 10, qty: 2}, {price: 5, qty: 1}]}, {out: [{v: 24}, {v: 6}]}],
+    [{mode: "net", lines: []}, {out: []}],
+    [{lines: [{price: 1, qty: 1}]}, {out: [{v: 1.2}]}],
+  ],
+}
+
+{
+  name: "branches iterate different arrays",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["useA", ""]},
+      {expression: "la", inputField: "a", outputPath: "picked", executionMode: "loop", fields: {x: "$root * 10"}},
+      {expression: "lb", inputField: "b", outputPath: "picked", executionMode: "loop", fields: {x: "$root"}},
+    ],
+    edges: ["input -> s", "s:0 -> la -> output", "s:1 -> lb -> output"],
+  },
+  cases: [
+    [{useA: true, a: [1, 2], b: [3]}, {picked: [{x: 10}, {x: 20}]}],
+    [{useA: false, a: [1, 2], b: [3]}, {picked: [{x: 3}]}],
+    [{useA: true, a: [], b: [3]}, {picked: []}],
+  ],
+}
+
+{
+  name: "a loop on the taken branch over a non-array fails, on the pruned branch it does not",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["isArray", ""]},
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "one", fields: {out: "items"}},
+    ],
+    edges: ["input -> s", "s:0 -> each -> output", "s:1 -> one -> output"],
+  },
+  cases: [
+    [{isArray: true, items: [1, 2]}, {out: [{v: 1}, {v: 2}]}],
+    [{isArray: false, items: 5}, {out: 5}],
+    [{isArray: false, items: "x"}, {out: "x"}],
+    [{isArray: true, items: 5}, "!error"],
+    [{isArray: true}, "!error"],
+  ],
+}
+
+{
+  name: "a switch on the array length picks a loop or a scalar fallback",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["len(items) > 3", "len(items) > 0", ""]},
+      {table: "many", inputField: "items", outputPath: "tiers", executionMode: "loop", inputs: ["v"], outputs: ["t"], rules: [
+        ["> 10", "'hi'"],
+        ["", "'lo'"],
+      ]},
+      {expression: "few", inputField: "items", outputPath: "tiers", executionMode: "loop", fields: {t: "'few'"}},
+      {expression: "none", fields: {tiers: "[]", empty: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> many -> output", "s:1 -> few -> output", "s:2 -> none -> output"],
+  },
+  cases: [
+    [{items: [{v: 11}, {v: 1}, {v: 20}, {v: 0}]}, {tiers: [{t: "hi"}, {t: "lo"}, {t: "hi"}, {t: "lo"}]}],
+    [{items: [{v: 11}, {v: 1}]}, {tiers: [{t: "few"}, {t: "few"}]}],
+    [{items: []}, {tiers: [], empty: true}],
+    [{}, {tiers: [], empty: true}],
+  ],
+}
+
+{
+  name: "collect branches each running a loop under their own outputPath",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["wantNames", "wantTotals"]},
+      {expression: "names", inputField: "rows", outputPath: "names", executionMode: "loop", fields: {n: "upper(name)"}},
+      {expression: "totals", inputField: "rows", outputPath: "totals", executionMode: "loop", fields: {t: "amount * 2"}},
+    ],
+    edges: ["input -> s", "s:0 -> names -> output", "s:1 -> totals -> output"],
+  },
+  cases: [
+    [{wantNames: true, wantTotals: true, rows: [{name: "a", amount: 1}]}, {names: [{n: "A"}], totals: [{t: 2}]}],
+    [{wantNames: true, rows: [{name: "a", amount: 1}, {name: "b", amount: 2}]}, {names: [{n: "A"}, {n: "B"}]}],
+    [{wantTotals: true, rows: [{name: "a", amount: 1}]}, {totals: [{t: 2}]}],
+    [{rows: [{name: "a", amount: 1}]}, {}],
+  ],
+}
+
+{
+  name: "a loop branch and a scalar branch converge on one node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["perItem", ""]},
+      {expression: "each", inputField: "items", outputPath: "vals", executionMode: "loop", fields: {v: "$root * 2"}},
+      {expression: "flat", fields: {vals: "map(items, {v: #})"}},
+      {expression: "sum", fields: {total: "sum(map(vals, #.v))", count: "len(vals)"}},
+    ],
+    edges: ["input -> s", "s:0 -> each -> sum", "s:1 -> flat -> sum", "sum -> output"],
+  },
+  cases: [
+    [{perItem: true, items: [1, 2, 3]}, {total: 12, count: 3}],
+    [{perItem: false, items: [1, 2, 3]}, {total: 6, count: 3}],
+    [{perItem: true, items: []}, {total: 0, count: 0}],
+  ],
+}
+
+{
+  name: "a loop with passThrough on a branch keeps the input next to the loop result",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["enrich", ""]},
+      {expression: "each", inputField: "users", outputPath: "users", passThrough: true, executionMode: "loop", fields: {adult: "age >= 18"}},
+      {expression: "skip", passThrough: true, fields: {skipped: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> each -> output", "s:1 -> skip -> output"],
+  },
+  cases: [
+    [{enrich: true, users: [{age: 20}, {age: 3}]}, {enrich: true, users: [{age: 20, adult: true}, {age: 3, adult: false}]}],
+    [{enrich: false, users: [{age: 20}]}, {enrich: false, users: [{age: 20}], skipped: true}],
+    [{enrich: true, users: []}, {enrich: true, users: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// A switch after a loop routes on the collected results.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a switch routes on the array a loop produced under an outputPath",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "txs", outputPath: "checks", executionMode: "loop", fields: {suspicious: "amount > 1000"}},
+      {switch: "s", when: ["some(checks, #.suspicious)", "len(checks) == 0", ""]},
+      {expression: "flag", fields: {status: "'review'", hits: "len(filter(checks, #.suspicious))"}},
+      {expression: "empty", fields: {status: "'empty'"}},
+      {expression: "ok", fields: {status: "'ok'"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> flag -> output", "s:1 -> empty -> output", "s:2 -> ok -> output"],
+  },
+  cases: [
+    [{txs: [{amount: 5}, {amount: 5000}, {amount: 2000}]}, {status: "review", hits: 2}],
+    [{txs: [{amount: 5}, {amount: 1000}]}, {status: "ok"}],
+    [{txs: []}, {status: "empty"}],
+  ],
+}
+
+{
+  name: "a switch after a passThrough loop sees the input and the results",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "scored", passThrough: true, executionMode: "loop", fields: {s: "x * $nodes.input.weight"}},
+      {switch: "s", when: ["sum(map(scored, #.s)) > limit", ""]},
+      {expression: "over", fields: {over: "true", limit: "limit"}},
+      {expression: "under", fields: {over: "false", n: "len(items)"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> over -> output", "s:1 -> under -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}, {x: 3}], weight: 2, limit: 10}, {over: true, limit: 10}],
+    [{items: [{x: 1}, {x: 2}, {x: 3}], weight: 1, limit: 10}, {over: false, n: 3}],
+    [{items: [], weight: 1, limit: 0}, {over: false, n: 0}],
+  ],
+}
+
+{
+  name: "a switch after a loop without outputPath sees an array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", executionMode: "loop", fields: {v: "$root"}},
+      {switch: "s", when: ["len($root) > 1", ""]},
+      {expression: "many", fields: {r: "'many'"}},
+      {expression: "few", fields: {r: "'few'"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> many -> output", "s:1 -> few -> output"],
+  },
+  cases: [
+    [{items: [1, 2]}, {r: "many"}],
+    [{items: [1]}, {r: "few"}],
+    [{items: []}, {r: "few"}],
+  ],
+}
+
+{
+  name: "a switch on a table-loop result picks per-batch handling",
+  graph: {
+    nodes: [
+      {table: "grade", inputField: "students", outputPath: "grades", passThrough: true, executionMode: "loop", inputs: ["score"], outputs: ["g"], rules: [
+        [">= 50", "'pass'"],
+        ["", "'fail'"],
+      ]},
+      {switch: "s", when: ["all(grades, #.g == 'pass')", "none(grades, #.g == 'pass')", ""]},
+      {expression: "allPass", fields: {batch: "'all'", class: "class"}},
+      {expression: "allFail", fields: {batch: "'none'", class: "class"}},
+      {expression: "mixed", fields: {batch: "'mixed'", failed: "len(filter(grades, #.g == 'fail'))"}},
+    ],
+    edges: ["input -> grade -> s", "s:0 -> allPass -> output", "s:1 -> allFail -> output", "s:2 -> mixed -> output"],
+  },
+  cases: [
+    [{class: "x", students: [{score: 50}, {score: 99}]}, {batch: "all", class: "x"}],
+    [{class: "y", students: [{score: 1}, {score: 49}]}, {batch: "none", class: "y"}],
+    [{class: "z", students: [{score: 1}, {score: 60}, {score: 2}]}, {batch: "mixed", failed: 2}],
+    [{class: "e", students: []}, {batch: "all", class: "e"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Sub-decisions on switch branches: each branch calls a different child, or the same child
+// with different transforms.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "each branch calls a different sub-decision",
+  decisions: {
+    retail: {nodes: [{expression: "e", fields: {fee: "amount * 0.03", plan: "'retail'"}}]},
+    business: {nodes: [{table: "t", inputs: ["amount"], outputs: ["fee"], rules: [
+      ["> 10000", "50"],
+      ["", "amount * 0.01"],
+    ]}, {expression: "tag", passThrough: true, fields: {plan: "'business'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["segment == 'business'", ""]},
+      {decision: "biz", key: "business"},
+      {decision: "ret", key: "retail"},
+    ],
+    edges: ["input -> s", "s:0 -> biz -> output", "s:1 -> ret -> output"],
+  },
+  cases: [
+    [{segment: "business", amount: 20000}, {fee: 50, plan: "business"}],
+    [{segment: "business", amount: 1000}, {fee: 10, plan: "business"}],
+    [{segment: "retail", amount: 1000}, {fee: 30, plan: "retail"}],
+    [{amount: 100}, {fee: 3, plan: "retail"}],
+  ],
+}
+
+{
+  name: "the same sub-decision on two branches with different inputFields",
+  decisions: {
+    addr: {nodes: [{expression: "fmt", fields: {line: "street + ', ' + city"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["shipTo == 'billing'", ""]},
+      {decision: "bill", key: "addr", inputField: "billing", outputPath: "label"},
+      {decision: "ship", key: "addr", inputField: "shipping", outputPath: "label"},
+    ],
+    edges: ["input -> s", "s:0 -> bill -> output", "s:1 -> ship -> output"],
+  },
+  cases: [
+    [{shipTo: "billing", billing: {street: "1 Main", city: "A"}, shipping: {street: "2 Side", city: "B"}}, {label: {line: "1 Main, A"}}],
+    [{shipTo: "shipping", billing: {street: "1 Main", city: "A"}, shipping: {street: "2 Side", city: "B"}}, {label: {line: "2 Side, B"}}],
+    [{billing: {street: "1 Main", city: "A"}, shipping: {street: "9 Far", city: "C"}}, {label: {line: "9 Far, C"}}],
+  ],
+}
+
+{
+  name: "a sub-decision on a pruned branch with a missing key is never loaded",
+  decisions: {
+    present: {nodes: [{expression: "e", fields: {r: "'present'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["usePresent", ""]},
+      {decision: "a", key: "present"},
+      {decision: "b", key: "absent"},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{usePresent: true}, {r: "present"}],
+    [{usePresent: false}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a sub-decision with passThrough on a branch, then a second switch",
+  decisions: {
+    risk: {nodes: [{expression: "e", fields: {risk: "min([1, claims * 0.25])"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["insured", ""]},
+      {decision: "assess", key: "risk", passThrough: true},
+      {expression: "uninsured", passThrough: true, fields: {risk: "1"}},
+      {switch: "s2", when: ["risk >= 1", "risk >= 0.5", ""]},
+      {expression: "deny", fields: {r: "'deny'", risk: "risk"}},
+      {expression: "refer", fields: {r: "'refer'", risk: "risk"}},
+      {expression: "accept", fields: {r: "'accept'", risk: "risk"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> assess -> s2", "s1:1 -> uninsured -> s2",
+      "s2:0 -> deny -> output", "s2:1 -> refer -> output", "s2:2 -> accept -> output",
+    ],
+  },
+  cases: [
+    [{insured: true, claims: 0}, {r: "accept", risk: 0}],
+    [{insured: true, claims: 2}, {r: "refer", risk: 0.5}],
+    [{insured: true, claims: 9}, {r: "deny", risk: 1}],
+    [{insured: false, claims: 0}, {r: "deny", risk: 1}],
+  ],
+}
+
+{
+  name: "a sub-decision loop on one branch, a single call on the other",
+  decisions: {
+    price: {nodes: [{expression: "e", fields: {p: "base * 1.1"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["batch", ""]},
+      {decision: "many", key: "price", inputField: "items", outputPath: "prices", executionMode: "loop"},
+      {decision: "one", key: "price", inputField: "item", outputPath: "prices"},
+    ],
+    edges: ["input -> s", "s:0 -> many -> output", "s:1 -> one -> output"],
+  },
+  cases: [
+    [{batch: true, items: [{base: 10}, {base: 20}]}, {prices: [{p: 11}, {p: 22}]}],
+    [{batch: false, item: {base: 100}}, {prices: {p: 110}}],
+    [{batch: true, items: []}, {prices: []}],
+  ],
+}
+
+{
+  name: "collect branches call two sub-decisions that write disjoint keys",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {l: "v + 1"}}]},
+    right: {nodes: [{expression: "e", fields: {r: "v - 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["v > 0", "v < 10"]},
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{v: 5}, {l: 6, r: 4}],
+    [{v: 20}, {l: 21}],
+    [{v: -5}, {r: -6}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Switches inside sub-decisions: the child routes on its own input; the parent sees only
+// the child's result.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a child with a switch called once through an inputField",
+  decisions: {
+    classify: {
+      nodes: [
+        {switch: "s", when: ["age >= 65", "age >= 18", ""]},
+        {expression: "senior", fields: {group: "'senior'"}},
+        {expression: "adult", fields: {group: "'adult'"}},
+        {expression: "minor", fields: {group: "'minor'"}},
+      ],
+      edges: ["input -> s", "s:0 -> senior -> output", "s:1 -> adult -> output", "s:2 -> minor -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "classify", inputField: "person", outputPath: "person", passThrough: true}],
+  },
+  cases: [
+    [{person: {age: 70, name: "a"}, id: 1}, {person: {age: 70, name: "a", group: "senior"}, id: 1}],
+    [{person: {age: 18}}, {person: {age: 18, group: "adult"}}],
+    [{person: {}}, {person: {group: "minor"}}],
+  ],
+}
+
+{
+  name: "a child whose switch matches nothing returns an empty result",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["n > 0"]},
+        {expression: "pos", fields: {pos: "true"}},
+      ],
+      edges: ["input -> s", "s:0 -> pos -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "res", passThrough: true}],
+  },
+  cases: [
+    [{n: 1}, {n: 1, res: {pos: true}}],
+    [{n: 0}, {n: 0, res: {}}],
+    [{}, {res: {}}],
+  ],
+}
+
+{
+  name: "a child switch routing per item in loop mode",
+  decisions: {
+    route: {
+      nodes: [
+        {switch: "s", when: ["type == 'refund'", "type == 'sale' and amount > 100", ""]},
+        {expression: "refund", fields: {sign: "-1", amount: "amount"}},
+        {expression: "big", fields: {sign: "1", amount: "amount", review: "true"}},
+        {expression: "sale", fields: {sign: "1", amount: "amount"}},
+      ],
+      edges: ["input -> s", "s:0 -> refund -> output", "s:1 -> big -> output", "s:2 -> sale -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "route", inputField: "txs", outputPath: "routed", executionMode: "loop"},
+      {expression: "net", fields: {net: "sum(map(routed, #.sign * #.amount))", reviews: "len(filter(routed, #.review == true))"}},
+    ],
+  },
+  cases: [
+    [{txs: [{type: "sale", amount: 50}, {type: "refund", amount: 20}, {type: "sale", amount: 200}]}, {net: 230, reviews: 1}],
+    [{txs: [{type: "refund", amount: 500}]}, {net: -500, reviews: 0}],
+    [{txs: [{type: "other", amount: 1000}]}, {net: 1000, reviews: 0}],
+    [{txs: []}, {net: 0, reviews: 0}],
+  ],
+}
+
+{
+  name: "a child collect switch per item",
+  decisions: {
+    tags: {
+      nodes: [
+        {switch: "s", hit: "collect", when: ["price > 100", "stock == 0", "onSale"]},
+        {expression: "a", fields: {premium: "true"}},
+        {expression: "b", fields: {soldOut: "true"}},
+        {expression: "c", fields: {sale: "true"}},
+      ],
+      edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "tags", inputField: "products", outputPath: "tags", executionMode: "loop"}],
+  },
+  cases: [
+    [{products: [{price: 200, stock: 0, onSale: true}, {price: 5, stock: 1}]}, {tags: [{premium: true, soldOut: true, sale: true}, {}]}],
+    [{products: [{price: 101, stock: 3}]}, {tags: [{premium: true}]}],
+  ],
+}
+
+{
+  name: "a child switch with no match per item yields empty objects",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["v > 0"]},
+        {expression: "pos", fields: {pos: "v"}},
+      ],
+      edges: ["input -> s", "s:0 -> pos -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 0}, {v: 2}]}, {out: [{pos: 1}, {}, {pos: 2}]}],
+    [{items: [{v: -1}]}, {out: [{}]}],
+  ],
+}
+
+{
+  name: "a parent switch routes on what a child switch decided",
+  decisions: {
+    tier: {
+      nodes: [
+        {switch: "s", when: ["spend >= 1000", "spend >= 100", ""]},
+        {expression: "gold", fields: {tier: "'gold'"}},
+        {expression: "silver", fields: {tier: "'silver'"}},
+        {expression: "bronze", fields: {tier: "'bronze'"}},
+      ],
+      edges: ["input -> s", "s:0 -> gold -> output", "s:1 -> silver -> output", "s:2 -> bronze -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "tier", passThrough: true},
+      {switch: "s", when: ["tier == 'gold'", ""]},
+      {expression: "vip", fields: {lounge: "true", tier: "tier"}},
+      {expression: "reg", fields: {lounge: "false", tier: "tier"}},
+    ],
+    edges: ["input -> call -> s", "s:0 -> vip -> output", "s:1 -> reg -> output"],
+  },
+  cases: [
+    [{spend: 1000}, {lounge: true, tier: "gold"}],
+    [{spend: 999}, {lounge: false, tier: "silver"}],
+    [{spend: 0}, {lounge: false, tier: "bronze"}],
+    [{}, {lounge: false, tier: "bronze"}],
+  ],
+}
+
+{
+  name: "switches nested across two sub-decision levels",
+  decisions: {
+    outer: {
+      nodes: [
+        {switch: "s", when: ["domestic", ""]},
+        {decision: "dom", key: "inner"},
+        {expression: "intl", fields: {rate: "25"}},
+      ],
+      edges: ["input -> s", "s:0 -> dom -> output", "s:1 -> intl -> output"],
+    },
+    inner: {
+      nodes: [
+        {switch: "s", when: ["express", ""]},
+        {expression: "fast", fields: {rate: "15"}},
+        {expression: "slow", fields: {rate: "5"}},
+      ],
+      edges: ["input -> s", "s:0 -> fast -> output", "s:1 -> slow -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["free", ""]},
+      {expression: "zero", fields: {rate: "0"}},
+      {decision: "call", key: "outer"},
+    ],
+    edges: ["input -> s", "s:0 -> zero -> output", "s:1 -> call -> output"],
+  },
+  cases: [
+    [{free: true, domestic: true, express: true}, {rate: 0}],
+    [{domestic: true, express: true}, {rate: 15}],
+    [{domestic: true}, {rate: 5}],
+    [{domestic: false, express: true}, {rate: 25}],
+  ],
+}
+
+{
+  name: "a child switch reading $nodes sees only the child's nodes",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "own", fields: {k: "1"}},
+        {switch: "s", when: ["$nodes.own.k == 1 and $nodes.parentNode == null", ""]},
+        {expression: "isolated", fields: {r: "'isolated'"}},
+        {expression: "leaked", fields: {r: "'leaked'"}},
+      ],
+      edges: ["input -> own -> s", "s:0 -> isolated -> output", "s:1 -> leaked -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {expression: "parentNode", passThrough: true, fields: {p: "1"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{}, {r: "isolated"}],
+    [{x: 1}, {r: "isolated"}],
+  ],
+}
+
+{
+  name: "a child switch reading $nodes.input sees the child's input",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "drop", fields: {only: "1"}},
+        {switch: "s", when: ["$nodes.input.flag", ""]},
+        {expression: "y", fields: {r: "'flag'"}},
+        {expression: "n", fields: {r: "'no flag'"}},
+      ],
+      edges: ["input -> drop -> s", "s:0 -> y -> output", "s:1 -> n -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: {flag: true}, flag: false}, {r: "flag"}],
+    [{sub: {flag: false}, flag: true}, {r: "no flag"}],
+    [{sub: {}, flag: true}, {r: "no flag"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// passThrough, inputField and outputPath on the nodes of switch branches.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "branches writing under different outputPaths",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["ok", ""]},
+      {expression: "good", outputPath: "result.success", fields: {code: "200"}},
+      {expression: "bad", outputPath: "result.failure", fields: {code: "500"}},
+    ],
+    edges: ["input -> s", "s:0 -> good -> output", "s:1 -> bad -> output"],
+  },
+  cases: [
+    [{ok: true}, {result: {success: {code: 200}}}],
+    [{ok: false}, {result: {failure: {code: 500}}}],
+    [{}, {result: {failure: {code: 500}}}],
+  ],
+}
+
+{
+  name: "collect branches writing under a shared outputPath prefix deep-merge",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", ""]},
+      {expression: "fa", outputPath: "flags.a", fields: {on: "true"}},
+      {expression: "fb", outputPath: "flags.b", fields: {on: "true"}},
+      {expression: "fz", outputPath: "flags", fields: {count: "(a ? 1 : 0) + (b ? 1 : 0)"}},
+    ],
+    edges: ["input -> s", "s:0 -> fa -> output", "s:1 -> fb -> output", "s:2 -> fz -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {flags: {a: {on: true}, b: {on: true}, count: 2}}],
+    [{a: true, b: false}, {flags: {a: {on: true}, count: 1}}],
+    [{a: false, b: false}, {flags: {count: 0}}],
+  ],
+}
+
+{
+  name: "passThrough branches with outputPath keep the input",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["kind == 'p'", ""]},
+      {expression: "person", passThrough: true, outputPath: "meta", fields: {label: "first + ' ' + last"}},
+      {expression: "company", passThrough: true, outputPath: "meta", fields: {label: "upper(name)"}},
+    ],
+    edges: ["input -> s", "s:0 -> person -> output", "s:1 -> company -> output"],
+  },
+  cases: [
+    [{kind: "p", first: "a", last: "b"}, {kind: "p", first: "a", last: "b", meta: {label: "a b"}}],
+    [{kind: "c", name: "acme"}, {kind: "c", name: "acme", meta: {label: "ACME"}}],
+    [{kind: "c", name: "acme", meta: {id: 7}}, {kind: "c", name: "acme", meta: {id: 7, label: "ACME"}}],
+  ],
+}
+
+{
+  name: "branches with inputField select different parts of the switch input",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["side == 'buy'", ""]},
+      {expression: "buy", inputField: "bid", fields: {px: "price", qty: "size"}},
+      {expression: "sell", inputField: "ask", fields: {px: "price", qty: "size"}},
+    ],
+    edges: ["input -> s", "s:0 -> buy -> output", "s:1 -> sell -> output"],
+  },
+  cases: [
+    [{side: "buy", bid: {price: 99, size: 1}, ask: {price: 101, size: 2}}, {px: 99, qty: 1}],
+    [{side: "sell", bid: {price: 99, size: 1}, ask: {price: 101, size: 2}}, {px: 101, qty: 2}],
+    [{side: "sell", bid: {price: 99, size: 1}}, {}],
+  ],
+}
+
+{
+  name: "a branch with inputField, outputPath and passThrough writes back in place",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["normalize", ""]},
+      {expression: "norm", inputField: "addr", outputPath: "addr", passThrough: true, fields: {city: "upper(city)", zip: "trim(zip)"}},
+    ],
+    edges: ["input -> s", "s:0 -> norm -> output", "s:1 -> output"],
+  },
+  cases: [
+    [{normalize: true, addr: {city: "paris", zip: " 75 ", line: "x"}}, {normalize: true, addr: {city: "PARIS", zip: "75", line: "x"}}],
+    [{normalize: false, addr: {city: "paris", zip: " 75 "}}, {normalize: false, addr: {city: "paris", zip: " 75 "}}],
+  ],
+}
+
+{
+  name: "a node with outputPath before the switch: conditions read through the path",
+  graph: {
+    nodes: [
+      {expression: "calc", outputPath: "calc", passThrough: true, fields: {total: "a + b"}},
+      {switch: "s", when: ["calc.total > 10", "total != null", ""]},
+      {expression: "big", fields: {r: "'big'", t: "calc.total"}},
+      {expression: "flat", fields: {r: "'flat'"}},
+      {expression: "small", fields: {r: "'small'", t: "calc.total"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> big -> output", "s:1 -> flat -> output", "s:2 -> small -> output"],
+  },
+  cases: [
+    [{a: 10, b: 1}, {r: "big", t: 11}],
+    [{a: 1, b: 1}, {r: "small", t: 2}],
+    [{a: 1, b: 1, total: 99}, {r: "flat"}],
+  ],
+}
+
+{
+  name: "a table with outputPath on each of two branches converging on one node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["country == 'US'", ""]},
+      {table: "us", outputPath: "tax", inputs: ["state"], outputs: ["rate"], rules: [
+        ["'CA'", "0.07"],
+        ["", "0.05"],
+      ]},
+      {table: "eu", outputPath: "tax", inputs: ["country"], outputs: ["rate"], rules: [
+        ["'DE'", "0.19"],
+        ["'FR'", "0.2"],
+      ]},
+      {expression: "final", fields: {rate: "tax.rate ?? 0", hasRate: "tax != null"}},
+    ],
+    edges: ["input -> s", "s:0 -> us -> final", "s:1 -> eu -> final", "final -> output"],
+  },
+  cases: [
+    [{country: "US", state: "CA"}, {rate: 0.07, hasRate: true}],
+    [{country: "US", state: "NV"}, {rate: 0.05, hasRate: true}],
+    [{country: "DE"}, {rate: 0.19, hasRate: true}],
+    [{country: "JP"}, {rate: 0, hasRate: false}],
+  ],
+}
+
+{
+  name: "a switch passes a non-object input from a loop straight to a branch",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", executionMode: "loop", fields: {v: "$root"}},
+      {switch: "s", when: ["len($root) > 0", ""]},
+      {expression: "count", fields: {n: "len($root)"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> count -> output", "s:1 -> output"],
+  },
+  cases: [
+    [{items: [1, 2]}, {n: 2}],
+    [{items: []}, []],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Loops whose bodies route through a switch in a child, combined with transforms on the
+// parent: passThrough over items, and a second loop after the routed one.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a child switch per item with passThrough enriches each item",
+  decisions: {
+    band: {
+      nodes: [
+        {switch: "s", when: ["score >= 80", "score >= 50", ""]},
+        {expression: "a", fields: {band: "'A'"}},
+        {expression: "b", fields: {band: "'B'"}},
+        {expression: "c", fields: {band: "'C'"}},
+      ],
+      edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "band", inputField: "rows", outputPath: "rows", passThrough: true, executionMode: "loop"}],
+  },
+  cases: [
+    [{rows: [{id: 1, score: 90}, {id: 2, score: 50}, {id: 3, score: 0}]}, {rows: [{id: 1, score: 90, band: "A"}, {id: 2, score: 50, band: "B"}, {id: 3, score: 0, band: "C"}]}],
+    [{rows: [{id: 1}]}, {rows: [{id: 1, band: "C"}]}],
+    [{rows: [], keep: true}, {rows: [], keep: true}],
+  ],
+}
+
+{
+  name: "a routed loop followed by a second loop over its results",
+  decisions: {
+    route: {
+      nodes: [
+        {switch: "s", when: ["qty > 10", ""]},
+        {expression: "bulk", fields: {unit: "price * 0.9", qty: "qty"}},
+        {expression: "retail", fields: {unit: "price", qty: "qty"}},
+      ],
+      edges: ["input -> s", "s:0 -> bulk -> output", "s:1 -> retail -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "priced", key: "route", inputField: "lines", outputPath: "priced", executionMode: "loop"},
+      {expression: "totals", inputField: "priced", outputPath: "totals", executionMode: "loop", fields: {t: "unit * qty"}},
+    ],
+  },
+  cases: [
+    [{lines: [{price: 10, qty: 20}, {price: 10, qty: 1}]}, {totals: [{t: 180}, {t: 10}]}],
+    [{lines: []}, {totals: []}],
+  ],
+}
+
+{
+  name: "a switch inside a loop child fails for one item and fails the parent",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["ok", ""]},
+        {expression: "good", fields: {r: "'ok'"}},
+        {custom: "bad", kind: "fail", config: {message: "item rejected"}},
+      ],
+      edges: ["input -> s", "s:0 -> good -> output", "s:1 -> bad -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{ok: true}, {ok: true}]}, {out: [{r: "ok"}, {r: "ok"}]}],
+    [{items: [{ok: true}, {ok: false}]}, "!error"],
+    [{items: []}, {out: []}],
+  ],
+}

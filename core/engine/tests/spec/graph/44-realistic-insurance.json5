@@ -1,0 +1,363 @@
+// Realistic insurance decisions modelled on the shapes of the published sample graphs: chained
+// pass-through tables writing dotted outputs, expression nodes reading `$` for their own earlier
+// keys, column-less rule tables relaying an earlier verdict, collect tables under an outputPath,
+// switch gates in front of the pricing path, loops over per-item tables and `$nodes` reads.
+// Each suite is one decision exercised across main paths, boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Auto premium: driver risk (input column is an expression over two history fields), base premium
+// with `$` self-references, vehicle and coverage factors, then the final product.
+{
+  name: "auto premium: driver, vehicle and coverage factors over a base premium",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {table: "driverRisk", passThrough: true, inputs: ["customer.age", "customer.history.accidents + customer.history.violations"], outputs: ["risk.age", "risk.category"], rules: [
+        ["< 25", "> 1", "1.5", "'high'"],
+        ["< 25", "", "1.3", "'elevated'"],
+        ["[25..69]", "> 2", "1.4", "'high'"],
+        ["[25..69]", "[1..2]", "1.1", "'moderate'"],
+        ["[25..69]", "", "1", "'low'"],
+        [">= 70", "", "1.25", "'elevated'"],
+      ]},
+      {expression: "basePremium", passThrough: true, fields: {
+        "premium.perThousand": "5.5",
+        "premium.units": "policy.coverage / 1000",
+        "premium.base": "$.premium.perThousand * $.premium.units",
+      }},
+      {table: "vehicleRisk", passThrough: true, inputs: ["policy.vehicle", "policy.vehicleAge"], outputs: ["risk.vehicle"], rules: [
+        ["'sedan'", "< 3", "0.9"],
+        ["'sedan'", "", "1"],
+        ["'suv'", "< 5", "1.1"],
+        ["'suv'", "", "1.2"],
+        ["'sports'", "", "1.6"],
+        ["", "", "1.3"],
+      ]},
+      {table: "coverageFactor", passThrough: true, inputs: ["policy.coverageType", "policy.deductible"], outputs: ["risk.coverage"], rules: [
+        ["'basic'", ">= 1000", "0.8"],
+        ["'basic'", "", "0.9"],
+        ["'full'", ">= 1000", "1.1"],
+        ["'full'", "", "1.25"],
+      ]},
+      {expression: "final", fields: {
+        category: "risk.category",
+        premium: "round(premium.base * risk.age * risk.vehicle * risk.coverage, 2)",
+        monthly: "round($.premium / 12, 2)",
+      }},
+      {output: "response"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, history: {accidents: 0, violations: 0}}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 2, coverageType: "basic", deductible: 1000}}, {category: "low", premium: 396, monthly: 33}],
+    [{customer: {age: 22, history: {accidents: 1, violations: 1}}, policy: {coverage: 200000, vehicle: "suv", vehicleAge: 3, coverageType: "full", deductible: 500}}, {category: "high", premium: 2268.75, monthly: 189.06}],
+    [{customer: {age: 24, history: {accidents: 1, violations: 0}}, policy: {coverage: 50000, vehicle: "sports", vehicleAge: 1, coverageType: "basic", deductible: 500}}, {category: "elevated", premium: 514.8, monthly: 42.9}],
+    [{customer: {age: 25, history: {accidents: 2, violations: 1}}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 3, coverageType: "full", deductible: 1000}}, {category: "high", premium: 847, monthly: 70.58}],
+    [{customer: {age: 69, history: {accidents: 0, violations: 2}}, policy: {coverage: 150000, vehicle: "truck", vehicleAge: 8, coverageType: "basic", deductible: 2500}}, {category: "moderate", premium: 943.8, monthly: 78.65}],
+    [{customer: {age: 70, history: {accidents: 4, violations: 4}}, policy: {coverage: 100000, vehicle: "suv", vehicleAge: 5, coverageType: "full", deductible: 0}}, {category: "elevated", premium: 1031.25, monthly: 85.94}],
+    [{customer: {age: 40, history: {accidents: 0, violations: 0}}, policy: {coverage: 0, vehicle: "sedan", vehicleAge: 1, coverageType: "basic", deductible: 1000}}, {category: "low", premium: 0, monthly: 0}],
+    [{customer: {age: 40, history: {accidents: 0, violations: 0}}, policy: {coverage: 1234567, vehicle: "sedan", vehicleAge: 10, coverageType: "full", deductible: 999.99}}, {category: "low", premium: 8487.65, monthly: 707.3}],
+    // Missing or mistyped data: a missing history sums null and errors in the input column, so
+    // the age-only rules decide; a missing age matches no rule and the final product errors.
+    [{customer: {age: 30}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 2, coverageType: "basic", deductible: 1000}}, {category: "low", premium: 396, monthly: 33}],
+    [{customer: {history: {accidents: 0, violations: 0}}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 2, coverageType: "basic", deductible: 1000}}, "!error"],
+    [{customer: {age: 30, history: {accidents: 0, violations: 0}}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 2, coverageType: "gold", deductible: 1000}}, "!error"],
+    [{customer: {age: 30, history: {accidents: 0, violations: 0}}, policy: {coverage: "100000", vehicle: "sedan", vehicleAge: 2, coverageType: "basic", deductible: 1000}}, "!error"],
+    [{customer: {age: 30, history: {accidents: 0, violations: 0}}, policy: {coverage: 100000, vehicle: "sedan", coverageType: "basic", deductible: 1000}}, {category: "low", premium: 440, monthly: 36.67}],
+    [{customer: {age: "30", history: {accidents: 0, violations: 0}}, policy: {coverage: 100000, vehicle: "sedan", vehicleAge: 2, coverageType: "basic", deductible: 1000}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Life underwriting: a collect table gathers risk factors under `riskFactors`, an expression sums
+// them, a first-hit referral table decides, and a last expression shapes the answer.
+{
+  name: "life underwriting: collected risk factors drive a referral decision",
+  graph: {
+    nodes: [
+      {input: "application"},
+      {table: "riskFactors", hit: "collect", outputPath: "riskFactors", passThrough: true, inputs: ["answers.medical", "answers.hospitalized", "answers.conditions", "answers.occupation", "answers.age"], outputs: ["points", "description"], rules: [
+        ["true", "", "", "", "", "10", "'high risk medical condition'"],
+        ["", "true", "", "", "", "5", "'recent hospitalization'"],
+        ["", "", "> 2", "", "", "7", "'multiple pre-existing conditions'"],
+        ["", "", "", "'diver', 'pilot', 'miner'", "", "8", "'hazardous occupation'"],
+        ["", "", "", "", "> 60", "6", "'age over 60'"],
+        ["", "", "", "", "< 18", "100", "'minor'"],
+      ]},
+      {expression: "score", passThrough: true, fields: {
+        totalScore: "sum(map(riskFactors ?? [], #.points))",
+        reasons: "map(riskFactors ?? [], #.description)",
+      }},
+      {table: "referral", passThrough: true, inputs: ["answers.coverage", "totalScore", "answers.incomplete"], outputs: ["underwriting.manualReview", "underwriting.reason", "underwriting.class"], rules: [
+        ["> 1500000", "", "", "true", "'coverage above automatic limit'", "'referred'"],
+        ["", ">= 20", "", "true", "'risk score'", "'referred'"],
+        ["", "", "true", "true", "'incomplete application'", "'referred'"],
+        ["", "[10..19]", "", "false", "'rated'", "'substandard'"],
+        ["", "< 10", "", "false", "'clean'", "'standard'"],
+      ]},
+      {expression: "answer", fields: {decision: "underwriting", score: "totalScore", reasons: "reasons"}},
+    ],
+  },
+  cases: [
+    [{answers: {age: 35, coverage: 500000}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 40, coverage: 500000, medical: true}}, {decision: {manualReview: false, reason: "rated", class: "substandard"}, score: 10, reasons: ["high risk medical condition"]}],
+    [{answers: {age: 40, coverage: 500000, medical: true, hospitalized: true}}, {decision: {manualReview: false, reason: "rated", class: "substandard"}, score: 15, reasons: ["high risk medical condition", "recent hospitalization"]}],
+    [{answers: {age: 40, coverage: 500000, medical: true, hospitalized: true, conditions: 3}}, {decision: {manualReview: true, reason: "risk score", class: "referred"}, score: 22, reasons: ["high risk medical condition", "recent hospitalization", "multiple pre-existing conditions"]}],
+    [{answers: {age: 61, coverage: 250000, occupation: "pilot"}}, {decision: {manualReview: false, reason: "rated", class: "substandard"}, score: 14, reasons: ["hazardous occupation", "age over 60"]}],
+    [{answers: {age: 60, coverage: 250000, conditions: 2}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 35, coverage: 1500001}}, {decision: {manualReview: true, reason: "coverage above automatic limit", class: "referred"}, score: 0, reasons: []}],
+    [{answers: {age: 35, coverage: 1500000}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 35, coverage: 100000, incomplete: true}}, {decision: {manualReview: true, reason: "incomplete application", class: "referred"}, score: 0, reasons: []}],
+    [{answers: {age: 35, coverage: 100000, incomplete: true, medical: true, occupation: "miner", hospitalized: true}}, {decision: {manualReview: true, reason: "risk score", class: "referred"}, score: 23, reasons: ["high risk medical condition", "recent hospitalization", "hazardous occupation"]}],
+    [{answers: {age: 17, coverage: 100000}}, {decision: {manualReview: true, reason: "risk score", class: "referred"}, score: 100, reasons: ["minor"]}],
+    [{answers: {medical: true, hospitalized: true, conditions: 5, occupation: "diver", age: 70, coverage: 2000000}}, {decision: {manualReview: true, reason: "coverage above automatic limit", class: "referred"}, score: 36, reasons: ["high risk medical condition", "recent hospitalization", "multiple pre-existing conditions", "hazardous occupation", "age over 60"]}],
+    // Bad and missing answers: comparison cells against null or a string fail and do not count.
+    [{}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 40, coverage: 100000, conditions: "3"}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 40, coverage: 100000, occupation: "Pilot"}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+    [{answers: {age: 40, coverage: 100000, medical: "yes"}}, {decision: {manualReview: false, reason: "clean", class: "standard"}, score: 0, reasons: []}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Claim validation: three column-less tables, each relaying the previous verdict when it failed,
+// then an outcome expression. Dates arrive as plain strings.
+{
+  name: "claim validation: chained checks relay the first failure",
+  graph: {
+    nodes: [
+      {input: "claimRequest"},
+      {table: "details", passThrough: true, inputs: [null], outputs: ["validation.details.ok", "validation.details.reason"], rules: [
+        ["len(trim(claimNumber ?? '')) < 5", "false", "'claim number too short'"],
+        ["amount == null", "false", "'missing amount'"],
+        ["amount <= 0", "false", "'amount must be positive'"],
+        ["", "true", "'ok'"],
+      ]},
+      {table: "policyStatus", passThrough: true, inputs: [null], outputs: ["validation.policy.ok", "validation.policy.reason"], rules: [
+        ["!validation.details.ok", "false", "validation.details.reason"],
+        ["policy.status != 'active'", "false", "'policy ' + (policy.status ?? 'unknown')"],
+        ["", "true", "'ok'"],
+      ]},
+      {table: "timing", passThrough: true, inputs: [null], outputs: ["validation.timing.ok", "validation.timing.reason"], rules: [
+        ["!validation.policy.ok", "false", "validation.policy.reason"],
+        ["d(incidentDate).isBefore(d(policy.start)) or d(incidentDate).isAfter(d(policy.end))", "false", "'incident outside policy period'"],
+        ["d(reportedDate).diff(d(incidentDate), 'day') > 30", "false", "'reported too late'"],
+        ["d(reportedDate).isBefore(d(incidentDate))", "false", "'reported before incident'"],
+        ["", "true", "'ok'"],
+      ]},
+      {expression: "outcome", fields: {
+        valid: "validation.timing.ok",
+        message: "validation.timing.reason",
+        nextStep: "$.valid ? (amount > 10000 ? 'adjuster' : 'fast-track') : 'reject'",
+      }},
+    ],
+  },
+  cases: [
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "CLM-1001", amount: 25000, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "adjuster"}],
+    [{claimNumber: "CLM-1001", amount: 10000, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "C1", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "claim number too short", nextStep: "reject"}],
+    [{amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "lapsed", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "claim number too short", nextStep: "reject"}],
+    [{claimNumber: "  ab  cd  ", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "CLM-1001", incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "missing amount", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 0, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "amount must be positive", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: -5, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "amount must be positive", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "lapsed", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "policy lapsed", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "policy unknown", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-05"}, {valid: false, message: "policy unknown", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2024-05-31", reportedDate: "2024-06-02", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "incident outside policy period", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-05-31", reportedDate: "2025-06-02", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2024-06-01", reportedDate: "2024-06-01", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-03-31", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-04-01", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "reported too late", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: 2500, incidentDate: "2025-03-01", reportedDate: "2025-02-28", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: false, message: "reported before incident", nextStep: "reject"}],
+    [{claimNumber: "CLM-1001", amount: "2500", incidentDate: "2025-03-01", reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, "!error"],
+    // A missing incident date is an invalid date: every isBefore/isAfter is false and diff errors,
+    // so no failing rule fires and the claim validates. The decision has to check presence itself.
+    [{claimNumber: "CLM-1001", amount: 2500, reportedDate: "2025-03-05", policy: {status: "active", start: "2024-06-01", end: "2025-05-31"}}, {valid: true, message: "ok", nextStep: "fast-track"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Property claim payout: a switch denies inactive policies and uncovered perils, otherwise a
+// per-peril limits table feeds a payout capped by the limit and reduced by the deductible.
+{
+  name: "property coverage: peril limits, deductibles and capped payout",
+  graph: {
+    nodes: [
+      {switch: "gate", when: ["policy.status != 'active'", "not (peril in (policy.covered ?? []))", ""]},
+      {expression: "inactive", fields: {decision: "'denied'", reason: "'policy inactive'", payout: "0"}},
+      {expression: "excluded", fields: {decision: "'denied'", reason: "'peril not covered: ' + peril", payout: "0"}},
+      {table: "limits", passThrough: true, inputs: ["peril"], outputs: ["limit", "deductible"], rules: [
+        ["'fire'", "policy.dwelling", "policy.deductible"],
+        ["'water'", "min([policy.dwelling, 50000])", "policy.deductible * 2"],
+        ["'theft'", "policy.contents ?? 0", "policy.deductible"],
+        ["'wind', 'hail'", "policy.dwelling", "max([policy.deductible, round(policy.dwelling * 0.02)])"],
+      ]},
+      {expression: "payout", fields: {
+        payout: "max([0, min([loss, limit]) - deductible])",
+        capped: "loss > limit",
+        decision: "$.payout > 0 ? 'approved' : 'below deductible'",
+        reason: "'covered'",
+      }},
+    ],
+    edges: [
+      "input -> gate",
+      "gate:0 -> inactive -> output",
+      "gate:1 -> excluded -> output",
+      "gate:2 -> limits -> payout -> output",
+    ],
+  },
+  cases: [
+    [{peril: "fire", loss: 20000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 19000, capped: false, decision: "approved", reason: "covered"}],
+    [{peril: "fire", loss: 400000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 299000, capped: true, decision: "approved", reason: "covered"}],
+    [{peril: "fire", loss: 300000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 299000, capped: false, decision: "approved", reason: "covered"}],
+    [{peril: "water", loss: 70000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 48000, capped: true, decision: "approved", reason: "covered"}],
+    [{peril: "water", loss: 1500, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 0, capped: false, decision: "below deductible", reason: "covered"}],
+    [{peril: "theft", loss: 5000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 4000, capped: false, decision: "approved", reason: "covered"}],
+    [{peril: "theft", loss: 5000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, deductible: 1000}}, {payout: 0, capped: true, decision: "below deductible", reason: "covered"}],
+    [{peril: "wind", loss: 10000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 1000}}, {payout: 4000, capped: false, decision: "approved", reason: "covered"}],
+    [{peril: "hail", loss: 10000, policy: {status: "active", covered: ["fire", "water", "theft", "wind", "hail"], dwelling: 300000, contents: 80000, deductible: 10000}}, {payout: 0, capped: false, decision: "below deductible", reason: "covered"}],
+    [{peril: "wind", loss: 1500, policy: {status: "active", covered: ["wind"], dwelling: 30000, deductible: 1000}}, {payout: 500, capped: false, decision: "approved", reason: "covered"}],
+    [{peril: "fire", loss: 20000, policy: {status: "cancelled", covered: ["fire"], dwelling: 300000, deductible: 1000}}, {decision: "denied", reason: "policy inactive", payout: 0}],
+    [{peril: "fire", loss: 20000, policy: {covered: ["fire"], dwelling: 300000, deductible: 1000}}, {decision: "denied", reason: "policy inactive", payout: 0}],
+    [{peril: "flood", loss: 20000, policy: {status: "active", covered: ["fire", "water"], dwelling: 300000, deductible: 1000}}, {decision: "denied", reason: "peril not covered: flood", payout: 0}],
+    [{peril: "fire", loss: 20000, policy: {status: "active", dwelling: 300000, deductible: 1000}}, {decision: "denied", reason: "peril not covered: fire", payout: 0}],
+    // Missing peril: the exclusion reason concatenates null; missing or mistyped loss breaks min().
+    [{loss: 20000, policy: {status: "active", covered: ["fire"], dwelling: 300000, deductible: 1000}}, "!error"],
+    [{peril: "fire", policy: {status: "active", covered: ["fire"], dwelling: 300000, deductible: 1000}}, "!error"],
+    [{peril: "fire", loss: "20000", policy: {status: "active", covered: ["fire"], dwelling: 300000, deductible: 1000}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Household auto: a loop-mode table rates each vehicle, a join brings the request back, and an
+// expression applies a multi-car discount to the summed factors.
+{
+  name: "household auto: per-vehicle rating loop and multi-car discount",
+  graph: {
+    nodes: [
+      {table: "rates", executionMode: "loop", inputField: "vehicles", outputPath: "rates", inputs: ["type", "year", "usage"], outputs: ["factor", "class"], rules: [
+        ["'sports'", "", "", "1.8", "'A'"],
+        ["", "< 2010", "", "1.3", "'C'"],
+        ["", "", "'business'", "1.4", "'B'"],
+        ["'suv', 'truck'", "", "", "1.2", "'B'"],
+        ["", "", "", "1", "'D'"],
+      ]},
+      {expression: "household", fields: {
+        count: "len(vehicles)",
+        classes: "map(rates, #.class)",
+        discount: "len(vehicles) >= 3 ? 0.15 : (len(vehicles) == 2 ? 0.1 : 0)",
+        premium: "round(base * sum(map(rates, #.factor)) * (1 - $.discount), 2)",
+      }},
+    ],
+    edges: ["input -> rates -> household -> output", "input -> household"],
+  },
+  cases: [
+    [{base: 600, vehicles: [{type: "sedan", year: 2020, usage: "personal"}]}, {count: 1, classes: ["D"], discount: 0, premium: 600}],
+    [{base: 600, vehicles: [{type: "sedan", year: 2020, usage: "personal"}, {type: "sports", year: 2023, usage: "personal"}]}, {count: 2, classes: ["D", "A"], discount: 0.1, premium: 1512}],
+    [{base: 600, vehicles: [{type: "sedan", year: 2005, usage: "personal"}, {type: "suv", year: 2018, usage: "personal"}, {type: "sedan", year: 2022, usage: "business"}]}, {count: 3, classes: ["C", "B", "B"], discount: 0.15, premium: 1989}],
+    [{base: 600, vehicles: [{type: "sedan", year: 2020}, {type: "sedan", year: 2020}, {type: "sedan", year: 2020}, {type: "sedan", year: 2020}]}, {count: 4, classes: ["D", "D", "D", "D"], discount: 0.15, premium: 2040}],
+    [{base: 600, vehicles: []}, {count: 0, classes: [], discount: 0, premium: 0}],
+    [{base: 600, vehicles: [{type: "sedan", usage: "personal"}]}, {count: 1, classes: ["D"], discount: 0, premium: 600}],
+    [{base: 600, vehicles: [{type: "sedan", year: 2010, usage: "personal"}]}, {count: 1, classes: ["D"], discount: 0, premium: 600}],
+    [{base: 600, vehicles: [{type: "sedan", year: 2009, usage: "personal"}]}, {count: 1, classes: ["C"], discount: 0, premium: 780}],
+    [{base: 600, vehicles: [{type: "truck", year: 2015, usage: "business"}]}, {count: 1, classes: ["B"], discount: 0, premium: 840}],
+    [{base: 600, vehicles: [{type: "sports", year: 2005, usage: "business"}]}, {count: 1, classes: ["A"], discount: 0, premium: 1080}],
+    [{base: 600, vehicles: [{type: "SUV", year: 2015, usage: "personal"}]}, {count: 1, classes: ["D"], discount: 0, premium: 600}],
+    [{base: 599.99, vehicles: [{type: "suv", year: 2015}, {type: "sports", year: 2015}]}, {count: 2, classes: ["B", "A"], discount: 0.1, premium: 1619.97}],
+    [{vehicles: [{type: "sedan", year: 2020}]}, "!error"],
+    [{base: 600}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Health cost sharing: a network table picks coinsurance and the deductible multiplier, then one
+// expression walks deductible, coinsurance and the out-of-pocket maximum through `$`.
+{
+  name: "health claim: deductible, coinsurance and out-of-pocket maximum",
+  graph: {
+    nodes: [
+      {table: "network", passThrough: true, inputs: ["claim.network"], outputs: ["share.coinsurance", "share.deductibleMultiplier"], rules: [
+        ["'in'", "plan.coinsurance", "1"],
+        ["'out'", "plan.coinsurance * 2", "2"],
+        ["", "1", "1"],
+      ]},
+      {expression: "cost", fields: {
+        allowed: "min([claim.allowed ?? claim.billed, claim.billed])",
+        deductibleLeft: "max([0, plan.deductible * share.deductibleMultiplier - (ytd.deductiblePaid ?? 0)])",
+        toDeductible: "min([$.allowed, $.deductibleLeft])",
+        coins: "round(($.allowed - $.toDeductible) * share.coinsurance, 2)",
+        oopLeft: "max([0, plan.oopMax - (ytd.oopPaid ?? 0)])",
+        patient: "min([$.toDeductible + $.coins, $.oopLeft])",
+        insurer: "$.allowed - $.patient",
+      }},
+    ],
+  },
+  cases: [
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 500, allowed: 400}}, {allowed: 400, deductibleLeft: 1000, toDeductible: 400, coins: 0, oopLeft: 5000, patient: 400, insurer: 0}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 3000, allowed: 2500}, ytd: {deductiblePaid: 1000, oopPaid: 1000}}, {allowed: 2500, deductibleLeft: 0, toDeductible: 0, coins: 500, oopLeft: 4000, patient: 500, insurer: 2000}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 3000, allowed: 2500}, ytd: {deductiblePaid: 600, oopPaid: 600}}, {allowed: 2500, deductibleLeft: 400, toDeductible: 400, coins: 420, oopLeft: 4400, patient: 820, insurer: 1680}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 20000, allowed: 18000}, ytd: {deductiblePaid: 1000, oopPaid: 4800}}, {allowed: 18000, deductibleLeft: 0, toDeductible: 0, coins: 3600, oopLeft: 200, patient: 200, insurer: 17800}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 1000, allowed: 800}, ytd: {deductiblePaid: 1000, oopPaid: 5200}}, {allowed: 800, deductibleLeft: 0, toDeductible: 0, coins: 160, oopLeft: 0, patient: 0, insurer: 800}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "out", billed: 2000}}, {allowed: 2000, deductibleLeft: 2000, toDeductible: 2000, coins: 0, oopLeft: 5000, patient: 2000, insurer: 0}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "out", billed: 5000, allowed: 4000}, ytd: {deductiblePaid: 2000, oopPaid: 2000}}, {allowed: 4000, deductibleLeft: 0, toDeductible: 0, coins: 1600, oopLeft: 3000, patient: 1600, insurer: 2400}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {billed: 3000, allowed: 3000}}, {allowed: 3000, deductibleLeft: 1000, toDeductible: 1000, coins: 2000, oopLeft: 5000, patient: 3000, insurer: 0}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 100, allowed: 150}}, {allowed: 100, deductibleLeft: 1000, toDeductible: 100, coins: 0, oopLeft: 5000, patient: 100, insurer: 0}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 0, allowed: 0}}, {allowed: 0, deductibleLeft: 1000, toDeductible: 0, coins: 0, oopLeft: 5000, patient: 0, insurer: 0}],
+    [{plan: {deductible: 1000, coinsurance: 0.25, oopMax: 5000}, claim: {network: "in", billed: 400, allowed: 333.33}, ytd: {deductiblePaid: 1000}}, {allowed: 333.33, deductibleLeft: 0, toDeductible: 0, coins: 83.33, oopLeft: 5000, patient: 83.33, insurer: 250}],
+    [{plan: {deductible: 1000, coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", allowed: 400}}, "!error"],
+    [{plan: {deductible: "1000", coinsurance: 0.2, oopMax: 5000}, claim: {network: "in", billed: 500, allowed: 400}}, "!error"],
+    [{plan: {deductible: 1000, oopMax: 5000}, claim: {network: "in", billed: 3000, allowed: 3000}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Claims triage: collected fraud indicators are scored, a first-hit switch sends high scores to
+// SIU and small clean claims to fast-track, everything else is classed by severity; the severity
+// branch reads the score back through `$nodes`.
+{
+  name: "claims triage: fraud indicators, fast-track and severity routing",
+  graph: {
+    nodes: [
+      {table: "indicators", hit: "collect", outputPath: "flags", passThrough: true, inputs: ["claim.daysSincePolicyStart", "claim.priorClaims", "claim.amount", "claim.policeReport", "claim.witnesses"], outputs: ["code", "weight"], rules: [
+        ["< 30", "", "", "", "", "'new_policy'", "30"],
+        ["", ">= 3", "", "", "", "'frequent_claimant'", "25"],
+        ["", "", "> 50000", "false", "", "'large_no_report'", "35"],
+        ["", "", "", "", "== 0", "'no_witnesses'", "10"],
+      ]},
+      {expression: "fraud", passThrough: true, fields: {fraudScore: "sum(map(flags, #.weight))", codes: "map(flags, #.code)"}},
+      {switch: "route", when: ["fraudScore >= 50", "claim.amount <= 2000 and len(flags) == 0", ""]},
+      {expression: "siu", fields: {queue: "'SIU'", score: "fraudScore", codes: "codes"}},
+      {expression: "fastTrack", fields: {queue: "'fast-track'", score: "fraudScore", autoPay: "claim.amount"}},
+      {table: "severity", inputs: ["claim.amount", "claim.injury"], outputs: ["queue", "level"], rules: [
+        ["", "true", "'bodily-injury'", "3"],
+        ["> 25000", "", "'complex'", "2"],
+        ["", "", "'standard'", "1"],
+      ]},
+      {expression: "assign", fields: {queue: "queue", level: "level", score: "$nodes.fraud.fraudScore"}},
+    ],
+    edges: [
+      "input -> indicators -> fraud -> route",
+      "route:0 -> siu -> output",
+      "route:1 -> fastTrack -> output",
+      "route:2 -> severity -> assign -> output",
+    ],
+  },
+  cases: [
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 1500, policeReport: true, witnesses: 1}}, {queue: "fast-track", score: 0, autoPay: 1500}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 2000, policeReport: true, witnesses: 1}}, {queue: "fast-track", score: 0, autoPay: 2000}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 2001, policeReport: true, witnesses: 1}}, {queue: "standard", level: 1, score: 0}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 30000, policeReport: true, witnesses: 1}}, {queue: "complex", level: 2, score: 0}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 30000, policeReport: true, witnesses: 1, injury: true}}, {queue: "bodily-injury", level: 3, score: 0}],
+    [{claim: {daysSincePolicyStart: 10, priorClaims: 0, amount: 1500, policeReport: true, witnesses: 1}}, {queue: "standard", level: 1, score: 30}],
+    [{claim: {daysSincePolicyStart: 10, priorClaims: 3, amount: 1500, policeReport: true, witnesses: 1}}, {queue: "SIU", score: 55, codes: ["new_policy", "frequent_claimant"]}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 1, amount: 60000, policeReport: false, witnesses: 0}}, {queue: "complex", level: 2, score: 45}],
+    [{claim: {daysSincePolicyStart: 29, priorClaims: 1, amount: 60000, policeReport: false, witnesses: 0}}, {queue: "SIU", score: 75, codes: ["new_policy", "large_no_report", "no_witnesses"]}],
+    [{claim: {daysSincePolicyStart: 30, priorClaims: 2, amount: 1000, policeReport: true, witnesses: 2}}, {queue: "fast-track", score: 0, autoPay: 1000}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 60000, witnesses: 1}}, {queue: "complex", level: 2, score: 0}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 1000}}, {queue: "fast-track", score: 0, autoPay: 1000}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: "3", amount: 1000, witnesses: 1}}, {queue: "fast-track", score: 0, autoPay: 1000}],
+    [{claim: {daysSincePolicyStart: 400, priorClaims: 0, amount: 1000, witnesses: 0, injury: true}}, {queue: "bodily-injury", level: 3, score: 10}],
+    [{}, {queue: "standard", level: 1, score: 0}],
+  ],
+}

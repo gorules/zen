@@ -1,0 +1,638 @@
+// Advanced request goals. Chapter 14 pins the basics (cones, unions, required-input pruning,
+// goal validation). This chapter combines goals with the other features: per-member writes,
+// nested write paths, multi-policy units, each block kind as a target, and optional inputs
+// that are missing from the request.
+
+// --- Goals on members ---------------------------------------------------------------------------
+
+// A member goal runs the member block for every member and nothing that aggregates it.
+{
+  name: "a member goal whose block reads another member computed value",
+  policy: {
+    models: {cart: {items: "item[]", coupon: "string"}, item: {qty: "number", price: "number"}},
+    blocks: [
+      {expression: "item.gross", value: "item.qty * item.price"},
+      {expression: "item.label", value: "string(item.qty) + 'x'"},
+      {expression: "item.heavy", value: "item.gross > 100"},
+      {expression: "cart.total", value: "sum(map(cart.items, #.gross))"},
+      {expression: "cart.code", value: "upper(cart.coupon)"},
+    ],
+  },
+  cases: [
+    {input: {cart: {items: [{qty: 2, price: 60}, {qty: 1, price: 5}]}}, goals: ["item.heavy"], output: {cart: {items: [{qty: 2, price: 60, gross: 120, heavy: true}, {qty: 1, price: 5, gross: 5, heavy: false}]}}},
+    {input: {cart: {items: []}}, goals: ["item.heavy"], output: {cart: {items: []}}},
+    {input: {cart: {items: [{qty: 3, price: 1}]}}, goals: ["item.label"], output: {cart: {items: [{qty: 3, price: 1, label: "3x"}]}}},
+    {input: {cart: {items: [{qty: 3}]}}, goals: ["item.label"], output: {cart: {items: [{qty: 3, label: "3x"}]}}},
+    {input: {cart: {items: [{qty: 2, price: 60}]}}, goals: ["item.heavy", "item.label"], output: {cart: {items: [{qty: 2, price: 60, gross: 120, heavy: true, label: "2x"}]}}},
+    {input: {cart: {items: [{qty: 2, price: 60}]}}, goals: ["cart.total"], output: {cart: {total: 120, items: [{qty: 2, price: 60, gross: 120}]}}},
+  ],
+}
+
+// A member goal whose member block reads a root-level computed value pulls that value in.
+{
+  name: "a member goal pulls a parent computed value into its cone",
+  policy: {
+    models: {team: {members: "member[]", bonusPool: "number"}, member: {points: "number"}},
+    blocks: [
+      {expression: "team.totalPoints", value: "sum(map(team.members, #.points))"},
+      {expression: "member.bonus", value: "team.totalPoints == 0 ? 0 : team.bonusPool * member.points / team.totalPoints"},
+      {expression: "team.size", value: "len(team.members)"},
+    ],
+  },
+  cases: [
+    {input: {team: {bonusPool: 100, members: [{points: 1}, {points: 3}]}}, goals: ["member.bonus"], output: {team: {bonusPool: 100, totalPoints: 4, members: [{points: 1, bonus: 25}, {points: 3, bonus: 75}]}}},
+    {input: {team: {bonusPool: 100, members: [{points: 0}]}}, goals: ["member.bonus"], output: {team: {bonusPool: 100, totalPoints: 0, members: [{points: 0, bonus: 0}]}}},
+    {input: {team: {bonusPool: 10, members: []}}, goals: ["member.bonus"], output: {team: {bonusPool: 10, totalPoints: 0, members: []}}},
+    {input: {team: {members: [{points: 1}]}}, goals: ["member.bonus"], output: "!error: MissingRequiredInputs"},
+    {input: {team: {members: [{points: 1}]}}, goals: ["team.size"], output: {team: {size: 1, members: [{points: 1}]}}},
+    {input: {team: {members: [{points: 1}]}}, goals: ["team.totalPoints"], output: {team: {totalPoints: 1, members: [{points: 1}]}}},
+  ],
+}
+
+// Goals on members of two different relationships of one owner.
+{
+  name: "member goals on two relationships of one owner",
+  policy: {
+    models: {customer: {companies: "company[]", accounts: "account[]"}, company: {revenue: "number"}, account: {balance: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "account.negative", value: "account.balance < 0"},
+      {expression: "customer.risky", value: "some(customer.accounts, #.negative)"},
+    ],
+  },
+  cases: [
+    {input: {customer: {companies: [{revenue: 500}], accounts: [{balance: -1}]}}, goals: ["company.big"], output: {customer: {companies: [{revenue: 500, big: true}], accounts: [{balance: -1}]}}},
+    {input: {customer: {companies: [{revenue: 500}], accounts: [{balance: -1}]}}, goals: ["account.negative"], output: {customer: {companies: [{revenue: 500}], accounts: [{balance: -1, negative: true}]}}},
+    {input: {customer: {companies: [{revenue: 5}], accounts: [{balance: 1}]}}, goals: ["company.big", "customer.risky"], output: {customer: {risky: false, companies: [{revenue: 5, big: false}], accounts: [{balance: 1, negative: false}]}}},
+    {input: {customer: {companies: [{revenue: 5}]}}, goals: ["company.big"], output: {customer: {companies: [{revenue: 5, big: false}]}}},
+    {input: {customer: {accounts: [{balance: 0}]}}, goals: ["account.negative"], output: {customer: {accounts: [{balance: 0, negative: false}]}}},
+  ],
+}
+
+// A member goal written by a per-member table and one written by a per-member match.
+{
+  name: "member goals on a per-member table and a per-member match",
+  policy: {
+    models: {order: {lines: "line[]"}, line: {qty: "number", sku: "string"}},
+    blocks: [
+      {table: "band", inputs: ["line.qty"], outputs: ["line.band"], rules: [[">= 100", "'bulk'"], [">= 10", "'pack'"], ["", "'unit'"]]},
+      {match: "line.kind", arms: [["startsWith(line.sku, 'X')", "'special'"], ["", "'normal'"]]},
+      {expression: "order.bulkCount", value: "count(order.lines, #.band == 'bulk')"},
+    ],
+  },
+  cases: [
+    {input: {order: {lines: [{qty: 150, sku: "A1"}, {qty: 1, sku: "X2"}]}}, goals: ["line.band"], output: {order: {lines: [{qty: 150, sku: "A1", band: "bulk"}, {qty: 1, sku: "X2", band: "unit"}]}}},
+    {input: {order: {lines: [{qty: 150, sku: "A1"}, {qty: 1, sku: "X2"}]}}, goals: ["line.kind"], output: {order: {lines: [{qty: 150, sku: "A1", kind: "normal"}, {qty: 1, sku: "X2", kind: "special"}]}}},
+    {input: {order: {lines: [{qty: 10}]}}, goals: ["line.band"], output: {order: {lines: [{qty: 10, band: "pack"}]}}},
+    {input: {order: {lines: [{sku: "X"}]}}, goals: ["line.kind"], output: {order: {lines: [{sku: "X", kind: "special"}]}}},
+    {input: {order: {lines: [{qty: 100, sku: "A"}, {qty: 99, sku: "B"}]}}, goals: ["order.bulkCount"], output: {order: {bulkCount: 1, lines: [{qty: 100, sku: "A", band: "bulk"}, {qty: 99, sku: "B", band: "pack"}]}}},
+  ],
+}
+
+// A goal on a member property of a global relationship.
+{
+  name: "a member goal on a global relationship",
+  policy: {
+    globals: {store: {products: "product[]", discount: "number"}},
+    models: {product: {price: "number"}},
+    blocks: [
+      {expression: "product.final", value: "product.price * (1 - discount)"},
+      {expression: "product.cheap", value: "product.price < 10"},
+      {expression: "catalogValue", value: "sum(map(products, #.final))"},
+    ],
+  },
+  cases: [
+    {input: {discount: 0.5, products: [{price: 10}, {price: 3}]}, goals: ["product.final"], output: {discount: 0.5, products: [{price: 10, final: 5}, {price: 3, final: 1.5}]}},
+    {input: {products: [{price: 10}, {price: 3}]}, goals: ["product.cheap"], output: {products: [{price: 10, cheap: false}, {price: 3, cheap: true}]}},
+    {input: {products: [{price: 10}]}, goals: ["product.final"], output: "!error: MissingRequiredInputs"},
+    {input: {discount: 0, products: [{price: 10}, {price: 3}]}, goals: ["catalogValue"], output: {discount: 0, products: [{price: 10, final: 10}, {price: 3, final: 3}], catalogValue: 13}},
+    {input: {discount: 0, products: []}, goals: ["catalogValue", "product.cheap"], output: {discount: 0, products: [], catalogValue: 0}},
+  ],
+}
+
+// --- Goals on nested paths ----------------------------------------------------------------------
+
+// Nested computed paths under an entity: a goal on a leaf, on its parent object, and on a sibling.
+{
+  name: "goals on nested computed paths under an entity",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.stats.ageBand", value: "customer.age >= 18 ? 'adult' : 'minor'"},
+      {expression: "customer.stats.incomeBand", value: "customer.income > 1000 ? 'high' : 'low'"},
+      {expression: "customer.flags.vip", value: "customer.stats.incomeBand == 'high'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, goals: ["customer.stats.ageBand"], output: {customer: {age: 20, stats: {ageBand: "adult"}}}},
+    {input: {customer: {income: 5000}}, goals: ["customer.stats.incomeBand"], output: {customer: {income: 5000, stats: {incomeBand: "high"}}}},
+    {input: {customer: {age: 3, income: 5}}, goals: ["customer.stats"], output: {customer: {age: 3, income: 5, stats: {ageBand: "minor", incomeBand: "low"}}}},
+    {input: {customer: {income: 5000}}, goals: ["customer.flags.vip"], output: {customer: {income: 5000, stats: {incomeBand: "high"}, flags: {vip: true}}}, note: "bug: reading customer.stats.incomeBand makes the required-input check demand customer.age, the input of the sibling leaf customer.stats.ageBand"},
+    {input: {customer: {income: 5000}}, goals: ["customer.flags"], output: {customer: {income: 5000, stats: {incomeBand: "high"}, flags: {vip: true}}}, note: "bug: reading customer.stats.incomeBand makes the required-input check demand customer.age, the input of the sibling leaf customer.stats.ageBand"},
+    {input: {customer: {income: 5000, age: 1}}, goals: ["customer.flags.vip"], output: {customer: {income: 5000, age: 1, stats: {incomeBand: "high"}, flags: {vip: true}}}},
+    {input: {customer: {age: 3}}, goals: ["customer.stats"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// Without goals every terminal write runs. A sibling leaf under an object that another block
+// reads into is still a terminal write.
+{
+  name: "a terminal nested leaf next to a leaf that is read",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.stats.ageBand", value: "customer.age >= 18 ? 'adult' : 'minor'"},
+      {expression: "customer.stats.incomeBand", value: "customer.income > 1000 ? 'high' : 'low'"},
+      {expression: "customer.flags.vip", value: "customer.stats.incomeBand == 'high'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {income: 5000, age: 1}}, output: {customer: {income: 5000, age: 1, stats: {ageBand: "minor", incomeBand: "high"}, flags: {vip: true}}}, note: "bug: the terminal write customer.stats.ageBand is dropped because a sibling leaf of customer.stats is read; its input is still required"},
+    {input: {customer: {income: 5, age: 30}}, output: {customer: {income: 5, age: 30, stats: {ageBand: "adult", incomeBand: "low"}, flags: {vip: false}}}, note: "bug: the terminal write customer.stats.ageBand is dropped because a sibling leaf of customer.stats is read; its input is still required"},
+    {input: {customer: {income: 5}}, output: "!error: MissingRequiredInputs"},
+    {input: {customer: {income: 5, age: 30}}, goals: ["customer.stats.ageBand", "customer.flags.vip"], output: {customer: {income: 5, age: 30, stats: {ageBand: "adult", incomeBand: "low"}, flags: {vip: false}}}},
+  ],
+}
+
+// The same over top-level nested paths: a read of one leaf must not depend on its sibling.
+{
+  name: "a goal reading one top-level nested leaf does not need the sibling's input",
+  policy: {
+    models: {o: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "r.x", value: "o.a"},
+      {expression: "r.y", value: "o.b"},
+      {expression: "q", value: "r.y + 1"},
+    ],
+  },
+  cases: [
+    {input: {o: {b: 1}}, goals: ["q"], output: {o: {b: 1}, r: {y: 1}, q: 2}, note: "bug: reading r.y makes the required-input check demand o.a, the input of the sibling leaf r.x"},
+    {input: {o: {a: 5, b: 1}}, goals: ["q"], output: {o: {a: 5, b: 1}, r: {y: 1}, q: 2}},
+    {input: {o: {a: 5, b: 1}}, goals: ["r.x"], output: {o: {a: 5, b: 1}, r: {x: 5}}},
+    {input: {o: {a: 5, b: 1}}, output: {o: {a: 5, b: 1}, r: {x: 5, y: 1}, q: 2}, note: "bug: the terminal write r.x is dropped because its sibling r.y is read"},
+  ],
+}
+
+// A goal on a deep leaf whose writer reads a sibling leaf of a different branch.
+{
+  name: "a goal on a deep nested leaf reading across branches",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [
+      {expression: "r.a.b.c", value: "o.n + 1"},
+      {expression: "r.a.x", value: "r.a.b.c * 2"},
+      {expression: "r.z.y", value: "r.a.x + r.a.b.c"},
+      {expression: "r.z.w", value: "'w'"},
+    ],
+  },
+  cases: [
+    {input: {o: {n: 1}}, goals: ["r.z.y"], output: {o: {n: 1}, r: {a: {b: {c: 2}, x: 4}, z: {y: 6}}}},
+    {input: {o: {n: 1}}, goals: ["r.a.b"], output: {o: {n: 1}, r: {a: {b: {c: 2}}}}},
+    {input: {o: {n: 1}}, goals: ["r.a"], output: {o: {n: 1}, r: {a: {b: {c: 2}, x: 4}}}},
+    {input: {o: {n: 1}}, goals: ["r.z.w"], output: {o: {n: 1}, r: {z: {w: "w"}}}},
+    {input: {}, goals: ["r.z.w"], output: {r: {z: {w: "w"}}}},
+    {input: {o: {n: 0}}, goals: ["r"], output: {o: {n: 0}, r: {a: {b: {c: 1}, x: 2}, z: {y: 3, w: "w"}}}},
+  ],
+}
+
+// Unknown nested goals: a leaf below a written leaf, or a branch nobody writes.
+{
+  name: "unknown nested goals",
+  policy: {
+    models: {o: {n: "number"}},
+    blocks: [{expression: "r.a.b", value: "o.n"}],
+  },
+  cases: [
+    {input: {o: {n: 1}}, goals: ["r.a.b.c"], output: "!error: GoalNotFound"},
+    {input: {o: {n: 1}}, goals: ["r.a.zz"], output: "!error: GoalNotFound"},
+    {input: {o: {n: 1}}, goals: ["r.zz"], output: "!error: GoalNotFound"},
+    {input: {o: {n: 1}}, goals: ["r.a"], output: {o: {n: 1}, r: {a: {b: 1}}}},
+    {input: {o: {n: 1}}, goals: ["r."], output: "!error: GoalNotFound"},
+  ],
+}
+
+// A table whose output columns write nested paths; goals on one column or on the parent.
+{
+  name: "goals on nested table output columns",
+  policy: {
+    models: {applicant: {score: "number"}},
+    blocks: [
+      {table: "t", inputs: ["applicant.score"], outputs: ["decision.terms.rate", "decision.terms.limit"], rules: [[">= 700", "0.05", "10000"], ["", "0.2", "500"]]},
+      {expression: "decision.note", value: "'rate ' + string(decision.terms.rate)"},
+    ],
+  },
+  cases: [
+    {input: {applicant: {score: 720}}, goals: ["decision.terms.rate"], output: {applicant: {score: 720}, decision: {terms: {rate: 0.05, limit: 10000}}}},
+    {input: {applicant: {score: 1}}, goals: ["decision.terms.limit"], output: {applicant: {score: 1}, decision: {terms: {rate: 0.2, limit: 500}}}},
+    {input: {applicant: {score: 720}}, goals: ["decision.terms"], output: {applicant: {score: 720}, decision: {terms: {rate: 0.05, limit: 10000}}}},
+    {input: {applicant: {score: 720}}, goals: ["decision.note"], output: {applicant: {score: 720}, decision: {terms: {rate: 0.05, limit: 10000}, note: "rate 0.05"}}},
+    {input: {applicant: {score: 720}}, goals: ["decision"], output: {applicant: {score: 720}, decision: {terms: {rate: 0.05, limit: 10000}, note: "rate 0.05"}}},
+  ],
+}
+
+// A nested goal under a per-member property.
+{
+  name: "a goal on a nested per-member path",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.metrics.margin", value: "company.revenue - company.cost"},
+      {expression: "company.metrics.ratio", value: "company.revenue == 0 ? 0 : company.cost / company.revenue"},
+    ],
+  },
+  cases: [
+    {input: {customer: {companies: [{revenue: 10, cost: 4}]}}, goals: ["company.metrics.margin"], output: {customer: {companies: [{revenue: 10, cost: 4, metrics: {margin: 6}}]}}},
+    {input: {customer: {companies: [{revenue: 10, cost: 4}]}}, goals: ["company.metrics"], output: {customer: {companies: [{revenue: 10, cost: 4, metrics: {margin: 6, ratio: 0.4}}]}}},
+    {input: {customer: {companies: [{revenue: 0, cost: 4}, {revenue: 8, cost: 2}]}}, goals: ["company.metrics.ratio"], output: {customer: {companies: [{revenue: 0, cost: 4, metrics: {ratio: 0}}, {revenue: 8, cost: 2, metrics: {ratio: 0.25}}]}}},
+    {input: {customer: {companies: []}}, goals: ["company.metrics"], output: {customer: {companies: []}}},
+  ],
+}
+
+// --- Goals across imports -----------------------------------------------------------------------
+
+// A goal on the root's write pulls a chain from four policies; goals on the intermediate
+// levels stop at that level.
+{
+  name: "goals at every level of a four-policy chain",
+  policy: {
+    imports: ["p3"],
+    blocks: [{expression: "o.p4", value: "o.p3 + 1"}],
+  },
+  policies: {
+    p3: {imports: ["p2"], blocks: [{expression: "o.p3", value: "o.p2 * 2"}, {expression: "o.side3", value: "o.extra"}]},
+    p2: {imports: ["p1"], blocks: [{expression: "o.p2", value: "o.p1 + 10"}]},
+    p1: {models: {o: {x: "number", extra: "string"}}, blocks: [{expression: "o.p1", value: "o.x * 3"}]},
+  },
+  cases: [
+    {input: {o: {x: 1}}, goals: ["o.p4"], output: {o: {x: 1, p1: 3, p2: 13, p3: 26, p4: 27}}},
+    {input: {o: {x: 1}}, goals: ["o.p3"], output: {o: {x: 1, p1: 3, p2: 13, p3: 26}}},
+    {input: {o: {x: 1}}, goals: ["o.p2"], output: {o: {x: 1, p1: 3, p2: 13}}},
+    {input: {o: {x: 1}}, goals: ["o.p1"], output: {o: {x: 1, p1: 3}}},
+    {input: {o: {extra: "e"}}, goals: ["o.side3"], output: {o: {extra: "e", side3: "e"}}},
+    {input: {o: {x: 1}}, output: "!error: MissingRequiredInputs"},
+    {input: {o: {x: 1, extra: "e"}}, output: {o: {x: 1, extra: "e", p1: 3, p2: 13, p3: 26, p4: 27, side3: "e"}}},
+  ],
+}
+
+// Goals choose one branch of a diamond; the other branch's inputs may be missing.
+{
+  name: "a goal on one diamond branch skips the other branch's inputs",
+  policy: {
+    imports: ["left", "right"],
+    blocks: [{expression: "c.both", value: "c.l + c.r"}],
+  },
+  policies: {
+    left: {imports: ["base"], models: {c: {lw: "number"}}, blocks: [{expression: "c.l", value: "c.norm * c.lw"}]},
+    right: {imports: ["base"], models: {c: {rw: "number"}}, blocks: [{expression: "c.r", value: "c.norm + c.rw"}]},
+    base: {models: {c: {v: "number"}}, blocks: [{expression: "c.norm", value: "c.v / 10"}]},
+  },
+  cases: [
+    {input: {c: {v: 20, lw: 3}}, goals: ["c.l"], output: {c: {v: 20, lw: 3, norm: 2, l: 6}}},
+    {input: {c: {v: 20, rw: 3}}, goals: ["c.r"], output: {c: {v: 20, rw: 3, norm: 2, r: 5}}},
+    {input: {c: {v: 20}}, goals: ["c.norm"], output: {c: {v: 20, norm: 2}}},
+    {input: {c: {v: 20, lw: 3, rw: 3}}, goals: ["c.both"], output: {c: {v: 20, lw: 3, rw: 3, norm: 2, l: 6, r: 5, both: 11}}},
+    {input: {c: {v: 20, lw: 3}}, goals: ["c.both"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {v: 20, lw: 3}}, goals: ["c.l", "c.r"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// A goal inside an imported policy whose blocks reach back into the importer's writes.
+{
+  name: "a goal on an imported block that reads the importer's write",
+  policy: {
+    imports: ["consumer"],
+    models: {c: {v: "number", w: "number"}},
+    blocks: [
+      {expression: "c.root", value: "c.v * 100"},
+      {expression: "c.other", value: "c.w"},
+    ],
+  },
+  policies: {
+    consumer: {blocks: [{expression: "c.consumed", value: "c.root + 1"}]},
+  },
+  cases: [
+    {input: {c: {v: 1}}, goals: ["c.consumed"], output: {c: {v: 1, root: 100, consumed: 101}}},
+    {input: {c: {w: 1}}, goals: ["c.other"], output: {c: {w: 1, other: 1}}},
+    {input: {c: {w: 1}}, goals: ["c.consumed"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {v: 0, w: 0}}, output: {c: {v: 0, w: 0, root: 0, consumed: 1, other: 0}}},
+  ],
+}
+
+// A goal on a property written in a policy that is in the workspace but not in the unit.
+{
+  name: "goals only see the importer's unit, not policies that import it",
+  policy: {
+    imports: ["base"],
+    blocks: [{expression: "c.mine", value: "c.base + 1"}],
+  },
+  policies: {
+    base: {models: {c: {v: "number"}}, blocks: [{expression: "c.base", value: "c.v"}]},
+    outside: {imports: ["main"], blocks: [{expression: "c.outer", value: "c.mine * 2"}]},
+  },
+  cases: [
+    {input: {c: {v: 1}}, goals: ["c.mine"], output: {c: {v: 1, base: 1, mine: 2}}},
+    {input: {c: {v: 1}}, goals: ["c.base"], output: {c: {v: 1, base: 1}}},
+    {input: {c: {v: 1}}, goals: ["c.outer"], output: "!error: GoalNotFound"},
+    {input: {c: {v: 1}}, output: {c: {v: 1, base: 1, mine: 2}}},
+  ],
+}
+
+// A goal on an imported global computation.
+{
+  name: "goals on globals computed in imports",
+  policy: {
+    imports: ["rates", "fees"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "order.total", value: "order.amount * (1 + rate) + fee"}],
+  },
+  policies: {
+    rates: {globals: {cfg: {baseRate: "number"}}, blocks: [{expression: "rate", value: "baseRate / 100"}]},
+    fees: {globals: {cfg: {feeCents: "number"}}, blocks: [{expression: "fee", value: "feeCents / 100"}]},
+  },
+  cases: [
+    {input: {baseRate: 20}, goals: ["rate"], output: {baseRate: 20, rate: 0.2}},
+    {input: {feeCents: 150}, goals: ["fee"], output: {feeCents: 150, fee: 1.5}},
+    {input: {baseRate: 20, feeCents: 150}, goals: ["rate", "fee"], output: {baseRate: 20, feeCents: 150, rate: 0.2, fee: 1.5}},
+    {input: {baseRate: 20, feeCents: 150, order: {amount: 10}}, goals: ["order.total"], output: {baseRate: 20, feeCents: 150, rate: 0.2, fee: 1.5, order: {amount: 10, total: 13.5}}},
+    {input: {baseRate: 20, order: {amount: 10}}, goals: ["order.total"], output: "!error: MissingRequiredInputs"},
+    {input: {feeCents: "1"}, goals: ["fee"], output: "!error: InputValidationFailed"},
+  ],
+}
+
+// --- Goals on match, table and assertion targets ------------------------------------------------
+
+// A match whose arm conditions read values computed by different blocks: the static cone
+// includes every arm's reads.
+{
+  name: "a goal on a match whose arms read different computed values",
+  policy: {
+    models: {c: {age: "number", spend: "number"}},
+    blocks: [
+      {expression: "c.isMinor", value: "c.age < 18"},
+      {expression: "c.isBig", value: "c.spend > 1000"},
+      {expression: "c.unrelated", value: "'u'"},
+      {match: "c.segment", arms: [["c.isMinor", "'youth'"], ["c.isBig", "'premium'"], ["", "'standard'"]]},
+    ],
+  },
+  cases: [
+    {input: {c: {age: 10, spend: 5000}}, goals: ["c.segment"], output: {c: {age: 10, spend: 5000, isMinor: true, isBig: true, segment: "youth"}}, note: "question: a later arm's condition demands its computed read (c.isBig) even though an earlier arm matched; untaken arm values are lazy, later conditions are not"},
+    {input: {c: {age: 30, spend: 5000}}, goals: ["c.segment"], output: {c: {age: 30, spend: 5000, isMinor: false, isBig: true, segment: "premium"}}},
+    {input: {c: {age: 30, spend: 1}}, goals: ["c.segment"], output: {c: {age: 30, spend: 1, isMinor: false, isBig: false, segment: "standard"}}},
+    {input: {c: {age: 10}}, goals: ["c.segment"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {age: 10, spend: 5000}}, goals: ["c.segment", "c.unrelated"], output: {c: {age: 10, spend: 5000, isMinor: true, isBig: true, segment: "youth", unrelated: "u"}}, note: "question: a later arm's condition demands its computed read (c.isBig) even though an earlier arm matched; untaken arm values are lazy, later conditions are not"},
+  ],
+}
+
+// A collect table goal and a first-hit table goal in the same policy.
+{
+  name: "goals on a collect table and a first-hit table",
+  policy: {
+    models: {c: {age: "number", country: "string"}},
+    blocks: [
+      {table: "tags", hit: "collect", inputs: ["c.age", "c.country"], outputs: ["c.tags"], rules: [
+        [">= 18", "", "'adult'"],
+        ["", "'NO'", "'nordic'"],
+        ["< 30", "", "'young'"],
+      ]},
+      {table: "zone", inputs: ["c.country"], outputs: ["c.zone"], rules: [["'NO'", "'eea'"], ["'US'", "'na'"], ["", "'other'"]]},
+      {expression: "c.tagCount", value: "len(c.tags)"},
+    ],
+  },
+  cases: [
+    {input: {c: {age: 20, country: "NO"}}, goals: ["c.tags"], output: {c: {age: 20, country: "NO", tags: ["adult", "nordic", "young"]}}},
+    {input: {c: {country: "US"}}, goals: ["c.zone"], output: {c: {country: "US", zone: "na"}}},
+    {input: {c: {age: 40, country: "SE"}}, goals: ["c.tagCount"], output: {c: {age: 40, country: "SE", tags: ["adult"], tagCount: 1}}},
+    {input: {c: {age: 40}}, goals: ["c.zone"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// Goals on two different outputs of one table owned by different consumers.
+{
+  name: "goals through two consumers of one multi-output table",
+  policy: {
+    models: {c: {score: "number"}},
+    blocks: [
+      {table: "t", inputs: ["c.score"], outputs: ["c.grade", "c.points"], rules: [[">= 90", "'A'", "4"], [">= 80", "'B'", "3"], ["", "'C'", "2"]]},
+      {expression: "c.label", value: "'grade ' + c.grade"},
+      {expression: "c.weighted", value: "c.points * 10"},
+    ],
+  },
+  cases: [
+    {input: {c: {score: 95}}, goals: ["c.label"], output: {c: {score: 95, grade: "A", points: 4, label: "grade A"}}},
+    {input: {c: {score: 85}}, goals: ["c.weighted"], output: {c: {score: 85, grade: "B", points: 3, weighted: 30}}},
+    {input: {c: {score: 10}}, goals: ["c.label", "c.weighted"], output: {c: {score: 10, grade: "C", points: 2, label: "grade C", weighted: 20}}},
+    {input: {c: {score: 90}}, goals: ["c.points"], output: {c: {score: 90, grade: "A", points: 4}}},
+  ],
+}
+
+// An assertion target with `or` groups; the goal pulls every condition's reads.
+{
+  name: "a goal on an assertion with or-conditions over computed values",
+  policy: {
+    models: {c: {age: "number", income: "number", guarantor: "boolean"}},
+    blocks: [
+      {expression: "c.adult", value: "c.age >= 18"},
+      {expression: "c.earns", value: "c.income >= 1000"},
+      {assertion: "c.ok", conditions: [["and", "c.adult"], ["or", "c.earns", 1], ["and", "c.guarantor", 1]]},
+      {expression: "c.msg", value: "c.ok ? 'yes' : 'no'"},
+    ],
+  },
+  cases: [
+    {input: {c: {age: 20, income: 2000, guarantor: false}}, goals: ["c.ok"], output: {c: {age: 20, income: 2000, guarantor: false, adult: true, earns: true, ok: true}}},
+    {input: {c: {age: 20, income: 0, guarantor: true}}, goals: ["c.ok"], output: {c: {age: 20, income: 0, guarantor: true, adult: true, earns: false, ok: true}}},
+    {input: {c: {age: 10, income: 0, guarantor: false}}, goals: ["c.msg"], output: {c: {age: 10, income: 0, guarantor: false, adult: false, earns: false, ok: false, msg: "no"}}},
+    {input: {c: {age: 20, income: 2000}}, goals: ["c.ok"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {age: 20}}, goals: ["c.adult"], output: {c: {age: 20, adult: true}}},
+  ],
+}
+
+// A goal on a match whose taken arm reads a value computed in an import.
+{
+  name: "a goal on a match reading values from two imports",
+  policy: {
+    imports: ["risk", "price"],
+    blocks: [{match: "c.offer", arms: [["c.risk == 'high'", "'none'"], ["", "'offer ' + string(c.price)"]]}],
+  },
+  policies: {
+    risk: {models: {c: {score: "number"}}, blocks: [{expression: "c.risk", value: "c.score < 500 ? 'high' : 'low'"}]},
+    price: {models: {c: {base: "number"}}, blocks: [{expression: "c.price", value: "c.base * 2"}]},
+  },
+  cases: [
+    {input: {c: {score: 700, base: 5}}, goals: ["c.offer"], output: {c: {score: 700, base: 5, risk: "low", price: 10, offer: "offer 10"}}},
+    {input: {c: {score: 100, base: 5}}, goals: ["c.offer"], output: {c: {score: 100, base: 5, risk: "high", offer: "none"}}},
+    {input: {c: {score: 100}}, goals: ["c.offer"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {score: 100}}, goals: ["c.risk"], output: {c: {score: 100, risk: "high"}}},
+  ],
+}
+
+// --- Goals combined with missing optional inputs ----------------------------------------------
+
+{
+  name: "a goal whose cone reads only optional inputs",
+  policy: {
+    models: {c: {nick: "string?", age: "number"}},
+    blocks: [
+      {expression: "c.display", value: "c.nick ?? 'anonymous'"},
+      {expression: "c.adult", value: "c.age >= 18"},
+    ],
+  },
+  cases: [
+    {input: {c: {}}, goals: ["c.display"], output: {c: {display: "anonymous"}}},
+    {input: {c: {nick: null}}, goals: ["c.display"], output: {c: {nick: null, display: "anonymous"}}},
+    {input: {c: {nick: "z"}}, goals: ["c.display"], output: {c: {nick: "z", display: "z"}}},
+    {input: {}, goals: ["c.display"], output: {c: {display: "anonymous"}}},
+    {input: {c: {}}, goals: ["c.adult"], output: "!error: MissingRequiredInputs"},
+    {input: {c: {nick: 1}}, goals: ["c.display"], output: "!error: InputValidationFailed"},
+  ],
+}
+
+{
+  name: "a goal over an optional relationship that is missing",
+  policy: {
+    models: {c: {companies: "company[]?", name: "string"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "c.total", value: "sum(map(c.companies ?? [], #.revenue))"},
+      {expression: "c.greeting", value: "'hi ' + c.name"},
+    ],
+  },
+  cases: [
+    {input: {c: {}}, goals: ["c.total"], output: {c: {total: 0}}},
+    {input: {c: {companies: null}}, goals: ["c.total"], output: {c: {companies: null, total: 0}}},
+    {input: {c: {companies: [{revenue: 5}, {revenue: 7}]}}, goals: ["c.total"], output: {c: {companies: [{revenue: 5}, {revenue: 7}], total: 12}}},
+    {input: {c: {}}, goals: ["company.big"], output: {c: {}}},
+    {input: {c: {companies: [{revenue: 500}]}}, goals: ["company.big"], output: {c: {companies: [{revenue: 500, big: true}]}}},
+    {input: {c: {name: "a"}}, goals: ["c.greeting"], output: {c: {name: "a", greeting: "hi a"}}},
+  ],
+}
+
+{
+  name: "a goal over an optional global and a nested optional default",
+  policy: {
+    globals: {cfg: {discount: "number?", currency: "string?"}},
+    models: {order: {amount: "number"}},
+    blocks: [
+      {expression: "order.net", value: "order.amount * (1 - (discount ?? 0))"},
+      {expression: "order.money.currency", value: "currency ?? 'EUR'"},
+      {expression: "order.money.text", value: "string(order.net) + ' ' + order.money.currency"},
+    ],
+  },
+  cases: [
+    {input: {order: {amount: 10}}, goals: ["order.net"], output: {order: {amount: 10, net: 10}}},
+    {input: {discount: 0.5, order: {amount: 10}}, goals: ["order.net"], output: {discount: 0.5, order: {amount: 10, net: 5}}},
+    {input: {}, goals: ["order.money.currency"], output: {order: {money: {currency: "EUR"}}}},
+    {input: {currency: "NOK"}, goals: ["order.money.currency"], output: {currency: "NOK", order: {money: {currency: "NOK"}}}},
+    {input: {order: {amount: 4}}, goals: ["order.money.text"], output: {order: {amount: 4, net: 4, money: {currency: "EUR", text: "4 EUR"}}}},
+    {input: {}, goals: ["order.money.text"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// A goal whose cone has an optional input read only by a table row that does not match.
+{
+  name: "a goal on a table reading an optional column",
+  policy: {
+    models: {c: {age: "number", nick: "string?"}},
+    blocks: [{table: "t", inputs: ["c.age"], outputs: ["c.name"], rules: [["< 18", "c.nick ?? 'kid'"], ["", "'adult'"]]}],
+  },
+  cases: [
+    {input: {c: {age: 30}}, goals: ["c.name"], output: {c: {age: 30, name: "adult"}}},
+    {input: {c: {age: 3}}, goals: ["c.name"], output: {c: {age: 3, name: "kid"}}},
+    {input: {c: {age: 3, nick: "bo"}}, goals: ["c.name"], output: {c: {age: 3, nick: "bo", name: "bo"}}},
+    {input: {c: {age: 3, nick: null}}, goals: ["c.name"], output: {c: {age: 3, nick: null, name: "kid"}}},
+    {input: {c: {nick: "bo"}}, goals: ["c.name"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// An optional input that is missing produces a null computed value; a goal on the dependent
+// sees null.
+{
+  name: "a goal on a value derived from a null optional",
+  policy: {
+    models: {c: {bonus: "number?"}},
+    blocks: [
+      {expression: "c.copy", value: "c.bonus"},
+      {expression: "c.isSet", value: "c.copy != null"},
+    ],
+  },
+  cases: [
+    {input: {c: {}}, goals: ["c.copy"], output: {c: {copy: null}}},
+    {input: {c: {}}, goals: ["c.isSet"], output: {c: {copy: null, isSet: false}}},
+    {input: {c: {bonus: 0}}, goals: ["c.isSet"], output: {c: {bonus: 0, copy: 0, isSet: true}}},
+    {input: {c: {bonus: null}}, goals: ["c.isSet"], output: {c: {bonus: null, copy: null, isSet: false}}},
+  ],
+}
+
+// --- Goal sets and output shape -----------------------------------------------------------------
+
+// A goal and its own dependency named together behave like the goal alone.
+{
+  name: "a goal named together with its own dependencies",
+  policy: {
+    models: {o: {x: "number"}},
+    blocks: [
+      {expression: "o.a", value: "o.x + 1"},
+      {expression: "o.b", value: "o.a * 2"},
+      {expression: "o.c", value: "o.b - 1"},
+    ],
+  },
+  cases: [
+    {input: {o: {x: 1}}, goals: ["o.c", "o.a"], output: {o: {x: 1, a: 2, b: 4, c: 3}}},
+    {input: {o: {x: 1}}, goals: ["o.a", "o.b", "o.c"], output: {o: {x: 1, a: 2, b: 4, c: 3}}},
+    {input: {o: {x: 1}}, goals: ["o.b", "o.x"], output: {o: {x: 1, a: 2, b: 4}}},
+    {input: {o: {x: 1}}, goals: ["o.c", "o.c", "o.c"], output: {o: {x: 1, a: 2, b: 4, c: 3}}},
+  ],
+}
+
+// Goals with whitespace or different case are not normalised.
+{
+  name: "goal names are matched exactly",
+  policy: {
+    models: {o: {x: "number"}},
+    blocks: [{expression: "o.total", value: "o.x"}],
+  },
+  cases: [
+    {input: {o: {x: 1}}, goals: ["o.total"], output: {o: {x: 1, total: 1}}},
+    {input: {o: {x: 1}}, goals: [" o.total"], output: "!error: GoalNotFound"},
+    {input: {o: {x: 1}}, goals: ["o.total "], output: "!error: GoalNotFound"},
+    {input: {o: {x: 1}}, goals: ["o.Total"], output: "!error: GoalNotFound"},
+    {input: {o: {x: 1}}, goals: ["o..total"], output: "!error: GoalNotFound"},
+    {input: {o: {x: 1}}, goals: ["o.total."], output: "!error: GoalNotFound"},
+  ],
+}
+
+// Goals on a realistic pricing policy split across imports.
+{
+  name: "goals select parts of a split pricing policy",
+  policy: {
+    imports: ["lines", "shipping"],
+    blocks: [
+      {expression: "quote.total", value: "quote.subtotal + quote.shippingCost"},
+      {assertion: "quote.valid", conditions: ["quote.total > 0", "len(quote.items) > 0"]},
+    ],
+  },
+  policies: {
+    lines: {
+      models: {quote: {items: "qitem[]"}, qitem: {qty: "number", unit: "number"}},
+      blocks: [
+        {expression: "qitem.amount", value: "qitem.qty * qitem.unit"},
+        {expression: "quote.subtotal", value: "sum(map(quote.items, #.amount))"},
+      ],
+    },
+    shipping: {
+      models: {quote: {weight: "number", express: "boolean?"}},
+      blocks: [{table: "ship", inputs: ["quote.weight", "quote.express ?? false"], outputs: ["quote.shippingCost"], rules: [
+        ["", "true", "25"],
+        ["<= 1", "", "5"],
+        ["", "", "10"],
+      ]}],
+    },
+  },
+  cases: [
+    {input: {quote: {weight: 0.5}}, goals: ["quote.shippingCost"], output: {quote: {weight: 0.5, shippingCost: 5}}},
+    {input: {quote: {weight: 3, express: true}}, goals: ["quote.shippingCost"], output: {quote: {weight: 3, express: true, shippingCost: 25}}},
+    {input: {quote: {items: [{qty: 2, unit: 3}]}}, goals: ["quote.subtotal"], output: {quote: {subtotal: 6, items: [{qty: 2, unit: 3, amount: 6}]}}},
+    {input: {quote: {weight: 2, items: [{qty: 2, unit: 3}]}}, goals: ["quote.total"], output: {quote: {weight: 2, subtotal: 6, shippingCost: 10, total: 16, items: [{qty: 2, unit: 3, amount: 6}]}}},
+    {input: {quote: {weight: 2, items: []}}, goals: ["quote.valid"], output: {quote: {weight: 2, subtotal: 0, shippingCost: 10, total: 10, valid: false, items: []}}},
+    {input: {quote: {items: []}}, goals: ["quote.valid"], output: "!error: MissingRequiredInputs"},
+  ],
+}

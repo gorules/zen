@@ -1,3 +1,4 @@
+mod compiled_default;
 mod support;
 
 use rust_decimal::Decimal;

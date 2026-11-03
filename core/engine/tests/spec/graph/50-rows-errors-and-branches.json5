@@ -446,12 +446,12 @@
     [{x: 6}, {tags: ["pos", "gt5"], first: "pos"}],
     [{x: 51}, {tags: ["pos", "gt5", "gt50"], first: "pos"}],
     [{x: -1}, {tags: ["neg"], first: "neg"}],
-    {input: {x: 0}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
-    {input: {}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: 0}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
+    {input: {}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
     [{x: 5}, {tags: ["pos"], first: "pos"}],
     [{x: 1000}, {tags: ["pos", "gt5", "gt50"], first: "pos"}],
     [{x: -0.001}, {tags: ["neg"], first: "neg"}],
-    {input: {x: "9"}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: "9"}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 

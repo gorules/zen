@@ -648,8 +648,8 @@
     nodes: [{expression: "e", fields: {first: "keys($root)", second: "keys($root)"}}],
   },
   cases: [
-    {input: {q: 1}, output: {first: ["q", "$nodes"], second: ["q", "$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
-    {input: {}, output: {first: ["$nodes"], second: ["$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+    {input: {q: 1}, output: {first: ["q", "$nodes"], second: ["q", "$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: {modes: ["batch", "columnar"], intended: true, why: "walker and compiled single list $nodes in $root; batch and columnar do not"}},
+    {input: {}, output: {first: ["$nodes"], second: ["$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: {modes: ["batch", "columnar"], intended: true, why: "walker and compiled single list $nodes in $root; batch and columnar do not"}},
   ],
 }
 

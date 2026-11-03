@@ -23,6 +23,74 @@ pub enum Note {
     Question(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Single,
+    Batch,
+    Columnar,
+    Engine,
+    Traced,
+}
+
+impl Mode {
+    fn parse(name: &str) -> Option<Mode> {
+        match name {
+            "single" => Some(Mode::Single),
+            "batch" => Some(Mode::Batch),
+            "columnar" => Some(Mode::Columnar),
+            "engine" => Some(Mode::Engine),
+            "traced" => Some(Mode::Traced),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Engines {
+    pub modes: Vec<Mode>,
+    pub intended: bool,
+    pub why: String,
+}
+
+impl Engines {
+    pub fn covers(&self, mode: Mode) -> bool {
+        self.modes.contains(&mode)
+    }
+
+    fn parse(lit: &Lit) -> Result<Engines, String> {
+        let invalid = |what: &str| {
+            format!(
+                "line {}: engines needs {what}: {{modes: [single|batch|columnar|engine|traced], intended: bool, why: text}}",
+                lit.line
+            )
+        };
+        let modes = lit
+            .get("modes")
+            .and_then(Lit::list)
+            .ok_or_else(|| invalid("`modes`"))?
+            .iter()
+            .map(|m| m.text().and_then(Mode::parse).ok_or_else(|| invalid("known modes")))
+            .collect::<Result<Vec<Mode>, String>>()?;
+        if modes.is_empty() {
+            return Err(invalid("at least one mode"));
+        }
+        let intended = match lit.get("intended").map(|l| &l.kind) {
+            Some(Kind::Bool(intended)) => *intended,
+            _ => return Err(invalid("`intended`")),
+        };
+        let why = lit
+            .get("why")
+            .and_then(Lit::text)
+            .ok_or_else(|| invalid("`why`"))?
+            .to_string();
+        Ok(Engines {
+            modes,
+            intended,
+            why,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Dialect {
     Graph,
@@ -38,7 +106,7 @@ pub struct Case {
     pub expected_text: String,
     pub goals: Vec<String>,
     pub note: Note,
-    pub engines: Option<String>,
+    pub engines: Option<Engines>,
 }
 
 #[derive(Debug, Clone)]
@@ -278,7 +346,7 @@ impl Spec {
             }
         };
         let engines = match &lit.kind {
-            Kind::Map(_) => lit.get("engines").and_then(Lit::text).map(str::to_string),
+            Kind::Map(_) => lit.get("engines").map(Engines::parse).transpose()?,
             _ => None,
         };
         let goals = goals

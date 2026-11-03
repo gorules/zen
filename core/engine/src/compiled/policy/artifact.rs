@@ -483,6 +483,14 @@ impl Artifact {
         &self,
         requests: &[EvaluateRequest],
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        let owned: Vec<EvaluateRequest> = requests
+            .iter()
+            .map(|request| EvaluateRequest {
+                input: request.input.deep_clone(),
+                ..request.clone()
+            })
+            .collect();
+        let requests = owned.as_slice();
         let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
             (0..requests.len()).map(|_| None).collect();
         let mut groups: Vec<(&[Arc<str>], Vec<usize>)> = Vec::new();

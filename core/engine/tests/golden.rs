@@ -7,14 +7,15 @@ mod fixture;
 mod policies;
 #[path = "support/policy_gen.rs"]
 mod policy_gen;
+mod compiled_default;
 mod support;
 
 use conformance::run::{GraphRun, Guard, PolicyRun};
-use conformance::{Dialect, Spec, Suite};
+use conformance::{Dialect, Mode, Spec, Suite};
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
 use policies::{Anchor, Generated, PolicyCase};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use support::columns::Built;
@@ -201,7 +202,7 @@ impl Graphs {
             return;
         };
         let plain = Outcome::graph(&decision.evaluate(input.depth_clone(64)).await);
-        check.same(&key, &format!("{label} single"), &entry.plain, &plain);
+        check.same(&key, Mode::Single, &format!("{label} single"), &entry.plain, &plain);
         if let Some(traced) = &entry.traced {
             let got = Outcome::graph_traced(
                 &decision
@@ -209,7 +210,7 @@ impl Graphs {
                     .await,
                 EvaluationTraceKind::Default,
             );
-            check.same(&key, &format!("{label} traced"), traced, &got);
+            check.same(&key, Mode::Traced, &format!("{label} traced"), traced, &got);
             let reference = Canon::reference(
                 traced,
                 decision
@@ -218,6 +219,7 @@ impl Graphs {
             );
             check.values(
                 &key,
+                Mode::Traced,
                 &format!("{label} reference"),
                 entry.reference.as_ref(),
                 Some(&reference),
@@ -254,6 +256,7 @@ impl Graphs {
                 };
                 check.same(
                     &key,
+                    Mode::Columnar,
                     "columns",
                     &entry.plain.normalized(Built::normalized),
                     &got.normalized(Built::normalized),
@@ -279,7 +282,7 @@ impl Graphs {
             .await;
         for (key, result) in keys.into_iter().zip(&results) {
             if let Some(entry) = check.entry(golden, &key) {
-                check.same(&key, label, &entry.plain, &Outcome::graph(result));
+                check.same(&key, Mode::Batch, label, &entry.plain, &Outcome::graph(result));
             }
         }
     }
@@ -333,7 +336,7 @@ impl Modes {
                     .await,
                 reference,
             );
-            check.same(&key, &format!("{label} {mode:?}"), &want, &got);
+            check.same(&key, Mode::Traced, &format!("{label} {mode:?}"), &want, &got);
         }
     }
 }
@@ -401,6 +404,7 @@ impl Policies {
         }
         check.same(
             &key,
+            Mode::Single,
             "single",
             &entry.plain,
             &Outcome::policy(ws.evaluate(&Self::request(path, input, goals, false))),
@@ -408,6 +412,7 @@ impl Policies {
         if let Some(traced) = &entry.traced {
             check.same(
                 &key,
+                Mode::Traced,
                 "traced",
                 traced,
                 &Outcome::policy_traced(ws.evaluate(&Self::request(path, input, goals, true))),
@@ -416,6 +421,7 @@ impl Policies {
         if let Some(enhanced) = &entry.enhanced {
             check.same(
                 &key,
+                Mode::Traced,
                 "enhanced",
                 enhanced,
                 &Outcome::policy_traced(
@@ -440,7 +446,7 @@ impl Policies {
         for ((input, goals), result) in requests.iter().zip(ws.evaluate_batch(&batch)) {
             let key = Canon::key(id, goals, input);
             if let Some(entry) = check.entry(golden, &key) {
-                check.same(&key, "batch", &entry.plain, &Outcome::policy(result));
+                check.same(&key, Mode::Batch, "batch", &entry.plain, &Outcome::policy(result));
             }
         }
     }
@@ -485,7 +491,7 @@ impl Policies {
                         },
                         ok => ok.normalized(Built::normalized),
                     };
-                    check.same(&key, "columns", &want, &got.normalized(Built::normalized));
+                    check.same(&key, Mode::Columnar, "columns", &want, &got.normalized(Built::normalized));
                 }
             });
         }
@@ -497,7 +503,7 @@ struct Check {
     failures: Vec<String>,
     compared: usize,
     ordered: usize,
-    divergent: BTreeSet<String>,
+    divergent: BTreeMap<String, Vec<Mode>>,
     skipped: usize,
 }
 
@@ -518,32 +524,62 @@ impl Check {
 
     const COLLECT: [&'static str; 1] = ["collect-tables.json"];
 
+    const EVERY: [Mode; 5] = [
+        Mode::Single,
+        Mode::Batch,
+        Mode::Columnar,
+        Mode::Engine,
+        Mode::Traced,
+    ];
+
     fn collected<'i>(&mut self, fixture: &str, inputs: impl IntoIterator<Item = &'i Variable>) {
         if Self::COLLECT.contains(&fixture) {
             self.divergent.extend(
                 inputs
                     .into_iter()
-                    .map(|input| Canon::key(fixture, &[], input)),
+                    .map(|input| (Canon::key(fixture, &[], input), Self::EVERY.to_vec())),
             );
         }
     }
 
     fn diverges(&mut self, suite: &Suite, id: &str, inputs: impl IntoIterator<Item = Variable>) {
+        let unmatched: Vec<Mode> = Self::EVERY
+            .into_iter()
+            .filter(|mode| {
+                suite
+                    .cases
+                    .iter()
+                    .any(|c| c.engines.as_ref().is_some_and(|e| e.covers(*mode)))
+            })
+            .collect();
         for input in inputs {
             let value = Built::normalized(input.to_value());
-            let case = suite
+            let modes = match suite
                 .cases
                 .iter()
                 .find(|c| Built::normalized(c.input.to_value()) == value)
-                .unwrap_or(&suite.cases[0]);
-            if case.engines.is_some() {
-                self.divergent.insert(Canon::key(id, &[], &input));
+            {
+                Some(case) => case
+                    .engines
+                    .as_ref()
+                    .map(|e| e.modes.clone())
+                    .unwrap_or_default(),
+                None => unmatched.clone(),
+            };
+            if !modes.is_empty() {
+                self.divergent.insert(Canon::key(id, &[], &input), modes);
             }
         }
     }
 
-    fn same(&mut self, key: &str, path: &str, want: &Outcome, got: &Outcome) {
-        if self.divergent.contains(key) {
+    fn diverged(&self, key: &str, mode: Mode) -> bool {
+        self.divergent
+            .get(key)
+            .is_some_and(|modes| modes.contains(&mode))
+    }
+
+    fn same(&mut self, key: &str, mode: Mode, path: &str, want: &Outcome, got: &Outcome) {
+        if self.diverged(key, mode) {
             self.skipped += 1;
             return;
         }
@@ -557,8 +593,15 @@ impl Check {
         }
     }
 
-    fn values(&mut self, key: &str, path: &str, want: Option<&Value>, got: Option<&Value>) {
-        if self.divergent.contains(key) {
+    fn values(
+        &mut self,
+        key: &str,
+        mode: Mode,
+        path: &str,
+        want: Option<&Value>,
+        got: Option<&Value>,
+    ) {
+        if self.diverged(key, mode) {
             self.skipped += 1;
             return;
         }
@@ -1083,7 +1126,8 @@ impl Corpus {
                             let key = Canon::key(&id, &[], &case.input);
                             if let Some(entry) = case
                                 .engines
-                                .is_none()
+                                .as_ref()
+                                .is_none_or(|e| !e.covers(Mode::Engine))
                                 .then(|| check.entry(golden, &key))
                                 .flatten()
                             {
@@ -1092,7 +1136,7 @@ impl Corpus {
                                         .evaluate(GraphRun::MAIN, case.input.depth_clone(64))
                                         .await,
                                 );
-                                check.same(&key, "engine", &entry.plain, &engine);
+                                check.same(&key, Mode::Engine, "engine", &entry.plain, &engine);
                                 if let Some(traced) = &entry.traced {
                                     let got = Outcome::graph_traced(
                                         &run.engine
@@ -1104,7 +1148,7 @@ impl Corpus {
                                             .await,
                                         EvaluationTraceKind::Default,
                                     );
-                                    check.same(&key, "engine traced", traced, &got);
+                                    check.same(&key, Mode::Traced, "engine traced", traced, &got);
                                 }
                             }
                         }
@@ -1138,6 +1182,7 @@ impl Corpus {
                 if let Some(entry) = check.entry(golden, &key) {
                     check.same(
                         &key,
+                        Mode::Single,
                         "diagnostics",
                         &entry.plain,
                         &Outcome::Ok(json!(run.blocking)),
@@ -1158,7 +1203,7 @@ impl Corpus {
                     if case.goals.is_empty()
                         && run.gate
                         && run.blocking.is_empty()
-                        && case.engines.is_none()
+                        && case.engines.as_ref().is_none_or(|e| !e.covers(Mode::Engine))
                     {
                         if let Some(entry) = check.entry(golden, &key) {
                             let engine = match Guard::block(
@@ -1174,7 +1219,7 @@ impl Corpus {
                                     },
                                 },
                             };
-                            check.same(&key, "engine", &entry.plain, &engine);
+                            check.same(&key, Mode::Engine, "engine", &entry.plain, &engine);
                         }
                     }
                 }

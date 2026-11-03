@@ -291,3 +291,77 @@ async fn lazy_policies_follow_changed_imports() {
     let result = engine.evaluate("main.json", input(150)).await.unwrap();
     assert_eq!(approved(&result.result), json!(false));
 }
+
+fn customer_policy() -> Value {
+    json!({
+        "blocks": [
+            { "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "customer",
+                "properties": [
+                    { "id": "p1", "name": "score", "type": "number", "array": false, "optional": false }
+                ]
+            } } },
+            { "id": "e-base", "type": "expression", "props": { "data": {
+                "key": "customer.base",
+                "value": "customer.score * 2"
+            } } },
+            { "id": "a-rich", "type": "assertion", "props": { "data": {
+                "output": "customer.rich",
+                "conditions": [
+                    { "id": "c1", "expression": "customer.base >= 30", "operator": "and", "depth": 0 }
+                ]
+            } } }
+        ]
+    })
+}
+
+fn shared_customer_contexts() -> Vec<Variable> {
+    let shared: Variable = json!({ "customer": { "score": 20 } }).into();
+    vec![shared.clone(), shared.clone(), shared]
+}
+
+fn assert_untouched(contexts: &[Variable], results: Vec<Value>) {
+    for context in contexts {
+        assert_eq!(context.to_value(), json!({ "customer": { "score": 20 } }));
+    }
+    assert!(results.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(results[0]["customer"]["rich"], json!(true));
+}
+
+#[tokio::test]
+async fn policy_batches_leave_the_callers_contexts_unchanged() {
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("policy", document(customer_policy()));
+    let lazy = DecisionEngine::default().with_loader(loader.clone());
+    let compiled = DecisionEngine::default().with_loader(loader);
+    compiled.compile();
+    for engine in [lazy, compiled] {
+        let contexts = shared_customer_contexts();
+        let results = engine
+            .evaluate_batch("policy", &contexts, EvaluationOptions::default())
+            .await
+            .into_iter()
+            .map(|r| r.expect("evaluates").result.to_value())
+            .collect();
+        assert_untouched(&contexts, results);
+    }
+
+    let mut workspace = zen_engine::policy::PolicyWorkspace::new();
+    workspace.set_policy("policy", serde_json::from_value(customer_policy()).unwrap());
+    let contexts = shared_customer_contexts();
+    let requests: Vec<zen_engine::policy::EvaluateRequest> = contexts
+        .iter()
+        .map(|context| zen_engine::policy::EvaluateRequest {
+            policy_path: Arc::from("policy"),
+            input: context.clone(),
+            goals: Vec::new(),
+            trace: false,
+        })
+        .collect();
+    let results = workspace
+        .evaluate_batch(&requests)
+        .into_iter()
+        .map(|r| r.expect("evaluates").output.to_value())
+        .collect();
+    assert_untouched(&contexts, results);
+}

@@ -412,7 +412,7 @@
     [{n: 500}, {res: {tier: "gold", score: 3, reasons: ["over 100", "over 10", "positive"]}}],
     [{n: 50}, {res: {tier: "silver", score: 2, reasons: ["over 10", "positive"]}}],
     [{n: 5}, {res: {tier: "bronze", reasons: ["positive"]}}],
-    {input: {n: 0}, output: {res: {reasons: []}}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {n: 0}, output: {res: {reasons: []}}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -429,7 +429,7 @@
   cases: [
     [{n: 50}, {res: "big"}, "question: the gathered `res.tags` array is silently dropped because `res` holds a scalar"],
     [{n: 5}, {res: "small"}, "question: the gathered `res.tags` array is silently dropped because `res` holds a scalar"],
-    {input: {n: 0}, output: {res: {tags: []}}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {n: 0}, output: {res: {tags: []}}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -803,7 +803,7 @@
   cases: [
     [{n: 10}, {kept: 2}],
     [{n: 1}, {kept: 2}],
-    {input: {n: 0}, output: {}, engines: "the release walker leaves empty collect columns out of node traces; compiled gives the intended result"},
+    {input: {n: 0}, output: {}, engines: {modes: ["traced"], intended: true, why: "the release walker leaves empty collect columns out of node traces; compiled gives the intended result"}},
   ],
 }
 

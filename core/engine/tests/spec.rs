@@ -1,8 +1,9 @@
 mod conformance;
+mod compiled_default;
 mod support;
 
 use conformance::run::{GraphRun, Guard, PolicyRun};
-use conformance::{Case, Dialect, Note, Spec, Suite};
+use conformance::{Case, Dialect, Expected, Mode, Note, Spec, Suite};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -78,8 +79,6 @@ impl Report {
 struct Differential;
 
 impl Differential {
-    const INTENDED: &'static str = "compiled gives the intended result";
-
     fn limit() -> usize {
         std::env::var("SPEC_SHOW")
             .ok()
@@ -102,10 +101,57 @@ impl Differential {
         );
     }
 
+    fn columnar(
+        suite: &Suite,
+        cases: &[&Case],
+        input: &Variable,
+        want: &Result<Value, String>,
+        got: &Result<Value, String>,
+        out: &mut Vec<String>,
+    ) {
+        let row = Built::normalized(input.to_value());
+        let matched = cases
+            .iter()
+            .find(|c| Built::normalized(c.input.to_value()) == row);
+        let exempt = |case: &Case| {
+            case.engines
+                .as_ref()
+                .is_some_and(|e| e.covers(Mode::Columnar))
+        };
+        match matched {
+            Some(case) if exempt(case) => {
+                let got = got.clone().map(|v| Variable::from(v));
+                let want = want.clone().map(|v| Variable::from(v));
+                let expected = match &case.expected {
+                    Expected::Value(value) => Case {
+                        expected: Expected::Value(Variable::from(Built::normalized(
+                            value.to_value(),
+                        ))),
+                        ..(*case).clone()
+                    },
+                    Expected::Error(_) => (*case).clone(),
+                };
+                Self::compare(suite, &expected, Mode::Columnar, &want, &got, out);
+            }
+            None if cases.iter().any(|c| exempt(c)) => {}
+            matched => {
+                if got != want {
+                    let location = matched
+                        .map(|case| suite.location(case))
+                        .unwrap_or_else(|| format!("{}:{} [{}]", suite.file, suite.line, suite.name));
+                    out.push(format!(
+                        "{location} columnar | input {}\n  reference {want:?}\n  columnar  {got:?}",
+                        input.to_value()
+                    ));
+                }
+            }
+        }
+    }
+
     fn compare(
         suite: &Suite,
         case: &Case,
-        mode: &str,
+        mode: Mode,
         want: &Result<Variable, String>,
         got: &Result<Variable, String>,
         out: &mut Vec<String>,
@@ -115,14 +161,24 @@ impl Differential {
             (Err(a), Err(b)) => a == b,
             _ => false,
         };
-        if let Some(engines) = &case.engines {
-            if engines.ends_with(Self::INTENDED) {
-                if let Some(failure) = suite.verdict(case, got) {
-                    out.push(format!("{failure} | {mode}"));
+        let mode_name = format!("{mode:?}").to_lowercase();
+        if let Some(engines) = case.engines.as_ref().filter(|e| e.covers(mode)) {
+            match engines.intended {
+                true => {
+                    if let Some(failure) = suite.verdict(case, got) {
+                        out.push(format!("{failure} | {mode_name} (intended)"));
+                    }
                 }
+                false if same => out.push(format!(
+                    "{} {mode_name} | input {}: matches the reference now; remove {mode_name} from the engines note",
+                    suite.location(case),
+                    case.input_text
+                )),
+                false => {}
             }
             return;
         }
+        let mode = mode_name;
         if !same {
             out.push(format!(
                 "{} {mode} | input {}\n  reference {}\n  {mode:9} {}",
@@ -215,7 +271,7 @@ impl Engines {
             Differential::compare(
                 suite,
                 case,
-                "single",
+                Mode::Single,
                 &wants[i],
                 &single,
                 &mut self.failures,
@@ -228,7 +284,7 @@ impl Engines {
             Differential::compare(
                 suite,
                 case,
-                "engine",
+                Mode::Engine,
                 &wants[i],
                 &engine,
                 &mut self.failures,
@@ -238,7 +294,7 @@ impl Engines {
                     .as_ref()
                     .map(|r| r.result.clone())
                     .map_err(|e| GraphRun::error(e));
-                Differential::compare(suite, case, "batch", &wants[i], &got, &mut self.failures);
+                Differential::compare(suite, case, Mode::Batch, &wants[i], &got, &mut self.failures);
             }
             self.compared += 1;
         }
@@ -285,25 +341,14 @@ impl Engines {
                     None => Ok(Built::normalized(output.row(row).to_value())),
                 };
                 self.columnar += 1;
-                let case = suite
-                    .cases
-                    .iter()
-                    .find(|c| {
-                        Built::normalized(c.input.to_value()) == Built::normalized(input.to_value())
-                    })
-                    .unwrap_or(&suite.cases[0]);
-                if got != want
-                    && case.engines.is_none()
-                    && !self
-                        .reference
-                        .ordered(|| Canon::key(&suite.id(), &[], &input))
+                if self
+                    .reference
+                    .ordered(|| Canon::key(&suite.id(), &[], &input))
                 {
-                    self.failures.push(format!(
-                        "{} columnar | input {}\n  reference {want:?}\n  columnar  {got:?}",
-                        suite.location(case),
-                        input.to_value()
-                    ));
+                    continue;
                 }
+                let cases: Vec<&Case> = suite.cases.iter().collect();
+                Differential::columnar(suite, &cases, &input, &want, &got, &mut self.failures);
             }
         }
         if support::switches().census {
@@ -337,14 +382,14 @@ impl Engines {
         for (i, case) in suite.cases.iter().enumerate() {
             let want = Self::driver(&self.reference, &run, suite, case);
             let single = run.compiled(case);
-            Differential::compare(suite, case, "single", &want, &single, &mut self.failures);
+            Differential::compare(suite, case, Mode::Single, &want, &single, &mut self.failures);
             for result in batch.iter().skip(i).step_by(suite.cases.len().max(1)) {
                 let got = run.gated(result);
-                Differential::compare(suite, case, "batch", &want, &got, &mut self.failures);
+                Differential::compare(suite, case, Mode::Batch, &want, &got, &mut self.failures);
             }
             if case.goals.is_empty() && run.gate {
                 let engine = run.engine(case);
-                Differential::compare(suite, case, "engine", &want, &engine, &mut self.failures);
+                Differential::compare(suite, case, Mode::Engine, &want, &engine, &mut self.failures);
             }
             self.compared += 1;
         }
@@ -432,24 +477,13 @@ impl Engines {
                 None => Ok(Built::normalized(output.row(row).to_value())),
             };
             self.columnar += 1;
-            if got != want
-                && !self
-                    .reference
-                    .ordered(|| Canon::key(&suite.id(), goals, &input))
+            if self
+                .reference
+                .ordered(|| Canon::key(&suite.id(), goals, &input))
             {
-                let case = cases
-                    .iter()
-                    .find(|c| {
-                        Built::normalized(c.input.to_value()) == Built::normalized(input.to_value())
-                    })
-                    .copied()
-                    .unwrap_or(cases[0]);
-                self.failures.push(format!(
-                    "{} columnar | input {}\n  reference {want:?}\n  columnar  {got:?}",
-                    suite.location(case),
-                    input.to_value()
-                ));
+                continue;
             }
+            Differential::columnar(suite, cases, &input, &want, &got, &mut self.failures);
         }
     }
 }

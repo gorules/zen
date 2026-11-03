@@ -37,9 +37,13 @@ cases: [
   - `question: <why>`: the output holds current behaviour whose intent is unclear.
 - **goals** (policy only): the request goals.
 - **engines** (object form only): a documented difference between the reference (walker or
-  driver) and the other engine modes, with the reason. The case is still checked against the
-  spec, but not compared across engines. Use it only when the reference itself is wrong or
-  reports a different but equivalent error, and say which side gives the intended result.
+  driver) and some compiled modes:
+  `engines: {modes: ["batch", "columnar"], intended: true, why: "..."}`.
+  Modes are `single`, `batch`, `columnar`, `engine` (DecisionEngine) and `traced`. Modes not
+  listed are still compared with the reference. With `intended: true` the listed modes give
+  the intended result and are checked against the spec output. With `intended: false` the
+  listed modes are a known open difference; once one of them matches the reference again the
+  run fails, so the mode gets removed from the note. List only the modes that differ.
 
 Evaluation time is fixed at `2025-03-20T10:15:30Z`, time zone UTC (`SPEC_TZ` overrides).
 

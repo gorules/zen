@@ -204,6 +204,12 @@ impl DecisionEngine {
                 .evaluate(&self.parts(), key_str, context, options)
                 .await?;
         }
+        if self.engine.scopes() {
+            return crate::compiled::Engine::interpreting(
+                self.evaluate_with_opts(key_str, context, options),
+            )
+            .await;
+        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
@@ -257,6 +263,12 @@ impl DecisionEngine {
                 .caches
                 .evaluate_serialized(&self.parts(), key_str, context, options)
                 .await;
+        }
+        if self.engine.scopes() {
+            return crate::compiled::Engine::interpreting(
+                self.evaluate_serialized(key_str, context, options),
+            )
+            .await;
         }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
@@ -384,6 +396,7 @@ impl DecisionEngine {
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
             .with_http_handler(self.http_handler.clone())
+            .with_engine(self.engine)
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation

@@ -102,9 +102,9 @@
   name: "extending a copied request object does not change the request",
   graph: {nodes: [{expression: "calc", passThrough: true, fields: {copy: "inp", "copy.extra": "1"}}]},
   cases: [
-    {input: {inp: {v: 1}}, output: {inp: {v: 1}, copy: {v: 1, extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also adds extra to the passed-through inp", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+    {input: {inp: {v: 1}}, output: {inp: {v: 1}, copy: {v: 1, extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also adds extra to the passed-through inp"},
     [{inp: {}}, {inp: {}, copy: {extra: 1}}, "bug: the copy aliases the request object, so writing copy.extra also adds extra to the passed-through inp"],
-    {input: {inp: {extra: 0}}, output: {inp: {extra: 0}, copy: {extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also overwrites the passed-through inp.extra", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+    {input: {inp: {extra: 0}}, output: {inp: {extra: 0}, copy: {extra: 1}}, note: "bug: the copy aliases the request object, so writing copy.extra also overwrites the passed-through inp.extra"},
   ],
 }
 
@@ -118,8 +118,8 @@
     edges: ["input -> writer -> output", "input -> reader -> output"],
   },
   cases: [
-    {input: {inp: {v: 1}}, output: {copy: {v: 1, extra: 1}, seen: {v: 1}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
-    {input: {inp: {v: "x"}}, output: {copy: {v: "x", extra: 1}, seen: {v: "x"}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: "walker and compiled row path alias the request; columnar gives the intended result"},
+    {input: {inp: {v: 1}}, output: {copy: {v: 1, extra: 1}, seen: {v: 1}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: {modes: ["columnar"], intended: true, why: "walker and compiled row path alias the request; columnar gives the intended result"}},
+    {input: {inp: {v: "x"}}, output: {copy: {v: "x", extra: 1}, seen: {v: "x"}}, note: "bug: the copy aliases the request object, so the sibling branch sees inp.extra through $nodes", engines: {modes: ["columnar"], intended: true, why: "walker and compiled row path alias the request; columnar gives the intended result"}},
   ],
 }
 

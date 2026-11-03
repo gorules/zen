@@ -568,8 +568,8 @@
     g: {graph: {nodes: [{expression: "e", fields: {y: "1"}}]}},
   },
   cases: [
-    {input: {}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"},
-    {input: {y: 2}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"},
+    {input: {}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: {modes: ["engine"], intended: false, why: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"}},
+    {input: {y: 2}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: {modes: ["engine"], intended: false, why: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"}},
   ],
 }
 

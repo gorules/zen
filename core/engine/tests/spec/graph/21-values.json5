@@ -673,7 +673,7 @@
     nodes: [{expression: "calc", fields: {n: "len(keys($root))", hasA: "'a' in keys($root)"}}],
   },
   cases: [
-    {input: {a: 1, b: 2}, output: {n: 2, hasA: true}, note: "bug: $root also contains the internal $nodes key", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
-    {input: {}, output: {n: 0, hasA: false}, note: "bug: $root also contains the internal $nodes key", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+    {input: {a: 1, b: 2}, output: {n: 2, hasA: true}, note: "bug: $root also contains the internal $nodes key"},
+    {input: {}, output: {n: 0, hasA: false}, note: "bug: $root also contains the internal $nodes key"},
   ],
 }

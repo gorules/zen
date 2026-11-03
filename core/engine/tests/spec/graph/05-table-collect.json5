@@ -435,7 +435,7 @@
     [{score: 95}, {tags: ["excellent", "pass", "attempted"]}],
     [{score: 60}, {tags: ["pass", "attempted"]}],
     [{score: 1}, {tags: ["attempted"]}],
-    {input: {score: 0}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {score: 0}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -454,7 +454,7 @@
     [{score: 95}, {grade: "A", tags: ["excellent", "pass", "attempted"]}],
     [{score: 60}, {grade: "C", tags: ["pass", "attempted"]}],
     [{score: 5}, {grade: "F", tags: ["attempted"]}],
-    {input: {score: -5}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {score: -5}, output: {tags: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -473,7 +473,7 @@
     [{x: 11}, {first: "big", notes: ["over five", "positive"]}],
     [{x: 6}, {first: "mid", notes: ["over five", "positive"]}],
     [{x: 1}, {notes: ["positive"]}],
-    {input: {x: 0}, output: {notes: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: 0}, output: {notes: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -490,7 +490,7 @@
   cases: [
     [{x: 6}, {notes: ["big"]}],
     [{x: 1}, {notes: []}],
-    {input: {x: 0}, output: {notes: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: 0}, output: {notes: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -525,7 +525,7 @@
     [{x: 20}, {codes: ["C1", "C2"], levels: [3, 1]}],
     [{x: 6}, {codes: ["C2"], levels: [1]}],
     [{x: 1}, {codes: [], levels: [1]}],
-    {input: {x: -1}, output: {codes: [], levels: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: -1}, output: {codes: [], levels: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 
@@ -594,7 +594,7 @@
   cases: [
     [{x: 6}, {x: 6, tags: ["p", "big"]}],
     [{x: 6, tags: ["old"]}, {x: 6, tags: ["p", "big"]}],
-    {input: {x: 0, tags: ["old"]}, output: {tags: [], x: 0}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {x: 0, tags: ["old"]}, output: {tags: [], x: 0}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 

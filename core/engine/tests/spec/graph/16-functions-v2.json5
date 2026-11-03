@@ -514,7 +514,7 @@ export const handler = async (input) => ({ valid: dayjs(input.date).isValid() })
   },
   cases: [
     [{kind: "string"}, "!error: plain message"],
-    {input: {kind: "object"}, output: "!error: quickjs: {", note: "bug: the walker reports the thrown object by its address instead of its JSON (BC1)", engines: "the release walker prints Object(0x...) for a thrown object; compiled gives the intended result"},
+    {input: {kind: "object"}, output: "!error: quickjs: {", note: "bug: the walker reports the thrown object by its address instead of its JSON (BC1)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker prints Object(0x...) for a thrown object; compiled gives the intended result"}},
     [{kind: "null"}, "!error"],
     [{kind: "none"}, {ok: "none"}],
   ],

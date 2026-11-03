@@ -259,7 +259,7 @@
       {tier: "silver", reasons: ["over 10", "positive"]},
       {tier: "bronze", reasons: ["positive"]},
     ]}],
-    {input: {items: [{v: 0}, {v: 1}]}, output: {out: [{reasons: []}, {reasons: ["positive"], tier: "bronze"}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {items: [{v: 0}, {v: 1}]}, output: {out: [{reasons: []}, {reasons: ["positive"], tier: "bronze"}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
     [{items: []}, {out: []}],
   ],
 }
@@ -273,7 +273,7 @@
     ]}],
   },
   cases: [
-    {input: {items: [{id: 1, v: 20}, {id: 2, v: -1}]}, output: {items: [{flags: ["pos", "big"], id: 1, v: 20}, {flags: [], id: 2, v: -1}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {items: [{id: 1, v: 20}, {id: 2, v: -1}]}, output: {items: [{flags: ["pos", "big"], id: 1, v: 20}, {flags: [], id: 2, v: -1}]}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
     [{items: [{id: 3, v: 5, flags: ["old"]}]}, {items: [{id: 3, v: 5, flags: ["pos"]}]}],
   ],
 }
@@ -410,8 +410,8 @@
     ]}],
   },
   cases: [
-    {input: {items: [{keep: true, x: 1}, {keep: false, x: 2}]}, output: {out: [{item: {keep: true, x: 1}}, {item: null}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
-    {input: {items: [{keep: true}]}, output: {out: [{item: {keep: true}}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
+    {input: {items: [{keep: true, x: 1}, {keep: false, x: 2}]}, output: {out: [{item: {keep: true, x: 1}}, {item: null}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: {modes: ["single", "batch", "columnar", "traced"], intended: true, why: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"}},
+    {input: {items: [{keep: true}]}, output: {out: [{item: {keep: true}}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"}},
   ],
 }
 
@@ -424,7 +424,7 @@
     ]}],
   },
   cases: [
-    {input: {item: {keep: true, x: 1}}, output: {out: {item: {keep: true, x: 1}}}, note: "bug: the input column's `$` reference is stored on the environment, so $root read in an output cell carries a stray `$` key (not loop-specific)", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
+    {input: {item: {keep: true, x: 1}}, output: {out: {item: {keep: true, x: 1}}}, note: "bug: the input column's `$` reference is stored on the environment, so $root read in an output cell carries a stray `$` key (not loop-specific)", engines: {modes: ["single", "batch", "columnar", "traced"], intended: true, why: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"}},
     [{item: {keep: false}}, {out: {item: null}}],
   ],
 }

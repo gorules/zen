@@ -168,6 +168,11 @@ impl Decision {
         self.compiled().evaluate_columns(columns, options).await
     }
 
+    pub(crate) fn with_engine(mut self, engine: crate::compiled::Engine) -> Self {
+        self.engine = engine;
+        self
+    }
+
     #[doc(hidden)]
     pub fn interpreted(&self) -> Self {
         Self {

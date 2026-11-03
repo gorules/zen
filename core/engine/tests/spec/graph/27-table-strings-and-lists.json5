@@ -763,7 +763,7 @@
     [{flags: ["vpn", "chargeback"]}, {reasons: ["prior chargeback", "vpn"]}],
     [{flags: ["new_device"]}, {reasons: ["new device"]}],
     [{flags: []}, {reasons: ["clean"]}],
-    {input: {flags: ["other"]}, output: {reasons: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: "the release walker leaves out empty collect columns; compiled gives the intended result"},
+    {input: {flags: ["other"]}, output: {reasons: []}, note: "bug: the walker leaves out an empty `[]` collect column instead of writing [] (#7)", engines: {modes: ["single", "batch", "columnar", "engine", "traced"], intended: true, why: "the release walker leaves out empty collect columns; compiled gives the intended result"}},
   ],
 }
 

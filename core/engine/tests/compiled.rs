@@ -1,5 +1,6 @@
 #[path = "support/fixture.rs"]
 mod fixture;
+mod compiled_default;
 mod support;
 
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};

@@ -1223,8 +1223,8 @@ export const handler = async (input) => ({ ...input, b: ++n });"""},
     ],
   },
   cases: [
-    {input: {v: 1}, output: {wrote: true, read: 1}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
-    {input: {v: "x"}, output: {wrote: true, read: "x"}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    {input: {v: 1}, output: {wrote: true, read: 1}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: {modes: ["batch", "columnar"], intended: false, why: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"}},
+    {input: {v: "x"}, output: {wrote: true, read: "x"}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: {modes: ["batch", "columnar"], intended: false, why: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"}},
     [{}, {wrote: true, read: "none"}, "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges"],
   ],
 }
@@ -1241,9 +1241,9 @@ export const handler = async (input) => ({ ...input, b: ++n });"""},
     edges: ["input -> route", "route:0 -> writer -> reader", "route:1 -> skip -> reader", "reader -> output"],
   },
   cases: [
-    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: {modes: ["batch", "columnar"], intended: false, why: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"}},
     [{write: false}, {branch: "skip", seen: "none"}],
-    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: {modes: ["batch", "columnar"], intended: false, why: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"}},
     [{}, {branch: "skip", seen: "none"}],
   ],
 }

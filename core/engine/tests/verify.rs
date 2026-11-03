@@ -1,4 +1,5 @@
 #[allow(dead_code)]
+mod compiled_default;
 mod support;
 
 use serde_json::{json, Value};

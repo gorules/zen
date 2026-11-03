@@ -28,14 +28,85 @@ pub(crate) enum Engine {
     Compiled,
 }
 
+thread_local! {
+    static INTERPRETING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl Engine {
     pub(crate) fn compiled(self) -> bool {
         match self {
-            Engine::Configured => crate::ZEN_CONFIG
-                .compiled
-                .load(std::sync::atomic::Ordering::Relaxed),
+            Engine::Configured => {
+                !INTERPRETING.get()
+                    && crate::ZEN_CONFIG
+                        .compiled
+                        .load(std::sync::atomic::Ordering::Relaxed)
+            }
             Engine::Interpreted => false,
             Engine::Compiled => true,
         }
+    }
+
+    pub(crate) fn scopes(self) -> bool {
+        self == Engine::Interpreted && !INTERPRETING.get()
+    }
+
+    pub(crate) fn interpreting<F: std::future::Future>(future: F) -> Interpreting<F> {
+        Interpreting(Box::pin(future))
+    }
+}
+
+pub(crate) struct Interpreting<F>(std::pin::Pin<Box<F>>);
+
+struct Restore(bool);
+
+impl Drop for Restore {
+    fn drop(&mut self) {
+        INTERPRETING.set(self.0);
+    }
+}
+
+impl<F: std::future::Future> std::future::Future for Interpreting<F> {
+    type Output = F::Output;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<F::Output> {
+        let _restore = Restore(INTERPRETING.replace(true));
+        self.0.as_mut().poll(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Engine;
+
+    fn run<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime")
+            .block_on(future)
+    }
+
+    #[test]
+    fn the_interpreting_scope_overrides_only_the_configured_engine() {
+        let inside = run(Engine::interpreting(async {
+            (
+                Engine::Configured.compiled(),
+                Engine::Compiled.compiled(),
+                Engine::Interpreted.scopes(),
+            )
+        }));
+        assert_eq!(inside, (false, true, false));
+        assert!(Engine::Interpreted.scopes());
+    }
+
+    #[test]
+    fn the_interpreting_scope_is_restored_after_a_panic() {
+        let panicked = std::panic::catch_unwind(|| {
+            run(Engine::interpreting(async { panic!("inside the scope") }))
+        });
+        assert!(panicked.is_err());
+        assert!(Engine::Interpreted.scopes());
     }
 }

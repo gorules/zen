@@ -1,5 +1,5 @@
-mod conformance;
 mod compiled_default;
+mod conformance;
 mod support;
 
 use conformance::run::{GraphRun, Guard, PolicyRun};
@@ -136,9 +136,9 @@ impl Differential {
             None if cases.iter().any(|c| exempt(c)) => {}
             matched => {
                 if got != want {
-                    let location = matched
-                        .map(|case| suite.location(case))
-                        .unwrap_or_else(|| format!("{}:{} [{}]", suite.file, suite.line, suite.name));
+                    let location = matched.map(|case| suite.location(case)).unwrap_or_else(|| {
+                        format!("{}:{} [{}]", suite.file, suite.line, suite.name)
+                    });
                     out.push(format!(
                         "{location} columnar | input {}\n  reference {want:?}\n  columnar  {got:?}",
                         input.to_value()
@@ -294,7 +294,14 @@ impl Engines {
                     .as_ref()
                     .map(|r| r.result.clone())
                     .map_err(|e| GraphRun::error(e));
-                Differential::compare(suite, case, Mode::Batch, &wants[i], &got, &mut self.failures);
+                Differential::compare(
+                    suite,
+                    case,
+                    Mode::Batch,
+                    &wants[i],
+                    &got,
+                    &mut self.failures,
+                );
             }
             self.compared += 1;
         }
@@ -382,14 +389,28 @@ impl Engines {
         for (i, case) in suite.cases.iter().enumerate() {
             let want = Self::driver(&self.reference, &run, suite, case);
             let single = run.compiled(case);
-            Differential::compare(suite, case, Mode::Single, &want, &single, &mut self.failures);
+            Differential::compare(
+                suite,
+                case,
+                Mode::Single,
+                &want,
+                &single,
+                &mut self.failures,
+            );
             for result in batch.iter().skip(i).step_by(suite.cases.len().max(1)) {
                 let got = run.gated(result);
                 Differential::compare(suite, case, Mode::Batch, &want, &got, &mut self.failures);
             }
             if case.goals.is_empty() && run.gate {
                 let engine = run.engine(case);
-                Differential::compare(suite, case, Mode::Engine, &want, &engine, &mut self.failures);
+                Differential::compare(
+                    suite,
+                    case,
+                    Mode::Engine,
+                    &want,
+                    &engine,
+                    &mut self.failures,
+                );
             }
             self.compared += 1;
         }

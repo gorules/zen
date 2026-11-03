@@ -1,3 +1,4 @@
+mod compiled_default;
 #[allow(dead_code)]
 mod conformance;
 #[path = "support/fixture.rs"]
@@ -7,7 +8,6 @@ mod fixture;
 mod policies;
 #[path = "support/policy_gen.rs"]
 mod policy_gen;
-mod compiled_default;
 mod support;
 
 use conformance::run::{GraphRun, Guard, PolicyRun};
@@ -202,7 +202,13 @@ impl Graphs {
             return;
         };
         let plain = Outcome::graph(&decision.evaluate(input.depth_clone(64)).await);
-        check.same(&key, Mode::Single, &format!("{label} single"), &entry.plain, &plain);
+        check.same(
+            &key,
+            Mode::Single,
+            &format!("{label} single"),
+            &entry.plain,
+            &plain,
+        );
         if let Some(traced) = &entry.traced {
             let got = Outcome::graph_traced(
                 &decision
@@ -282,7 +288,13 @@ impl Graphs {
             .await;
         for (key, result) in keys.into_iter().zip(&results) {
             if let Some(entry) = check.entry(golden, &key) {
-                check.same(&key, Mode::Batch, label, &entry.plain, &Outcome::graph(result));
+                check.same(
+                    &key,
+                    Mode::Batch,
+                    label,
+                    &entry.plain,
+                    &Outcome::graph(result),
+                );
             }
         }
     }
@@ -336,7 +348,13 @@ impl Modes {
                     .await,
                 reference,
             );
-            check.same(&key, Mode::Traced, &format!("{label} {mode:?}"), &want, &got);
+            check.same(
+                &key,
+                Mode::Traced,
+                &format!("{label} {mode:?}"),
+                &want,
+                &got,
+            );
         }
     }
 }
@@ -446,7 +464,13 @@ impl Policies {
         for ((input, goals), result) in requests.iter().zip(ws.evaluate_batch(&batch)) {
             let key = Canon::key(id, goals, input);
             if let Some(entry) = check.entry(golden, &key) {
-                check.same(&key, Mode::Batch, "batch", &entry.plain, &Outcome::policy(result));
+                check.same(
+                    &key,
+                    Mode::Batch,
+                    "batch",
+                    &entry.plain,
+                    &Outcome::policy(result),
+                );
             }
         }
     }
@@ -491,7 +515,13 @@ impl Policies {
                         },
                         ok => ok.normalized(Built::normalized),
                     };
-                    check.same(&key, Mode::Columnar, "columns", &want, &got.normalized(Built::normalized));
+                    check.same(
+                        &key,
+                        Mode::Columnar,
+                        "columns",
+                        &want,
+                        &got.normalized(Built::normalized),
+                    );
                 }
             });
         }
@@ -1203,7 +1233,10 @@ impl Corpus {
                     if case.goals.is_empty()
                         && run.gate
                         && run.blocking.is_empty()
-                        && case.engines.as_ref().is_none_or(|e| !e.covers(Mode::Engine))
+                        && case
+                            .engines
+                            .as_ref()
+                            .is_none_or(|e| !e.covers(Mode::Engine))
                     {
                         if let Some(entry) = check.entry(golden, &key) {
                             let engine = match Guard::block(

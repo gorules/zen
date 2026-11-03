@@ -1,1 +1,2 @@
 core/expression/tests/** text eol=lf
+core/engine/tests/**/*.json5 text eol=lf

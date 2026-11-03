@@ -1,3 +1,4 @@
+mod compiled_default;
 mod conformance;
 #[allow(dead_code)]
 #[path = "support/fixture.rs"]
@@ -7,7 +8,6 @@ mod fixture;
 mod policies;
 #[path = "support/policy_gen.rs"]
 mod policy_gen;
-mod compiled_default;
 mod support;
 
 use conformance::run::PolicyRun;

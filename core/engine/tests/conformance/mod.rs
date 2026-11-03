@@ -69,7 +69,11 @@ impl Engines {
             .and_then(Lit::list)
             .ok_or_else(|| invalid("`modes`"))?
             .iter()
-            .map(|m| m.text().and_then(Mode::parse).ok_or_else(|| invalid("known modes")))
+            .map(|m| {
+                m.text()
+                    .and_then(Mode::parse)
+                    .ok_or_else(|| invalid("known modes"))
+            })
             .collect::<Result<Vec<Mode>, String>>()?;
         if modes.is_empty() {
             return Err(invalid("at least one mode"));
@@ -199,7 +203,12 @@ impl Spec {
         for path in Self::files(dialect) {
             let file = path
                 .strip_prefix(Self::root())
-                .map(|p| p.to_string_lossy().to_string())
+                .map(|p| {
+                    p.components()
+                        .map(|c| c.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
                 .unwrap_or_default();
             let text = match std::fs::read_to_string(&path) {
                 Ok(t) => t,

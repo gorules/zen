@@ -206,7 +206,10 @@ impl Caches {
         let mut results = Vec::with_capacity(contexts.len());
         for context in contexts {
             results.push(
-                match self.evaluate(parts, key, context.deep_clone(), options).await {
+                match self
+                    .evaluate(parts, key, context.deep_clone(), options)
+                    .await
+                {
                     Ok(result) => result,
                     Err(error) => Err(Box::<EvaluationError>::from(error)),
                 },

@@ -10,9 +10,7 @@ use zen_expression::variable::Variable;
 const KEY: &str = "throws.json";
 
 fn content() -> DecisionContent {
-    let node = |id: &str, kind: &str, content: Value| {
-        json!({ "id": id, "name": id, "type": kind, "content": content })
-    };
+    let node = |id: &str, kind: &str, content: Value| json!({ "id": id, "name": id, "type": kind, "content": content });
     let source = "export const handler = async () => { throw { code: 7, reason: 'object' }; };";
     serde_json::from_value(json!({
         "nodes": [

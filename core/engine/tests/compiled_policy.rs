@@ -1,3 +1,4 @@
+mod compiled_default;
 #[allow(dead_code)]
 mod conformance;
 #[allow(dead_code)]
@@ -5,7 +6,6 @@ mod conformance;
 mod policies;
 #[path = "support/policy_gen.rs"]
 mod policy_gen;
-mod compiled_default;
 mod support;
 
 use policies::{Anchor, Batch, Generated, PolicyCase};

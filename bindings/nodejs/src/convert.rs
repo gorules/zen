@@ -6,7 +6,7 @@ use napi::bindgen_prelude::ToNapiValue;
 use napi::sys;
 use napi::sys::{napi_env, napi_value};
 use serde_json::Value;
-use zen_engine::{DecisionGraphResponse, EvaluationTrace, EvaluationTraceKind};
+use zen_engine::{DecisionGraphResponse, EvaluationTrace};
 use zen_expression::variable::{RcCell, ToVariable};
 use zen_expression::Variable;
 
@@ -95,7 +95,7 @@ pub struct NodeEvalResponse {
 }
 
 impl NodeEvalResponse {
-    pub fn build(response: DecisionGraphResponse, mode: EvaluationTraceKind) -> Self {
+    pub fn build(response: DecisionGraphResponse) -> Self {
         let mut arena = PortableArena::new();
         let mut memo = HashMap::new();
 
@@ -104,23 +104,13 @@ impl NodeEvalResponse {
         let trace = match response.trace {
             None => TraceField::None,
             Some(EvaluationTrace::Graph(graph)) => {
-                let variable = graph.to_variable();
-                match mode {
-                    EvaluationTraceKind::Default => {
-                        TraceField::Arena(arena.add(&variable, &mut memo))
-                    }
-                    other => TraceField::Json(other.serialize_trace(&variable)),
-                }
+                TraceField::Arena(arena.add(&graph.to_variable(), &mut memo))
             }
             Some(EvaluationTrace::Policy(policy)) => {
-                let value = match mode {
-                    EvaluationTraceKind::String | EvaluationTraceKind::ReferenceString => {
-                        Value::String(serde_json::to_string(&policy).unwrap_or_default())
-                    }
-                    _ => serde_json::to_value(&policy).unwrap_or_default(),
-                };
-
-                TraceField::Json(value)
+                TraceField::Json(serde_json::to_value(&policy).unwrap_or_default())
+            }
+            Some(EvaluationTrace::V1(document)) => {
+                TraceField::Arena(arena.add(&document.to_variable(), &mut memo))
             }
         };
 

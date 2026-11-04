@@ -8,8 +8,10 @@ use std::future::Future;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use zen_expression::lane::{Programs, Session};
-use zen_expression::variable::{ToVariable, Variable};
+use zen_expression::variable::Variable;
 use zen_types::decision::{DecisionNode, DecisionNodeKind, TransformAttributes};
+
+pub(crate) type Sink = std::cell::RefCell<crate::compiled::trace::collect::Fact>;
 
 #[derive(Clone)]
 pub(crate) struct Row<'a> {
@@ -17,12 +19,7 @@ pub(crate) struct Row<'a> {
     pub(crate) input: Variable,
     pub(crate) nodes: Option<Variable>,
     pub(crate) programs: Option<&'a Arc<Programs>>,
-    pub(crate) trace: bool,
-}
-
-pub(crate) struct Ctx<'a, T> {
-    pub(crate) row: Row<'a>,
-    pub(crate) trace: Option<T>,
+    pub(crate) sink: Option<&'a Sink>,
 }
 
 impl<'a> Row<'a> {
@@ -98,32 +95,35 @@ impl<'a> Row<'a> {
     }
 }
 
-impl<'a, T: Default + ToVariable> Ctx<'a, T> {
-    pub(crate) fn new(row: Row<'a>) -> Self {
-        Self {
-            trace: row.trace.then(T::default),
-            row,
+impl Row<'_> {
+    pub(crate) fn traced(&self) -> bool {
+        self.sink.is_some()
+    }
+
+    pub(crate) fn push(&self, fact: crate::compiled::trace::collect::Fact) {
+        if let Some(sink) = self.sink {
+            *sink.borrow_mut() = fact;
         }
     }
 
-    pub(crate) fn trace(&mut self, mutator: impl FnOnce(&mut T)) {
-        if let Some(trace) = &mut self.trace {
-            mutator(trace);
+    pub(crate) fn take(&self) -> crate::compiled::trace::collect::Fact {
+        match self.sink {
+            Some(sink) => std::mem::replace(
+                &mut *sink.borrow_mut(),
+                crate::compiled::trace::collect::Fact::None,
+            ),
+            None => crate::compiled::trace::collect::Fact::None,
         }
     }
 
     pub(crate) fn error(&self, source: impl Into<Box<dyn std::error::Error>>) -> NodeError {
-        NodeError::traced(
-            self.row.id.clone(),
-            self.trace.as_ref().map(ToVariable::to_variable),
-            source,
-        )
+        NodeError::new(self.id.clone(), source)
     }
 
     pub(crate) fn success(&self, output: Variable) -> NodeResult {
         Ok(NodeResponse {
             output,
-            trace_data: self.trace.as_ref().map(ToVariable::to_variable),
+            trace_data: None,
         })
     }
 }

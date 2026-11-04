@@ -62,8 +62,9 @@ pub struct ZenEngineEvaluationOptions {
 impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
     fn into(self) -> EvaluationOptions {
         EvaluationOptions {
-            trace: self.trace,
+            trace: self.trace.into(),
             max_depth: self.max_depth,
+            ..Default::default()
         }
     }
 }

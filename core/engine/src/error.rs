@@ -1,4 +1,3 @@
-use crate::engine::EvaluationTraceKind;
 use crate::loader::LoaderError;
 use crate::DecisionGraphValidationError;
 use serde::ser::SerializeMap;
@@ -78,11 +77,7 @@ pub enum EvaluationError {
 }
 
 impl EvaluationError {
-    pub fn serialize_with_mode<S>(
-        &self,
-        serializer: S,
-        mode: EvaluationTraceKind,
-    ) -> Result<S::Ok, S::Error>
+    fn serialize_map<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -102,7 +97,7 @@ impl EvaluationError {
                 map.serialize_entry("nodeId", &node_id)?;
 
                 if let Some(trace) = &trace {
-                    map.serialize_entry("trace", &mode.serialize_trace(trace))?;
+                    map.serialize_entry("trace", trace)?;
                 }
             }
             EvaluationError::LoaderError(err) => {
@@ -146,7 +141,7 @@ impl Serialize for EvaluationError {
     where
         S: Serializer,
     {
-        self.serialize_with_mode(serializer, Default::default())
+        self.serialize_map(serializer)
     }
 }
 

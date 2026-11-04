@@ -1,5 +1,6 @@
 use crate::compiled::content::Content;
 use crate::compiled::host::NodeHandlerExtensions;
+use crate::compiled::pinning;
 use crate::compiled::prepared::Prepared;
 use crate::compiled::traced::Traced;
 use crate::compiled::{ColumnarOutput, CompiledGraph, CompiledPlan, Invalid};
@@ -53,12 +54,64 @@ impl CompiledDecision {
         Arc::ptr_eq(&self.source, content)
     }
 
+    pub(crate) async fn evaluate_pinned(
+        &self,
+        context: Variable,
+        options: EvaluationOptions,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let clock = pinning::scope_for(&options);
+        let inner = std::pin::pin!(self.evaluate_with_opts(context, pinning::inner(options)));
+        pinning::run(clock, inner).await
+    }
+
+    pub(crate) async fn evaluate_batch_pinned(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let clock = pinning::batch_for(&options);
+        pinning::with(
+            clock,
+            self.evaluate_batch(contexts, pinning::inner(options)),
+        )
+        .await
+    }
+
+    pub(crate) async fn evaluate_columns_pinned<'a>(
+        &self,
+        columns: &'a Columns<'a>,
+        options: EvaluationOptions,
+    ) -> ColumnarOutput<'a> {
+        let clock = pinning::batch_for(&options);
+        pinning::with(
+            clock,
+            self.evaluate_columns(columns, pinning::inner(options)),
+        )
+        .await
+    }
+
+    pub(crate) async fn trace_pair_pinned(
+        &self,
+        context: Variable,
+    ) -> Option<(
+        crate::compiled::trace::TraceDocument,
+        crate::compiled::trace::TraceDocument,
+    )> {
+        let options = EvaluationOptions {
+            trace: crate::compiled::trace::TraceFormat::V1,
+            ..Default::default()
+        };
+        let clock = pinning::scope_for(&options);
+        let inner = std::pin::pin!(self.trace_pair(context));
+        pinning::run(clock, inner).await
+    }
+
     pub(crate) async fn evaluate_with_opts(
         &self,
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
-        if options.trace {
+        if options.trace.is_on() {
             return self.traced(context, options).await;
         }
 
@@ -79,13 +132,23 @@ impl CompiledDecision {
         contexts: &[Variable],
         options: EvaluationOptions,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        self.evaluate_batched(contexts, options).await
+    }
+
+    async fn evaluate_batched(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let owned: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
-        if options.trace {
-            let mut responses = Vec::with_capacity(owned.len());
-            for context in owned {
-                responses.push(self.evaluate_with_opts(context, options).await);
-            }
-            return responses;
+        if options.trace.is_on() {
+            let start = std::time::Instant::now();
+            return match self.traced_batch(&owned, contexts, options).await {
+                Ok((results, batch)) => {
+                    batch.responses(results, &format!("{:.1?}", start.elapsed()))
+                }
+                Err(invalid) => owned.iter().map(|_| Err(invalid.evaluation())).collect(),
+            };
         }
 
         match Self::compiled(self.prepared()) {
@@ -109,6 +172,56 @@ impl CompiledDecision {
         columns: &'a Columns<'a>,
         options: EvaluationOptions,
     ) -> ColumnarOutput<'a> {
+        self.evaluate_columned(columns, options).await
+    }
+
+    async fn evaluate_columned<'a>(
+        &self,
+        columns: &'a Columns<'a>,
+        options: EvaluationOptions,
+    ) -> ColumnarOutput<'a> {
+        if options.trace.is_on() {
+            if let Ok((compiled, content)) = Self::compiled(self.prepared()) {
+                let content = compiled.schemas(content, &self.loader).await;
+                if let Some(output) = compiled
+                    .evaluate_columns_traced(
+                        &content,
+                        &self.extensions(&content),
+                        options.max_depth,
+                        columns,
+                        options.trace,
+                    )
+                    .await
+                {
+                    crate::compiled::trace::count_columnar(true, columns.rows);
+                    return output;
+                }
+            }
+            crate::compiled::trace::count_columnar(false, columns.rows);
+            if let Some(clock) = zen_expression::clock::current() {
+                clock.reset_streams();
+            }
+            let contexts: Vec<Variable> = (0..columns.rows).map(|row| columns.row(row)).collect();
+            let owned: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
+            return match self.traced_batch(&owned, &contexts, options).await {
+                Ok((results, batch)) => {
+                    let results = results
+                        .into_iter()
+                        .map(|result| {
+                            result.map(|result| DecisionGraphResponse {
+                                performance: String::new(),
+                                result,
+                                trace: None,
+                            })
+                        })
+                        .collect();
+                    ColumnarOutput::from_results(results).traced(batch)
+                }
+                Err(invalid) => ColumnarOutput::from_results(
+                    owned.iter().map(|_| Err(invalid.evaluation())).collect(),
+                ),
+            };
+        }
         match Self::compiled(self.prepared()) {
             Ok((compiled, content)) => {
                 let content = compiled.schemas(content, &self.loader).await;
@@ -125,13 +238,46 @@ impl CompiledDecision {
                 let contexts: Vec<Variable> =
                     (0..columns.rows).map(|row| columns.row(row)).collect();
                 let options = EvaluationOptions {
-                    trace: false,
+                    trace: crate::compiled::trace::TraceFormat::Off,
                     ..options
                 };
-                let results = self.evaluate_batch(&contexts, options).await;
+                let results = self.evaluate_batched(&contexts, options).await;
                 ColumnarOutput::from_results(results)
             }
         }
+    }
+
+    pub(crate) async fn traced_batch(
+        &self,
+        owned: &[Variable],
+        requests: &[Variable],
+        options: EvaluationOptions,
+    ) -> Result<
+        (
+            Vec<Result<Variable, Box<EvaluationError>>>,
+            crate::compiled::trace::TraceBatch,
+        ),
+        &Invalid,
+    > {
+        let (compiled, content) = Self::compiled(self.prepared())?;
+        let content = compiled.schemas(content, &self.loader).await;
+        let (results, traces) = compiled
+            .traced_batch(
+                &content,
+                &self.extensions(&content),
+                options.max_depth,
+                owned,
+                requests,
+            )
+            .await;
+        let batch = crate::compiled::trace::TraceBatch::new(
+            traces,
+            requests.to_vec(),
+            owned.to_vec(),
+            &results,
+            options.trace,
+        );
+        Ok((results, batch))
     }
 
     async fn traced(
@@ -139,6 +285,17 @@ impl CompiledDecision {
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let start = std::time::Instant::now();
+        let request = crate::compiled::trace::Request::take(&context);
+        let run = self.run(context, options.max_depth).await?;
+        crate::compiled::trace::collected(options.trace, request, run, start)
+    }
+
+    async fn run(
+        &self,
+        context: Variable,
+        max_depth: u8,
+    ) -> Result<crate::compiled::traced::Run, Box<EvaluationError>> {
         let (compiled, content) = Self::compiled(self.tracing()).map_err(Invalid::evaluation)?;
         let content = compiled.schemas(content, &self.loader).await;
         let extensions = self.extensions(&content);
@@ -146,11 +303,23 @@ impl CompiledDecision {
             graph: compiled,
             content: &content,
             extensions: &extensions,
-            max_depth: options.max_depth,
+            max_depth,
             iteration: 0,
             parent: None,
         };
-        traced.evaluate(context).await
+        Ok(traced.run(context).await)
+    }
+
+    pub(crate) async fn trace_pair(
+        &self,
+        context: Variable,
+    ) -> Option<(
+        crate::compiled::trace::TraceDocument,
+        crate::compiled::trace::TraceDocument,
+    )> {
+        let request = crate::compiled::trace::Request::take(&context);
+        let run = self.run(context, 10).await.ok()?;
+        crate::compiled::trace::pair(request, run)
     }
 
     fn prepared(&self) -> (&Arc<Content>, &CompiledPlan) {

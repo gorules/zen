@@ -14,9 +14,10 @@ use pyo3::{pyclass, pymethods, Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, 
 use pyo3_async_runtimes::tokio::get_current_locals;
 use pyo3_async_runtimes::{tokio, TaskLocals};
 use pythonize::{depythonize, pythonize};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::str::FromStr;
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
+use zen_engine::trace::TraceFormat;
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[pyclass]
@@ -25,10 +26,12 @@ pub struct PyZenEngine {
     engine: Arc<DecisionEngine>,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct PyZenEvaluateOptions {
-    pub trace: Option<bool>,
+    pub trace: Option<TraceFormat>,
     pub max_depth: Option<u8>,
+    pub now: Option<zen_engine::clock::Instant>,
+    pub timezone: Option<zen_engine::clock::Timezone>,
+    pub seed: Option<u64>,
 }
 
 impl From<PyZenEvaluateOptions> for EvaluationOptions {
@@ -36,6 +39,9 @@ impl From<PyZenEvaluateOptions> for EvaluationOptions {
         Self {
             max_depth: value.max_depth.unwrap_or(5),
             trace: value.trace.unwrap_or_default(),
+            now: value.now,
+            timezone: value.timezone,
+            seed: value.seed,
         }
     }
 }
@@ -44,17 +50,68 @@ impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let dict = ob.downcast::<PyDict>()?;
 
-        let trace = dict
-            .get_item("trace")?
-            .map(|v| v.extract::<bool>())
-            .transpose()?;
+        let trace = match dict.get_item("trace")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => match v.extract::<bool>() {
+                Ok(flag) => Some(TraceFormat::from(flag)),
+                Err(_) => {
+                    let name = v.extract::<String>()?;
+                    Some(TraceFormat::from_str(&name).map_err(|_| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "invalid trace format '{name}', expected true, false, 'v1' or 'legacy'"
+                        ))
+                    })?)
+                }
+            },
+        };
 
         let max_depth = dict
             .get_item("max_depth")?
             .map(|v| v.extract::<u8>())
             .transpose()?;
 
-        Ok(PyZenEvaluateOptions { trace, max_depth })
+        let invalid = |what: String| pyo3::exceptions::PyValueError::new_err(what);
+        let now = match dict.get_item("now")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => match v.extract::<i64>() {
+                Ok(ms) => Some(
+                    zen_engine::clock::instant_from_millis(ms)
+                        .ok_or_else(|| invalid(format!("invalid now {ms}")))?,
+                ),
+                Err(_) => {
+                    let text = v.extract::<String>()?;
+                    Some(zen_engine::clock::parse_instant(&text).ok_or_else(|| {
+                        invalid(format!("invalid now '{text}', expected RFC 3339"))
+                    })?)
+                }
+            },
+        };
+        let timezone = match dict.get_item("timezone")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => {
+                let name = v.extract::<String>()?;
+                Some(
+                    zen_engine::clock::parse_timezone(&name)
+                        .ok_or_else(|| invalid(format!("invalid timezone '{name}'")))?,
+                )
+            }
+        };
+        let seed = match dict.get_item("seed")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => Some(v.extract::<u64>()?),
+        };
+
+        Ok(PyZenEvaluateOptions {
+            trace,
+            max_depth,
+            now,
+            timezone,
+            seed,
+        })
     }
 }
 
@@ -63,6 +120,9 @@ impl Default for PyZenEvaluateOptions {
         Self {
             trace: None,
             max_depth: None,
+            now: None,
+            timezone: None,
+            seed: None,
         }
     }
 }

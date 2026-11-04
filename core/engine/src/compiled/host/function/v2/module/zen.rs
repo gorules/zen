@@ -82,9 +82,19 @@ impl ZenListener {
                 ))
             }
         };
-        call.traced(&graph, context.0, None)
+        let start = Instant::now();
+        let run = call
+            .traced(&graph, context.0, None)
             .await
-            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?
+            .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+        let trace = crate::compiled::trace::graph_map(&run.level.legacy())
+            .map(crate::decision_graph::graph::EvaluationTrace::Graph);
+        run.result
+            .map(|result| DecisionGraphResponse {
+                performance: format!("{:.1?}", start.elapsed()),
+                result,
+                trace,
+            })
             .or_throw(ctx)
     }
 }

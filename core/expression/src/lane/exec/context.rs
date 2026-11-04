@@ -30,6 +30,7 @@ pub struct Context<'a> {
     pub columns: Option<&'a Columns<'a>>,
     pub bound: &'a [Binding],
     pub base: usize,
+    pub first: usize,
     pub(super) views: Vec<(u64, Reg, Column<'a>)>,
     pub(super) texts: Vec<(*const u8, Option<&'a str>)>,
 }
@@ -50,6 +51,7 @@ impl<'a> Context<'a> {
             columns: None,
             bound: &[],
             base: 0,
+            first: 0,
             views: Vec::new(),
             texts: Vec::new(),
         }
@@ -66,7 +68,13 @@ impl<'a> Context<'a> {
         ctx.columns = Some(columns);
         ctx.bound = bound;
         ctx.base = base;
+        ctx.first = base;
         ctx
+    }
+
+    #[inline]
+    pub(super) fn drawn_row(&self, row: u32) -> usize {
+        self.first + row as usize
     }
 
     pub(super) fn view(&self, program: u64, reg: Reg) -> Option<Column<'a>> {

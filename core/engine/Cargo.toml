@@ -15,9 +15,11 @@ doctest = false
 ahash = { workspace = true }
 anyhow = { workspace = true }
 base64 = "0.22"
+itoa = "1"
+regex = { workspace = true }
 thiserror = { workspace = true }
 petgraph = { workspace = true }
-serde_json = { workspace = true, features = [] }
+serde_json = { workspace = true, features = ["raw_value"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_path_to_error = "0.1"
 strum = { workspace = true, features = ["derive"] }
@@ -30,6 +32,7 @@ rquickjs = { version = "0.10", features = ["macro", "loader", "rust-alloc", "fut
 zen-types = { path = "../types", version = "2.1.6" }
 zen-expression = { path = "../expression", version = "2.1.6" }
 zen-tmpl = { path = "../template", version = "2.1.6" }
+smallvec = { version = "1", features = ["union"] }
 nohash-hasher = { workspace = true }
 downcast-rs = { version = "2.0", features = ["std", "sync"] }
 arc-swap = "1"
@@ -43,12 +46,15 @@ typed-arena = "2"
 self_cell = "1"
 
 [dev-dependencies]
+serde_json = { workspace = true, features = ["unbounded_depth"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
 insta = { version = "1.43", features = ["yaml", "redactions"] }
 toml = "0.8"
 mimalloc = "0.1.52"
 ctor = "1.0.13"
+rayon = "1"
+zstd = "0.13"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 recursive = { workspace = true }

@@ -2450,9 +2450,10 @@ impl SpecLane {
         let scopes = || cases.iter().map(|c| Self::scope(c)).collect::<Vec<_>>();
         let plain = program.without_kernel();
         self.compiled += 1;
-        match program.has_kernel() {
-            true => self.kernels += 1,
-            false => self
+        match (program.has_kernel(), program.program().draws) {
+            (true, _) => self.kernels += 1,
+            (false, true) => {}
+            (false, false) => self
                 .failures
                 .push(format!("{expression} | compiled without a kernel")),
         }

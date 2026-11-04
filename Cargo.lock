@@ -6045,11 +6045,14 @@ dependencies = [
 name = "zen-benchmark"
 version = "0.0.23"
 dependencies = [
+ "mimalloc",
+ "rust_decimal",
  "serde",
  "serde_json",
  "tokio",
  "zen-engine",
  "zen-expression",
+ "zstd",
 ]
 
 [[package]]
@@ -6068,13 +6071,16 @@ dependencies = [
  "flate2",
  "http",
  "insta",
+ "itoa",
  "json_dotpath",
  "jsonschema",
  "mimalloc",
  "nohash-hasher",
  "once_cell",
  "petgraph",
+ "rayon",
  "recursive",
+ "regex",
  "reqsign",
  "reqwest 0.12.28",
  "rquickjs",
@@ -6084,6 +6090,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2 0.10.9",
+ "smallvec",
  "strum 0.27.2",
  "swc_common",
  "swc_ecma_ast",
@@ -6097,6 +6104,7 @@ dependencies = [
  "zen-tmpl",
  "zen-types",
  "zip",
+ "zstd",
 ]
 
 [[package]]
@@ -6336,3 +6344,31 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[package]]
+name = "zstd"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb02c3132d251ab1606e9fc913a7da6c6ed08cc263df15edf082e1dc497d157"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c8ea04668f5de8d8d51051714ba560c9536519cadcdb8829bba4fe2ad159b03"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.1.2+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3"
+dependencies = [
+ "cc",
+ "pkg-config",
+]

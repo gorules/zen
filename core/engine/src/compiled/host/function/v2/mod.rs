@@ -132,12 +132,18 @@ impl FunctionV2NodeHandler {
             return Self::run(id, &source, extensions, config, iteration, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());
-        for row in rows {
+        for (at, row) in rows.into_iter().enumerate() {
             let fresh = NodeHandlerExtensions {
                 function_runtime: Default::default(),
                 ..extensions.clone()
             };
-            results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
+            results.extend(
+                crate::compiled::pinning::at_row(
+                    at,
+                    Self::run(id, &source, &fresh, config, iteration, vec![row]),
+                )
+                .await,
+            );
         }
         results
     }

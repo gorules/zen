@@ -53,7 +53,7 @@ fn evaluate(
         policy_path: Arc::from("main"),
         input: Variable::from(input),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     })?;
     Ok(result.output.to_value())
 }

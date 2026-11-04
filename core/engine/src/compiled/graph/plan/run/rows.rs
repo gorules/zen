@@ -4,6 +4,7 @@ use crate::compiled::census::Census;
 use crate::compiled::graph::data::{Data, Layer};
 use crate::compiled::graph::plan::view::{Node, Ref, M};
 use crate::compiled::graph::plan::{RowsCond, RowsOp, SegPlan};
+use crate::compiled::graph::tap::Tap;
 use crate::compiled::graph::{CompiledGraph, Condition, Kind};
 use crate::compiled::host::NodeError;
 use crate::compiled::leaf::Mask;
@@ -238,15 +239,18 @@ impl<'a> Run<'_, 'a> {
                     Ok(graph) => {
                         let (at, inputs, nodes) =
                             self.inputs(seg, Some(&op.view), &op.nodes, positions);
-                        let results = CompiledGraph::batch(
-                            step,
-                            content,
-                            &graph,
-                            &inputs,
-                            &nodes,
-                            self.host.extensions,
-                            self.host.max_depth,
-                            self.iteration,
+                        let results = crate::compiled::pinning::originated(
+                            crate::compiled::pinning::rows_origin(&at.as_slice().into()),
+                            CompiledGraph::batch(
+                                step,
+                                content,
+                                &graph,
+                                &inputs,
+                                &nodes,
+                                self.host.extensions,
+                                self.host.max_depth,
+                                self.iteration,
+                            ),
                         )
                         .await;
                         {
@@ -270,20 +274,33 @@ impl<'a> Run<'_, 'a> {
         let values: Vec<Variable> = match &step.kind {
             Kind::Host(_) => {
                 Census::mark("hosted");
+                let origin = crate::compiled::pinning::rows_origin(&at.as_slice().into());
                 let results = match &step.node.kind {
                     DecisionNodeKind::CustomNode { content } => {
-                        CompiledGraph::custom(step, content, inputs, nodes, self.host.extensions)
-                            .await
+                        crate::compiled::pinning::originated(
+                            origin,
+                            CompiledGraph::custom(
+                                step,
+                                content,
+                                inputs,
+                                nodes,
+                                self.host.extensions,
+                            ),
+                        )
+                        .await
                     }
                     _ => {
-                        CompiledGraph::hosted(
-                            step,
-                            &inputs,
-                            &nodes,
-                            self.host.extensions,
-                            self.host.max_depth,
-                            self.iteration,
-                            self.store.rows > 1,
+                        crate::compiled::pinning::originated(
+                            origin,
+                            CompiledGraph::hosted(
+                                step,
+                                &inputs,
+                                &nodes,
+                                self.host.extensions,
+                                self.host.max_depth,
+                                self.iteration,
+                                self.store.rows > 1,
+                            ),
                         )
                         .await
                     }
@@ -313,7 +330,23 @@ impl<'a> Run<'_, 'a> {
             _ => {
                 let data =
                     data.unwrap_or_else(|| Data::plain((0..inputs.len()).collect(), inputs.into()));
-                let (output, failures) = graph.rowwise(&mut self.runner, step, data, &nodes);
+                let traced = self.trace.is_some();
+                let mut walked = Vec::new();
+                if traced {
+                    Tap::arm(CompiledGraph::wants_fields(step));
+                }
+                let _origin = crate::compiled::pinning::rows_scope(&at);
+                let (output, failures) = graph.rowwise(
+                    &mut self.runner,
+                    step,
+                    data,
+                    &nodes,
+                    traced.then_some(&mut walked),
+                );
+                if traced {
+                    let tap = Tap::take();
+                    self.hosted_rows(op.node, &output, tap, walked);
+                }
                 for (i, message) in failures {
                     self.store.errors.fail(at[i], &step.node, Rc::from(message));
                 }
@@ -398,6 +431,10 @@ impl<'a> Run<'_, 'a> {
             .enumerate()
             .map(|(i, input)| CompiledGraph::scope(input, nodes.get(i).and_then(Option::as_ref)))
             .collect();
+        let _origin = program
+            .program()
+            .draws
+            .then(|| crate::compiled::pinning::rows_scope(&at));
         for (result, &row) in self.runner.evaluate(program, &scopes).into_iter().zip(&at) {
             if matches!(result, Ok(Variable::Bool(true))) {
                 Bits::set(&mut bits, row, true);

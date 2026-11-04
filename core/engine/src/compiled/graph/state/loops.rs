@@ -49,15 +49,18 @@ impl CompiledGraph {
                     .iter()
                     .map(|&r| nodes.get(r).cloned().flatten())
                     .collect();
-                let mut produced =
-                    Self::items(runner, step, body, &body_inputs, &body_nodes).into_iter();
+                let mut produced = {
+                    let _origin = zen_expression::clock::streamed()
+                        .then(|| zen_expression::clock::rows(rows.iter().copied().collect()));
+                    Self::items(runner, step, body, &body_inputs, &body_nodes).into_iter()
+                };
                 effective
                     .into_iter()
                     .map(|e| e.and_then(|_| produced.next().unwrap_or_else(|| Ok(Variable::Null))))
                     .collect()
             }
             true => {
-                let mut owners: Vec<usize> = Vec::new();
+                let mut owners: Vec<(usize, usize)> = Vec::new();
                 let mut items: Vec<Variable> = Vec::new();
                 let mut item_nodes: Vec<Option<Variable>> = Vec::new();
                 let mut shaped: Vec<Result<usize, String>> = Vec::with_capacity(inputs.len());
@@ -69,8 +72,8 @@ impl CompiledGraph {
                             Some(array) => {
                                 let array = array.borrow();
                                 shaped.push(Ok(array.len()));
-                                for item in array.iter() {
-                                    owners.push(row);
+                                for (index, item) in array.iter().enumerate() {
+                                    owners.push((row, index));
                                     items.push(item.clone());
                                     item_nodes.push(nodes.get(row).cloned().flatten());
                                 }
@@ -78,7 +81,11 @@ impl CompiledGraph {
                         },
                     }
                 }
-                let mut produced = Self::items(runner, step, body, &items, &item_nodes).into_iter();
+                let mut produced = {
+                    let _origin =
+                        Self::draws(body).then(|| zen_expression::clock::items(owners.into()));
+                    Self::items(runner, step, body, &items, &item_nodes).into_iter()
+                };
                 let mut item_inputs = items.into_iter();
                 shaped
                     .into_iter()
@@ -139,6 +146,8 @@ impl CompiledGraph {
             .unwrap_or_default();
         let lists = data.subtree(source);
         let mut items: Vec<Variable> = Vec::new();
+        let mut owners: Vec<(usize, usize)> = Vec::new();
+        let draws = Self::draws(body);
         let mut spans: Vec<Option<(usize, usize)>> = Vec::with_capacity(lists.len());
         let mut failures = Vec::new();
         for (row, list) in lists.iter().enumerate() {
@@ -146,6 +155,9 @@ impl CompiledGraph {
                 Some(array) => {
                     let start = items.len();
                     items.extend(array.borrow().iter().cloned());
+                    if draws {
+                        owners.extend((0..items.len() - start).map(|index| (row, index)));
+                    }
                     spans.push(Some((start, items.len())));
                 }
                 None => {
@@ -154,7 +166,10 @@ impl CompiledGraph {
                 }
             }
         }
-        let produced = Self::items(runner, step, body, &items, &[]);
+        let produced = {
+            let _origin = draws.then(|| zen_expression::clock::items(owners.into()));
+            Self::items(runner, step, body, &items, &[])
+        };
         let mut values = Vec::with_capacity(spans.len());
         for (row, span) in spans.into_iter().enumerate() {
             let Some((start, end)) = span else {
@@ -212,15 +227,18 @@ impl CompiledGraph {
                 .iter()
                 .map(|&i| nodes.get(i).cloned().flatten())
                 .collect();
-            let mut produced =
-                Self::items(runner, step, body, &kept_inputs, &kept_nodes).into_iter();
+            let mut produced = {
+                let _origin = zen_expression::clock::streamed()
+                    .then(|| zen_expression::clock::rows(kept.iter().copied().collect()));
+                Self::items(runner, step, body, &kept_inputs, &kept_nodes).into_iter()
+            };
             return inputs
                 .iter()
                 .enumerate()
                 .map(|(i, input)| match Self::foreign(input) {
-                    true => {
+                    true => crate::compiled::pinning::at_row_now(i, || {
                         Self::walked(step, input.clone(), nodes.get(i).cloned().flatten(), false)
-                    }
+                    }),
                     false => produced.next().unwrap_or(Ok(Variable::Null)),
                 })
                 .collect();
@@ -242,6 +260,13 @@ impl CompiledGraph {
         }
     }
 
+    pub(in crate::compiled::graph) fn draws(body: &Body) -> bool {
+        match body {
+            Body::Expression { program, .. } => program.program().draws,
+            Body::Table(table) => table.programs().iter().any(|p| p.program().draws),
+        }
+    }
+
     pub(in crate::compiled::graph) fn foreign(value: &Variable) -> bool {
         !matches!(value, Variable::Null | Variable::Object(_))
     }
@@ -257,11 +282,35 @@ impl CompiledGraph {
             input,
             nodes,
             programs: step.shared_programs(),
-            trace: false,
+            sink: None,
         };
         row.now(&step.node, None, transforms)
             .map(|response| response.output)
             .map_err(|error| error.source.to_string())
+    }
+
+    pub(in crate::compiled::graph) fn walked_traced(
+        step: &Step,
+        input: Variable,
+        nodes: Option<Variable>,
+    ) -> (
+        Result<Variable, String>,
+        crate::compiled::trace::collect::Fact,
+    ) {
+        let sink =
+            crate::compiled::exact::graph::Sink::new(crate::compiled::trace::collect::Fact::None);
+        let row = Row {
+            id: &step.node.id,
+            input,
+            nodes,
+            programs: Some(step.programs()),
+            sink: Some(&sink),
+        };
+        let result = row
+            .now(&step.node, None, true)
+            .map(|response| response.output)
+            .map_err(|error| error.source.to_string());
+        (result, sink.into_inner())
     }
 
     pub(in crate::compiled::graph) fn item_keys(step: &Step, body: &Body) -> Option<Vec<Arc<str>>> {

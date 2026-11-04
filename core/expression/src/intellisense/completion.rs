@@ -346,7 +346,7 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Min => "Returns the smallest of the elements in the input array",
             InternalFunction::Max => "Returns the largest of the elements in the input array",
             InternalFunction::Rand => {
-                "Generates a random number between 0 (inclusive) and max (inclusive)"
+                "Generates a random number between 0 (inclusive) and max (inclusive); every call, and every item of a closure, draws anew from the evaluation's seeded stream"
             }
             InternalFunction::Median => {
                 "Calculates the median value of all elements in the input array"

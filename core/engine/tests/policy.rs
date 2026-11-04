@@ -501,7 +501,7 @@ fn goal_evaluate_accepts_array_input_for_array_element_reads() {
         policy_path: Arc::from("policy"),
         input: Variable::from(skeleton),
         goals: vec![Arc::from("customer.totalRevenue")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req);
     assert!(
@@ -564,7 +564,7 @@ fn optional_input_omission_does_not_flag_missing() {
         policy_path: Arc::from("policy"),
         input: Variable::from(json!({ "customer": {} })),
         goals: vec![Arc::from("customer.greeted")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     });
     assert!(
         greeted.is_ok(),
@@ -576,7 +576,7 @@ fn optional_input_omission_does_not_flag_missing() {
         policy_path: Arc::from("policy"),
         input: Variable::from(json!({ "customer": {} })),
         goals: vec![Arc::from("customer.adult")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     });
     assert!(
         matches!(adult, Err(EvaluationError::MissingRequiredInputs { .. })),
@@ -853,7 +853,7 @@ fn columns_kind_shape_is_accepted() {
         policy_path: Arc::from("pricing"),
         input: Variable::from(json!({ "customer": { "age": 35 } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.evaluate(&req).expect("evaluate should succeed");
     let serialized: serde_json::Value = result.output.into();
@@ -867,7 +867,7 @@ fn columns_kind_shape_is_accepted() {
         serialized
     );
     let trace = result.trace.expect("trace should be populated");
-    assert_eq!(trace.executions.len(), 1);
+    assert_eq!(trace.as_legacy().expect("legacy trace").executions.len(), 1);
 }
 
 #[test]
@@ -983,7 +983,7 @@ fn multi_policy_with_import() {
         policy_path: Arc::from("order"),
         input: Variable::from(json!({ "customer": { "age": 35 } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let out: serde_json::Value = result.output.into();
@@ -1023,7 +1023,7 @@ fn missing_import_diagnostic_and_evaluate_error() {
         policy_path: Arc::from("main"),
         input: Variable::from(json!({})),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let err = ws
         .evaluate(&req)
@@ -1067,7 +1067,7 @@ fn missing_transitive_import_fails_evaluate() {
         policy_path: Arc::from("main"),
         input: Variable::from(json!({})),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let err = ws
         .evaluate(&req)
@@ -1189,7 +1189,7 @@ fn nested_iteration_uses_owner_back_reference() {
             }
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate should succeed");
     let serialized: serde_json::Value = result.output.into();
@@ -1375,7 +1375,7 @@ fn policy_merge_evaluates_correctly() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "id": "x" } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let out: serde_json::Value = result.output.into();
@@ -1551,7 +1551,7 @@ fn global_scalar_appears_at_json_top_level_and_evaluates() {
             "customer": { "subtotal": 100 }
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate should succeed");
     let out: serde_json::Value = result.output.into();
@@ -1699,7 +1699,7 @@ fn global_relationship_iterates_top_level_array() {
             ]
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate should succeed");
     let out: serde_json::Value = result.output.into();
@@ -1929,13 +1929,22 @@ fn enhance_trace_populates_dt_input_pass_bitmask() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "age": 25, "country": "US" } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.enhance_trace(&req).expect("enhance succeeded");
     let trace = result.trace.expect("trace populated");
-    assert_eq!(trace.engine_version.as_ref(), env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        trace
+            .as_legacy()
+            .expect("legacy trace")
+            .engine_version
+            .as_ref(),
+        env!("CARGO_PKG_VERSION")
+    );
 
     let dt_exec = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -2008,12 +2017,14 @@ fn enhance_trace_operand_values_are_flat_path_keyed() {
             json!({ "customer": { "totalRevenue": 700000, "revenue": 500000, "threshold": 100 } }),
         ),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.enhance_trace(&req).expect("enhance succeeded");
     let dt = result
         .trace
         .expect("trace populated")
+        .into_legacy()
+        .expect("legacy trace")
         .executions
         .into_iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -2071,12 +2082,14 @@ fn enhance_trace_operand_values_per_instance() {
             { "name": "Smol", "revenue": 50000 }
         ]}})),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.enhance_trace(&req).expect("enhance succeeded");
     let execs: Vec<_> = result
         .trace
         .expect("trace populated")
+        .into_legacy()
+        .expect("legacy trace")
         .executions
         .into_iter()
         .filter(|e| e.block_id.as_ref() == "company-risk")
@@ -2127,12 +2140,14 @@ fn enhance_trace_populates_match_arm_results() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "score": 600 } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.enhance_trace(&req).expect("enhance succeeded");
     let trace = result.trace.expect("trace populated");
 
     let tree_exec = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "tree")
@@ -2186,12 +2201,21 @@ fn default_trace_omits_extras() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "age": 25 } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let trace = result.trace.expect("trace populated");
-    assert_eq!(trace.engine_version.as_ref(), env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        trace
+            .as_legacy()
+            .expect("legacy trace")
+            .engine_version
+            .as_ref(),
+        env!("CARGO_PKG_VERSION")
+    );
     let dt_exec = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -2260,12 +2284,14 @@ fn trace_block_execution_tags_imported_policy_only() {
         policy_path: Arc::from("order"),
         input: Variable::from(json!({ "customer": { "age": 35 } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let trace = result.trace.expect("trace populated");
 
     let pricing_exec = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt-pricing")
@@ -2277,6 +2303,8 @@ fn trace_block_execution_tags_imported_policy_only() {
     );
 
     let order_exec = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "a-order")
@@ -2529,7 +2557,7 @@ fn enum_field_type_checks_and_validates() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "status": "active" } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let ok = ws.evaluate(&req).expect("valid enum value should evaluate");
     let out: serde_json::Value = ok.output.into();
@@ -2544,7 +2572,7 @@ fn enum_field_type_checks_and_validates() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "status": "unknown" } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let err = ws
         .evaluate(&bad_req)
@@ -2589,7 +2617,7 @@ fn enum_with_duplicate_values_raises_diagnostic() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "status": "active" } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     ws.evaluate(&req)
         .expect("dedup'd enum still validates the surviving values");
@@ -2770,7 +2798,7 @@ fn assertion_writes_to_undeclared_global_top_level_path() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "age": 25 } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let out: serde_json::Value = result.output.into();
@@ -2839,7 +2867,7 @@ fn input_validation_rejects_wrong_type_for_global() {
             "customer": { "id": "c1" }
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let err = ws
         .evaluate(&req)
@@ -3182,7 +3210,7 @@ fn disjoint_nested_writes_across_blocks_merge_at_runtime() {
             policy_path: Arc::from("p"),
             input: Variable::from(json!({ "principal": 1000 })),
             goals: Vec::new(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         })
         .expect("evaluate should succeed");
     let out: serde_json::Value = result.output.into();
@@ -3330,7 +3358,7 @@ fn assertion_nested_or_of_and_group() {
                 policy_path: Arc::from("p"),
                 input: Variable::from(json!({ "customer": { "a": a, "b": b, "c": c } })),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             })
             .expect("evaluate succeeded");
         result
@@ -3397,7 +3425,7 @@ fn eval(ws: &PolicyWorkspace, path: &str, input: serde_json::Value) -> serde_jso
         policy_path: Arc::from(path),
         input: Variable::from(input),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     ws.evaluate(&req).expect("evaluate ok").output.into()
 }
@@ -3973,7 +4001,7 @@ fn lazy_prunes_dead_arm_intermediate() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "segment": "corporate", "age": 10 } })),
         goals: vec![Arc::from("customer.retailValue")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let goal_out: serde_json::Value = ws.evaluate(&req).expect("goal eval ok").output.into();
     assert_eq!(
@@ -4053,7 +4081,7 @@ fn lazy_iterated_match_picks_per_instance_arm() {
             ] }
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let serialized: serde_json::Value = ws.evaluate(&req).expect("evaluate ok").output.into();
     let companies = serialized
@@ -4294,7 +4322,7 @@ fn global_aggregation_of_fanout_field() {
             json!({ "customer": { "companies": [ { "revenue": 10 }, { "revenue": 20 } ] } }),
         ),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let out: serde_json::Value = ws.evaluate(&req).expect("evaluate ok").output.into();
     assert_eq!(
@@ -4332,7 +4360,7 @@ fn trace_on_error_carries_partial_trace() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "age": 10, "name": "Alice" } })),
         goals: Vec::new(),
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
     };
     match ws
         .evaluate(&req)
@@ -4346,9 +4374,16 @@ fn trace_on_error_carries_partial_trace() {
             assert_eq!(block_id.as_ref(), "bad", "error names the failing block");
             let trace = partial_trace.expect("partial trace attached on error");
             assert!(
-                trace.executions.iter().any(|e| e.block_id.as_ref() == "ok"),
+                trace
+                    .as_legacy()
+                    .expect("legacy trace")
+                    .executions
+                    .iter()
+                    .any(|e| e.block_id.as_ref() == "ok"),
                 "partial trace must include blocks that ran before the failure; got {:?}",
                 trace
+                    .as_legacy()
+                    .expect("legacy trace")
                     .executions
                     .iter()
                     .map(|e| e.block_id.clone())
@@ -4391,7 +4426,7 @@ fn goal_validation_resolves_fanout_entity_input() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "application": { "drivers": [ { "dob": 1990 } ] } })),
         goals: vec![Arc::from("driver.age")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req);
     assert!(
@@ -4530,7 +4565,7 @@ fn reference_pool_field_read_terminates_and_evaluates() {
             "product": [ { "id": "p1", "price": 10 }, { "id": "p2", "price": 200 } ]
         })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let output: serde_json::Value = result.output.into();
@@ -4625,7 +4660,7 @@ fn empty_match_arm_value_types_as_nullable() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "flag": false } })),
         goals: vec![Arc::from("customer.tier")],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let output: serde_json::Value = result.output.into();
@@ -4669,7 +4704,7 @@ fn invalid_write_paths_are_not_registered_as_writers() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "age": 30 } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("evaluate succeeded");
     let output: serde_json::Value = result.output.into();
@@ -4820,7 +4855,7 @@ fn null_typed_computed_field_reads_are_not_unknown_properties() {
         policy_path: Arc::from("p"),
         input: Variable::from(json!({ "customer": { "base": 1 } })),
         goals: Vec::new(),
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     };
     let result = ws.evaluate(&req).expect("policy must evaluate");
     let output: serde_json::Value = result.output.into();
@@ -4853,7 +4888,7 @@ fn bool_assertion_eval(conditions: serde_json::Value) -> impl Fn(bool, bool, boo
                 policy_path: Arc::from("p"),
                 input: Variable::from(json!({ "customer": { "a": a, "b": b, "c": c } })),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             })
             .expect("evaluate succeeded");
         result

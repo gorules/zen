@@ -749,7 +749,7 @@ fn graph_evaluation_is_rejected_by_workspace() {
         policy_path: "g".into(),
         input: json!({}).into(),
         goals: vec![],
-        trace: false,
+        trace: zen_engine::trace::TraceFormat::Off,
     });
     assert!(matches!(result, Err(EvaluationError::GraphNotEvaluable(_))));
 }

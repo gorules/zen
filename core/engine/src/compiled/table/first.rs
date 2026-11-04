@@ -94,6 +94,18 @@ impl Table {
     }
 
     pub fn first(&self, runner: &mut LaneRunner, bound: &Bound) -> First {
+        let first = self.chosen_first(runner, bound);
+        crate::compiled::graph::tap::Tap::first(self, &first);
+        first
+    }
+
+    pub(crate) fn origins_of(&self, first: &First) -> Vec<Option<u32>> {
+        (0..first.codes.len())
+            .map(|row| first.chosen(row).map(|rule| self.origin(rule)))
+            .collect()
+    }
+
+    fn chosen_first(&self, runner: &mut LaneRunner, bound: &Bound) -> First {
         if let (Some(dispatch), true) = (&self.dispatch, self.literal) {
             if let (Some(keys), Some(chosen)) =
                 (self.keyed(dispatch, runner, bound), &dispatch.chosen)

@@ -300,8 +300,9 @@ impl Scenario {
         let counts = Counts::default();
         let decision = self.decision(&counts);
         let options = EvaluationOptions {
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
             max_depth: self.max_depth,
+            ..Default::default()
         };
         let xs: Vec<i64> = (1..=Self::ROWS).collect();
         let columns = Columns::new(xs.len()).column("x", Column::new(Values::I64(&xs)));

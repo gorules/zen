@@ -123,7 +123,10 @@ impl Policies {
             policy_path: Arc::from("p"),
             input: Variable::from(input.clone()),
             goals: Vec::new(),
-            trace,
+            trace: match trace {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
         }
     }
 
@@ -366,6 +369,8 @@ fn policy_collects_in_output_order() {
             .trace
             .map(|trace| {
                 trace
+                    .as_legacy()
+                    .expect("legacy trace")
                     .executions
                     .iter()
                     .flat_map(|execution| {

@@ -224,6 +224,7 @@ pub(crate) struct SegPlan {
     pub end: SegEnd,
     pub hosted: Vec<Refusal>,
     views: Vec<(NodeIndex, Node)>,
+    results: Vec<(NodeIndex, Node)>,
     nested: Nested,
 }
 
@@ -238,6 +239,7 @@ struct Builder<'g> {
     masks: Masks,
     catalog: Catalog,
     views: Vec<(NodeIndex, Node)>,
+    results: Vec<(NodeIndex, Node)>,
     objects: Vec<(Node, Ref)>,
     hosted: Vec<Refusal>,
     null: Option<SlotId>,
@@ -698,6 +700,7 @@ impl<'g> Builder<'g> {
             op.sources = sources;
             self.catalog.ops.push(Op::Lane(Box::new(op)));
         }
+        self.results.push((node, out.clone()));
         match transform.pass_through {
             true => Node::merge(input, &out, &mut self.masks, &mut self.catalog),
             false => Ok(out),
@@ -828,6 +831,7 @@ impl<'g> Builder<'g> {
                 }
             }
         };
+        self.results.push((node, out.clone()));
         match transform.pass_through {
             true => Node::merge(input, &out, &mut self.masks, &mut self.catalog),
             false => Ok(out),
@@ -1226,16 +1230,18 @@ impl<'g> Builder<'g> {
         &mut self,
         f: impl FnOnce(&mut Self) -> Result<T, Refusal>,
     ) -> Result<T, Refusal> {
-        let (slots, ops, objects, masks) = (
+        let (slots, ops, objects, results, masks) = (
             self.catalog.slots.len(),
             self.catalog.ops.len(),
             self.objects.len(),
+            self.results.len(),
             self.masks.clone(),
         );
         f(self).inspect_err(|_| {
             self.catalog.slots.truncate(slots);
             self.catalog.ops.truncate(ops);
             self.objects.truncate(objects);
+            self.results.truncate(results);
             self.masks = masks;
         })
     }
@@ -1287,6 +1293,7 @@ impl<'g> Builder<'g> {
             fields: Vec::new(),
         };
         let output = Node::wrap(leaf, path);
+        self.results.push((node, output.clone()));
         match transform.pass_through {
             true => Node::merge(input, &output, &mut self.masks, &mut self.catalog),
             false => Ok(output),
@@ -1508,6 +1515,7 @@ impl<'g> Builder<'g> {
             end,
             hosted: self.hosted,
             views: self.views,
+            results: self.results,
             nested: self.nested,
         })
     }
@@ -1560,6 +1568,7 @@ impl SegPlan {
                 ops: Vec::new(),
             },
             views: self.views.clone(),
+            results: self.results.clone(),
             objects: Vec::new(),
             hosted: Vec::new(),
             null: None,
@@ -1746,6 +1755,7 @@ impl Plan {
             masks: Masks::default(),
             catalog: Catalog::default(),
             views: Vec::new(),
+            results: Vec::new(),
             objects: Vec::new(),
             hosted: Vec::new(),
             null: None,

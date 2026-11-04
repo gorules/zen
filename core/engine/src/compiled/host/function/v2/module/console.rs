@@ -20,8 +20,10 @@ impl RuntimeListener for ConsoleListener {
     ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
         Box::pin(async move {
             match event {
-                RuntimeEvent::Startup => Console::init(&ctx)?,
-                RuntimeEvent::SoftReset => Console::init(&ctx)?,
+                RuntimeEvent::Startup | RuntimeEvent::SoftReset => {
+                    Console::init(&ctx)?;
+                    crate::compiled::pinning::install_js(&ctx)?;
+                }
             }
 
             Ok(())

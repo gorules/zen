@@ -476,7 +476,7 @@ impl Engines {
                 policy_path: Arc::from(PolicyRun::MAIN),
                 input: input.depth_clone(64),
                 goals: targets.to_vec(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = self.reference.policy(
                 || Canon::key(&suite.id(), goals, &input),

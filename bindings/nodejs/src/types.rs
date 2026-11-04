@@ -40,6 +40,7 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
 pub struct ZenEngineResponse {
     pub performance: String,
     pub result: Value,
+    #[napi(ts_type = "Record<string, ZenEngineTrace> | ZenTraceDocument")]
     pub trace: Option<HashMap<Arc<str>, ZenEngineTrace>>,
 }
 

@@ -83,7 +83,7 @@ impl Math {
                     .round()
                     .to_i64()
                     .ok_or_else(|| "Invalid upper range".to_string())?;
-                Ok(Decimal::from(fastrand::i64(0..=upper)))
+                Ok(Decimal::from(crate::clock::random_int(upper)))
             })
         }],
         fail: |args| Params::fail(args, Self::NUMBER),

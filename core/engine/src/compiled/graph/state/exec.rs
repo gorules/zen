@@ -1,6 +1,8 @@
 use crate::compiled::content::Content;
 use crate::compiled::graph::data::{Col, Data};
 use crate::compiled::graph::schedule::Execute;
+use crate::compiled::graph::tap::Tap;
+use crate::compiled::graph::traces::{Encoding, Facts, Value};
 use crate::compiled::graph::{data, Body, CompiledGraph, Kind, NodeColumn, State, Step};
 use crate::compiled::host::function::v1::{Batch, FunctionV1NodeHandler};
 use crate::compiled::host::function::v2::FunctionV2NodeHandler;
@@ -11,6 +13,7 @@ use crate::compiled::host::{NodeContextConfig, NodeHandlerExtensions};
 use crate::model::DecisionNodeKind;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 use zen_expression::lane::LaneRunner;
 use zen_expression::Variable;
 use zen_types::decision::FunctionNodeContent;
@@ -30,13 +33,14 @@ impl CompiledGraph {
         let Some(step) = self.step_at(event.node) else {
             return;
         };
-        let data = match step.kind {
+        let start = Instant::now();
+        let data = Rc::new(match step.kind {
             Kind::Input => Data::plain(
                 rows.clone(),
                 rows.iter().map(|&r| inputs[r].clone()).collect(),
             ),
             _ => Self::input_of(state, &event.parents, rows),
-        };
+        });
         let (nodes, extra) = self.node_inputs(
             step,
             state,
@@ -46,26 +50,58 @@ impl CompiledGraph {
         );
 
         if matches!(step.kind, Kind::Host(_)) {
-            let materialized = data.materialized();
+            let materialized = match state.traces.is_some() {
+                true => Self::merged_rows(state, &event.parents, rows).into(),
+                false => data.materialized(),
+            };
             let batched = state.errors.len() > 1;
+            let traced = state.traces.is_some();
+            let origin = crate::compiled::pinning::rows_origin(rows);
             let replayed = state
                 .nesting
                 .completed
                 .and_then(|completed| completed.replay(event.node, rows));
-            let results = match replayed {
-                None => {
-                    Self::hosted(
-                        step,
-                        &materialized,
-                        &nodes,
-                        extensions,
-                        max_depth,
-                        state.nesting.iteration,
-                        batched,
+            let (results, facts) = match (replayed, traced) {
+                (_, true) => {
+                    let nodes = match step.nodes && state.with_nodes && nodes.is_empty() {
+                        true => self
+                            .nodes_of(state, &event.visible, rows)
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                        false => nodes,
+                    };
+                    let (results, facts) = crate::compiled::pinning::originated(
+                        origin,
+                        Self::hosted_traced(
+                            step,
+                            &materialized,
+                            &nodes,
+                            extensions,
+                            max_depth,
+                            state.nesting.iteration,
+                        ),
                     )
-                    .await
+                    .await;
+                    (results, Facts::Rows(facts))
                 }
-                Some(replayed) => {
+                (None, false) => (
+                    crate::compiled::pinning::originated(
+                        origin,
+                        Self::hosted(
+                            step,
+                            &materialized,
+                            &nodes,
+                            extensions,
+                            max_depth,
+                            state.nesting.iteration,
+                            batched,
+                        ),
+                    )
+                    .await,
+                    Facts::None,
+                ),
+                (Some(replayed), false) => {
                     let missing: Vec<usize> =
                         (0..rows.len()).filter(|&i| replayed[i].is_none()).collect();
                     let inputs: Vec<Variable> =
@@ -77,26 +113,33 @@ impl CompiledGraph {
                     let mut fresh = match missing.is_empty() {
                         true => Vec::new(),
                         false => {
-                            Self::hosted(
-                                step,
-                                &inputs,
-                                &parents,
-                                extensions,
-                                max_depth,
-                                state.nesting.iteration,
-                                batched,
+                            let at: Rc<[usize]> = missing.iter().map(|&i| rows[i]).collect();
+                            crate::compiled::pinning::originated(
+                                crate::compiled::pinning::rows_origin(&at),
+                                Self::hosted(
+                                    step,
+                                    &inputs,
+                                    &parents,
+                                    extensions,
+                                    max_depth,
+                                    state.nesting.iteration,
+                                    batched,
+                                ),
                             )
                             .await
                         }
                     }
                     .into_iter();
-                    replayed
-                        .into_iter()
-                        .map(|done| match done {
-                            Some(value) => Ok(value),
-                            None => fresh.next().unwrap_or(Ok(Variable::Null)),
-                        })
-                        .collect()
+                    (
+                        replayed
+                            .into_iter()
+                            .map(|done| match done {
+                                Some(value) => Ok(value),
+                                None => fresh.next().unwrap_or(Ok(Variable::Null)),
+                            })
+                            .collect(),
+                        Facts::None,
+                    )
                 }
             };
             let mut values = Vec::with_capacity(rows.len());
@@ -109,13 +152,24 @@ impl CompiledGraph {
                     }
                 }
             }
-            state.nodes[event.node.index()].push(Rc::new(Data::plain(rows.clone(), values.into())));
+            let output = Rc::new(Data::plain(rows.clone(), values.into()));
+            state.nodes[event.node.index()].push(output.clone());
+            Self::trace_event(
+                state,
+                event,
+                rows,
+                true,
+                Some(Value::Data(output)),
+                start,
+                facts,
+                Encoding::Generic,
+            );
             return;
         }
 
-        let (output, failures): (Data<'a>, Vec<(usize, String)>) = match &step.kind {
-            Kind::Switch { .. } | Kind::Host(_) => (data, Vec::new()),
-            Kind::Output if !step.schema => (data, Vec::new()),
+        let (output, failures): (Rc<Data<'a>>, Vec<(usize, String)>) = match &step.kind {
+            Kind::Switch { .. } | Kind::Host(_) => (data.clone(), Vec::new()),
+            Kind::Output if !step.schema => (data.clone(), Vec::new()),
             Kind::Input if !step.schema && Self::unresolved(content, &step.node) => {
                 let values: Col = data
                     .materialized()
@@ -124,21 +178,42 @@ impl CompiledGraph {
                         DeclaredDates::prepare(value, None).unwrap_or_else(|| value.clone())
                     })
                     .collect();
-                (Data::plain(rows.clone(), values), Vec::new())
+                (Rc::new(Data::plain(rows.clone(), values)), Vec::new())
             }
             Kind::Input | Kind::Output => {
                 let (values, failures) = self
                     .bounded(step, &data.materialized(), &nodes, content, extensions)
                     .await;
-                (Data::plain(rows.clone(), values.into()), failures)
+                (Rc::new(Data::plain(rows.clone(), values.into())), failures)
             }
-            Kind::Node { .. } => self.node(step, rows, &data, &nodes, &extra),
+            Kind::Node { .. } => {
+                let (output, failures) = self.node(step, rows, &data, &nodes, &extra);
+                (Rc::new(output), failures)
+            }
         };
 
         for (i, message) in failures {
             state.errors.fail(rows[i], &step.node, message);
         }
-        state.nodes[event.node.index()].push(Rc::new(output));
+        state.nodes[event.node.index()].push(output.clone());
+        if state.traces.is_some() {
+            let encoding = self.encoding(step, event, &data);
+            let (input, output) = match step.kind {
+                Kind::Input => (false, Some(Value::Data(output))),
+                Kind::Output => (true, Some(Value::Null)),
+                _ => (true, Some(Value::Data(output))),
+            };
+            Self::trace_event(
+                state,
+                event,
+                rows,
+                input,
+                output,
+                start,
+                Facts::None,
+                encoding,
+            );
+        }
     }
 
     pub(in crate::compiled::graph) async fn hosted(
@@ -202,14 +277,17 @@ impl CompiledGraph {
         for (i, value) in inputs.iter().enumerate() {
             let nodes = nodes.get(i).cloned().flatten();
             results.push(
-                Self::host(
-                    step,
-                    value.clone(),
-                    nodes,
-                    extensions,
-                    max_depth,
-                    iteration,
-                    batched,
+                crate::compiled::pinning::at_row(
+                    i,
+                    Self::host(
+                        step,
+                        value.clone(),
+                        nodes,
+                        extensions,
+                        max_depth,
+                        iteration,
+                        batched,
+                    ),
                 )
                 .await,
             );
@@ -231,17 +309,20 @@ impl CompiledGraph {
         let mut results = Vec::with_capacity(inputs.len());
         for (i, value) in inputs.iter().enumerate() {
             let nodes = nodes.get(i).cloned().flatten();
-            match batch.call(value, nodes.as_ref()) {
+            match crate::compiled::pinning::at_row_now(i, || batch.call(value, nodes.as_ref())) {
                 Some(result) => results.push(result),
                 None => results.push(
-                    Self::host(
-                        step,
-                        value.clone(),
-                        nodes,
-                        extensions,
-                        max_depth,
-                        iteration,
-                        batched,
+                    crate::compiled::pinning::at_row(
+                        i,
+                        Self::host(
+                            step,
+                            value.clone(),
+                            nodes,
+                            extensions,
+                            max_depth,
+                            iteration,
+                            batched,
+                        ),
                     )
                     .await,
                 ),
@@ -293,6 +374,7 @@ impl CompiledGraph {
         step: &Step,
         data: Data<'a>,
         nodes: &[Option<Variable>],
+        mut facts: Option<&mut Vec<crate::compiled::trace::collect::Fact>>,
     ) -> (Data<'a>, Vec<(usize, String)>) {
         let rows: Rc<[usize]> = (0..data.len()).collect();
         if Self::foreign_input(step, &data) {
@@ -303,7 +385,17 @@ impl CompiledGraph {
                 .iter()
                 .enumerate()
                 .map(|(i, value)| {
-                    match Self::walked(step, value.clone(), nodes.get(i).cloned().flatten(), true) {
+                    let node = nodes.get(i).cloned().flatten();
+                    let result =
+                        crate::compiled::pinning::at_row_now(i, || match facts.as_deref_mut() {
+                            Some(facts) => {
+                                let (result, fact) = Self::walked_traced(step, value.clone(), node);
+                                facts.push(fact);
+                                result
+                            }
+                            None => Self::walked(step, value.clone(), node, true),
+                        });
+                    match result {
                         Ok(output) => output,
                         Err(message) => {
                             failures.push((i, message));
@@ -392,10 +484,14 @@ impl CompiledGraph {
                             .is_some_and(|(program, _)| program.path().is_some()) =>
                 {
                     crate::compiled::census::Census::mark("looped");
+                    let _origin = zen_expression::clock::streamed()
+                        .then(|| zen_expression::clock::rows(rows.clone()));
                     Self::looped(runner, step, body, transform, path, data)
                 }
                 _ => {
                     crate::compiled::census::Census::mark("transformed");
+                    let _origin = zen_expression::clock::streamed()
+                        .then(|| zen_expression::clock::rows(rows.clone()));
                     let materialized = data.materialized();
                     let results =
                         Self::transformed(runner, step, body, transform, &materialized, nodes);
@@ -455,8 +551,15 @@ impl CompiledGraph {
         rows: &Rc<[usize]>,
         state: &mut State<'a>,
     ) {
-        let data = Self::input_of(state, &event.parents, rows);
-        let foreign = Self::foreign_input(step, &data);
+        let start = Instant::now();
+        let traced = state.traces.is_some();
+        let data = Rc::new(Self::input_of(state, &event.parents, rows));
+        let foreign = Self::foreign_input(step, &data)
+            || (traced && matches!(step.kind, Kind::Node { .. }) && step.draws());
+        if traced {
+            Tap::arm(Self::wants_fields(step));
+        }
+        let mut walked: Option<Vec<crate::compiled::trace::collect::Fact>> = None;
         let (output, failures) = match &step.kind {
             Kind::Node { .. } if foreign => {
                 let values = data.materialized();
@@ -469,16 +572,25 @@ impl CompiledGraph {
                     false => Vec::new(),
                 };
                 let mut failures = Vec::new();
+                let mut facts = traced.then(|| Vec::with_capacity(values.len()));
+                let _origin = zen_expression::clock::streamed()
+                    .then(|| zen_expression::clock::rows(rows.clone()));
                 let outputs: Vec<Variable> = values
                     .iter()
                     .enumerate()
                     .map(|(i, value)| {
-                        match Self::walked(
-                            step,
-                            value.clone(),
-                            nodes.get(i).cloned().flatten(),
-                            true,
-                        ) {
+                        let node = nodes.get(i).cloned().flatten();
+                        let result =
+                            crate::compiled::pinning::at_row_now(i, || match facts.as_mut() {
+                                Some(facts) => {
+                                    let (result, fact) =
+                                        Self::walked_traced(step, value.clone(), node);
+                                    facts.push(fact);
+                                    result
+                                }
+                                None => Self::walked(step, value.clone(), node, true),
+                            });
+                        match result {
                             Ok(output) => output,
                             Err(message) => {
                                 failures.push((i, message));
@@ -487,7 +599,8 @@ impl CompiledGraph {
                         }
                     })
                     .collect();
-                (Data::plain(rows.clone(), outputs.into()), failures)
+                walked = facts;
+                (Rc::new(Data::plain(rows.clone(), outputs.into())), failures)
             }
             Kind::Node { .. } => {
                 let (nodes, extra) = self.node_inputs(
@@ -497,13 +610,40 @@ impl CompiledGraph {
                     rows,
                     step.column_path(rows.len()),
                 );
-                self.node(step, rows, &data, &nodes, &extra)
+                let (output, failures) = self.node(step, rows, &data, &nodes, &extra);
+                (Rc::new(output), failures)
             }
-            _ => (data, Vec::new()),
+            _ => (data.clone(), Vec::new()),
+        };
+        let tap = match traced {
+            true => Tap::take(),
+            false => None,
         };
         for (i, message) in failures {
             state.errors.fail(rows[i], &step.node, message);
         }
-        state.nodes[event.node.index()].push(Rc::new(output));
+        state.nodes[event.node.index()].push(output.clone());
+        if traced && !matches!(step.kind, Kind::Switch { .. }) {
+            let facts = match (&step.kind, walked) {
+                (Kind::Node { .. }, Some(walked)) => Facts::Rows(walked),
+                (Kind::Node { .. }, None) => self.tapped(step, tap, state, event, rows, &data),
+                _ => Facts::None,
+            };
+            let encoding = self.encoding(step, event, &data);
+            let output = match step.kind {
+                Kind::Output => Value::Null,
+                _ => Value::Data(output),
+            };
+            Self::trace_event(
+                state,
+                event,
+                rows,
+                true,
+                Some(output),
+                start,
+                facts,
+                encoding,
+            );
+        }
     }
 }

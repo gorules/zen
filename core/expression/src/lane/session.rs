@@ -18,6 +18,13 @@ impl Programs {
         Self::default()
     }
 
+    pub fn sources(&self) -> impl Iterator<Item = &str> {
+        self.standard
+            .keys()
+            .chain(self.unary.keys())
+            .map(|k| k.as_ref())
+    }
+
     pub fn compile<'s>(sources: impl IntoIterator<Item = (&'s str, ExpressionKind)>) -> Self {
         let mut programs = Self::new();
         for (source, kind) in sources {

@@ -8,7 +8,7 @@ use crate::compiled::exact::policy::Exact;
 use crate::compiled::policy::artifact::Artifact as EvalArtifact;
 use crate::compiled::policy::site::{Evaluate, HostState, Pick, Picked, Site};
 use crate::policy::blocks::{Block, BlockKind, ExecutionError};
-use crate::workspace::types::{BlockExecution, BlockRef, BlockTrace, EvaluationError};
+use crate::workspace::{BlockExecution, BlockRef, BlockTrace, EvaluationError};
 
 pub(crate) struct Host<'a> {
     pub(crate) state: HostState<'a>,

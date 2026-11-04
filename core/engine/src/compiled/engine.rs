@@ -1,19 +1,17 @@
 use crate::compiled::decision::CompiledDecision;
 use crate::compiled::host::graph::graph::Responses;
+use crate::compiled::pinning;
 use crate::compiled::policy::artifact::Artifact;
-use crate::compiled::policy::validator::InputSchema;
 use crate::compiled::prepared::{Decisions, Policies, Prepared};
 use crate::decision_graph::graph::DecisionGraphResponse;
-use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
+use crate::engine::{EvaluationOptions, EvaluationSerializedOptions};
 use crate::loader::{DynamicLoader, LoaderResult};
 use crate::model::{DecisionContent, GraphContent};
 use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::policy::raw::PolicyDocument;
 use crate::workspace::db::Db;
-use crate::workspace::types::{
-    EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity,
-};
+use crate::workspace::{EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity};
 use crate::EvaluationError;
 use ahash::{HashMap, HashSet, HashSetExt};
 use arc_swap::ArcSwapOption;
@@ -78,7 +76,7 @@ impl Caches {
                 .into_iter()
                 .any(|d| d.severity == Severity::Error);
             if !blocked {
-                let artifact = Artifact::new(db.eval_artifact(key), InputSchema::of(&db, key));
+                let artifact = Artifact::new(&db, key, db.eval_artifact(key));
                 entries.insert(key.clone(), Entry::Policy(Arc::new(artifact)));
             }
         }
@@ -106,6 +104,49 @@ impl Caches {
                 self.children.clone(),
             )
         })
+    }
+
+    pub(crate) async fn evaluate_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        context: Variable,
+        options: EvaluationOptions,
+    ) -> LoaderResult<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let clock = pinning::scope_for(&options);
+        let inner = std::pin::pin!(self.evaluate(parts, key, context, pinning::inner(options)));
+        pinning::run(clock, inner).await
+    }
+
+    pub(crate) async fn evaluate_serialized_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        context: Variable,
+        options: EvaluationSerializedOptions,
+    ) -> Result<Value, Value> {
+        let clock = pinning::scope_for(&options);
+        let inner =
+            std::pin::pin!(self.evaluate_serialized(parts, key, context, pinning::inner(options)));
+        pinning::run(clock, inner).await
+    }
+
+    pub(crate) async fn evaluate_batch_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let clock = pinning::batch_for(&options);
+        let inner = std::pin::pin!(self.evaluate_batch(
+            parts,
+            key,
+            contexts,
+            pinning::inner(options),
+            &clock,
+        ));
+        pinning::run(Some(clock.clone()), inner).await
     }
 
     pub(crate) async fn evaluate(
@@ -149,12 +190,8 @@ impl Caches {
         context: Variable,
         options: EvaluationSerializedOptions,
     ) -> Result<Value, Value> {
-        let opts = EvaluationOptions {
-            trace: options.trace != EvaluationTraceKind::None,
-            max_depth: options.max_depth,
-        };
-        match self.evaluate(parts, key, context, opts).await {
-            Ok(response) => Responses::serialized(response, options.trace),
+        match self.evaluate(parts, key, context, options).await {
+            Ok(response) => Responses::serialized(response),
             Err(err) => Err(Value::String(err.to_string())),
         }
     }
@@ -165,6 +202,7 @@ impl Caches {
         key: &str,
         contexts: &[Variable],
         options: EvaluationOptions,
+        clock: &Arc<zen_expression::clock::Clock>,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         if let Some(entry) = self.entry(key) {
             return match entry {
@@ -204,11 +242,13 @@ impl Caches {
             }
         }
         let mut results = Vec::with_capacity(contexts.len());
-        for context in contexts {
+        for (row, context) in contexts.iter().enumerate() {
             results.push(
-                match self
-                    .evaluate(parts, key, context.deep_clone(), options)
-                    .await
+                match crate::compiled::pinning::with(
+                    clock.stream(row),
+                    self.evaluate(parts, key, context.deep_clone(), options),
+                )
+                .await
                 {
                     Ok(result) => result,
                     Err(error) => Err(Box::<EvaluationError>::from(error)),
@@ -240,8 +280,9 @@ impl Caches {
                 .any(|d| d.severity == Severity::Error);
             (!blocked).then(|| {
                 Arc::new(Artifact::new(
+                    &db,
+                    &entry_path,
                     db.eval_artifact(&entry_path),
-                    InputSchema::of(&db, &entry_path),
                 ))
             })
         });

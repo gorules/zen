@@ -21,6 +21,9 @@ pub(crate) struct ZenEngine {
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
     pub trace: Option<bool>,
+    pub now: Option<String>,
+    pub timezone: Option<String>,
+    pub seed: Option<u64>,
 }
 
 impl Default for ZenEvaluateOptions {
@@ -28,6 +31,9 @@ impl Default for ZenEvaluateOptions {
         Self {
             max_depth: Some(5),
             trace: Some(false),
+            now: None,
+            timezone: None,
+            seed: None,
         }
     }
 }
@@ -36,7 +42,19 @@ impl From<ZenEvaluateOptions> for EvaluationOptions {
     fn from(value: ZenEvaluateOptions) -> Self {
         Self {
             max_depth: value.max_depth.unwrap_or(5),
-            trace: value.trace.unwrap_or(false),
+            trace: match value.trace.unwrap_or(false) {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
+            now: value
+                .now
+                .as_deref()
+                .and_then(zen_engine::clock::parse_instant),
+            timezone: value
+                .timezone
+                .as_deref()
+                .and_then(zen_engine::clock::parse_timezone),
+            seed: value.seed,
         }
     }
 }

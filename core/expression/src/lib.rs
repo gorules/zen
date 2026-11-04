@@ -57,6 +57,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod clock;
 mod config;
 mod isolate;
 

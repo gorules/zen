@@ -11,7 +11,7 @@ use zen_types::symbol::Symbol;
 use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
 use crate::compiled::policy::blocks::{MatchSelection, TableIndexes, TableSelection};
 use crate::policy::blocks::{Block, BlockKind, BlockReadPlan, ExecutionError, PropertyRead};
-use crate::workspace::types::{BlockExecution, BlockRef, BlockTrace, EvaluationError, WriteTrace};
+use crate::workspace::{BlockExecution, BlockRef, BlockTrace, EvaluationError, WriteTrace};
 
 pub(crate) struct Site<'a> {
     pub(crate) store: &'a Variable,

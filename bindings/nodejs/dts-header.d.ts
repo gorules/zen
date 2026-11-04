@@ -339,7 +339,8 @@ export interface PolicyEvaluationResult {
   output?: unknown;
   /** Evaluation duration in microseconds. */
   duration?: number;
-  trace?: PolicyTrace;
+  /** Version 1 trace document by default on the compiled engine; today's shape with `trace: 'legacy'` and always on the interpreted engine. */
+  trace?: PolicyTrace | ZenTraceDocument;
   /** Present when a block failed mid-evaluation; `trace` then holds the partial trace up to the failure. */
   error?: PolicyEvaluationFailure;
 }
@@ -349,6 +350,12 @@ export interface PolicyEvaluationFailure {
   blockId: string;
   expression: string;
   message: string;
+}
+
+export interface ZenTraceDocument {
+  version: 1;
+  kind: 'graph' | 'policy';
+  [key: string]: unknown;
 }
 
 export interface PolicyTrace {

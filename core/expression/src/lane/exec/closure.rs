@@ -166,7 +166,11 @@ impl Executor {
         rest: &mut [Frame<M>],
         ctx: &mut Context,
     ) -> bool {
-        if c.sequential || matches!(c.kind, ClosureFunction::FlatMap) || active.is_empty() {
+        if c.sequential
+            || c.body.draws
+            || matches!(c.kind, ClosureFunction::FlatMap)
+            || active.is_empty()
+        {
             return false;
         }
         let source = match Self::selection(c, f, ctx) {
@@ -755,10 +759,15 @@ impl Executor {
             bits.clear();
             bits.resize(words, 0);
         }
-        let mut start = 0;
-        while start < total {
-            let end = (start + chunk).min(total);
-            let width = end - start;
+        let parent_of = |j: usize| match column {
+            Some(_) => slots[j].0,
+            None => items[j].0,
+        };
+        let blocks = Executor::blocks(total, chunk, c.body.draws, |j| {
+            ctx.drawn_row(f.rows[parent_of(j) as usize])
+        });
+        for (start, width) in blocks {
+            let end = start + width;
             rows.clear();
             parents.clear();
             for j in start..end {
@@ -823,7 +832,6 @@ impl Executor {
                     _ => child.take(out, lane),
                 });
             }
-            start = end;
         }
     }
 
@@ -852,14 +860,15 @@ impl Executor {
         rest: &mut [Frame<M>],
         ctx: &mut Context,
     ) {
-        if active.count() == 1 {
-            let lane = active.first().unwrap_or_default();
-            let r = match Self::list_of(c, lane, f, ctx) {
-                Ok(list @ Variable::Array(_)) => Self::single(c, lane, &list, f, rest, ctx),
-                Ok(_) => Err(Ops::error("Begin", "Unsupported type")),
-                Err(e) => Err(e),
-            };
-            f.put(c.dst, lane, r);
+        if active.count() == 1 || c.body.draws {
+            for lane in Lanes::of(active) {
+                let r = match Self::list_of(c, lane, f, ctx) {
+                    Ok(list @ Variable::Array(_)) => Self::single(c, lane, &list, f, rest, ctx),
+                    Ok(_) => Err(Ops::error("Begin", "Unsupported type")),
+                    Err(e) => Err(e),
+                };
+                f.put(c.dst, lane, r);
+            }
             return;
         }
         let mut scratch = std::mem::take(&mut f.scratch);

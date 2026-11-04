@@ -222,6 +222,49 @@ impl Executor {
         word
     }
 
+    pub fn blocks(
+        total: usize,
+        width: usize,
+        draws: bool,
+        row: impl Fn(usize) -> usize,
+    ) -> smallvec::SmallVec<[(usize, usize); 4]> {
+        let mut out = smallvec::SmallVec::new();
+        if !draws {
+            let mut start = 0;
+            while start < total {
+                let n = (total - start).min(width);
+                out.push((start, n));
+                start += n;
+            }
+            return out;
+        }
+        let streamed = crate::clock::streamed();
+        let key = |i: usize| match streamed {
+            true => crate::clock::stream_key(row(i)),
+            false => 0,
+        };
+        let cap = crate::lane::Word::LANES.min(width);
+        let (mut start, mut n, mut i) = (0usize, 0usize, 0usize);
+        while i < total {
+            let k = key(i);
+            let mut j = i + 1;
+            while j < total && j - i < cap && key(j) == k {
+                j += 1;
+            }
+            if n + (j - i) > cap {
+                out.push((start, n));
+                start = i;
+                n = 0;
+            }
+            n += j - i;
+            i = j;
+        }
+        if n > 0 {
+            out.push((start, n));
+        }
+        out
+    }
+
     pub fn run<M: LaneSet>(
         program: &Program,
         frames: &mut [Frame<M>],
@@ -1003,6 +1046,32 @@ impl Executor {
                         Builtins::call(builtin, &kind, &[value])
                     };
                     f.write(*dst, lane, r);
+                }
+            }
+            Op::Call {
+                dst,
+                kind: kind @ FunctionKind::Internal(InternalFunction::Rand),
+                args,
+            } => {
+                let Some(builtin) = Builtins::of(kind) else {
+                    return;
+                };
+                f.box_lists(args, active);
+                let mut hint = 0usize;
+                for lane in Lanes::of(active) {
+                    let result = {
+                        let values: smallvec::SmallVec<[Arg; 4]> = args
+                            .iter()
+                            .map(|a| match *a {
+                                Input::Const(id) => Arg::of(&f.consts[id as usize]),
+                                Input::Reg(r) => f.arg_view(r, lane),
+                            })
+                            .collect();
+                        crate::clock::at_row(ctx.drawn_row(f.rows[lane]), || {
+                            Builtins::call_hinted(builtin, kind, &values, &mut hint)
+                        })
+                    };
+                    f.write_call(*dst, lane, result);
                 }
             }
             Op::Call { dst, kind, args } => {

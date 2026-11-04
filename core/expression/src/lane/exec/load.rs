@@ -194,6 +194,7 @@ impl Executor {
         let pure = Effect::function(&c.kind) != Effect::Random;
         for lane in Lanes::of(active & !done) {
             let mut share = None;
+            let drawn = (!pure).then(|| crate::clock::set_row(Some(ctx.drawn_row(f.rows[lane]))));
             let r = match column {
                 Some(Some(col)) => {
                     let row = ctx.base + f.rows[lane] as usize;
@@ -251,6 +252,9 @@ impl Executor {
                     Err(e) => Err(Fault::Vm(e)),
                 }),
             };
+            if let Some(previous) = drawn {
+                crate::clock::set_row(previous);
+            }
             f.write_call(c.dst, lane, r);
             if let (Some(code), false, true) =
                 (share, f.boxed[c.dst as usize].get(lane), f.alive.get(lane))

@@ -184,7 +184,9 @@ impl Table {
         let rows = bound.rows();
         let words = self.words;
         let (candidates, deferred) = self.candidates(runner, bound, false);
+        let exact = deferred.is_empty();
         let first = self.choose(runner, bound, &candidates, deferred);
+        self.tap_hits(&candidates, Some(&first), exact);
         let lists = self.collect_columns.len();
         let targeted = self.targets();
         let (targets, templates) = &targeted;
@@ -251,6 +253,7 @@ impl Table {
             return None;
         }
         let (candidates, _) = self.candidates(runner, bound, false);
+        self.tap_hits(&candidates, None, true);
         let (codes, sets) = self.sets(&candidates, bound.rows());
         let templates: Vec<Vec<Variable>> = sets
             .iter()
@@ -378,6 +381,7 @@ impl Table {
         let names = self.record_names()?;
         let rows = bound.rows();
         let (candidates, _) = self.candidates(runner, bound, false);
+        self.tap_hits(&candidates, None, true);
         let (codes, sets) = self.sets(&candidates, rows);
         let sets: Vec<Vec<usize>> = sets
             .into_iter()

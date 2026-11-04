@@ -8,7 +8,6 @@ use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 mod duration;
 mod duration_parser;
@@ -229,17 +228,9 @@ mod helper {
     use rust_decimal::prelude::ToPrimitive;
     use std::ops::Deref;
     use std::str::FromStr;
-    use std::sync::OnceLock;
 
     pub(super) fn tz() -> Tz {
-        static CACHED_TZ: OnceLock<Tz> = OnceLock::new();
-
-        *CACHED_TZ.get_or_init(|| {
-            iana_time_zone::get_timezone()
-                .ok()
-                .and_then(|tz| Tz::from_str(&tz).ok())
-                .unwrap_or(Tz::UTC)
-        })
+        crate::clock::timezone()
     }
 
     pub fn now() -> DateTime<Tz> {
@@ -818,14 +809,7 @@ impl Date {
 }
 
 pub(crate) fn utc_now() -> DateTime<Utc> {
-    static CURRENT_DATE_VALUE: OnceLock<Option<DateTime<Utc>>> = OnceLock::new();
-
-    CURRENT_DATE_VALUE
-        .get_or_init(|| match std::env::var("__ZEN_MOCK_UTC_TIME") {
-            Ok(v) => v.parse::<DateTime<Utc>>().ok(),
-            Err(_) => None,
-        })
-        .unwrap_or_else(Utc::now)
+    crate::clock::now()
 }
 
 #[cfg(test)]

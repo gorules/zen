@@ -23,7 +23,7 @@ impl fmt::Display for InputValidationError {
 }
 
 #[derive(Debug, Error)]
-pub enum EvaluationError {
+pub enum EvaluationError<T = crate::workspace::types::Trace> {
     #[error("policy '{0}' not found in workspace")]
     PolicyNotFound(Arc<str>),
 
@@ -63,11 +63,11 @@ pub enum EvaluationError {
         block_id: Arc<str>,
         expression: Arc<str>,
         source: IsolateError,
-        partial_trace: Option<Box<crate::workspace::types::Trace>>,
+        partial_trace: Option<Box<T>>,
     },
 }
 
-impl EvaluationError {
+impl<T: serde::Serialize> EvaluationError<T> {
     pub fn serialize_into_map<M: SerializeMap>(&self, map: &mut M) -> Result<(), M::Error> {
         match self {
             Self::PolicyNotFound(path) => {

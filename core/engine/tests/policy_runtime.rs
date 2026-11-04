@@ -3,10 +3,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, PolicyContent};
-use zen_engine::{
-    DecisionEngine, EvaluationError, EvaluationOptions, EvaluationSerializedOptions,
-    EvaluationTraceKind,
-};
+use zen_engine::trace::TraceFormat;
+use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions, EvaluationSerializedOptions};
 
 mod support;
 use support::load_test_data;
@@ -220,44 +218,67 @@ async fn missing_import_is_loader_error() {
     );
 }
 
-fn assert_string_trace(value: serde_json::Value) {
-    let trace = value.pointer("/trace").expect("trace key present");
-    let trace_str = trace.as_str().expect("trace must serialize as a string");
-    let parsed: serde_json::Value = serde_json::from_str(trace_str).expect("trace string is JSON");
-    assert!(parsed.pointer("/properties").is_some());
-    assert!(parsed.pointer("/executions").is_some());
+fn assert_trace_format(response: serde_json::Value, format: TraceFormat) {
+    let trace = response.get("trace").expect("trace present");
+    match format {
+        TraceFormat::V1 => {
+            assert_eq!(trace.pointer("/version"), Some(&json!(1)));
+            assert_eq!(trace.pointer("/kind"), Some(&json!("policy")));
+        }
+        _ => {
+            assert!(trace.pointer("/properties").is_some());
+            assert!(trace.pointer("/executions").is_some());
+        }
+    }
 }
 
 #[tokio::test]
-async fn serialized_string_trace_for_policies() {
-    let loader = Arc::new(MemoryLoader::default());
-    loader.add("policy", make_policy_content(simple_policy_json()));
-    let engine = engine_with(loader);
+async fn serialized_trace_formats_for_policies() {
+    for compiled in [false, true] {
+        let loader = Arc::new(MemoryLoader::default());
+        loader.add("policy", make_policy_content(simple_policy_json()));
+        let engine = match compiled {
+            true => engine_with(loader).compiled_engine(),
+            false => engine_with(loader),
+        };
+        let expected = |format: TraceFormat| match compiled {
+            true => format,
+            false => TraceFormat::Legacy,
+        };
 
-    let options = EvaluationSerializedOptions {
-        trace: EvaluationTraceKind::String,
-        ..Default::default()
-    };
-    let lazy = engine
-        .evaluate_serialized(
-            "policy",
-            json!({ "customer": { "age": 30 } }).into(),
-            options,
-        )
-        .await
-        .expect("evaluate ok");
-    assert_string_trace(lazy);
+        for format in [TraceFormat::V1, TraceFormat::Legacy] {
+            let options = EvaluationSerializedOptions {
+                trace: format,
+                ..Default::default()
+            };
+            let lazy = engine
+                .evaluate_serialized(
+                    "policy",
+                    json!({ "customer": { "age": 30 } }).into(),
+                    options,
+                )
+                .await
+                .expect("evaluate ok");
+            assert_trace_format(lazy, expected(format));
+        }
 
-    engine.compile();
-    let precompiled = engine
-        .evaluate_serialized(
-            "policy",
-            json!({ "customer": { "age": 30 } }).into(),
-            options,
-        )
-        .await
-        .expect("evaluate ok");
-    assert_string_trace(precompiled);
+        engine.compile();
+        for format in [TraceFormat::V1, TraceFormat::Legacy] {
+            let options = EvaluationSerializedOptions {
+                trace: format,
+                ..Default::default()
+            };
+            let precompiled = engine
+                .evaluate_serialized(
+                    "policy",
+                    json!({ "customer": { "age": 30 } }).into(),
+                    options,
+                )
+                .await
+                .expect("evaluate ok");
+            assert_trace_format(precompiled, expected(format));
+        }
+    }
 }
 
 #[tokio::test]
@@ -333,7 +354,7 @@ async fn trace_serializes_for_policies() {
             "policy",
             json!({ "customer": { "age": 30 } }).into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )

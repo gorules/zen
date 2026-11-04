@@ -6,7 +6,7 @@ use crate::compiled::policy::entity::Entity;
 use crate::compiled::policy::{PolicyPlan, Rows};
 use crate::compiled::shred::{Shred, Shredder};
 use crate::compiled::ColumnarOutput;
-use crate::workspace::types::{EvaluateRequest, EvaluationError};
+use crate::workspace::{EvaluateRequest, EvaluationError};
 use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 use zen_expression::lane::{Columns, Kind as LaneKind, LaneProgram};
@@ -196,7 +196,7 @@ impl PolicyPlan {
             policy_path: policy_path.clone(),
             input: columns.row(row),
             goals: goals.to_vec(),
-            trace: false,
+            trace: crate::compiled::trace::TraceFormat::Off,
         };
         let sheet = Sheet::new(columns);
         let Some(mut sheet) = sheet else {
@@ -367,7 +367,12 @@ impl PolicyPlan {
                 _ => shredder.visit(&sheet.object(row), 0, row),
             }
         }
-        for (&row, result) in hosted.iter().zip(self.evaluate(artifact, &requests)) {
+        crate::compiled::pinning::restart(&hosted);
+        let evaluated = {
+            let _origin = crate::compiled::pinning::rows_scope(&hosted);
+            self.evaluate(artifact, &requests)
+        };
+        for (&row, result) in hosted.iter().zip(evaluated) {
             match result {
                 Ok(result) => shredder.visit(&result.output, 0, row),
                 Err(error) => errors[row] = Some(error),

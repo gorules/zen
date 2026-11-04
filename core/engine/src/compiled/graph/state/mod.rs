@@ -1,6 +1,7 @@
 mod exec;
 mod host;
 mod loops;
+mod trace;
 
 use crate::compiled::bound::{Bound, Scopes};
 use crate::compiled::content::Content;
@@ -8,6 +9,7 @@ use crate::compiled::graph::data::{Col, Data};
 use crate::compiled::graph::errors::RowErrors;
 use crate::compiled::graph::schedule::{End, Outcome, Replay, Segment};
 use crate::compiled::graph::step::StaticRead;
+use crate::compiled::graph::traces::Traces;
 use crate::compiled::graph::{data, CompiledGraph, Condition, Hit, Kind, Step};
 use crate::compiled::host::graph::walker::GraphWalker;
 use crate::compiled::host::NodeError;
@@ -37,6 +39,7 @@ pub(crate) struct State<'a> {
     pub(in crate::compiled::graph) results: Vec<Option<Variable>>,
     nesting: Nesting<'a>,
     with_nodes: bool,
+    pub(in crate::compiled::graph) traces: Option<Traces<'a>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -44,6 +47,7 @@ pub(crate) struct Nesting<'a> {
     pub(in crate::compiled::graph) parents: Option<&'a [Option<Variable>]>,
     pub(in crate::compiled::graph) iteration: u8,
     pub(in crate::compiled::graph) completed: Option<&'a Completed>,
+    pub(in crate::compiled::graph) traced: bool,
 }
 
 #[derive(Default)]
@@ -231,12 +235,18 @@ impl CompiledGraph {
             max_depth,
         } = host;
         let count = inputs.len();
+        if nesting.iteration == 0 && nesting.parents.is_none() {
+            crate::compiled::trace::count_run();
+        }
         let mut state = State {
             nodes: vec![Vec::new(); self.steps.len()],
             errors: RowErrors::new(count),
             results: vec![None; count],
             with_nodes: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
             nesting,
+            traces: nesting
+                .traced
+                .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
         if nesting.iteration >= max_depth {
             state
@@ -295,7 +305,11 @@ impl CompiledGraph {
                     visible,
                     ..
                 } => {
+                    let start = std::time::Instant::now();
                     let groups = self.switch(*node, parents, visible, &rows, &state);
+                    if state.traces.is_some() {
+                        self.trace_switch(*node, parents, &rows, &groups, start, &mut state);
+                    }
                     for (outcome, members) in groups.into_iter().rev() {
                         let members: Rc<[usize]> = match members.len() == rows.len() {
                             true => rows.clone(),
@@ -385,6 +399,8 @@ impl CompiledGraph {
         rebase: Option<&str>,
         f: impl FnOnce(&Bound) -> R,
     ) -> R {
+        let _origin = zen_expression::clock::streamed()
+            .then(|| zen_expression::clock::rows(data.rows.clone()));
         let with_nodes = |scope: Scope, row: usize| match nodes.get(row).cloned().flatten() {
             None => scope,
             Some(n) => {

@@ -236,7 +236,7 @@ impl PolicyRun {
             policy_path: Arc::from(Self::MAIN),
             input: case.input.depth_clone(64),
             goals: case.goals.iter().map(|g| Arc::from(g.as_str())).collect(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         }
     }
 

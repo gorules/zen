@@ -1284,6 +1284,9 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
     }
 
     fn call(&mut self, kind: &FunctionKind, arguments: &'a [&'a Node<'a>]) -> Option<Code> {
+        if crate::lane::effect::Effect::function(kind) == crate::lane::effect::Effect::Random {
+            return None;
+        }
         let function = match kind {
             FunctionKind::Internal(function) => function,
             FunctionKind::Closure(closure) => return self.closure(*closure, arguments),

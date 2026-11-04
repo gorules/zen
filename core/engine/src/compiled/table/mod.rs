@@ -7,6 +7,7 @@ mod profile;
 mod strict;
 
 use crate::compiled::bound::{Bound, Outs};
+use crate::compiled::graph::tap::{Field, Tap};
 use crate::compiled::leaf::{Array, Bits, Dict, Literal, Store};
 use cells::{Built, OutputCells};
 pub(crate) use dispatch::Dispatch;
@@ -14,6 +15,7 @@ pub(crate) use first::First;
 use fused::FusedCells;
 use profile::{Empty, Resolve};
 pub(crate) use profile::{Profile, TableIr};
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -137,6 +139,7 @@ type Keyed<'k, T> = (Cow<'k, [u64]>, Rc<[T]>);
 type Found<'k> = (Rc<Dict>, Cow<'k, [u64]>, Cow<'k, [u64]>);
 
 pub(crate) struct Table {
+    origins: Vec<u32>,
     id: u64,
     profile: Profile,
     fused: Option<FusedCells>,
@@ -147,6 +150,7 @@ pub(crate) struct Table {
     rules: usize,
     words: usize,
     columns: Vec<Column>,
+    fields: Vec<Option<Arc<str>>>,
     outputs: Vec<RuleOutputs>,
     collect_columns: Vec<(usize, Arc<str>)>,
     split: Option<Arc<[Arc<str>]>>,
@@ -162,10 +166,11 @@ enum Part {
 }
 
 impl Table {
-    fn reachable(mut ir: TableIr) -> TableIr {
+    fn reachable(mut ir: TableIr) -> (TableIr, Vec<u32>) {
+        let all: Vec<u32> = (0..ir.rules.len() as u32).collect();
         if ir.collect || ir.profile.resolve != Resolve::Row || ir.outputs.iter().any(|o| o.collect)
         {
-            return ir;
+            return (ir, all);
         }
         let ids: Vec<&Arc<str>> = ir
             .inputs
@@ -186,18 +191,29 @@ impl Table {
                 )
             })
             .collect();
+        let origins = all
+            .into_iter()
+            .zip(&keep)
+            .filter(|(_, kept)| **kept)
+            .map(|(at, _)| at)
+            .collect();
         let mut keep = keep.into_iter();
         ir.rules.retain(|_| keep.next().unwrap_or(true));
-        ir
+        (ir, origins)
+    }
+
+    pub fn origin(&self, rule: usize) -> u32 {
+        self.origins.get(rule).copied().unwrap_or(rule as u32)
     }
 
     pub fn compile(ir: TableIr) -> Result<Self, String> {
-        let ir = Self::reachable(ir);
+        let (ir, origins) = Self::reachable(ir);
         let rules = ir.rules.len();
         let words = rules.div_ceil(64).max(1);
         let strict = ir.profile.strict();
         let bit = |bits: &mut Vec<u64>, rule: usize| bits[rule / 64] |= 1 << (rule % 64);
         let mut columns = Vec::with_capacity(ir.inputs.len());
+        let mut fields: Vec<Option<Arc<str>>> = Vec::with_capacity(ir.inputs.len());
         let mut ordered = Vec::new();
         let mut plain_sources: Vec<(usize, usize, Arc<str>)> = Vec::new();
         for input in ir.inputs.iter() {
@@ -253,6 +269,7 @@ impl Table {
                         cells: Box::new(set),
                         empty,
                     });
+                    fields.push(Some(Arc::from(field)));
                 }
                 None => {
                     let mut distinct: Vec<(Arc<str>, Option<LaneProgram>, Vec<u64>)> = Vec::new();
@@ -300,10 +317,12 @@ impl Table {
                         owners,
                         optimistic,
                     });
+                    fields.push(None);
                 }
             }
         }
         let mut table = Self {
+            origins,
             id: Self::next_id(),
             profile: ir.profile,
             fused: None,
@@ -314,6 +333,7 @@ impl Table {
             rules,
             words,
             columns,
+            fields,
             outputs: Vec::new(),
             collect_columns: Vec::new(),
             split: None,
@@ -639,6 +659,7 @@ impl Table {
         let mut bits = Vec::new();
         let mut deferred = Vec::new();
         let fused = self.fused_truths(runner, bound);
+        let mut tapped: Option<Vec<Field>> = Tap::wants_fields().then(Vec::new);
         for (index, column) in self.columns.iter().enumerate() {
             match column {
                 Column::Field {
@@ -649,6 +670,17 @@ impl Table {
                     let mut failed = vec![false; rows];
                     let (direct, typed) = Self::field_column(runner, bound, field, &mut failed);
                     let column = direct.or_else(|| typed.as_ref().map(Array::column));
+                    if let (Some(tapped), Some(Some(name))) =
+                        (tapped.as_mut(), self.fields.get(index))
+                    {
+                        tapped.push(Field {
+                            name: name.clone(),
+                            values: (0..rows)
+                                .map(|row| column.map_or(Variable::Null, |c| c.variable(row)))
+                                .collect(),
+                            failed: failed.clone(),
+                        });
+                    }
                     if let (Some(truths), Some(view), true) = (&fused, direct, self.fuses(index)) {
                         cells.indexed_column(&view, rows, &mut bits);
                         for other in 0..cells.others() {
@@ -824,7 +856,54 @@ impl Table {
                 }
             }
         }
+        if let Some(tapped) = tapped {
+            Tap::fields(tapped);
+        }
         (all, deferred)
+    }
+
+    fn literal_outputs(&self) -> bool {
+        self.outputs
+            .iter()
+            .all(|o| o.paths.is_empty() || o.literals.is_some())
+    }
+
+    pub(crate) fn tap_hits(&self, candidates: &[u64], first: Option<&First>, exact: bool) {
+        if !Tap::armed() {
+            return;
+        }
+        if !exact || !self.literal_outputs() {
+            Tap::hits(None);
+            return;
+        }
+        let words = self.words;
+        let hits = candidates
+            .chunks_exact(words)
+            .enumerate()
+            .map(|(row, bits)| {
+                let from = match first {
+                    None => 0,
+                    Some(first) => match first.chosen(row) {
+                        None => return SmallVec::new(),
+                        Some(chosen) => chosen,
+                    },
+                };
+                let mut out: SmallVec<[u32; 4]> = SmallVec::new();
+                if first.is_some() {
+                    out.push(self.origin(from));
+                }
+                out.extend(
+                    Bits::rows(bits)
+                        .filter(|&rule| match first {
+                            None => true,
+                            Some(_) => rule > from,
+                        })
+                        .map(|rule| self.origin(rule)),
+                );
+                out
+            })
+            .collect();
+        Tap::hits(Some(hits));
     }
 
     const FUSED: usize = 64;
@@ -1050,6 +1129,7 @@ impl Table {
             Hit::Collect => {
                 let words = self.words;
                 let (candidates, _) = self.candidates(runner, bound, false);
+                self.tap_hits(&candidates, None, true);
                 let mut result: Vec<Vec<Variable>> = vec![Vec::new(); rows];
                 let mut any = vec![0u64; words];
                 candidates
@@ -1104,7 +1184,9 @@ impl Table {
             }
             Hit::FirstCollect => {
                 let (candidates, deferred) = self.candidates(runner, bound, false);
+                let exact = deferred.is_empty();
                 let first = self.choose(runner, bound, &candidates, deferred);
+                self.tap_hits(&candidates, Some(&first), exact);
                 let mut collected =
                     self.gather(runner, bound, &first, &candidates, &self.targets());
                 (0..rows)

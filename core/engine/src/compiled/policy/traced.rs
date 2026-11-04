@@ -5,7 +5,7 @@ use super::schedule::{Demand, End, Event};
 use super::{Host, PolicyPlan};
 use crate::compiled::policy::artifact::{Artifact as EvalArtifact, StoreOps};
 use crate::compiled::policy::site::Picked;
-use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult, Trace};
+use crate::workspace::{EvaluateRequest, EvaluationError, EvaluationResult, Trace};
 
 impl PolicyPlan {
     pub(crate) fn traced(
@@ -20,13 +20,13 @@ impl PolicyPlan {
             artifact,
             &store,
             &req.policy_path,
-            req.trace,
+            req.trace.is_on(),
             extras,
             &self.programs,
         );
         let outcome = self.replay(artifact, &mut host);
 
-        let trace = req.trace.then(|| Trace {
+        let trace = req.trace.is_on().then(|| Trace {
             engine_version: Arc::from(crate::ENGINE_VERSION),
             properties: store.snapshot(&order_to_run),
             executions: host.executions(),
@@ -39,7 +39,7 @@ impl PolicyPlan {
         Ok(EvaluationResult {
             output: store,
             duration: start.elapsed(),
-            trace,
+            trace: trace.map(crate::compiled::trace::PolicyTrace::Legacy),
         })
     }
 

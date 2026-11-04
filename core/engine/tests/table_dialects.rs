@@ -286,6 +286,7 @@ impl Table {
                 let trace = result
                     .trace
                     .as_ref()
+                    .and_then(|t| t.as_legacy())
                     .and_then(|t| t.executions.iter().find(|e| e.block_id.as_ref() == "t"))
                     .map(|e| {
                         serde_json::to_value(&e.trace)
@@ -341,8 +342,9 @@ impl Table {
         let traced = Self::block(decision.evaluate_with_opts(
             context.depth_clone(64),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 max_depth: 10,
+                ..Default::default()
             },
         ));
         let graph_trace = match &traced {
@@ -382,7 +384,10 @@ impl Table {
             policy_path: Arc::from("p"),
             input: Variable::from(policy_input.clone()),
             goals: Vec::new(),
-            trace,
+            trace: match trace {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
         };
         let (compiled, _) = Self::policy_result(ws.evaluate(&request(false)));
         let (traced, policy_trace) = Self::policy_result(ws.evaluate(&request(true)));

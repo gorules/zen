@@ -836,17 +836,19 @@ impl LaneRunner {
         }
         let p = &program.program;
         self.frames(p);
-        for (chunk, roots) in scopes.chunks(Word::LANES).enumerate() {
+        for (start, n) in Executor::blocks(scopes.len(), Word::LANES, p.draws, |i| i) {
+            let roots = &scopes[start..start + n];
             self.rows.clear();
-            self.rows.extend(0..roots.len() as u32);
+            self.rows.extend(0..n as u32);
             let mut ctx = Context::new(p, roots);
+            ctx.first = start;
             Executor::run(p, &mut self.frames, &mut ctx, &self.rows);
             let frame = &mut self.frames[0];
-            for lane in 0..roots.len() {
+            for lane in 0..n {
                 let result = frame
                     .take_result(p, lane)
                     .map_err(|source| IsolateError::VMError { source });
-                sink(chunk * Word::LANES + lane, result);
+                sink(start + lane, result);
             }
         }
     }
@@ -887,6 +889,7 @@ impl LaneRunner {
             values.resize(roots.len(), None);
             self.frames(p);
             let mut ctx = Context::new(p, roots);
+            ctx.first = start;
             Executor::run(p, &mut self.frames, &mut ctx, &self.rows);
             let frame = &mut self.frames[0];
             let mut slow = 0usize;
@@ -985,11 +988,12 @@ impl LaneRunner {
     ) {
         let p = &program.program;
         self.frames(p);
-        for (chunk, roots) in scopes.chunks(Word::LANES).enumerate() {
-            let start = chunk * Word::LANES;
+        for (start, n) in Executor::blocks(scopes.len(), Word::LANES, p.draws, |i| i) {
+            let roots = &scopes[start..start + n];
             self.rows.clear();
             self.rows.extend(0..roots.len() as u32);
             let mut ctx = Context::new(p, roots);
+            ctx.first = start;
             let Some((frame, _)) = self.frames.split_first_mut() else {
                 return;
             };
@@ -1191,9 +1195,11 @@ impl LaneRunner {
         sink: &mut dyn FnMut(usize, usize, Fault),
     ) {
         let total = subset.map_or(scopes.len(), <[usize]>::len);
-        let mut start = 0;
-        while start < total {
-            let n = (total - start).min(width);
+        let blocks = Executor::blocks(total, width, p.draws, |i| match subset {
+            None => i,
+            Some(list) => list[i],
+        });
+        for (start, n) in blocks {
             rows.clear();
             let (roots, base) = match subset {
                 None => {
@@ -1211,7 +1217,6 @@ impl LaneRunner {
                 return;
             };
             frame.export_outputs(p, outs, start, n, &mut *sink);
-            start += n;
         }
     }
 
@@ -1229,9 +1234,11 @@ impl LaneRunner {
     ) {
         let many = !p.outputs.is_empty();
         let total = subset.map_or(scopes.len(), <[usize]>::len);
-        let mut start = 0;
-        while start < total {
-            let n = (total - start).min(width);
+        let blocks = Executor::blocks(total, width, p.draws, |i| match subset {
+            None => i,
+            Some(list) => list[i],
+        });
+        for (start, n) in blocks {
             rows.clear();
             let (roots, base) = match subset {
                 None => {
@@ -1265,7 +1272,6 @@ impl LaneRunner {
                 };
                 sink(row, result);
             }
-            start += n;
         }
     }
 
@@ -1345,9 +1351,7 @@ impl LaneRunner {
             false => None,
         };
         self.wide.iter_mut().for_each(Frame::forget);
-        let mut start = 0;
-        while start < columns.rows {
-            let n = (columns.rows - start).min(LANES);
+        for (start, n) in Executor::blocks(columns.rows, LANES, p.draws, |i| i) {
             self.rows.clear();
             self.rows.extend(0..n as u32);
             self.scopes.clear();
@@ -1362,7 +1366,6 @@ impl LaneRunner {
             let mut ctx = Context::columnar(p, &self.scopes, columns, &bound, start);
             Executor::run(p, &mut self.wide, &mut ctx, &self.rows);
             chunk(&mut self.wide[0], start, n);
-            start += n;
         }
     }
 }

@@ -165,7 +165,7 @@ fn engine_with_trace() {
         "table.json",
         json!({ "input": 12 }).into(),
         EvaluationOptions {
-            trace: true,
+            trace: zen_engine::trace::TraceFormat::Legacy,
             ..Default::default()
         },
     ));
@@ -370,7 +370,7 @@ async fn engine_snapshot_tests() {
                 .evaluate_with_opts(
                     input.clone(),
                     EvaluationOptions {
-                        trace: true,
+                        trace: zen_engine::trace::TraceFormat::Legacy,
                         ..Default::default()
                     },
                 )
@@ -380,7 +380,7 @@ async fn engine_snapshot_tests() {
                 .evaluate_with_opts(
                     input.clone(),
                     EvaluationOptions {
-                        trace: true,
+                        trace: zen_engine::trace::TraceFormat::Legacy,
                         ..Default::default()
                     },
                 )
@@ -411,7 +411,7 @@ async fn engine_function_v2() {
                 "function-v2.json",
                 json!({ "input": 12 }).into(),
                 EvaluationOptions {
-                    trace: true,
+                    trace: zen_engine::trace::TraceFormat::Legacy,
                     ..Default::default()
                 },
             )
@@ -567,8 +567,9 @@ async fn decision_table_index_matches_linear_semantics() {
                 .evaluate_with_opts(
                     Variable::from(probe),
                     EvaluationOptions {
-                        trace: true,
+                        trace: zen_engine::trace::TraceFormat::Legacy,
                         max_depth: 5,
+                        ..Default::default()
                     },
                 )
                 .await

@@ -10,7 +10,6 @@ use std::cell::OnceCell;
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 // Duration is a modified copy of `humantime`
 mod duration;
@@ -249,17 +248,9 @@ mod helper {
     use rust_decimal::prelude::ToPrimitive;
     use std::ops::Deref;
     use std::str::FromStr;
-    use std::sync::OnceLock;
 
     fn tz() -> Tz {
-        static CACHED_TZ: OnceLock<Tz> = OnceLock::new();
-
-        *CACHED_TZ.get_or_init(|| {
-            iana_time_zone::get_timezone()
-                .ok()
-                .and_then(|tz| Tz::from_str(&tz).ok())
-                .unwrap_or_else(|| Tz::UTC)
-        })
+        crate::clock::timezone()
     }
 
     pub fn now() -> DateTime<Tz> {
@@ -650,15 +641,5 @@ impl DynamicVariableExt for dyn DynamicVariable {
 }
 
 pub(crate) fn utc_now() -> DateTime<Utc> {
-    static CURRENT_DATE_VALUE: OnceLock<Option<DateTime<Utc>>> = OnceLock::new();
-
-    CURRENT_DATE_VALUE
-        .get_or_init(|| match std::env::var("__ZEN_MOCK_UTC_TIME") {
-            Ok(v) => {
-                let now = v.parse::<DateTime<Utc>>().unwrap();
-                Some(now)
-            }
-            Err(_) => None,
-        })
-        .unwrap_or_else(|| Utc::now())
+    crate::clock::now()
 }

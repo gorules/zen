@@ -182,7 +182,83 @@ impl<'a> Run<'_, 'a> {
                 laned: store.counts.1,
                 hosted: 0,
             },
+            traces: None,
         }
+    }
+}
+
+impl CompiledGraph {
+    fn shared_row(columns: &Columns<'_>, row: usize) -> zen_expression::Variable {
+        let object = zen_expression::Variable::empty_object();
+        for (path, column) in &columns.columns {
+            let nested = matches!(column.values, Values::Any(_))
+                && columns
+                    .columns
+                    .iter()
+                    .any(|(other, _)| zen_types::path::DotPath::under(other, path));
+            let value = match nested {
+                true => column.variable(row).depth_clone(usize::MAX),
+                false => column.variable(row),
+            };
+            if !matches!(value, zen_expression::Variable::Null) || column.valid(row) {
+                object.dot_insert(path, value);
+            }
+        }
+        object
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn plan_traces(
+        &self,
+        content: &Arc<Content>,
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        columns: &Columns<'_>,
+        trace: super::PlanTrace,
+        output: &ColumnarOutput<'_>,
+        deferred: &[usize],
+        format: crate::compiled::trace::TraceFormat,
+    ) -> crate::compiled::trace::TraceBatch {
+        let rows = columns.rows;
+        let mut traces = crate::compiled::graph_traces::Traces::new(
+            self.template().clone(),
+            self.steps.len(),
+            rows,
+        );
+        traces.events = trace.events;
+        let requests: Vec<zen_expression::Variable> =
+            (0..rows).map(|r| Self::shared_row(columns, r)).collect();
+        let mut failures: Vec<Option<(Arc<str>, String)>> = vec![None; rows];
+        for row in 0..rows {
+            let errored = output.errors.get(row).is_some_and(Option::is_some);
+            if !errored && !deferred.contains(&row) {
+                continue;
+            }
+            let fresh = NodeHandlerExtensions {
+                function_runtime: Default::default(),
+                ..extensions.clone()
+            };
+            let traced = crate::compiled::traced::Traced {
+                graph: self,
+                content,
+                extensions: &fresh,
+                max_depth,
+                iteration: 0,
+                parent: None,
+            };
+            let run = Box::pin(traced.run(requests[row].deep_clone())).await;
+            failures[row] = crate::compiled::trace::failure(&run.result);
+            if let Some(slot) = traces.replaced.get_mut(row) {
+                *slot = Some(run.level);
+            }
+        }
+        crate::compiled::trace::TraceBatch::with_failures(
+            traces,
+            requests,
+            Vec::new(),
+            failures,
+            format,
+        )
     }
 }
 
@@ -196,6 +272,7 @@ impl Plan {
         max_depth: u8,
         columns: &'a Columns<'a>,
         admitted: Admitted<'a>,
+        traced: Option<crate::compiled::trace::TraceFormat>,
     ) -> PlanOutcome<'a> {
         if let Some(resolved) = &content.resolved_schemas {
             let touched = graph.steps.iter().flatten().any(|step| {
@@ -218,6 +295,24 @@ impl Plan {
         let Ok(root) = root.as_ref().as_ref() else {
             return PlanOutcome::Skipped;
         };
+        if traced.is_some() {
+            let hosted = graph.steps.iter().flatten().any(|step| {
+                matches!(step.kind, Kind::Host(_) | Kind::Switch { .. }) || step.draws()
+            }) || root.ops.iter().any(|op| match op {
+                crate::compiled::graph::plan::Op::Child(_) => true,
+                crate::compiled::graph::plan::Op::Rows(rows) => graph
+                    .step_at(rows.node)
+                    .is_none_or(|step| matches!(step.kind, Kind::Host(_))),
+                _ => false,
+            });
+            if hosted {
+                if std::env::var("ZEN_TRACE_COLUMNAR_DEBUG").is_ok_and(|v| v != "0") {
+                    eprintln!("columnar plan not traced: hosted node");
+                }
+                return PlanOutcome::Untraced;
+            }
+        }
+        crate::compiled::trace::count_run();
         let mut store = Store::new(root, columns, dated);
         for (row, error) in failures {
             store.errors.set(row, error);
@@ -238,17 +333,37 @@ impl Plan {
             completed: Completed::default(),
             iteration: 0,
             parents: None,
+            trace: traced.map(|_| Box::new(super::PlanTrace::new(graph.steps.len()))),
         };
         run.walk(root.clone()).await;
         let Run {
             runner,
             store,
             completed,
+            trace,
             ..
         } = run;
+        if let Some(reason) = trace.as_ref().and_then(|t| t.refused) {
+            if std::env::var("ZEN_TRACE_COLUMNAR_DEBUG").is_ok_and(|v| v != "0") {
+                eprintln!("columnar plan not traced: {reason}");
+            }
+            CompiledGraph::RUNNER.with_borrow_mut(|slot| *slot = runner);
+            return PlanOutcome::Untraced;
+        }
         CompiledGraph::RUNNER.with_borrow_mut(|slot| *slot = runner);
         let rows = store.errors.deferred();
         let output = Run::assemble(store);
+        let output = match (traced, trace) {
+            (Some(format), Some(trace)) => {
+                let batch = graph
+                    .plan_traces(
+                        content, extensions, max_depth, columns, *trace, &output, &rows, format,
+                    )
+                    .await;
+                output.traced(batch)
+            }
+            _ => output,
+        };
         match rows.is_empty() {
             true => PlanOutcome::Done(output),
             false => PlanOutcome::Partial {
@@ -262,6 +377,7 @@ impl Plan {
 
 pub(crate) enum PlanOutcome<'a> {
     Skipped,
+    Untraced,
     Done(ColumnarOutput<'a>),
     Partial {
         output: ColumnarOutput<'a>,

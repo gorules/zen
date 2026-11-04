@@ -28,6 +28,7 @@ pub struct ColumnarOutput<'a> {
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<Rc<EvaluationError>>>,
     pub(crate) paths: Paths,
+    pub(crate) traces: Option<Rc<crate::compiled::trace::TraceBatch>>,
 }
 
 impl ColumnarOutput<'_> {
@@ -50,11 +51,25 @@ impl ColumnarOutput<'_> {
                 hosted: rows,
                 ..Paths::default()
             },
+            traces: None,
         }
     }
 
     pub fn row(&self, row: usize) -> Variable {
         OutputColumn::row(&self.columns, row)
+    }
+
+    pub fn traces(&self) -> Option<&crate::compiled::trace::TraceBatch> {
+        self.traces.as_deref()
+    }
+
+    pub fn trace_json(&self, row: usize) -> Option<String> {
+        self.traces.as_ref()?.json(row)
+    }
+
+    pub(crate) fn traced(mut self, traces: crate::compiled::trace::TraceBatch) -> Self {
+        self.traces = Some(Rc::new(traces));
+        self
     }
 
     #[doc(hidden)]
@@ -87,6 +102,7 @@ impl ColumnarOutput<'_> {
                 hosted: self.paths.hosted + rows.len(),
                 ..self.paths
             },
+            traces: self.traces,
         }
     }
 }
@@ -225,6 +241,52 @@ impl CompiledGraph {
         Leaf::Any(values.into())
     }
 
+    pub(crate) async fn evaluate_columns_traced<'a>(
+        &self,
+        content: &Arc<Content>,
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        columns: &'a Columns<'a>,
+        format: crate::compiled::trace::TraceFormat,
+    ) -> Option<ColumnarOutput<'a>> {
+        if max_depth == 0 {
+            return None;
+        }
+        let admitted = self.planned_input(content, extensions, columns).await?;
+        match self
+            .plan()
+            .evaluate(
+                self,
+                content,
+                extensions,
+                max_depth,
+                columns,
+                admitted,
+                Some(format),
+            )
+            .await
+        {
+            PlanOutcome::Skipped | PlanOutcome::Untraced => None,
+            PlanOutcome::Done(output) => Some(output),
+            PlanOutcome::Partial {
+                output,
+                rows,
+                completed,
+            } => {
+                let inputs = Self::input_data(columns).materialized();
+                let inputs: Vec<Variable> = rows.iter().map(|&row| inputs[row].clone()).collect();
+                let completed = completed.subset(&rows);
+                crate::compiled::pinning::restart(&rows);
+                let results = crate::compiled::pinning::originated(
+                    crate::compiled::pinning::rows_origin(&rows.as_slice().into()),
+                    self.resumed(content, extensions, max_depth, &inputs, Some(&completed)),
+                )
+                .await;
+                Some(output.splice(&rows, results))
+            }
+        }
+    }
+
     pub(crate) async fn evaluate_columns<'a>(
         &self,
         content: &Arc<Content>,
@@ -236,10 +298,12 @@ impl CompiledGraph {
             if let Some(admitted) = self.planned_input(content, extensions, columns).await {
                 match self
                     .plan()
-                    .evaluate(self, content, extensions, max_depth, columns, admitted)
+                    .evaluate(
+                        self, content, extensions, max_depth, columns, admitted, None,
+                    )
                     .await
                 {
-                    PlanOutcome::Skipped => {}
+                    PlanOutcome::Skipped | PlanOutcome::Untraced => {}
                     PlanOutcome::Done(output) => return output,
                     PlanOutcome::Partial {
                         output,
@@ -250,9 +314,12 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        let results = self
-                            .resumed(content, extensions, max_depth, &inputs, Some(&completed))
-                            .await;
+                        crate::compiled::pinning::restart(&rows);
+                        let results = crate::compiled::pinning::originated(
+                            crate::compiled::pinning::rows_origin(&rows.as_slice().into()),
+                            self.resumed(content, extensions, max_depth, &inputs, Some(&completed)),
+                        )
+                        .await;
                         return output.splice(&rows, results);
                     }
                 }

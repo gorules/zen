@@ -2,10 +2,9 @@ use crate::compiled::host::graph::walker::StableDiDecisionGraph;
 use crate::compiled::host::{
     NodeContext, NodeContextBase, NodeDataType, NodeHandler, NodeResult, TraceDataType,
 };
-use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
-use crate::engine::EvaluationTraceKind;
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::model::{DecisionNodeKind, GraphContent};
-use crate::workspace::types::EvaluationResult;
+use crate::workspace::EvaluationResult;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
@@ -84,24 +83,12 @@ pub(crate) struct Responses;
 
 impl Responses {
     pub(crate) fn policy(result: EvaluationResult) -> DecisionGraphResponse {
-        DecisionGraphResponse {
-            performance: format!("{:.1?}", result.duration),
-            result: result.output,
-            trace: result.trace.map(EvaluationTrace::Policy),
-        }
+        DecisionGraphResponse::from(result)
     }
 
     pub(crate) fn serialized(
         response: Result<DecisionGraphResponse, Box<EvaluationError>>,
-        mode: EvaluationTraceKind,
     ) -> Result<serde_json::Value, serde_json::Value> {
-        match response {
-            Ok(ok) => Ok(ok
-                .serialize_with_mode(serde_json::value::Serializer, mode)
-                .unwrap_or_default()),
-            Err(err) => Err(err
-                .serialize_with_mode(serde_json::value::Serializer, mode)
-                .unwrap_or_default()),
-        }
+        DecisionGraphResponse::serialized(response)
     }
 }

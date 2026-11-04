@@ -45,6 +45,7 @@ impl Script {
     }
 
     fn prepare(ctx: &Ctx) -> anyhow::Result<()> {
+        crate::compiled::pinning::install_js(ctx).map_err(|e| map_js_error(ctx, e))?;
         Module::evaluate(
             ctx.clone(),
             "main",
@@ -114,6 +115,8 @@ impl Session {
                 true => format!("{layout};main(({}))", Self::ROW),
                 false => format!("{layout};main({args_str})"),
             };
+            ctx.eval::<(), _>("globalThis.now = Date.now();")
+                .map_err(|e| map_js_error(&ctx, e))?;
             ctx.eval::<String, _>(script)
                 .map_err(|e| map_js_error(&ctx, e))
         })?;

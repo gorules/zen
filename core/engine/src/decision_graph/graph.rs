@@ -2,7 +2,6 @@ use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::schema_dict;
 use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
-use crate::engine::EvaluationTraceKind;
 use crate::model::{DecisionNodeKind, GraphContent};
 use crate::nodes::custom::CustomNodeHandler;
 use crate::nodes::decision::DecisionNodeHandler;
@@ -20,8 +19,7 @@ use crate::{DecisionGraphTrace, DecisionGraphValidationError, EvaluationError};
 use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use petgraph::matrix_graph::Zero;
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -323,21 +321,22 @@ impl DecisionGraph {
 #[serde(untagged)]
 pub enum EvaluationTrace {
     Graph(HashMap<Arc<str>, DecisionGraphTrace>),
-    Policy(crate::policy::Trace),
+    Policy(crate::trace::PolicyTrace),
+    V1(crate::trace::TraceDocument),
 }
 
 impl EvaluationTrace {
     pub fn as_graph(&self) -> Option<&HashMap<Arc<str>, DecisionGraphTrace>> {
         match self {
             Self::Graph(m) => Some(m),
-            Self::Policy(_) => None,
+            _ => None,
         }
     }
 
     pub fn into_graph(self) -> Option<HashMap<Arc<str>, DecisionGraphTrace>> {
         match self {
             Self::Graph(m) => Some(m),
-            Self::Policy(_) => None,
+            _ => None,
         }
     }
 }
@@ -349,44 +348,6 @@ pub struct DecisionGraphResponse {
     pub result: Variable,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace: Option<EvaluationTrace>,
-}
-
-impl DecisionGraphResponse {
-    pub fn serialize_with_mode<S>(
-        &self,
-        serializer: S,
-        mode: EvaluationTraceKind,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("performance", &self.performance)?;
-        map.serialize_entry("result", &self.result)?;
-        if let Some(trace) = &self.trace {
-            match trace {
-                EvaluationTrace::Graph(graph_trace) => {
-                    map.serialize_entry(
-                        "trace",
-                        &mode.serialize_trace(&graph_trace.to_variable()),
-                    )?;
-                }
-                EvaluationTrace::Policy(policy_trace) => match mode {
-                    EvaluationTraceKind::String | EvaluationTraceKind::ReferenceString => {
-                        map.serialize_entry(
-                            "trace",
-                            &serde_json::to_string(policy_trace).unwrap_or_default(),
-                        )?;
-                    }
-                    _ => {
-                        map.serialize_entry("trace", policy_trace)?;
-                    }
-                },
-            }
-        }
-
-        map.end()
-    }
 }
 
 async fn handle_node<NodeData, TraceData, NodeHandlerType>(

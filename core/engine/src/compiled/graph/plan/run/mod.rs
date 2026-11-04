@@ -22,7 +22,9 @@ mod loops;
 mod rows;
 mod store;
 mod table;
+mod trace;
 mod typed;
+pub(crate) use trace::PlanTrace;
 
 type Parents<'r> = &'r dyn Fn(usize) -> Option<Variable>;
 
@@ -38,6 +40,7 @@ struct Run<'r, 'a> {
     completed: Completed,
     iteration: u8,
     parents: Option<Parents<'r>>,
+    trace: Option<Box<PlanTrace>>,
 }
 
 impl<'a> Run<'_, 'a> {
@@ -88,6 +91,9 @@ impl<'a> Run<'_, 'a> {
                 live = self.alive(live, &mut seen);
                 positions = live.as_ref();
             }
+            if self.trace.is_some() && self.traced_op(seg, op, positions) {
+                continue;
+            }
             match op {
                 Op::Lane(lane) => {
                     if matches!(lane.program, Program::Expression) {
@@ -112,7 +118,9 @@ impl<'a> Run<'_, 'a> {
                 Op::Deferred { op, units } => self.deferred(seg, op, units, positions),
                 Op::Rows(op) => {
                     Census::begin();
+                    let start = std::time::Instant::now();
                     self.rows(seg, op, positions).await;
+                    self.timed_rows(op.node, start);
                     if Census::on() {
                         self.counted(op, positions);
                     }
@@ -232,6 +240,9 @@ impl<'a> Run<'_, 'a> {
             live = self.alive(live, &mut seen);
             positions = live.as_ref();
         }
+        if self.trace.is_some() {
+            self.capture(seg, positions);
+        }
         match &seg.end {
             SegEnd::Finish(_) if self.iteration > 0 => {}
             SegEnd::Finish(refs) if matches!(refs.as_slice(), [(path, _)] if path.is_empty()) => {
@@ -257,8 +268,11 @@ impl<'a> Run<'_, 'a> {
                 });
             }
             SegEnd::Switch {
-                first, conditions, ..
-            } => self.fan_out(seg, positions, *first, conditions, children),
+                first,
+                conditions,
+                ids,
+                ..
+            } => self.fan_out(seg, positions, *first, conditions, ids, children),
         }
     }
 

@@ -64,8 +64,9 @@ async fn graph_trace(documents: &[(&str, Value)], entry: &str, input: Value) -> 
             entry,
             input.into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 max_depth: 10,
+                ..Default::default()
             },
         )
         .await

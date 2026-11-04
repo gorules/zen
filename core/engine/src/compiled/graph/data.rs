@@ -432,6 +432,62 @@ impl<'a> Data<'a> {
         }
     }
 
+    pub fn container(&self, row: usize) -> bool {
+        match &self.shape {
+            _ if self.whole.get().is_some() => self.whole.get().is_some_and(|whole| {
+                matches!(whole[row], Variable::Object(_) | Variable::Array(_))
+            }),
+            Shape::Plain(values) => matches!(values[row], Variable::Object(_) | Variable::Array(_)),
+            Shape::Patched { .. } => !self.nulled(row),
+        }
+    }
+
+    pub fn extends(&self, input: &Data<'a>) -> Option<&Layer<'a>> {
+        let Shape::Patched {
+            base,
+            layers,
+            nulls: None,
+            ..
+        } = &self.shape
+        else {
+            return None;
+        };
+        let (last, head) = layers.split_last()?;
+        let same = |a: &Layer<'a>, b: &Layer<'a>| {
+            Rc::ptr_eq(&a.columns, &b.columns) || a.paths.is_empty() && b.paths.is_empty()
+        };
+        match &input.shape {
+            Shape::Plain(values) => {
+                let based = base.as_ref().is_some_and(|b| Rc::ptr_eq(b, values));
+                (based && head.is_empty()).then_some(last)
+            }
+            Shape::Patched {
+                base: before,
+                layers: earlier,
+                ..
+            } => {
+                let based = match (base, before) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                    _ => false,
+                };
+                (based
+                    && head.len() == earlier.len()
+                    && head.iter().zip(earlier.iter()).all(|(a, b)| same(a, b)))
+                .then_some(last)
+            }
+        }
+    }
+
+    pub fn apply(layer: &Layer<'a>, row: usize, before: &Variable) -> Option<Variable> {
+        let Variable::Object(map) = before else {
+            return None;
+        };
+        let mut current = map.borrow().clone();
+        layer.apply(row, &mut current);
+        Some(Variable::from_object(current))
+    }
+
     pub fn partial(&self, path: &str) -> Leaf<'a> {
         Leaf::Any(self.subtree(path))
     }

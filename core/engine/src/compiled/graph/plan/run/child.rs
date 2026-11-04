@@ -218,8 +218,13 @@ impl<'a> Run<'_, 'a> {
             completed: Completed::default(),
             iteration: self.iteration + 1,
             parents: Some(&parents),
+            trace: None,
         };
-        Box::pin(run.walk(op.root.clone())).await;
+        Box::pin(crate::compiled::pinning::originated(
+            crate::compiled::pinning::rows_origin(at),
+            run.walk(op.root.clone()),
+        ))
+        .await;
         let Run {
             runner, mut store, ..
         } = run;
@@ -276,15 +281,18 @@ impl<'a> Run<'_, 'a> {
                 failed: Vec::new(),
             };
         };
-        let results = CompiledGraph::nested_results(
-            step,
-            content,
-            &op.content,
-            &inputs,
-            &nodes,
-            self.host.extensions,
-            self.host.max_depth,
-            self.iteration,
+        let results = crate::compiled::pinning::originated(
+            crate::compiled::pinning::rows_origin(at),
+            CompiledGraph::nested_results(
+                step,
+                content,
+                &op.content,
+                &inputs,
+                &nodes,
+                self.host.extensions,
+                self.host.max_depth,
+                self.iteration,
+            ),
         )
         .await;
         let mut failed = Vec::new();

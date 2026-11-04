@@ -355,7 +355,7 @@ async fn policy_batches_leave_the_callers_contexts_unchanged() {
             policy_path: Arc::from("policy"),
             input: context.clone(),
             goals: Vec::new(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         })
         .collect();
     let results = workspace

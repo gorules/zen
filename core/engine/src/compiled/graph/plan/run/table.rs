@@ -24,6 +24,9 @@ impl<'a> Run<'_, 'a> {
             return;
         };
         let local = positions.map_or(self.store.rows, |p| p.len());
+        let _origin = positions
+            .filter(|_| table.programs().iter().any(|p| p.program().draws))
+            .and_then(|p| crate::compiled::pinning::rows_scope(p));
         let mut leaves: Vec<Option<Leaf<'a>>> = op
             .reads
             .iter()
@@ -37,7 +40,7 @@ impl<'a> Run<'_, 'a> {
                 })
             })
             .collect();
-        let keyed = match (op.mode, table.stable) {
+        let keyed = match (op.mode, table.stable && self.trace.is_none()) {
             (TableMode::First, true) => {
                 let present: Vec<Leaf<'a>> = leaves.iter().flatten().cloned().collect();
                 match present.len() > 1 {

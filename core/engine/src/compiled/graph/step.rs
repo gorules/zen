@@ -80,6 +80,22 @@ pub(super) struct StaticRead {
 }
 
 impl Step {
+    pub(super) fn draws(&self) -> bool {
+        match &self.kind {
+            Kind::Node { body, transform } => {
+                super::CompiledGraph::draws(body)
+                    || transform
+                        .input_field
+                        .as_ref()
+                        .is_some_and(|(program, _)| program.program().draws)
+            }
+            Kind::Switch { conditions, .. } => conditions.iter().any(|(_, condition)| {
+                matches!(condition, Condition::Program(program) if program.program().draws)
+            }),
+            _ => false,
+        }
+    }
+
     pub(super) fn column_path(&self, rows: usize) -> bool {
         match &self.kind {
             Kind::Node { body, transform } => {
@@ -205,6 +221,7 @@ impl CompiledGraph {
             root,
             dictionaries,
             plan: OnceLock::new(),
+            template: OnceLock::new(),
             census: crate::compiled::census::Census::id(),
         })
     }

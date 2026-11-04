@@ -23,8 +23,7 @@ use support::golden::Live;
 use support::golden::{Canon, Entry, Golden, Outcome};
 use zen_engine::policy::{EvaluateRequest, PolicyWorkspace};
 use zen_engine::{
-    Decision, EvaluationError, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
-    ZEN_CONFIG,
+    Decision, EvaluationError, EvaluationOptions, EvaluationSerializedOptions, ZEN_CONFIG,
 };
 use zen_expression::lane::Columns;
 use zen_expression::Variable;
@@ -147,15 +146,9 @@ struct Graphs;
 impl Graphs {
     fn traced() -> EvaluationOptions {
         EvaluationOptions {
-            trace: true,
+            trace: zen_engine::trace::TraceFormat::Legacy,
             max_depth: 10,
-        }
-    }
-
-    fn serialized() -> EvaluationSerializedOptions {
-        EvaluationSerializedOptions {
-            trace: EvaluationTraceKind::Reference,
-            max_depth: 10,
+            ..Default::default()
         }
     }
 
@@ -174,15 +167,8 @@ impl Graphs {
                     &walker
                         .evaluate_with_opts(input.depth_clone(64), Self::traced())
                         .await,
-                    EvaluationTraceKind::Default,
                 );
-                let reference = Canon::reference(
-                    &traced,
-                    walker
-                        .evaluate_serialized(input.depth_clone(64), Self::serialized())
-                        .await,
-                );
-                entry.traced(traced, Some(reference))
+                entry.traced(traced, None)
             }
             false => entry,
         };
@@ -214,22 +200,8 @@ impl Graphs {
                 &decision
                     .evaluate_with_opts(input.depth_clone(64), Self::traced())
                     .await,
-                EvaluationTraceKind::Default,
             );
             check.same(&key, Mode::Traced, &format!("{label} traced"), traced, &got);
-            let reference = Canon::reference(
-                traced,
-                decision
-                    .evaluate_serialized(input.depth_clone(64), Self::serialized())
-                    .await,
-            );
-            check.values(
-                &key,
-                Mode::Traced,
-                &format!("{label} reference"),
-                entry.reference.as_ref(),
-                Some(&reference),
-            );
         }
     }
 
@@ -303,12 +275,7 @@ impl Graphs {
 struct Modes;
 
 impl Modes {
-    const ALL: [EvaluationTraceKind; 4] = [
-        EvaluationTraceKind::Default,
-        EvaluationTraceKind::String,
-        EvaluationTraceKind::Reference,
-        EvaluationTraceKind::ReferenceString,
-    ];
+    const ALL: [zen_engine::trace::TraceFormat; 1] = [zen_engine::trace::TraceFormat::Legacy];
 
     async fn compare(
         check: &mut Check,
@@ -331,11 +298,9 @@ impl Modes {
             let options = EvaluationSerializedOptions {
                 trace: mode,
                 max_depth: 10,
+                ..Default::default()
             };
-            let reference = matches!(
-                mode,
-                EvaluationTraceKind::Reference | EvaluationTraceKind::ReferenceString
-            );
+            let reference = false;
             let want = Canon::mode(
                 walker
                     .evaluate_serialized(input.depth_clone(64), options)
@@ -367,7 +332,10 @@ impl Policies {
             policy_path: Arc::from(path),
             input: input.depth_clone(64),
             goals: goals.iter().map(|g| Arc::from(g.as_str())).collect(),
-            trace,
+            trace: match trace {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
         }
     }
 
@@ -620,25 +588,6 @@ impl Check {
                 want.show(),
                 got.show()
             ));
-        }
-    }
-
-    fn values(
-        &mut self,
-        key: &str,
-        mode: Mode,
-        path: &str,
-        want: Option<&Value>,
-        got: Option<&Value>,
-    ) {
-        if self.diverged(key, mode) {
-            self.skipped += 1;
-            return;
-        }
-        self.compared += 1;
-        if want != got {
-            self.failures
-                .push(format!("{key} {path}\n  golden {want:?}\n  got    {got:?}"));
         }
     }
 
@@ -1176,7 +1125,6 @@ impl Corpus {
                                                 Graphs::traced(),
                                             )
                                             .await,
-                                        EvaluationTraceKind::Default,
                                     );
                                     check.same(&key, Mode::Traced, "engine traced", traced, &got);
                                 }

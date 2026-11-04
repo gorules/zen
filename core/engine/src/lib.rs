@@ -123,6 +123,12 @@
 #![allow(clippy::module_inception)]
 
 mod analysis;
+pub mod clock {
+    pub use zen_expression::clock::{
+        format_instant, instant_from_millis, parse_instant, parse_timezone, row_seed,
+        unrowed_draws, Clock, Instant, Timezone,
+    };
+}
 mod compiled;
 mod config;
 mod decision;
@@ -144,15 +150,14 @@ pub mod columns {
     pub use zen_expression::lane::{Column, Columns, Dictionary, Values};
 }
 
+pub use compiled::trace::api as trace;
 pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use decision_graph::{
     DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError, EvaluationTrace,
 };
-pub use engine::{
-    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
-};
+pub use engine::{DecisionEngine, EvaluationOptions, EvaluationSerializedOptions};
 pub use error::{CompileFailure, ContentKindError, EvaluationError};
 pub use workspace::Workspace;
 pub use zen_expression::Variable;

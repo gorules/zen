@@ -60,7 +60,7 @@ impl Differential {
             policy_path: Arc::from(path),
             input: Variable::from(input.clone()),
             goals: goals.iter().map(|g| Arc::from(g.as_str())).collect(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         }
     }
 
@@ -234,7 +234,7 @@ impl Columnar {
                 policy_path: Arc::from(Generated::PATH),
                 input: input.depth_clone(64),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = reference.policy(
                 || Canon::key(label, &[], &input),
@@ -588,7 +588,7 @@ impl Anchor {
                 policy_path: Arc::from(Anchor::PATH),
                 input: input.depth_clone(64),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = reference.policy(
                 || Canon::key(suite, &[], &input),
@@ -636,7 +636,7 @@ impl Anchor {
                 policy_path: Arc::from("anchor"),
                 input: r.depth_clone(usize::MAX),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             })
             .collect()
     }
@@ -894,7 +894,7 @@ fn policy_columnar_shredded_irregular_lists() {
                 policy_path: Arc::from("anchor"),
                 input: columns.row(row),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = ws
                 .evaluate_with_driver(&request)
@@ -973,7 +973,7 @@ fn policy_columnar_converts_declared_dates_without_hosting() {
                 policy_path: Arc::from("anchor"),
                 input: columns.row(row),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = ws
                 .evaluate_with_driver(&request)
@@ -1093,7 +1093,7 @@ fn policy_member_blocks_reading_their_own_list_match_the_driver() {
                     policy_path: Arc::from("anchor"),
                     input: columns.row(row),
                     goals: Vec::new(),
-                    trace: false,
+                    trace: zen_engine::trace::TraceFormat::Off,
                 };
                 let want = ws
                     .evaluate_with_driver(&request)
@@ -1439,7 +1439,10 @@ fn single_row_latency() {
     let traced = |rows: &[Variable]| -> Vec<EvaluateRequest> {
         Anchor::fresh(rows)
             .into_iter()
-            .map(|r| EvaluateRequest { trace: true, ..r })
+            .map(|r| EvaluateRequest {
+                trace: zen_engine::trace::TraceFormat::Legacy,
+                ..r
+            })
             .collect()
     };
     let mut results: Vec<(&str, f64)> = vec![

@@ -284,6 +284,10 @@ impl<'s, 'a> Pass<'s, 'a> {
         let special = self.plan.special(program, &columns);
         let program = special.as_deref().unwrap_or(program);
         Self::prefer_codes(program, &mut outs);
+        let _origin = program
+            .program()
+            .draws
+            .then(|| crate::compiled::pinning::rows_scope(parents));
         self.runner.evaluate_sites(
             program,
             scopes.slice(),

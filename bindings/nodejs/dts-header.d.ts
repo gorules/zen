@@ -339,8 +339,12 @@ export interface PolicyEvaluationResult {
   output?: unknown;
   /** Evaluation duration in microseconds. */
   duration?: number;
-  /** Version 1 trace document by default on the compiled engine; today's shape with `trace: 'legacy'` and always on the interpreted engine. */
-  trace?: PolicyTrace | ZenTraceDocument;
+  /**
+   * Version 1 trace document by default on the compiled engine; today's shape with `trace: 'legacy'` and always on the
+   * interpreted engine. Tell them apart with `version`: `1` for {@link ZenPolicyTraceV1}, absent for {@link PolicyTrace}.
+   * `null` when the engine could not write the version 1 document.
+   */
+  trace?: ZenPolicyTraceV1 | PolicyTrace | null;
   /** Present when a block failed mid-evaluation; `trace` then holds the partial trace up to the failure. */
   error?: PolicyEvaluationFailure;
 }
@@ -352,13 +356,1097 @@ export interface PolicyEvaluationFailure {
   message: string;
 }
 
-export interface ZenTraceDocument {
-  version: 1;
-  kind: 'graph' | 'policy';
+/**
+ * A Zen trace document, format version 1: the stored form of a graph run (`kind: "graph"`) or a
+ * policy run (`kind: "policy"`).
+ *
+ * Narrow it with `kind`:
+ *
+ * ```ts
+ * if (trace.kind === 'graph') trace.nodes; else trace.executions;
+ * ```
+ *
+ * The document is compact rather than self-explanatory: much is left out because a reader can
+ * derive it (a node's input, a table's `reference_map`, an expression node's output, a policy
+ * block's reads), and repeated lists may be packed (`$runs`, `$pick`). The engine restores the
+ * full legacy trace from it. Readers ignore fields they don't know, refuse tags (`$…` keys) they
+ * don't know, and refuse `requires` entries they don't know.
+ */
+export type ZenTraceV1 = ZenGraphTraceV1 | ZenPolicyTraceV1;
+
+/**
+ * @deprecated Use {@link ZenTraceV1}, or {@link ZenGraphTraceV1} / {@link ZenPolicyTraceV1}.
+ */
+export type ZenTraceDocument = ZenTraceV1;
+
+/**
+ * An RFC 6901 JSON Pointer: `""` is the whole value, `/a/b/0` is key `a`, then `b`, then `0`.
+ * Inside a segment `~` is written `~0` and `/` is written `~1`. Segments are strings: `0` is an
+ * index when the value there is an array and a key when it is an object.
+ *
+ * Policy pointers keep Zen's dotted-path meaning: `/order/items/0` is `order.items.0`, and a
+ * path in a record is relative to the record's `member`.
+ */
+export type ZenJsonPointer = '' | `/${string}`;
+
+/** An object keyed by JSON Pointers (`""` or `/…`), such as the keys of `$set`. */
+export interface ZenJsonPointerMap<T> {
+  ''?: T;
+  [pointer: `/${string}`]: T;
+}
+
+/**
+ * Optional features a document uses. A reader must understand every entry to read the document
+ * correctly.
+ *
+ * - `steps`: the graph body has {@link ZenGraphTraceV1Body.steps | steps}.
+ * - `documents`: policy `reads` are derived from the policy documents; restoring needs them.
+ * - `absent-default`: the policy body has {@link ZenPolicyTraceV1Body.absent | absent}.
+ * - `result-rows`: some expression node stores its `results` as {@link ZenGraphResultRow | rows}.
+ * - `redacted`: some value is a {@link ZenTraceRedacted} marker.
+ * - `truncated`: the document is incomplete (`truncated: true`) and may hold `$omitted` markers.
+ * - `derived`, `ref-nodes`: draft documents only (T2/T3); Zen refuses `derived`.
+ */
+export type ZenTraceKnownFeature =
+  | 'steps'
+  | 'documents'
+  | 'absent-default'
+  | 'result-rows'
+  | 'redacted'
+  | 'truncated'
+  | 'derived'
+  | 'ref-nodes';
+
+/**
+ * A `requires` entry: a {@link ZenTraceKnownFeature}, or a feature added by a later writer.
+ * Readers must refuse a document with an entry they don't know, instead of misreading it.
+ */
+export type ZenTraceFeature = ZenTraceKnownFeature | (string & {});
+
+/**
+ * Free-form data the caller attached to the evaluation. It is plain data: keys starting with `$`
+ * are not tags here, and no reader derives anything from it.
+ */
+export interface ZenTraceContext {
+  /** The caller's id for this evaluation. */
+  evaluationId?: string;
+  /** The evaluation this one ran for (a batch, or a decision that called a service that evaluated this one). */
+  parentEvaluationId?: string;
+  /** A request or trace id from the caller's system. */
+  correlationId?: string;
+  /** The variant of an experiment the evaluation ran under. */
+  variant?: string;
   [key: string]: unknown;
 }
 
+/** Fields shared by graph and policy documents. */
+export interface ZenTraceEnvelope {
+  /** Always `1`. A reader rejects any other value. */
+  version: 1;
+  /** Selects the body: {@link ZenGraphTraceV1} or {@link ZenPolicyTraceV1}. */
+  kind: 'graph' | 'policy';
+  /**
+   * The engine version that produced the trace. Informational for graphs; for policies it is
+   * the legacy trace's `engineVersion` and is restored. Absent when unknown.
+   */
+  engine?: string;
+  /**
+   * The optional features this document uses, which a reader must understand to read it.
+   * Absent means none. Readers must refuse unknown entries.
+   */
+  requires?: ZenTraceFeature[];
+  /**
+   * The evaluation's pinned clock: the one instant every "now" in the evaluation used. RFC 3339
+   * in UTC with a `Z` suffix and 3, 6 or 9 fraction digits, e.g. `"2026-11-04T09:30:00.125Z"`.
+   * Always written by the engine; absent from converted documents.
+   */
+  evaluatedAt?: string;
+  /**
+   * The IANA time zone the evaluation ran in (`"UTC"`, `"Europe/Berlin"`). Always written by the
+   * engine; absent from converted documents.
+   */
+  timezone?: string;
+  /**
+   * The seed of the evaluation's random stream, an integer from 0 to 2^64 − 1. Written only when
+   * the evaluation drew a random number. Seeds the engine draws are below 2^53, so they are exact
+   * as JavaScript numbers; a larger seed supplied by the caller loses digits when parsed as one.
+   */
+  seed?: number;
+  /** Caller data, passed through untouched. */
+  context?: ZenTraceContext;
+  /**
+   * `true`: the document does not hold the whole evaluation; `$omitted` markers show where data is
+   * missing. Requires the `truncated` feature. Absent means `false`.
+   */
+  truncated?: boolean;
+  /** Only set on derived display views, never on stored documents; readers reject it. */
+  view?: never;
+}
+
+/** A JSON scalar. */
+export type ZenTraceScalar = null | boolean | number | string;
+
+/**
+ * Plain data: `x` is taken as it is, and nothing inside is read as a tag. User data with an
+ * object key starting with `$` is always written this way.
+ *
+ * @example { "$literal": { "$price": 10 } }
+ */
+export interface ZenTraceLiteral {
+  $literal: unknown;
+}
+
+/**
+ * A value that was removed on purpose. It restores as the string `"[redacted]"`. Requires the
+ * `redacted` feature.
+ *
+ * @example { "$redacted": true, "reason": "pii" }
+ */
+export interface ZenTraceRedacted {
+  $redacted: true;
+  /** Why the value was removed. Free text. */
+  reason?: string;
+}
+
+/**
+ * A value the writer did not store. It restores as the string `"[omitted]"`. Requires the
+ * `truncated` feature.
+ *
+ * @example { "$omitted": { "bytes": 12345 } }
+ */
+export interface ZenTraceOmittedValue {
+  $omitted: {
+    /** The size of the omitted value, when the writer knows it. */
+    bytes?: number;
+  };
+}
+
+/**
+ * Omitted loop items: stands for `iterations` items of a sub-decision `loop` list or of a
+ * loop-mode expression node's `results`. Each restores as `null`.
+ */
+export interface ZenTraceOmittedIterations {
+  $omitted: { iterations: number };
+}
+
+/** The last `nodes` of a trace level that the writer did not store. They are not restored. */
+export interface ZenTraceOmittedNodes {
+  $omitted: { nodes: number };
+}
+
+/**
+ * A step of a `$runs` entry: a number added per element, or a tree of per-field steps for
+ * objects and arrays (keys are field names or array indexes).
+ */
+export type ZenTraceRunStep = number | { [field: string]: ZenTraceRunStep };
+
+/**
+ * A packed list of runs. Each entry is `[v]` (`v` once), `[v, n]` (`v` repeated `n` times) or
+ * `[v, n, step]` (`n` values starting at `v`, adding `step` each time, computed exactly).
+ *
+ * @example { "$runs": [[0, 5, 1], ["x", 3]] } // [0, 1, 2, 3, 4, "x", "x", "x"]
+ */
+export interface ZenTraceRuns<T> {
+  $runs: Array<[T] | [T, number] | [T, number, ZenTraceRunStep]>;
+}
+
+/**
+ * A packed list of repeated values: element `k` is `$pick[at[k]]`.
+ *
+ * @example { "$pick": ["a", "b"], "at": [0, 0, 1, 0] } // ["a", "a", "b", "a"]
+ */
+export interface ZenTracePick<T> {
+  $pick: T[];
+  at: number[];
+}
+
+/**
+ * A list. Any list of 4 or more elements may be written packed, as {@link ZenTraceRuns} or
+ * {@link ZenTracePick}, when that is at least 20% shorter. Expand packing before reading.
+ */
+export type ZenTraceList<T> = T[] | ZenTraceRuns<T> | ZenTracePick<T>;
+
+/**
+ * User data as stored: JSON, where an object with a `$` key is wrapped in `$literal`, any list
+ * may be packed, and any value may be replaced by a `$redacted` or `$omitted` marker. Used where
+ * data is kept verbatim: `details`, function logs, rule cells, step values, policy writes.
+ */
+export type ZenTraceData =
+  | ZenTraceScalar
+  | ZenTraceData[]
+  | ZenTraceRuns<ZenTraceData>
+  | ZenTracePick<ZenTraceData>
+  | ZenTraceDataObject
+  | ZenTraceLiteral
+  | ZenTraceRedacted
+  | ZenTraceOmittedValue;
+
+/** A plain object of user data. Keys starting with `$` are tags, so they never appear here. */
+export interface ZenTraceDataObject {
+  [key: string]: ZenTraceData;
+  [tag: `$${string}`]: never;
+}
+
+/**
+ * Where a graph `$ref` points, as `<source><pointer>`:
+ * - `request…`: the request of the current trace level (a sub-decision's own request inside it);
+ * - `nodes/<node id>/output…`: the output of a node that ran earlier at the same level;
+ * - `self…`: another place in the same value.
+ */
+export type ZenGraphRefTarget =
+  | 'request'
+  | `request/${string}`
+  | `nodes/${string}`
+  | 'self'
+  | `self/${string}`;
+
+/**
+ * A value equal to the one at another place. Used instead of repeating a large value.
+ * With `items`, the value is the list of those 0-based elements of the referenced array.
+ *
+ * @example { "$ref": "nodes/score/output/risk" }
+ */
+export interface ZenGraphRef {
+  $ref: ZenGraphRefTarget;
+  items?: ZenTraceList<number>;
+}
+
+/**
+ * A graph value: {@link ZenTraceData} where a {@link ZenGraphRef} may also stand in for any value
+ * at any depth. Used for node inputs and outputs, edit values and expression results.
+ */
+export type ZenGraphValue =
+  | ZenTraceScalar
+  | ZenGraphValue[]
+  | ZenTraceRuns<ZenGraphValue>
+  | ZenTracePick<ZenGraphValue>
+  | ZenGraphValueObject
+  | ZenTraceLiteral
+  | ZenTraceRedacted
+  | ZenTraceOmittedValue
+  | ZenGraphRef;
+
+/** A plain object of graph values. Keys starting with `$` are tags, so they never appear here. */
+export interface ZenGraphValueObject {
+  [key: string]: ZenGraphValue;
+  [tag: `$${string}`]: never;
+}
+
+/**
+ * An array splice `[at, deleteCount, ...insert]`, as in `Array.prototype.splice`.
+ * Like any list it may be packed.
+ */
+export type ZenTraceSplice = [number, number, ...ZenGraphValue[]] | ZenTraceRuns<ZenGraphValue> | ZenTracePick<ZenGraphValue>;
+
+/**
+ * Edits applied to a base value. They touch disjoint paths, so their order carries nothing.
+ */
+export interface ZenTraceEdits {
+  /** Set the value at each pointer. */
+  $set?: ZenJsonPointerMap<ZenGraphValue>;
+  /** Delete these paths. */
+  $delete?: ZenTraceList<ZenJsonPointer>;
+  /** Splice the array at each pointer. */
+  $splice?: ZenJsonPointerMap<ZenTraceSplice>;
+  /**
+   * The same edit on every item of the array at each pointer: `$set` maps a pointer inside the
+   * item to one value per item.
+   *
+   * @example { "$each": { "/lines": { "$set": { "/total": [10, 20, 30] } } } }
+   */
+  $each?: ZenJsonPointerMap<{ $set: ZenJsonPointerMap<ZenTraceList<ZenGraphValue>> }>;
+}
+
+/**
+ * A node input written as edits against a base:
+ * - `$merge`: the merge of these earlier nodes' outputs at the same level, in order (objects
+ *   merge key by key; anything else is replaced by the later value);
+ * - `$from: "request"` / `"null"`: the level's request, or `null`;
+ * - neither: the default input (see {@link ZenGraphNodeBase.input}).
+ *
+ * @example { "$merge": ["a", "b"], "$set": { "/flag": true } }
+ */
+export type ZenGraphInputBag = ZenTraceEdits &
+  (
+    | { $merge: ZenTraceList<string>; $from?: never }
+    | { $from: 'request' | 'null'; $merge?: never }
+    | { $merge?: never; $from?: never }
+  );
+
+/** A node input: an operator bag, or the input itself as a value. */
+export type ZenGraphInput = ZenGraphInputBag | ZenGraphValue;
+
+/**
+ * Output bases every node offers: `input` (the node's input), `empty` (`{}`) and `null`.
+ */
+export type ZenGraphOutputBase = 'input' | 'empty' | 'null';
+
+/**
+ * Output bases of an expression node, built from its `results` (keys sorted, dotted keys nested,
+ * placed at `resultsAt`):
+ * - `results`: the results alone;
+ * - `input+results`: the results merged over the node input;
+ * - `items+results`, `input+items+results` (loop mode): each item's results merged over its item.
+ */
+export type ZenGraphResultsBase = 'results' | 'input+results' | 'items+results' | 'input+items+results';
+
+/**
+ * A node output written as edits against a base. Without `$from` the base is the node's
+ * default output (see each node type's `output`).
+ */
+export type ZenGraphOutputBag<Base extends string = ZenGraphOutputBase> = ZenTraceEdits & {
+  /** The base, when it is not the node's default. */
+  $from?: Base;
+};
+
+/** A node output: an operator bag, or the output itself as a value. */
+export type ZenGraphOutput<Base extends string = ZenGraphOutputBase> = ZenGraphOutputBag<Base> | ZenGraphValue;
+
+/**
+ * A timing. An integer is nanoseconds and prints back the way the engine prints a `Duration`
+ * (`333` → `"333.0ns"`, `47200` → `"47.2µs"`). A string is a timing kept verbatim, and
+ * `{ value }` is a non-string timing kept verbatim.
+ */
+export type ZenTracePerf = number | string | { value: ZenTraceData };
+
+/** The node kinds a `type` names. */
+export type ZenGraphNodeType = 'input' | 'output' | 'table' | 'expression' | 'switch' | 'function' | 'decision' | 'custom';
+
+/** Fields every graph node record has. */
+export interface ZenGraphNodeBase {
+  /** The node's id (its key in the legacy trace). */
+  id: string;
+  /** The node's name, when it differs from `id`. Absent: the name is the id. */
+  name?: string;
+  /**
+   * The node kind. It selects the default output. The engine always writes it; a converted
+   * document leaves it out where the legacy trace does not tell (see {@link ZenGraphUntypedNode}).
+   */
+  type?: ZenGraphNodeType;
+  /** Timing (see {@link ZenTracePerf}). Only absent in path shapes ({@link ZenGraphShapeNode}). */
+  perf: ZenTracePerf;
+  /**
+   * The evaluation failed at this node, at every trace level the failure bubbled through.
+   * Its output is `null` unless `output` says otherwise.
+   */
+  failed?: true;
+  /** The evaluation's error message, on the top-level failed node. */
+  error?: string;
+  /**
+   * The node's input. Absent: the default. The first node of a level has input `null`; any other
+   * node merges the outputs of the open nodes (earlier nodes at this level whose output no later
+   * node has merged yet), in execution order, or takes the level's request when there are none.
+   */
+  input?: ZenGraphInput;
+  /**
+   * The legacy trace's `traceData`, verbatim, for anything the record fields don't cover. When
+   * present it replaces the type-specific fields.
+   */
+  details?: ZenTraceData;
+}
+
+/** The input node. Its default output is the request. */
+export interface ZenGraphInputNode extends ZenGraphNodeBase {
+  type: 'input';
+  /** Absent: the request (`$from: "request"`). */
+  output?: ZenGraphOutput<ZenGraphOutputBase | 'request'>;
+  /** The node ran over an empty list. */
+  loop?: [];
+}
+
+/** An output node. Its default output is `null`. */
+export interface ZenGraphOutputNode extends ZenGraphNodeBase {
+  type: 'output';
+  /** Absent: `null`. */
+  output?: ZenGraphOutput;
+  /** The node ran over an empty list. */
+  loop?: [];
+}
+
+/**
+ * What one expression key evaluated to, as an id/key/value row. Rows are used instead of a map
+ * when a key repeats (requires `result-rows`); restoring reads them in order, the later row
+ * winning.
+ *
+ * @example { "id": "x1", "key": "v", "value": 2 }
+ */
+export interface ZenGraphResultRow {
+  /** The expression's id in the node content. */
+  id: string;
+  /** The expression's key. */
+  key: string;
+  /** What it evaluated to. */
+  value: ZenGraphValue;
+}
+
+/** What each expression key evaluated to. Keys are expression keys, not tags. */
+export interface ZenGraphResultMap {
+  [key: string]: ZenGraphValue;
+}
+
+/** One run's results: a map, or rows (in evaluation order) when a key repeats. */
+export type ZenGraphRunResults = ZenGraphResultMap | ZenGraphResultRow[];
+
+/**
+ * An expression node's results:
+ * - one run: a {@link ZenGraphResultMap}, or a list of {@link ZenGraphResultRow} (requires
+ *   `result-rows`);
+ * - loop mode: one entry per item, each a map or a row list; omitted items appear as
+ *   {@link ZenTraceOmittedIterations}.
+ */
+export type ZenGraphResults =
+  | ZenGraphRunResults
+  | ZenTraceList<ZenGraphRunResults | ZenTraceOmittedIterations>;
+
+/**
+ * An expression node. Its default output is built from `results` (base `results`); the
+ * expression values themselves are always stored, in `results`.
+ */
+export interface ZenGraphExpressionNode extends ZenGraphNodeBase {
+  type: 'expression';
+  /** Absent: the results (`$from: "results"`), or `null` when the node failed. */
+  output?: ZenGraphOutput<ZenGraphOutputBase | ZenGraphResultsBase>;
+  /** What each expression evaluated to. */
+  results?: ZenGraphResults;
+  /** The key that was being evaluated when the node failed. */
+  failedKey?: string;
+  /** Where the results are placed in the output. Absent: at the root. */
+  resultsAt?: ZenJsonPointer;
+  /** Loop mode: the list the node looped over, as a pointer into its input. */
+  items?: ZenJsonPointer;
+  /** The node looped over an empty list. */
+  loop?: [];
+}
+
+/**
+ * A map keyed by user strings (rule cells, references), escaped as a whole: when any key starts
+ * with `$`, the map is written as `{ "$literal": map }`.
+ */
+export type ZenTraceKeyedData = ZenTraceDataObject | ZenTraceLiteral | ZenTraceRedacted | ZenTraceOmittedValue;
+
+/**
+ * A matched table rule, as the legacy trace logged it. Its `reference_map` is derived from the
+ * scope (the input, `scope`, or the loop item) at each cell's field, then corrected by
+ * `references` and `referencesAbsent`.
+ *
+ * @example { "id": "r0", "cells": { "customer.age[i0]": ">= 18" }, "index": 0 }
+ */
+export interface ZenGraphRuleEntry {
+  /** The rule's `_id`, when the logged rule has a string `_id`. */
+  id?: string;
+  /** The logged rule without its string `_id`: `"<field>[<input id>]": "<cell text>"`. */
+  cells: ZenTraceKeyedData;
+  /** The rule's position, as logged. */
+  index: number;
+  /** In a loop: the 0-based item this entry belongs to, when it is not the next item. */
+  item?: number;
+  /** `reference_map` entries whose value differs from the one read from the scope. */
+  references?: ZenTraceKeyedData;
+  /** Fields a reader would derive that are missing from `reference_map`. */
+  referencesAbsent?: ZenTraceList<string>;
+  verbatim?: never;
+}
+
+/** A logged table entry that does not have the usual `rule` / `reference_map` / `index` shape. */
+export interface ZenGraphVerbatimRuleEntry {
+  verbatim: ZenTraceData;
+}
+
+/** A table entry. */
+export type ZenGraphTableEntry = ZenGraphRuleEntry | ZenGraphVerbatimRuleEntry;
+
+/** A decision table node. Its default output is its input; what it produced is in `output`. */
+export interface ZenGraphTableNode extends ZenGraphNodeBase {
+  type: 'table';
+  /** Absent: the input. */
+  output?: ZenGraphOutput;
+  /** The matched rule, when one entry was logged; `null` when the logged entry was `null`. */
+  rule?: ZenGraphTableEntry | null;
+  /**
+   * A list of entries: with `items`, one per matched loop item; without, the matched rules of a
+   * collect table.
+   */
+  rules?: ZenTraceList<ZenGraphTableEntry>;
+  /** Loop-mode collect table: one list of entries per item. */
+  rulesPerItem?: ZenTraceList<ZenTraceList<ZenGraphTableEntry>>;
+  /** The part of the input the table worked on, as a pointer into the input. Absent: the whole input. */
+  scope?: ZenJsonPointer;
+  /** Loop mode: the list the table looped over, as a pointer into the input. */
+  items?: ZenJsonPointer;
+  /** The table looped over an empty list. */
+  loop?: [];
+}
+
+/** A switch node. Its default output is its input. */
+export interface ZenGraphSwitchNode extends ZenGraphNodeBase {
+  type: 'switch';
+  /** Absent: the input. */
+  output?: ZenGraphOutput;
+  /** The ids of the statements taken, in order. */
+  branches?: ZenTraceList<string>;
+}
+
+/** A function node. Its default output is `{}`; what it produced is in `output`. */
+export interface ZenGraphFunctionNode extends ZenGraphNodeBase {
+  type: 'function';
+  /** Absent: `{}` (`$from: "empty"`). */
+  output?: ZenGraphOutput;
+  /** Console output, when not empty. Absent: `[]`. */
+  log?: ZenTraceList<ZenTraceData> | ZenTraceRedacted | ZenTraceOmittedValue;
+}
+
+/**
+ * A sub-decision node. It runs a nested trace on its own request: the input at `scope` (one run)
+ * or item `i` of the list at `items` (loop mode). Inside, `request` refers to that value.
+ */
+export interface ZenGraphDecisionNode extends ZenGraphNodeBase {
+  type: 'decision';
+  /** Absent: the input. */
+  output?: ZenGraphOutput;
+  /** One run: an inline trace, or a reference to a shared path shape. */
+  sub?: ZenGraphSub;
+  /** Loop mode: one trace per item, in one of the {@link ZenGraphLoop} forms. */
+  loop?: ZenGraphLoop;
+  /** The part of the input the sub-decision ran on. Absent: the whole input. */
+  scope?: ZenJsonPointer;
+  /** Loop mode: the list it looped over, as a pointer into the input. */
+  items?: ZenJsonPointer;
+}
+
+/** A custom node. Its default output is its input; its trace data, if any, is in `details`. */
+export interface ZenGraphCustomNode extends ZenGraphNodeBase {
+  type: 'custom';
+  /** Absent: the input. */
+  output?: ZenGraphOutput;
+  /** The node ran over an empty list. */
+  loop?: [];
+}
+
+/**
+ * A node whose kind the document does not name. Converted documents leave `type` out for custom
+ * nodes, tables that matched nothing, failed nodes without trace data, and loops over an empty
+ * list. Its default output is its input, or `null` when it failed.
+ */
+export interface ZenGraphUntypedNode extends ZenGraphNodeBase {
+  type?: undefined;
+  /** Absent: the input. */
+  output?: ZenGraphOutput;
+  /** The node ran over an empty list. */
+  loop?: [];
+}
+
+/** A graph node record, discriminated by `type`. */
+export type ZenGraphNode =
+  | ZenGraphInputNode
+  | ZenGraphOutputNode
+  | ZenGraphExpressionNode
+  | ZenGraphTableNode
+  | ZenGraphSwitchNode
+  | ZenGraphFunctionNode
+  | ZenGraphDecisionNode
+  | ZenGraphCustomNode
+  | ZenGraphUntypedNode;
+
+/**
+ * The records of one trace level, in execution order (a record's position is its `order`).
+ * In a truncated document the last element may be a {@link ZenTraceOmittedNodes} marker.
+ */
+export type ZenGraphNodeList = ZenGraphNode[] | [...ZenGraphNode[], ZenTraceOmittedNodes];
+
+/**
+ * One trace level: the top-level graph, an inline sub-decision, or one loop iteration.
+ * `{ verbatim }` is a level kept as the legacy trace because it does not fit the record model.
+ */
+export type ZenGraphTrace = { nodes: ZenGraphNodeList; verbatim?: never } | ZenGraphVerbatimTrace;
+
+/** A trace level kept as the legacy trace (escaped). */
+export interface ZenGraphVerbatimTrace {
+  verbatim: ZenTraceData;
+  nodes?: never;
+}
+
+/**
+ * A sub-decision node inside a path shape. Besides the usual forms, its `sub` and `loop` may
+ * refer to further shapes without timings of their own: their timings continue the enclosing
+ * row.
+ */
+export interface ZenGraphShapeDecisionNode extends Omit<ZenGraphDecisionNode, 'perf' | 'sub' | 'loop'> {
+  perf?: ZenTracePerf;
+  sub?: ZenGraphSub | ZenGraphNestedSub;
+  loop?: ZenGraphLoop | ZenGraphNestedLoop;
+}
+
+/**
+ * A node record inside a path shape: like {@link ZenGraphNode}, but `perf` may be left out, in
+ * which case it is the next value of the enclosing timings row (depth-first node order).
+ */
+export type ZenGraphShapeNode =
+  | (Exclude<ZenGraphNode, ZenGraphDecisionNode> extends infer N
+      ? N extends ZenGraphNode
+        ? Omit<N, 'perf'> & { perf?: ZenTracePerf }
+        : never
+      : never)
+  | ZenGraphShapeDecisionNode;
+
+/** A path shape: a trace level without (some of) its timings, shared between iterations. */
+export type ZenGraphShape = { nodes: ZenGraphShapeNode[]; verbatim?: never } | ZenGraphVerbatimTrace;
+
+/** A path shape: an index into the body's `paths`, or the shape inline. */
+export type ZenGraphShapeRef = number | ZenGraphShape;
+
+/** One iteration's timings, in depth-first node order. */
+export type ZenGraphTimingRow = ZenTraceList<ZenTracePerf>;
+
+/**
+ * Loop timings, either form:
+ * - `timings`: one row per iteration;
+ * - `timingColumns`: the same table grouped by shape (iterations whose shape entries are equal
+ *   as written), in order of first use, each group column-major: `[[col0, col1, …], …]`.
+ *   Used when some group has at least 16 iterations.
+ */
+export type ZenGraphLoopTimings =
+  | { timings: ZenTraceList<ZenGraphTimingRow>; timingColumns?: never }
+  | { timingColumns: ZenTraceList<ZenTraceList<ZenTraceList<ZenTracePerf>>>; timings?: never };
+
+/**
+ * A packed loop with its own shapes: iteration `i` is `paths[iterationPaths[i]]` (or `paths[0]`
+ * for each of `iterations` iterations) with its timings filled in.
+ */
+export type ZenGraphLocalLoop = { paths: ZenTraceList<ZenGraphShape>; path?: never } & (
+  | { iterations: number; iterationPaths?: never }
+  | { iterationPaths: ZenTraceList<number>; iterations?: never }
+) &
+  ZenGraphLoopTimings;
+
+/**
+ * The iterations of a loop over shared shapes: `path` for each of `iterations` iterations, or one
+ * shape per iteration in `iterationPaths`. Shape numbers index the body's `paths`.
+ */
+export type ZenGraphLoopShapes = { paths?: never } & (
+  | { path: ZenGraphShapeRef; iterations: number; iterationPaths?: never }
+  | { iterationPaths: ZenTraceList<ZenGraphShapeRef>; path?: never; iterations?: never }
+);
+
+/** A loop over shared shapes (the deep form), with its timings. */
+export type ZenGraphDeepLoop = ZenGraphLoopShapes & ZenGraphLoopTimings;
+
+/** A loop over shared shapes inside a shape: its timings continue the enclosing row. */
+export type ZenGraphNestedLoop = ZenGraphLoopShapes & { timings?: never; timingColumns?: never };
+
+/**
+ * A sub-decision in loop mode: one trace per item.
+ * - a list of iteration traces (omitted items as {@link ZenTraceOmittedIterations});
+ * - {@link ZenGraphLocalLoop}: packed with the loop's own shapes;
+ * - {@link ZenGraphDeepLoop}: packed with the body's shared shapes.
+ *
+ * `[]` is a loop over an empty list.
+ */
+export type ZenGraphLoop = ZenTraceList<ZenGraphTrace | ZenTraceOmittedIterations> | ZenGraphLocalLoop | ZenGraphDeepLoop;
+
+/** A one-run sub-decision written as a shared shape and its single timings row. */
+export interface ZenGraphDeepSub {
+  path: ZenGraphShapeRef;
+  timings: [ZenGraphTimingRow];
+  nodes?: never;
+  verbatim?: never;
+}
+
+/** A one-run sub-decision inside a shape: its timings continue the enclosing row. */
+export interface ZenGraphNestedSub {
+  path: ZenGraphShapeRef;
+  timings?: never;
+  nodes?: never;
+  verbatim?: never;
+}
+
+/** A one-run sub-decision: an inline trace, or {@link ZenGraphDeepSub}. */
+export type ZenGraphSub = ZenGraphTrace | ZenGraphDeepSub;
+
+/**
+ * One intermediate expression value.
+ * - `{ expr, value }`: a sub-expression and its value;
+ * - `{ expr, values, at?, count? }`: a closure body, one value per item (capped; `count` is the
+ *   full count, `at` the item positions when they are not 0, 1, 2, …);
+ * - `{ expr, error, errorAt? }`: the sub-expression failed.
+ */
+export interface ZenGraphStep {
+  /** The sub-expression's text. */
+  expr: string;
+  value?: ZenTraceData;
+  values?: ZenTraceList<ZenTraceData>;
+  at?: ZenTraceList<number | number[]>;
+  count?: number;
+  error?: ZenTraceData;
+  errorAt?: number | number[];
+  /** Documents written before steps dropped the whole expression: readers drop such a first step. */
+  final?: true;
+}
+
+/** The steps of one expression key, in source pre-order. */
+export type ZenGraphStepList = ZenTraceList<ZenGraphStep>;
+
+/** The steps of a key that produced no result (the node failed there; see `failedKey`). */
+export interface ZenGraphNoResultSteps {
+  steps: ZenGraphStepList;
+  noResult: true;
+}
+
+/**
+ * The recorded intermediate values of one expression node. Keys of `keys`, `perItem` and
+ * `columns` are expression keys, or the rows' expression ids when the node's results are rows.
+ */
+export interface ZenGraphSteps {
+  /** The expression node's id. */
+  node: string;
+  /**
+   * Where the node is: node ids, each followed by an iteration index when that node's trace data
+   * is a list, as a pointer. Absent: the top level.
+   */
+  in?: ZenJsonPointer;
+  /** Single-run node: steps per expression key. */
+  keys?: { [key: string]: ZenGraphStepList | ZenGraphNoResultSteps };
+  /** Loop-mode node: per key, one step list (or `null`) per item. */
+  perItem?: { [key: string]: ZenTraceList<ZenGraphStepList | ZenGraphNoResultSteps | null> };
+  /** Loop-mode node whose items all ran the same plain steps: per key, one value per item for each step. */
+  columns?: { [key: string]: ZenTraceList<{ expr: string; values: ZenTraceList<ZenTraceData> }> };
+}
+
+/** The body of a graph document. */
+export interface ZenGraphTraceV1Body {
+  /** The top-level node records, in execution order. */
+  nodes: ZenGraphNodeList;
+  /** Shared path shapes, referenced by number from `path` and `iterationPaths`. */
+  paths?: ZenTraceList<ZenGraphShape>;
+  /** Intermediate expression values. Requires `steps`. */
+  steps?: ZenTraceList<ZenGraphSteps>;
+  verbatim?: never;
+}
+
+/** A graph document whose whole trace was kept verbatim (a fallback that does not occur in practice). */
+export interface ZenGraphTraceV1Verbatim extends ZenTraceEnvelope {
+  kind: 'graph';
+  /** The legacy trace, escaped. */
+  verbatim: ZenTraceData;
+  nodes?: never;
+}
+
+/** A graph document with node records. */
+export interface ZenGraphTraceV1Records extends ZenTraceEnvelope, ZenGraphTraceV1Body {
+  kind: 'graph';
+}
+
+/**
+ * A version 1 graph trace.
+ *
+ * @example
+ * {"version":1,"kind":"graph","nodes":[
+ *   {"id":"input","type":"input","perf":333},
+ *   {"id":"plans","type":"table","perf":11700,"output":{"$set":{"/plan":{"feePct":0}}},
+ *    "rule":{"id":"r0","cells":{"risk.band[i0]":"'A', 'B'"},"index":0}},
+ *   {"id":"offer","type":"expression","perf":52600,"results":{"approved":true}},
+ *   {"id":"output","type":"output","perf":833}]}
+ */
+export type ZenGraphTraceV1 = ZenGraphTraceV1Records | ZenGraphTraceV1Verbatim;
+
+/** A policy block kind. */
+export type ZenPolicyBlockKind = 'expression' | 'match' | 'assertion' | 'decisionTable';
+
+/** A field a policy body's `absent` can list. */
+export type ZenPolicyAbsentField = 'writes' | 'reads' | 'operands';
+
+/**
+ * A policy `$ref`: the elements `items` of the list at a path in the running document (the
+ * request plus every earlier write) just before the block ran. A write stored this way holds
+ * live references to those elements.
+ *
+ * @example { "$ref": "current/shipment/vehicles", "items": [0, 1, 2] }
+ */
+export interface ZenPolicyRef {
+  $ref: 'current' | `current/${string}`;
+  items: ZenTraceList<number>;
+}
+
+/** A written value: user data, or a {@link ZenPolicyRef}. */
+export type ZenPolicyWriteValue = ZenTraceData | ZenPolicyRef;
+
+/** One write in a multi-write list. */
+export interface ZenPolicyWrite {
+  path: ZenJsonPointer;
+  value: ZenPolicyWriteValue;
+}
+
+/**
+ * What a block wrote, every value explicit: `{ pointer: value }` for one write, a list in write
+ * order for several.
+ *
+ * @example { "/order/total": 250 }
+ */
+export type ZenPolicyWrites = ZenJsonPointerMap<ZenPolicyWriteValue> | ZenTraceList<ZenPolicyWrite>;
+
+/** A correction to a derived list of pointers. */
+export interface ZenPolicyListCorrection {
+  add?: ZenTraceList<ZenJsonPointer>;
+  remove?: ZenTraceList<ZenJsonPointer>;
+}
+
+/**
+ * The paths a block read.
+ * - With `requires: ["documents"]`: absent means the reads derived from the documents;
+ *   `{ add, remove }` corrects them; a list is the reads in full.
+ * - Without: a list, or `"previous"` when it equals the previous reads of the same block (and
+ *   policy); absent means `[]`.
+ */
+export type ZenPolicyReads = ZenTraceList<ZenJsonPointer> | 'previous' | ZenPolicyListCorrection;
+
+/** Decision table: per rule position (`"0"`, `"1"`, …), the input positions whose cells did not pass. */
+export interface ZenPolicyFailedCells {
+  [rule: `${number}`]: ZenTraceList<number>;
+}
+
+/**
+ * Legacy execution fields kept verbatim, under their legacy names, when the record fields can't
+ * express them.
+ */
+export interface ZenPolicyDetails {
+  /** The legacy block trace, whole. */
+  trace?: ZenTraceData;
+  writes?: ZenTraceData;
+  operandValues?: ZenTraceData;
+  reads?: ZenTraceData;
+  matchedRows?: ZenTraceData;
+  extras?: ZenTraceData;
+  evaluations?: ZenTraceData;
+  /** Expression: the written property, when it is not the first write's path. */
+  property?: string;
+  /** The block's value (an assertion's result), when it is not the first write's value. */
+  value?: ZenTraceData;
+  /** Match: the matched arm's id, when it is not the first true arm. */
+  matchedArm?: string | null;
+  /** Arm or condition ids, when they are not `<block>:<n>`. */
+  ids?: ZenTraceList<string>;
+  /** The whole legacy execution, when its paths can't be written as pointers. */
+  execution?: ZenTraceData;
+}
+
+/** Fields of an execution record that are not tied to the block kind. */
+export interface ZenPolicyExecutionFields {
+  /**
+   * What the block wrote, in write order. Absent: nothing (`[]`), unless `writesAbsent` (or the
+   * body's `absent`) says the legacy execution had no `writes` field at all.
+   */
+  writes?: ZenPolicyWrites;
+  /**
+   * `true`: the legacy execution had no `writes`. `false`: it had them, though the body's
+   * `absent` lists `writes`. Absent: the body's default.
+   */
+  writesAbsent?: boolean;
+  /** See {@link ZenPolicyReads}. */
+  reads?: ZenPolicyReads;
+  /**
+   * `true`: the legacy execution had no `reads`. `false`: it had them, though the body's
+   * `absent` lists `reads`. Absent: the body's default.
+   */
+  readsAbsent?: boolean;
+  /** Operand values that differ from the running document, by pointer. */
+  storedOperands?: ZenJsonPointerMap<ZenTraceData>;
+  /** Corrections to the derived operand names (the reads that have a value). */
+  operandKeys?: ZenPolicyListCorrection;
+  /**
+   * `true`: the legacy execution had no `operandValues`. `false`: it had them, though the body's
+   * `absent` lists `operands`. Absent: the body's default.
+   */
+  operandsAbsent?: boolean;
+  /** These operands (or all, `true`) are read from the document after the block's own write. */
+  operandsAfterWrite?: true | ZenTraceList<ZenJsonPointer>;
+  /** Execution fields the legacy format doesn't define, verbatim. */
+  extraFields?: ZenTraceDataObject | ZenTraceLiteral;
+  /** Legacy fields kept verbatim. */
+  details?: ZenPolicyDetails;
+}
+
+/** Fields that place an execution: which block, where, from which policy. */
+export interface ZenPolicyExecutionHead {
+  /** The block id. */
+  block?: string;
+  /** The policy that holds the block (legacy `policyPath`). */
+  policy?: string;
+}
+
+/** An expression block execution. Its trace (property and value) is its first write. */
+export interface ZenPolicyExpressionFields {
+  kind: 'expression';
+}
+
+/** A match block execution. Arm `n`'s id is `<block>:<n>`; the matched arm is the first true one. */
+export interface ZenPolicyMatchFields {
+  kind: 'match';
+  /** Each arm's result, in order. */
+  arms?: ZenTraceList<boolean>;
+}
+
+/** An assertion block execution. Condition `n`'s id is `<block>:<n>`. */
+export interface ZenPolicyAssertionFields {
+  kind: 'assertion';
+  /** Each condition's result, in order. */
+  conditions?: ZenTraceList<boolean>;
+}
+
+/**
+ * A decision table execution. `inputPass` is rebuilt from `ruleCount`, `inputCount` and
+ * `failedCells`; `evaluations` default to one map of every write when one row matched, `[]` when
+ * none did.
+ */
+export interface ZenPolicyDecisionTableFields {
+  kind: 'decisionTable';
+  /** The matched rows (0-based rule positions). */
+  rows?: ZenTraceList<number>;
+  /** The number of rules. */
+  ruleCount?: number;
+  /** The number of input columns. */
+  inputCount?: number;
+  /** The input cells that did not pass. Absent: every cell passed. */
+  failedCells?: ZenPolicyFailedCells;
+  /** The fields each matched row produced, one list per row, when it is not the default. */
+  evaluations?: ZenTraceList<ZenTraceList<ZenJsonPointer>>;
+  /** The fields whose value in `evaluations` is the next element of the written list. */
+  collected?: ZenTraceList<ZenJsonPointer>;
+}
+
+/** An execution whose legacy trace did not fit the model: it is in `details.trace` (or `details.execution`). */
+export interface ZenPolicyUnknownKindFields {
+  kind?: undefined;
+}
+
+/** The kind-specific fields of an execution, discriminated by `kind`. */
+export type ZenPolicyKindFields =
+  | ZenPolicyExpressionFields
+  | ZenPolicyMatchFields
+  | ZenPolicyAssertionFields
+  | ZenPolicyDecisionTableFields
+  | ZenPolicyUnknownKindFields;
+
+/**
+ * One block execution.
+ *
+ * @example {"block":"b3","kind":"match","arms":[false,false,true],"writes":{"/order/couponOff":0}}
+ */
+export type ZenPolicyExecution = ZenPolicyExecutionHead &
+  ZenPolicyExecutionFields &
+  ZenPolicyKindFields & {
+    /** The entity the block ran on (legacy `instancePath`). Absent: the root. */
+    member?: ZenJsonPointer;
+    members?: never;
+  };
+
+/** A member's fields in a run that could not be shared or put in a column. */
+export type ZenPolicyMemberFields = ZenPolicyExecutionFields & {
+  kind?: ZenPolicyBlockKind;
+  arms?: ZenTraceList<boolean>;
+  conditions?: ZenTraceList<boolean>;
+  rows?: ZenTraceList<number>;
+  ruleCount?: number;
+  inputCount?: number;
+  failedCells?: ZenPolicyFailedCells;
+  evaluations?: ZenTraceList<ZenTraceList<ZenJsonPointer>>;
+  collected?: ZenTraceList<ZenJsonPointer>;
+};
+
+/** A column: one entry per member, `null` where a member has none. */
+export type ZenPolicyColumn<T> = ZenTraceList<T | null>;
+
+/**
+ * A run of one block over every member of a list: member `k` is `<members>/<k>`. Column fields
+ * hold one entry per member; any other field is shared by every member, and `perMember` holds
+ * what is neither.
+ *
+ * @example
+ * {"block":"band","kind":"decisionTable","members":"/customer/companies","rows":[[0],[1]],
+ *  "ruleCount":2,"inputCount":1,"failedCells":[{"1":[0]},{"0":[0]}],"writes":{"/company/band":["low","high"]}}
+ */
+export interface ZenPolicyRun extends ZenPolicyExecutionHead, Omit<ZenPolicyExecutionFields, 'writes'> {
+  /** The list the block ran over. */
+  members: ZenJsonPointer;
+  member?: never;
+  /** The number of members, when it differs from the list's length at that moment. */
+  count?: number;
+  /** The block kind, when it is the same for every member. */
+  kind?: ZenPolicyBlockKind;
+  /**
+   * What each member wrote: `{ pointer: [value per member] }` for one write each, or one
+   * `{ path, values }` per write when every member wrote the same paths.
+   */
+  writes?:
+    | ZenJsonPointerMap<ZenTraceList<ZenPolicyWriteValue>>
+    | ZenTraceList<{ path: ZenJsonPointer; values: ZenTraceList<ZenPolicyWriteValue> }>;
+  arms?: ZenPolicyColumn<ZenTraceList<boolean>>;
+  conditions?: ZenPolicyColumn<ZenTraceList<boolean>>;
+  rows?: ZenPolicyColumn<ZenTraceList<number>>;
+  ruleCount?: number;
+  inputCount?: number;
+  failedCells?: ZenPolicyColumn<ZenPolicyFailedCells>;
+  evaluations?: ZenPolicyColumn<ZenTraceList<ZenTraceList<ZenJsonPointer>>>;
+  collected?: ZenPolicyColumn<ZenTraceList<ZenJsonPointer>>;
+  /** One object per member with that member's own fields. */
+  perMember?: ZenTraceList<ZenPolicyMemberFields>;
+}
+
+/** An execution record: one block execution, or a {@link ZenPolicyRun} over a list. */
+export type ZenPolicyExecutionRecord = ZenPolicyExecution | ZenPolicyRun;
+
+/**
+ * The legacy `properties`. Absent: derived from the top-level writes.
+ * - `{ set, remove }`: corrections to the derived properties, by pointer;
+ * - `{ verbatim }`: the legacy value;
+ * - `{ absent: true }`: the legacy trace had no `properties`.
+ */
+export type ZenPolicyProperties =
+  | { set?: ZenJsonPointerMap<ZenTraceData>; remove?: ZenTraceList<ZenJsonPointer>; verbatim?: never; absent?: never }
+  | { verbatim: ZenTraceData; set?: never; remove?: never; absent?: never }
+  | { absent: true; set?: never; remove?: never; verbatim?: never };
+
+/** The body of a policy document. */
+export interface ZenPolicyTraceV1Body {
+  /**
+   * The fields most executions lack, in this order. Each listed field is absent in every record
+   * unless the record says `<field>Absent: false`. Requires `absent-default`. Absent: no default.
+   */
+  absent?: ZenPolicyAbsentField[];
+  /** The execution records, in execution order. */
+  executions: ZenTraceList<ZenPolicyExecutionRecord>;
+  /** See {@link ZenPolicyProperties}. */
+  properties?: ZenPolicyProperties;
+  /** Top-level legacy trace fields other than `engineVersion`, `executions` and `properties`. */
+  extraFields?: ZenTraceDataObject | ZenTraceLiteral;
+  verbatim?: never;
+}
+
+/** A policy document whose whole trace was kept verbatim (a fallback that does not occur in practice). */
+export interface ZenPolicyTraceV1Verbatim extends ZenTraceEnvelope {
+  kind: 'policy';
+  /** The legacy trace, escaped. */
+  verbatim: ZenTraceData;
+  executions?: never;
+}
+
+/** A policy document with execution records. */
+export interface ZenPolicyTraceV1Records extends ZenTraceEnvelope, ZenPolicyTraceV1Body {
+  kind: 'policy';
+}
+
+/**
+ * A version 1 policy trace.
+ *
+ * @example
+ * {"version":1,"kind":"policy","engine":"2.1.2","requires":["documents"],"executions":[
+ *   {"block":"b0","kind":"expression","member":"/order/items/0","writes":{"/item/lineTotal":200}},
+ *   {"block":"discount","kind":"decisionTable","rows":[3],"ruleCount":4,"inputCount":2,
+ *    "failedCells":{"0":[0,1]},"writes":{"/order/discountRate":0}}]}
+ */
+export type ZenPolicyTraceV1 = ZenPolicyTraceV1Records | ZenPolicyTraceV1Verbatim;
+
 export interface PolicyTrace {
+  /** Absent in the legacy shape; a version 1 document has `version: 1`. */
+  version?: undefined;
   engineVersion: string;
   properties: Record<string, unknown>;
   executions: PolicyBlockExecution[];

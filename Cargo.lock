@@ -6078,7 +6078,6 @@ dependencies = [
  "nohash-hasher",
  "once_cell",
  "petgraph",
- "rayon",
  "recursive",
  "regex",
  "reqsign",
@@ -6104,7 +6103,6 @@ dependencies = [
  "zen-tmpl",
  "zen-types",
  "zip",
- "zstd",
 ]
 
 [[package]]

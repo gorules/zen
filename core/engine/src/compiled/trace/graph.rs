@@ -4,11 +4,11 @@ use super::core::{
     Refs, Seg, REF_MIN,
 };
 use super::loops::{
-    deep_or_flat, is_verbatim, loop_in, nest, nodes_val, sub_in, tidy_record, EncRec, EncTrace,
-    NestKind, Shapes,
+    deep_or_flat, loop_in, nest, nodes_val, sub_in, tidy_record, EncRec, EncTrace, NestKind,
+    Shapes, MAX_DEPTH,
 };
 use super::value::{eq, json_len, utf16_len, Key, Obj, Val};
-use super::{bad, R};
+use super::{bad, malformed, Need, R};
 use rust_decimal::Decimal;
 use std::rc::Rc;
 
@@ -43,13 +43,14 @@ fn order_of(e: &Val) -> Decimal {
     e.get("order").and_then(|x| x.as_num()).unwrap_or_default()
 }
 
-pub fn ordered_keys(t: &Obj) -> Vec<Key> {
-    let mut keys: Vec<(Key, Decimal)> = t.iter().map(|(k, v)| (k.clone(), order_of(v))).collect();
-    keys.sort_by(|a, b| {
-        a.1.cmp(&b.1)
+pub fn ordered_entries(t: &Obj) -> Vec<(&Key, &Val)> {
+    let mut entries: Vec<(&Key, &Val, Decimal)> =
+        t.iter().map(|(k, v)| (k, v, order_of(v))).collect();
+    entries.sort_by(|a, b| {
+        a.2.cmp(&b.2)
             .then_with(|| a.0.encode_utf16().cmp(b.0.encode_utf16()))
     });
-    keys.into_iter().map(|(k, _)| k).collect()
+    entries.into_iter().map(|(k, v, _)| (k, v)).collect()
 }
 
 fn js_falsy(v: &Val) -> bool {
@@ -204,13 +205,14 @@ fn discover_parents(input: &Val, level: &Level, dflt: &[Key]) -> Vec<Vec<Key>> {
         let c: Vec<Key> = ids
             .iter()
             .filter(|id| {
-                let o = level.output(id).unwrap();
-                o.is_obj()
-                    && if t == 0 {
-                        deep_sub(o, input)
-                    } else {
-                        top_keys_in(o, iobj)
-                    }
+                level.output(id).is_some_and(|o| {
+                    o.is_obj()
+                        && if t == 0 {
+                            deep_sub(o, input)
+                        } else {
+                            top_keys_in(o, iobj)
+                        }
+                })
             })
             .cloned()
             .collect();
@@ -330,8 +332,10 @@ fn encode_value(target: &Val, bases: &[Base], refs: &mut Refs) -> R<Option<Val>>
                 None => refs.encode(target),
             }));
         }
-        let bag = o.enc.as_obj().unwrap();
-        if eq(&apply_bag(o.base.as_ref().unwrap(), bag)?, target) {
+        let (Some(bag), Some(base)) = (o.enc.as_obj(), o.base.as_ref()) else {
+            return Err(malformed("an encoded value needs a bag and a base"));
+        };
+        if eq(&apply_bag(base, bag)?, target) {
             let mapped = map_bag_values(bag, &mut |v| Ok(refs.encode(v)))?;
             return Ok(Some(Val::obj(mapped)));
         }
@@ -350,17 +354,20 @@ fn decode_value(
     let Some(enc) = enc else {
         return Ok(base_of(&Obj::new())?.unwrap_or(Val::Null));
     };
-    if !is_bag(enc) {
-        return refs.decode(enc);
-    }
-    let bag = enc.as_obj().unwrap();
+    let bag = match enc {
+        Val::Obj(o) if is_bag(enc) => o,
+        _ => return refs.decode(enc),
+    };
     let base = base_of(bag)?.ok_or_else(|| bad("missing base"))?;
     let mapped = map_bag_values(bag, &mut |v| refs.decode(v))?;
     apply_bag(&base, &mapped)
 }
 
-fn is_result_entry(v: &Val) -> bool {
-    matches!(v, Val::Obj(o) if o.len() == 1 && o.has("result"))
+fn result_entry(v: &Val) -> Option<&Val> {
+    match v {
+        Val::Obj(o) if o.len() == 1 => o.get("result"),
+        _ => None,
+    }
 }
 
 fn is_empty_entry(v: &Val) -> bool {
@@ -378,8 +385,8 @@ fn results_of(td: &Val, failing: bool) -> Option<Results> {
         let mut results = Obj::with_capacity(m.len());
         let mut failed_key: Option<Key> = None;
         for (k, v) in m.iter() {
-            if is_result_entry(v) {
-                results.insert(k.clone(), v.get("result").unwrap().clone());
+            if let Some(r) = result_entry(v) {
+                results.insert(k.clone(), r.clone());
             } else if allow_fail && failed_key.is_none() && is_empty_entry(v) {
                 failed_key = Some(k.clone());
             } else {
@@ -432,10 +439,10 @@ enum ResultsVal {
 
 fn build_results(m: &Obj) -> Val {
     let mut o = Val::empty_obj();
-    let mut keys: Vec<&Key> = m.keys().collect();
-    keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-    for k in keys {
-        o = deep_merge(&o, &place_at(&dotted(k), m.get(k).unwrap().clone()));
+    let mut entries: Vec<(&Key, &Val)> = m.iter().collect();
+    entries.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+    for (k, v) in entries {
+        o = deep_merge(&o, &place_at(&dotted(k), v.clone()));
     }
     o
 }
@@ -714,8 +721,33 @@ fn derive_refs(fields: Option<&[String]>, scope: Option<&Val>) -> Obj {
     m
 }
 
+struct EntryParts<'a> {
+    rule_val: &'a Val,
+    rule: &'a Obj,
+    index: &'a Val,
+    refs: &'a Obj,
+}
+
+fn entry_parts(e: &Val) -> Option<EntryParts<'_>> {
+    let Val::Obj(o) = e else { return None };
+    if o.len() != 3 {
+        return None;
+    }
+    match (o.get("rule"), o.get("reference_map"), o.get("index")) {
+        (Some(rule_val @ Val::Obj(rule)), Some(Val::Obj(refs)), Some(index @ Val::Num(_))) => {
+            Some(EntryParts {
+                rule_val,
+                rule,
+                index,
+                refs,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn is_entry(e: &Val) -> bool {
-    matches!(e, Val::Obj(o) if o.len() == 3 && matches!(o.get("rule"), Some(Val::Obj(_))) && matches!(o.get("reference_map"), Some(Val::Obj(_))) && matches!(o.get("index"), Some(Val::Num(_))))
+    entry_parts(e).is_some()
 }
 
 fn verbatim_entry(e: &Val) -> Val {
@@ -725,10 +757,15 @@ fn verbatim_entry(e: &Val) -> Val {
 }
 
 fn entry_out(e: &Val, scope: Option<&Val>) -> Val {
-    if !is_entry(e) {
+    let Some(EntryParts {
+        rule_val,
+        rule,
+        index,
+        refs: a,
+    }) = entry_parts(e)
+    else {
         return verbatim_entry(e);
-    }
-    let rule = e.get("rule").unwrap().as_obj().unwrap();
+    };
     let mut o = Obj::new();
     match rule.get("_id") {
         Some(Val::Str(id)) => {
@@ -737,12 +774,11 @@ fn entry_out(e: &Val, scope: Option<&Val>) -> Val {
             cells.remove("_id");
             o.insert(Rc::from("cells"), escape(&Val::obj(cells)));
         }
-        _ => o.insert(Rc::from("cells"), escape(e.get("rule").unwrap())),
+        _ => o.insert(Rc::from("cells"), escape(rule_val)),
     }
-    o.insert(Rc::from("index"), e.get("index").unwrap().clone());
+    o.insert(Rc::from("index"), index.clone());
     let fields = cell_fields(rule);
     let d = derive_refs(fields.as_deref(), scope);
-    let a = e.get("reference_map").unwrap().as_obj().unwrap();
     let mut refs = Obj::new();
     for (k, v) in a.iter() {
         if !d.get(k).is_some_and(|x| eq(x, v)) {
@@ -815,9 +851,14 @@ fn entry_in(x: &Val, scope: Option<&Val>) -> R<Val> {
 }
 
 fn refs_match(e: &Val, scope: Option<&Val>) -> bool {
-    let rule = e.get("rule").unwrap().as_obj().unwrap();
-    let d = derive_refs(cell_fields(rule).as_deref(), scope);
-    eq(&Val::obj(d), e.get("reference_map").unwrap())
+    let Some(p) = entry_parts(e) else {
+        return false;
+    };
+    let d = derive_refs(cell_fields(p.rule).as_deref(), scope);
+    match e.get("reference_map") {
+        Some(m) => eq(&Val::obj(d), m),
+        None => false,
+    }
 }
 
 fn loop_entries(td: &[Val], items: Option<&Vec<Val>>) -> Vec<Val> {
@@ -846,10 +887,10 @@ fn loop_entries(td: &[Val], items: Option<&Vec<Val>>) -> Vec<Val> {
 fn scope_candidates(input: &Val, entries: &[&Val]) -> (Vec<String>, Vec<String>) {
     let mut probes: Vec<(Vec<Seg>, Val)> = Vec::new();
     for e in entries {
-        if !is_entry(e) {
+        let Some(p) = entry_parts(e) else {
             continue;
-        }
-        for (f, v) in e.get("reference_map").unwrap().as_obj().unwrap().iter() {
+        };
+        for (f, v) in p.refs.iter() {
             if !v.is_null() && plain_path(f) {
                 probes.push((dotted(f), v.clone()));
                 break;
@@ -916,17 +957,23 @@ fn encode_table(td: &Val, input: &Val) -> R<TableEnc> {
         return Ok(best);
     }
     let a = td.as_arr().ok_or_else(|| bad("table trace"))?;
-    if a.iter()
-        .all(|x| matches!(x, Val::Arr(l) if l.iter().all(is_entry)))
-    {
-        let flat: Vec<&Val> = a.iter().flat_map(|x| x.as_arr().unwrap().iter()).collect();
+    let lists: Option<Vec<&Vec<Val>>> = a
+        .iter()
+        .map(|x| match x {
+            Val::Arr(l) if l.iter().all(is_entry) => Some(&**l),
+            _ => None,
+        })
+        .collect();
+    if let Some(lists) = lists {
+        let flat: Vec<&Val> = lists.iter().flat_map(|l| l.iter()).collect();
         let try_items = |p: Option<&String>| -> R<TableEnc> {
             let items = match p {
                 Some(p) => get_path(input, &from_ptr(p)?),
                 None => None,
             };
             let value = Val::arr(
-                a.iter()
+                lists
+                    .iter()
                     .enumerate()
                     .map(|(j, arr)| {
                         let it = items
@@ -936,13 +983,7 @@ fn encode_table(td: &Val, input: &Val) -> R<TableEnc> {
                                 Some(Val::Obj(o)) => o.get(&j.to_string()),
                                 _ => None,
                             });
-                        Val::arr(
-                            arr.as_arr()
-                                .unwrap()
-                                .iter()
-                                .map(|e| entry_out(e, it))
-                                .collect(),
-                        )
+                        Val::arr(arr.iter().map(|e| entry_out(e, it)).collect())
                     })
                     .collect(),
             );
@@ -1149,7 +1190,7 @@ enum SubScope {
 
 fn sub_scope(input: &Val, reqs: &[Option<Val>], is_loop: bool) -> SubScope {
     if !is_loop {
-        let Some(r) = &reqs[0] else {
+        let Some(Some(r)) = reqs.first() else {
             return SubScope::None;
         };
         if eq(input, r) {
@@ -1186,8 +1227,8 @@ fn sub_scope(input: &Val, reqs: &[Option<Val>], is_loop: bool) -> SubScope {
                 if a.len() >= reqs.len()
                     && reqs
                         .iter()
-                        .enumerate()
-                        .all(|(i, r)| r.as_ref().is_some_and(|r| eq(&a[i], r)))
+                        .zip(a.iter())
+                        .all(|(r, x)| r.as_ref().is_some_and(|r| eq(x, r)))
                 {
                     found = Some(to_ptr(path));
                 }
@@ -1207,9 +1248,8 @@ fn sub_request(t: &Val) -> Option<Val> {
     if !is_graph_trace(t) {
         return None;
     }
-    let o = t.as_obj().unwrap();
-    let first = ordered_keys(o).into_iter().next()?;
-    let e = o.get(&first)?;
+    let o = t.as_obj()?;
+    let (_, e) = ordered_entries(o).into_iter().next()?;
     if e.get("input").is_some_and(|i| i.is_null()) {
         e.get("output").cloned()
     } else {
@@ -1255,16 +1295,22 @@ impl Kind {
     }
 }
 
-fn infer_type(entry: &Obj, pos: usize, last: bool, failed: bool) -> Option<Kind> {
-    let td = entry.get("traceData").unwrap();
+fn infer_type(
+    td: &Val,
+    input: &Val,
+    output: &Val,
+    pos: usize,
+    last: bool,
+    failed: bool,
+) -> Option<Kind> {
     if td.is_null() {
         if failed {
             return None;
         }
-        if pos == 0 && entry.get("input").unwrap().is_null() {
+        if pos == 0 && input.is_null() {
             return Some(Kind::Input);
         }
-        if entry.get("output").unwrap().is_null() && last {
+        if output.is_null() && last {
             return Some(Kind::Output);
         }
         return None;
@@ -1401,20 +1447,30 @@ pub(crate) fn encode_trace(
     if !well_formed(trace) {
         return Ok(verbatim_trace(trace));
     }
-    let tobj = trace.as_obj().unwrap();
-    let keys = ordered_keys(tobj);
-    for (pos, key) in keys.iter().enumerate() {
-        let e = tobj.get(key).unwrap();
-        let id_ok = matches!(e.get("id"), Some(Val::Str(s)) if s == key);
+    if d.depth >= MAX_DEPTH {
+        return Err(malformed("sub-decisions are nested too deeply"));
+    }
+    let tobj = trace
+        .as_obj()
+        .need("a legacy graph trace must be an object")?;
+    let ordered = ordered_entries(tobj);
+    for (pos, (key, e)) in ordered.iter().enumerate() {
+        let id_ok = matches!(e.get("id"), Some(Val::Str(s)) if s == *key);
         let order_ok = matches!(e.get("order"), Some(Val::Num(n)) if *n == Decimal::from(pos));
         if !id_ok || !order_ok {
             return Ok(verbatim_trace(trace));
         }
     }
-    let entries: Vec<(Key, &Obj)> = keys
-        .iter()
-        .map(|k| (k.clone(), tobj.get(k).unwrap().as_obj().unwrap()))
-        .collect();
+    let entries: Vec<(Key, &Obj)> = ordered
+        .into_iter()
+        .map(|(k, e)| {
+            Ok((
+                k.clone(),
+                e.as_obj()
+                    .need("a legacy graph trace entry must be an object")?,
+            ))
+        })
+        .collect::<R<_>>()?;
     encode_entries(&entries, req, d, failing, err)
 }
 
@@ -1431,23 +1487,35 @@ pub(crate) fn encode_entries(
     for (pos, (key, entry)) in entries.iter().enumerate() {
         let entry: &Obj = entry;
         let last = pos == entries.len() - 1;
-        let e_input = entry.get("input").unwrap();
-        let e_output = entry.get("output").unwrap();
-        let td = entry.get("traceData").unwrap();
+        let e_input = entry
+            .get("input")
+            .need("a legacy graph trace entry needs input")?;
+        let e_output = entry
+            .get("output")
+            .need("a legacy graph trace entry needs output")?;
+        let td = entry
+            .get("traceData")
+            .need("a legacy graph trace entry needs traceData")?;
         let mut rec = Obj::new();
         rec.insert(Rc::from("id"), Val::Str(key.clone()));
         let failed = failing && last && e_output.is_null();
-        let name = entry.get("name").unwrap();
+        let name = entry
+            .get("name")
+            .need("a legacy graph trace entry needs name")?;
         if !matches!(name, Val::Str(s) if s == key) {
             rec.insert(Rc::from("name"), name.clone());
         }
-        let kind = infer_type(entry, pos, last, failed);
+        let kind = infer_type(td, e_input, e_output, pos, last, failed);
         if let Some(k) = kind {
             rec.insert(Rc::from("type"), Val::str(k.name()));
         }
         rec.insert(
             Rc::from("perf"),
-            perf_out(entry.get("performance").unwrap()),
+            perf_out(
+                entry
+                    .get("performance")
+                    .need("a legacy graph trace entry needs performance")?,
+            ),
         );
         if failed {
             rec.insert(Rc::from("failed"), Val::Bool(true));
@@ -1507,7 +1575,8 @@ pub(crate) fn encode_entries(
         let mut rb: Option<Vec<RBase>> = None;
         match kind {
             Some(Kind::Expression) => {
-                let r = results_of(td, failed).unwrap();
+                let r =
+                    results_of(td, failed).need("expression traceData must map keys to results")?;
                 let rv = results_val(&r);
                 let ch = choose_results(e_input, e_output, &rv)?;
                 if let Some(a) = &ch.at {
@@ -1525,18 +1594,24 @@ pub(crate) fn encode_entries(
                 rres = Some(r);
             }
             Some(Kind::Switch) => {
-                let st = td.get("statements").unwrap().as_arr().unwrap();
-                detail.push((
-                    "branches",
-                    Val::arr(st.iter().map(|s| s.get("id").unwrap().clone()).collect()),
-                ));
+                let st = td
+                    .get("statements")
+                    .and_then(|s| s.as_arr())
+                    .need("switch traceData needs a statements list")?;
+                let ids = st
+                    .iter()
+                    .map(|s| s.get("id").cloned().need("switch statement needs an id"))
+                    .collect::<R<Vec<_>>>()?;
+                detail.push(("branches", Val::arr(ids)));
             }
-            Some(Kind::Function) => {
-                let log = td.get("log").unwrap();
-                if !log.as_arr().unwrap().is_empty() {
-                    detail.push(("log", escape(log)));
+            Some(Kind::Function) => match td.get("log") {
+                Some(log @ Val::Arr(l)) => {
+                    if !l.is_empty() {
+                        detail.push(("log", escape(log)));
+                    }
                 }
-            }
+                _ => return Err(malformed("function traceData needs a log list")),
+            },
             Some(Kind::Table) => {
                 let t = encode_table(td, e_input)?;
                 if let Some(s) = t.scope {
@@ -1570,6 +1645,7 @@ pub(crate) fn encode_entries(
                 }
                 let n = subs.len();
                 let mut encoded = Vec::with_capacity(n);
+                d.depth += 1;
                 for (i, s) in subs.iter().enumerate() {
                     let sreq = if is_loop {
                         index_in(items_arr.as_ref(), i)
@@ -1578,8 +1654,9 @@ pub(crate) fn encode_entries(
                     } else {
                         scoped.clone().unwrap_or(Val::Null)
                     };
-                    encoded.push(encode_trace(s, &sreq, d, failed && i == n - 1, None)?);
+                    encoded.push(encode_trace(s, &sreq, d, failed && i + 1 == n, None)?);
                 }
+                d.depth -= 1;
                 nest_out = Some(nest(
                     d,
                     if is_loop {
@@ -1588,7 +1665,7 @@ pub(crate) fn encode_entries(
                         NestKind::Sub
                     },
                     encoded,
-                ));
+                )?);
             }
             _ => {
                 if matches!(td, Val::Arr(a) if a.is_empty()) {
@@ -1646,7 +1723,10 @@ pub(crate) fn encode_entries(
                 rec.insert(Rc::from("details"), escape(td));
             }
         }
-        let rec = tidy_record(&Val::obj(rec)).as_obj().unwrap().clone();
+        let rec = match tidy_record(&Val::obj(rec)) {
+            Val::Obj(o) => Rc::unwrap_or_clone(o),
+            _ => return Err(malformed("a node record must be an object")),
+        };
         nodes.push(EncRec {
             obj: rec,
             nest: nest_out,
@@ -1669,6 +1749,7 @@ pub(crate) struct DecodeCtx {
     rows: bool,
     at: String,
     keys: Vec<(String, Vec<(Key, Key)>)>,
+    depth: usize,
 }
 
 fn fold_rows(rows: &[Val], refs: &Refs, ids: &mut Vec<(Key, Key)>) -> R<Obj> {
@@ -1689,8 +1770,11 @@ fn fold_rows(rows: &[Val], refs: &Refs, ids: &mut Vec<(Key, Key)>) -> R<Obj> {
 }
 
 fn decode_trace(t: &Val, req: &Val, paths: &[Val], ctx: &mut DecodeCtx) -> R<Val> {
-    if is_verbatim(t) {
-        return Ok(unescape(t.get("verbatim").unwrap()));
+    if let Some(v) = t.get("verbatim") {
+        return Ok(unescape(v));
+    }
+    if ctx.depth >= MAX_DEPTH {
+        return Err(malformed("sub-decisions are nested too deeply"));
     }
     let recs = t
         .get("nodes")
@@ -1831,10 +1915,10 @@ fn decode_trace(t: &Val, req: &Val, paths: &[Val], ctx: &mut DecodeCtx) -> R<Val
                 Some(p) => get_path(&input, &from_ptr(p)?).cloned(),
                 None => None,
             };
-            let subs = if is_loop {
-                loop_in(rec.get("loop").unwrap(), paths)?
-            } else {
-                vec![sub_in(rec.get("sub").unwrap(), paths)?]
+            let subs = match (rec.get("loop"), rec.get("sub")) {
+                (Some(l), _) => loop_in(l, paths)?,
+                (None, Some(s)) => vec![sub_in(s, paths)?],
+                (None, None) => return Err(malformed("a nested record needs loop or sub")),
             };
             let mut out = Vec::with_capacity(subs.len());
             let outer = ctx.at.clone();
@@ -1853,7 +1937,10 @@ fn decode_trace(t: &Val, req: &Val, paths: &[Val], ctx: &mut DecodeCtx) -> R<Val
                     ctx.at.push('/');
                     ctx.at.push_str(&i.to_string());
                 }
-                out.push(decode_trace(s, &sreq, paths, ctx)?);
+                ctx.depth += 1;
+                let sub = decode_trace(s, &sreq, paths, ctx);
+                ctx.depth -= 1;
+                out.push(sub?);
             }
             ctx.at = outer;
             if is_loop {
@@ -1918,6 +2005,15 @@ pub(crate) struct Found {
     pub(crate) no_result: bool,
 }
 
+fn step_block(v: &Val) -> Option<(&Val, Option<&Val>)> {
+    let Val::Obj(vo) = v else { return None };
+    let steps = vo.get("steps").filter(|s| is_step_list(s))?;
+    if !vo.keys().all(|x| &**x == "steps" || &**x == "result") {
+        return None;
+    }
+    Some((steps, vo.get("result")))
+}
+
 fn split_td(td: &Val) -> (Val, Option<Vec<(Key, Found)>>) {
     let Val::Obj(o) = td else {
         return (td.clone(), None);
@@ -1925,29 +2021,22 @@ fn split_td(td: &Val) -> (Val, Option<Vec<(Key, Found)>>) {
     let mut found: Option<Vec<(Key, Found)>> = None;
     let mut out = Obj::with_capacity(o.len());
     for (k, v) in o.iter() {
-        let ok = match v {
-            Val::Obj(vo) => {
-                vo.get("steps").is_some_and(is_step_list)
-                    && vo.keys().all(|x| &**x == "steps" || &**x == "result")
+        match step_block(v) {
+            Some((steps, result)) => {
+                found.get_or_insert_with(Vec::new).push((
+                    k.clone(),
+                    Found {
+                        steps: steps.clone(),
+                        no_result: result.is_none(),
+                    },
+                ));
+                let mut e = Obj::new();
+                if let Some(r) = result {
+                    e.insert(Rc::from("result"), r.clone());
+                }
+                out.insert(k.clone(), Val::obj(e));
             }
-            _ => false,
-        };
-        if ok {
-            let no_result = !v.has("result");
-            found.get_or_insert_with(Vec::new).push((
-                k.clone(),
-                Found {
-                    steps: v.get("steps").unwrap().clone(),
-                    no_result,
-                },
-            ));
-            let mut e = Obj::new();
-            if !no_result {
-                e.insert(Rc::from("result"), v.get("result").unwrap().clone());
-            }
-            out.insert(k.clone(), Val::obj(e));
-        } else {
-            out.insert(k.clone(), v.clone());
+            None => out.insert(k.clone(), v.clone()),
         }
     }
     match found {
@@ -1961,22 +2050,28 @@ pub(crate) enum Block {
     Items(Vec<Seg>, Key, Vec<Option<Vec<(Key, Found)>>>),
 }
 
-pub(crate) fn extract(trace: &Val, path: &[Seg], blocks: &mut Vec<Block>) -> Val {
-    if !is_graph_trace(trace) {
-        return trace.clone();
+pub(crate) fn extract(trace: &Val, path: &[Seg], blocks: &mut Vec<Block>) -> R<Val> {
+    let Some(o) = trace.as_obj().filter(|_| is_graph_trace(trace)) else {
+        return Ok(trace.clone());
+    };
+    if path.len() > 2 * MAX_DEPTH {
+        return Err(malformed("sub-decisions are nested too deeply"));
     }
-    let o = trace.as_obj().unwrap();
     let mut out = Obj::with_capacity(o.len());
-    for id in ordered_keys(o) {
-        let rec = o.get(&id).unwrap().as_obj().unwrap();
-        out.insert(id.clone(), Val::obj(extract_record(&id, rec, path, blocks)));
+    for (id, rec) in ordered_entries(o) {
+        let rec = rec
+            .as_obj()
+            .need("a legacy graph trace entry must be an object")?;
+        out.insert(id.clone(), Val::obj(extract_record(id, rec, path, blocks)?));
     }
-    Val::obj(out)
+    Ok(Val::obj(out))
 }
 
-pub(crate) fn extract_record(id: &Key, rec: &Obj, path: &[Seg], blocks: &mut Vec<Block>) -> Obj {
+pub(crate) fn extract_record(id: &Key, rec: &Obj, path: &[Seg], blocks: &mut Vec<Block>) -> R<Obj> {
     {
-        let td = rec.get("traceData").unwrap();
+        let td = rec
+            .get("traceData")
+            .need("a legacy graph trace entry needs traceData")?;
         let ntd = match td {
             Val::Arr(a) if !a.is_empty() && a.iter().all(is_graph_trace) => Val::arr(
                 a.iter()
@@ -1987,12 +2082,12 @@ pub(crate) fn extract_record(id: &Key, rec: &Obj, path: &[Seg], blocks: &mut Vec
                         p.push(Seg::I(i));
                         extract(x, &p, blocks)
                     })
-                    .collect(),
+                    .collect::<R<_>>()?,
             ),
             _ if is_graph_trace(td) => {
                 let mut p = path.to_vec();
                 p.push(Seg::K(id.clone()));
-                extract(td, &p, blocks)
+                extract(td, &p, blocks)?
             }
             Val::Arr(a) => {
                 let items: Vec<Split> = a.iter().map(split_td).collect();
@@ -2021,7 +2116,7 @@ pub(crate) fn extract_record(id: &Key, rec: &Obj, path: &[Seg], blocks: &mut Vec
         };
         let mut r = rec.clone();
         r.set("traceData", ntd);
-        r
+        Ok(r)
     }
 }
 
@@ -2041,14 +2136,13 @@ fn step_columns(found: &[Option<&Found>]) -> Option<Val> {
     }
     let lists: Vec<&Vec<Val>> = found
         .iter()
-        .map(|f| f.unwrap().steps.as_arr().unwrap())
-        .collect();
-    let first = lists[0];
+        .map(|f| f.and_then(|f| f.steps.as_arr()))
+        .collect::<Option<_>>()?;
+    let first = *lists.first()?;
     let same = lists.iter().all(|l| {
         l.len() == first.len()
-            && l.iter().enumerate().all(|(j, x)| {
-                x.get("expr").and_then(|e| e.as_str())
-                    == first[j].get("expr").and_then(|e| e.as_str())
+            && l.iter().zip(first.iter()).all(|(x, f)| {
+                x.get("expr").and_then(|e| e.as_str()) == f.get("expr").and_then(|e| e.as_str())
                     && x.as_obj().is_some_and(|o| o.len() == 2 && o.has("value"))
             })
     });
@@ -2060,19 +2154,19 @@ fn step_columns(found: &[Option<&Found>]) -> Option<Val> {
         .enumerate()
         .map(|(j, x)| {
             let mut o = Obj::with_capacity(2);
-            o.insert(Rc::from("expr"), x.get("expr").unwrap().clone());
+            o.insert(Rc::from("expr"), x.get("expr")?.clone());
             o.insert(
                 Rc::from("values"),
                 Val::arr(
                     lists
                         .iter()
-                        .map(|l| l[j].get("value").unwrap().clone())
-                        .collect(),
+                        .map(|l| l.get(j).and_then(|s| s.get("value")).cloned())
+                        .collect::<Option<_>>()?,
                 ),
             );
-            Val::obj(o)
+            Some(Val::obj(o))
         })
-        .collect();
+        .collect::<Option<_>>()?;
     Some(escape(&Val::arr(cols)))
 }
 
@@ -2185,12 +2279,10 @@ fn rekey_steps(e: &Val, rows: &[(Key, Key)]) -> Val {
 
 fn drop_final(steps: Val) -> Val {
     if let Val::Arr(a) = &steps {
-        if a.first()
-            .and_then(|x| x.get("final"))
-            .is_some_and(|f| matches!(f, Val::Bool(true)))
-            && a[0].is_obj()
-        {
-            return Val::arr(a[1..].to_vec());
+        if let Some((first, rest)) = a.split_first() {
+            if first.is_obj() && matches!(first.get("final"), Some(Val::Bool(true))) {
+                return Val::arr(rest.to_vec());
+            }
         }
     }
     steps
@@ -2387,10 +2479,10 @@ pub fn encode_graph(
     engine: Option<&Val>,
 ) -> R<Val> {
     let mut blocks = Vec::new();
-    let plain = extract(trace, &[], &mut blocks);
+    let plain = extract(trace, &[], &mut blocks)?;
     let mut d = Shapes::default();
     let enc = encode_trace(&plain, request, &mut d, error.is_some(), error)?;
-    Ok(finish_graph(enc, d, &blocks, engine, &[]))
+    finish_graph(enc, d, &blocks, engine, &[])
 }
 
 pub(crate) fn finish_graph(
@@ -2399,7 +2491,7 @@ pub(crate) fn finish_graph(
     blocks: &[Block],
     engine: Option<&Val>,
     extra: &[&str],
-) -> Val {
+) -> R<Val> {
     let body_val = match enc {
         EncTrace::Verbatim(v) => {
             let mut o = Obj::with_capacity(1);
@@ -2407,7 +2499,7 @@ pub(crate) fn finish_graph(
             o
         }
         EncTrace::Nodes(nodes) => {
-            let (nodes, shared) = deep_or_flat(nodes, &d);
+            let (nodes, shared) = deep_or_flat(nodes, &d)?;
             let mut o = Obj::with_capacity(2);
             o.insert(
                 Rc::from("nodes"),
@@ -2430,7 +2522,7 @@ pub(crate) fn finish_graph(
     }
     requires.extend_from_slice(extra);
     let env = super::core::envelope("graph", engine, body, &requires);
-    super::core::pack(&Val::obj(env))
+    Ok(super::core::pack(&Val::obj(env)))
 }
 
 pub fn decode_graph(body: &Obj, request: &Val, rows: bool) -> R<Val> {
@@ -2450,6 +2542,7 @@ pub fn decode_graph(body: &Obj, request: &Val, rows: bool) -> R<Val> {
         rows,
         at: String::new(),
         keys: Vec::new(),
+        depth: 0,
     };
     let mut trace = decode_trace(
         &nodes_val(

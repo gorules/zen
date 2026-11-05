@@ -647,7 +647,7 @@ fn apply_trie(mut v: Option<Val>, t: Trie) -> R<Option<Val>> {
                 _ => return Err(bad("$splice on a value that is not a list")),
             };
             let at = at.min(c.len());
-            let end = (at + d).min(c.len());
+            let end = at.saturating_add(d).min(c.len());
             c.splice(at..end, ins);
             v = Some(Val::arr(c));
         }
@@ -1083,7 +1083,7 @@ impl Packer {
                     (None, None) => v.clone(),
                 }
             }
-            _ => unreachable!(),
+            _ => v.clone(),
         };
         if shared {
             self.done.insert(v.ptr(), out.clone());
@@ -1910,12 +1910,12 @@ impl Measure {
                 if let Some((_, h, n)) = self.memo.get(&p) {
                     return (*h, *n);
                 }
-                let mut keys: Vec<&Key> = o.keys().collect();
-                keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+                let mut entries: Vec<(&Key, &Val)> = o.iter().collect();
+                entries.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
                 let mut h = 13;
                 let mut n = 2;
-                for k in keys {
-                    let (eh, en) = self.get(o.get(k).unwrap());
+                for (k, x) in entries {
+                    let (eh, en) = self.get(x);
                     h = mix(mix(h, fnv(k)), eh);
                     n += en + utf16_len(k) + 4;
                 }
@@ -2125,7 +2125,7 @@ impl Refs {
                 }
                 Val::obj(out)
             }
-            _ => unreachable!(),
+            _ => x.clone(),
         };
         if n > self.min {
             mine.entry(h).or_insert_with(|| path.clone());
@@ -2734,16 +2734,16 @@ pub fn canon(v: &Val, out: &mut String) {
             out.push(']');
         }
         Val::Obj(o) => {
-            let mut keys: Vec<&Key> = o.keys().collect();
-            keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+            let mut entries: Vec<(&Key, &Val)> = o.iter().collect();
+            entries.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
             out.push('{');
-            for (i, k) in keys.into_iter().enumerate() {
+            for (i, (k, x)) in entries.into_iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
                 super::value::write_str(k, out);
                 out.push(':');
-                canon(o.get(k).unwrap(), out);
+                canon(x, out);
             }
             out.push('}');
         }

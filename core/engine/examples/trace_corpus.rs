@@ -1,5 +1,4 @@
 use mimalloc::MiMalloc;
-use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
@@ -18,10 +17,8 @@ struct Args {
     poc: Option<PathBuf>,
     poc_nodocs: Option<PathBuf>,
     out: Option<PathBuf>,
-    threads: usize,
     limit: usize,
     no_docs: bool,
-    zstd_today: bool,
     batch_mb: usize,
 }
 
@@ -52,13 +49,11 @@ fn args() -> Args {
         poc: m.get("poc").map(PathBuf::from),
         poc_nodocs: m.get("poc-nodocs").map(PathBuf::from),
         out: m.get("out").map(PathBuf::from),
-        threads: m.get("threads").and_then(|t| t.parse().ok()).unwrap_or(0),
         limit: m
             .get("limit")
             .and_then(|t| t.parse().ok())
             .unwrap_or(usize::MAX),
         no_docs: m.contains_key("no-docs"),
-        zstd_today: m.contains_key("zstd-today"),
         batch_mb: m
             .get("batch-mb")
             .and_then(|t| t.parse().ok())
@@ -77,11 +72,8 @@ struct One {
     poc_restore: Option<bool>,
     identical: Option<bool>,
     rust_raw: usize,
-    rust_zstd: usize,
     poc_raw: usize,
-    poc_zstd: usize,
     today_raw: usize,
-    today_zstd: usize,
     encode_ns: u128,
     convert_ns: u128,
     restore_ns: u128,
@@ -98,16 +90,8 @@ struct NoDocs {
     poc_restore: Option<bool>,
     identical: Option<bool>,
     rust_raw: usize,
-    rust_zstd: usize,
     poc_raw: usize,
-    poc_zstd: usize,
     v1: String,
-}
-
-fn zsize(s: &str) -> usize {
-    zstd::bulk::compress(s.as_bytes(), 3)
-        .map(|b| b.len())
-        .unwrap_or(0)
 }
 
 fn release_text(
@@ -214,11 +198,7 @@ fn check(
         id: id.clone(),
         ..Default::default()
     };
-    let today = line.len();
-    one.today_raw = today;
-    if a.zstd_today {
-        one.today_zstd = zsize(line);
-    }
+    one.today_raw = line.len();
     let t0 = Instant::now();
     let _ = convert_val_with(&trace, &request, err, None, docs.as_ref(), false);
     one.encode_ns = t0.elapsed().as_nanos();
@@ -241,12 +221,10 @@ fn check(
         Err(e) => one.failure = Some(format!("{id}: rust restore failed: {e}")),
     }
     one.rust_raw = text.len();
-    one.rust_zstd = zsize(&text);
     if let Some(p) = poc {
         let (pid, ptext) = poc_text(p);
         assert_eq!(pid, id, "poc file out of order");
         one.poc_raw = ptext.len();
-        one.poc_zstd = zsize(&ptext);
         one.identical = Some(ptext == text);
         match restore_val(&ptext, &request, docs.as_ref()) {
             Ok(b) => match first_diff(&trace, &b) {
@@ -276,12 +254,10 @@ fn check(
         nd.round_trip =
             restore_val(&t2, &request, None).is_ok_and(|b| first_diff(&trace, &b).is_none());
         nd.rust_raw = t2.len();
-        nd.rust_zstd = zsize(&t2);
         if let Some(p) = poc_nd {
             let (pid, ptext) = poc_text(p);
             assert_eq!(pid, id, "poc no-docs file out of order");
             nd.poc_raw = ptext.len();
-            nd.poc_zstd = zsize(&ptext);
             nd.identical = Some(ptext == t2);
             let back = restore_val(&ptext, &request, None);
             nd.poc_restore = Some(back.as_ref().is_ok_and(|b| first_diff(&trace, b).is_none()));
@@ -315,11 +291,8 @@ struct Sum {
     poc_restore: usize,
     identical: usize,
     rust_raw: usize,
-    rust_zstd: usize,
     poc_raw: usize,
-    poc_zstd: usize,
     today_raw: usize,
-    today_zstd: usize,
     encode_ns: u128,
     convert_ns: u128,
     restore_ns: u128,
@@ -331,21 +304,13 @@ struct Sum {
     nd_poc_restore: usize,
     nd_identical: usize,
     nd_rust_raw: usize,
-    nd_rust_zstd: usize,
     nd_poc_raw: usize,
-    nd_poc_zstd: usize,
     failures: Vec<String>,
     verbatim: BTreeMap<String, usize>,
 }
 
 fn main() {
     let a = args();
-    if a.threads > 0 {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(a.threads)
-            .build_global()
-            .unwrap();
-    }
     let src = BufReader::with_capacity(1 << 24, std::fs::File::open(&a.source).expect("source"));
     let mut poc = a
         .poc
@@ -388,7 +353,7 @@ fn main() {
             break;
         }
         let results: Vec<One> = batch
-            .par_iter()
+            .iter()
             .map(|(l, p, pn)| check(&a, l, p.as_deref(), pn.as_deref(), &cache))
             .collect();
         for r in results {
@@ -409,11 +374,8 @@ fn main() {
             }
             sum.identical += r.identical.unwrap_or(false) as usize;
             sum.rust_raw += r.rust_raw;
-            sum.rust_zstd += r.rust_zstd;
             sum.poc_raw += r.poc_raw;
-            sum.poc_zstd += r.poc_zstd;
             sum.today_raw += r.today_raw;
-            sum.today_zstd += r.today_zstd;
             sum.encode_ns += r.encode_ns;
             sum.convert_ns += r.convert_ns;
             sum.restore_ns += r.restore_ns;
@@ -438,9 +400,7 @@ fn main() {
                 sum.nd_poc_restore += nd.poc_restore.unwrap_or(false) as usize;
                 sum.nd_identical += nd.identical.unwrap_or(false) as usize;
                 sum.nd_rust_raw += nd.rust_raw;
-                sum.nd_rust_zstd += nd.rust_zstd;
                 sum.nd_poc_raw += nd.poc_raw;
-                sum.nd_poc_zstd += nd.poc_zstd;
             }
             if let Some(o) = out.as_mut() {
                 let mut line = format!(
@@ -467,7 +427,7 @@ fn main() {
     };
     let mut report = format!(
         "{{\"segment\":\"{}\",\"skipped\":{},\"pocDiffersOnlyBeyondDoublePrecision\":{},\"traces\":{},\"converted\":{},\"verbatim\":{},\"roundTrip\":{},\"pocChecked\":{},\"restoreOfPocText\":{},\"byteIdentical\":{},\
-\"bytesPerTrace\":{{\"rustRaw\":{:.1},\"rustZstd\":{:.1},\"pocRaw\":{:.1},\"pocZstd\":{:.1},\"todayRaw\":{:.1},\"todayZstd\":{:.1},\"rawVsPocPct\":{:.3},\"zstdVsPocPct\":{:.3}}},\
+\"bytesPerTrace\":{{\"rustRaw\":{:.1},\"pocRaw\":{:.1},\"todayRaw\":{:.1},\"rawVsPocPct\":{:.3}}},\
 \"msPerTrace\":{{\"encode\":{:.4},\"convertWithVerify\":{:.4},\"restore\":{:.4},\"maxConvert\":{:.1},\"maxConvertId\":\"{}\"}},\"wallSeconds\":{:.1}",
         a.segment,
         sum.skipped,
@@ -480,13 +440,9 @@ fn main() {
         sum.poc_restore,
         sum.identical,
         sum.rust_raw as f64 / t,
-        sum.rust_zstd as f64 / t,
         sum.poc_raw as f64 / t,
-        sum.poc_zstd as f64 / t,
         sum.today_raw as f64 / t,
-        sum.today_zstd as f64 / t,
         pct(sum.rust_raw, sum.poc_raw),
-        pct(sum.rust_zstd, sum.poc_zstd),
         ms(sum.encode_ns),
         ms(sum.convert_ns),
         ms(sum.restore_ns),
@@ -497,16 +453,14 @@ fn main() {
     if sum.nd_traces > 0 {
         let tn = sum.nd_traces as f64;
         report.push_str(&format!(
-            ",\"withoutDocuments\":{{\"traces\":{},\"ok\":{},\"pocDiffersOnlyBeyondDoublePrecision\":{},\"restoreOfPocText\":{},\"byteIdentical\":{},\"rustRaw\":{:.1},\"rustZstd\":{:.1},\"pocRaw\":{:.1},\"pocZstd\":{:.1}}}",
+            ",\"withoutDocuments\":{{\"traces\":{},\"ok\":{},\"pocDiffersOnlyBeyondDoublePrecision\":{},\"restoreOfPocText\":{},\"byteIdentical\":{},\"rustRaw\":{:.1},\"pocRaw\":{:.1}}}",
             sum.nd_traces,
             sum.nd_ok,
             sum.nd_precision_only,
             sum.nd_poc_restore,
             sum.nd_identical,
             sum.nd_rust_raw as f64 / tn,
-            sum.nd_rust_zstd as f64 / tn,
-            sum.nd_poc_raw as f64 / tn,
-            sum.nd_poc_zstd as f64 / tn
+            sum.nd_poc_raw as f64 / tn
         ));
     }
     let fails: Vec<String> = sum.failures.iter().map(|f| Val::str(f).to_json()).collect();

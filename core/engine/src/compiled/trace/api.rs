@@ -13,12 +13,32 @@ pub enum TraceError {
     DocumentsRequired,
     #[error("{0}")]
     Json(String),
+    #[error("malformed trace: {0}")]
+    Malformed(String),
 }
 
 pub(crate) type R<T> = Result<T, TraceError>;
 
 pub(crate) fn bad(msg: impl Into<String>) -> TraceError {
     TraceError::Invalid(msg.into())
+}
+
+pub(crate) fn malformed(what: impl Into<String>) -> TraceError {
+    TraceError::Malformed(what.into())
+}
+
+pub(crate) trait Need<T> {
+    fn need(self, what: &str) -> R<T>;
+}
+
+impl<T> Need<T> for Option<T> {
+    #[inline]
+    fn need(self, what: &str) -> R<T> {
+        match self {
+            Some(v) => Ok(v),
+            None => Err(malformed(what)),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

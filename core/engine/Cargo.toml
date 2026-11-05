@@ -53,8 +53,6 @@ insta = { version = "1.43", features = ["yaml", "redactions"] }
 toml = "0.8"
 mimalloc = "0.1.52"
 ctor = "1.0.13"
-rayon = "1"
-zstd = "0.13"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 recursive = { workspace = true }

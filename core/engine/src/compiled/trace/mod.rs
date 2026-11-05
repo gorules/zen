@@ -1,29 +1,23 @@
 pub mod api;
 pub(crate) mod collect;
 mod convert;
-#[allow(clippy::unwrap_used)]
 mod core;
-#[allow(clippy::unwrap_used)]
 mod graph;
-#[allow(clippy::unwrap_used)]
 mod loops;
 mod marks;
-#[allow(clippy::unwrap_used)]
 mod native;
 mod native_policy;
-#[allow(clippy::unwrap_used)]
 mod policy;
 mod policy_ser;
 pub(crate) mod rows;
-#[allow(clippy::unwrap_used)]
 mod sim;
 mod transcode;
 mod value;
 
 pub(crate) use api::Evaluation;
 use api::{
-    bad, ConvertArgs, ConvertOutput, Input, LegacyTrace, NodeError, RestoreArgs, Status,
-    TraceError, R,
+    bad, malformed, ConvertArgs, ConvertOutput, Input, LegacyTrace, Need, NodeError, RestoreArgs,
+    Status, TraceError, R,
 };
 pub(crate) use graph::plain_path;
 use policy_ser::PolicyDocument;

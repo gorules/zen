@@ -6,7 +6,7 @@ use super::sim::{
     Sim,
 };
 use super::value::{eq, json_len, Key, Obj, Val};
-use super::{bad, TraceError, R};
+use super::{bad, Need, TraceError, R};
 use ahash::{HashMap, HashSet};
 use base64::Engine;
 use std::rc::Rc;
@@ -206,9 +206,17 @@ fn ok_writes(ws: Option<&Val>) -> bool {
     true
 }
 
-fn ok_list(l: Option<&Val>) -> bool {
-    let Some(Val::Arr(a)) = l else { return false };
-    a.iter().all(|x| matches!(x, Val::Obj(o) if o.len() == 2 && matches!(o.get("id"), Some(Val::Str(_))) && matches!(o.get("result"), Some(Val::Bool(_)))))
+fn arm_list(l: Option<&Val>) -> Option<Vec<(&Val, &Val)>> {
+    let Some(Val::Arr(a)) = l else { return None };
+    a.iter()
+        .map(|x| match x {
+            Val::Obj(o) if o.len() == 2 => match (o.get("id"), o.get("result")) {
+                (Some(id @ Val::Str(_)), Some(result @ Val::Bool(_))) => Some((id, result)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
 }
 
 fn default_ids(block: &str, n: usize) -> Vec<Val> {
@@ -426,10 +434,13 @@ fn evals_out(evals: Option<&Val>, rows: &[Val], writes: &Writes) -> EvalsOut {
     if rows.len() == 1 && eq(&evals[0], &Val::obj(writes_map(writes))) {
         return EvalsOut::Default;
     }
-    let fields: Vec<Vec<String>> = evals
+    let Some(fields) = evals
         .iter()
-        .map(|e| sorted_keys(e.as_obj().unwrap()))
-        .collect();
+        .map(|e| e.as_obj().map(sorted_keys))
+        .collect::<Option<Vec<Vec<String>>>>()
+    else {
+        return EvalsOut::Bad;
+    };
     let mut all: Vec<String> = Vec::new();
     for f in fields.iter().flatten() {
         if !all.contains(f) {
@@ -444,7 +455,7 @@ fn evals_out(evals: Option<&Val>, rows: &[Val], writes: &Writes) -> EvalsOut {
         .filter(|f| {
             !evals.iter().all(|ev| match ev.get(f) {
                 None => true,
-                Some(x) => eq(x, wv_get(writes, f).unwrap()),
+                Some(x) => wv_get(writes, f).is_some_and(|w| eq(x, w)),
             })
         })
         .cloned()
@@ -474,7 +485,7 @@ fn trace_out(e: &Obj, block: &str, writes: Option<&Writes>) -> R<TraceOut> {
     let tr = e.get("trace");
     let kind = tr.and_then(|t| t.get("kind"));
     let kind_s = kind.and_then(|x| x.as_str()).filter(|s| KINDS.contains(s));
-    let (Some(tr), Some(kind_s)) = (tr.filter(|t| t.is_obj()), kind_s) else {
+    let (Some(tr @ Val::Obj(to)), Some(kind_s), Some(kind)) = (tr, kind_s, kind) else {
         let mut details = Obj::new();
         details.insert(k("trace"), tr.cloned().unwrap_or(Val::Null));
         return Ok(TraceOut {
@@ -482,8 +493,6 @@ fn trace_out(e: &Obj, block: &str, writes: Option<&Writes>) -> R<TraceOut> {
             details,
         });
     };
-    let to = tr.as_obj().unwrap();
-    let kind = kind.unwrap();
     let empty: Writes = Vec::new();
     let ws = writes.unwrap_or(&empty);
     let w0 = ws.first();
@@ -492,19 +501,18 @@ fn trace_out(e: &Obj, block: &str, writes: Option<&Writes>) -> R<TraceOut> {
     let mut det = Obj::new();
     match kind_s {
         "expression" => {
-            if !to.has("property")
-                || !to.has("value")
-                || to
-                    .keys()
-                    .any(|x| !matches!(&**x, "kind" | "property" | "value"))
+            let (Some(prop), Some(v)) = (to.get("property"), to.get("value")) else {
+                return Ok(whole_trace(Some(kind), tr));
+            };
+            if to
+                .keys()
+                .any(|x| !matches!(&**x, "kind" | "property" | "value"))
             {
                 return Ok(whole_trace(Some(kind), tr));
             }
-            let prop = to.get("property").unwrap();
             if !w0.is_some_and(|w| same_prim(&w.0, prop)) {
                 det.insert(k("property"), prop.clone());
             }
-            let v = to.get("value").unwrap();
             if !w0.is_some_and(|w| eq(&w.1, v)) {
                 det.insert(k("value"), v.clone());
             }
@@ -515,20 +523,14 @@ fn trace_out(e: &Obj, block: &str, writes: Option<&Writes>) -> R<TraceOut> {
             } else {
                 "conditions"
             };
-            let list = to.get(field);
-            if !ok_list(list) {
+            let Some(list) = arm_list(to.get(field)) else {
                 return Ok(whole_trace(Some(kind), tr));
-            }
-            let list = list.unwrap().as_arr().unwrap();
+            };
             rec.insert(
                 k(field),
-                Val::arr(
-                    list.iter()
-                        .map(|a| a.get("result").unwrap().clone())
-                        .collect(),
-                ),
+                Val::arr(list.iter().map(|(_, r)| (*r).clone()).collect()),
             );
-            let ids: Vec<Val> = list.iter().map(|a| a.get("id").unwrap().clone()).collect();
+            let ids: Vec<Val> = list.iter().map(|(id, _)| (*id).clone()).collect();
             if !eq(
                 &Val::arr(ids.clone()),
                 &Val::arr(default_ids(block, list.len())),
@@ -545,8 +547,8 @@ fn trace_out(e: &Obj, block: &str, writes: Option<&Writes>) -> R<TraceOut> {
             if kind_s == "match" {
                 let first = list
                     .iter()
-                    .find(|a| matches!(a.get("result"), Some(Val::Bool(true))))
-                    .map(|a| a.get("id").unwrap().clone());
+                    .find(|(_, r)| matches!(r, Val::Bool(true)))
+                    .map(|(id, _)| (*id).clone());
                 let m = to.get("matchedArm");
                 let same = match (m, &first) {
                     (None, None) => true,
@@ -685,7 +687,7 @@ fn trace_in(rec: &Obj, det: &Obj, block: &str, writes: &Writes) -> R<Option<Val>
             let first = list
                 .iter()
                 .find(|a| matches!(a.get("result"), Some(Val::Bool(true))))
-                .map(|a| a.get("id").unwrap().clone());
+                .and_then(|a| a.get("id").cloned());
             t.insert(k("arms"), Val::arr(list));
             t.insert(k("kind"), kind.clone());
             t.insert(k("value"), val);
@@ -956,6 +958,7 @@ fn to_record(sim: &mut Sim, e: &Obj, derive: bool, def: Absent) -> R<Recorded> {
                 .cloned()
                 .collect();
             let ak: Vec<String> = ov.keys().map(|k| k.to_string()).collect();
+            let ak_len = ak.len();
             let (add, del) = list_delta(&pk, &ak);
             if !add.is_empty() || !del.is_empty() {
                 let mut o = Obj::new();
@@ -970,8 +973,8 @@ fn to_record(sim: &mut Sim, e: &Obj, derive: bool, def: Absent) -> R<Recorded> {
             let mut lit: Option<Obj> = None;
             let mut post: Option<Vec<String>> = None;
             let mut after: Option<Val> = None;
-            for key in &ak {
-                let v = ov.get(key).unwrap();
+            for (key, v) in ov.iter() {
+                let key: &str = key;
                 if sim.val(key, inst).is_some_and(|x| eq(v, &x)) {
                     continue;
                 }
@@ -982,16 +985,16 @@ fn to_record(sim: &mut Sim, e: &Obj, derive: bool, def: Absent) -> R<Recorded> {
                     .as_ref()
                     .is_some_and(|a| sim.val_in(a, key, inst).is_some_and(|x| eq(v, &x)))
                 {
-                    post.get_or_insert_with(Vec::new).push(key.clone());
+                    post.get_or_insert_with(Vec::new).push(key.to_string());
                 } else {
                     lit.get_or_insert_with(Obj::new)
-                        .insert(Rc::from(key.as_str()), v.clone());
+                        .insert(Rc::from(key), v.clone());
                 }
             }
             if let Some(p) = post {
                 rec.insert(
                     k("operandsAfterWrite"),
-                    if p.len() == ak.len() {
+                    if p.len() == ak_len {
                         Val::Bool(true)
                     } else {
                         strs(&p)
@@ -1178,10 +1181,7 @@ fn from_record(
         let pj = rec.get("operandsAfterWrite");
         let all_after = matches!(pj, Some(Val::Bool(true)));
         let ps: HashSet<String> = match pj {
-            Some(Val::Arr(_)) => str_list(pj.unwrap())
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
+            Some(a @ Val::Arr(_)) => str_list(a).unwrap_or_default().into_iter().collect(),
             _ => HashSet::default(),
         };
         let mut ov = Obj::new();
@@ -1190,11 +1190,10 @@ fn from_record(
             if let Some(v) = lit.get(key) {
                 ov.set(key, v.clone());
             } else if all_after || ps.contains(key) {
-                if after.is_none() {
-                    after =
-                        Some(sim.after(if good { &writes } else { &empty }, inst, from.as_ref()));
-                }
-                if let Some(v) = sim.val_in(after.as_ref().unwrap(), key, inst) {
+                let state = after.get_or_insert_with(|| {
+                    sim.after(if good { &writes } else { &empty }, inst, from.as_ref())
+                });
+                if let Some(v) = sim.val_in(state, key, inst) {
                     ov.set(key, v);
                 }
             } else if let Some(v) = sim.val(key, inst) {
@@ -1259,54 +1258,39 @@ fn same_head(a: &Obj, b: &Obj) -> bool {
 
 fn write_columns(rs: &[Obj]) -> Option<Val> {
     let ws: Vec<Option<&Val>> = rs.iter().map(|r| r.get("writes")).collect();
-    if ws
+    let objs: Option<Vec<&Obj>> = ws
         .iter()
-        .all(|w| matches!(w, Some(Val::Obj(o)) if o.len() == 1))
-    {
-        let p = ws[0]
-            .unwrap()
-            .as_obj()
-            .unwrap()
-            .first_key()
-            .unwrap()
-            .clone();
-        if !ws.iter().all(|w| w.unwrap().has(&p)) {
-            return None;
-        }
+        .map(|w| match w {
+            Some(Val::Obj(o)) if o.len() == 1 => Some(&**o),
+            _ => None,
+        })
+        .collect();
+    if let Some(objs) = objs {
+        let p = objs.first()?.first_key()?.clone();
+        let col: Vec<Val> = objs
+            .iter()
+            .map(|o| o.get(&p).cloned())
+            .collect::<Option<_>>()?;
         let mut o = Obj::new();
-        o.insert(
-            p.clone(),
-            Val::arr(
-                ws.iter()
-                    .map(|w| w.unwrap().get(&p).unwrap().clone())
-                    .collect(),
-            ),
-        );
+        o.insert(p, Val::arr(col));
         return Some(Val::obj(o));
     }
-    if ws
+    let arrs: Option<Vec<&Vec<Val>>> = ws
         .iter()
-        .all(|w| matches!(w, Some(Val::Arr(a)) if a.len() > 1))
-    {
-        let first = ws[0].unwrap().as_arr().unwrap();
-        let paths: Vec<Val> = first
-            .iter()
-            .map(|x| x.get("path").cloned().unwrap_or(Val::Null))
-            .collect();
+        .map(|w| match w {
+            Some(Val::Arr(a)) if a.len() > 1 => Some(&**a),
+            _ => None,
+        })
+        .collect();
+    if let Some(arrs) = arrs {
+        let path_of = |x: &Val| x.get("path").cloned().unwrap_or(Val::Null);
+        let first = arrs.first()?;
+        let paths: Vec<Val> = first.iter().map(path_of).collect();
         let pv = Val::arr(paths.clone());
-        if !ws.iter().all(|w| {
-            eq(
-                &Val::arr(
-                    w.unwrap()
-                        .as_arr()
-                        .unwrap()
-                        .iter()
-                        .map(|x| x.get("path").cloned().unwrap_or(Val::Null))
-                        .collect(),
-                ),
-                &pv,
-            )
-        }) {
+        if !arrs
+            .iter()
+            .all(|a| eq(&Val::arr(a.iter().map(path_of).collect()), &pv))
+        {
             return None;
         }
         let list = paths
@@ -1318,10 +1302,10 @@ fn write_columns(rs: &[Obj]) -> Option<Val> {
                 o.insert(
                     k("values"),
                     Val::arr(
-                        ws.iter()
-                            .map(|w| {
-                                w.unwrap().as_arr().unwrap()[i]
-                                    .get("value")
+                        arrs.iter()
+                            .map(|a| {
+                                a.get(i)
+                                    .and_then(|x| x.get("value"))
                                     .cloned()
                                     .unwrap_or(Val::Null)
                             })
@@ -1384,15 +1368,15 @@ fn build_run(first: &Obj, coll: &str, count: usize, len: i64, recs: Vec<Obj>) ->
             for r in rs.iter_mut() {
                 r.remove(&key);
             }
-        } else if &*key != "writes"
-            && rs
-                .iter()
-                .all(|r| r.get(&key).is_some_and(|v| eq(v, rs[0].get(&key).unwrap())))
-        {
-            let v = rs[0].get(&key).unwrap().clone();
-            run.insert(key.clone(), v);
-            for r in rs.iter_mut() {
-                r.remove(&key);
+        } else if &*key != "writes" {
+            let Some(v) = rs.first().and_then(|r| r.get(&key)).cloned() else {
+                continue;
+            };
+            if rs.iter().all(|r| r.get(&key).is_some_and(|x| eq(x, &v))) {
+                run.insert(key.clone(), v);
+                for r in rs.iter_mut() {
+                    r.remove(&key);
+                }
             }
         }
     }
@@ -1704,7 +1688,7 @@ fn previous_reads(recs: Vec<Obj>, def: Absent) -> Vec<Obj> {
             let key = format!("{}|{}", r.get("policy").map(js_string).unwrap_or_default(), template(r.get("block")));
             let own = r.get("reads").and_then(|x| if x.is_arr() { str_list(x) } else { None });
             let mine = own.clone().or_else(|| match r.get("perMember") {
-                Some(Val::Arr(pm)) if !pm.is_empty() => pm.last().unwrap().get("reads").and_then(str_list),
+                Some(Val::Arr(pm)) => pm.last().and_then(|m| m.get("reads")).and_then(str_list),
                 _ => None,
             });
             let prev = last.get(&key).cloned();
@@ -1789,16 +1773,15 @@ pub fn encode_policy(trace: &Val, request: &Val, documents: Option<&Val>) -> R<V
     let def = Absent::of_execs(&execs);
     let mut items: Vec<Item> = Vec::with_capacity(execs.len());
     for e in execs.iter() {
-        let unsafe_paths = match e {
-            Val::Obj(eo) => {
-                !dkeys.is_empty()
-                    && !exec_paths(eo)
-                        .iter()
-                        .all(|p| !p.as_str().is_some() || dot_safe(p, &dkeys))
-            }
-            _ => true,
+        let safe = match e {
+            Val::Obj(eo) => (dkeys.is_empty()
+                || exec_paths(eo)
+                    .iter()
+                    .all(|p| p.as_str().is_none() || dot_safe(p, &dkeys)))
+            .then_some(eo),
+            _ => None,
         };
-        if unsafe_paths {
+        let Some(eo) = safe else {
             let mut rec = Obj::new();
             if let Some(b) = e.get("blockId") {
                 rec.insert(k("block"), b.clone());
@@ -1812,8 +1795,7 @@ pub fn encode_policy(trace: &Val, request: &Val, documents: Option<&Val>) -> R<V
                 sim.apply(&writes_pairs(w), inst.as_deref(), None);
             }
             continue;
-        }
-        let eo = e.as_obj().unwrap();
+        };
         let sw = sweep_of(eo.get("instancePath"));
         let len = match &sw {
             Some((coll, 0)) => len_at(&sim, coll),
@@ -1849,7 +1831,7 @@ pub fn encode_policy(trace: &Val, request: &Val, documents: Option<&Val>) -> R<V
                 o.insert(k("absent"), Val::Bool(true));
                 body.insert(k("properties"), Val::obj(o));
             }
-            Some(Val::Obj(a)) => {
+            Some(av @ Val::Obj(a)) => {
                 let mut set = Obj::new();
                 let mut del: Vec<String> = Vec::new();
                 for (key, v) in a.iter() {
@@ -1869,7 +1851,7 @@ pub fn encode_policy(trace: &Val, request: &Val, documents: Option<&Val>) -> R<V
                     .all(|x| dot_safe(&Val::str(&x), &dkeys));
                 let mut props = Obj::new();
                 if !all_safe {
-                    props.insert(k("verbatim"), pack(&escape(act.unwrap())));
+                    props.insert(k("verbatim"), pack(&escape(av)));
                 } else {
                     if !set.is_empty() {
                         props.insert(
@@ -1986,7 +1968,12 @@ pub fn decode_policy(
                 .as_i64()
                 .filter(|n| *n <= 10_000_000)
                 .ok_or_else(|| bad("count must be a small integer"))?,
-            None => len_at(&sim, rec.get("members").unwrap().as_str().unwrap()),
+            None => len_at(
+                &sim,
+                rec.get("members")
+                    .and_then(|m| m.as_str())
+                    .need("a member run needs members")?,
+            ),
         };
         for idx in 0..n.max(0) as usize {
             let m = member_record(&rec, idx)?;
@@ -1997,15 +1984,16 @@ pub fn decode_policy(
     if let Some(e) = engine {
         t.insert(k("engineVersion"), e.clone());
     }
-    let ex = Val::arr(executions);
-    match body.get("properties") {
-        Some(p) if p.has("verbatim") => {
-            t.insert(k("properties"), unescape(p.get("verbatim").unwrap()))
-        }
-        Some(p) if matches!(p.get("absent"), Some(v) if !matches!(v, Val::Null | Val::Bool(false))) =>
-            {}
-        p => {
-            let mut pred = props_of(ex.as_arr().unwrap(), request, &sim.state);
+    let props = body.get("properties");
+    let verbatim = props.and_then(|p| p.get("verbatim"));
+    let absent = props.is_some_and(
+        |p| matches!(p.get("absent"), Some(v) if !matches!(v, Val::Null | Val::Bool(false))),
+    );
+    match (verbatim, props) {
+        (Some(v), _) => t.insert(k("properties"), unescape(v)),
+        _ if absent => {}
+        (None, p) => {
+            let mut pred = props_of(&executions, request, &sim.state);
             if let Some(p) = p {
                 if let Some(Val::Arr(rm)) = p.get("remove") {
                     for x in rm.iter() {
@@ -2023,7 +2011,7 @@ pub fn decode_policy(
             t.insert(k("properties"), Val::obj(pred));
         }
     }
-    t.insert(k("executions"), ex);
+    t.insert(k("executions"), Val::arr(executions));
     if let Some(x) = body.get("extraFields") {
         if let Val::Obj(x) = unescape(x) {
             for (key, v) in x.iter() {

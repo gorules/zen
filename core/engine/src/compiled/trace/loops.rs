@@ -1,10 +1,11 @@
 use super::core::canon;
 use super::value::{json_len, Key, Obj, Val};
-use super::{bad, R};
+use super::{bad, malformed, Need, R};
 use ahash::HashMap;
 use std::rc::Rc;
 
 pub const MAX_ITERATIONS: usize = 10_000_000;
+pub const MAX_DEPTH: usize = 256;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NestKind {
@@ -41,6 +42,7 @@ pub enum EncTrace {
 pub struct Shapes {
     pub paths: Vec<Val>,
     index: HashMap<String, usize>,
+    pub depth: usize,
 }
 
 pub const REC_ORDER: [&str; 21] = [
@@ -79,19 +81,31 @@ fn ids_val(ids: &[usize]) -> Val {
 }
 
 impl Nest {
-    fn shape(&self) -> Obj {
+    fn first(&self) -> R<usize> {
+        self.ids
+            .first()
+            .copied()
+            .need("a nested trace needs at least one run")
+    }
+
+    fn uniform(&self) -> bool {
+        self.ids.windows(2).all(|w| w[0] == w[1])
+    }
+
+    fn shape(&self) -> R<Obj> {
+        let first = self.first()?;
         let mut o = Obj::new();
         if self.kind == NestKind::Sub {
-            o.insert(Rc::from("path"), Val::int(self.ids[0] as i64));
-            return o;
+            o.insert(Rc::from("path"), Val::int(first as i64));
+            return Ok(o);
         }
-        if self.ids.iter().all(|&x| x == self.ids[0]) {
-            o.insert(Rc::from("path"), Val::int(self.ids[0] as i64));
+        if self.uniform() {
+            o.insert(Rc::from("path"), Val::int(first as i64));
             o.insert(Rc::from("iterations"), Val::int(self.ids.len() as i64));
         } else {
             o.insert(Rc::from("iterationPaths"), ids_val(&self.ids));
         }
-        o
+        Ok(o)
     }
 }
 
@@ -159,28 +173,30 @@ fn without(r: &Obj, key: &str) -> Obj {
     c
 }
 
-fn hoist(t: EncTrace) -> (Val, Vec<Val>) {
+fn hoist(t: EncTrace) -> R<(Val, Vec<Val>)> {
     match t {
-        EncTrace::Verbatim(v) => (verbatim_val(v), Vec::new()),
+        EncTrace::Verbatim(v) => Ok((verbatim_val(v), Vec::new())),
         EncTrace::Nodes(nodes) => {
             let mut timings = Vec::new();
             let mut out = Vec::with_capacity(nodes.len());
             for r in nodes {
                 let mut c = r.obj;
-                if matches!(c.get("perf"), Some(Val::Num(_))) {
-                    timings.push(c.remove("perf").unwrap());
+                if let Some(p @ Val::Num(_)) = c.get("perf").cloned() {
+                    c.remove("perf");
+                    timings.push(p);
                 }
                 if let Some(n) = r.nest {
-                    c = with_field(&c, n.kind.field(), Val::obj(n.shape()));
+                    c = with_field(&c, n.kind.field(), Val::obj(n.shape()?));
                     let ps = &n.timings;
+                    let width = ps.first().map_or(0, |p| p.len());
                     if n.kind == NestKind::Loop
                         && ps.len() > 1
-                        && !ps[0].is_empty()
-                        && ps.iter().all(|p| p.len() == ps[0].len())
+                        && width > 0
+                        && ps.iter().all(|p| p.len() == width)
                     {
-                        for j in 0..ps[0].len() {
+                        for j in 0..width {
                             for p in ps {
-                                timings.push(p[j].clone());
+                                timings.extend(p.get(j).cloned());
                             }
                         }
                     } else {
@@ -191,7 +207,7 @@ fn hoist(t: EncTrace) -> (Val, Vec<Val>) {
                 }
                 out.push(Val::obj(c));
             }
-            (nodes_val(out), timings)
+            Ok((nodes_val(out), timings))
         }
     }
 }
@@ -207,15 +223,18 @@ fn intern(d: &mut Shapes, skel: Val) -> usize {
     id
 }
 
-pub fn nest(d: &mut Shapes, kind: NestKind, subs: Vec<EncTrace>) -> Nest {
+pub fn nest(d: &mut Shapes, kind: NestKind, subs: Vec<EncTrace>) -> R<Nest> {
+    if subs.is_empty() {
+        return Err(malformed("a nested trace needs at least one run"));
+    }
     let mut ids = Vec::with_capacity(subs.len());
     let mut timings = Vec::with_capacity(subs.len());
     for s in subs {
-        let (skel, t) = hoist(s);
+        let (skel, t) = hoist(s)?;
         ids.push(intern(d, skel));
         timings.push(t);
     }
-    Nest { kind, ids, timings }
+    Ok(Nest { kind, ids, timings })
 }
 
 #[derive(Clone)]
@@ -240,14 +259,25 @@ fn resolve<'a>(paths: &'a [Val], id: &'a ShapeId) -> R<&'a Val> {
     }
 }
 
-fn shape_kind(r: &Val) -> Option<NestKind> {
+fn shape_of(r: &Val) -> Option<(NestKind, &Val, &Obj)> {
     match r.get("loop") {
-        Some(Val::Obj(o)) if !o.has("paths") => return Some(NestKind::Loop),
+        Some(v @ Val::Obj(o)) if !o.has("paths") => return Some((NestKind::Loop, v, o)),
         _ => {}
     }
     match r.get("sub") {
-        Some(Val::Obj(o)) if o.has("path") => Some(NestKind::Sub),
+        Some(v @ Val::Obj(o)) if o.has("path") => Some((NestKind::Sub, v, o)),
         _ => None,
+    }
+}
+
+fn sub_path(s: &Val) -> R<ShapeId> {
+    shape_id(s.get("path").need("a sub shape needs path")?)
+}
+
+fn deeper(depth: usize) -> R<usize> {
+    match depth < MAX_DEPTH {
+        true => Ok(depth + 1),
+        false => Err(malformed("nested shapes are too deep")),
     }
 }
 
@@ -297,18 +327,18 @@ fn group_key(id: &ShapeId) -> String {
 fn to_cols(ids: &[ShapeId], rows: &[Vec<Val>]) -> Vec<Vec<Vec<Val>>> {
     let mut order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<&Vec<Val>>> = HashMap::default();
-    for (i, id) in ids.iter().enumerate() {
+    for (id, row) in ids.iter().zip(rows) {
         let k = group_key(id);
         if !groups.contains_key(&k) {
             order.push(k.clone());
         }
-        groups.entry(k).or_default().push(&rows[i]);
+        groups.entry(k).or_default().push(row);
     }
     order
         .iter()
-        .map(|k| {
-            let g = &groups[k];
-            (0..g[0].len())
+        .filter_map(|k| groups.get(k))
+        .map(|g| {
+            (0..g.first().map_or(0, |r| r.len()))
                 .map(|j| {
                     g.iter()
                         .map(|r| r.get(j).cloned().unwrap_or(Val::Null))
@@ -332,9 +362,10 @@ fn from_cols(ids: &[ShapeId], groups: &Val) -> R<Vec<Vec<Val>>> {
     let mut seen = vec![0usize; gi.len()];
     let mut out = Vec::with_capacity(ids.len());
     for k in &keys {
-        let g = gi[k];
-        let t = seen[g];
-        seen[g] += 1;
+        let g = *gi.get(k).need("timingColumns group")?;
+        let slot = seen.get_mut(g).need("timingColumns group")?;
+        let t = *slot;
+        *slot += 1;
         let cols = groups
             .get(g)
             .and_then(|x| x.as_arr())
@@ -406,6 +437,10 @@ impl Cursor {
         Self { row, at: 0 }
     }
 
+    fn remaining(&self) -> usize {
+        self.row.len().saturating_sub(self.at)
+    }
+
     fn next(&mut self) -> R<Val> {
         let v = self
             .row
@@ -424,10 +459,10 @@ fn strip_timings(t: &Val) -> Option<(Val, Vec<Val>)> {
     let mut timings = Vec::new();
     let nodes = records(t)
         .iter()
-        .map(|r| match r.get("perf") {
-            Some(Val::Num(_)) => {
-                timings.push(r.get("perf").unwrap().clone());
-                Val::obj(without(r.as_obj().unwrap(), "perf"))
+        .map(|r| match (r, r.get("perf")) {
+            (Val::Obj(o), Some(p @ Val::Num(_))) => {
+                timings.push(p.clone());
+                Val::obj(without(o, "perf"))
             }
             _ => r.clone(),
         })
@@ -531,24 +566,22 @@ fn loop_unpack(x: &Val) -> R<Vec<Val>> {
     Ok(out)
 }
 
-fn timing_count(paths: &[Val], id: &ShapeId) -> R<usize> {
+fn timing_count(paths: &[Val], id: &ShapeId, depth: usize) -> R<usize> {
+    let depth = deeper(depth)?;
     let skel = resolve(paths, id)?;
-    let mut n = 0;
+    let mut n: usize = 0;
     for r in skel_records(skel) {
         if !r.has("perf") {
-            n += 1;
+            n = n.saturating_add(1);
         }
-        match shape_kind(r) {
-            Some(NestKind::Loop) => {
-                for c in iteration_ids(r.get("loop").unwrap())? {
-                    n += timing_count(paths, &c)?;
+        match shape_of(r) {
+            Some((NestKind::Loop, s, _)) => {
+                for c in iteration_ids(s)? {
+                    n = n.saturating_add(timing_count(paths, &c, depth)?);
                 }
             }
-            Some(NestKind::Sub) => {
-                n += timing_count(
-                    paths,
-                    &shape_id(r.get("sub").unwrap().get("path").unwrap())?,
-                )?;
+            Some((NestKind::Sub, s, _)) => {
+                n = n.saturating_add(timing_count(paths, &sub_path(s)?, depth)?);
             }
             None => {}
         }
@@ -556,28 +589,36 @@ fn timing_count(paths: &[Val], id: &ShapeId) -> R<usize> {
     Ok(n)
 }
 
-fn expand_nested(paths: &[Val], s: &Val, next: &mut Cursor) -> R<Vec<Val>> {
+fn expand_nested(paths: &[Val], s: &Val, next: &mut Cursor, depth: usize) -> R<Vec<Val>> {
     let ids = iteration_ids(s)?;
     let lens: Vec<usize> = ids
         .iter()
-        .map(|id| timing_count(paths, id))
+        .map(|id| timing_count(paths, id, depth))
         .collect::<R<_>>()?;
-    if ids.len() < 2 || lens[0] == 0 || lens.iter().any(|&l| l != lens[0]) {
-        return ids.iter().map(|id| rebuild(paths, id, next)).collect();
+    let width = lens.first().copied().unwrap_or(0);
+    if ids.len() < 2 || width == 0 || lens.iter().any(|&l| l != width) {
+        return ids
+            .iter()
+            .map(|id| rebuild(paths, id, next, depth))
+            .collect();
     }
-    let mut rows: Vec<Vec<Val>> = vec![Vec::with_capacity(lens[0]); ids.len()];
-    for _ in 0..lens[0] {
+    if width.saturating_mul(ids.len()) > next.remaining() {
+        return Err(bad("timing row too short"));
+    }
+    let mut rows: Vec<Vec<Val>> = vec![Vec::with_capacity(width); ids.len()];
+    for _ in 0..width {
         for r in rows.iter_mut() {
             r.push(next.next()?);
         }
     }
     ids.iter()
         .zip(rows)
-        .map(|(id, row)| rebuild(paths, id, &mut Cursor::new(row)))
+        .map(|(id, row)| rebuild(paths, id, &mut Cursor::new(row), depth))
         .collect()
 }
 
-fn rebuild(paths: &[Val], id: &ShapeId, next: &mut Cursor) -> R<Val> {
+fn rebuild(paths: &[Val], id: &ShapeId, next: &mut Cursor, depth: usize) -> R<Val> {
+    let depth = deeper(depth)?;
     let skel = resolve(paths, id)?;
     if !skel.is_obj() || is_verbatim(skel) {
         return Ok(skel.clone());
@@ -591,14 +632,14 @@ fn rebuild(paths: &[Val], id: &ShapeId, next: &mut Cursor) -> R<Val> {
         } else {
             with_field(o, "perf", next.next()?)
         };
-        match shape_kind(r) {
-            Some(NestKind::Loop) => {
-                let l = expand_nested(paths, r.get("loop").unwrap(), next)?;
+        match shape_of(r) {
+            Some((NestKind::Loop, s, _)) => {
+                let l = expand_nested(paths, s, next, depth)?;
                 c.set("loop", Val::arr(l));
             }
-            Some(NestKind::Sub) => {
-                let p = shape_id(r.get("sub").unwrap().get("path").unwrap())?;
-                c.set("sub", rebuild(paths, &p, next)?);
+            Some((NestKind::Sub, s, _)) => {
+                let p = sub_path(s)?;
+                c.set("sub", rebuild(paths, &p, next, depth)?);
             }
             None => {}
         }
@@ -614,13 +655,16 @@ fn flatten(t: Val) -> Val {
     let nodes = records(&t)
         .iter()
         .map(|r| {
-            if let Some(Val::Arr(l)) = r.get("loop") {
+            let Val::Obj(ro) = r else {
+                return r.clone();
+            };
+            if let Some(Val::Arr(l)) = ro.get("loop") {
                 let packed = loop_pack(l.iter().cloned().map(flatten).collect());
-                return Val::obj(with_field(r.as_obj().unwrap(), "loop", packed));
+                return Val::obj(with_field(ro, "loop", packed));
             }
-            if let Some(s @ Val::Obj(_)) = r.get("sub") {
+            if let Some(s @ Val::Obj(_)) = ro.get("sub") {
                 let f = flatten(s.clone());
-                return Val::obj(with_field(r.as_obj().unwrap(), "sub", f));
+                return Val::obj(with_field(ro, "sub", f));
             }
             r.clone()
         })
@@ -629,19 +673,22 @@ fn flatten(t: Val) -> Val {
 }
 
 fn flat_form(d: &Shapes, n: &Nest) -> (&'static str, Val) {
+    let run = |id: usize, t: Option<&Vec<Val>>| {
+        let mut c = Cursor::new(t.cloned().unwrap_or_default());
+        flatten(rebuild(&d.paths, &ShapeId::At(id), &mut c, 0).unwrap_or(Val::Null))
+    };
     if n.kind == NestKind::Sub {
-        let mut c = Cursor::new(n.timings[0].clone());
-        let t = rebuild(&d.paths, &ShapeId::At(n.ids[0]), &mut c).unwrap_or(Val::Null);
-        return ("sub", flatten(t));
+        let t = match n.ids.first() {
+            Some(&id) => run(id, n.timings.first()),
+            None => Val::Null,
+        };
+        return ("sub", t);
     }
     let runs = n
         .ids
         .iter()
         .enumerate()
-        .map(|(i, id)| {
-            let mut c = Cursor::new(n.timings[i].clone());
-            flatten(rebuild(&d.paths, &ShapeId::At(*id), &mut c).unwrap_or(Val::Null))
-        })
+        .map(|(i, &id)| run(id, n.timings.get(i)))
         .collect();
     ("loop", loop_pack(runs))
 }
@@ -655,76 +702,86 @@ struct Finalizer<'a> {
 }
 
 impl<'a> Finalizer<'a> {
-    fn visit(&mut self, id: usize, reach: &mut Vec<bool>) {
-        self.uses[id] += 1;
-        if reach[id] {
-            return;
+    fn path(&self, id: usize) -> R<&'a Val> {
+        self.d.paths.get(id).need("shape path out of range")
+    }
+
+    fn visit(&mut self, id: usize, reach: &mut [bool]) -> R<()> {
+        let skel = self.path(id)?;
+        if let Some(u) = self.uses.get_mut(id) {
+            *u += 1;
         }
-        reach[id] = true;
-        for r in skel_records(&self.d.paths[id]) {
-            if let Some(k) = shape_kind(r) {
-                for c in shape_ids(r.get(k.field()).unwrap()).unwrap_or_default() {
+        match reach.get_mut(id) {
+            Some(seen) if !*seen => *seen = true,
+            _ => return Ok(()),
+        }
+        for r in skel_records(skel) {
+            if let Some((_, s, _)) = shape_of(r) {
+                for c in shape_ids(s).unwrap_or_default() {
                     if let ShapeId::At(c) = c {
-                        self.visit(c, reach);
+                        self.visit(c, reach)?;
                     }
                 }
             }
         }
+        Ok(())
     }
 
-    fn reference(&mut self, id: usize) -> Val {
-        let uses = self.uses[id];
-        if uses <= 1 || json_len(&self.d.paths[id]) * (uses - 1) <= 2 * uses + 12 {
-            return self.materialize(id);
+    fn reference(&mut self, id: usize, depth: usize) -> R<Val> {
+        let depth = deeper(depth)?;
+        let uses = self.uses.get(id).copied().unwrap_or(0);
+        if uses <= 1 || json_len(self.path(id)?) * (uses - 1) <= 2 * uses + 12 {
+            return self.materialize(id, depth);
         }
         self.hit_shared = true;
         if let Some(&s) = self.slot.get(&id) {
-            return Val::int(s as i64);
+            return Ok(Val::int(s as i64));
         }
         let s = self.shared.len();
         self.slot.insert(id, s);
         self.shared.push(None);
-        let m = self.materialize(id);
-        self.shared[s] = Some(m);
-        Val::int(s as i64)
+        let m = self.materialize(id, depth)?;
+        if let Some(slot) = self.shared.get_mut(s) {
+            *slot = Some(m);
+        }
+        Ok(Val::int(s as i64))
     }
 
-    fn shape_out(&mut self, s: &Obj) -> Obj {
+    fn shape_out(&mut self, s: &Obj, depth: usize) -> R<Obj> {
         let mut out = s.clone();
         if let Some(Val::Arr(ip)) = s.get("iterationPaths") {
             let mapped = ip
                 .iter()
-                .map(|i| self.reference(i.as_usize().unwrap_or(0)))
-                .collect();
+                .map(|i| self.reference(i.as_usize().unwrap_or(0), depth))
+                .collect::<R<_>>()?;
             out.set("iterationPaths", Val::arr(mapped));
         } else if let Some(p) = s.get("path") {
-            let r = self.reference(p.as_usize().unwrap_or(0));
+            let r = self.reference(p.as_usize().unwrap_or(0), depth)?;
             out.set("path", r);
         }
-        out
+        Ok(out)
     }
 
-    fn materialize(&mut self, id: usize) -> Val {
-        let skel = self.d.paths[id].clone();
-        if !skel.is_obj() || is_verbatim(&skel) {
-            return skel;
+    fn materialize(&mut self, id: usize, depth: usize) -> R<Val> {
+        let skel = self.path(id)?;
+        if !skel.is_obj() || is_verbatim(skel) {
+            return Ok(skel.clone());
         }
-        let nodes = records(&skel)
+        let nodes = records(skel)
             .iter()
-            .map(|r| match shape_kind(r) {
-                Some(k) => {
-                    let s = r.get(k.field()).unwrap().as_obj().unwrap().clone();
-                    let so = self.shape_out(&s);
-                    Val::obj(with_field(r.as_obj().unwrap(), k.field(), Val::obj(so)))
+            .map(|r| match (r, shape_of(r)) {
+                (Val::Obj(ro), Some((k, _, s))) => {
+                    let so = self.shape_out(s, depth)?;
+                    Ok(Val::obj(with_field(ro, k.field(), Val::obj(so))))
                 }
-                None => r.clone(),
+                _ => Ok(r.clone()),
             })
-            .collect();
-        with_nodes(&skel, nodes)
+            .collect::<R<_>>()?;
+        Ok(with_nodes(skel, nodes))
     }
 }
 
-fn finalize(nodes: &[EncRec], d: &Shapes, force_flat: bool) -> (Vec<Val>, Vec<Val>) {
+fn finalize(nodes: &[EncRec], d: &Shapes, force_flat: bool) -> R<(Vec<Val>, Vec<Val>)> {
     let mut flats: HashMap<usize, (&'static str, Val)> = HashMap::default();
     if force_flat {
         for (i, r) in nodes.iter().enumerate() {
@@ -744,13 +801,14 @@ fn finalize(nodes: &[EncRec], d: &Shapes, force_flat: bool) -> (Vec<Val>, Vec<Va
     for (i, r) in nodes.iter().enumerate() {
         if let Some(n) = &r.nest {
             if !flats.contains_key(&i) {
+                let uniform = n.uniform();
                 for id in n.ids.iter() {
-                    if n.kind == NestKind::Sub || n.ids.iter().any(|x| x != &n.ids[0]) {
-                        f.visit(*id, &mut reach);
+                    if n.kind == NestKind::Sub || !uniform {
+                        f.visit(*id, &mut reach)?;
                     }
                 }
-                if n.kind == NestKind::Loop && n.ids.iter().all(|x| *x == n.ids[0]) {
-                    f.visit(n.ids[0], &mut reach);
+                if n.kind == NestKind::Loop && uniform {
+                    f.visit(n.first()?, &mut reach)?;
                 }
             }
         }
@@ -765,7 +823,7 @@ fn finalize(nodes: &[EncRec], d: &Shapes, force_flat: bool) -> (Vec<Val>, Vec<Va
             (k, v)
         } else {
             f.hit_shared = false;
-            let mut o = f.shape_out(&n.shape());
+            let mut o = f.shape_out(&n.shape()?, 0)?;
             if n.kind == NestKind::Sub {
                 o.insert(Rc::from("timings"), rows_val(&n.timings));
                 ("sub", Val::obj(o))
@@ -792,7 +850,7 @@ fn finalize(nodes: &[EncRec], d: &Shapes, force_flat: bool) -> (Vec<Val>, Vec<Va
         .into_iter()
         .map(|x| x.unwrap_or(Val::Null))
         .collect();
-    (out, shared)
+    Ok((out, shared))
 }
 
 fn body_len(nodes: &[Val], shared: &[Val]) -> usize {
@@ -803,21 +861,21 @@ fn body_len(nodes: &[Val], shared: &[Val]) -> usize {
     n
 }
 
-pub fn deep_or_flat(nodes: Vec<EncRec>, d: &Shapes) -> (Vec<Val>, Vec<Val>) {
+pub fn deep_or_flat(nodes: Vec<EncRec>, d: &Shapes) -> R<(Vec<Val>, Vec<Val>)> {
     if d.paths.is_empty() {
-        return (
+        return Ok((
             nodes.into_iter().map(|r| Val::obj(r.obj)).collect(),
             Vec::new(),
-        );
+        ));
     }
-    let deep = finalize(&nodes, d, false);
-    let flat = finalize(&nodes, d, true);
+    let deep = finalize(&nodes, d, false)?;
+    let flat = finalize(&nodes, d, true)?;
     let fl = body_len(&flat.0, &flat.1);
     let dl = body_len(&deep.0, &deep.1);
     if dl + 64 < fl && (dl as f64) < fl as f64 * 0.95 {
-        deep
+        Ok(deep)
     } else {
-        flat
+        Ok(flat)
     }
 }
 
@@ -835,6 +893,7 @@ pub fn loop_in(x: &Val, paths: &[Val]) -> R<Vec<Val>> {
                         paths,
                         id,
                         &mut Cursor::new(rows.get(i).cloned().unwrap_or_default()),
+                        0,
                     )
                 })
                 .collect()
@@ -844,10 +903,10 @@ pub fn loop_in(x: &Val, paths: &[Val]) -> R<Vec<Val>> {
 }
 
 pub fn sub_in(x: &Val, paths: &[Val]) -> R<Val> {
-    if !x.has("path") {
+    let Some(path) = x.get("path") else {
         return Ok(x.clone());
-    }
-    let id = shape_id(x.get("path").unwrap())?;
+    };
+    let id = shape_id(path)?;
     let row = x
         .get("timings")
         .and_then(|t| t.as_arr())
@@ -855,7 +914,7 @@ pub fn sub_in(x: &Val, paths: &[Val]) -> R<Val> {
         .and_then(|r| r.as_arr())
         .map(|r| r.to_vec())
         .ok_or_else(|| bad("sub needs timings"))?;
-    rebuild(paths, &id, &mut Cursor::new(row))
+    rebuild(paths, &id, &mut Cursor::new(row), 0)
 }
 
 pub fn tidy_trace(t: &Val) -> Val {
@@ -863,11 +922,9 @@ pub fn tidy_trace(t: &Val) -> Val {
         Val::Obj(o) => {
             let mut out = Obj::with_capacity(o.len());
             for (k, v) in o.iter() {
-                let nv = match &**k {
-                    "nodes" if v.is_arr() => {
-                        Val::arr(v.as_arr().unwrap().iter().map(tidy_record).collect())
-                    }
-                    "sub" | "loop" | "paths" | "path" | "iterationPaths" => tidy_trace(v),
+                let nv = match (&**k, v) {
+                    ("nodes", Val::Arr(a)) => Val::arr(a.iter().map(tidy_record).collect()),
+                    ("sub" | "loop" | "paths" | "path" | "iterationPaths", _) => tidy_trace(v),
                     _ => v.clone(),
                 };
                 out.insert(k.clone(), nv);
@@ -971,7 +1028,7 @@ mod tests {
             Val::obj(out.clone()),
             Val::obj(with_field(&call, "sub", inner_val)),
         ]);
-        let sub = nest(d, NestKind::Sub, vec![plain(&inner)]);
+        let sub = nest(d, NestKind::Sub, vec![plain(&inner)]).unwrap();
         let enc = EncTrace::Nodes(vec![
             EncRec {
                 obj: row,
@@ -1007,9 +1064,9 @@ mod tests {
             }
             let top = EncRec {
                 obj: node("loop", "decision", 1, vec![]),
-                nest: Some(nest(&mut d, NestKind::Loop, subs)),
+                nest: Some(nest(&mut d, NestKind::Loop, subs).unwrap()),
             };
-            let (out, shared) = finalize(&[top], &d, false);
+            let (out, shared) = finalize(&[top], &d, false).unwrap();
             let lp = out[0].get("loop").unwrap();
             assert!(lp.has("timingColumns"), "{}", lp.to_json());
             let paths = lp.get("iterationPaths").and_then(|p| p.as_arr()).unwrap();

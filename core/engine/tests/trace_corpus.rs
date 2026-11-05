@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use zen_engine::trace::testing::{convert_val, first_diff, parse, restore_val, Val};
@@ -61,24 +60,16 @@ fn corpus_converts_and_restores_exactly() {
     let mut failures = Vec::new();
     for seg in segments.split(',').filter(|s| !s.is_empty()) {
         let file = std::fs::File::open(dir.join(format!("{seg}.jsonl"))).expect("segment file");
-        let mut lines = BufReader::with_capacity(1 << 24, file).lines();
         let mut traces = 0usize;
-        loop {
-            let batch: Vec<String> = lines
-                .by_ref()
-                .take(512)
-                .map(|l| l.expect("line"))
-                .filter(|l| !l.is_empty())
-                .collect();
-            if batch.is_empty() {
-                break;
+        for line in BufReader::with_capacity(1 << 24, file).lines() {
+            let line = line.expect("line");
+            if line.is_empty() {
+                continue;
             }
-            traces += batch.len();
-            let errs: Vec<String> = batch
-                .par_iter()
-                .filter_map(|l| check_line(&dir, l).err())
-                .collect();
-            failures.extend(errs);
+            traces += 1;
+            if let Err(e) = check_line(&dir, &line) {
+                failures.push(e);
+            }
         }
         eprintln!("{seg}: {traces} traces, {} failures so far", failures.len());
     }

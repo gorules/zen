@@ -77,7 +77,7 @@ impl Shared {
                 }
                 Val::obj(out)
             }
-            _ => unreachable!(),
+            _ => from_variable(v),
         };
         self.memo.insert(key, out.clone());
         out

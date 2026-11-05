@@ -1,8 +1,6 @@
 use super::value::{eq, Obj, Val};
 use ahash::{HashMap, HashSet};
-use regex::Regex;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 pub fn split(p: &str) -> Vec<String> {
     if p.is_empty() {
@@ -802,32 +800,104 @@ fn slice(src: &[char], a: usize, b: usize) -> &[char] {
     &src[a..b]
 }
 
-fn re_call() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"^([A-Za-z_$][A-Za-z0-9_$]*)\s*\(").unwrap())
+fn id_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_' || b == b'$'
 }
 
-fn re_hash() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"^#\.([A-Za-z_$][A-Za-z0-9_$]*)").unwrap())
+fn id_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
 }
 
-fn re_head() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"^\(?\s*([A-Za-z_$][A-Za-z0-9_$.]*)").unwrap())
+fn path_byte(b: u8) -> bool {
+    id_byte(b) || b == b'.'
 }
 
-fn re_as() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r"([A-Za-z_$][A-Za-z0-9_$.]*)\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)").unwrap()
+fn word_end(s: &[u8], at: usize, rest: fn(u8) -> bool) -> Option<usize> {
+    if !s.get(at).copied().is_some_and(id_start) {
+        return None;
+    }
+    let mut j = at + 1;
+    while s.get(j).copied().is_some_and(rest) {
+        j += 1;
+    }
+    Some(j)
+}
+
+fn skip_space(s: &str, at: usize) -> usize {
+    let Some(tail) = s.get(at..) else { return at };
+    match tail.char_indices().find(|(_, c)| !c.is_whitespace()) {
+        Some((i, _)) => at + i,
+        None => s.len(),
+    }
+}
+
+fn call_head(e: &str) -> Option<usize> {
+    let b = e.as_bytes();
+    let j = word_end(b, 0, id_byte)?;
+    let k = skip_space(e, j);
+    (b.get(k) == Some(&b'(')).then_some(k + 1)
+}
+
+fn hash_head(e: &str) -> Option<&str> {
+    let rest = e.strip_prefix("#.")?;
+    let j = word_end(rest.as_bytes(), 0, id_byte)?;
+    rest.get(..j)
+}
+
+fn path_head(e: &str) -> Option<&str> {
+    let at = skip_space(e, usize::from(e.starts_with('(')));
+    let j = word_end(e.as_bytes(), at, path_byte)?;
+    e.get(at..j)
+}
+
+fn scan_pairs<'a>(
+    src: &'a str,
+    tail: impl Fn(&'a str, usize) -> Option<(usize, usize)>,
+) -> Vec<(&'a str, &'a str)> {
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let Some(j) = word_end(b, i, path_byte) else {
+            i += 1;
+            continue;
+        };
+        match tail(src, j).and_then(|(s, e)| Some((src.get(i..j)?, src.get(s..e)?, e))) {
+            Some((head, name, end)) => {
+                out.push((head, name));
+                i = end;
+            }
+            None => i = j,
+        }
+    }
+    out
+}
+
+fn as_pairs(src: &str) -> Vec<(&str, &str)> {
+    scan_pairs(src, |s, j| {
+        let k = skip_space(s, j);
+        if k == j || !s.get(k..)?.starts_with("as") {
+            return None;
+        }
+        let n = skip_space(s, k + 2);
+        if n == k + 2 {
+            return None;
+        }
+        Some((n, word_end(s.as_bytes(), n, id_byte)?))
     })
 }
 
-fn re_index() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r"([A-Za-z_$][A-Za-z0-9_$.]*)\[[^\]]*\]\.([A-Za-z_$][A-Za-z0-9_$]*)").unwrap()
+fn index_pairs(src: &str) -> Vec<(&str, &str)> {
+    scan_pairs(src, |s, j| {
+        let b = s.as_bytes();
+        if b.get(j) != Some(&b'[') {
+            return None;
+        }
+        let close = j + 1 + b.get(j + 1..)?.iter().position(|&c| c == b']')?;
+        if b.get(close + 1) != Some(&b'.') {
+            return None;
+        }
+        Some((close + 2, word_end(b, close + 2, id_byte)?))
     })
 }
 
@@ -838,20 +908,23 @@ fn is_array_prop(p: &Val) -> bool {
 fn coll_target(models: &HashMap<String, Val>, expr: &[char], t: Option<&str>) -> Option<String> {
     let s: String = expr.iter().collect();
     let e = s.trim();
-    if let Some(c) = re_call().find(e) {
+    if let Some(c) = call_head(e) {
         let ec: Vec<char> = e.chars().collect();
-        let k = e[..c.end()].chars().count() - 1;
+        let k = e
+            .get(..c)
+            .map_or(0, |p| p.chars().count())
+            .saturating_sub(1);
         let end = close_paren(&ec, k);
         let args = split_top(slice(&ec, k + 1, end));
-        return coll_target(models, &args[0], t);
+        return coll_target(models, args.first()?, t);
     }
-    let p = if let Some(m) = re_hash().captures(e) {
+    let p = if let Some(m) = hash_head(e) {
         match t {
-            Some(t) => models.get(&format!("{}.{}", t, &m[1])),
+            Some(t) => models.get(&format!("{}.{}", t, m)),
             None => None,
         }
     } else {
-        re_head().captures(e).and_then(|m| models.get(&m[1]))
+        path_head(e).and_then(|m| models.get(m))
     };
     let p = p?;
     if is_array_prop(p) {
@@ -902,11 +975,13 @@ fn closures(models: &HashMap<String, Val>, src: &[char], t: Option<&str>, out: &
             if k < n && src[k] == '(' {
                 let end = close_paren(src, k);
                 let args = split_top(slice(src, k + 1, end));
-                closures(models, &args[0], t, out);
-                if args.len() > 1 {
-                    let ct = coll_target(models, &args[0], t);
-                    for a in &args[1..] {
-                        closures(models, a, ct.as_deref(), out);
+                if let Some((first, rest)) = args.split_first() {
+                    closures(models, first, t, out);
+                    if !rest.is_empty() {
+                        let ct = coll_target(models, first, t);
+                        for a in rest {
+                            closures(models, a, ct.as_deref(), out);
+                        }
                     }
                 }
                 i = end + 1;
@@ -927,10 +1002,10 @@ fn expr_reads(models: &HashMap<String, Val>, src: Option<&Val>, out: &mut ReadSe
     let mut ids = Vec::new();
     idents(src, &mut ids);
     let mut alias: HashMap<String, String> = HashMap::default();
-    for m in re_as().captures_iter(src) {
-        if let Some(p) = models.get(&m[1]) {
+    for (path, name) in as_pairs(src) {
+        if let Some(p) = models.get(path) {
             if let Some(t) = target_of(p) {
-                alias.insert(m[2].to_string(), t);
+                alias.insert(name.to_string(), t);
             }
         }
     }
@@ -939,20 +1014,20 @@ fn expr_reads(models: &HashMap<String, Val>, src: Option<&Val>, out: &mut ReadSe
             continue;
         }
         let head = id.split('.').next().unwrap_or("");
-        match alias.get(head) {
-            Some(t) => expand_id(models, &format!("{}{}", t, &id[head.len()..]), out),
-            None => expand_id(models, &id, out),
+        match (alias.get(head), id.get(head.len()..)) {
+            (Some(t), Some(rest)) => expand_id(models, &format!("{}{}", t, rest), out),
+            _ => expand_id(models, &id, out),
         }
     }
     if src.contains('#') {
         let chars: Vec<char> = src.chars().collect();
         closures(models, &chars, None, out);
     }
-    for m in re_index().captures_iter(src) {
-        if let Some(p) = models.get(&m[1]) {
+    for (path, field) in index_pairs(src) {
+        if let Some(p) = models.get(path) {
             if is_array_prop(p) {
                 if let Some(t) = target_of(p) {
-                    expand_id(models, &format!("{}.{}", t, &m[2]), out);
+                    expand_id(models, &format!("{}.{}", t, field), out);
                 }
             }
         }
@@ -1085,4 +1160,86 @@ pub fn props_of(execs: &[Val], request: &Val, final_state: &Val) -> Obj {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use regex::Regex;
+
+    fn texts() -> Vec<String> {
+        let alphabet: Vec<char> = "ab_$9.x s([)]#a.s\t\u{a0}\u{e9}as".chars().collect();
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut out: Vec<String> = [
+            "",
+            "items as it",
+            "a.b as c, d as e",
+            "x ass y",
+            "list[0].name",
+            "a.b[i].c and x[1].y",
+            "fn (a, b)",
+            "(  head.path",
+            "#.field",
+            "#.",
+            "1a as b",
+            "a\u{a0}as\u{a0}b",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        for _ in 0..20_000 {
+            let len = (next() % 24) as usize;
+            out.push(
+                (0..len)
+                    .map(|_| alphabet[(next() % alphabet.len() as u64) as usize])
+                    .collect(),
+            );
+        }
+        out
+    }
+
+    fn pairs(re: &Regex, s: &str) -> Vec<(String, String)> {
+        re.captures_iter(s)
+            .map(|m| (m[1].to_string(), m[2].to_string()))
+            .collect()
+    }
+
+    fn owned(v: Vec<(&str, &str)>) -> Vec<(String, String)> {
+        v.into_iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn matchers_agree_with_regex() {
+        let call = Regex::new(r"^([A-Za-z_$][A-Za-z0-9_$]*)\s*\(").unwrap();
+        let hash = Regex::new(r"^#\.([A-Za-z_$][A-Za-z0-9_$]*)").unwrap();
+        let head = Regex::new(r"^\(?\s*([A-Za-z_$][A-Za-z0-9_$.]*)").unwrap();
+        let alias =
+            Regex::new(r"([A-Za-z_$][A-Za-z0-9_$.]*)\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)").unwrap();
+        let index =
+            Regex::new(r"([A-Za-z_$][A-Za-z0-9_$.]*)\[[^\]]*\]\.([A-Za-z_$][A-Za-z0-9_$]*)")
+                .unwrap();
+        for s in texts() {
+            assert_eq!(call.find(&s).map(|m| m.end()), call_head(&s), "{s:?}");
+            assert_eq!(
+                hash.captures(&s).map(|m| m[1].to_string()),
+                hash_head(&s).map(str::to_string),
+                "{s:?}"
+            );
+            assert_eq!(
+                head.captures(&s).map(|m| m[1].to_string()),
+                path_head(&s).map(str::to_string),
+                "{s:?}"
+            );
+            assert_eq!(pairs(&alias, &s), owned(as_pairs(&s)), "{s:?}");
+            assert_eq!(pairs(&index, &s), owned(index_pairs(&s)), "{s:?}");
+        }
+    }
 }

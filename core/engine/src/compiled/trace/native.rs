@@ -670,7 +670,7 @@ impl Refs {
                 }
                 Val::obj(out)
             }
-            _ => unreachable!(),
+            _ => from_variable(x),
         };
         if big {
             mine.add(m, spot, x);
@@ -898,15 +898,12 @@ impl Coder {
                     let prefix = match (ao.as_ref().and_then(|x| x.slots()), y.slots()) {
                         (Some((xs, xv)), Some((ys, yv))) if xv.len() <= yv.len() => {
                             let (xk, yk) = (xs.keys(), ys.keys());
-                            std::ptr::eq(xs, ys) || xk.iter().zip(yk).all(|(p, q)| p == q)
+                            (std::ptr::eq(xs, ys) || xk.iter().zip(yk).all(|(p, q)| p == q))
+                                .then_some((xv, ys, yv))
                         }
-                        _ => false,
+                        _ => None,
                     };
-                    if prefix {
-                        let (xv, (ys, yv)) = (
-                            ao.as_ref().and_then(|x| x.slots()).unwrap().1,
-                            y.slots().unwrap(),
-                        );
+                    if let Some((xv, ys, yv)) = prefix {
                         for (i, (k, v)) in ys.keys().iter().zip(yv).enumerate() {
                             p.push(PSeg::K(k.clone()));
                             lit += self.writes(xv.get(i), v, p, &mut sub);
@@ -2178,7 +2175,8 @@ pub(crate) fn encode_doc(
             true => &[super::core::RESULT_ROWS],
             false => &[],
         };
-        let doc = finish_graph(enc, shapes, &[], engine, extra);
+        let doc = finish_graph(enc, shapes, &[], engine, extra)
+            .map_err(|_| "nested trace shapes do not resolve")?;
         return Ok(Doc::Tree(match evaluation {
             Some(e) => e.stamp(doc),
             None => doc,
@@ -2390,7 +2388,7 @@ fn encode_level(
                         rows.push(result_rows(n, m, false));
                         Results::One(sorted_results(m), None)
                     }
-                    _ => unreachable!(),
+                    _ => return Err("expression facts are neither results nor items"),
                 };
                 if rows.iter().any(Option::is_some) {
                     *rows_used = true;
@@ -2469,7 +2467,7 @@ fn encode_level(
                         })
                         .collect::<Option<_>>()
                         .ok_or("loop item without a sub-decision")?,
-                    _ => unreachable!(),
+                    _ => return Err("decision facts are neither a sub-decision nor items"),
                 };
                 let scoped = scope_of(&r.input, attrs);
                 let mut items_arr: Option<Vec<Variable>> = None;
@@ -2506,14 +2504,17 @@ fn encode_level(
                         rows_used,
                     )?);
                 }
-                nest_out = Some(nest(
-                    shapes,
-                    match is_loop {
-                        true => NestKind::Loop,
-                        false => NestKind::Sub,
-                    },
-                    encoded,
-                ));
+                nest_out = Some(
+                    nest(
+                        shapes,
+                        match is_loop {
+                            true => NestKind::Loop,
+                            false => NestKind::Sub,
+                        },
+                        encoded,
+                    )
+                    .map_err(|_| "nested trace without runs")?,
+                );
             }
             Kind::Input | Kind::Output | Kind::Custom => {
                 if matches!(data, Variable::Array(a) if a.borrow().is_empty()) {

@@ -488,7 +488,12 @@ fn results_bases(
         },
     ];
     if let (Some(rs), Some(items)) = (many, items) {
-        if let Some(Val::Arr(arr)) = get_path(input, &from_ptr(items)?) {
+        let arr: Option<&[Val]> = match get_path(input, &from_ptr(items)?) {
+            Some(Val::Arr(arr)) => Some(arr),
+            _ if super::core::lenient() => Some(&[]),
+            _ => None,
+        };
+        if let Some(arr) = arr {
             let merged: Vec<Val> = rs
                 .iter()
                 .enumerate()

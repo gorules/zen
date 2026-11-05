@@ -380,6 +380,39 @@ export type ZenTraceV1 = ZenGraphTraceV1 | ZenPolicyTraceV1;
 export type ZenTraceDocument = ZenTraceV1;
 
 /**
+ * Today's graph trace: one {@link ZenEngineTrace} per node, keyed by node id. It has no `version`
+ * field, so `trace.version === 1` tells a version 1 document apart from it. (A node whose id is
+ * `version` would show up under that key; its record is an object, never `1`, so the check still
+ * holds.)
+ */
+export type ZenLegacyGraphTrace = Record<string, ZenEngineTrace> & { version?: undefined };
+
+/**
+ * The `trace` of a {@link ZenEngineResponse}, by the `trace` evaluation option and the decision:
+ *
+ * | option | graph decision | policy decision |
+ * |---|---|---|
+ * | `true` or `'v1'`, compiled engine | {@link ZenGraphTraceV1} | {@link ZenPolicyTraceV1} |
+ * | `'legacy'`, compiled engine | {@link ZenLegacyGraphTrace} | {@link PolicyTrace} |
+ * | `true`, `'v1'` or `'legacy'`, interpreted engine | {@link ZenLegacyGraphTrace} | {@link PolicyTrace} |
+ * | `false` or absent | no `trace` | no `trace` |
+ *
+ * The field is `null` instead when the engine wrote a document that it then failed to read into a
+ * JavaScript value, an internal error.
+ *
+ * Narrow it with `version`, then with `kind`:
+ *
+ * ```ts
+ * if (trace?.version === 1) {
+ *   if (trace.kind === 'graph') trace.nodes; else trace.executions;
+ * } else if (trace) {
+ *   // a legacy graph trace (graph decision) or a legacy policy trace (policy decision)
+ * }
+ * ```
+ */
+export type ZenEngineResponseTrace = ZenTraceV1 | ZenLegacyGraphTrace | PolicyTrace;
+
+/**
  * An RFC 6901 JSON Pointer: `""` is the whole value, `/a/b/0` is key `a`, then `b`, then `0`.
  * Inside a segment `~` is written `~0` and `/` is written `~1`. Segments are strings: `0` is an
  * index when the value there is an array and a key when it is an object.
@@ -498,7 +531,9 @@ export interface ZenTraceLiteral {
 
 /**
  * A value that was removed on purpose. It restores as the string `"[redacted]"`. Requires the
- * `redacted` feature.
+ * `redacted` feature. It may only stand for user data (a value position: node inputs and outputs,
+ * results, rule cells and references, logs, details, step values, writes, stored operands); a
+ * reader refuses it in a structural position such as a whole rule entry, an `id` or a `$merge`.
  *
  * @example { "$redacted": true, "reason": "pii" }
  */

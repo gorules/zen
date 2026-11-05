@@ -349,6 +349,7 @@ pub(crate) fn decode_val(doc: &Val, request: &Val, documents: Option<&Val>) -> R
         ));
     }
     let marks = check_doc_tags(doc)?;
+    marks::envelope(doc)?;
     let env = open_envelope(&core::unpack_doc(doc)?)?;
     let (redacted, truncated) = (env.has(core::REDACTED), env.has(core::TRUNCATED));
     if marks.redacted && !redacted {
@@ -498,6 +499,11 @@ pub mod testing {
         Some(crate::compiled::trace::core::pack(&plain).to_json())
     }
 
+    pub fn unpacked(doc: &str) -> Option<Val> {
+        let v = parse(doc).ok()?;
+        crate::compiled::trace::core::unpack_doc(&v).ok()
+    }
+
     pub fn first_diff(a: &Val, b: &Val) -> Option<String> {
         super::first_diff(a, b, "")
     }
@@ -592,9 +598,17 @@ pub fn inspect(json: &str) -> Result<Inspection, TraceError> {
 
 pub fn redact(json: &str, pointers: &[&str], reason: Option<&str>) -> Result<String, TraceError> {
     let doc = value::parse(json).map_err(|e| TraceError::Json(e.to_string()))?;
-    check_doc_tags(&doc)?;
+    let found = check_doc_tags(&doc)?;
+    marks::envelope(&doc)?;
     let plain = core::unpack_doc(&doc)?;
-    open_envelope(&plain)?;
+    let env = open_envelope(&plain)?;
+    if found.omitted && !env.has(core::TRUNCATED) {
+        return Err(bad("zen-trace v1: $omitted needs requires truncated"));
+    }
+    if found.redacted || found.omitted {
+        marks::settle(&Val::Obj(std::rc::Rc::new(env.body.clone())), &env.kind)?;
+    }
+    let root = marks::root(&env.kind);
     let mut marker = value::Obj::with_capacity(2);
     marker.insert(std::rc::Rc::from(core::REDACTED_TAG), Val::Bool(true));
     if let Some(r) = reason {
@@ -611,11 +625,21 @@ pub fn redact(json: &str, pointers: &[&str], reason: Option<&str>) -> Result<Str
             return Err(bad(format!("redact: {p} points into the envelope")));
         }
         let mut at = &out;
+        let mut pos = root;
         for s in &segs {
             if core::is_literal(at) {
                 return Err(bad(format!("redact: {p} points inside $literal")));
             }
+            if !marks::keyed(pos) && marks::is_marker(at) {
+                return Err(bad(format!("redact: {p} points inside a marker")));
+            }
+            pos = marks::child(pos, at, &s.text());
             at = core::child(at, s).ok_or_else(|| bad(format!("redact: {p} does not resolve")))?;
+        }
+        if pos != marks::Pos::Value {
+            return Err(bad(format!(
+                "redact: {p} is not a value position; only user data (node inputs and outputs, results, rule cells and references, logs, details, step values, writes, stored operands, verbatim traces) can be redacted"
+            )));
         }
         out = core::replace_at(&out, &segs, marker.clone())?;
     }
@@ -631,5 +655,18 @@ pub fn redact(json: &str, pointers: &[&str], reason: Option<&str>) -> Result<Str
         requires.push(Val::str(core::REDACTED));
     }
     o.set("requires", Val::arr(requires));
-    Ok(core::pack(&Val::obj(o)).to_json())
+    let mut body = o.clone();
+    body.remove("context");
+    let Val::Obj(packed) = core::pack(&Val::obj(body)) else {
+        return Err(bad("not a zen-trace v1 document"));
+    };
+    let mut out = value::Obj::with_capacity(o.len());
+    for (k, v) in o.iter() {
+        let v = match &**k {
+            "context" => v.clone(),
+            _ => packed.get(k).cloned().unwrap_or(Val::Null),
+        };
+        out.insert(k.clone(), v);
+    }
+    Ok(Val::obj(out).to_json())
 }

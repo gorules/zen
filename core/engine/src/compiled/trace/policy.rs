@@ -393,6 +393,9 @@ fn evals_in(evaluations: &[Vec<String>], collected: &[String], writes: &Writes) 
                 at.insert(f.clone(), i + 1);
                 let v = match wv_get(writes, f) {
                     Some(Val::Arr(a)) => a.get(i).cloned(),
+                    Some(p) if super::core::lenient() && super::core::is_placeholder(p) => {
+                        Some(p.clone())
+                    }
                     _ => None,
                 }?;
                 ev.set(f, v);

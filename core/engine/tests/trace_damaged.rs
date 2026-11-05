@@ -132,7 +132,14 @@ fn cases() -> Vec<Case> {
                 legacy: f.get(legacy_key).cloned().unwrap_or(Val::Null),
                 request: f.get("request").cloned().unwrap_or(Val::Null),
                 documents: f.get("documents").cloned(),
-                docs: doc_keys.iter().filter_map(|k| str_field(&f, k)).collect(),
+                docs: doc_keys
+                    .iter()
+                    .filter_map(|k| match f.get(k) {
+                        Some(Val::Str(s)) => Some(s.to_string()),
+                        Some(v) if v.is_obj() => Some(v.to_json()),
+                        _ => None,
+                    })
+                    .collect(),
                 error,
             });
         }
@@ -623,4 +630,356 @@ fn deeply_nested_sub_decisions_are_bounded() {
         });
         assert_eq!(r.is_ok(), depth < 255, "{depth}");
     }
+}
+
+fn pointers(v: &Val, at: &str, out: &mut Vec<String>) {
+    if !at.is_empty() {
+        out.push(at.to_string());
+    }
+    let mut push = |k: &str, x: &Val| {
+        let seg = k.replace('~', "~0").replace('/', "~1");
+        pointers(x, &format!("{at}/{seg}"), out);
+    };
+    match v {
+        Val::Arr(a) => a
+            .iter()
+            .enumerate()
+            .for_each(|(i, x)| push(&i.to_string(), x)),
+        Val::Obj(o) => o.iter().for_each(|(k, x)| push(k, x)),
+        _ => {}
+    }
+}
+
+fn env_count(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(default)
+}
+
+#[test]
+fn redaction_with_random_pointers_errors_or_restores() {
+    let singles = env_count("ZEN_TRACE_REDACT_SINGLES", 12);
+    let sets = env_count("ZEN_TRACE_REDACT_SETS", 4);
+    let mut rng = Rng(0x51ed_270b_2738_6ad3);
+    let (mut redacted, mut refused) = (0usize, 0usize);
+    let mut failures: Vec<String> = Vec::new();
+    for case in cases() {
+        let error = case.error.as_ref().map(|(n, m)| (n.as_str(), m.as_deref()));
+        let (own, _) = zen_engine::trace::testing::convert_val(
+            &case.legacy,
+            &case.request,
+            error,
+            Some("fuzz"),
+            case.documents.as_ref(),
+        );
+        for doc in case.docs.iter().chain(std::iter::once(&own)) {
+            if restore_val(doc, &case.request, case.documents.as_ref()).is_err() {
+                continue;
+            }
+            let Some(plain) = zen_engine::trace::testing::unpacked(doc) else {
+                continue;
+            };
+            let mut all = Vec::new();
+            pointers(&plain, "", &mut all);
+            if all.is_empty() {
+                continue;
+            }
+            let mut picks: Vec<Vec<&str>> = Vec::new();
+            match singles >= all.len() {
+                true => picks.extend(all.iter().map(|p| vec![p.as_str()])),
+                false => picks.extend(
+                    (0..singles).map(|_| vec![all[(rng.next() as usize) % all.len()].as_str()]),
+                ),
+            }
+            for _ in 0..sets {
+                let n = 2 + (rng.next() as usize) % 4;
+                picks.push(
+                    (0..n)
+                        .map(|_| all[(rng.next() as usize) % all.len()].as_str())
+                        .collect(),
+                );
+            }
+            for set in picks {
+                let r = catch_unwind(AssertUnwindSafe(|| match redact(doc, &set, Some("fuzz")) {
+                    Err(_) => Ok(false),
+                    Ok(out) => restore_val(&out, &case.request, case.documents.as_ref())
+                        .map(|_| true)
+                        .map_err(|e| format!("{e}")),
+                }));
+                match r {
+                    Ok(Ok(true)) => redacted += 1,
+                    Ok(Ok(false)) => refused += 1,
+                    Ok(Err(e)) if failures.len() < 20 => {
+                        failures.push(format!("{set:?}: {e}\n  {}", &doc[..doc.len().min(300)]))
+                    }
+                    Err(_) if failures.len() < 20 => {
+                        failures.push(format!("{set:?}: panic\n  {}", &doc[..doc.len().min(300)]))
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "redacted documents that do not restore:\n{}",
+        failures.join("\n")
+    );
+    assert!(redacted > 1000 && refused > 1000, "{redacted} {refused}");
+}
+
+fn segments(p: &str) -> Vec<String> {
+    p.split('/')
+        .skip(1)
+        .map(|s| s.replace("~1", "/").replace("~0", "~"))
+        .collect()
+}
+
+fn fits(pattern: &str, p: &str) -> bool {
+    let segs = segments(p);
+    let pat: Vec<&str> = pattern.split('/').collect();
+    pat.len() == segs.len()
+        && pat.iter().zip(&segs).all(|(w, s)| match *w {
+            "*" => true,
+            "#" => !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()),
+            "@" => !s.starts_with('$') && !s.bytes().all(|b| b.is_ascii_digit()),
+            w => w == s,
+        })
+}
+
+const VALUE_CLASSES: [&str; 26] = [
+    "nodes/#/input",
+    "nodes/#/output",
+    "nodes/#/output/@",
+    "nodes/#/input/$set/*",
+    "nodes/#/output/$set/*",
+    "nodes/#/output/$each/*/$set/*/#",
+    "nodes/#/results/@",
+    "nodes/#/results/#/value",
+    "nodes/#/results/#/@",
+    "nodes/#/rule/cells/@",
+    "nodes/#/rule/references/@",
+    "nodes/#/rules/#/cells/@",
+    "nodes/#/rulesPerItem/#/#/cells/@",
+    "nodes/#/log",
+    "nodes/#/sub/nodes/#/output",
+    "nodes/#/loop/#/nodes/#/output",
+    "steps/#/keys/*/#/value",
+    "steps/#/perItem/*/#/#/value",
+    "executions/#/writes/@",
+    "executions/#/writes/#/value",
+    "executions/#/writes/#/values/#",
+    "executions/#/storedOperands/@",
+    "executions/#/writes/@/#",
+    "executions/#/perMember/#/writes/#/value",
+    "steps/#/columns/*/#/values/#",
+    "properties/set/@",
+];
+
+const STRUCTURAL: [&str; 32] = [
+    "nodes/#",
+    "nodes/#/id",
+    "nodes/#/type",
+    "nodes/#/perf",
+    "nodes/#/name",
+    "nodes/#/results",
+    "nodes/#/results/#",
+    "nodes/#/results/#/key",
+    "nodes/#/rule",
+    "nodes/#/rule/index",
+    "nodes/#/rule/cells",
+    "nodes/#/rules",
+    "nodes/#/rules/#",
+    "nodes/#/rulesPerItem/#",
+    "nodes/#/branches",
+    "nodes/#/branches/#",
+    "nodes/#/scope",
+    "nodes/#/items",
+    "nodes/#/sub",
+    "nodes/#/loop",
+    "nodes/#/loop/#",
+    "nodes/#/input/$merge",
+    "nodes/#/output/$from",
+    "nodes/#/output/$set",
+    "paths/#",
+    "steps/#/node",
+    "executions/#",
+    "executions/#/block",
+    "executions/#/kind",
+    "executions/#/writes",
+    "executions/#/writes/#/path",
+    "executions/#/arms",
+];
+
+#[test]
+fn redaction_of_every_value_class_restores_the_placeholder() {
+    let mut found: Vec<&str> = Vec::new();
+    let mut failures = Vec::new();
+    for case in cases() {
+        for doc in &case.docs {
+            if restore_val(doc, &case.request, case.documents.as_ref()).is_err() {
+                continue;
+            }
+            let Some(plain) = zen_engine::trace::testing::unpacked(doc) else {
+                continue;
+            };
+            let mut all = Vec::new();
+            pointers(&plain, "", &mut all);
+            for class in VALUE_CLASSES {
+                if found.contains(&class) {
+                    continue;
+                }
+                let Some(p) = all.iter().rfind(|p| fits(class, p)) else {
+                    continue;
+                };
+                found.push(class);
+                let back = redact(doc, &[p], Some("pii"))
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| {
+                        restore_val(&r, &case.request, case.documents.as_ref())
+                            .map_err(|e| e.to_string())
+                    });
+                match back {
+                    Ok(v) if v.to_json().contains("[redacted]") => {}
+                    Ok(_) => failures.push(format!("{class} ({p}): no placeholder")),
+                    Err(e) => failures.push(format!("{class} ({p}): {e}")),
+                }
+            }
+        }
+    }
+    let missing: Vec<_> = VALUE_CLASSES
+        .iter()
+        .filter(|c| !found.contains(c))
+        .collect();
+    assert!(missing.is_empty(), "no fixture has {missing:?}");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn redaction_of_structural_positions_is_refused() {
+    let mut found: Vec<&str> = Vec::new();
+    let mut failures = Vec::new();
+    for case in cases() {
+        for doc in &case.docs {
+            if restore_val(doc, &case.request, case.documents.as_ref()).is_err() {
+                continue;
+            }
+            let Some(plain) = zen_engine::trace::testing::unpacked(doc) else {
+                continue;
+            };
+            let mut all = Vec::new();
+            pointers(&plain, "", &mut all);
+            for class in STRUCTURAL {
+                for p in all.iter().filter(|p| fits(class, p)).take(3) {
+                    if !found.contains(&class) {
+                        found.push(class);
+                    }
+                    match redact(doc, &[p], None) {
+                        Err(e) if e.to_string().contains("not a value position") => {}
+                        Err(e) => failures.push(format!("{class} ({p}): {e}")),
+                        Ok(_) => failures.push(format!("{class} ({p}): accepted")),
+                    }
+                }
+            }
+            for p in ["/nodes/99/output", "/executions/99/writes/~1x", "/nope"] {
+                if redact(doc, &[p], None).is_ok() {
+                    failures.push(format!("{p}: accepted a pointer that does not resolve"));
+                }
+            }
+        }
+    }
+    let missing: Vec<_> = STRUCTURAL.iter().filter(|c| !found.contains(c)).collect();
+    assert!(missing.is_empty(), "no fixture has {missing:?}");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const SPLICE_DOC: &str = r#"{"version":1,"kind":"graph","nodes":[{"id":"input","type":"input","perf":1000},{"id":"c","type":"custom","perf":1000,"output":{"$splice":{"/l":[0,1,"x",{"a":1}]}},"details":{"note":"n"}},{"id":"output","type":"output","perf":1000}]}"#;
+
+#[test]
+fn redaction_inside_operators_and_verbatim_traces() {
+    let request = parse(r#"{"l":[1,2]}"#).unwrap();
+    let restored = |doc: &str| restore_val(doc, &request, None).map(|v| v.to_json());
+    let plain = restored(SPLICE_DOC).unwrap();
+    assert!(plain.contains("\"x\""), "{plain}");
+    for p in [
+        "/nodes/1/output/$splice/~1l/2",
+        "/nodes/1/output/$splice/~1l/3",
+        "/nodes/1/output/$splice/~1l/3/a",
+        "/nodes/1/details",
+        "/nodes/1/details/note",
+    ] {
+        let out = redact(SPLICE_DOC, &[p], None).unwrap_or_else(|e| panic!("{p}: {e}"));
+        let back = restored(&out).unwrap_or_else(|e| panic!("{p}: {e}"));
+        assert!(back.contains("[redacted]"), "{p}: {back}");
+    }
+    for p in [
+        "/nodes/1/output/$splice",
+        "/nodes/1/output/$splice/~1l",
+        "/nodes/1/output/$splice/~1l/0",
+        "/nodes/1/output/$splice/~1l/1",
+    ] {
+        assert!(redact(SPLICE_DOC, &[p], None).is_err(), "{p}");
+    }
+    let legacy = r#"{"input":{"id":"input","name":"input","order":0,"input":null,"output":{"a":1},"performance":"1.0µs","traceData":null},"weird":{"id":"other","order":7}}"#;
+    let out = convert(ConvertArgs::new(
+        LegacyTrace::Json(legacy),
+        Input::Json(r#"{"a":1}"#),
+    ))
+    .unwrap();
+    assert!(out.json.contains("\"verbatim\""), "{}", out.json);
+    for p in ["/verbatim", "/verbatim/input/output"] {
+        let r = redact(&out.json, &[p], Some("pii")).unwrap_or_else(|e| panic!("{p}: {e}"));
+        let back = restore_json(RestoreArgs {
+            trace: Input::Json(&r),
+            request: Input::Json(r#"{"a":1}"#),
+            documents: None,
+        })
+        .unwrap_or_else(|e| panic!("{p}: {e}"));
+        assert!(back.contains("[redacted]"), "{p}: {back}");
+    }
+}
+
+#[test]
+fn markers_in_structural_positions_are_refused_by_the_reader() {
+    let request = parse(r#"{"l":[1,2]}"#).unwrap();
+    let marker = r#"{"$redacted":true}"#;
+    let docs = [
+        SPLICE_DOC.replace(r#""id":"c","#, &format!(r#""id":{marker},"#)),
+        SPLICE_DOC.replace(r#""perf":1000,"output""#, &format!(r#""perf":{marker},"output""#)),
+        SPLICE_DOC.replace(r#"[0,1,"x""#, &format!(r#"[{marker},1,"x""#)),
+        SPLICE_DOC.replace(r#"{"$splice":{"/l":[0,1,"x",{"a":1}]}}"#, &format!(r#"{{"$splice":{{"/l":{marker}}}}}"#)),
+        SPLICE_DOC.replace(r#"{"id":"output","type":"output","perf":1000}"#, marker),
+        SPLICE_DOC.replace(r#""kind":"graph","#, &format!(r#""kind":"graph","seed":{marker},"#)),
+        r#"{"version":1,"kind":"graph","nodes":[{"id":"t","type":"table","perf":1,"rule":{"$redacted":true}}]}"#.to_string(),
+        r#"{"version":1,"kind":"graph","nodes":[{"id":"t","type":"table","perf":1,"rules":[{"$omitted":{}}]}]}"#.to_string(),
+        r#"{"version":1,"kind":"graph","nodes":[{"id":"s","type":"switch","perf":1,"branches":{"$redacted":true}}]}"#.to_string(),
+        r#"{"version":1,"kind":"policy","executions":[{"block":{"$redacted":true},"kind":"expression","writes":{"/a":1}}]}"#.to_string(),
+        r#"{"version":1,"kind":"policy","executions":[{"block":"b","kind":"expression","writes":{"$redacted":true}}]}"#.to_string(),
+    ];
+    let requires = parse(r#"["redacted","truncated"]"#).unwrap();
+    for doc in docs {
+        let mut v = parse(&doc).unwrap();
+        if let Val::Obj(o) = &v {
+            let mut o = (**o).clone();
+            o.set("requires", requires.clone());
+            v = Val::obj(o);
+        }
+        let doc = v.to_json();
+        match restore_val(&doc, &request, None) {
+            Err(e) => assert!(e.to_string().contains("structural"), "{doc}: {e}"),
+            Ok(_) => panic!("accepted {doc}"),
+        }
+    }
+    let keyed = r#"{"version":1,"kind":"graph","requires":["redacted"],"nodes":[{"id":"input","type":"input","perf":1},{"id":"e","type":"expression","perf":1,"results":{"$redacted":true}}]}"#;
+    let back = restore_val(keyed, &request, None).unwrap().to_json();
+    assert!(back.contains(r#""$redacted":{"result":true}"#), "{back}");
+    let ok = SPLICE_DOC
+        .replace(r#""x""#, r#"{"$redacted":true,"reason":"pii"}"#)
+        .replace(
+            r#""kind":"graph","#,
+            r#""kind":"graph","requires":["redacted"],"#,
+        );
+    let back = restore_val(&ok, &request, None).unwrap().to_json();
+    assert!(back.contains("[redacted]"), "{back}");
 }

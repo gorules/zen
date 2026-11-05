@@ -650,6 +650,55 @@ fn gzip_len(text: &str) -> usize {
     out.finish().unwrap().len()
 }
 
+fn pointers(v: &zen_engine::trace::testing::Val, at: &str, out: &mut Vec<String>) {
+    use zen_engine::trace::testing::Val;
+    if !at.is_empty() {
+        out.push(at.to_string());
+    }
+    let mut push = |k: &str, x: &Val| {
+        let seg = k.replace('~', "~0").replace('/', "~1");
+        pointers(x, &format!("{at}/{seg}"), out);
+    };
+    match v {
+        Val::Arr(a) => a
+            .iter()
+            .enumerate()
+            .for_each(|(i, x)| push(&i.to_string(), x)),
+        Val::Obj(o) => o.iter().for_each(|(k, x)| push(k, x)),
+        _ => {}
+    }
+}
+
+fn redaction_failures(
+    json: &str,
+    input: &zen_engine::Variable,
+    documents: Option<&str>,
+    label: &str,
+    failures: &mut Vec<String>,
+) {
+    let Some(plain) = zen_engine::trace::testing::unpacked(json) else {
+        return;
+    };
+    let mut all = Vec::new();
+    pointers(&plain, "", &mut all);
+    let stride = match std::env::var("TRACE_REDACT_ALL") {
+        Ok(_) => 1,
+        Err(_) => (all.len() / 12).max(1),
+    };
+    for p in all.iter().step_by(stride) {
+        let Ok(redacted) = zen_engine::trace::redact(json, &[p], None) else {
+            continue;
+        };
+        if let Err(e) = zen_engine::trace::restore(zen_engine::trace::RestoreArgs {
+            trace: zen_engine::trace::Input::Json(&redacted),
+            request: zen_engine::trace::Input::Variable(input),
+            documents: documents.map(zen_engine::trace::Input::Json),
+        }) {
+            failures.push(format!("{label}: redacting {p} does not restore: {e}"));
+        }
+    }
+}
+
 fn native_and_convert() {
     Spec::prepare();
     let misses = zen_engine::trace::testing::native_misses();
@@ -685,6 +734,7 @@ fn native_and_convert() {
                 .map(|v| serde_json::to_value(&v).unwrap())
                 .map_err(|e| e.to_string())
             };
+            redaction_failures(native.json(), &case.input, None, &label, &mut failures);
             match (back(&native), back(&convert)) {
                 (Ok(a), Ok(b)) if a == b => {}
                 (Ok(a), Ok(b)) => failures.push(format!(
@@ -1199,6 +1249,13 @@ fn policy_native_and_convert() {
                 .map(|v| canonical(serde_json::to_value(&v).unwrap()))
                 .map_err(|e| e.to_string())
             };
+            redaction_failures(
+                fast.json(),
+                &case.input,
+                Some(&documents),
+                &suite.location(case),
+                &mut failures,
+            );
             match (back(&fast), back(&slow)) {
                 (Ok(a), Ok(b)) if agrees(&a, &b) => {}
                 (a, b) => failures.push(format!(

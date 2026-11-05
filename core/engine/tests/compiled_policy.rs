@@ -504,7 +504,13 @@ impl Anchor {
                 }
                 program
             });
-            runner.evaluate_columns_many(program, columns, outs, |_, _, _| {});
+            runner.evaluate_columns_many(
+                program,
+                &zen_expression::clock::EvalContext::default(),
+                columns,
+                outs,
+                |_, _, _| {},
+            );
             stages[index] += start.elapsed().as_nanos() as f64 / rows as f64;
         };
         let mut member: Vec<Output> = (0..2).map(|_| Output::new()).collect();
@@ -707,7 +713,12 @@ impl Anchor {
                 _ => 1,
             };
             for _ in 0..repeat {
-                runner.evaluate_columns_into(program, columns, out);
+                runner.evaluate_columns_into(
+                    program,
+                    &zen_expression::clock::EvalContext::default(),
+                    columns,
+                    out,
+                );
             }
             stages[index] += start.elapsed().as_nanos() as f64 / rows as f64 / repeat as f64;
         };

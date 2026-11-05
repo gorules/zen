@@ -51,7 +51,11 @@ pub(crate) struct Dedup {
 }
 
 impl TypedCall<'_, '_> {
-    pub fn run(self, program: &Program) -> Option<Outputs> {
+    pub fn run(
+        self,
+        program: &Program,
+        eval: &zen_expression::clock::EvalContext,
+    ) -> Option<Outputs> {
         let mut batch = Batch::new(self.rows);
         self.columns
             .iter()
@@ -69,7 +73,7 @@ impl TypedCall<'_, '_> {
             });
         }
         let mut out = program.outputs();
-        program.run(&batch, &mut out, self.select).ok()?;
+        program.run(&batch, &mut out, self.select, eval).ok()?;
         Some(out)
     }
 }
@@ -238,6 +242,7 @@ impl Dedup {
         codes: &[Hint],
         positions: Option<&Rc<[usize]>>,
         rows: usize,
+        eval: &zen_expression::clock::EvalContext,
     ) -> Option<(Outputs, Vec<u32>)> {
         let (reps, ids) = Self::distinct(leaves, codes, positions, rows)?;
         let picks: Rc<[usize]> = reps.into();
@@ -248,7 +253,7 @@ impl Dedup {
             lists: Vec::new(),
             select: None,
         };
-        Some((call.run(program)?, ids))
+        Some((call.run(program, eval)?, ids))
     }
 
     pub fn coded(
@@ -257,8 +262,9 @@ impl Dedup {
         codes: &[Hint],
         positions: Option<&Rc<[usize]>>,
         rows: usize,
+        eval: &zen_expression::clock::EvalContext,
     ) -> Option<Outputs> {
-        let (mut out, ids) = Self::reps(program, leaves, codes, positions, rows)?;
+        let (mut out, ids) = Self::reps(program, leaves, codes, positions, rows, eval)?;
         out.spread(rows, &ids, positions.map(|p| &p[..]))
             .then_some(out)
     }

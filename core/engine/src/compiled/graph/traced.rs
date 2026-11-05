@@ -204,7 +204,7 @@ impl Traced<'_> {
         let DecisionNodeKind::SwitchNode { content } = &step.node.kind else {
             return (Outcome::from(Vec::new()), SmallVec::new());
         };
-        let taken = Self::statements(step, content, input, nodes);
+        let taken = Self::statements(step, content, input, nodes, &self.extensions.eval);
         let outcome = taken
             .iter()
             .filter_map(|&at| content.statements.get(at as usize))
@@ -218,9 +218,11 @@ impl Traced<'_> {
         content: &SwitchNodeContent,
         input: &Variable,
         nodes: Option<Variable>,
+        eval: &zen_expression::clock::EvalContext,
     ) -> SmallVec<[u32; 4]> {
-        let mut session =
-            Session::with_environment(input.clone()).with_programs(Some(step.programs().clone()));
+        let mut session = Session::with_environment(input.clone())
+            .with_programs(Some(step.programs().clone()))
+            .with_eval(eval.clone());
         if let Some(nodes) = nodes {
             session.set_local(Variable::nodes_key(), nodes);
         }

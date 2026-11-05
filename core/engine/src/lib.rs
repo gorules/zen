@@ -126,7 +126,7 @@ mod analysis;
 pub mod clock {
     pub use zen_expression::clock::{
         format_instant, instant_from_millis, parse_instant, parse_timezone, row_seed,
-        unrowed_draws, Clock, Instant, Timezone,
+        unrowed_draws, Instant, Timezone,
     };
 }
 mod compiled;

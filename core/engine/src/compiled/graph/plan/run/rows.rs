@@ -239,19 +239,20 @@ impl<'a> Run<'_, 'a> {
                     Ok(graph) => {
                         let (at, inputs, nodes) =
                             self.inputs(seg, Some(&op.view), &op.nodes, positions);
-                        let results = crate::compiled::pinning::originated(
-                            crate::compiled::pinning::rows_origin(&at.as_slice().into()),
-                            CompiledGraph::batch(
-                                step,
-                                content,
-                                &graph,
-                                &inputs,
-                                &nodes,
-                                self.host.extensions,
-                                self.host.max_depth,
-                                self.iteration,
-                            ),
-                        )
+                        let scoped = self
+                            .host
+                            .extensions
+                            .scoped(self.host.extensions.eval.rows(&at));
+                        let results = Box::pin(CompiledGraph::batch(
+                            step,
+                            content,
+                            &graph,
+                            &inputs,
+                            &nodes,
+                            &scoped,
+                            self.host.max_depth,
+                            self.iteration,
+                        ))
                         .await;
                         {
                             self.completed
@@ -274,34 +275,24 @@ impl<'a> Run<'_, 'a> {
         let values: Vec<Variable> = match &step.kind {
             Kind::Host(_) => {
                 Census::mark("hosted");
-                let origin = crate::compiled::pinning::rows_origin(&at.as_slice().into());
+                let scoped = self
+                    .host
+                    .extensions
+                    .scoped(self.host.extensions.eval.rows(&at));
                 let results = match &step.node.kind {
                     DecisionNodeKind::CustomNode { content } => {
-                        crate::compiled::pinning::originated(
-                            origin,
-                            CompiledGraph::custom(
-                                step,
-                                content,
-                                inputs,
-                                nodes,
-                                self.host.extensions,
-                            ),
-                        )
-                        .await
+                        Box::pin(CompiledGraph::custom(step, content, inputs, nodes, &scoped)).await
                     }
                     _ => {
-                        crate::compiled::pinning::originated(
-                            origin,
-                            CompiledGraph::hosted(
-                                step,
-                                &inputs,
-                                &nodes,
-                                self.host.extensions,
-                                self.host.max_depth,
-                                self.iteration,
-                                self.store.rows > 1,
-                            ),
-                        )
+                        Box::pin(CompiledGraph::hosted(
+                            step,
+                            &inputs,
+                            &nodes,
+                            &scoped,
+                            self.host.max_depth,
+                            self.iteration,
+                            self.store.rows > 1,
+                        ))
                         .await
                     }
                 };
@@ -335,9 +326,10 @@ impl<'a> Run<'_, 'a> {
                 if traced {
                     Tap::arm(CompiledGraph::wants_fields(step));
                 }
-                let _origin = crate::compiled::pinning::rows_scope(&at);
+                let eval = self.host.extensions.eval.rows(&at);
                 let (output, failures) = graph.rowwise(
                     &mut self.runner,
+                    &eval,
                     step,
                     data,
                     &nodes,
@@ -431,11 +423,16 @@ impl<'a> Run<'_, 'a> {
             .enumerate()
             .map(|(i, input)| CompiledGraph::scope(input, nodes.get(i).and_then(Option::as_ref)))
             .collect();
-        let _origin = program
-            .program()
-            .draws
-            .then(|| crate::compiled::pinning::rows_scope(&at));
-        for (result, &row) in self.runner.evaluate(program, &scopes).into_iter().zip(&at) {
+        let eval = match program.program().draws {
+            true => self.host.extensions.eval.rows(&at),
+            false => self.host.extensions.eval.clone(),
+        };
+        for (result, &row) in self
+            .runner
+            .evaluate(program, &eval, &scopes)
+            .into_iter()
+            .zip(&at)
+        {
             if matches!(result, Ok(Variable::Bool(true))) {
                 Bits::set(&mut bits, row, true);
             }

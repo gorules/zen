@@ -7,6 +7,7 @@ use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
 use std::future::Future;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
+use zen_expression::clock::EvalContext;
 use zen_expression::lane::{Programs, Session};
 use zen_expression::variable::Variable;
 use zen_types::decision::{DecisionNode, DecisionNodeKind, TransformAttributes};
@@ -20,12 +21,14 @@ pub(crate) struct Row<'a> {
     pub(crate) nodes: Option<Variable>,
     pub(crate) programs: Option<&'a Arc<Programs>>,
     pub(crate) sink: Option<&'a Sink>,
+    pub(crate) eval: EvalContext,
 }
 
 impl<'a> Row<'a> {
     pub(crate) fn session(&self) -> Session {
-        let mut session =
-            Session::with_environment(self.input.clone()).with_programs(self.programs.cloned());
+        let mut session = Session::with_environment(self.input.clone())
+            .with_programs(self.programs.cloned())
+            .with_eval(self.eval.clone());
         if let Some(nodes) = &self.nodes {
             session.set_local(Variable::nodes_key(), nodes.clone());
         }
@@ -33,9 +36,10 @@ impl<'a> Row<'a> {
         session
     }
 
-    pub(crate) fn with_input(&self, input: Variable) -> Self {
+    pub(crate) fn with_input(&self, input: Variable, eval: EvalContext) -> Self {
         Self {
             input,
+            eval,
             ..self.clone()
         }
     }
@@ -53,8 +57,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _| {
-                    let row = self.with_input(input);
+                self.transform(attributes, |input, _, eval| {
+                    let row = self.with_input(input, eval);
                     async move { row.expression(content) }
                 })
                 .await
@@ -64,8 +68,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _| {
-                    let row = self.with_input(input);
+                self.transform(attributes, |input, _, eval| {
+                    let row = self.with_input(input, eval);
                     async move { RowTable::graph(row, content, index) }
                 })
                 .await

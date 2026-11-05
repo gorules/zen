@@ -9,6 +9,7 @@ use crate::EvaluationError;
 use std::cell::{OnceCell, RefCell};
 use std::error::Error;
 use std::sync::Arc;
+use zen_expression::clock::EvalContext;
 use zen_expression::Variable;
 use zen_types::decision::TransformAttributes;
 
@@ -57,8 +58,13 @@ impl Call<'_> {
     }
 
     #[allow(clippy::arc_with_non_send_sync)]
-    pub(super) fn sub_extensions(&self, content: &Content) -> NodeHandlerExtensions {
+    pub(super) fn sub_extensions(
+        &self,
+        content: &Content,
+        eval: &EvalContext,
+    ) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
+            eval: eval.clone(),
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
@@ -71,10 +77,11 @@ impl Call<'_> {
         graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
+        eval: &EvalContext,
     ) -> Result<Variable, Box<dyn Error>> {
         let compiled = Self::compiled(graph)?;
         let content = compiled.schemas(graph, self.extensions.loader()).await;
-        let extensions = self.sub_extensions(&content);
+        let extensions = self.sub_extensions(&content, eval);
         let parents = [parent];
         let inputs = [input];
         let nesting = Nesting {
@@ -106,10 +113,11 @@ impl Call<'_> {
         graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
+        eval: &EvalContext,
     ) -> Result<Run, Box<dyn Error>> {
         let compiled = Self::compiled(graph)?;
         let content = compiled.schemas(graph, self.extensions.loader()).await;
-        let extensions = self.sub_extensions(&content);
+        let extensions = self.sub_extensions(&content, eval);
         let traced = Traced {
             graph: compiled,
             content: &content,
@@ -128,7 +136,7 @@ impl Call<'_> {
         let nodes = &row.nodes;
         let traced = row.traced();
         let sink = &row;
-        row.transform(attributes, |input, _| async move {
+        row.transform(attributes, |input, _, eval| async move {
             let fault = |source: Box<dyn Error>| NodeError::new(id.clone(), source);
             let cached = loaded.borrow().clone();
             let graph = match cached {
@@ -143,13 +151,16 @@ impl Call<'_> {
                 },
             };
             if !traced {
-                let output = self.run(&graph, input, nodes.clone()).await.map_err(fault)?;
+                let output = self
+                    .run(&graph, input, nodes.clone(), &eval)
+                    .await
+                    .map_err(fault)?;
                 return Ok(NodeResponse {
                     output,
                     trace_data: None,
                 });
             }
-            match self.traced(&graph, input, nodes.clone()).await {
+            match self.traced(&graph, input, nodes.clone(), &eval).await {
                 Err(source) => Err(fault(source)),
                 Ok(run) => {
                     let failed = matches!(&run.result, Err(e) if !matches!(**e, EvaluationError::NodeError { .. }));

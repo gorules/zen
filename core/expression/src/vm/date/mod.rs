@@ -250,7 +250,7 @@ mod helper {
     use std::str::FromStr;
 
     fn tz() -> Tz {
-        crate::clock::timezone()
+        crate::clock::system_timezone()
     }
 
     pub fn now() -> DateTime<Tz> {
@@ -641,5 +641,5 @@ impl DynamicVariableExt for dyn DynamicVariable {
 }
 
 pub(crate) fn utc_now() -> DateTime<Utc> {
-    crate::clock::now()
+    crate::clock::system_now()
 }

@@ -1,184 +1,34 @@
 use crate::engine::EvaluationOptions;
-use std::future::Future;
-use std::pin::Pin;
+use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use zen_expression::clock::Clock;
+use zen_expression::clock::{Clock, EvalContext};
 
-pub(crate) struct Recycled(Option<Arc<Clock>>);
-
-impl Drop for Recycled {
-    fn drop(&mut self) {
-        if let Some(clock) = self.0.take() {
-            Clock::recycle(clock);
-        }
-    }
-}
-
-pub(crate) async fn run<F: Future>(clock: Option<Arc<Clock>>, mut inner: Pin<&mut F>) -> F::Output {
-    let clock = Recycled(clock);
-    std::future::poll_fn(move |cx: &mut Context<'_>| -> Poll<F::Output> {
-        let _origin = zen_expression::clock::enter_origin(None);
-        let _scope = clock.0.as_ref().map(|clock| clock.enter());
-        inner.as_mut().poll(cx)
-    })
-    .await
-}
-
-pub(crate) type Boxed<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
-
-pub(crate) fn originated<'a, F: Future + 'a>(
-    origin: Option<Rc<zen_expression::clock::Origin>>,
-    inner: F,
-) -> Boxed<'a, F::Output> {
-    let Some(origin) = origin else {
-        return Box::pin(inner);
-    };
-    Box::pin(async move {
-        let mut inner = std::pin::pin!(inner);
-        std::future::poll_fn(move |cx: &mut Context<'_>| -> Poll<F::Output> {
-            let _origin = zen_expression::clock::enter_origin(Some(origin.clone()));
-            inner.as_mut().poll(cx)
-        })
-        .await
-    })
-}
-
-pub(crate) fn rows_origin(rows: &Rc<[usize]>) -> Option<Rc<zen_expression::clock::Origin>> {
-    zen_expression::clock::streamed().then(|| {
-        Rc::new(zen_expression::clock::Origin::Rows(
-            rows.clone(),
-            zen_expression::clock::origin(),
-        ))
-    })
-}
-
-pub(crate) fn rows_scope(rows: &[usize]) -> Option<zen_expression::clock::Origins> {
-    zen_expression::clock::streamed().then(|| zen_expression::clock::rows(rows.into()))
-}
-
-pub(crate) fn restart(rows: &[usize]) {
-    if zen_expression::clock::origin().is_some() {
-        return;
-    }
-    if let Some(clock) = zen_expression::clock::current().filter(|clock| clock.is_batch()) {
-        for &row in rows {
-            clock.fresh_stream(row);
-        }
-    }
-}
-
-pub(crate) fn at_row_now<R>(row: usize, f: impl FnOnce() -> R) -> R {
-    match zen_expression::clock::streamed() {
-        true => match zen_expression::clock::stream_at(row) {
-            Some(stream) => {
-                let _origin = zen_expression::clock::enter_origin(None);
-                stream.scope(f)
-            }
-            None => f(),
-        },
-        false => f(),
-    }
-}
-
-pub(crate) fn item<'a, F: Future + 'a>(index: usize, inner: F) -> Boxed<'a, F::Output> {
-    let origin = zen_expression::clock::Origin::Items(
-        Rc::from([(0, index)]),
-        zen_expression::clock::origin(),
-    );
-    originated(Some(Rc::new(origin)), inner)
-}
-
-pub(crate) fn at_row<'a, F: Future + 'a>(row: usize, inner: F) -> Boxed<'a, F::Output> {
-    match zen_expression::clock::streamed() {
-        true => match zen_expression::clock::stream_at(row) {
-            Some(stream) => Box::pin(with(stream, inner)),
-            None => Box::pin(inner),
-        },
-        false => Box::pin(inner),
-    }
-}
-
-pub(crate) fn scope_for(options: &EvaluationOptions) -> Option<Arc<Clock>> {
-    match nested(options) {
-        true => None,
-        false => Some(clock_for(options)),
-    }
-}
-
-pub(crate) fn supplies(options: &EvaluationOptions) -> bool {
-    options.now.is_some() || options.timezone.is_some() || options.seed.is_some()
-}
-
-pub(crate) fn clock_for(options: &EvaluationOptions) -> Arc<Clock> {
-    let clock = match (zen_expression::clock::current(), supplies(options)) {
-        (Some(current), false) => current,
-        _ => Clock::new(options.now, options.timezone, options.seed),
-    };
+pub(crate) fn single(options: &EvaluationOptions) -> EvalContext {
+    let eval = EvalContext::new(Clock::new(options.now, options.timezone, options.seed));
     if options.trace.is_on() {
-        clock.now();
+        eval.now();
     }
-    clock
+    eval
 }
 
-pub(crate) fn batch_for(options: &EvaluationOptions) -> Arc<Clock> {
-    clock_for(options).batch()
+pub(crate) fn batch(options: &EvaluationOptions) -> EvalContext {
+    EvalContext::new(Clock::batch(options.now, options.timezone, options.seed))
 }
 
-pub(crate) fn nested(options: &EvaluationOptions) -> bool {
-    !supplies(options) && zen_expression::clock::current_is_set()
-}
-
-pub(crate) fn inner(options: EvaluationOptions) -> EvaluationOptions {
-    EvaluationOptions {
-        now: None,
-        timezone: None,
-        seed: None,
-        ..options
-    }
-}
-
-pub(crate) async fn with<F: Future>(clock: Arc<Clock>, inner: F) -> F::Output {
-    let inner = std::pin::pin!(inner);
-    run(Some(clock), inner).await
-}
-
-pub(crate) fn scoped<R>(f: impl FnOnce() -> R) -> R {
-    match zen_expression::clock::current() {
-        Some(_) => f(),
-        None => Clock::new(None, None, None).scope(f),
-    }
-}
-
-pub(crate) fn batched<R>(f: impl FnOnce() -> R) -> R {
-    match zen_expression::clock::current() {
-        Some(clock) => clock.batch().scope(f),
-        None => Clock::new(None, None, None).batch().scope(f),
-    }
-}
-
-pub(crate) fn evaluation_of(clock: &Clock) -> crate::compiled::trace::Evaluation {
+pub(crate) fn evaluation(eval: &EvalContext) -> crate::compiled::trace::Evaluation {
     crate::compiled::trace::Evaluation {
-        evaluated_at: Some(clock.evaluated_at()),
-        timezone: Some(clock.zone()),
-        seed: clock.seed(),
+        evaluated_at: Some(eval.clock().evaluated_at()),
+        timezone: Some(eval.clock().zone()),
+        seed: eval.seed(),
     }
 }
 
-pub(crate) fn row_evaluation(clock: &Arc<Clock>, row: usize) -> crate::compiled::trace::Evaluation {
+pub(crate) fn row_evaluation(eval: &EvalContext, row: usize) -> crate::compiled::trace::Evaluation {
     crate::compiled::trace::Evaluation {
-        evaluated_at: Some(clock.evaluated_at()),
-        timezone: Some(clock.zone()),
-        seed: match clock.is_batch() {
-            true => clock.row_seed(row),
-            false => clock.seed(),
-        },
+        evaluated_at: Some(eval.clock().evaluated_at()),
+        timezone: Some(eval.clock().zone()),
+        seed: eval.row_seed(row),
     }
-}
-
-pub(crate) fn evaluation() -> Option<crate::compiled::trace::Evaluation> {
-    zen_expression::clock::current().map(|clock| evaluation_of(&clock))
 }
 
 const PIN_JS: &str = r#"(() => {
@@ -200,18 +50,62 @@ const PIN_JS: &str = r#"(() => {
   globalThis.__zenPinned = true;
 })();"#;
 
-pub(crate) fn install_js(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
-    let globals = ctx.globals();
-    if globals.get::<_, bool>("__zenPinned").unwrap_or(false) {
-        return Ok(());
+#[derive(Debug, Clone, Default)]
+pub(crate) struct JsClock(Rc<RefCell<Option<EvalContext>>>);
+
+pub(crate) struct Entered {
+    clock: JsClock,
+    previous: Option<EvalContext>,
+}
+
+impl Drop for Entered {
+    fn drop(&mut self) {
+        *self.clock.0.borrow_mut() = self.previous.take();
     }
-    globals.set(
-        "__zenNow",
-        rquickjs::prelude::Func::from(|| zen_expression::clock::now().timestamp_millis() as f64),
-    )?;
-    globals.set(
-        "__zenRandom",
-        rquickjs::prelude::Func::from(zen_expression::clock::random_f64),
-    )?;
-    ctx.eval::<(), _>(PIN_JS)
+}
+
+impl JsClock {
+    pub(crate) fn enter(&self, eval: EvalContext) -> Entered {
+        Entered {
+            clock: self.clone(),
+            previous: self.0.borrow_mut().replace(eval),
+        }
+    }
+
+    pub(crate) fn current(&self) -> Option<EvalContext> {
+        self.0.borrow().clone()
+    }
+
+    fn now(&self) -> f64 {
+        let now = match self.0.borrow().as_ref() {
+            Some(eval) => eval.now(),
+            None => zen_expression::clock::system_now(),
+        };
+        now.timestamp_millis() as f64
+    }
+
+    fn random(&self) -> f64 {
+        match self.0.borrow().as_ref() {
+            Some(eval) => eval.random_f64(0),
+            None => EvalContext::default().random_f64(0),
+        }
+    }
+
+    pub(crate) fn install(&self, ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
+        let globals = ctx.globals();
+        if globals.get::<_, bool>("__zenPinned").unwrap_or(false) {
+            return Ok(());
+        }
+        let clock = self.clone();
+        globals.set(
+            "__zenNow",
+            rquickjs::prelude::Func::from(move || clock.now()),
+        )?;
+        let clock = self.clone();
+        globals.set(
+            "__zenRandom",
+            rquickjs::prelude::Func::from(move || clock.random()),
+        )?;
+        ctx.eval::<(), _>(PIN_JS)
+    }
 }

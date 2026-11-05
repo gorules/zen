@@ -349,6 +349,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs: None,
                     sink,
+                    eval: base.extensions.eval.clone(),
                 };
                 call.node(row, &content.transform_attributes).await
             }
@@ -365,6 +366,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs,
                     sink,
+                    eval: base.extensions.eval.clone(),
                 };
                 row.node(node, index, true).await
             }

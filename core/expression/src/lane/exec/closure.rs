@@ -763,7 +763,7 @@ impl Executor {
             Some(_) => slots[j].0,
             None => items[j].0,
         };
-        let blocks = Executor::blocks(total, chunk, c.body.draws, |j| {
+        let blocks = Executor::blocks(total, chunk, c.body.draws, ctx.eval, |j| {
             ctx.drawn_row(f.rows[parent_of(j) as usize])
         });
         for (start, width) in blocks {

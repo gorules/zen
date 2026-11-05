@@ -1,5 +1,5 @@
 use crate::functions::{FunctionKind, InternalFunction};
-use crate::lane::builtins::{Apply, Arg, Array, Builtin, Fail, Out, Outcome, Params};
+use crate::lane::builtins::{Apply, Arg, Array, At, Builtin, Fail, Out, Outcome, Params};
 use crate::variable::Variable;
 #[cfg(not(feature = "regex-lite"))]
 use regex::Regex;
@@ -166,11 +166,11 @@ impl Text {
         fail: Self::len_fail,
     };
 
-    fn len_str(args: &[Arg]) -> Outcome {
+    fn len_str(_: &At, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: &str| Ok(a.len()))
     }
 
-    fn len_array(args: &[Arg]) -> Outcome {
+    fn len_array(_: &At, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: Array| Ok(a.len()))
     }
 
@@ -186,11 +186,12 @@ impl Text {
         fail: Self::contains_fail,
     };
 
-    fn contains_str(args: &[Arg]) -> Outcome {
+    fn contains_str(_: &At, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| Ok(a.contains(b)))
     }
 
-    fn contains_array(args: &[Arg]) -> Outcome {
+    fn contains_array(at: &At, args: &[Arg]) -> Outcome {
+        let tz = at.timezone();
         Apply::two(args, |a: Array, b: Arg| {
             Ok(a.any(|x| match (x, b) {
                 (Arg::Num(x), Arg::Num(y)) => x == y,
@@ -198,8 +199,8 @@ impl Text {
                 (Arg::Bool(x), Arg::Bool(y)) => x == y,
                 (Arg::Null, Arg::Null) => true,
                 (x, y) => match (x.date(), y.date()) {
-                    (Some(d), _) => d.is_valid() && y.coerce_date() == Some(d),
-                    (None, Some(d)) => d.is_valid() && x.coerce_date() == Some(d),
+                    (Some(d), _) => d.is_valid() && y.coerce_date(tz) == Some(d),
+                    (None, Some(d)) => d.is_valid() && x.coerce_date(tz) == Some(d),
                     (None, None) => false,
                 },
             }))
@@ -219,17 +220,17 @@ impl Text {
     }
 
     pub(crate) const STARTS_WITH: Builtin = Builtin {
-        overloads: &[|args| Apply::two(args, |a: &str, b: &str| Ok(a.starts_with(b)))],
+        overloads: &[|_, args| Apply::two(args, |a: &str, b: &str| Ok(a.starts_with(b)))],
         fail: |args| Params::fail(args, Self::TWO),
     };
 
     pub(crate) const ENDS_WITH: Builtin = Builtin {
-        overloads: &[|args| Apply::two(args, |a: &str, b: &str| Ok(a.ends_with(b)))],
+        overloads: &[|_, args| Apply::two(args, |a: &str, b: &str| Ok(a.ends_with(b)))],
         fail: |args| Params::fail(args, Self::TWO),
     };
 
     pub(crate) const MATCHES: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::two(args, |a: &str, b: &str| {
                 Patterns::with(b, |regex| regex.is_match(a))
             })
@@ -238,17 +239,17 @@ impl Text {
     };
 
     pub(crate) const UPPER: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: &str| Ok(a.to_uppercase()))],
+        overloads: &[|_, args| Apply::one(args, |a: &str| Ok(a.to_uppercase()))],
         fail: |args| Params::fail(args, Self::ONE),
     };
 
     pub(crate) const LOWER: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: &str| Ok(a.to_lowercase()))],
+        overloads: &[|_, args| Apply::one(args, |a: &str| Ok(a.to_lowercase()))],
         fail: |args| Params::fail(args, Self::ONE),
     };
 
     pub(crate) const TRIM: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: &str| Ok(Out::from(a.trim())))],
+        overloads: &[|_, args| Apply::one(args, |a: &str| Ok(Out::from(a.trim())))],
         fail: |args| Params::fail(args, Self::ONE),
     };
 
@@ -257,7 +258,7 @@ impl Text {
         fail: |args| Params::fail(args, Self::TWO),
     };
 
-    fn extract(args: &[Arg]) -> Outcome {
+    fn extract(_: &At, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| {
             let captures: Vec<Variable> = Patterns::with(b, |regex| {
                 regex
@@ -280,7 +281,7 @@ impl Text {
         fail: |args| Params::fail(args, Self::TWO),
     };
 
-    fn split(args: &[Arg]) -> Outcome {
+    fn split(_: &At, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| {
             Ok(Variable::from_array(
                 a.split(b).map(|s| Variable::String(s.into())).collect(),
@@ -297,7 +298,7 @@ impl Text {
         Decimal::from_f64(strsim::normalized_damerau_levenshtein(a, b)).unwrap_or(Decimal::ZERO)
     }
 
-    fn fuzzy(args: &[Arg]) -> Outcome {
+    fn fuzzy(_: &At, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: Arg, b: &str| match a {
             Arg::Str(a) => Ok(Variable::Number(Self::similarity(a, b))),
             Arg::Date(_) | Arg::Var(Variable::Dynamic(_)) => match a.text() {

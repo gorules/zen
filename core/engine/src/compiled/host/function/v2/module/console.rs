@@ -22,7 +22,6 @@ impl RuntimeListener for ConsoleListener {
             match event {
                 RuntimeEvent::Startup | RuntimeEvent::SoftReset => {
                     Console::init(&ctx)?;
-                    crate::compiled::pinning::install_js(&ctx)?;
                 }
             }
 

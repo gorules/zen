@@ -1,11 +1,11 @@
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
-use std::cell::{Cell, RefCell};
+use std::cell::{OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 pub use chrono_tz::Tz as Timezone;
 
@@ -22,26 +22,6 @@ fn mix(mut z: u64) -> u64 {
 
 pub fn row_seed(base: u64, row: usize) -> u64 {
     mix(base ^ mix((row as u64).wrapping_add(1).wrapping_mul(GAMMA))) & DRAWN_BITS
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Source {
-    Fresh,
-    Row(usize),
-    Batch,
-}
-
-#[derive(Debug)]
-pub struct Clock {
-    now: OnceLock<Instant>,
-    stamp: OnceLock<Arc<str>>,
-    timezone: Tz,
-    seed: OnceLock<u64>,
-    draws: AtomicU64,
-    touched: AtomicBool,
-    source: Source,
-    parent: Option<Arc<Clock>>,
-    streams: Mutex<BTreeMap<usize, Arc<Clock>>>,
 }
 
 pub fn system_now() -> Instant {
@@ -123,132 +103,197 @@ pub fn format_instant(at: &Instant) -> String {
     out
 }
 
-impl Clock {
-    pub fn new(now: Option<Instant>, timezone: Option<Tz>, seed: Option<u64>) -> Arc<Self> {
-        let timezone = timezone.unwrap_or_else(system_timezone);
-        if let Some(mut clock) = POOL.with(|p| p.borrow_mut().pop()) {
-            if let Some(c) = Arc::get_mut(&mut clock) {
-                c.now = OnceLock::new();
-                c.stamp = OnceLock::new();
-                c.seed = OnceLock::new();
-                *c.draws.get_mut() = 0;
-                *c.touched.get_mut() = false;
-                c.timezone = timezone;
-                c.source = Source::Fresh;
-                c.parent = None;
-                if let Ok(streams) = c.streams.get_mut() {
-                    streams.clear();
-                }
-                if let Some(now) = now {
-                    let _ = c.now.set(now);
-                }
-                if let Some(seed) = seed {
-                    let _ = c.seed.set(seed);
-                }
-                return clock;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Stream {
+    Root,
+    Row(u32),
+    Item(u32),
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct Node {
+    seed: Option<u64>,
+    draws: u64,
+    touched: bool,
+}
+
+impl Node {
+    fn drew(&self) -> bool {
+        self.draws > 0 || self.touched
+    }
+}
+
+#[derive(Debug)]
+struct Item {
+    parent: Stream,
+    index: usize,
+    node: Node,
+}
+
+#[derive(Debug, Default)]
+struct Streams {
+    root: Node,
+    rows: Vec<Node>,
+    items: Vec<Item>,
+    children: BTreeMap<(Stream, usize), u32>,
+}
+
+impl Streams {
+    fn row(&mut self, row: u32) -> &mut Node {
+        let at = row as usize;
+        if self.rows.len() <= at {
+            self.rows.resize(at + 1, Node::default());
+        }
+        &mut self.rows[at]
+    }
+
+    fn node(&mut self, stream: Stream) -> Option<&mut Node> {
+        match stream {
+            Stream::Root => Some(&mut self.root),
+            Stream::Row(row) => Some(self.row(row)),
+            Stream::Item(item) => self.items.get_mut(item as usize).map(|item| &mut item.node),
+        }
+    }
+
+    fn peek(&self, stream: Stream) -> Option<&Node> {
+        match stream {
+            Stream::Root => Some(&self.root),
+            Stream::Row(row) => self.rows.get(row as usize),
+            Stream::Item(item) => self.items.get(item as usize).map(|item| &item.node),
+        }
+    }
+
+    fn parent(&self, stream: Stream) -> Option<Stream> {
+        match stream {
+            Stream::Root => None,
+            Stream::Row(_) => Some(Stream::Root),
+            Stream::Item(item) => self.items.get(item as usize).map(|item| item.parent),
+        }
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn base(&mut self, stream: Stream) -> u64 {
+        if let Some(seed) = self.node(stream).and_then(|node| node.seed) {
+            return seed;
+        }
+        let seed = match stream {
+            Stream::Root => fastrand::u64(..) & DRAWN_BITS,
+            Stream::Row(row) => row_seed(self.base(Stream::Root), row as usize),
+            Stream::Item(item) => match self.items.get(item as usize) {
+                Some(&Item { parent, index, .. }) => row_seed(self.base(parent), index),
+                None => fastrand::u64(..) & DRAWN_BITS,
+            },
+        };
+        if let Some(node) = self.node(stream) {
+            node.seed = Some(seed);
+        }
+        seed
+    }
+
+    fn touch(&mut self, stream: Stream) {
+        let mut up = self.parent(stream);
+        while let Some(parent) = up {
+            match self.node(parent) {
+                Some(node) if !node.touched => node.touched = true,
+                _ => break,
             }
+            up = self.parent(parent);
         }
-        let clock = Self {
-            now: OnceLock::new(),
-            stamp: OnceLock::new(),
-            timezone,
-            seed: OnceLock::new(),
-            draws: AtomicU64::new(0),
-            touched: AtomicBool::new(false),
-            source: Source::Fresh,
-            parent: None,
-            streams: Mutex::new(BTreeMap::new()),
+    }
+
+    fn next_u64(&mut self, stream: Stream) -> u64 {
+        let base = self.base(stream);
+        let k = match self.node(stream) {
+            Some(node) => {
+                node.draws += 1;
+                node.draws - 1
+            }
+            None => 0,
         };
-        if let Some(now) = now {
-            let _ = clock.now.set(now);
-        }
-        if let Some(seed) = seed {
-            let _ = clock.seed.set(seed);
-        }
-        Arc::new(clock)
+        self.touch(stream);
+        mix(base.wrapping_add(k.wrapping_add(1).wrapping_mul(GAMMA)))
     }
 
-    fn root(self: &Arc<Self>) -> Arc<Self> {
-        match (self.source, &self.parent) {
-            (Source::Batch, Some(parent)) => parent.clone(),
-            _ => self.clone(),
+    fn child(&mut self, parent: Stream, index: usize) -> Stream {
+        if let Some(&item) = self.children.get(&(parent, index)) {
+            return Stream::Item(item);
+        }
+        let item = self.items.len() as u32;
+        self.items.push(Item {
+            parent,
+            index,
+            node: Node::default(),
+        });
+        self.children.insert((parent, index), item);
+        Stream::Item(item)
+    }
+
+    fn restart(&mut self, row: u32) {
+        *self.row(row) = Node::default();
+        let parent = Stream::Row(row);
+        let stale: Vec<(Stream, usize)> = self
+            .children
+            .range((parent, 0)..=(parent, usize::MAX))
+            .map(|(key, _)| *key)
+            .collect();
+        for key in stale {
+            self.children.remove(&key);
         }
     }
 
-    fn child(&self, index: usize, parent: Arc<Self>) -> Arc<Self> {
-        Arc::new(Self {
-            now: OnceLock::from(self.now()),
-            stamp: self.stamp.clone(),
-            timezone: self.timezone,
-            seed: OnceLock::new(),
-            draws: AtomicU64::new(0),
-            touched: AtomicBool::new(false),
-            source: Source::Row(index),
-            parent: Some(parent),
-            streams: Mutex::new(BTreeMap::new()),
-        })
+    fn reset(&mut self) {
+        self.rows.clear();
+        self.items.clear();
+        self.children.clear();
     }
+}
 
-    pub fn row(self: &Arc<Self>, index: usize) -> Arc<Self> {
-        self.child(index, self.root())
+#[derive(Debug)]
+pub struct Clock {
+    now: OnceCell<Instant>,
+    stamp: OnceCell<Arc<str>>,
+    zone: OnceCell<Arc<str>>,
+    timezone: Tz,
+    batch: bool,
+    streams: RefCell<Streams>,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self::new(None, None, None)
     }
+}
 
-    pub fn batch(self: &Arc<Self>) -> Arc<Self> {
-        if matches!(self.source, Source::Batch) {
-            return self.clone();
-        }
-        let clock = Self {
-            now: OnceLock::from(self.now()),
-            stamp: self.stamp.clone(),
-            timezone: self.timezone,
-            seed: OnceLock::new(),
-            draws: AtomicU64::new(0),
-            touched: AtomicBool::new(false),
-            source: Source::Batch,
-            parent: Some(self.clone()),
-            streams: Mutex::new(BTreeMap::new()),
+impl Clock {
+    pub fn new(now: Option<Instant>, timezone: Option<Tz>, seed: Option<u64>) -> Self {
+        let streams = Streams {
+            root: Node {
+                seed,
+                ..Node::default()
+            },
+            ..Streams::default()
         };
-        Arc::new(clock)
-    }
-
-    pub fn is_batch(&self) -> bool {
-        matches!(self.source, Source::Batch)
-    }
-
-    pub fn stream(self: &Arc<Self>, row: usize) -> Arc<Self> {
-        if !self.is_batch() {
-            return self.clone();
+        Self {
+            now: now.map_or_else(OnceCell::new, OnceCell::from),
+            stamp: OnceCell::new(),
+            zone: OnceCell::new(),
+            timezone: timezone.unwrap_or_else(system_timezone),
+            batch: false,
+            streams: RefCell::new(streams),
         }
-        let mut streams = self.streams.lock().unwrap_or_else(|e| e.into_inner());
-        streams.entry(row).or_insert_with(|| self.row(row)).clone()
     }
 
-    pub fn item(self: &Arc<Self>, index: usize) -> Arc<Self> {
-        let mut streams = self.streams.lock().unwrap_or_else(|e| e.into_inner());
-        streams
-            .entry(index)
-            .or_insert_with(|| self.child(index, self.clone()))
-            .clone()
-    }
-
-    pub fn reset_streams(&self) {
-        let mut streams = self.streams.lock().unwrap_or_else(|e| e.into_inner());
-        streams.clear();
-    }
-
-    pub fn fresh_stream(self: &Arc<Self>, row: usize) -> Arc<Self> {
-        if !self.is_batch() {
-            return self.clone();
-        }
-        let clock = self.row(row);
-        let mut streams = self.streams.lock().unwrap_or_else(|e| e.into_inner());
-        streams.insert(row, clock.clone());
+    pub fn batch(now: Option<Instant>, timezone: Option<Tz>, seed: Option<u64>) -> Self {
+        let clock = Self {
+            batch: true,
+            ..Self::new(now, timezone, seed)
+        };
+        clock.now();
         clock
     }
 
-    pub fn row_seed(self: &Arc<Self>, row: usize) -> Option<u64> {
-        let streams = self.streams.lock().unwrap_or_else(|e| e.into_inner());
-        streams.get(&row).and_then(|stream| stream.seed())
+    pub fn is_batch(&self) -> bool {
+        self.batch
     }
 
     pub fn now(&self) -> Instant {
@@ -265,127 +310,72 @@ impl Clock {
         self.timezone
     }
 
-    pub fn timezone_name(&self) -> &'static str {
-        self.timezone.name()
-    }
-
     pub fn zone(&self) -> Arc<str> {
-        ZONE.with(|z| {
-            let mut z = z.borrow_mut();
-            match &*z {
-                Some((tz, name)) if *tz == self.timezone => name.clone(),
-                _ => {
-                    let name: Arc<str> = Arc::from(self.timezone.name());
-                    *z = Some((self.timezone, name.clone()));
-                    name
-                }
-            }
-        })
-    }
-
-    pub fn recycle(clock: Arc<Self>) {
-        if Arc::strong_count(&clock) == 1 {
-            POOL.with(|p| {
-                let mut p = p.borrow_mut();
-                if p.len() < 4 {
-                    p.push(clock);
-                }
-            });
-        }
-    }
-
-    pub fn drew(&self) -> bool {
-        self.draws.load(Ordering::Relaxed) > 0 || self.touched.load(Ordering::Relaxed)
+        self.zone
+            .get_or_init(|| Arc::from(self.timezone.name()))
+            .clone()
     }
 
     pub fn seed(&self) -> Option<u64> {
-        match self.drew() {
-            true => self.seed.get().copied(),
-            false => None,
+        let streams = self.streams.borrow();
+        let root = &streams.root;
+        let drew = match self.batch {
+            true => root.draws > 0,
+            false => root.drew(),
+        };
+        drew.then_some(root.seed).flatten()
+    }
+
+    pub fn stream_seed(&self, stream: Stream) -> Option<u64> {
+        if stream == Stream::Root {
+            return self.seed();
+        }
+        let streams = self.streams.borrow();
+        streams
+            .peek(stream)
+            .filter(|node| node.drew())
+            .and_then(|node| node.seed)
+    }
+
+    pub fn row_stream(&self, row: usize) -> Stream {
+        match self.batch {
+            true => Stream::Row(row as u32),
+            false => Stream::Root,
         }
     }
 
-    fn base(&self) -> u64 {
-        *self.seed.get_or_init(|| match (self.source, &self.parent) {
-            (Source::Row(index), Some(parent)) => row_seed(parent.base(), index),
-            (Source::Batch, Some(parent)) => parent.base(),
-            _ => fastrand::u64(..) & DRAWN_BITS,
-        })
+    pub fn child(&self, parent: Stream, index: usize) -> Stream {
+        self.streams.borrow_mut().child(parent, index)
     }
 
-    pub fn next_u64(&self) -> u64 {
-        let base = self.base();
-        let k = self.draws.fetch_add(1, Ordering::Relaxed);
-        let mut up = self.parent.as_deref();
-        while let Some(parent) = up {
-            if parent.touched.swap(true, Ordering::Relaxed) {
-                break;
-            }
-            up = parent.parent.as_deref();
+    pub fn restart(&self, rows: &[usize]) {
+        if !self.batch {
+            return;
         }
-        mix(base.wrapping_add(k.wrapping_add(1).wrapping_mul(GAMMA)))
+        let mut streams = self.streams.borrow_mut();
+        for &row in rows {
+            streams.restart(row as u32);
+        }
     }
 
-    pub fn next_f64(&self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    pub fn reset(&self) {
+        self.streams.borrow_mut().reset();
     }
 
-    pub fn enter(self: &Arc<Self>) -> Scope {
-        Scope(CURRENT.with(|c| c.replace(Some(self.clone()))))
+    pub fn next_u64(&self, stream: Stream) -> u64 {
+        if self.batch && stream == Stream::Root {
+            UNROWED.fetch_add(1, Ordering::Relaxed);
+        }
+        self.streams.borrow_mut().next_u64(stream)
     }
 
-    pub fn scope<R>(self: &Arc<Self>, f: impl FnOnce() -> R) -> R {
-        let _scope = self.enter();
-        f()
+    pub fn next_f64(&self, stream: Stream) -> f64 {
+        (self.next_u64(stream) >> 11) as f64 / (1u64 << 53) as f64
     }
-}
 
-thread_local! {
-    static CURRENT: RefCell<Option<Arc<Clock>>> = const { RefCell::new(None) };
-    static POOL: RefCell<Vec<Arc<Clock>>> = const { RefCell::new(Vec::new()) };
-    static ZONE: RefCell<Option<(Tz, Arc<str>)>> = const { RefCell::new(None) };
-}
-
-pub struct Scope(Option<Arc<Clock>>);
-
-impl Drop for Scope {
-    fn drop(&mut self) {
-        let previous = self.0.take();
-        CURRENT.with(|c| *c.borrow_mut() = previous);
+    pub fn next_int(&self, stream: Stream, upper: i64) -> i64 {
+        fastrand::Rng::with_seed(self.next_u64(stream)).i64(0..=upper)
     }
-}
-
-pub fn current_is_set() -> bool {
-    CURRENT.with(|c| c.borrow().is_some())
-}
-
-pub fn current() -> Option<Arc<Clock>> {
-    CURRENT.with(|c| c.borrow().clone())
-}
-
-pub fn now() -> Instant {
-    CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(clock) => clock.now(),
-        None => system_now(),
-    })
-}
-
-pub fn timezone() -> Tz {
-    CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(clock) => clock.timezone,
-        None => system_timezone(),
-    })
-}
-
-#[derive(Debug)]
-pub enum Origin {
-    Rows(Rc<[usize]>, Option<Rc<Origin>>),
-    Items(Rc<[(usize, usize)]>, Option<Rc<Origin>>),
-}
-
-thread_local! {
-    static ORIGIN: RefCell<Option<Rc<Origin>>> = const { RefCell::new(None) };
-    static ROW: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 static UNROWED: AtomicU64 = AtomicU64::new(0);
@@ -394,111 +384,168 @@ pub fn unrowed_draws() -> u64 {
     UNROWED.load(Ordering::Relaxed)
 }
 
-pub struct Origins(Option<Rc<Origin>>);
-
-impl Drop for Origins {
-    fn drop(&mut self) {
-        let previous = self.0.take();
-        ORIGIN.with(|o| *o.borrow_mut() = previous);
-    }
+#[derive(Debug, Clone, Default)]
+enum Rows {
+    #[default]
+    Direct,
+    One(Stream),
+    Picked(Rc<Picked>),
+    Items(Rc<Items>),
 }
 
-pub fn origin() -> Option<Rc<Origin>> {
-    ORIGIN.with(|o| o.borrow().clone())
+#[derive(Debug)]
+struct Picked {
+    rows: Rc<[usize]>,
+    rest: Rows,
 }
 
-pub fn enter_origin(origin: Option<Rc<Origin>>) -> Origins {
-    Origins(ORIGIN.with(|o| o.replace(origin)))
+#[derive(Debug)]
+struct Items {
+    items: Rc<[(usize, usize)]>,
+    rest: Rows,
 }
 
-pub fn rows(rows: Rc<[usize]>) -> Origins {
-    let parent = origin();
-    enter_origin(Some(Rc::new(Origin::Rows(rows, parent))))
-}
-
-pub fn items(items: Rc<[(usize, usize)]>) -> Origins {
-    let parent = origin();
-    enter_origin(Some(Rc::new(Origin::Items(items, parent))))
-}
-
-#[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
-fn resolve(origin: Option<&Rc<Origin>>, row: usize, clock: &Arc<Clock>) -> Arc<Clock> {
-    match origin.map(|o| &**o) {
-        None => clock.stream(row),
-        Some(Origin::Rows(rows, parent)) => resolve(
-            parent.as_ref(),
-            rows.get(row).copied().unwrap_or(row),
-            clock,
-        ),
-        Some(Origin::Items(items, parent)) => match items.get(row) {
-            Some(&(at, index)) => resolve(parent.as_ref(), at, clock).item(index),
-            None => resolve(parent.as_ref(), row, clock),
-        },
-    }
-}
-
-pub fn stream_at(row: usize) -> Option<Arc<Clock>> {
-    let clock = current()?;
-    Some(ORIGIN.with(|o| resolve(o.borrow().as_ref(), row, &clock)))
-}
-
-pub fn streamed() -> bool {
-    ORIGIN.with(|o| o.borrow().is_some()) || drawing_batch()
-}
-
-pub fn stream_key(row: usize) -> usize {
-    stream_at(row).map_or(0, |s| Arc::as_ptr(&s) as usize)
-}
-
-pub fn drawing_batch() -> bool {
-    CURRENT.with(|c| c.borrow().as_ref().is_some_and(|clock| clock.is_batch()))
-}
-
-pub fn set_row(row: Option<usize>) -> Option<usize> {
-    ROW.with(|r| r.replace(row))
-}
-
-pub fn at_row<R>(row: usize, f: impl FnOnce() -> R) -> R {
-    let previous = set_row(Some(row));
-    let out = f();
-    set_row(previous);
-    out
-}
-
-fn draw(clock: &Arc<Clock>) -> u64 {
-    if !streamed() {
-        return clock.next_u64();
-    }
-    match ROW.with(Cell::get) {
-        Some(row) => ORIGIN
-            .with(|o| resolve(o.borrow().as_ref(), row, clock))
-            .next_u64(),
-        None => {
-            UNROWED.fetch_add(1, Ordering::Relaxed);
-            clock.next_u64()
+impl Rows {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn stream(&self, clock: &Clock, row: usize) -> Stream {
+        match self {
+            Rows::Direct => clock.row_stream(row),
+            Rows::One(stream) => *stream,
+            Rows::Picked(picked) => {
+                let row = picked.rows.get(row).copied().unwrap_or(row);
+                picked.rest.stream(clock, row)
+            }
+            Rows::Items(items) => match items.items.get(row) {
+                Some(&(at, index)) => clock.child(items.rest.stream(clock, at), index),
+                None => items.rest.stream(clock, row),
+            },
         }
     }
 }
 
-pub fn next_u64() -> u64 {
-    CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(clock) => draw(clock),
-        None => fastrand::u64(..),
-    })
+#[derive(Debug, Clone)]
+pub struct EvalContext {
+    clock: Rc<Clock>,
+    rows: Rows,
 }
 
-pub fn random_f64() -> f64 {
-    CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(clock) => (draw(clock) >> 11) as f64 / (1u64 << 53) as f64,
-        None => fastrand::f64(),
-    })
+impl Default for EvalContext {
+    fn default() -> Self {
+        Self::new(Clock::default())
+    }
 }
 
-pub fn random_int(upper: i64) -> i64 {
-    CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(clock) => fastrand::Rng::with_seed(draw(clock)).i64(0..=upper),
-        None => fastrand::i64(0..=upper),
-    })
+impl EvalContext {
+    pub fn new(clock: Clock) -> Self {
+        Self {
+            clock: Rc::new(clock),
+            rows: Rows::Direct,
+        }
+    }
+
+    pub fn clock(&self) -> &Clock {
+        &self.clock
+    }
+
+    pub fn now(&self) -> Instant {
+        self.clock.now()
+    }
+
+    pub fn timezone(&self) -> Tz {
+        self.clock.timezone
+    }
+
+    pub fn stream(&self, row: usize) -> Stream {
+        self.rows.stream(&self.clock, row)
+    }
+
+    pub fn is_direct(&self) -> bool {
+        matches!(self.rows, Rows::Direct)
+    }
+
+    fn uniform(&self) -> bool {
+        match self.rows {
+            Rows::Direct => !self.clock.batch,
+            Rows::One(_) => true,
+            Rows::Picked(_) | Rows::Items(_) => false,
+        }
+    }
+
+    pub fn rows(&self, rows: &[usize]) -> Self {
+        if self.uniform() {
+            return self.clone();
+        }
+        self.picked(Rc::from(rows))
+    }
+
+    pub fn picked(&self, rows: Rc<[usize]>) -> Self {
+        if self.uniform() {
+            return self.clone();
+        }
+        Self {
+            clock: self.clock.clone(),
+            rows: Rows::Picked(Rc::new(Picked {
+                rows,
+                rest: self.rows.clone(),
+            })),
+        }
+    }
+
+    pub fn items(&self, items: &[(usize, usize)]) -> Self {
+        Self {
+            clock: self.clock.clone(),
+            rows: Rows::Items(Rc::new(Items {
+                items: Rc::from(items),
+                rest: self.rows.clone(),
+            })),
+        }
+    }
+
+    pub fn item(&self, index: usize) -> Self {
+        self.items(&[(0, index)])
+    }
+
+    pub fn at(&self, row: usize) -> Self {
+        if self.uniform() {
+            return self.clone();
+        }
+        Self {
+            clock: self.clock.clone(),
+            rows: Rows::One(self.stream(row)),
+        }
+    }
+
+    pub fn restart(&self, rows: &[usize]) {
+        if self.is_direct() {
+            self.clock.restart(rows);
+        }
+    }
+
+    pub fn seed(&self) -> Option<u64> {
+        match self.rows {
+            Rows::One(stream) => self.clock.stream_seed(stream),
+            _ => self.clock.seed(),
+        }
+    }
+
+    pub fn row_seed(&self, row: usize) -> Option<u64> {
+        match (&self.rows, self.clock.batch) {
+            (Rows::Direct, true) => self.clock.stream_seed(Stream::Row(row as u32)),
+            _ => self.seed(),
+        }
+    }
+
+    pub fn next_u64(&self, row: usize) -> u64 {
+        self.clock.next_u64(self.stream(row))
+    }
+
+    pub fn random_f64(&self, row: usize) -> f64 {
+        self.clock.next_f64(self.stream(row))
+    }
+
+    pub fn random_int(&self, row: usize, upper: i64) -> i64 {
+        self.clock.next_int(self.stream(row), upper)
+    }
 }
 
 #[cfg(test)]
@@ -507,10 +554,10 @@ mod tests {
 
     #[test]
     fn a_seeded_clock_repeats_its_stream() {
-        let a = Clock::new(None, Some(Tz::UTC), Some(42));
-        let b = Clock::new(None, Some(Tz::UTC), Some(42));
-        let xs: Vec<i64> = (0..8).map(|_| a.scope(|| random_int(1000))).collect();
-        let ys: Vec<i64> = (0..8).map(|_| b.scope(|| random_int(1000))).collect();
+        let a = EvalContext::new(Clock::new(None, Some(Tz::UTC), Some(42)));
+        let b = EvalContext::new(Clock::new(None, Some(Tz::UTC), Some(42)));
+        let xs: Vec<i64> = (0..8).map(|_| a.random_int(0, 1000)).collect();
+        let ys: Vec<i64> = (0..8).map(|_| b.random_int(0, 1000)).collect();
         assert_eq!(xs, ys);
         assert_eq!(a.seed(), Some(42));
     }
@@ -518,21 +565,43 @@ mod tests {
     #[test]
     fn a_clock_reads_now_once() {
         let clock = Clock::new(None, None, None);
-        let first = clock.scope(now);
+        let first = clock.now();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        assert_eq!(clock.scope(now), first);
+        assert_eq!(clock.now(), first);
         assert_eq!(clock.seed(), None);
     }
 
     #[test]
     fn rows_replay_alone() {
-        let batch = Clock::new(None, None, Some(7));
-        let row = batch.row(3);
-        let drawn: Vec<u64> = (0..4).map(|_| row.next_u64()).collect();
-        let alone = Clock::new(Some(row.now()), None, row.seed());
-        let again: Vec<u64> = (0..4).map(|_| alone.next_u64()).collect();
+        let batch = EvalContext::new(Clock::batch(None, None, Some(7)));
+        let drawn: Vec<u64> = (0..4).map(|_| batch.next_u64(3)).collect();
+        let alone = EvalContext::new(Clock::new(Some(batch.now()), None, batch.row_seed(3)));
+        let again: Vec<u64> = (0..4).map(|_| alone.next_u64(0)).collect();
         assert_eq!(drawn, again);
-        assert_eq!(row.seed(), Some(row_seed(7, 3)));
+        assert_eq!(batch.row_seed(3), Some(row_seed(7, 3)));
+        assert_eq!(batch.seed(), None);
+    }
+
+    #[test]
+    fn items_derive_from_their_row() {
+        let batch = EvalContext::new(Clock::batch(None, None, Some(5)));
+        let items = batch.rows(&[2, 4]).items(&[(1, 0), (1, 1), (0, 3)]);
+        let drawn: Vec<u64> = (0..3).map(|i| items.next_u64(i)).collect();
+        let alone = EvalContext::new(Clock::new(None, None, Some(row_seed(5, 4))));
+        let looped = alone.items(&[(0, 0), (0, 1)]);
+        assert_eq!(drawn[..2], [looped.next_u64(0), looped.next_u64(1)]);
+        assert_eq!(batch.row_seed(4), Some(row_seed(5, 4)));
+        assert_eq!(alone.seed(), Some(row_seed(5, 4)));
+        assert_eq!(batch.row_seed(1), None);
+    }
+
+    #[test]
+    fn two_contexts_do_not_share_streams() {
+        let a = EvalContext::new(Clock::new(None, None, Some(1)));
+        let b = EvalContext::new(Clock::new(None, None, Some(1)));
+        let first = a.next_u64(0);
+        assert_eq!(b.next_u64(0), first);
+        assert_ne!(a.next_u64(0), first);
     }
 
     #[test]

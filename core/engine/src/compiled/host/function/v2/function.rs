@@ -9,15 +9,18 @@ use crate::compiled::host::function::v2::listener::{RuntimeEvent, RuntimeListene
 use crate::compiled::host::function::v2::module::console::{Console, Log};
 use crate::compiled::host::function::v2::module::ModuleLoader;
 use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
+use crate::compiled::pinning::JsClock;
 use rquickjs::prelude::Func;
 use rquickjs::promise::MaybePromise;
 use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module, Object};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
+use zen_expression::clock::EvalContext;
 use zen_expression::variable::{ToVariable, Variable};
 
 pub struct FunctionConfig {
     pub(crate) listeners: Option<Vec<Box<dyn RuntimeListener>>>,
+    pub(crate) clock: JsClock,
 }
 
 pub struct Function {
@@ -26,6 +29,7 @@ pub struct Function {
     listeners: Vec<Box<dyn RuntimeListener>>,
     module_loader: ModuleLoader,
     declared: RefCell<HashMap<String, u64>>,
+    clock: JsClock,
 }
 
 impl Debug for Function {
@@ -49,9 +53,17 @@ impl Function {
             module_loader,
             listeners: config.listeners.unwrap_or_default(),
             declared: RefCell::new(HashMap::new()),
+            clock: config.clock,
         };
 
         this.dispatch_event(RuntimeEvent::Startup).await?;
+        let clock = this.clock.clone();
+        let installed: FunctionResult = async_with!(&this.ctx => |ctx| {
+            clock.install(&ctx).catch(&ctx)?;
+            Ok(())
+        })
+        .await;
+        installed?;
         Ok(this)
     }
 
@@ -132,7 +144,9 @@ impl Function {
         &self,
         name: &str,
         data: JsValueWithNodes,
+        eval: &EvalContext,
     ) -> FunctionResult<HandlerResponse> {
+        let _entered = self.clock.enter(eval.clone());
         let k: FunctionResult<HandlerResponse> = async_with!(&self.ctx => |ctx| {
             self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
 
@@ -158,7 +172,9 @@ impl Function {
         config: (u8, u8, bool),
         rows: Vec<(Variable, Option<Variable>)>,
         tick: &dyn Fn(),
+        eval: &EvalContext,
     ) -> Vec<FunctionResult<Variable>> {
+        let _entered = self.clock.enter(eval.clone());
         let count = rows.len();
         let current: Rc<RefCell<Variable>> = Rc::new(RefCell::new(Variable::Null));
         let shared = current.clone();

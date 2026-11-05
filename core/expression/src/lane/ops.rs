@@ -1,5 +1,5 @@
 use crate::compiler::{Compare, FetchFastTarget};
-use crate::lane::builtins::{Arg, Builtins, Out, Text};
+use crate::lane::builtins::{Arg, At, Builtins, Out, Text};
 use crate::lane::date::{Date, DynamicVariableExt};
 use crate::lane::interval::{Interval, IntervalData};
 use crate::lexer::Bracket;
@@ -8,6 +8,7 @@ use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::VMError;
 use crate::vm::VMError::*;
+use chrono_tz::Tz;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
@@ -107,7 +108,7 @@ impl Ops {
         }
     }
 
-    pub(crate) fn equal(a: &Variable, b: &Variable) -> bool {
+    pub(crate) fn equal(a: &Variable, b: &Variable, tz: Tz) -> bool {
         match (a, b) {
             (Number(a), Number(b)) => Self::same_number(a, b),
             (Bool(a), Bool(b)) => a == b,
@@ -118,7 +119,7 @@ impl Ops {
                 a.is_some() && b.is_some() && a == b
             }
             (Dynamic(a), b @ String(_)) | (b @ String(_), Dynamic(a)) => {
-                a.as_date().is_some_and(|a| a.matches(b))
+                a.as_date().is_some_and(|a| a.matches(b, tz))
             }
             _ => false,
         }
@@ -131,7 +132,7 @@ impl Ops {
         }
     }
 
-    pub(crate) fn membership(a: Variable, b: &Variable) -> VMResult<bool> {
+    pub(crate) fn membership(a: Variable, b: &Variable, tz: Tz) -> VMResult<bool> {
         let a = match b {
             Object(_) => Date::textual(a),
             _ => a,
@@ -162,13 +163,13 @@ impl Ops {
                 let Some(a) = a.as_date() else {
                     return Err(Self::unsupported("In"));
                 };
-                Ok(arr.borrow().iter().any(|b| a.matches(b)))
+                Ok(arr.borrow().iter().any(|b| a.matches(b, tz)))
             }
             (String(a), Array(b)) => {
                 let text = String(a.clone());
                 Ok(b.borrow().iter().any(|b| match b {
                     String(b) => &a == b,
-                    Dynamic(d) => d.as_date().is_some_and(|d| d.matches(&text)),
+                    Dynamic(d) => d.as_date().is_some_and(|d| d.matches(&text, tz)),
                     _ => false,
                 }))
             }
@@ -212,15 +213,25 @@ impl Ops {
         }
     }
 
-    pub(crate) fn compared(a: &Variable, b: &Variable, comparison: Compare) -> Option<bool> {
+    pub(crate) fn compared(
+        a: &Variable,
+        b: &Variable,
+        comparison: Compare,
+        tz: Tz,
+    ) -> Option<bool> {
         match (a, b) {
             (Number(a), Number(b)) => Some(Self::ordered_number(a, b, comparison)),
-            (Dynamic(_), _) | (_, Dynamic(_)) => Self::compare(a, b, comparison).ok(),
+            (Dynamic(_), _) | (_, Dynamic(_)) => Self::compare(a, b, comparison, tz).ok(),
             _ => None,
         }
     }
 
-    pub(crate) fn compare(a: &Variable, b: &Variable, comparison: Compare) -> VMResult<bool> {
+    pub(crate) fn compare(
+        a: &Variable,
+        b: &Variable,
+        comparison: Compare,
+        tz: Tz,
+    ) -> VMResult<bool> {
         match (a, b) {
             (Number(a), Number(b)) => Ok(Self::ordered_number(a, b, comparison)),
             (Dynamic(a), Dynamic(b)) => match (a.as_date(), b.as_date()) {
@@ -229,7 +240,10 @@ impl Ops {
             },
             (Dynamic(_), String(_)) | (String(_), Dynamic(_)) => {
                 let valid = |date: &Date| date.is_valid();
-                match (Date::coerce(a).filter(valid), Date::coerce(b).filter(valid)) {
+                match (
+                    Date::coerce(a, tz).filter(valid),
+                    Date::coerce(b, tz).filter(valid),
+                ) {
                     (Some(a), Some(b)) => Ok(Self::ordered(&a, &b, comparison)),
                     _ => Err(Self::unsupported("Compare")),
                 }
@@ -399,8 +413,8 @@ impl Ops {
         Ok(())
     }
 
-    pub(crate) fn len(current: &Variable) -> VMResult<Variable> {
-        Builtins::raw(&Text::LEN, &[Arg::of(current)])
+    pub(crate) fn len(current: &Variable, at: &At) -> VMResult<Variable> {
+        Builtins::raw(&Text::LEN, &[Arg::of(current)], at)
             .map(Out::variable)
             .map_err(|message| Self::error("Len", message))
     }

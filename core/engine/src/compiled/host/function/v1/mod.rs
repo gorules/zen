@@ -33,7 +33,13 @@ impl NodeHandler for FunctionV1NodeHandler {
         runtime.set_interrupt_handler(Some(interrupt_handler));
 
         let mut script = Script::new(runtime.clone());
-        let result_response = script.call(ctx.node.deref(), &ctx.input_with_nodes()).await;
+        let result_response = script
+            .call(
+                ctx.node.deref(),
+                &ctx.input_with_nodes(),
+                &ctx.extensions.eval,
+            )
+            .await;
 
         runtime.set_interrupt_handler(None);
 
@@ -75,13 +81,14 @@ impl Batch {
         &mut self,
         input: &Variable,
         nodes: Option<&Variable>,
+        eval: &zen_expression::clock::EvalContext,
     ) -> Option<Result<Variable, NodeError>> {
         if self.session.is_none() && !self.failed {
             self.session = Session::open(&self.source, MAX_DURATION);
             self.failed = self.session.is_none();
         }
         let session = self.session.as_ref()?;
-        let result = session.call(&self.layout, &NodeContextBase::joined(input, nodes));
+        let result = session.call(&self.layout, &NodeContextBase::joined(input, nodes), eval);
         if result.is_err() || !session.settled() {
             self.session = None;
         }

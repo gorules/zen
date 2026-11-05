@@ -1,9 +1,10 @@
+use crate::clock::{Clock, EvalContext};
 use crate::compiler::Compare;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{
     ClosureFunction, DateMethod, FunctionKind, InternalFunction, MethodKind, MethodRegistry,
 };
-use crate::lane::builtins::{Arg, Builtins, Dates, Out};
+use crate::lane::builtins::{Arg, At, Builtins, Dates, Out};
 use crate::lane::columns::Columns;
 use crate::lane::compile::{Hints, LaneCompiler};
 use crate::lane::date::Date;
@@ -76,23 +77,13 @@ enum Step {
 }
 
 pub(crate) struct Env<'a> {
+    eval: &'a EvalContext,
     row: usize,
     columns: Option<&'a Columns<'a>>,
     bound: &'a [Binding],
     outs: &'a [Variable],
     current: Option<&'a RefCell<Scope>>,
     roots: Option<&'a RefCell<Scope>>,
-}
-
-impl Env<'_> {
-    const EMPTY: Env<'static> = Env {
-        row: 0,
-        columns: None,
-        bound: &[],
-        outs: &[],
-        current: None,
-        roots: None,
-    };
 }
 
 pub(crate) struct Cx<'a> {
@@ -103,6 +94,21 @@ pub(crate) struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
+    #[inline]
+    fn at(&self) -> At<'a> {
+        At::new(self.env.eval, self.env.row)
+    }
+
+    #[inline]
+    fn tz(&self) -> chrono_tz::Tz {
+        self.env.eval.timezone()
+    }
+
+    #[inline]
+    fn clock(&self) -> &'a Clock {
+        self.env.eval.clock()
+    }
+
     #[inline]
     fn pointer(&self, depth: u32) -> Option<&'a Variable> {
         let mut cx = self;
@@ -576,15 +582,23 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub(crate) fn run(&self, scope: &Scope) -> Option<Variable> {
+    pub(crate) fn run(&self, scope: &Scope, eval: &EvalContext) -> Option<Variable> {
         match (self.entries.as_slice(), &self.mode) {
             ([entry], Mode::Plain) => entry(&Cx {
                 scope,
-                env: &Env::EMPTY,
+                env: &Env {
+                    eval,
+                    row: 0,
+                    columns: None,
+                    bound: &[],
+                    outs: &[],
+                    current: None,
+                    roots: None,
+                },
                 element: None,
                 up: None,
             }),
-            _ => self.run_all(scope, 0, None, &[])?.pop(),
+            _ => self.run_all(scope, 0, None, &[], eval)?.pop(),
         }
     }
 
@@ -595,6 +609,7 @@ impl Kernel {
         row: usize,
         columns: Option<&Columns>,
         bound: &[Binding],
+        eval: &EvalContext,
     ) -> Option<Values> {
         let mut values = Values::new();
         let (current, roots, bound) = match &self.mode {
@@ -613,6 +628,7 @@ impl Kernel {
                 *current.borrow_mut() = roots.borrow().clone();
             }
             let env = Env {
+                eval,
                 row,
                 columns,
                 bound,
@@ -793,8 +809,11 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     let a = a(s)?;
                     let to = match &to {
                         Some(t) => t(s)?,
-                        None => Ops::subtract(Ops::len(&a).ok()?, Variable::Number(Decimal::ONE))
-                            .ok()?,
+                        None => Ops::subtract(
+                            Ops::len(&a, &s.at()).ok()?,
+                            Variable::Number(Decimal::ONE),
+                        )
+                        .ok()?,
                     };
                     let from = match &from {
                         Some(f) => f(s)?,
@@ -942,7 +961,9 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     Key::Static(k) => Symbol::from(k.as_ref()),
                     Key::Dynamic(f) => {
                         let k = f(s)?;
-                        let text = Builtins::raw(string, &[Arg::of(&k)]).ok()?.variable();
+                        let text = Builtins::raw(string, &[Arg::of(&k)], &s.at())
+                            .ok()?
+                            .variable();
                         Ops::object_key(text).ok()?
                     }
                 };
@@ -1243,7 +1264,10 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                             let (m, sc) = Scaled::parts(&n)?;
                             Scaled::write(m, sc, &mut out);
                         }
-                        v => match Builtins::raw(string, &[Arg::of(&v)]).ok()?.variable() {
+                        v => match Builtins::raw(string, &[Arg::of(&v)], &s.at())
+                            .ok()?
+                            .variable()
+                        {
                             Variable::String(t) => out.push_str(t.as_str()),
                             _ => return None,
                         },
@@ -1353,7 +1377,8 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         builtin: &'static crate::lane::builtins::Builtin,
         codes: Vec<Code>,
     ) -> Result<Code, Vec<Code>> {
-        let call = move |views: &[Arg]| Builtins::raw(builtin, views).ok().map(Out::variable);
+        let call =
+            move |views: &[Arg], at: At| Builtins::raw(builtin, views, &at).ok().map(Out::variable);
         let mut codes = codes;
         match codes.as_slice() {
             [Code::Load(_)] => {
@@ -1361,7 +1386,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     return Err(codes);
                 };
                 Ok(Code::Val(Box::new(move |s| {
-                    l.with(s, |v| call(&[Arg::of(v)]))
+                    l.with(s, |v| call(&[Arg::of(v)], s.at()))
                 })))
             }
             [Code::Load(_), Code::Const(c)] if Self::const_arg(c).is_some() => {
@@ -1369,7 +1394,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     return Err(codes);
                 };
                 Ok(Code::Val(Box::new(move |s| {
-                    l.with(s, |v| call(&[Arg::of(v), Self::const_arg(&c)?]))
+                    l.with(s, |v| call(&[Arg::of(v), Self::const_arg(&c)?], s.at()))
                 })))
             }
             [Code::Load(_), Code::Load(_)] => {
@@ -1377,7 +1402,9 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     return Err(codes);
                 };
                 Ok(Code::Val(Box::new(move |s| {
-                    a.with(s, |x| b.with(s, |y| call(&[Arg::of(x), Arg::of(y)])))
+                    a.with(s, |x| {
+                        b.with(s, |y| call(&[Arg::of(x), Arg::of(y)], s.at()))
+                    })
                 })))
             }
             _ => Err(codes),
@@ -1430,7 +1457,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                         Variable::Array(a) => {
                             Some(Variable::Number(Decimal::from(a.borrow().len())))
                         }
-                        other => Builtins::raw(builtin, &[Arg::of(other)])
+                        other => Builtins::raw(builtin, &[Arg::of(other)], &s.at())
                             .ok()
                             .map(Out::variable),
                     })
@@ -1458,9 +1485,11 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 Ok(Code::Val(Box::new(move |s| {
                     l.with(s, |v| match v {
                         Variable::String(t) => Some(Variable::Bool(test(t.as_str(), &needle))),
-                        other => Builtins::raw(builtin, &[Arg::of(other), Arg::Str(&needle)])
-                            .ok()
-                            .map(Out::variable),
+                        other => {
+                            Builtins::raw(builtin, &[Arg::of(other), Arg::Str(&needle)], &s.at())
+                                .ok()
+                                .map(Out::variable)
+                        }
                     })
                 })))
             }
@@ -1483,7 +1512,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     .map(|f| f(s))
                     .collect::<Option<SmallVec<[Held; 4]>>>()?;
                 let views: SmallVec<[Arg; 4]> = values.iter().map(Held::arg).collect();
-                Builtins::raw(builtin, &views).ok()
+                Builtins::raw(builtin, &views, &s.at()).ok()
             }),
         ))
     }
@@ -1497,15 +1526,15 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         let builtin = Builtins::of(kind)?;
         let zone_text: Option<Box<str>> = zone.map(|(_, z)| Box::from(z));
         let zone = zone.map(|(z, _)| z);
-        Some(Code::Date(self.node(text)?.view(move |_, v| match v {
-            Variable::String(t) => Some(Date::text(t.as_str(), zone)),
+        Some(Code::Date(self.node(text)?.view(move |s, v| match v {
+            Variable::String(t) => Some(Date::text(t.as_str(), zone, s.clock())),
             other => {
                 let mut views: SmallVec<[Arg; 2]> = SmallVec::new();
                 views.push(Arg::of(other));
                 if let Some(z) = &zone_text {
                     views.push(Arg::Str(z));
                 }
-                match Builtins::raw(builtin, &views).ok()? {
+                match Builtins::raw(builtin, &views, &s.at()).ok()? {
                     Out::Date(d) => Some(d),
                     Out::Var(v) => Date::of(&v).filter(|_| !Date::sourced(&v)),
                     _ => None,
@@ -1556,7 +1585,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 return Some(Variable::Number(Scaled::decimal(m, sc)));
             }
             let array = Variable::from_array(values.into_vec());
-            Builtins::raw(builtin, &[Arg::of(&array)])
+            Builtins::raw(builtin, &[Arg::of(&array)], &s.at())
                 .ok()
                 .map(Out::variable)
         })))
@@ -1656,7 +1685,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     values.push(f(s)?);
                 }
                 let views: SmallVec<[Arg; 4]> = values.iter().map(Held::arg).collect();
-                Builtins::call_method(builtin, &kind, &views).ok()
+                Builtins::call_method(builtin, &kind, &views, &s.at()).ok()
             }),
         ))
     }
@@ -1768,7 +1797,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 let y = y.val();
                 x.view(move |s, a| {
                     let b = y(s)?;
-                    Some(Ops::equal(a, &b))
+                    Some(Ops::equal(a, &b, s.tz()))
                 })
             }
         };
@@ -1794,11 +1823,11 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
             },
             Const::String(t) => {
                 let t = t.clone();
-                x.view(move |_, v| {
+                x.view(move |cx, v| {
                     Some(match v {
                         Variable::String(s) => s.as_str() == t.as_ref(),
                         Variable::Dynamic(_) => {
-                            Ops::equal(v, &Variable::String(Symbol::from(t.as_ref())))
+                            Ops::equal(v, &Variable::String(Symbol::from(t.as_ref())), cx.tz())
                         }
                         _ => false,
                     })
@@ -1815,7 +1844,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 }
             }
             Const::Null => x.view(|_, v| Some(matches!(v, Variable::Null))),
-            _ => x.view(move |_, v| Some(Ops::equal(v, &c.variable()))),
+            _ => x.view(move |s, v| Some(Ops::equal(v, &c.variable(), s.tz()))),
         }
     }
 
@@ -1847,19 +1876,19 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
             return Some(Code::Bool(f));
         }
         let f: BoolFn = match (a, b) {
-            (x, Code::Const(Const::Number(k))) => x.view(move |_, v| match v {
+            (x, Code::Const(Const::Number(k))) => x.view(move |s, v| match v {
                 Variable::Number(n) => Some(Ops::ordered_number(n, &k, order)),
-                other => Ops::compare(other, &Variable::Number(k), order).ok(),
+                other => Ops::compare(other, &Variable::Number(k), order, s.tz()).ok(),
             }),
-            (Code::Const(Const::Number(k)), y) => y.view(move |_, v| match v {
+            (Code::Const(Const::Number(k)), y) => y.view(move |s, v| match v {
                 Variable::Number(n) => Some(Ops::ordered_number(&k, n, order)),
-                other => Ops::compare(&Variable::Number(k), other, order).ok(),
+                other => Ops::compare(&Variable::Number(k), other, order, s.tz()).ok(),
             }),
             (x, y) => {
                 let y = y.val();
                 x.view(move |s, a| {
                     let b = y(s)?;
-                    Ops::compare(a, &b, order).ok()
+                    Ops::compare(a, &b, order, s.tz()).ok()
                 })
             }
         };
@@ -1932,7 +1961,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         let (a, b) = (self.node(left)?, self.node(right)?.val());
         let test = a.view(move |s, x| {
             let y = b(s)?;
-            Ops::membership(x.clone(), &y).ok()
+            Ops::membership(x.clone(), &y, s.tz()).ok()
         });
         Some(Self::negated(test, not))
     }

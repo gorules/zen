@@ -98,7 +98,7 @@ impl Table {
             let (direct, typed) = Self::field_column(runner, bound, field, &mut failed);
             let view = direct.or_else(|| typed.as_ref().map(Array::column));
             match view {
-                Some(view) => cells.classify(p, &view, rows, &mut pieces),
+                Some(view) => cells.classify(p, &view, rows, &mut pieces, bound.eval.timezone()),
                 None => pieces.iter_mut().for_each(|x| *x = p.failed),
             }
             let stride = *stride as u32;
@@ -163,7 +163,7 @@ impl Table {
             let (direct, typed) = Self::field_column(runner, bound, field, &mut failed);
             let view = direct.or_else(|| typed.as_ref().map(Array::column));
             match view {
-                Some(view) => cells.classify(p, &view, rows, &mut pieces),
+                Some(view) => cells.classify(p, &view, rows, &mut pieces, bound.eval.timezone()),
                 None => pieces.iter_mut().for_each(|x| *x = p.failed),
             }
             for (piece, failed) in pieces.iter_mut().zip(&failed) {

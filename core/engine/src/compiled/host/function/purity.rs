@@ -1581,7 +1581,11 @@ mod tests {
             .await
             .expect("module");
         let response = function
-            .call_handler(&name, JsValueWithNodes(JsValue(Variable::Null)))
+            .call_handler(
+                &name,
+                JsValueWithNodes(JsValue(Variable::Null)),
+                &zen_expression::clock::EvalContext::default(),
+            )
             .await
             .expect("names");
         let names = response

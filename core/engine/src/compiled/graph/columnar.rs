@@ -276,12 +276,11 @@ impl CompiledGraph {
                 let inputs = Self::input_data(columns).materialized();
                 let inputs: Vec<Variable> = rows.iter().map(|&row| inputs[row].clone()).collect();
                 let completed = completed.subset(&rows);
-                crate::compiled::pinning::restart(&rows);
-                let results = crate::compiled::pinning::originated(
-                    crate::compiled::pinning::rows_origin(&rows.as_slice().into()),
-                    self.resumed(content, extensions, max_depth, &inputs, Some(&completed)),
-                )
-                .await;
+                extensions.eval.restart(&rows);
+                let scoped = extensions.scoped(extensions.eval.rows(&rows));
+                let results =
+                    Box::pin(self.resumed(content, &scoped, max_depth, &inputs, Some(&completed)))
+                        .await;
                 Some(output.splice(&rows, results))
             }
         }
@@ -314,11 +313,15 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        crate::compiled::pinning::restart(&rows);
-                        let results = crate::compiled::pinning::originated(
-                            crate::compiled::pinning::rows_origin(&rows.as_slice().into()),
-                            self.resumed(content, extensions, max_depth, &inputs, Some(&completed)),
-                        )
+                        extensions.eval.restart(&rows);
+                        let scoped = extensions.scoped(extensions.eval.rows(&rows));
+                        let results = Box::pin(self.resumed(
+                            content,
+                            &scoped,
+                            max_depth,
+                            &inputs,
+                            Some(&completed),
+                        ))
                         .await;
                         return output.splice(&rows, results);
                     }

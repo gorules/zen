@@ -15,6 +15,7 @@ use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
+use zen_expression::clock::EvalContext;
 use zen_expression::Variable;
 
 impl CompiledGraph {
@@ -365,21 +366,23 @@ impl CompiledGraph {
             true => self.nodes_of(state, &event.visible, rows),
             false => Vec::new(),
         };
-        Self::facts_of(step, &inputs, &nodes)
+        Self::facts_of(step, &inputs, &nodes, &state.eval.picked(rows.clone()))
     }
 
     pub(in crate::compiled::graph) fn facts_of(
         step: &Step,
         inputs: &[Variable],
         nodes: &[Variable],
+        eval: &EvalContext,
     ) -> Vec<Fact> {
-        Self::evaluated(step, inputs, nodes).0
+        Self::evaluated(step, inputs, nodes, eval).0
     }
 
     pub(in crate::compiled::graph) fn evaluated(
         step: &Step,
         inputs: &[Variable],
         nodes: &[Variable],
+        eval: &EvalContext,
     ) -> (Vec<Fact>, Vec<Variable>) {
         let programs = Some(step.programs());
         let mut outputs = Vec::with_capacity(inputs.len());
@@ -394,6 +397,7 @@ impl CompiledGraph {
                     nodes: nodes.get(position).cloned(),
                     programs,
                     sink: Some(&sink),
+                    eval: eval.at(position),
                 };
                 outputs.push(
                     row.now(&step.node, None, true)
@@ -444,6 +448,7 @@ impl CompiledGraph {
                 nodes: nodes.get(i).cloned().flatten(),
                 extensions: NodeHandlerExtensions {
                     function_runtime: shared.clone().unwrap_or_default(),
+                    eval: extensions.eval.at(i),
                     ..extensions.clone()
                 },
                 iteration,
@@ -454,10 +459,12 @@ impl CompiledGraph {
                     ..Default::default()
                 },
             };
-            let result = crate::compiled::pinning::at_row(
-                i,
-                Self::dispatch(step, base, Some(step.programs()), Some(&sink)),
-            )
+            let result = Box::pin(Self::dispatch(
+                step,
+                base,
+                Some(step.programs()),
+                Some(&sink),
+            ))
             .await;
             let fact = sink.into_inner();
             let fact = match (&fact, &result) {

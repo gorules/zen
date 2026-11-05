@@ -1,3 +1,4 @@
+use crate::clock::EvalContext;
 use crate::lane::date::Date;
 use crate::typed::batch::{Batch, Feeds, Origin};
 use crate::typed::build::{Build, Built, Passes, Stage};
@@ -152,10 +153,11 @@ impl Program {
         batch: &Batch,
         out: &mut Outputs,
         select: Option<&[u64]>,
+        eval: &EvalContext,
     ) -> Result<(), Unsupported> {
-        let mut feeds = Feeds::new(&self.hir, &self.classes, batch)?;
+        let mut feeds = Feeds::new(&self.hir, &self.classes, batch, eval)?;
         if self.clock {
-            feeds.now = Date::now();
+            feeds.now = Date::now(eval.clock());
         }
         if out.slots().len() != self.hir.outputs.len() {
             *out = Outputs::new(&self.hir)?;
@@ -204,7 +206,7 @@ impl Program {
 
     #[cfg(test)]
     pub(crate) fn dump(&self, batch: &Batch) -> Result<String, Unsupported> {
-        let feeds = Feeds::new(&self.hir, &self.classes, batch)?;
+        let feeds = Feeds::new(&self.hir, &self.classes, batch, &EvalContext::default())?;
         let mut sig = Vec::new();
         feeds.sig(&self.hir, &mut sig);
         Ok(self.plan(&sig).dump())

@@ -583,8 +583,13 @@ fn policy_request(x: usize, trace: TraceFormat) -> zen_engine::policy::EvaluateR
     }
 }
 
-fn pinned<R>(seed: u64, f: impl FnOnce() -> R) -> R {
-    zen_engine::clock::Clock::new(parse_instant(NOW), parse_timezone("UTC"), Some(seed)).scope(f)
+fn pinned(seed: u64) -> EvaluationOptions {
+    EvaluationOptions {
+        now: parse_instant(NOW),
+        timezone: parse_timezone("UTC"),
+        seed: Some(seed),
+        ..Default::default()
+    }
 }
 
 fn policy_trace(result: &zen_engine::policy::EvaluationResult) -> Value {
@@ -600,8 +605,12 @@ fn policy_rows_draw_from_their_streams() {
     let singles: Vec<(Value, Value)> = (0..ROWS)
         .map(|x| {
             let seed = row_seed(base, x);
-            let traced = pinned(seed, || ws.evaluate(&policy_request(x, TraceFormat::V1))).unwrap();
-            let plain = pinned(seed, || ws.evaluate(&policy_request(x, TraceFormat::Off))).unwrap();
+            let traced = ws
+                .evaluate_pinned(&policy_request(x, TraceFormat::V1), &pinned(seed))
+                .unwrap();
+            let plain = ws
+                .evaluate_pinned(&policy_request(x, TraceFormat::Off), &pinned(seed))
+                .unwrap();
             let value = serde_json::to_value(&traced.output).unwrap();
             assert_eq!(
                 value,
@@ -613,7 +622,7 @@ fn policy_rows_draw_from_their_streams() {
         .collect();
     for trace in [TraceFormat::V1, TraceFormat::Off] {
         let requests: Vec<_> = (0..ROWS).map(|x| policy_request(x, trace)).collect();
-        let batch = pinned(base, || ws.evaluate_batch(&requests));
+        let batch = ws.evaluate_batch_pinned(&requests, &pinned(base));
         for (x, result) in batch.into_iter().enumerate() {
             let result = result.unwrap();
             assert_eq!(
@@ -629,10 +638,9 @@ fn policy_rows_draw_from_their_streams() {
     let rows: Vec<Value> = (0..ROWS).map(policy_input).collect();
     let built = Built::nested(&rows).expect("columns");
     let columns = built.columns();
-    let output = pinned(base, || {
-        ws.evaluate_columns(&Arc::from("policy"), &[], &columns)
-    })
-    .unwrap();
+    let output = ws
+        .evaluate_columns_pinned(&Arc::from("policy"), &[], &columns, &pinned(base))
+        .unwrap();
     for (x, (single, _)) in singles.iter().enumerate() {
         assert_eq!(
             &serde_json::to_value(output.row(x)).unwrap(),

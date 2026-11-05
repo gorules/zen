@@ -253,8 +253,10 @@ impl CompiledGraph {
                         results.push(Err(error));
                         continue;
                     };
+                    extensions.eval.restart(&[row]);
                     let fresh = NodeHandlerExtensions {
                         function_runtime: Default::default(),
+                        eval: extensions.eval.at(row),
                         ..extensions.clone()
                     };
                     let traced = traced::Traced {
@@ -265,16 +267,7 @@ impl CompiledGraph {
                         iteration: 0,
                         parent: None,
                     };
-                    let run = match zen_expression::clock::current() {
-                        Some(clock) if clock.is_batch() => {
-                            Box::pin(crate::compiled::pinning::with(
-                                clock.fresh_stream(row),
-                                traced.run(request.deep_clone()),
-                            ))
-                            .await
-                        }
-                        _ => Box::pin(traced.run(request.deep_clone())).await,
-                    };
+                    let run = Box::pin(traced.run(request.deep_clone())).await;
                     if let Some(slot) = traces.replaced.get_mut(row) {
                         *slot = Some(run.level);
                     }

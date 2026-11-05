@@ -3,7 +3,7 @@ use super::frame::{Fault, Frame, SEGMENTS};
 use super::Executor;
 use crate::compiler::FetchFastTarget;
 use crate::functions::{FunctionKind, InternalFunction};
-use crate::lane::builtins::{Arg, Builtins, ListView, Out, Text, TextKernel};
+use crate::lane::builtins::{Arg, At, Builtins, ListView, Out, Text, TextKernel};
 use crate::lane::columns::{Column, Dictionary, Values};
 use crate::lane::effect::Effect;
 use crate::lane::mask::{LaneSet, Lanes};
@@ -42,11 +42,19 @@ impl Executor {
             .map(|id| f.consts[*id as usize].clone())
             .collect();
         let mut hint = 0usize;
+        let eval = ctx.eval;
+        let drawn = std::cell::Cell::new(ctx.first);
         let mut call = |first: Arg| -> Result<Out, Fault> {
             let mut args: smallvec::SmallVec<[Arg; 4]> = smallvec::SmallVec::new();
             args.push(first);
             args.extend(consts.iter().map(Arg::of));
-            Builtins::call_hinted(builtin, &c.kind, &args, &mut hint)
+            Builtins::call_hinted(
+                builtin,
+                &c.kind,
+                &args,
+                &mut hint,
+                &At::new(eval, drawn.get()),
+            )
         };
         let column = ctx.column(c.site);
         if let Some(Some(col)) = column {
@@ -194,7 +202,9 @@ impl Executor {
         let pure = Effect::function(&c.kind) != Effect::Random;
         for lane in Lanes::of(active & !done) {
             let mut share = None;
-            let drawn = (!pure).then(|| crate::clock::set_row(Some(ctx.drawn_row(f.rows[lane]))));
+            if !pure {
+                drawn.set(ctx.drawn_row(f.rows[lane]));
+            }
             let r = match column {
                 Some(Some(col)) => {
                     let row = ctx.base + f.rows[lane] as usize;
@@ -252,9 +262,6 @@ impl Executor {
                     Err(e) => Err(Fault::Vm(e)),
                 }),
             };
-            if let Some(previous) = drawn {
-                crate::clock::set_row(previous);
-            }
             f.write_call(c.dst, lane, r);
             if let (Some(code), false, true) =
                 (share, f.boxed[c.dst as usize].get(lane), f.alive.get(lane))
@@ -653,6 +660,7 @@ impl Executor {
         ctx: &mut Context,
     ) {
         let k = f.consts[*id as usize].clone();
+        let tz = ctx.tz();
         let d = *dst as usize;
         let mut word = f.none();
         match ctx.column(*site) {
@@ -661,7 +669,7 @@ impl Executor {
                 let mut matched = [0u64; 4];
                 if let Values::Dict { values, .. } = column.values {
                     for code in 0..values.len() {
-                        matched[code / 64] |= (values.equals(code, &k) as u64) << (code % 64);
+                        matched[code / 64] |= (values.equals(code, &k, tz) as u64) << (code % 64);
                     }
                 }
                 let null = matches!(k, Variable::Null);
@@ -719,7 +727,7 @@ impl Executor {
                     _ => {
                         for lane in Lanes::of(active) {
                             let row = ctx.base + f.rows[lane] as usize;
-                            word.put(lane, column.equals(row, &k));
+                            word.put(lane, column.equals(row, &k, tz));
                         }
                     }
                 }
@@ -736,18 +744,19 @@ impl Executor {
                     let env = ctx.envs.get(row);
                     let hit = match load {
                         Load::Env(key) => Self::lookup(key, *site, row, f, ctx, |_, r| {
-                            r.map(|v| Ops::equal(v, &k))
+                            r.map(|v| Ops::equal(v, &k, tz))
                         }),
                         Load::Path(path) => match Self::simple(path) && env.locals().is_empty() {
                             true => Ok(Self::path_with(
                                 env.base(),
                                 &path[1..],
                                 &mut f.hints[slot..],
-                                |v| Ops::equal(v, &k),
+                                |v| Ops::equal(v, &k, tz),
                             )),
                             false => Ok(Ops::equal(
                                 &Ops::fetch_fast(path, ctx.roots.get(row), env),
                                 &k,
+                                tz,
                             )),
                         },
                     };
@@ -802,7 +811,7 @@ impl Executor {
                         Some(None) => Ok(Variable::Null),
                         None => Self::row_value(load, *site, lane, f, ctx),
                     };
-                    haystack.and_then(|h| Ops::membership(f.take(*a, lane), &h))
+                    haystack.and_then(|h| Ops::membership(f.take(*a, lane), &h, ctx.tz()))
                 }
             };
             f.put(*dst, lane, result.map(Variable::Bool));

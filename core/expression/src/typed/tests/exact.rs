@@ -114,10 +114,11 @@ impl Lab {
             let shift = if size == 7 { 3 } else { 0 };
             let frame = Frame::new(&self.hir, &self.workload.spec, chunk, shift);
             let batch = frame.batch();
-            program.run(&batch, &mut out, None).expect("run");
+            let eval = crate::clock::EvalContext::default();
+            program.run(&batch, &mut out, None, &eval).expect("run");
             let typed = Self::rows_of(&out, &self.hir, &frame);
-            let mut feeds = Feeds::new(&self.hir, &[], &batch).expect("feeds");
-            feeds.now = crate::lane::date::Date::now();
+            let mut feeds = Feeds::new(&self.hir, &[], &batch, &eval).expect("feeds");
+            feeds.now = crate::lane::date::Date::now(eval.clock());
             let interp = Interp::run(&self.hir, &feeds);
             for (i, (t, r)) in typed.iter().zip(&interp).enumerate() {
                 let row = start + i;
@@ -210,12 +211,26 @@ impl Bench {
         let batch = frame.batch();
         let program = Program::new(hir).expect("program");
         let mut out = program.outputs();
-        program.run(&batch, &mut out, None).expect("run");
+        program
+            .run(
+                &batch,
+                &mut out,
+                None,
+                &crate::clock::EvalContext::default(),
+            )
+            .expect("run");
         let mut best = f64::MAX;
         for _ in 0..reps {
             let t = Instant::now();
             for _ in 0..50 {
-                program.run(&batch, &mut out, None).expect("run");
+                program
+                    .run(
+                        &batch,
+                        &mut out,
+                        None,
+                        &crate::clock::EvalContext::default(),
+                    )
+                    .expect("run");
             }
             best = best.min(t.elapsed().as_nanos() as f64 / 50.0 / size as f64);
         }

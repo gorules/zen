@@ -201,19 +201,6 @@ pub(crate) fn verify() -> bool {
 
 pub(crate) type GraphMap = HashMap<Arc<str>, DecisionGraphTrace>;
 
-pub(crate) fn graph_v1(
-    legacy: &Variable,
-    request: &Variable,
-    error: Option<(&str, &str)>,
-) -> TraceDocument {
-    graph_v1_at(
-        legacy,
-        request,
-        error,
-        crate::compiled::pinning::evaluation().as_ref(),
-    )
-}
-
 pub(crate) fn graph_v1_at(
     legacy: &Variable,
     request: &Variable,
@@ -355,7 +342,11 @@ fn policy_level(trace: Trace) -> collect::PolicyLevel {
     }
 }
 
-fn policy_native(trace: Trace, request: &Variable) -> Result<TraceDocument, Trace> {
+fn policy_native(
+    trace: Trace,
+    request: &Variable,
+    evaluation: Option<&Evaluation>,
+) -> Result<TraceDocument, Trace> {
     if !plain(&trace) {
         return Err(trace);
     }
@@ -366,9 +357,7 @@ fn policy_native(trace: Trace, request: &Variable) -> Result<TraceDocument, Trac
     let legacy = verify().then(|| policy_variable(&trace));
     let fallback = (legacy.is_some() || members).then(|| trace.clone());
     let document = match PolicyDocument::new(policy_level(trace), request) {
-        Ok(document) => {
-            TraceDocument::policy(document.with_evaluation(crate::compiled::pinning::evaluation()))
-        }
+        Ok(document) => TraceDocument::policy(document.with_evaluation(evaluation.cloned())),
         Err(miss) => {
             if std::env::var("ZEN_TRACE_NATIVE_DEBUG").is_ok_and(|v| v != "0") {
                 eprintln!("native policy trace fell back: {miss}");
@@ -403,21 +392,30 @@ pub fn policy_pair(
     documents: &str,
 ) -> (Option<TraceDocument>, TraceDocument) {
     (
-        policy_native(trace.clone(), request).ok(),
-        policy_converted(trace, request, documents),
+        policy_native(trace.clone(), request, None).ok(),
+        policy_converted(trace, request, documents, None),
     )
 }
 
-pub(crate) fn policy_v1(trace: Trace, request: &Variable, documents: &str) -> TraceDocument {
-    match policy_native(trace, request) {
+pub(crate) fn policy_v1(
+    trace: Trace,
+    request: &Variable,
+    documents: &str,
+    evaluation: Option<&Evaluation>,
+) -> TraceDocument {
+    match policy_native(trace, request, evaluation) {
         Ok(doc) => doc,
-        Err(trace) => policy_converted(&trace, request, documents),
+        Err(trace) => policy_converted(&trace, request, documents, evaluation),
     }
 }
 
-fn policy_converted(trace: &Trace, request: &Variable, documents: &str) -> TraceDocument {
+fn policy_converted(
+    trace: &Trace,
+    request: &Variable,
+    documents: &str,
+    evaluation: Option<&Evaluation>,
+) -> TraceDocument {
     let legacy = policy_variable(trace);
-    let evaluation = crate::compiled::pinning::evaluation();
     let args = ConvertArgs {
         trace: LegacyTrace::Variable(&legacy),
         request: Input::Variable(request),
@@ -425,7 +423,7 @@ fn policy_converted(trace: &Trace, request: &Variable, documents: &str) -> Trace
         engine_version: None,
         documents: Some(Input::Json(documents)),
         verify: verify(),
-        evaluation: evaluation.as_ref(),
+        evaluation,
     };
     match api::convert(args) {
         Ok(output) => TraceDocument::from_output(output),
@@ -515,19 +513,6 @@ pub fn native_misses() -> usize {
     MISSES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-pub(crate) fn written(
-    level: &collect::Level,
-    request: &Variable,
-    error: Option<(&str, &str)>,
-) -> TraceDocument {
-    written_at(
-        level,
-        request,
-        error,
-        crate::compiled::pinning::evaluation().as_ref(),
-    )
-}
-
 pub(crate) fn written_at(
     level: &collect::Level,
     request: &Variable,
@@ -584,6 +569,7 @@ pub(crate) fn failure(
 pub(crate) fn pair(
     request: Request,
     run: crate::compiled::traced::Run,
+    evaluation: Option<&Evaluation>,
 ) -> Option<(TraceDocument, TraceDocument)> {
     let run = cleaned(run);
     let failed = failure(&run.result);
@@ -592,8 +578,8 @@ pub(crate) fn pair(
     }
     let error = failed.as_ref().map(|(n, m)| (&**n, m.as_str()));
     Some((
-        written(&run.level, &request.0, error),
-        graph_v1(&run.level.legacy(), &request.0, error),
+        written_at(&run.level, &request.0, error, evaluation),
+        graph_v1_at(&run.level.legacy(), &request.0, error, evaluation),
     ))
 }
 
@@ -602,13 +588,14 @@ pub(crate) fn collected(
     request: Request,
     run: crate::compiled::traced::Run,
     start: std::time::Instant,
+    evaluation: Option<&Evaluation>,
 ) -> GraphResult {
     let crate::compiled::traced::Run { result, level } = cleaned(run);
     let performance = format!("{:.1?}", start.elapsed());
     let request = request.0;
     match result {
         Ok(result) => {
-            let doc = written(&level, &request, None);
+            let doc = written_at(&level, &request, None, evaluation);
             let trace = match format {
                 TraceFormat::Legacy => EvaluationTrace::Graph(
                     restore(&doc, &request, None)
@@ -629,7 +616,7 @@ pub(crate) fn collected(
                 node_id, source, ..
             } => {
                 let message = source.to_string();
-                let doc = written(&level, &request, Some((&node_id, &message)));
+                let doc = written_at(&level, &request, Some((&node_id, &message)), evaluation);
                 let trace = match format {
                     TraceFormat::Legacy => {
                         restore(&doc, &request, None).unwrap_or_else(|| level.legacy())
@@ -654,7 +641,7 @@ pub struct TraceBatch {
     owned: Vec<Variable>,
     failures: Vec<Option<(Arc<str>, String)>>,
     format: TraceFormat,
-    clock: Option<Arc<zen_expression::clock::Clock>>,
+    eval: zen_expression::clock::EvalContext,
 }
 
 impl TraceBatch {
@@ -664,6 +651,7 @@ impl TraceBatch {
         owned: Vec<Variable>,
         results: &[Result<Variable, Box<EvaluationError>>],
         format: TraceFormat,
+        eval: &zen_expression::clock::EvalContext,
     ) -> Self {
         Self {
             hint: std::cell::Cell::new(256),
@@ -672,7 +660,7 @@ impl TraceBatch {
             owned,
             failures: results.iter().map(failure).collect(),
             format,
-            clock: zen_expression::clock::current(),
+            eval: eval.clone(),
         }
     }
 
@@ -682,6 +670,7 @@ impl TraceBatch {
         owned: Vec<Variable>,
         failures: Vec<Option<(Arc<str>, String)>>,
         format: TraceFormat,
+        eval: &zen_expression::clock::EvalContext,
     ) -> Self {
         Self {
             hint: std::cell::Cell::new(256),
@@ -690,14 +679,12 @@ impl TraceBatch {
             owned,
             failures,
             format,
-            clock: zen_expression::clock::current(),
+            eval: eval.clone(),
         }
     }
 
     fn evaluation(&self, row: usize) -> Option<Evaluation> {
-        self.clock
-            .as_ref()
-            .map(|clock| crate::compiled::pinning::row_evaluation(clock, row))
+        Some(crate::compiled::pinning::row_evaluation(&self.eval, row))
     }
 
     fn columnar(&self, row: usize, out: &mut String) -> bool {

@@ -9,6 +9,7 @@ mod number;
 mod switch;
 mod text;
 
+use crate::clock::EvalContext;
 use crate::functions::{FunctionKind, InternalFunction};
 use crate::lane::builtins::{Arg, Builtins, Out};
 use crate::lane::interval::{Interval, IntervalData};
@@ -20,6 +21,7 @@ use crate::lane::program::{
 };
 use crate::lane::scaled::Scaled;
 use crate::variable::Variable;
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use zen_types::symbol::Symbol;
 
@@ -155,7 +157,7 @@ impl Executor {
     }
 
     #[inline]
-    fn equal_lane<M: LaneSet>(f: &Frame<M>, a: Reg, b: Reg, lane: usize) -> Option<bool> {
+    fn equal_lane<M: LaneSet>(f: &Frame<M>, a: Reg, b: Reg, lane: usize, tz: Tz) -> Option<bool> {
         let typed = |reg: Reg, value: &Variable| match (f.kind(reg), value) {
             (Kind::List, _) => Some(false),
             (Kind::Str, Variable::String(s)) => Some(f.text_at(reg, lane) == s.as_str()),
@@ -168,7 +170,11 @@ impl Executor {
             _ => None,
         };
         match (f.generic(a, lane), f.generic(b, lane)) {
-            (true, true) => Some(Ops::equal(&f.regs[f.at(a, lane)], &f.regs[f.at(b, lane)])),
+            (true, true) => Some(Ops::equal(
+                &f.regs[f.at(a, lane)],
+                &f.regs[f.at(b, lane)],
+                tz,
+            )),
             (false, true) => typed(a, &f.regs[f.at(b, lane)]),
             (true, false) => typed(b, &f.regs[f.at(a, lane)]),
             (false, false) => match (f.kind(a), f.kind(b)) {
@@ -226,6 +232,7 @@ impl Executor {
         total: usize,
         width: usize,
         draws: bool,
+        eval: &EvalContext,
         row: impl Fn(usize) -> usize,
     ) -> smallvec::SmallVec<[(usize, usize); 4]> {
         let mut out = smallvec::SmallVec::new();
@@ -238,11 +245,7 @@ impl Executor {
             }
             return out;
         }
-        let streamed = crate::clock::streamed();
-        let key = |i: usize| match streamed {
-            true => crate::clock::stream_key(row(i)),
-            false => 0,
-        };
+        let key = |i: usize| eval.stream(row(i));
         let cap = crate::lane::Word::LANES.min(width);
         let (mut start, mut n, mut i) = (0usize, 0usize, 0usize);
         while i < total {
@@ -387,7 +390,7 @@ impl Executor {
             }
             Op::Stage { index } => f.stage = *index,
             Op::Num { dst, op, a, b } => Self::num(*op, *dst, *a, *b, active, f),
-            Op::Cmp { dst, op, a, b } => Self::cmp(*op, *dst, *a, *b, active, f),
+            Op::Cmp { dst, op, a, b } => Self::cmp(*op, *dst, *a, *b, active, f, ctx.tz()),
             Op::Env { site, dst, .. } | Op::Path { site, dst, .. }
                 if ctx.column(*site).is_some() =>
             {
@@ -734,8 +737,9 @@ impl Executor {
                 }
                 if slow.any() {
                     let k = f.consts[*id as usize].clone();
+                    let tz = ctx.tz();
                     for lane in Lanes::of(slow) {
-                        if f.with(*a, lane, |v| Ops::equal(v, &k)) {
+                        if f.with(*a, lane, |v| Ops::equal(v, &k, tz)) {
                             word.set(lane);
                         }
                     }
@@ -787,7 +791,7 @@ impl Executor {
                                 *right,
                             )
                         }) {
-                            Ok(range) => Ops::membership(x, range),
+                            Ok(range) => Ops::membership(x, range, ctx.tz()),
                             Err(e) => Err(e.clone()),
                         },
                     };
@@ -804,8 +808,9 @@ impl Executor {
                 let (done, mut word) = Self::any_number(*a, *id, active, f);
                 if let Variable::Array(list) = &f.consts[*id as usize] {
                     let list = list.borrow();
+                    let tz = ctx.tz();
                     for lane in Lanes::of(active & !done) {
-                        let hit = f.with(*a, lane, |x| list.iter().any(|k| Ops::equal(x, k)));
+                        let hit = f.with(*a, lane, |x| list.iter().any(|k| Ops::equal(x, k, tz)));
                         word.put(lane, hit);
                     }
                 }
@@ -819,7 +824,8 @@ impl Executor {
                 f.boxed[d] &= !done;
                 for lane in Lanes::of(active & !done) {
                     let x = f.take(*a, lane);
-                    let r = Ops::membership(x, &f.consts[*id as usize]).map(Variable::Bool);
+                    let r =
+                        Ops::membership(x, &f.consts[*id as usize], ctx.tz()).map(Variable::Bool);
                     f.put(*dst, lane, r);
                 }
             }
@@ -844,7 +850,7 @@ impl Executor {
             } => {
                 for lane in Lanes::of(active) {
                     let (x, y) = (f.take(*a, lane), f.take(*b, lane));
-                    match Ops::compared(&x, &y, *c) {
+                    match Ops::compared(&x, &y, *c, ctx.tz()) {
                         Some(hit) => f.set(*dst, lane, Variable::Bool(hit)),
                         None => f.fault(lane, Fault::Unsupported("Compare")),
                     }
@@ -858,7 +864,7 @@ impl Executor {
             } => {
                 let (mut word, mut done) = (f.none(), f.none());
                 for lane in Lanes::of(active) {
-                    if let Some(hit) = Self::equal_lane(f, *a, *b, lane) {
+                    if let Some(hit) = Self::equal_lane(f, *a, *b, lane, ctx.tz()) {
                         word.put(lane, hit);
                         done.set(lane);
                     }
@@ -877,7 +883,7 @@ impl Executor {
                 }
                 for lane in Lanes::of(active & !done) {
                     let (x, y) = (f.take(*a, lane), f.take(*b, lane));
-                    f.put(*dst, lane, Ok(Variable::Bool(Ops::equal(&x, &y))));
+                    f.put(*dst, lane, Ok(Variable::Bool(Ops::equal(&x, &y, ctx.tz()))));
                 }
             }
             Op::Binary { dst, op, a, b } => {
@@ -904,9 +910,11 @@ impl Executor {
                         Binary::Divide => Ops::divide(x, y),
                         Binary::Modulo => Ops::modulo(x, y),
                         Binary::Exponent => Ops::exponent(x, y),
-                        Binary::Equal => Ok(Variable::Bool(Ops::equal(&x, &y))),
-                        Binary::In => Ops::membership(x, &y).map(Variable::Bool),
-                        Binary::Compare(c) => Ops::compare(&x, &y, *c).map(Variable::Bool),
+                        Binary::Equal => Ok(Variable::Bool(Ops::equal(&x, &y, ctx.tz()))),
+                        Binary::In => Ops::membership(x, &y, ctx.tz()).map(Variable::Bool),
+                        Binary::Compare(c) => {
+                            Ops::compare(&x, &y, *c, ctx.tz()).map(Variable::Bool)
+                        }
                     };
                     f.put(*dst, lane, r);
                 }
@@ -931,7 +939,8 @@ impl Executor {
             }
             Op::Len { dst, a } => {
                 for lane in Lanes::of(active) {
-                    let r = f.with(*a, lane, Ops::len);
+                    let at = ctx.here();
+                    let r = f.with(*a, lane, |v| Ops::len(v, &at));
                     f.put(*dst, lane, r);
                 }
             }
@@ -972,7 +981,7 @@ impl Executor {
                 dst,
                 items,
                 largest,
-            } => Self::extreme(*dst, items, *largest, active, f),
+            } => Self::extreme(*dst, items, *largest, active, f, ctx.here()),
             Op::Concat { dst, a, b } => {
                 let typed = match f.kind(*dst) {
                     Kind::Str => active & !f.boxed[*a as usize] & !f.boxed[*b as usize],
@@ -1036,14 +1045,16 @@ impl Executor {
                 for lane in Lanes::of(active & !typed) {
                     if f.with(a, lane, |value| matches!(value, Variable::Null)) {
                         let r = null
-                            .get_or_insert_with(|| Builtins::call(builtin, &kind, &[Arg::Null]))
+                            .get_or_insert_with(|| {
+                                Builtins::call(builtin, &kind, &[Arg::Null], &ctx.here())
+                            })
                             .clone();
                         f.write(*dst, lane, r);
                         continue;
                     }
                     let r = {
                         let value = f.arg_view(a, lane);
-                        Builtins::call(builtin, &kind, &[value])
+                        Builtins::call(builtin, &kind, &[value], &ctx.here())
                     };
                     f.write(*dst, lane, r);
                 }
@@ -1067,9 +1078,13 @@ impl Executor {
                                 Input::Reg(r) => f.arg_view(r, lane),
                             })
                             .collect();
-                        crate::clock::at_row(ctx.drawn_row(f.rows[lane]), || {
-                            Builtins::call_hinted(builtin, kind, &values, &mut hint)
-                        })
+                        Builtins::call_hinted(
+                            builtin,
+                            kind,
+                            &values,
+                            &mut hint,
+                            &ctx.at(f.rows[lane]),
+                        )
                     };
                     f.write_call(*dst, lane, result);
                 }
@@ -1086,7 +1101,7 @@ impl Executor {
                 if done.is_empty() {
                     done = Self::number_call(*dst, kind, args, active, f)
                         | Self::list_call(*dst, kind, args, active, f)
-                        | Self::date_call(*dst, kind, args, active, f);
+                        | Self::date_call(*dst, kind, args, active, f, ctx.here());
                 }
                 done |= Self::member_call(*dst, kind, args, active & !done, f);
                 done |= Self::length_call(*dst, kind, args, active & !done, f);
@@ -1103,7 +1118,7 @@ impl Executor {
                                 Input::Reg(_) => None,
                             })
                             .collect();
-                        Builtins::call_hinted(builtin, kind, &values, &mut hint)
+                        Builtins::call_hinted(builtin, kind, &values, &mut hint, &ctx.here())
                     };
                     for lane in Lanes::of(rest) {
                         let copy = match &result {
@@ -1126,7 +1141,7 @@ impl Executor {
                                 Input::Reg(r) => f.arg_view(r, lane),
                             })
                             .collect();
-                        Builtins::call_hinted(builtin, kind, &values, &mut hint)
+                        Builtins::call_hinted(builtin, kind, &values, &mut hint, &ctx.here())
                     };
                     f.write_call(*dst, lane, result);
                 }
@@ -1144,7 +1159,7 @@ impl Executor {
                                 Input::Reg(r) => f.arg_view(r, lane),
                             })
                             .collect();
-                        Builtins::call_method(builtin, kind, &values)
+                        Builtins::call_method(builtin, kind, &values, &ctx.here())
                     };
                     f.write(*dst, lane, result);
                 }

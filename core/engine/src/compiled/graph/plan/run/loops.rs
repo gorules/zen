@@ -88,10 +88,11 @@ impl<'a> Run<'_, 'a> {
                     .fail(row, &step.node, Rc::from("Expected an array")),
             }
         }
-        let produced = {
-            let _origin = draws.then(|| zen_expression::clock::items(owners.into()));
-            CompiledGraph::items(&mut self.runner, step, body, &items, &[])
+        let eval = match draws {
+            true => self.host.extensions.eval.items(&owners),
+            false => self.host.extensions.eval.clone(),
         };
+        let produced = CompiledGraph::items(&mut self.runner, &eval, step, body, &items, &[]);
         let mut values = vec![Variable::Null; rows];
         for (row, start, end) in spans {
             let mut collected = Vec::with_capacity(end - start);
@@ -244,7 +245,13 @@ impl<'a> Run<'_, 'a> {
         }
         let items: Rc<[usize]> = (0..count).collect();
         let data = Data::record(&items, Layer::new(keys.into(), leaves, Some(present)), None);
-        let (output, failures) = CompiledGraph::item_run(&mut self.runner, step, body, &data);
+        let (output, failures) = CompiledGraph::item_run(
+            &mut self.runner,
+            &self.host.extensions.eval,
+            step,
+            body,
+            &data,
+        );
         let paths: Vec<(Arc<str>, Leaf<'a>)> = output.leaves().to_vec();
         let shaped = matches!(output.shape, DataShape::Patched { base: None, .. })
             && paths

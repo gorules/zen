@@ -307,7 +307,12 @@ impl<'a> Run<'_, 'a> {
                             )
                             .unwrap_or_else(|reason| {
                                 crate::compiled::trace::reevaluated(reason, rows.len());
-                                Facts::Rows(CompiledGraph::facts_of(step, &inputs, &nodes))
+                                Facts::Rows(CompiledGraph::facts_of(
+                                    step,
+                                    &inputs,
+                                    &nodes,
+                                    &self.host.extensions.eval.rows(&rows),
+                                ))
                             });
                             (facts, hosted.values)
                         }
@@ -316,7 +321,12 @@ impl<'a> Run<'_, 'a> {
                                 "plan hosts the node row by row",
                                 rows.len(),
                             );
-                            let (facts, outputs) = CompiledGraph::evaluated(step, &inputs, &nodes);
+                            let (facts, outputs) = CompiledGraph::evaluated(
+                                step,
+                                &inputs,
+                                &nodes,
+                                &self.host.extensions.eval.rows(&rows),
+                            );
                             (Facts::Rows(facts), outputs.into())
                         }
                     };
@@ -479,7 +489,12 @@ impl<'a> Run<'_, 'a> {
         }
         crate::compiled::trace::reevaluated(reason, count);
         let inputs = self.merged_inputs(event, rows)?;
-        Some(Facts::Rows(CompiledGraph::facts_of(step, &inputs, &[])))
+        Some(Facts::Rows(CompiledGraph::facts_of(
+            step,
+            &inputs,
+            &[],
+            &self.host.extensions.eval.picked(rows.clone()),
+        )))
     }
 
     fn merged_inputs(

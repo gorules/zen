@@ -1,4 +1,4 @@
-use crate::lane::builtins::{Apply, Array, Builtin, Fail, Params};
+use crate::lane::builtins::{Apply, Array, At, Builtin, Fail, Params};
 use crate::lane::date::Date;
 use crate::lane::date::DynamicVariableExt;
 use crate::variable::Variable;
@@ -41,22 +41,22 @@ impl Math {
     }
 
     pub(crate) const ABS: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Decimal| Ok(a.abs()))],
+        overloads: &[|_, args| Apply::one(args, |a: Decimal| Ok(a.abs()))],
         fail: |args| Params::fail(args, Self::NUMBER),
     };
 
     pub(crate) const CEIL: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Decimal| Ok(a.ceil()))],
+        overloads: &[|_, args| Apply::one(args, |a: Decimal| Ok(a.ceil()))],
         fail: |args| Params::fail(args, Self::NUMBER),
     };
 
     pub(crate) const FLOOR: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Decimal| Ok(a.floor()))],
+        overloads: &[|_, args| Apply::one(args, |a: Decimal| Ok(a.floor()))],
         fail: |args| Params::fail(args, Self::NUMBER),
     };
 
     pub(crate) const ROUND: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::two(args, |a: Decimal, places: Option<Decimal>| {
                 Ok(a.round_dp_with_strategy(
                     Self::places(places)?,
@@ -68,7 +68,7 @@ impl Math {
     };
 
     pub(crate) const TRUNC: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::two(args, |a: Decimal, places: Option<Decimal>| {
                 Ok(a.trunc_with_scale(Self::places(places)?))
             })
@@ -77,20 +77,20 @@ impl Math {
     };
 
     pub(crate) const RAND: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|at: &At, args| {
             Apply::one(args, |a: Decimal| {
                 let upper = a
                     .round()
                     .to_i64()
                     .ok_or_else(|| "Invalid upper range".to_string())?;
-                Ok(Decimal::from(crate::clock::random_int(upper)))
+                Ok(Decimal::from(at.random_int(upper)))
             })
         }],
         fail: |args| Params::fail(args, Self::NUMBER),
     };
 
     pub(crate) const SUM: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 let numbers = a
                     .numbers()
@@ -102,7 +102,7 @@ impl Math {
     };
 
     pub(crate) const AVG: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 let numbers = a
                     .numbers()
@@ -116,7 +116,7 @@ impl Math {
     };
 
     pub(crate) const MEDIAN: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 let mut values = Self::numbers(&a)?;
                 values.sort();
@@ -146,7 +146,7 @@ impl Math {
     };
 
     pub(crate) const MODE: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 let mut counts = BTreeMap::new();
                 for n in Self::numbers(&a)? {
@@ -208,12 +208,12 @@ impl Math {
     }
 
     pub(crate) const MIN: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Array| Self::pick(a, false))],
+        overloads: &[|_, args| Apply::one(args, |a: Array| Self::pick(a, false))],
         fail: |args| Params::fail(args, Self::ARRAY),
     };
 
     pub(crate) const MAX: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Array| Self::pick(a, true))],
+        overloads: &[|_, args| Apply::one(args, |a: Array| Self::pick(a, true))],
         fail: |args| Params::fail(args, Self::ARRAY),
     };
 }

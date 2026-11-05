@@ -3,6 +3,7 @@ use crate::compiled::host::{NodeResponse, NodeResult};
 use crate::compiled::trace::collect::Fact;
 use std::future::Future;
 use std::ops::Deref;
+use zen_expression::clock::EvalContext;
 use zen_expression::Variable;
 use zen_types::decision::{TransformAttributes, TransformExecutionMode};
 
@@ -13,7 +14,7 @@ impl Row<'_> {
         evaluate: F,
     ) -> NodeResult
     where
-        F: Fn(Variable, bool) -> Fut,
+        F: Fn(Variable, bool, EvalContext) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
         let input = match &attributes.input_field {
@@ -28,7 +29,7 @@ impl Row<'_> {
 
         let output = match attributes.execution_mode {
             TransformExecutionMode::Single => {
-                let response = evaluate(input, false).await?;
+                let response = evaluate(input, false, self.eval.clone()).await?;
                 if let Some(td) = response.trace_data {
                     self.push(Fact::Data(td));
                 }
@@ -47,8 +48,7 @@ impl Row<'_> {
                 for (index, input) in input_array.iter().enumerate() {
                     let has_more = index < input_array.len() - 1;
                     let response =
-                        crate::compiled::pinning::item(index, evaluate(input.clone(), has_more))
-                            .await?;
+                        Box::pin(evaluate(input.clone(), has_more, self.eval.item(index))).await?;
                     if let Some(items) = items.as_mut() {
                         let fact = match (self.take(), response.trace_data) {
                             (Fact::None, Some(td)) => Fact::Data(td),

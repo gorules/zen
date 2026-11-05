@@ -8,6 +8,7 @@ use crate::lane::program::{Kind, Subject, SwitchOp};
 use crate::lane::scaled::Scaled;
 use crate::lane::ShortKey;
 use crate::variable::Variable;
+use chrono_tz::Tz;
 use zen_types::symbol::Symbol;
 
 impl Executor {
@@ -17,7 +18,7 @@ impl Executor {
         picks.resize(f.width, 0);
         let done = match op.subject {
             Subject::Site(site) => Self::switch_column(op, site, active, f, ctx, &mut picks),
-            Subject::Reg(reg) => Self::switch_register(op, reg, active, f, &mut picks),
+            Subject::Reg(reg) => Self::switch_register(op, reg, active, f, &mut picks, ctx.tz()),
         };
         if done.any() {
             Self::switch_write(op, done, f, &picks);
@@ -99,7 +100,11 @@ impl Executor {
                         op.cases
                             .iter()
                             .position(|case| {
-                                values.equals(code, &Variable::String(Symbol::from(case.as_ref())))
+                                values.equals(
+                                    code,
+                                    &Variable::String(Symbol::from(case.as_ref())),
+                                    ctx.tz(),
+                                )
                             })
                             .map_or(fallback, |at| at as u8)
                     })
@@ -126,6 +131,7 @@ impl Executor {
         active: M,
         f: &mut Frame<M>,
         picks: &mut [u8],
+        tz: Tz,
     ) -> M {
         let fallback = op.cases.len() as u8;
         let typed = match f.kind(reg) {
@@ -159,7 +165,7 @@ impl Executor {
         for lane in Lanes::of(active & !typed) {
             picks[lane] = f
                 .with(reg, lane, |value| {
-                    cases.iter().position(|case| Ops::equal(value, case))
+                    cases.iter().position(|case| Ops::equal(value, case, tz))
                 })
                 .map_or(fallback, |at| at as u8);
         }

@@ -234,8 +234,10 @@ impl CompiledGraph {
             if !errored && !deferred.contains(&row) {
                 continue;
             }
+            extensions.eval.restart(&[row]);
             let fresh = NodeHandlerExtensions {
                 function_runtime: Default::default(),
+                eval: extensions.eval.at(row),
                 ..extensions.clone()
             };
             let traced = crate::compiled::traced::Traced {
@@ -258,6 +260,7 @@ impl CompiledGraph {
             Vec::new(),
             failures,
             format,
+            &extensions.eval,
         )
     }
 }

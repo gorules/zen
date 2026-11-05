@@ -444,7 +444,14 @@ impl<'s, 'a> Pass<'s, 'a> {
             })
             .collect::<Option<_>>()?;
         let positions: Option<Rc<[usize]>> = (!full).then(|| rows.into());
-        Dedup::coded(program, &leaves, &codes, positions.as_ref(), total)
+        Dedup::coded(
+            program,
+            &leaves,
+            &codes,
+            positions.as_ref(),
+            total,
+            &self.state.eval,
+        )
     }
 
     fn execute(
@@ -508,7 +515,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 .collect(),
             select,
         };
-        call.run(program)
+        call.run(program, &self.state.eval)
     }
 
     fn listing(

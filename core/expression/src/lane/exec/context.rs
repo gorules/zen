@@ -1,6 +1,9 @@
+use crate::clock::EvalContext;
+use crate::lane::builtins::At;
 use crate::lane::columns::{Column, Columns, Values};
 use crate::lane::program::{Binding, Program, Reg};
 use crate::scope::Scope;
+use chrono_tz::Tz;
 
 pub enum Envs<'a> {
     Shared(&'a [Scope]),
@@ -25,6 +28,7 @@ impl Envs<'_> {
 }
 
 pub struct Context<'a> {
+    pub eval: &'a EvalContext,
     pub roots: Envs<'a>,
     pub envs: Envs<'a>,
     pub columns: Option<&'a Columns<'a>>,
@@ -36,7 +40,7 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(program: &Program, roots: &'a [Scope]) -> Self {
+    pub fn new(program: &Program, roots: &'a [Scope], eval: &'a EvalContext) -> Self {
         let envs = match program.writes_env {
             true => Envs::Owned(roots.to_vec()),
             false => Envs::Shared(roots),
@@ -46,6 +50,7 @@ impl<'a> Context<'a> {
             false => Envs::Shared(roots),
         };
         Self {
+            eval,
             roots,
             envs,
             columns: None,
@@ -63,8 +68,9 @@ impl<'a> Context<'a> {
         columns: &'a Columns<'a>,
         bound: &'a [Binding],
         base: usize,
+        eval: &'a EvalContext,
     ) -> Self {
-        let mut ctx = Self::new(program, roots);
+        let mut ctx = Self::new(program, roots, eval);
         ctx.columns = Some(columns);
         ctx.bound = bound;
         ctx.base = base;
@@ -75,6 +81,21 @@ impl<'a> Context<'a> {
     #[inline]
     pub(super) fn drawn_row(&self, row: u32) -> usize {
         self.first + row as usize
+    }
+
+    #[inline]
+    pub(crate) fn at(&self, row: u32) -> At<'a> {
+        At::new(self.eval, self.drawn_row(row))
+    }
+
+    #[inline]
+    pub(crate) fn here(&self) -> At<'a> {
+        At::new(self.eval, self.first)
+    }
+
+    #[inline]
+    pub(crate) fn tz(&self) -> Tz {
+        self.eval.timezone()
     }
 
     pub(super) fn view(&self, program: u64, reg: Reg) -> Option<Column<'a>> {

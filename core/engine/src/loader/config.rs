@@ -48,14 +48,15 @@ impl LoaderConfig {
         use std::io::Read;
 
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+        archive.validate_header_consistency()?;
         let loader = MemoryLoader::default();
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            if !entry.is_file() || !entry.name().ends_with(".json") {
+            let key = entry.name()?.to_string();
+            if !entry.is_file() || !key.ends_with(".json") {
                 continue;
             }
 
-            let key = entry.name().to_string();
             let mut buffer = Vec::with_capacity(entry.size() as usize);
             entry.read_to_end(&mut buffer)?;
             let content: DecisionContent = serde_json::from_slice(&buffer)?;
@@ -118,5 +119,27 @@ mod tests {
 
         assert!(loader.load("graph.json").await.is_ok());
         assert!(loader.load("missing.json").await.is_err());
+    }
+
+    #[test]
+    fn zip_config_rejects_cloaked_entry_names() {
+        use std::io::Write;
+
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            writer
+                .start_file("graph.json", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(GRAPH_JSON.as_bytes()).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let mut bytes = cursor.into_inner();
+        let local_name = 30..30 + "graph.json".len();
+        assert_eq!(&bytes[local_name.clone()], b"graph.json");
+        bytes[local_name].copy_from_slice(b"other.json");
+
+        assert!(LoaderConfig::Zip { bytes }.into_loader().is_err());
     }
 }

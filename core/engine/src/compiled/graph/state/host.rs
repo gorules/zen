@@ -346,7 +346,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs: None,
                     trace,
-                    eval: base.extensions.eval.clone(),
+                    context: base.extensions.context.clone(),
                 };
                 call.node(row, &content.transform_attributes).await
             }
@@ -363,7 +363,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs,
                     trace,
-                    eval: base.extensions.eval.clone(),
+                    context: base.extensions.context.clone(),
                 };
                 row.node(node, index, true).await
             }

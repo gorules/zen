@@ -49,12 +49,12 @@ impl<'s, 'a> Pass<'s, 'a> {
         if p.writes_env || p.chain || p.opaque() || p.rows {
             let scopes: Vec<Scope> = positions.iter().map(|&row| self.scope(row)).collect();
             let mut values = vec![Variable::Null; positions.len()];
-            let eval = match p.draws {
-                true => self.state.eval.rows(positions),
-                false => self.state.eval.clone(),
+            let context = match p.draws {
+                true => self.state.context.rows(positions),
+                false => self.state.context.clone(),
             };
             self.runner
-                .evaluate_with(program, &eval, &scopes, |at, result| match result {
+                .evaluate_with(program, &context, &scopes, |at, result| match result {
                     Ok(value) => values[at] = value,
                     Err(_) => failed[at] = true,
                 });
@@ -215,7 +215,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         Self::prefer_codes(program, &mut outs);
         self.runner.evaluate_sites(
             program,
-            &self.state.eval,
+            &self.state.context,
             scopes.slice(),
             &columns,
             &bound,

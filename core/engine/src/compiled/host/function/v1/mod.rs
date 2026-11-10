@@ -37,7 +37,7 @@ impl NodeHandler for FunctionV1NodeHandler {
             .call(
                 ctx.node.deref(),
                 &ctx.input_with_nodes(),
-                &ctx.extensions.eval,
+                &ctx.extensions.context,
             )
             .await;
 
@@ -81,14 +81,18 @@ impl Batch {
         &mut self,
         input: &Variable,
         nodes: Option<&Variable>,
-        eval: &zen_expression::context::EvaluationContext,
+        context: &zen_expression::context::EvaluationContext,
     ) -> Option<Result<Variable, NodeError>> {
         if self.session.is_none() && !self.failed {
             self.session = Session::open(&self.source, MAX_DURATION);
             self.failed = self.session.is_none();
         }
         let session = self.session.as_ref()?;
-        let result = session.call(&self.layout, &NodeContextBase::joined(input, nodes), eval);
+        let result = session.call(
+            &self.layout,
+            &NodeContextBase::joined(input, nodes),
+            context,
+        );
         if result.is_err() || !session.settled() {
             self.session = None;
         }

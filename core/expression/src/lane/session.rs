@@ -65,7 +65,7 @@ impl Programs {
 
 #[derive(Debug, Default)]
 pub struct Session {
-    eval: Option<EvaluationContext>,
+    context: Option<EvaluationContext>,
     scope: Scope,
     references: HashMap<String, Variable>,
     programs: Option<Arc<Programs>>,
@@ -87,13 +87,13 @@ impl Session {
         session
     }
 
-    pub fn with_eval(mut self, eval: EvaluationContext) -> Self {
-        self.eval = Some(eval);
+    pub fn with_context(mut self, context: EvaluationContext) -> Self {
+        self.context = Some(context);
         self
     }
 
-    pub fn set_eval(&mut self, eval: EvaluationContext) {
-        self.eval = Some(eval);
+    pub fn set_context(&mut self, context: EvaluationContext) {
+        self.context = Some(context);
     }
 
     pub fn with_programs(mut self, programs: Option<Arc<Programs>>) -> Self {
@@ -167,24 +167,24 @@ impl Session {
     }
 
     fn run(&mut self, source: &str, kind: ExpressionKind) -> Result<Variable, IsolateError> {
-        let eval = self.eval.get_or_insert_with(EvaluationContext::default);
+        let context = self.context.get_or_insert_with(EvaluationContext::default);
         let program = match self.programs.as_deref().and_then(|p| p.get(source, &kind)) {
             Some(program) => program,
             None => self.fallback.insert(source, kind.clone()),
         };
         match program {
-            Some(program) => Self::evaluate(program, eval, &self.scope),
-            None => Self::evaluate(&LaneProgram::compile(source, kind)?, eval, &self.scope),
+            Some(program) => Self::evaluate(program, context, &self.scope),
+            None => Self::evaluate(&LaneProgram::compile(source, kind)?, context, &self.scope),
         }
     }
 
     fn evaluate(
         program: &LaneProgram,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         scope: &Scope,
     ) -> Result<Variable, IsolateError> {
         let mut runner = Self::RUNNER.take();
-        let result = runner.evaluate_one(program, eval, scope);
+        let result = runner.evaluate_one(program, context, scope);
         Self::RUNNER.set(runner);
         result
     }

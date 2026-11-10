@@ -28,7 +28,7 @@ impl Envs<'_> {
 }
 
 pub struct Context<'a> {
-    pub eval: &'a EvaluationContext,
+    pub context: &'a EvaluationContext,
     pub roots: Envs<'a>,
     pub envs: Envs<'a>,
     pub columns: Option<&'a Columns<'a>>,
@@ -40,7 +40,7 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(program: &Program, roots: &'a [Scope], eval: &'a EvaluationContext) -> Self {
+    pub fn new(program: &Program, roots: &'a [Scope], context: &'a EvaluationContext) -> Self {
         let envs = match program.writes_env {
             true => Envs::Owned(roots.to_vec()),
             false => Envs::Shared(roots),
@@ -50,7 +50,7 @@ impl<'a> Context<'a> {
             false => Envs::Shared(roots),
         };
         Self {
-            eval,
+            context,
             roots,
             envs,
             columns: None,
@@ -68,9 +68,9 @@ impl<'a> Context<'a> {
         columns: &'a Columns<'a>,
         bound: &'a [Binding],
         base: usize,
-        eval: &'a EvaluationContext,
+        context: &'a EvaluationContext,
     ) -> Self {
-        let mut ctx = Self::new(program, roots, eval);
+        let mut ctx = Self::new(program, roots, context);
         ctx.columns = Some(columns);
         ctx.bound = bound;
         ctx.base = base;
@@ -85,17 +85,17 @@ impl<'a> Context<'a> {
 
     #[inline]
     pub(crate) fn at(&self, row: u32) -> RowContext<'a> {
-        RowContext::new(self.eval, self.drawn_row(row))
+        RowContext::new(self.context, self.drawn_row(row))
     }
 
     #[inline]
     pub(crate) fn here(&self) -> RowContext<'a> {
-        RowContext::new(self.eval, self.first)
+        RowContext::new(self.context, self.first)
     }
 
     #[inline]
     pub(crate) fn tz(&self) -> Tz {
-        self.eval.timezone()
+        self.context.timezone()
     }
 
     pub(super) fn view(&self, program: u64, reg: Reg) -> Option<Column<'a>> {

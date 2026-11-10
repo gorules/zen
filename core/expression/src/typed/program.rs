@@ -153,11 +153,11 @@ impl Program {
         batch: &Batch,
         out: &mut Outputs,
         select: Option<&[u64]>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Result<(), Unsupported> {
-        let mut feeds = Feeds::new(&self.hir, &self.classes, batch, eval)?;
+        let mut feeds = Feeds::new(&self.hir, &self.classes, batch, context)?;
         if self.clock {
-            feeds.now = Date::now(eval);
+            feeds.now = Date::now(context);
         }
         if out.slots().len() != self.hir.outputs.len() {
             *out = Outputs::new(&self.hir)?;

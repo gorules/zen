@@ -166,11 +166,11 @@ impl Text {
         fail: Self::len_fail,
     };
 
-    fn len_str(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn len_str(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: &str| Ok(a.len()))
     }
 
-    fn len_array(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn len_array(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: Array| Ok(a.len()))
     }
 
@@ -186,12 +186,12 @@ impl Text {
         fail: Self::contains_fail,
     };
 
-    fn contains_str(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn contains_str(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| Ok(a.contains(b)))
     }
 
-    fn contains_array(at: &RowContext, args: &[Arg]) -> Outcome {
-        let tz = at.timezone();
+    fn contains_array(ctx: &RowContext, args: &[Arg]) -> Outcome {
+        let tz = ctx.timezone();
         Apply::two(args, |a: Array, b: Arg| {
             Ok(a.any(|x| match (x, b) {
                 (Arg::Num(x), Arg::Num(y)) => x == y,
@@ -258,7 +258,7 @@ impl Text {
         fail: |args| Params::fail(args, Self::TWO),
     };
 
-    fn extract(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn extract(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| {
             let captures: Vec<Variable> = Patterns::with(b, |regex| {
                 regex
@@ -281,7 +281,7 @@ impl Text {
         fail: |args| Params::fail(args, Self::TWO),
     };
 
-    fn split(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn split(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: &str, b: &str| {
             Ok(Variable::from_array(
                 a.split(b).map(|s| Variable::String(s.into())).collect(),
@@ -298,7 +298,7 @@ impl Text {
         Decimal::from_f64(strsim::normalized_damerau_levenshtein(a, b)).unwrap_or(Decimal::ZERO)
     }
 
-    fn fuzzy(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn fuzzy(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::two(args, |a: Arg, b: &str| match a {
             Arg::Str(a) => Ok(Variable::Number(Self::similarity(a, b))),
             Arg::Date(_) | Arg::Var(Variable::Dynamic(_)) => match a.text() {

@@ -294,7 +294,7 @@ impl Executor {
         largest: bool,
         active: M,
         f: &mut Frame<M>,
-        at: RowContext,
+        ctx: RowContext,
     ) {
         let mut slow = f.none();
         for lane in Lanes::of(active) {
@@ -345,7 +345,7 @@ impl Executor {
                 })
                 .collect();
             let array = Variable::from_array(values);
-            let r = Builtins::call(builtin, &kind, &[Arg::of(&array)], &at);
+            let r = Builtins::call(builtin, &kind, &[Arg::of(&array)], &ctx);
             f.write(dst, lane, r);
         }
     }

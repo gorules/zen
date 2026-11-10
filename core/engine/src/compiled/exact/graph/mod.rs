@@ -19,7 +19,7 @@ pub(crate) struct Row<'a> {
     pub(crate) nodes: Option<Variable>,
     pub(crate) programs: Option<&'a Arc<Programs>>,
     pub(crate) trace: bool,
-    pub(crate) eval: EvaluationContext,
+    pub(crate) context: EvaluationContext,
 }
 
 pub(crate) struct Ctx<'a, T> {
@@ -31,7 +31,7 @@ impl<'a> Row<'a> {
     pub(crate) fn session(&self) -> Session {
         let mut session = Session::with_environment(self.input.clone())
             .with_programs(self.programs.cloned())
-            .with_eval(self.eval.clone());
+            .with_context(self.context.clone());
         if let Some(nodes) = &self.nodes {
             session.set_local(Variable::nodes_key(), nodes.clone());
         }
@@ -39,10 +39,10 @@ impl<'a> Row<'a> {
         session
     }
 
-    pub(crate) fn with_input(&self, input: Variable, eval: EvaluationContext) -> Self {
+    pub(crate) fn with_input(&self, input: Variable, context: EvaluationContext) -> Self {
         Self {
             input,
-            eval,
+            context,
             ..self.clone()
         }
     }
@@ -60,8 +60,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _, eval| {
-                    let row = self.with_input(input, eval);
+                self.transform(attributes, |input, _, context| {
+                    let row = self.with_input(input, context);
                     async move { row.expression(content) }
                 })
                 .await
@@ -71,8 +71,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _, eval| {
-                    let row = self.with_input(input, eval);
+                self.transform(attributes, |input, _, context| {
+                    let row = self.with_input(input, context);
                     async move { RowTable::graph(row, content, index) }
                 })
                 .await

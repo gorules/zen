@@ -42,7 +42,7 @@ impl Executor {
             .map(|id| f.consts[*id as usize].clone())
             .collect();
         let mut hint = 0usize;
-        let eval = ctx.eval;
+        let context = ctx.context;
         let drawn = std::cell::Cell::new(ctx.first);
         let mut call = |first: Arg| -> Result<Out, Fault> {
             let mut args: smallvec::SmallVec<[Arg; 4]> = smallvec::SmallVec::new();
@@ -53,7 +53,7 @@ impl Executor {
                 &c.kind,
                 &args,
                 &mut hint,
-                &RowContext::new(eval, drawn.get()),
+                &RowContext::new(context, drawn.get()),
             )
         };
         let column = ctx.column(c.site);

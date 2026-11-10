@@ -9,12 +9,12 @@ fn scope(n: usize) -> Scope {
 }
 
 fn single(program: &LaneProgram, n: usize, seed: u64) -> Value {
-    let eval = EvaluationContext::new(Pinned {
+    let context = EvaluationContext::new(Pinned {
         seed: Some(seed),
         ..Pinned::default()
     });
     let value = LaneRunner::new()
-        .evaluate_one(program, &eval, &scope(n))
+        .evaluate_one(program, &context, &scope(n))
         .unwrap();
     serde_json::to_value(value).unwrap()
 }
@@ -93,7 +93,7 @@ fn batched_rows_match_single_rows() {
 fn interleaved_contexts_keep_their_own_clock_and_stream() {
     use zen_expression::context::parse_instant;
     let program = compile("[rand(1000000), d().timestamp(), d().offsetName()]");
-    let context = |now: &str, zone: &str, seed: u64| {
+    let pinned = |now: &str, zone: &str, seed: u64| {
         EvaluationContext::new(Pinned {
             now: parse_instant(now),
             timezone: zen_expression::context::parse_timezone(zone),
@@ -109,23 +109,23 @@ fn interleaved_contexts_keep_their_own_clock_and_stream() {
     let alone: Vec<Vec<Value>> = pins
         .iter()
         .map(|&(now, zone, seed)| {
-            let eval = context(now, zone, seed);
+            let context = pinned(now, zone, seed);
             (0..4)
                 .map(|_| {
-                    let value = runner.evaluate_one(&program, &eval, &scope(0)).unwrap();
+                    let value = runner.evaluate_one(&program, &context, &scope(0)).unwrap();
                     serde_json::to_value(value).unwrap()
                 })
                 .collect()
         })
         .collect();
-    let evals: Vec<EvaluationContext> = pins
+    let contexts: Vec<EvaluationContext> = pins
         .iter()
-        .map(|&(now, zone, seed)| context(now, zone, seed))
+        .map(|&(now, zone, seed)| pinned(now, zone, seed))
         .collect();
-    let mut seen: Vec<Vec<Value>> = vec![Vec::new(); evals.len()];
+    let mut seen: Vec<Vec<Value>> = vec![Vec::new(); contexts.len()];
     for _ in 0..4 {
-        for (which, eval) in evals.iter().enumerate() {
-            let value = runner.evaluate_one(&program, eval, &scope(0)).unwrap();
+        for (which, context) in contexts.iter().enumerate() {
+            let value = runner.evaluate_one(&program, context, &scope(0)).unwrap();
             seen[which].push(serde_json::to_value(value).unwrap());
         }
     }

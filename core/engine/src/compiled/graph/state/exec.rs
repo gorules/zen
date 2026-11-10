@@ -49,7 +49,7 @@ impl CompiledGraph {
         if matches!(step.kind, Kind::Host(_)) {
             let materialized = data.materialized();
             let batched = state.errors.len() > 1;
-            let scoped = extensions.scoped(state.eval.picked(rows.clone()));
+            let scoped = extensions.scoped(state.context.picked(rows.clone()));
             let replayed = state
                 .nesting
                 .completed
@@ -80,7 +80,7 @@ impl CompiledGraph {
                         true => Vec::new(),
                         false => {
                             let at: Vec<usize> = missing.iter().map(|&i| rows[i]).collect();
-                            let scoped = extensions.scoped(state.eval.rows(&at));
+                            let scoped = extensions.scoped(state.context.rows(&at));
                             Box::pin(Self::hosted(
                                 step,
                                 &inputs,
@@ -136,7 +136,7 @@ impl CompiledGraph {
                     .await;
                 (Data::plain(rows.clone(), values.into()), failures)
             }
-            Kind::Node { .. } => self.node(&state.eval, step, rows, &data, &nodes, &extra),
+            Kind::Node { .. } => self.node(&state.context, step, rows, &data, &nodes, &extra),
         };
 
         for (i, message) in failures {
@@ -210,7 +210,7 @@ impl CompiledGraph {
                     step,
                     value.clone(),
                     nodes,
-                    &extensions.scoped(extensions.eval.at(i)),
+                    &extensions.scoped(extensions.context.at(i)),
                     max_depth,
                     iteration,
                     batched,
@@ -235,15 +235,15 @@ impl CompiledGraph {
         let mut results = Vec::with_capacity(inputs.len());
         for (i, value) in inputs.iter().enumerate() {
             let nodes = nodes.get(i).cloned().flatten();
-            let eval = extensions.eval.at(i);
-            match batch.call(value, nodes.as_ref(), &eval) {
+            let context = extensions.context.at(i);
+            match batch.call(value, nodes.as_ref(), &context) {
                 Some(result) => results.push(result),
                 None => results.push(
                     Box::pin(Self::host(
                         step,
                         value.clone(),
                         nodes,
-                        &extensions.scoped(eval),
+                        &extensions.scoped(context),
                         max_depth,
                         iteration,
                         batched,
@@ -295,7 +295,7 @@ impl CompiledGraph {
     pub(in crate::compiled::graph) fn rowwise<'a>(
         &self,
         runner: &mut LaneRunner,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         step: &Step,
         data: Data<'a>,
         nodes: &[Option<Variable>],
@@ -310,7 +310,7 @@ impl CompiledGraph {
                 .enumerate()
                 .map(|(i, value)| {
                     let node = nodes.get(i).cloned().flatten();
-                    match Self::walked(step, value.clone(), node, true, &eval.at(i)) {
+                    match Self::walked(step, value.clone(), node, true, &context.at(i)) {
                         Ok(output) => output,
                         Err(message) => {
                             failures.push((i, message));
@@ -321,27 +321,28 @@ impl CompiledGraph {
                 .collect();
             return (Data::plain(rows, values), failures);
         }
-        self.node_with(runner, eval, step, &rows, &data, nodes, &[])
+        self.node_with(runner, context, step, &rows, &data, nodes, &[])
     }
 
     fn node<'a>(
         &self,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         step: &Step,
         rows: &Rc<[usize]>,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
         extra: &[NodeColumn<'a>],
     ) -> (Data<'a>, Vec<(usize, String)>) {
-        Self::RUNNER
-            .with_borrow_mut(|runner| self.node_with(runner, eval, step, rows, data, nodes, extra))
+        Self::RUNNER.with_borrow_mut(|runner| {
+            self.node_with(runner, context, step, rows, data, nodes, extra)
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
     fn node_with<'a>(
         &self,
         runner: &mut LaneRunner,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         step: &Step,
         rows: &Rc<[usize]>,
         data: &Data<'a>,
@@ -370,13 +371,13 @@ impl CompiledGraph {
             match (rebase, &transform.output_path, wide) {
                 (Some(rebase), None, true) if !overlapping => {
                     crate::compiled::census::Census::mark("layered");
-                    Self::bound(eval, step, data, nodes, extra, rebase, |bound| {
+                    Self::bound(context, step, data, nodes, extra, rebase, |bound| {
                         Self::layered(runner, body, transform.pass_through, data, bound, None)
                     })
                 }
                 (Some(rebase), Some(path), true) if keyed && expression && !overlapping => {
                     crate::compiled::census::Census::mark("layered-path");
-                    Self::bound(eval, step, data, nodes, extra, rebase, |bound| {
+                    Self::bound(context, step, data, nodes, extra, rebase, |bound| {
                         Self::layered(
                             runner,
                             body,
@@ -389,7 +390,7 @@ impl CompiledGraph {
                 }
                 (Some(None), Some(path), true) if keyed => {
                     crate::compiled::census::Census::mark("placed");
-                    Self::bound(eval, step, data, nodes, extra, None, |bound| {
+                    Self::bound(context, step, data, nodes, extra, None, |bound| {
                         Self::placed(runner, body, path, transform.pass_through, data, bound)
                     })
                 }
@@ -404,7 +405,7 @@ impl CompiledGraph {
                     crate::compiled::census::Census::mark("looped");
                     Self::looped(
                         runner,
-                        &eval.picked(rows.clone()),
+                        &context.picked(rows.clone()),
                         step,
                         body,
                         transform,
@@ -417,7 +418,7 @@ impl CompiledGraph {
                     let materialized = data.materialized();
                     let results = Self::transformed(
                         runner,
-                        &eval.picked(rows.clone()),
+                        &context.picked(rows.clone()),
                         step,
                         body,
                         transform,
@@ -494,13 +495,13 @@ impl CompiledGraph {
                     false => Vec::new(),
                 };
                 let mut failures = Vec::new();
-                let eval = state.eval.picked(rows.clone());
+                let context = state.context.picked(rows.clone());
                 let outputs: Vec<Variable> = values
                     .iter()
                     .enumerate()
                     .map(|(i, value)| {
                         let node = nodes.get(i).cloned().flatten();
-                        match Self::walked(step, value.clone(), node, true, &eval.at(i)) {
+                        match Self::walked(step, value.clone(), node, true, &context.at(i)) {
                             Ok(output) => output,
                             Err(message) => {
                                 failures.push((i, message));
@@ -519,7 +520,7 @@ impl CompiledGraph {
                     rows,
                     step.column_path(rows.len()),
                 );
-                self.node(&state.eval, step, rows, &data, &nodes, &extra)
+                self.node(&state.context, step, rows, &data, &nodes, &extra)
             }
             _ => (data, Vec::new()),
         };

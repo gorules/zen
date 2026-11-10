@@ -409,7 +409,7 @@ impl<'a> Run<'_, 'a> {
                     select: None,
                 };
                 Some(Lowered {
-                    out: call.run(&op.program, &self.host.extensions.eval)?,
+                    out: call.run(&op.program, &self.host.extensions.context)?,
                     keyed: Some(ids),
                     select: None,
                     prefault,
@@ -500,7 +500,7 @@ impl<'a> Run<'_, 'a> {
                 .collect(),
             select,
         };
-        call.run(&op.program, &self.host.extensions.eval)
+        call.run(&op.program, &self.host.extensions.context)
     }
 
     fn coded(
@@ -530,7 +530,7 @@ impl<'a> Run<'_, 'a> {
             &codes,
             positions,
             rows,
-            &self.host.extensions.eval,
+            &self.host.extensions.context,
         )
         .map(|(out, ids)| (out, Some(ids)))
     }

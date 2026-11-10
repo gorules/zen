@@ -64,10 +64,10 @@ impl Call<'_> {
     pub(super) fn sub_extensions(
         &self,
         content: &Content,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
-            eval: eval.clone(),
+            context: context.clone(),
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
@@ -80,11 +80,11 @@ impl Call<'_> {
         graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Result<Variable, Box<dyn Error>> {
         let compiled = Self::compiled(graph)?;
         let content = compiled.schemas(graph, self.extensions.loader()).await;
-        let extensions = self.sub_extensions(&content, eval);
+        let extensions = self.sub_extensions(&content, context);
         let parents = [parent];
         let inputs = [input];
         let nesting = Nesting {
@@ -115,11 +115,11 @@ impl Call<'_> {
         graph: &Arc<Content>,
         input: Variable,
         parent: Option<Variable>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Result<TracedRun, Box<dyn Error>> {
         let compiled = Self::compiled(graph)?;
         let content = compiled.schemas(graph, self.extensions.loader()).await;
-        let extensions = self.sub_extensions(&content, eval);
+        let extensions = self.sub_extensions(&content, context);
         let traced = Traced {
             graph: compiled,
             content: &content,
@@ -137,7 +137,7 @@ impl Call<'_> {
         let id = row.id;
         let nodes = &row.nodes;
         let traced = row.trace;
-        row.transform(attributes, |input, _, eval| async move {
+        row.transform(attributes, |input, _, context| async move {
             let fault = |source: Box<dyn Error>, trace: Option<Variable>| {
                 NodeError::traced(id.clone(), trace, source)
             };
@@ -156,7 +156,7 @@ impl Call<'_> {
             };
             if !traced {
                 let output = self
-                    .run(&graph, input, nodes.clone(), &eval)
+                    .run(&graph, input, nodes.clone(), &context)
                     .await
                     .map_err(|e| fault(e, None))?;
                 return Ok(NodeResponse {
@@ -164,7 +164,7 @@ impl Call<'_> {
                     trace_data: None,
                 });
             }
-            match self.traced(&graph, input, nodes.clone(), &eval).await {
+            match self.traced(&graph, input, nodes.clone(), &context).await {
                 Err(source) => Err(fault(source, blank)),
                 Ok(Ok(response)) => Ok(NodeResponse {
                     output: response.result,

@@ -73,7 +73,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .call_handler(
                 &module_name,
                 JsValueWithNodes(JsValue(ctx.input.clone())),
-                &ctx.extensions.eval,
+                &ctx.extensions.context,
             )
             .await;
 
@@ -139,7 +139,7 @@ impl FunctionV2NodeHandler {
         for (at, row) in rows.into_iter().enumerate() {
             let fresh = NodeHandlerExtensions {
                 function_runtime: Default::default(),
-                eval: extensions.eval.at(at),
+                context: extensions.context.at(at),
                 ..extensions.clone()
             };
             results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
@@ -194,7 +194,7 @@ impl FunctionV2NodeHandler {
                 (iteration, config.max_depth, config.trace),
                 rows,
                 &tick,
-                &extensions.eval,
+                &extensions.context,
             )
             .await;
         function.runtime().set_interrupt_handler(None).await;

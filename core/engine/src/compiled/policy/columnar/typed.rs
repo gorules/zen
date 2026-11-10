@@ -450,7 +450,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             &codes,
             positions.as_ref(),
             total,
-            &self.state.eval,
+            &self.state.context,
         )
     }
 
@@ -515,7 +515,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 .collect(),
             select,
         };
-        call.run(program, &self.state.eval)
+        call.run(program, &self.state.context)
     }
 
     fn listing(

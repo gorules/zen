@@ -413,8 +413,8 @@ impl Ops {
         Ok(())
     }
 
-    pub(crate) fn len(current: &Variable, at: &RowContext) -> VMResult<Variable> {
-        Builtins::raw(&Text::LEN, &[Arg::of(current)], at)
+    pub(crate) fn len(current: &Variable, ctx: &RowContext) -> VMResult<Variable> {
+        Builtins::raw(&Text::LEN, &[Arg::of(current)], ctx)
             .map(Out::variable)
             .map_err(|message| Self::error("Len", message))
     }

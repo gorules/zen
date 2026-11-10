@@ -162,7 +162,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                             (Some(b), Some((prev, date))) if prev == b => Some(date),
                             (Some(b), _) => std::str::from_utf8(b)
                                 .ok()
-                                .map(|t| Date::text(t, None, &self.feeds.eval)),
+                                .map(|t| Date::text(t, None, &self.feeds.context)),
                             (None, _) => Some(Date(None)),
                         };
                         match date {
@@ -182,7 +182,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         return;
                     }
                 }
-                let at = RowContext::new(&self.feeds.eval, start);
+                let ctx = RowContext::new(&self.feeds.context, start);
                 let mut given: SmallVec<[Given; 4]> = SmallVec::new();
                 let mut seen: SmallVec<[Given; 4]> = SmallVec::new();
                 let mut last: Option<Option<Out>> = None;
@@ -201,7 +201,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         && seen.len() == given.len()
                         && seen.iter().zip(&given).all(|(a, b)| Self::same(a, b));
                     if !repeated {
-                        last = Some(Builtins::raw(builtin, &given, &at).ok());
+                        last = Some(Builtins::raw(builtin, &given, &ctx).ok());
                         seen.clear();
                         seen.extend(given.iter().copied());
                     }
@@ -216,7 +216,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 Self::broken(d, broken);
             }),
             Ins::Clock { clock, dst, args } => Self::def(regs, *dst, |d, regs| {
-                let tz = self.feeds.eval.timezone();
+                let tz = self.feeds.context.timezone();
                 let views: SmallVec<[DV; 2]> =
                     args.iter().map(|(a, r)| self.dated(a, *r, regs)).collect();
                 for w in 0..words {

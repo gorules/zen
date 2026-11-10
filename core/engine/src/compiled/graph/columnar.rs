@@ -250,8 +250,8 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        extensions.eval.restart(&rows);
-                        let scoped = extensions.scoped(extensions.eval.rows(&rows));
+                        extensions.context.restart(&rows);
+                        let scoped = extensions.scoped(extensions.context.rows(&rows));
                         let results = Box::pin(self.resumed(
                             content,
                             &scoped,

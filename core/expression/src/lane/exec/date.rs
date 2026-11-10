@@ -14,7 +14,7 @@ impl Executor {
         args: &[Input],
         active: M,
         f: &mut Frame<M>,
-        at: RowContext,
+        ctx: RowContext,
     ) -> M {
         let mut done = f.none();
         let zone = match (kind, args) {
@@ -46,7 +46,7 @@ impl Executor {
                 {
                     *date
                 }
-                _ => Date::text(text, zone, at.context()),
+                _ => Date::text(text, zone, ctx.context()),
             };
             let at = f.at(dst, lane);
             f.dates[at] = date;

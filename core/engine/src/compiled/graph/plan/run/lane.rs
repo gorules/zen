@@ -124,7 +124,7 @@ impl<'a> Run<'_, 'a> {
         };
         self.runner.evaluate_sites(
             program,
-            &self.host.extensions.eval,
+            &self.host.extensions.context,
             scopes.slice(),
             &columns,
             &op.bound,
@@ -198,7 +198,7 @@ impl<'a> Run<'_, 'a> {
                 .runner
                 .evaluate(
                     source,
-                    &self.host.extensions.eval.at(row),
+                    &self.host.extensions.context.at(row),
                     std::slice::from_ref(&scope),
                 )
                 .into_iter()

@@ -88,11 +88,11 @@ impl<'a> Run<'_, 'a> {
                     .fail(row, &step.node, Rc::from("Expected an array")),
             }
         }
-        let eval = match draws {
-            true => self.host.extensions.eval.items(&owners),
-            false => self.host.extensions.eval.clone(),
+        let context = match draws {
+            true => self.host.extensions.context.items(&owners),
+            false => self.host.extensions.context.clone(),
         };
-        let produced = CompiledGraph::items(&mut self.runner, &eval, step, body, &items, &[]);
+        let produced = CompiledGraph::items(&mut self.runner, &context, step, body, &items, &[]);
         let mut values = vec![Variable::Null; rows];
         for (row, start, end) in spans {
             let mut collected = Vec::with_capacity(end - start);
@@ -247,7 +247,7 @@ impl<'a> Run<'_, 'a> {
         let data = Data::record(&items, Layer::new(keys.into(), leaves, Some(present)), None);
         let (output, failures) = CompiledGraph::item_run(
             &mut self.runner,
-            &self.host.extensions.eval,
+            &self.host.extensions.context,
             step,
             body,
             &data,

@@ -241,7 +241,7 @@ impl<'a> Run<'_, 'a> {
                         let scoped = self
                             .host
                             .extensions
-                            .scoped(self.host.extensions.eval.rows(&at));
+                            .scoped(self.host.extensions.context.rows(&at));
                         let results = Box::pin(CompiledGraph::batch(
                             step,
                             content,
@@ -277,7 +277,7 @@ impl<'a> Run<'_, 'a> {
                 let scoped = self
                     .host
                     .extensions
-                    .scoped(self.host.extensions.eval.rows(&at));
+                    .scoped(self.host.extensions.context.rows(&at));
                 let results = match &step.node.kind {
                     DecisionNodeKind::CustomNode { content } => {
                         Box::pin(CompiledGraph::custom(step, content, inputs, nodes, &scoped)).await
@@ -320,8 +320,9 @@ impl<'a> Run<'_, 'a> {
             _ => {
                 let data =
                     data.unwrap_or_else(|| Data::plain((0..inputs.len()).collect(), inputs.into()));
-                let eval = self.host.extensions.eval.rows(&at);
-                let (output, failures) = graph.rowwise(&mut self.runner, &eval, step, data, &nodes);
+                let context = self.host.extensions.context.rows(&at);
+                let (output, failures) =
+                    graph.rowwise(&mut self.runner, &context, step, data, &nodes);
                 for (i, message) in failures {
                     self.store.errors.fail(at[i], &step.node, Rc::from(message));
                 }
@@ -406,13 +407,13 @@ impl<'a> Run<'_, 'a> {
             .enumerate()
             .map(|(i, input)| CompiledGraph::scope(input, nodes.get(i).and_then(Option::as_ref)))
             .collect();
-        let eval = match program.program().draws {
-            true => self.host.extensions.eval.rows(&at),
-            false => self.host.extensions.eval.clone(),
+        let context = match program.program().draws {
+            true => self.host.extensions.context.rows(&at),
+            false => self.host.extensions.context.clone(),
         };
         for (result, &row) in self
             .runner
-            .evaluate(program, &eval, &scopes)
+            .evaluate(program, &context, &scopes)
             .into_iter()
             .zip(&at)
         {

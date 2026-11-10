@@ -86,7 +86,7 @@ pub(crate) struct Feeds<'x> {
     pub(crate) lists: Vec<Lists>,
     pub(crate) parents: Vec<Option<u16>>,
     pub(crate) now: Date,
-    pub(crate) eval: EvaluationContext,
+    pub(crate) context: EvaluationContext,
 }
 
 #[derive(Clone, Debug)]
@@ -647,7 +647,7 @@ impl<'x> Feeds<'x> {
         hir: &Hir,
         classes: &[(Origin, u16)],
         batch: &Batch<'x>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Result<Self, Unsupported> {
         let schema = &hir.schema;
         if batch.columns.len() != schema.columns.len() || batch.lists.len() != schema.lists.len() {
@@ -748,7 +748,7 @@ impl<'x> Feeds<'x> {
             lists,
             parents,
             now: Date(None),
-            eval: eval.clone(),
+            context: context.clone(),
         };
         for (origin, dict) in classes {
             let class = {

@@ -77,13 +77,13 @@ impl Math {
     };
 
     pub(crate) const RAND: Builtin = Builtin {
-        overloads: &[|at: &RowContext, args| {
+        overloads: &[|ctx: &RowContext, args| {
             Apply::one(args, |a: Decimal| {
                 let upper = a
                     .round()
                     .to_i64()
                     .ok_or_else(|| "Invalid upper range".to_string())?;
-                Ok(Decimal::from(at.random_int(upper)))
+                Ok(Decimal::from(ctx.random_int(upper)))
             })
         }],
         fail: |args| Params::fail(args, Self::NUMBER),

@@ -94,7 +94,7 @@ impl Convert {
     };
 
     pub(crate) const DATE: Builtin = Builtin {
-        overloads: &[|at: &RowContext, args| {
+        overloads: &[|ctx: &RowContext, args| {
             Apply::two(args, |value: Option<Arg>, zone: Option<&str>| {
                 let zone = match zone {
                     Some(z) => Some(Tz::from_str(z).map_err(|_| "Invalid timezone".to_string())?),
@@ -102,9 +102,9 @@ impl Convert {
                 };
                 Ok(match value {
                     Some(Arg::Date(d)) => zone.map_or(d, |zone| d.tz(zone)),
-                    Some(Arg::Str(s)) => Date::text(s, zone, at.context()),
-                    Some(v) => Date::new(v.variable(), zone, at.context()),
-                    None => Date::now(at.context()),
+                    Some(Arg::Str(s)) => Date::text(s, zone, ctx.context()),
+                    Some(v) => Date::new(v.variable(), zone, ctx.context()),
+                    None => Date::now(ctx.context()),
                 })
             })
         }],

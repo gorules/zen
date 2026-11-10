@@ -684,8 +684,8 @@ mod tests {
     fn narrowing_creates_no_streams() {
         let batch = EvaluationContext::batch(seeded(3));
         for row in 0..64 {
-            let at = batch.at(row);
-            let _ = at.item(row).at(0).now();
+            let context = batch.at(row);
+            let _ = context.item(row).at(0).now();
         }
         let streams = batch.shared.streams.borrow();
         assert!(streams.rows.is_empty());

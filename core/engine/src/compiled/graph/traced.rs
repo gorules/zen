@@ -179,7 +179,7 @@ impl Traced<'_> {
         let DecisionNodeKind::SwitchNode { content } = &step.node.kind else {
             return Outcome::from(Vec::new());
         };
-        let statements = Self::statements(step, content, &input, nodes, &self.extensions.eval);
+        let statements = Self::statements(step, content, &input, nodes, &self.extensions.context);
         if let Some(mut record) = tracer.trace_callback() {
             let output = input.depth_clone(1);
             record(DecisionGraphTrace {
@@ -209,11 +209,11 @@ impl Traced<'_> {
         content: &SwitchNodeContent,
         input: &Variable,
         nodes: Option<Variable>,
-        eval: &zen_expression::context::EvaluationContext,
+        context: &zen_expression::context::EvaluationContext,
     ) -> Vec<SwitchStatementTraceRow> {
         let mut session = Session::with_environment(input.clone())
             .with_programs(Some(step.programs().clone()))
-            .with_eval(eval.clone());
+            .with_context(context.clone());
         if let Some(nodes) = nodes {
             session.set_local(Variable::nodes_key(), nodes);
         }

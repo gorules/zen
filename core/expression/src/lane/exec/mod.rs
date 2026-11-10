@@ -232,7 +232,7 @@ impl Executor {
         total: usize,
         width: usize,
         draws: bool,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         row: impl Fn(usize) -> usize,
     ) -> smallvec::SmallVec<[(usize, usize); 4]> {
         let mut out = smallvec::SmallVec::new();
@@ -245,7 +245,7 @@ impl Executor {
             }
             return out;
         }
-        let key = |i: usize| eval.stream(row(i));
+        let key = |i: usize| context.stream(row(i));
         let cap = crate::lane::Word::LANES.min(width);
         let (mut start, mut n, mut i) = (0usize, 0usize, 0usize);
         while i < total {
@@ -939,8 +939,8 @@ impl Executor {
             }
             Op::Len { dst, a } => {
                 for lane in Lanes::of(active) {
-                    let at = ctx.here();
-                    let r = f.with(*a, lane, |v| Ops::len(v, &at));
+                    let row_ctx = ctx.here();
+                    let r = f.with(*a, lane, |v| Ops::len(v, &row_ctx));
                     f.put(*dst, lane, r);
                 }
             }

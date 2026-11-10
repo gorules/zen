@@ -77,7 +77,7 @@ enum Step {
 }
 
 pub(crate) struct Env<'a> {
-    eval: &'a EvaluationContext,
+    context: &'a EvaluationContext,
     row: usize,
     columns: Option<&'a Columns<'a>>,
     bound: &'a [Binding],
@@ -96,17 +96,17 @@ pub(crate) struct Cx<'a> {
 impl<'a> Cx<'a> {
     #[inline]
     fn at(&self) -> RowContext<'a> {
-        RowContext::new(self.env.eval, self.env.row)
+        RowContext::new(self.env.context, self.env.row)
     }
 
     #[inline]
     fn tz(&self) -> chrono_tz::Tz {
-        self.env.eval.timezone()
+        self.env.context.timezone()
     }
 
     #[inline]
     fn context(&self) -> &'a EvaluationContext {
-        self.env.eval
+        self.env.context
     }
 
     #[inline]
@@ -582,12 +582,12 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub(crate) fn run(&self, scope: &Scope, eval: &EvaluationContext) -> Option<Variable> {
+    pub(crate) fn run(&self, scope: &Scope, context: &EvaluationContext) -> Option<Variable> {
         match (self.entries.as_slice(), &self.mode) {
             ([entry], Mode::Plain) => entry(&Cx {
                 scope,
                 env: &Env {
-                    eval,
+                    context,
                     row: 0,
                     columns: None,
                     bound: &[],
@@ -598,7 +598,7 @@ impl Kernel {
                 element: None,
                 up: None,
             }),
-            _ => self.run_all(scope, 0, None, &[], eval)?.pop(),
+            _ => self.run_all(scope, 0, None, &[], context)?.pop(),
         }
     }
 
@@ -609,7 +609,7 @@ impl Kernel {
         row: usize,
         columns: Option<&Columns>,
         bound: &[Binding],
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Option<Values> {
         let mut values = Values::new();
         let (current, roots, bound) = match &self.mode {
@@ -628,7 +628,7 @@ impl Kernel {
                 *current.borrow_mut() = roots.borrow().clone();
             }
             let env = Env {
-                eval,
+                context,
                 row,
                 columns,
                 bound,
@@ -1377,8 +1377,8 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         builtin: &'static crate::lane::builtins::Builtin,
         codes: Vec<Code>,
     ) -> Result<Code, Vec<Code>> {
-        let call = move |views: &[Arg], at: RowContext| {
-            Builtins::raw(builtin, views, &at).ok().map(Out::variable)
+        let call = move |views: &[Arg], ctx: RowContext| {
+            Builtins::raw(builtin, views, &ctx).ok().map(Out::variable)
         };
         let mut codes = codes;
         match codes.as_slice() {

@@ -21,7 +21,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
     pub(crate) prepared: Arc<crate::compiled::prepared::Prepared>,
-    pub(crate) eval: zen_expression::context::EvaluationContext,
+    pub(crate) context: zen_expression::context::EvaluationContext,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -36,7 +36,7 @@ impl Default for NodeHandlerExtensions {
             dt_indexes: None,
             http_handler: None,
             prepared: Default::default(),
-            eval: Default::default(),
+            context: Default::default(),
         }
     }
 }
@@ -67,9 +67,9 @@ impl NodeHandlerExtensions {
             .context("Failed to create function")
     }
 
-    pub(crate) fn scoped(&self, eval: zen_expression::context::EvaluationContext) -> Self {
+    pub(crate) fn scoped(&self, context: zen_expression::context::EvaluationContext) -> Self {
         Self {
-            eval,
+            context,
             ..self.clone()
         }
     }

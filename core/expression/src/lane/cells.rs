@@ -117,7 +117,7 @@ struct Other {
 type Keyed = (u64, Box<[u8]>, Vec<u64>);
 
 pub struct CellEnv<'a> {
-    pub eval: &'a EvaluationContext,
+    pub context: &'a EvaluationContext,
     pub scopes: &'a [Scope],
     pub columns: &'a Columns<'a>,
     pub bind: &'a dyn Fn(&str) -> Binding,
@@ -507,11 +507,11 @@ impl CellSet {
         values: &[Variable],
         envs: &[Scope],
         out: &mut Vec<u64>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) {
         let columns = Columns::new(values.len());
         let env = CellEnv {
-            eval,
+            context,
             scopes: envs,
             columns: &columns,
             bind: &|_| Binding::Row,
@@ -541,7 +541,7 @@ impl CellSet {
     ) {
         runner.evaluate_bound(
             program,
-            env.eval,
+            env.context,
             scopes,
             env.columns,
             env.bind,
@@ -566,7 +566,7 @@ impl CellSet {
         out: &mut Vec<u64>,
     ) {
         let words = self.words;
-        self.indexed(values, out, env.eval.timezone());
+        self.indexed(values, out, env.context.timezone());
         if self.others.is_empty() {
             return;
         }

@@ -191,7 +191,7 @@ impl PolicyPlan {
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
         columns: &'a Columns<'a>,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> ColumnarOutput<'a> {
         let rows = columns.rows;
         let request = |row: usize| EvaluateRequest {
@@ -203,7 +203,7 @@ impl PolicyPlan {
         let sheet = Sheet::new(columns);
         let Some(mut sheet) = sheet else {
             let requests: Vec<EvaluateRequest> = (0..rows).map(request).collect();
-            return from_results(rows, self.evaluate(artifact, &requests, eval));
+            return from_results(rows, self.evaluate(artifact, &requests, context));
         };
         let mut errors: Vec<Option<EvaluationError>> = (0..rows).map(|_| None).collect();
         let stores: Vec<OnceCell<Variable>> = (0..rows).map(|_| OnceCell::new()).collect();
@@ -279,7 +279,7 @@ impl PolicyPlan {
                 arms: ByBlock::default(),
                 stores: &stores,
                 state: Rows {
-                    eval: eval.clone(),
+                    context: context.clone(),
                     hosts: Vec::new(),
                     picks: Vec::new(),
                     failures: errors,
@@ -370,8 +370,8 @@ impl PolicyPlan {
                 _ => shredder.visit(&sheet.object(row), 0, row),
             }
         }
-        eval.restart(&hosted);
-        let evaluated = self.evaluate(artifact, &requests, &eval.rows(&hosted));
+        context.restart(&hosted);
+        let evaluated = self.evaluate(artifact, &requests, &context.rows(&hosted));
         for (&row, result) in hosted.iter().zip(evaluated) {
             match result {
                 Ok(result) => shredder.visit(&result.output, 0, row),

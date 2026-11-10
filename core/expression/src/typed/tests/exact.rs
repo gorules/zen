@@ -114,11 +114,11 @@ impl Lab {
             let shift = if size == 7 { 3 } else { 0 };
             let frame = Frame::new(&self.hir, &self.workload.spec, chunk, shift);
             let batch = frame.batch();
-            let eval = crate::context::EvaluationContext::default();
-            program.run(&batch, &mut out, None, &eval).expect("run");
+            let context = crate::context::EvaluationContext::default();
+            program.run(&batch, &mut out, None, &context).expect("run");
             let typed = Self::rows_of(&out, &self.hir, &frame);
-            let mut feeds = Feeds::new(&self.hir, &[], &batch, &eval).expect("feeds");
-            feeds.now = crate::lane::date::Date::now(&eval);
+            let mut feeds = Feeds::new(&self.hir, &[], &batch, &context).expect("feeds");
+            feeds.now = crate::lane::date::Date::now(&context);
             let interp = Interp::run(&self.hir, &feeds);
             for (i, (t, r)) in typed.iter().zip(&interp).enumerate() {
                 let row = start + i;

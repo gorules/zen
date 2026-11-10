@@ -29,7 +29,7 @@ impl Row<'_> {
 
         let output = match attributes.execution_mode {
             TransformExecutionMode::Single => {
-                let response = evaluate(input, false, self.eval.clone()).await?;
+                let response = evaluate(input, false, self.context.clone()).await?;
                 if let Some(td) = response.trace_data {
                     if let Some(t) = &mut trace {
                         *t = td;
@@ -50,7 +50,8 @@ impl Row<'_> {
                 let mut output_array = Vec::with_capacity(input_array.len());
                 for (index, input) in input_array.iter().enumerate() {
                     let has_more = index < input_array.len() - 1;
-                    let response = evaluate(input.clone(), has_more, self.eval.item(index)).await?;
+                    let response =
+                        evaluate(input.clone(), has_more, self.context.item(index)).await?;
                     if let Some(td) = response.trace_data {
                         if let Some(Variable::Array(arr)) = &trace {
                             arr.borrow_mut().push(td);

@@ -128,7 +128,7 @@ impl Arrays {
         fail: |_| "Argument on 0 position out of bounds".to_string(),
     };
 
-    fn keys(_: &RowContext, args: &[Arg]) -> Outcome {
+    fn keys(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: Arg| match a {
             Arg::Var(Variable::Array(_)) | Arg::List(_) => {
                 let len = match a {

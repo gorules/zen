@@ -144,9 +144,9 @@ impl Function {
         &self,
         name: &str,
         data: JsValueWithNodes,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> FunctionResult<HandlerResponse> {
-        let _entered = self.slot.enter(eval.clone());
+        let _entered = self.slot.enter(context.clone());
         let k: FunctionResult<HandlerResponse> = async_with!(&self.ctx => |ctx| {
             self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
 
@@ -172,9 +172,9 @@ impl Function {
         config: (u8, u8, bool),
         rows: Vec<(Variable, Option<Variable>)>,
         tick: &dyn Fn(),
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> Vec<FunctionResult<Variable>> {
-        let _entered = self.slot.enter(eval.clone());
+        let _entered = self.slot.enter(context.clone());
         let count = rows.len();
         let current: Rc<RefCell<Variable>> = Rc::new(RefCell::new(Variable::Null));
         let shared = current.clone();

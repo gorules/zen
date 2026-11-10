@@ -2564,8 +2564,8 @@ impl Lowering {
                 Lit::Code(..) => None,
             })
             .collect::<Option<Vec<Given>>>()?;
-        let eval = EvaluationContext::default();
-        match Builtins::raw(host.builtin()?, &given, &RowContext::new(&eval, 0)).ok()? {
+        let context = EvaluationContext::default();
+        match Builtins::raw(host.builtin()?, &given, &RowContext::new(&context, 0)).ok()? {
             Out::Num(n) => Dec::from_decimal(&n).map(Lit::Num),
             Out::Bool(b) => Some(Lit::Bool(b)),
             Out::Str(s) => Some(Lit::Text(s.to_string())),

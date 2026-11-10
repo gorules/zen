@@ -35,19 +35,19 @@ impl Script {
         &mut self,
         source: &str,
         args: &P,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> anyhow::Result<EvaluateResponse>
     where
         P: Serialize,
     {
-        let _entered = self.slot.enter(eval.clone());
+        let _entered = self.slot.enter(context.clone());
         let runtime = &self.runtime;
-        let context = Context::full(runtime).context("Failed to create context")?;
+        let js_context = Context::full(runtime).context("Failed to create context")?;
 
         let args_str =
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
 
-        let json_response = context.with(|ctx| -> anyhow::Result<String> {
+        let json_response = js_context.with(|ctx| -> anyhow::Result<String> {
             Self::prepare(&ctx, &self.slot)?;
             ctx.eval::<String, _>(format!("{source};main({args_str})"))
                 .map_err(|e| map_js_error(&ctx, e))
@@ -117,12 +117,12 @@ impl Session {
         &self,
         layout: &str,
         args: &P,
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
     ) -> anyhow::Result<EvaluateResponse>
     where
         P: Serialize,
     {
-        let _entered = self.slot.enter(eval.clone());
+        let _entered = self.slot.enter(context.clone());
         let args_str =
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
         self.started

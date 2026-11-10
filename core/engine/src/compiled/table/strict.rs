@@ -123,7 +123,7 @@ impl Table {
     pub fn matched(
         &self,
         runner: &mut LaneRunner,
-        eval: &zen_expression::context::EvaluationContext,
+        context: &zen_expression::context::EvaluationContext,
         input: usize,
         leaf: &Leaf,
         matching: &mut Matching,
@@ -149,10 +149,10 @@ impl Table {
                 }
             }
         }
-        cells.indexed_column(&column, count, bits, eval.timezone());
+        cells.indexed_column(&column, count, bits, context.timezone());
         let columns = Columns::new(count);
         let env = CellEnv {
-            eval,
+            context,
             scopes: &[],
             columns: &columns,
             bind: &|_| Binding::Row,

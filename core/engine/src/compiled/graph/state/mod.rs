@@ -33,7 +33,7 @@ pub(in crate::compiled::graph) struct Host<'r> {
 }
 
 pub(crate) struct State<'a> {
-    eval: EvaluationContext,
+    context: EvaluationContext,
     nodes: Vec<Vec<Rc<Data<'a>>>>,
     pub(crate) errors: RowErrors<Box<EvaluationError>>,
     pub(in crate::compiled::graph) results: Vec<Option<Variable>>,
@@ -234,7 +234,7 @@ impl CompiledGraph {
         } = host;
         let count = inputs.len();
         let mut state = State {
-            eval: extensions.eval.clone(),
+            context: extensions.context.clone(),
             nodes: vec![Vec::new(); self.steps.len()],
             errors: RowErrors::new(count),
             results: vec![None; count],
@@ -381,7 +381,7 @@ impl CompiledGraph {
     }
 
     fn bound<'a, R>(
-        eval: &EvaluationContext,
+        context: &EvaluationContext,
         step: &Step,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
@@ -389,7 +389,7 @@ impl CompiledGraph {
         rebase: Option<&str>,
         f: impl FnOnce(&Bound) -> R,
     ) -> R {
-        let eval = eval.picked(data.rows.clone());
+        let context = context.picked(data.rows.clone());
         let with_nodes = |scope: Scope, row: usize| match nodes.get(row).cloned().flatten() {
             None => scope,
             Some(n) => {
@@ -418,7 +418,7 @@ impl CompiledGraph {
                 .enumerate()
                 .map(|(row, v)| with_nodes(Scope::new(v.clone()), row))
                 .collect();
-            return f(&Bound::plain(scopes, eval));
+            return f(&Bound::plain(scopes, context));
         }
         let blank = nodes.iter().all(Option::is_none)
             && matches!(&data.shape, data::Shape::Patched { base: None, .. });
@@ -456,7 +456,7 @@ impl CompiledGraph {
             .map(|(p, _)| p.clone())
             .collect();
         let bound = Bound {
-            eval,
+            context,
             scopes,
             columns,
             bind: Box::new(move |key: &str| {
@@ -497,7 +497,7 @@ impl CompiledGraph {
         let data = Self::input_of(state, parents, rows);
         let (nodes, extra) = self.node_inputs(step, state, visible, rows, true);
         let hits: Vec<Hit> = Self::RUNNER.with_borrow_mut(|runner| {
-            Self::bound(&state.eval, step, &data, &nodes, &extra, None, |bound| {
+            Self::bound(&state.context, step, &data, &nodes, &extra, None, |bound| {
                 conditions
                     .iter()
                     .map(|(_, condition)| match condition {

@@ -24,13 +24,13 @@ impl<'a> Host<'a> {
         trace: bool,
         extras: bool,
         programs: &Arc<Programs>,
-        eval: EvaluationContext,
+        context: EvaluationContext,
     ) -> Self {
         Self {
             state: HostState::new(artifact, store, entry, trace, extras),
             session: Session::new()
                 .with_programs(Some(programs.clone()))
-                .with_eval(eval),
+                .with_context(context),
         }
     }
 

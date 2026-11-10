@@ -20,7 +20,7 @@ impl Scopes {
 }
 
 pub(crate) struct Bound<'a> {
-    pub eval: EvaluationContext,
+    pub context: EvaluationContext,
     pub scopes: Scopes,
     pub columns: Columns<'a>,
     pub bind: Box<dyn Fn(&str) -> Binding + 'a>,
@@ -93,10 +93,10 @@ impl<'a> Bound<'a> {
         }
     }
 
-    pub fn plain(scopes: Vec<Scope>, eval: EvaluationContext) -> Self {
+    pub fn plain(scopes: Vec<Scope>, context: EvaluationContext) -> Self {
         let rows = scopes.len();
         Self {
-            eval,
+            context,
             scopes: Scopes::Owned(scopes),
             columns: Columns::new(rows),
             bind: Box::new(|_| Binding::Row),
@@ -148,7 +148,7 @@ impl<'a> Bound<'a> {
         let program = specialized.as_deref().unwrap_or(program);
         runner.evaluate_bound(
             program,
-            &self.eval,
+            &self.context,
             self.scopes(),
             &self.columns,
             &*self.bind,
@@ -181,7 +181,7 @@ impl<'a> Bound<'a> {
         let program = specialized.as_deref().unwrap_or(program);
         runner.evaluate_bound_into(
             program,
-            &self.eval,
+            &self.context,
             self.scopes(),
             &self.columns,
             bind,

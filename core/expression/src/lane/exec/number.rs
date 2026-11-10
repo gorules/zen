@@ -3,7 +3,7 @@ use super::frame::{Buffers, Frame};
 use super::Executor;
 use crate::compiler::Compare;
 use crate::functions::{FunctionKind, InternalFunction};
-use crate::lane::builtins::{Arg, Builtins, Out};
+use crate::lane::builtins::{Arg, Builtins, Out, RowContext};
 use crate::lane::columns::{Column, Values};
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::ops::Ops;
@@ -11,6 +11,7 @@ use crate::lane::program::{Input, Kind, NumCmp, NumOp, Operand, Reg};
 use crate::lane::scaled::{Kernel, Scaled};
 use crate::lexer::Bracket;
 use crate::variable::Variable;
+use chrono_tz::Tz;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
@@ -293,6 +294,7 @@ impl Executor {
         largest: bool,
         active: M,
         f: &mut Frame<M>,
+        at: RowContext,
     ) {
         let mut slow = f.none();
         for lane in Lanes::of(active) {
@@ -343,7 +345,7 @@ impl Executor {
                 })
                 .collect();
             let array = Variable::from_array(values);
-            let r = Builtins::call(builtin, &kind, &[Arg::of(&array)]);
+            let r = Builtins::call(builtin, &kind, &[Arg::of(&array)], &at);
             f.write(dst, lane, r);
         }
     }
@@ -530,7 +532,7 @@ impl Executor {
         let scale = Frame::<M>::uniform(f.scales.get(base..base + f.width)?, ok)?;
         let (k, s) = Scaled::parts(&n)?;
         match Threshold::of(op, scale, k, s)? {
-            Threshold::At(op, k) => Some(Kernel::threshold::<M>(values, k, |o| op.test(o))),
+            Threshold::RowContext(op, k) => Some(Kernel::threshold::<M>(values, k, |o| op.test(o))),
             Threshold::Never => Some(f.none()),
         }
     }
@@ -691,6 +693,7 @@ impl Executor {
         b: Operand,
         active: M,
         f: &mut Frame<M>,
+        tz: Tz,
     ) {
         let slow = active & (f.operand_boxed(a) | f.operand_boxed(b));
         let fast = active & !slow;
@@ -711,11 +714,11 @@ impl Executor {
         for lane in Lanes::of(slow) {
             let (x, y) = (f.operand_value(a, lane), f.operand_value(b, lane));
             match op {
-                NumCmp::Order(c) => match Ops::compared(&x, &y, c) {
+                NumCmp::Order(c) => match Ops::compared(&x, &y, c, tz) {
                     Some(hit) => f.set(dst, lane, Variable::Bool(hit)),
                     None => f.fault(lane, Fault::Unsupported("Compare")),
                 },
-                NumCmp::Equal => f.set(dst, lane, Variable::Bool(Ops::equal(&x, &y))),
+                NumCmp::Equal => f.set(dst, lane, Variable::Bool(Ops::equal(&x, &y, tz))),
             }
         }
     }
@@ -758,7 +761,7 @@ impl NumCmp {
 }
 
 pub(super) enum Threshold {
-    At(NumCmp, i64),
+    RowContext(NumCmp, i64),
     Never,
 }
 
@@ -766,16 +769,16 @@ impl Threshold {
     pub(super) fn of(op: NumCmp, scale: u8, k: i64, s: u8) -> Option<Threshold> {
         if s <= scale {
             let k = k.checked_mul(*Scaled::POW10.get((scale - s) as usize)?)?;
-            return Some(Threshold::At(op, k));
+            return Some(Threshold::RowContext(op, k));
         }
         let p = *Scaled::POW10.get((s - scale) as usize)?;
         let floor = k.div_euclid(p);
         let exact = k.rem_euclid(p) == 0;
         let ceil = floor + (!exact) as i64;
         Some(match op {
-            NumCmp::Order(Compare::More | Compare::LessOrEqual) => Threshold::At(op, floor),
-            NumCmp::Order(Compare::MoreOrEqual | Compare::Less) => Threshold::At(op, ceil),
-            NumCmp::Equal if exact => Threshold::At(op, floor),
+            NumCmp::Order(Compare::More | Compare::LessOrEqual) => Threshold::RowContext(op, floor),
+            NumCmp::Order(Compare::MoreOrEqual | Compare::Less) => Threshold::RowContext(op, ceil),
+            NumCmp::Equal if exact => Threshold::RowContext(op, floor),
             NumCmp::Equal => Threshold::Never,
         })
     }

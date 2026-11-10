@@ -1,5 +1,5 @@
 use crate::functions::{DateMethod, FunctionKind, InternalFunction, MethodKind};
-use crate::lane::builtins::{Arg as Given, Builtin, Builtins, Dates, Out};
+use crate::lane::builtins::{Arg as Given, Builtin, Builtins, Dates, Out, RowContext};
 use crate::lane::date::Date;
 use crate::lane::Bits;
 use crate::typed::exec::{Buf, Exec, Others, Reg};
@@ -160,9 +160,9 @@ impl<'e, 'x> Exec<'e, 'x> {
                         let bytes = text.get(start, i);
                         let date = match (bytes, last) {
                             (Some(b), Some((prev, date))) if prev == b => Some(date),
-                            (Some(b), _) => {
-                                std::str::from_utf8(b).ok().map(|t| Date::text(t, None))
-                            }
+                            (Some(b), _) => std::str::from_utf8(b)
+                                .ok()
+                                .map(|t| Date::text(t, None, &self.feeds.eval)),
                             (None, _) => Some(Date(None)),
                         };
                         match date {
@@ -182,6 +182,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         return;
                     }
                 }
+                let at = RowContext::new(&self.feeds.eval, start);
                 let mut given: SmallVec<[Given; 4]> = SmallVec::new();
                 let mut seen: SmallVec<[Given; 4]> = SmallVec::new();
                 let mut last: Option<Option<Out>> = None;
@@ -200,7 +201,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         && seen.len() == given.len()
                         && seen.iter().zip(&given).all(|(a, b)| Self::same(a, b));
                     if !repeated {
-                        last = Some(Builtins::raw(builtin, &given).ok());
+                        last = Some(Builtins::raw(builtin, &given, &at).ok());
                         seen.clear();
                         seen.extend(given.iter().copied());
                     }
@@ -215,6 +216,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 Self::broken(d, broken);
             }),
             Ins::Clock { clock, dst, args } => Self::def(regs, *dst, |d, regs| {
+                let tz = self.feeds.eval.timezone();
                 let views: SmallVec<[DV; 2]> =
                     args.iter().map(|(a, r)| self.dated(a, *r, regs)).collect();
                 for w in 0..words {
@@ -228,7 +230,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                     (Clock::Coerce, [text]) => {
                         d.stamps();
                         self.each(act, &skip, |i| match text.given(start, i) {
-                            Some(Given::Str(t)) => match Date::from_text(t) {
+                            Some(Given::Str(t)) => match Date::from_text(t, tz) {
                                 date if date.is_valid() => d.dates[i] = date,
                                 _ => broken.push(i),
                             },
@@ -263,7 +265,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         self.bools(act, &mut d.bits, |i| {
                             match (date.given(start, i), text.given(start, i)) {
                                 (Some(Given::Date(x)), Some(Given::Str(t))) => {
-                                    x.is_valid() && Date::from_text(t) == x
+                                    x.is_valid() && Date::from_text(t, tz) == x
                                 }
                                 (Some(Given::Date(x)), Some(Given::Date(y))) => {
                                     x.is_valid() && x == y

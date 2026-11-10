@@ -1,6 +1,7 @@
 use crate::compiled::core::special::Specialized;
 use std::cell::RefCell;
 use std::rc::Rc;
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Binding, Columns, Fault, Kind, LaneProgram, LaneRunner, Output};
 use zen_expression::{IsolateError, Scope, Variable};
 
@@ -19,6 +20,7 @@ impl Scopes {
 }
 
 pub(crate) struct Bound<'a> {
+    pub eval: EvaluationContext,
     pub scopes: Scopes,
     pub columns: Columns<'a>,
     pub bind: Box<dyn Fn(&str) -> Binding + 'a>,
@@ -91,9 +93,10 @@ impl<'a> Bound<'a> {
         }
     }
 
-    pub fn plain(scopes: Vec<Scope>) -> Self {
+    pub fn plain(scopes: Vec<Scope>, eval: EvaluationContext) -> Self {
         let rows = scopes.len();
         Self {
+            eval,
             scopes: Scopes::Owned(scopes),
             columns: Columns::new(rows),
             bind: Box::new(|_| Binding::Row),
@@ -145,6 +148,7 @@ impl<'a> Bound<'a> {
         let program = specialized.as_deref().unwrap_or(program);
         runner.evaluate_bound(
             program,
+            &self.eval,
             self.scopes(),
             &self.columns,
             &*self.bind,
@@ -177,6 +181,7 @@ impl<'a> Bound<'a> {
         let program = specialized.as_deref().unwrap_or(program);
         runner.evaluate_bound_into(
             program,
+            &self.eval,
             self.scopes(),
             &self.columns,
             bind,

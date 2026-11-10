@@ -87,11 +87,20 @@ impl Workspace {
     }
 
     pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
+        self.evaluate_pinned(req, &Default::default())
+    }
+
+    pub fn evaluate_pinned(
+        &self,
+        req: &EvaluateRequest,
+        options: &crate::EvaluationOptions,
+    ) -> Result<EvaluationResult, EvaluationError> {
         if self.engine.compiled() {
             return crate::compiled::policy::artifact::Runtime::evaluate(
                 &self.db,
                 &self.compiled,
                 req,
+                &crate::compiled::pinning::single(options.pinned()),
             );
         }
         self.db.evaluate(req)
@@ -106,6 +115,7 @@ impl Workspace {
                 &self.db,
                 &self.compiled,
                 req,
+                &crate::compiled::pinning::single(Default::default()),
             );
         }
         self.db.enhance_trace(req)
@@ -115,10 +125,19 @@ impl Workspace {
         &self,
         requests: &[EvaluateRequest],
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        self.evaluate_batch_pinned(requests, &Default::default())
+    }
+
+    pub fn evaluate_batch_pinned(
+        &self,
+        requests: &[EvaluateRequest],
+        options: &crate::EvaluationOptions,
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
         crate::compiled::policy::artifact::Runtime::evaluate_batch(
             &self.db,
             &self.compiled,
             requests,
+            &crate::compiled::pinning::batch(options.pinned()),
         )
     }
 
@@ -128,12 +147,23 @@ impl Workspace {
         goals: &[Arc<str>],
         columns: &'a crate::columns::Columns<'a>,
     ) -> Result<crate::ColumnarOutput<'a>, EvaluationError> {
+        self.evaluate_columns_pinned(policy_path, goals, columns, &Default::default())
+    }
+
+    pub fn evaluate_columns_pinned<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a crate::columns::Columns<'a>,
+        options: &crate::EvaluationOptions,
+    ) -> Result<crate::ColumnarOutput<'a>, EvaluationError> {
         crate::compiled::policy::artifact::Runtime::evaluate_columns(
             &self.db,
             &self.compiled,
             policy_path,
             goals,
             columns,
+            &crate::compiled::pinning::batch(options.pinned()),
         )
     }
 

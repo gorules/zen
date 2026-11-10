@@ -21,6 +21,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
     pub(crate) prepared: Arc<crate::compiled::prepared::Prepared>,
+    pub(crate) eval: zen_expression::context::EvaluationContext,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -35,6 +36,7 @@ impl Default for NodeHandlerExtensions {
             dt_indexes: None,
             http_handler: None,
             prepared: Default::default(),
+            eval: Default::default(),
         }
     }
 }
@@ -43,7 +45,9 @@ impl NodeHandlerExtensions {
     pub async fn function_runtime(&self) -> anyhow::Result<&Function> {
         self.function_runtime
             .get_or_try_init(|| {
+                let slot = crate::compiled::pinning::JsSlot::default();
                 Function::create(FunctionConfig {
+                    slot: slot.clone(),
                     listeners: Some(vec![
                         Box::new(ConsoleListener),
                         Box::new(HttpListener {
@@ -54,12 +58,20 @@ impl NodeHandlerExtensions {
                             loader: self.loader.clone(),
                             custom_node: self.custom_node.clone(),
                             http_handler: self.http_handler.clone(),
+                            slot,
                         }),
                     ]),
                 })
             })
             .await
             .context("Failed to create function")
+    }
+
+    pub(crate) fn scoped(&self, eval: zen_expression::context::EvaluationContext) -> Self {
+        Self {
+            eval,
+            ..self.clone()
+        }
     }
 
     pub fn validator_cache(&self) -> &ValidatorCache {

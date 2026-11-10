@@ -38,12 +38,14 @@ impl<'a> Run<'_, 'a> {
             None => (0..rows).collect(),
         };
         let mut native: Option<(Leaf<'a>, Vec<usize>)> = None;
-        match leaf.items() {
+        let draws = CompiledGraph::draws(body);
+        match leaf.items().filter(|_| !draws) {
             Some(items) => {
                 if self.native_loop(step, body, transform.pass_through, &items, out, &at) {
                     return;
                 }
             }
+            None if draws => {}
             None => {
                 if let Some((records, odd)) = self.shredded(&leaf, rows) {
                     let (rest, lifted): (Vec<usize>, Vec<usize>) =
@@ -68,12 +70,16 @@ impl<'a> Run<'_, 'a> {
             }
         }
         let mut items: Vec<Variable> = Vec::new();
+        let mut owners: Vec<(usize, usize)> = Vec::new();
         let mut spans: Vec<(usize, usize, usize)> = Vec::with_capacity(at.len());
         for &row in &at {
             match leaf.get(row).as_array() {
                 Some(array) => {
                     let start = items.len();
                     items.extend(array.borrow().iter().cloned());
+                    if draws {
+                        owners.extend((0..items.len() - start).map(|index| (row, index)));
+                    }
                     spans.push((row, start, items.len()));
                 }
                 None => self
@@ -82,7 +88,11 @@ impl<'a> Run<'_, 'a> {
                     .fail(row, &step.node, Rc::from("Expected an array")),
             }
         }
-        let produced = CompiledGraph::items(&mut self.runner, step, body, &items, &[]);
+        let eval = match draws {
+            true => self.host.extensions.eval.items(&owners),
+            false => self.host.extensions.eval.clone(),
+        };
+        let produced = CompiledGraph::items(&mut self.runner, &eval, step, body, &items, &[]);
         let mut values = vec![Variable::Null; rows];
         for (row, start, end) in spans {
             let mut collected = Vec::with_capacity(end - start);
@@ -235,7 +245,13 @@ impl<'a> Run<'_, 'a> {
         }
         let items: Rc<[usize]> = (0..count).collect();
         let data = Data::record(&items, Layer::new(keys.into(), leaves, Some(present)), None);
-        let (output, failures) = CompiledGraph::item_run(&mut self.runner, step, body, &data);
+        let (output, failures) = CompiledGraph::item_run(
+            &mut self.runner,
+            &self.host.extensions.eval,
+            step,
+            body,
+            &data,
+        );
         let paths: Vec<(Arc<str>, Leaf<'a>)> = output.leaves().to_vec();
         let shaped = matches!(output.shape, DataShape::Patched { base: None, .. })
             && paths

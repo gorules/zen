@@ -17,7 +17,14 @@ impl Literal {
         if !p.site_keys.is_empty() || p.opaque() || p.writes_env || p.chain || !p.timeless() {
             return None;
         }
-        match runner.evaluate_one(program, &Scope::default()).ok()? {
+        match runner
+            .evaluate_one(
+                program,
+                &zen_expression::context::EvaluationContext::default(),
+                &Scope::default(),
+            )
+            .ok()?
+        {
             Variable::Null => Some(Literal::Null),
             Variable::Bool(b) => Some(Literal::Bool(b)),
             Variable::Number(n) => Some(Literal::Num(n)),

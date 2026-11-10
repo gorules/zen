@@ -21,6 +21,7 @@ pub(crate) struct ZenListener {
     pub loader: DynamicLoader,
     pub custom_node: DynamicCustomNode,
     pub http_handler: DynamicHttpHandler,
+    pub slot: crate::compiled::pinning::JsSlot,
 }
 
 impl ZenListener {
@@ -49,7 +50,7 @@ impl ZenListener {
             }
         };
         let result = call
-            .run(&graph, context.0, None)
+            .run(&graph, context.0, None, &extensions.eval)
             .await
             .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
         Ok(DecisionGraphResponse {
@@ -82,7 +83,7 @@ impl ZenListener {
                 ))
             }
         };
-        call.traced(&graph, context.0, None)
+        call.traced(&graph, context.0, None, &extensions.eval)
             .await
             .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?
             .or_throw(ctx)
@@ -99,6 +100,7 @@ impl RuntimeListener for ZenListener {
         let loader = self.loader.clone();
         let custom_node = self.custom_node.clone();
         let http_handler = self.http_handler.clone();
+        let slot = self.slot.clone();
 
         Box::pin(async move {
             if event != RuntimeEvent::Startup {
@@ -117,6 +119,7 @@ impl RuntimeListener for ZenListener {
                             let loader = loader.clone();
                             let custom_node = custom_node.clone();
                             let http_handler = http_handler.clone();
+                            let eval = slot.current().unwrap_or_default();
 
                             async move {
                                 let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
@@ -133,6 +136,7 @@ impl RuntimeListener for ZenListener {
                                     custom_node: custom_node.clone(),
                                     http_handler: http_handler.clone(),
                                     prepared: prepared.clone(),
+                                    eval,
                                     ..Default::default()
                                 };
                                 let response = match trace {

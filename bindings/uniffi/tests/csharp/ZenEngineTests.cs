@@ -157,7 +157,7 @@ public class ZenEngineTests
     public async Task TraceOption()
     {
         using var engine = new ZenEngine(new ZenLoader.Filesystem(TestDataRoot()));
-        var options = new ZenEvaluateOptions(5, true);
+        var options = new ZenEvaluateOptions(5, true, null, null, null, null);
         var response = await engine.Evaluate("table.json", new JsonBuffer("{\"input\":12}"), options);
         Assert.NotNull(response.Trace);
         Assert.NotEmpty(response.Trace);

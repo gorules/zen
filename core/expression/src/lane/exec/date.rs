@@ -1,7 +1,7 @@
 use super::frame::Frame;
 use super::Executor;
 use crate::functions::{FunctionKind, InternalFunction, MethodKind};
-use crate::lane::builtins::{Arg, Dates};
+use crate::lane::builtins::{Arg, Dates, RowContext};
 use crate::lane::date::Date;
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::program::{Input, Kind, Reg};
@@ -14,6 +14,7 @@ impl Executor {
         args: &[Input],
         active: M,
         f: &mut Frame<M>,
+        at: RowContext,
     ) -> M {
         let mut done = f.none();
         let zone = match (kind, args) {
@@ -45,7 +46,7 @@ impl Executor {
                 {
                     *date
                 }
-                _ => Date::text(text, zone),
+                _ => Date::text(text, zone, at.context()),
             };
             let at = f.at(dst, lane);
             f.dates[at] = date;

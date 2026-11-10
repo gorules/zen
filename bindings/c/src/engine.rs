@@ -57,13 +57,37 @@ pub(crate) struct ZenEngineStruct {
 pub struct ZenEngineEvaluationOptions {
     trace: bool,
     max_depth: u8,
+    now: *const c_char,
+    timezone: *const c_char,
+    has_seed: bool,
+    seed: u64,
+    locale: *const c_char,
+}
+
+impl Default for ZenEngineEvaluationOptions {
+    fn default() -> Self {
+        Self {
+            trace: false,
+            max_depth: 5,
+            now: std::ptr::null(),
+            timezone: std::ptr::null(),
+            has_seed: false,
+            seed: 0,
+            locale: std::ptr::null(),
+        }
+    }
 }
 
 impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
     fn into(self) -> EvaluationOptions {
+        use zen_engine::context::{parse_instant, parse_locale, parse_timezone};
         EvaluationOptions {
             trace: self.trace,
             max_depth: self.max_depth,
+            now: safe_str_from_ptr(self.now).and_then(parse_instant),
+            timezone: safe_str_from_ptr(self.timezone).and_then(parse_timezone),
+            seed: self.has_seed.then_some(self.seed),
+            locale: safe_str_from_ptr(self.locale).and_then(parse_locale),
         }
     }
 }
@@ -321,6 +345,7 @@ mod tests {
             ZenEngineEvaluationOptions {
                 trace: false,
                 max_depth: 5,
+                ..Default::default()
             },
         );
 
@@ -412,6 +437,7 @@ mod tests {
             ZenEngineEvaluationOptions {
                 trace: false,
                 max_depth: 5,
+                ..Default::default()
             },
         );
 

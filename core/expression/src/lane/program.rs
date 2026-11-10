@@ -510,6 +510,7 @@ pub struct Program {
     pub memos: u32,
     pub layout: Option<Layout>,
     pub isolated: bool,
+    pub draws: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -657,6 +658,7 @@ impl Program {
             }
         }
         self.frames = self.depth() + 1;
+        self.draws = !self.stable();
     }
 
     fn fields_only(&self, at: usize, reg: Reg) -> bool {
@@ -700,22 +702,23 @@ impl Program {
     }
 
     pub fn pure(&self) -> bool {
-        self.steps.iter().all(|step| {
-            !matches!(
-                step.op,
-                Op::Env { .. }
-                    | Op::Path { .. }
-                    | Op::RootEnv { .. }
-                    | Op::LoadEq { .. }
-                    | Op::LoadIn { .. }
-                    | Op::LoadCall(_)
-                    | Op::AssignBegin { .. }
-                    | Op::AssignStep { .. }
-                    | Op::Closure(_)
-                    | Op::Rewind
-                    | Op::DollarInsert { .. }
-            )
-        })
+        !self.draws
+            && self.steps.iter().all(|step| {
+                !matches!(
+                    step.op,
+                    Op::Env { .. }
+                        | Op::Path { .. }
+                        | Op::RootEnv { .. }
+                        | Op::LoadEq { .. }
+                        | Op::LoadIn { .. }
+                        | Op::LoadCall(_)
+                        | Op::AssignBegin { .. }
+                        | Op::AssignStep { .. }
+                        | Op::Closure(_)
+                        | Op::Rewind
+                        | Op::DollarInsert { .. }
+                )
+            })
     }
 
     pub fn opaque(&self) -> bool {

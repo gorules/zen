@@ -170,7 +170,7 @@ impl CompiledGraph {
         let content = compiled.schemas(graph, extensions.loader()).await;
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
-            ..call.sub_extensions(&content)
+            ..call.sub_extensions(&content, &extensions.eval)
         };
         let parents: Vec<Option<Variable>> = (0..inputs.len())
             .map(|row| nodes.get(row).cloned().flatten())

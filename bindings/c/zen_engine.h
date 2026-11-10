@@ -26,6 +26,11 @@ typedef struct ZenResult_c_char {
 typedef struct ZenEngineEvaluationOptions {
   bool trace;
   uint8_t max_depth;
+  const char *now;
+  const char *timezone;
+  bool has_seed;
+  uint64_t seed;
+  const char *locale;
 } ZenEngineEvaluationOptions;
 
 typedef struct ZenEngineStruct {

@@ -24,6 +24,7 @@ use schedule::{Blocks, Demand, End, Event, Replay, Segment};
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::SourceInfo;
 use zen_expression::lane::{LaneProgram, LaneRunner, Programs};
 use zen_expression::{Scope, Variable};
@@ -191,6 +192,7 @@ pub(crate) struct PolicyPlan {
 }
 
 struct Rows<'a> {
+    eval: EvaluationContext,
     hosts: Vec<Option<Host<'a>>>,
     picks: Vec<Vec<(usize, Picked)>>,
     failures: Vec<Option<EvaluationError>>,
@@ -374,6 +376,7 @@ impl PolicyPlan {
         &self,
         artifact: &EvalArtifact,
         requests: &[EvaluateRequest],
+        eval: &EvaluationContext,
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
         let start = Instant::now();
         let count = requests.len();
@@ -390,10 +393,12 @@ impl PolicyPlan {
             })
             .collect();
         let mut state = Rows {
+            eval: eval.clone(),
             hosts: stores
                 .iter()
                 .zip(requests)
-                .map(|(store, request)| {
+                .enumerate()
+                .map(|(row, (store, request))| {
                     store.as_ref().map(|store| {
                         Host::new(
                             artifact,
@@ -402,6 +407,7 @@ impl PolicyPlan {
                             false,
                             false,
                             &self.programs,
+                            eval.at(row),
                         )
                     })
                 })
@@ -551,15 +557,31 @@ impl PolicyPlan {
             .unzip()
     }
 
-    fn run(
-        program: &LaneProgram,
-        scopes: &[Scope],
-        sink: impl FnMut(usize, Result<Variable, zen_expression::IsolateError>),
-    ) {
-        Self::RUNNER.with_borrow_mut(|runner| runner.evaluate_with(program, scopes, sink));
+    fn drawn(eval: &EvaluationContext, program: &LaneProgram, rows: &[usize]) -> EvaluationContext {
+        match program.program().draws {
+            true => eval.rows(rows),
+            false => eval.clone(),
+        }
     }
 
-    fn arms(ir: &MatchIr, conditions: &[Option<LaneProgram>], scopes: Vec<Scope>) -> Vec<Arm> {
+    fn run(
+        eval: &EvaluationContext,
+        program: &LaneProgram,
+        scopes: &[Scope],
+        rows: &[usize],
+        sink: impl FnMut(usize, Result<Variable, zen_expression::IsolateError>),
+    ) {
+        let eval = Self::drawn(eval, program, rows);
+        Self::RUNNER.with_borrow_mut(|runner| runner.evaluate_with(program, &eval, scopes, sink));
+    }
+
+    fn arms(
+        eval: &EvaluationContext,
+        ir: &MatchIr,
+        conditions: &[Option<LaneProgram>],
+        scopes: Vec<Scope>,
+        rows: &[usize],
+    ) -> Vec<Arm> {
         let mut outcome: Vec<Option<Arm>> = (0..scopes.len()).map(|_| None).collect();
         let mut open: Vec<usize> = (0..scopes.len()).collect();
         let mut scopes = scopes;
@@ -574,7 +596,8 @@ impl PolicyPlan {
                 break;
             };
             let mut hit = vec![None; open.len()];
-            Self::run(program, &scopes, |i, result| {
+            let at: Vec<usize> = open.iter().map(|&lane| rows[lane]).collect();
+            Self::run(eval, program, &scopes, &at, |i, result| {
                 hit[i] = Some(result.map(|v| v.as_bool().unwrap_or(false)).ok())
             });
             let mut next_open = Vec::with_capacity(open.len());
@@ -614,7 +637,8 @@ impl PolicyPlan {
     ) -> Vec<usize> {
         let (live, scopes) = Self::scopes(rows, state);
         let mut delegated = Vec::new();
-        for (row, arm) in live.into_iter().zip(Self::arms(ir, conditions, scopes)) {
+        let arms = Self::arms(&state.eval, ir, conditions, scopes, &live);
+        for (row, arm) in live.into_iter().zip(arms) {
             match arm {
                 Arm::Failed => delegated.push(row),
                 Arm::Matched(matched_arm) => {
@@ -684,7 +708,8 @@ impl PolicyPlan {
             .iter()
             .map(|l| Scope::new(l.root.shallow_clone()))
             .collect();
-        let arms = Self::arms(ir, conditions, scopes);
+        let owners: Vec<usize> = lanes.iter().map(|l| captured[l.owner].row).collect();
+        let arms = Self::arms(&state.eval, ir, conditions, scopes, &owners);
         let mut delegated = Vec::new();
         for Capture {
             row,
@@ -727,21 +752,25 @@ impl PolicyPlan {
             .iter()
             .map(|l| Scope::new(l.root.shallow_clone()))
             .collect();
+        let owners: Vec<usize> = lanes.iter().map(|l| captured[l.owner].row).collect();
+        let eval = state.eval.clone();
         let mut writes: Vec<Option<Option<Write>>> = (0..lanes.len()).map(|_| None).collect();
         match native {
-            Native::Expression { key, program } => Self::run(program, &scopes, |i, result| {
-                writes[i] = result.ok().map(|value| {
-                    Some(Write {
-                        path: key.clone(),
-                        value,
+            Native::Expression { key, program } => {
+                Self::run(&eval, program, &scopes, &owners, |i, result| {
+                    writes[i] = result.ok().map(|value| {
+                        Some(Write {
+                            path: key.clone(),
+                            value,
+                        })
                     })
                 })
-            }),
+            }
             Native::Assertion { ir, conditions } => {
                 let mut results: Vec<Option<Vec<bool>>> =
                     (0..lanes.len()).map(|_| Some(Vec::new())).collect();
                 for program in conditions {
-                    Self::run(program, &scopes, |i, result| {
+                    Self::run(&eval, program, &scopes, &owners, |i, result| {
                         match (result, &mut results[i]) {
                             (Ok(value), Some(r)) => r.push(value.as_bool().unwrap_or(false)),
                             _ => results[i] = None,
@@ -788,7 +817,8 @@ impl PolicyPlan {
                         continue;
                     };
                     let subset: Vec<Scope> = members.iter().map(|&i| scopes[i].clone()).collect();
-                    Self::run(program, &subset, |j, result| {
+                    let at: Vec<usize> = members.iter().map(|&i| owners[i]).collect();
+                    Self::run(&eval, program, &subset, &at, |j, result| {
                         writes[members[j]] = result
                             .ok()
                             .map(|value| key.clone().map(|path| Write { path, value }))
@@ -809,8 +839,8 @@ impl PolicyPlan {
                     true => delegated.push(row),
                     false => {
                         if let Some(host) = state.hosts[row].as_mut() {
-                            if let Err(error) = host.commit(owner, rule, Picked::Iterated(iterated))
-                            {
+                            let committed = host.commit(owner, rule, Picked::Iterated(iterated));
+                            if let Err(error) = committed {
                                 state.failures[row] = Some(error);
                             }
                         }
@@ -866,7 +896,9 @@ impl PolicyPlan {
             };
             let (live, scopes) = Self::scopes(&members, state);
             let mut results: Vec<Option<Variable>> = vec![None; live.len()];
-            Self::run(program, &scopes, |i, result| results[i] = result.ok());
+            Self::run(&state.eval, program, &scopes, &live, |i, result| {
+                results[i] = result.ok()
+            });
             for (row, result) in live.into_iter().zip(results) {
                 match result {
                     Some(value) => {
@@ -893,10 +925,16 @@ impl PolicyPlan {
         let mut results: Vec<Vec<bool>> = vec![Vec::with_capacity(conditions.len()); live.len()];
         let mut failed = vec![false; live.len()];
         for program in conditions {
-            Self::run(program, &scopes, |i, result| match result {
-                Ok(value) => results[i].push(value.as_bool().unwrap_or(false)),
-                Err(_) => failed[i] = true,
-            });
+            Self::run(
+                &state.eval,
+                program,
+                &scopes,
+                &live,
+                |i, result| match result {
+                    Ok(value) => results[i].push(value.as_bool().unwrap_or(false)),
+                    Err(_) => failed[i] = true,
+                },
+            );
         }
         let mut delegated = Vec::new();
         for (i, row) in live.into_iter().enumerate() {
@@ -921,8 +959,9 @@ impl PolicyPlan {
     ) -> Vec<usize> {
         let (live, scopes) = Self::scopes(rows, state);
         let mut delegated = Vec::new();
+        let eval = Self::drawn(&state.eval, program, &live);
         Self::RUNNER.with_borrow_mut(|runner| {
-            runner.evaluate_with(program, &scopes, |i, result| {
+            runner.evaluate_with(program, &eval, &scopes, |i, result| {
                 let row = live[i];
                 match (result, state.hosts[row].as_ref()) {
                     (Ok(value), Some(host)) => host.state.write(key, value),

@@ -1,14 +1,14 @@
+use crate::context::EvaluationContext;
 pub(crate) use crate::lane::date::duration::Duration;
 pub(crate) use crate::lane::date::duration_unit::DurationUnit;
 use crate::variable::DynamicVariable;
 use crate::Variable;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat};
 use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 mod duration;
 mod duration_parser;
@@ -78,24 +78,28 @@ impl Formats {
 }
 
 impl Date {
-    pub fn now() -> Self {
-        Self(Some(helper::now()))
+    pub fn now(context: &EvaluationContext) -> Self {
+        Self(Some(helper::now_tz(context, context.timezone())))
     }
 
-    pub fn yesterday() -> Self {
-        Self::now().sub(Duration::day())
+    pub fn yesterday(context: &EvaluationContext) -> Self {
+        Self::now(context).sub(Duration::day())
     }
 
-    pub fn tomorrow() -> Self {
-        Self::now().add(Duration::day())
+    pub fn tomorrow(context: &EvaluationContext) -> Self {
+        Self::now(context).add(Duration::day())
     }
 
-    pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
-        Self(helper::parse_date(var, tz_opt))
+    pub fn new(var: Variable, tz_opt: Option<Tz>, context: &EvaluationContext) -> Self {
+        Self(helper::parse_date(var, tz_opt, context))
     }
 
-    pub(crate) fn text(str: &str, tz_opt: Option<Tz>) -> Self {
-        Self(helper::parse_str(str, tz_opt.unwrap_or_else(helper::tz)))
+    pub(crate) fn text(str: &str, tz_opt: Option<Tz>, context: &EvaluationContext) -> Self {
+        Self(helper::parse_str(
+            str,
+            tz_opt.unwrap_or_else(|| context.timezone()),
+            context,
+        ))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -219,7 +223,8 @@ impl Date {
 }
 
 mod helper {
-    use crate::lane::date::{utc_now, Duration, DurationUnit, DynamicVariableExt};
+    use crate::context::EvaluationContext;
+    use crate::lane::date::{Duration, DurationUnit, DynamicVariableExt};
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, FixedOffset, LocalResult, Month, Months, NaiveDate,
@@ -229,31 +234,19 @@ mod helper {
     use rust_decimal::prelude::ToPrimitive;
     use std::ops::Deref;
     use std::str::FromStr;
-    use std::sync::OnceLock;
 
-    pub(super) fn tz() -> Tz {
-        static CACHED_TZ: OnceLock<Tz> = OnceLock::new();
-
-        *CACHED_TZ.get_or_init(|| {
-            iana_time_zone::get_timezone()
-                .ok()
-                .and_then(|tz| Tz::from_str(&tz).ok())
-                .unwrap_or(Tz::UTC)
-        })
+    pub fn now_tz(context: &EvaluationContext, tz: Tz) -> DateTime<Tz> {
+        context.now().with_timezone(&tz)
     }
 
-    pub fn now() -> DateTime<Tz> {
-        now_tz(tz())
-    }
-
-    pub fn now_tz(tz: Tz) -> DateTime<Tz> {
-        utc_now().with_timezone(&tz)
-    }
-
-    pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
+    pub fn parse_date(
+        var: Variable,
+        tz_opt: Option<Tz>,
+        context: &EvaluationContext,
+    ) -> Option<DateTime<Tz>> {
         match var {
             Variable::Number(n) => {
-                let tz = tz_opt.unwrap_or_else(tz);
+                let tz = tz_opt.unwrap_or_else(|| context.timezone());
                 let n_i64 = n.to_i64()?;
                 let date_time = match tz.timestamp_millis_opt(n_i64) {
                     LocalResult::Single(date_time) => date_time,
@@ -263,7 +256,11 @@ mod helper {
 
                 Some(date_time)
             }
-            Variable::String(str) => parse_str(str.deref(), tz_opt.unwrap_or_else(tz)),
+            Variable::String(str) => parse_str(
+                str.deref(),
+                tz_opt.unwrap_or_else(|| context.timezone()),
+                context,
+            ),
             Variable::Dynamic(d) => {
                 let date = d.as_date()?;
                 let source = d
@@ -280,18 +277,18 @@ mod helper {
         }
     }
 
-    pub(crate) fn parse_str(str: &str, tz: Tz) -> Option<DateTime<Tz>> {
-        parse_text(str, tz).or_else(|| zone_now(str))
+    pub(crate) fn parse_str(
+        str: &str,
+        tz: Tz,
+        context: &EvaluationContext,
+    ) -> Option<DateTime<Tz>> {
+        parse_text(str, tz).or_else(|| zone_now(str, context))
     }
 
     #[cold]
     #[inline(never)]
-    fn zone_now(str: &str) -> Option<DateTime<Tz>> {
-        Tz::from_str(str).ok().map(now_tz)
-    }
-
-    pub(crate) fn from_text(str: &str) -> Option<DateTime<Tz>> {
-        parse_text(str, tz())
+    fn zone_now(str: &str, context: &EvaluationContext) -> Option<DateTime<Tz>> {
+        Tz::from_str(str).ok().map(|tz| now_tz(context, tz))
     }
 
     #[inline]
@@ -445,7 +442,7 @@ mod helper {
         }
     }
 
-    pub(crate) trait Clock: Datelike + Timelike + Sized {
+    pub(crate) trait Wall: Datelike + Timelike + Sized {
         fn add_days(self, days: Days) -> Option<Self>;
         fn sub_days(self, days: Days) -> Option<Self>;
         fn plus(self, delta: TimeDelta) -> Option<Self>;
@@ -453,7 +450,7 @@ mod helper {
         fn sub_months(self, months: Months) -> Option<Self>;
     }
 
-    impl Clock for DateTime<Tz> {
+    impl Wall for DateTime<Tz> {
         fn add_days(self, days: Days) -> Option<Self> {
             self.checked_add_days(days)
         }
@@ -475,7 +472,7 @@ mod helper {
         }
     }
 
-    impl Clock for NaiveDateTime {
+    impl Wall for NaiveDateTime {
         fn add_days(self, days: Days) -> Option<Self> {
             self.checked_add_days(days)
         }
@@ -500,7 +497,7 @@ mod helper {
     pub(crate) struct Calendar;
 
     impl Calendar {
-        pub(crate) fn shift<T: Clock>(mut date_time: T, duration: Duration) -> Option<T> {
+        pub(crate) fn shift<T: Wall>(mut date_time: T, duration: Duration) -> Option<T> {
             date_time = date_time.plus(TimeDelta::try_seconds(duration.seconds)?)?;
             date_time = match duration.months < 0 {
                 true => date_time.sub_months(Months::new(duration.months.unsigned_abs()))?,
@@ -525,7 +522,7 @@ mod helper {
             )
         }
 
-        pub(crate) fn start_of<T: Clock>(date_time: T, unit: DurationUnit) -> Option<T> {
+        pub(crate) fn start_of<T: Wall>(date_time: T, unit: DurationUnit) -> Option<T> {
             Some(match unit {
                 DurationUnit::Second => date_time.with_nanosecond(0)?,
                 DurationUnit::Minute => date_time.with_second(0)?.with_nanosecond(0)?,
@@ -571,7 +568,7 @@ mod helper {
             })
         }
 
-        pub(crate) fn end_of<T: Clock>(mut date_time: T, unit: DurationUnit) -> Option<T> {
+        pub(crate) fn end_of<T: Wall>(mut date_time: T, unit: DurationUnit) -> Option<T> {
             date_time = date_time.with_nanosecond(999_999_999)?;
 
             Some(match unit {
@@ -769,24 +766,31 @@ impl Date {
         Variable::Dynamic(Rc::new(crate::vm::VmDate::from(self.0)))
     }
 
-    pub(crate) fn coerce(v: &Variable) -> Option<Date> {
+    pub(crate) fn coerce(v: &Variable, tz: Tz) -> Option<Date> {
         match v {
             Variable::Dynamic(d) => d.as_date(),
-            Variable::String(text) => Some(Self::from_text(text)),
+            Variable::String(text) => Some(Self::from_text(text, tz)),
             _ => None,
         }
     }
 
-    pub(crate) fn parses(text: &str) -> bool {
-        helper::parse_text(text, helper::tz()).is_some()
+    pub(crate) fn from_text(text: &str, tz: Tz) -> Date {
+        Date(helper::parse_text(text, tz))
     }
 
-    pub(crate) fn from_text(text: &str) -> Date {
-        Date(helper::from_text(text))
+    pub(crate) fn never(text: &str) -> bool {
+        !Self::from_text(text, Tz::UTC).is_valid()
+            && !Self::from_text(text, Tz::Etc__GMTMinus14).is_valid()
     }
 
-    pub(crate) fn matches(&self, other: &Variable) -> bool {
-        self.0.is_some() && Self::coerce(other).is_some_and(|other| other == *self)
+    pub(crate) fn fixed(text: &str) -> Option<Date> {
+        let utc = Self::from_text(text, Tz::UTC);
+        let east = Self::from_text(text, Tz::Etc__GMTMinus14);
+        (utc.is_valid() && utc == east).then_some(utc)
+    }
+
+    pub(crate) fn matches(&self, other: &Variable, tz: Tz) -> bool {
+        self.0.is_some() && Self::coerce(other, tz).is_some_and(|other| other == *self)
     }
 
     pub(crate) fn rendered(&self) -> Option<String> {
@@ -817,17 +821,6 @@ impl Date {
     }
 }
 
-pub(crate) fn utc_now() -> DateTime<Utc> {
-    static CURRENT_DATE_VALUE: OnceLock<Option<DateTime<Utc>>> = OnceLock::new();
-
-    CURRENT_DATE_VALUE
-        .get_or_init(|| match std::env::var("__ZEN_MOCK_UTC_TIME") {
-            Ok(v) => v.parse::<DateTime<Utc>>().ok(),
-            Err(_) => None,
-        })
-        .unwrap_or_else(Utc::now)
-}
-
 #[cfg(test)]
 mod format_tests {
     use super::Date;
@@ -856,7 +849,11 @@ mod format_tests {
             "2025-10-26 02:30:00",
         ];
         for date in dates {
-            let vm = Date::new(Variable::String(date.into()), None);
+            let vm = Date::new(
+                Variable::String(date.into()),
+                None,
+                &crate::context::EvaluationContext::default(),
+            );
             let Some(dt) = vm.0 else { continue };
             for format in formats {
                 for _ in 0..2 {

@@ -35,7 +35,11 @@ impl<'c> OutputCells<'c> {
                 let p = program.program();
                 match p.site_keys.is_empty() && p.timeless() && !p.opaque() {
                     true => LaneRunner::new()
-                        .evaluate_one(&program, &zen_expression::Scope::default())
+                        .evaluate_one(
+                            &program,
+                            &zen_expression::context::EvaluationContext::default(),
+                            &zen_expression::Scope::default(),
+                        )
                         .ok(),
                     false => None,
                 }

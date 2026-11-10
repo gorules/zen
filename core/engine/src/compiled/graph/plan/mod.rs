@@ -1478,7 +1478,11 @@ impl<'g> Builder<'g> {
                                 true => {
                                     let scope = zen_expression::Scope::default();
                                     let truth = zen_expression::lane::LaneRunner::new()
-                                        .evaluate_one(program, &scope);
+                                        .evaluate_one(
+                                            program,
+                                            &zen_expression::context::EvaluationContext::default(),
+                                            &scope,
+                                        );
                                     match truth {
                                         Ok(zen_expression::Variable::Bool(true)) => Cond::Always,
                                         _ => Cond::Never,

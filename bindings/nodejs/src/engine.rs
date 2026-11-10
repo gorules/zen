@@ -87,6 +87,12 @@ pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
     #[napi(ts_type = "boolean | 'string' | 'reference' | 'referenceString'")]
     pub trace: Option<JsEvaluationTraceKind>,
+    #[napi(ts_type = "string | number")]
+    pub now: Option<Either<String, f64>>,
+    pub timezone: Option<String>,
+    #[napi(ts_type = "number | string")]
+    pub seed: Option<Either<f64, String>>,
+    pub locale: Option<String>,
 }
 
 impl Default for ZenEvaluateOptions {
@@ -94,16 +100,85 @@ impl Default for ZenEvaluateOptions {
         Self {
             max_depth: Some(5),
             trace: Some(JsEvaluationTraceKind::default()),
+            now: None,
+            timezone: None,
+            seed: None,
+            locale: None,
         }
     }
 }
 
-impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
-    fn from(value: ZenEvaluateOptions) -> Self {
-        Self {
+const MAX_SAFE_INTEGER: f64 = 9007199254740991.0;
+
+impl TryFrom<ZenEvaluateOptions> for EvaluationSerializedOptions {
+    type Error = napi::Error;
+
+    fn try_from(value: ZenEvaluateOptions) -> Result<Self, Self::Error> {
+        use zen_engine::context::{
+            instant_from_millis, parse_instant, parse_locale, parse_timezone,
+        };
+        let now = match value.now {
+            None => None,
+            Some(Either::A(text)) => Some(
+                parse_instant(&text)
+                    .ok_or_else(|| anyhow!("invalid now '{text}', expected an RFC 3339 instant"))?,
+            ),
+            Some(Either::B(ms)) if ms.is_finite() && ms.fract() == 0.0 => Some(
+                instant_from_millis(ms as i64)
+                    .ok_or_else(|| anyhow!("invalid now {ms}, out of range"))?,
+            ),
+            Some(Either::B(ms)) => {
+                return Err(anyhow!("invalid now {ms}, expected whole epoch milliseconds").into())
+            }
+        };
+        let timezone = match value.timezone {
+            None => None,
+            Some(name) => Some(
+                parse_timezone(&name)
+                    .ok_or_else(|| anyhow!("invalid timezone '{name}', expected an IANA name"))?,
+            ),
+        };
+        let seed = match value.seed {
+            None => None,
+            Some(Either::A(n)) if (0.0..=MAX_SAFE_INTEGER).contains(&n) && n.fract() == 0.0 => {
+                Some(n as u64)
+            }
+            Some(Either::A(n)) => {
+                return Err(anyhow!(
+                    "invalid seed {n}, expected a whole number from 0 to 2^53 - 1, or a string"
+                )
+                .into())
+            }
+            Some(Either::B(text)) => Some(text.parse::<u64>().map_err(|_| {
+                anyhow!("invalid seed '{text}', expected an unsigned 64-bit integer")
+            })?),
+        };
+        let locale = match value.locale {
+            None => None,
+            Some(tag) => Some(
+                parse_locale(&tag)
+                    .ok_or_else(|| anyhow!("invalid locale '{tag}', expected a BCP 47 tag"))?,
+            ),
+        };
+        Ok(Self {
             max_depth: value.max_depth.unwrap_or(5),
             trace: value.trace.unwrap_or_default().0,
-        }
+            now,
+            timezone,
+            seed,
+            locale,
+        })
+    }
+}
+
+pub(crate) fn unserialized(options: &EvaluationSerializedOptions) -> EvaluationOptions {
+    EvaluationOptions {
+        trace: options.trace != EvaluationTraceKind::None,
+        max_depth: options.max_depth,
+        now: options.now,
+        timezone: options.timezone,
+        seed: options.seed,
+        locale: options.locale,
     }
 }
 
@@ -251,13 +326,10 @@ impl ZenEngine {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<NodeEvalResponse> {
         let graph = self.graph.clone();
-        let result = spawn_worker(|| {
-            let serialized: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+        let serialized: EvaluationSerializedOptions = opts.unwrap_or_default().try_into()?;
+        let result = spawn_worker(move || {
             let mode = serialized.trace;
-            let options = EvaluationOptions {
-                trace: mode != EvaluationTraceKind::None,
-                max_depth: serialized.max_depth,
-            };
+            let options = unserialized(&serialized);
 
             async move {
                 let context = zen_engine::Variable::try_from_value(context).map_err(
@@ -342,19 +414,15 @@ impl ZenEngine {
         requests: Vec<EvaluateBatchRequest>,
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Vec<EvaluateBatchResult>> {
-        let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+        let options: EvaluationSerializedOptions = opts.unwrap_or_default().try_into()?;
         let mode = options.trace;
-        let max_depth = options.max_depth;
 
         let mut handles = Vec::with_capacity(requests.len());
         for req in requests {
             let engine = self.graph.clone();
             let EvaluateBatchRequest { key, context } = req;
             handles.push(spawn_worker(move || async move {
-                let eval_opts = EvaluationOptions {
-                    trace: mode != EvaluationTraceKind::None,
-                    max_depth,
-                };
+                let eval_opts = unserialized(&options);
 
                 let context = zen_engine::Variable::try_from_value(context).map_err(
                     |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),

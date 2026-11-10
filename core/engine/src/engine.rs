@@ -36,10 +36,33 @@ impl Debug for DecisionEngine {
     }
 }
 
+/// Options for one evaluation.
+///
+/// `now`, `timezone`, `seed` and `locale` pin the evaluation context of the compiled engine:
+/// `d()`, `rand()` and the date helpers in expressions, and `Date`, `Math.random`, local time,
+/// `Intl` and `toLocale*` in function nodes read them instead of the host clock, zone and
+/// random source. Each one left `None` is resolved lazily: `now` from the host clock once per
+/// evaluation (once per batch), `timezone` from the host zone, `seed` at random on the first
+/// draw and `locale` to `en-US`. In a batch, row `i` draws from its own stream seeded with
+/// `zen_engine::context::row_seed(seed, i)`, so it replays alone with that seed.
+///
+/// The interpreted engine (`compiled: false`) ignores these four fields and keeps using the host
+/// clock, the host zone and an unseeded random source.
+///
+/// Outbound HTTP from function nodes is not captured by the context, so replaying a graph that
+/// makes such calls is not guaranteed to reproduce its result.
 #[derive(Debug, Clone, Copy)]
 pub struct EvaluationOptions {
     pub trace: bool,
     pub max_depth: u8,
+    /// Instant the evaluation runs at.
+    pub now: Option<zen_expression::context::Instant>,
+    /// IANA time zone for local dates, e.g. `Europe/Berlin`.
+    pub timezone: Option<zen_expression::context::Timezone>,
+    /// Seed of the random streams.
+    pub seed: Option<u64>,
+    /// BCP 47 locale for function nodes, `en-US` when `None`.
+    pub locale: Option<zen_expression::context::Locale>,
 }
 
 impl Default for EvaluationOptions {
@@ -47,14 +70,27 @@ impl Default for EvaluationOptions {
         Self {
             trace: false,
             max_depth: 10,
+            now: None,
+            timezone: None,
+            seed: None,
+            locale: None,
         }
     }
 }
 
+/// [`EvaluationOptions`] with a serialized trace; the context fields behave the same.
 #[derive(Debug, Clone, Copy)]
 pub struct EvaluationSerializedOptions {
     pub trace: EvaluationTraceKind,
     pub max_depth: u8,
+    /// Instant the evaluation runs at.
+    pub now: Option<zen_expression::context::Instant>,
+    /// IANA time zone for local dates, e.g. `Europe/Berlin`.
+    pub timezone: Option<zen_expression::context::Timezone>,
+    /// Seed of the random streams.
+    pub seed: Option<u64>,
+    /// BCP 47 locale for function nodes, `en-US` when `None`.
+    pub locale: Option<zen_expression::context::Locale>,
 }
 
 impl Default for EvaluationSerializedOptions {
@@ -62,6 +98,10 @@ impl Default for EvaluationSerializedOptions {
         Self {
             trace: EvaluationTraceKind::None,
             max_depth: 10,
+            now: None,
+            timezone: None,
+            seed: None,
+            locale: None,
         }
     }
 }
@@ -91,6 +131,34 @@ impl EvaluationTraceKind {
             EvaluationTraceKind::ReferenceString => {
                 Value::String(serde_json::to_string(&trace.serialize_ref()).unwrap_or_default())
             }
+        }
+    }
+}
+
+impl EvaluationOptions {
+    pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
+        zen_expression::context::Pinned {
+            now: self.now,
+            timezone: self.timezone,
+            seed: self.seed,
+            locale: self.locale,
+        }
+    }
+}
+
+impl EvaluationSerializedOptions {
+    pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
+        self.unserialized().pinned()
+    }
+
+    pub(crate) fn unserialized(&self) -> EvaluationOptions {
+        EvaluationOptions {
+            trace: self.trace != EvaluationTraceKind::None,
+            max_depth: self.max_depth,
+            now: self.now,
+            timezone: self.timezone,
+            seed: self.seed,
+            locale: self.locale,
         }
     }
 }
@@ -201,7 +269,7 @@ impl DecisionEngine {
         if self.engine.compiled() {
             return self
                 .caches
-                .evaluate(&self.parts(), key_str, context, options)
+                .evaluate_pinned(&self.parts(), key_str, context, options)
                 .await?;
         }
         if self.engine.scopes() {
@@ -261,7 +329,7 @@ impl DecisionEngine {
         if self.engine.compiled() {
             return self
                 .caches
-                .evaluate_serialized(&self.parts(), key_str, context, options)
+                .evaluate_serialized_pinned(&self.parts(), key_str, context, options)
                 .await;
         }
         if self.engine.scopes() {
@@ -316,10 +384,7 @@ impl DecisionEngine {
                 decision.evaluate_serialized(context, options).await
             }
             DecisionContent::Policy(_) => {
-                let inner_opts = EvaluationOptions {
-                    trace: options.trace != EvaluationTraceKind::None,
-                    max_depth: options.max_depth,
-                };
+                let inner_opts = options.unserialized();
                 let trace_mode = options.trace;
                 let response = crate::policy::runtime::evaluate_policy(
                     &self.loader,
@@ -351,7 +416,7 @@ impl DecisionEngine {
         K: AsRef<str>,
     {
         self.caches
-            .evaluate_batch(&self.parts(), key.as_ref(), contexts, options)
+            .evaluate_batch_pinned(&self.parts(), key.as_ref(), contexts, options)
             .await
     }
 

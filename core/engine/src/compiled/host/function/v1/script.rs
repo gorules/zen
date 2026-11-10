@@ -1,4 +1,5 @@
 use crate::compiled::host::function::v2::serde::JsValue;
+use crate::compiled::pinning::JsSlot;
 use anyhow::Context as _;
 use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use zen_expression::context::EvaluationContext;
 use zen_expression::variable::Variable;
 
 #[derive(Debug, Deserialize)]
@@ -18,17 +20,27 @@ pub struct EvaluateResponse {
 
 pub struct Script {
     runtime: Runtime,
+    slot: JsSlot,
 }
 
 impl Script {
     pub fn new(runtime: Runtime) -> Self {
-        Self { runtime }
+        Self {
+            runtime,
+            slot: JsSlot::default(),
+        }
     }
 
-    pub async fn call<P>(&mut self, source: &str, args: &P) -> anyhow::Result<EvaluateResponse>
+    pub async fn call<P>(
+        &mut self,
+        source: &str,
+        args: &P,
+        eval: &EvaluationContext,
+    ) -> anyhow::Result<EvaluateResponse>
     where
         P: Serialize,
     {
+        let _entered = self.slot.enter(eval.clone());
         let runtime = &self.runtime;
         let context = Context::full(runtime).context("Failed to create context")?;
 
@@ -36,7 +48,7 @@ impl Script {
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
 
         let json_response = context.with(|ctx| -> anyhow::Result<String> {
-            Self::prepare(&ctx)?;
+            Self::prepare(&ctx, &self.slot)?;
             ctx.eval::<String, _>(format!("{source};main({args_str})"))
                 .map_err(|e| map_js_error(&ctx, e))
         })?;
@@ -44,7 +56,8 @@ impl Script {
         Self::response(&json_response)
     }
 
-    fn prepare(ctx: &Ctx) -> anyhow::Result<()> {
+    fn prepare(ctx: &Ctx, slot: &JsSlot) -> anyhow::Result<()> {
+        slot.install(ctx).map_err(|e| map_js_error(ctx, e))?;
         Module::evaluate(
             ctx.clone(),
             "main",
@@ -70,6 +83,7 @@ pub(crate) struct Session {
     context: Context,
     base: Instant,
     started: Arc<AtomicU64>,
+    slot: JsSlot,
 }
 
 impl Session {
@@ -87,20 +101,28 @@ impl Session {
                 > limit
         })));
         let context = Context::full(&runtime).ok()?;
-        let ready =
-            context.with(|ctx| Script::prepare(&ctx).is_ok() && ctx.eval::<(), _>(source).is_ok());
+        let slot = JsSlot::default();
+        let ready = context
+            .with(|ctx| Script::prepare(&ctx, &slot).is_ok() && ctx.eval::<(), _>(source).is_ok());
         (ready && !runtime.is_job_pending()).then_some(Self {
             runtime,
             context,
             base,
             started,
+            slot,
         })
     }
 
-    pub(crate) fn call<P>(&self, layout: &str, args: &P) -> anyhow::Result<EvaluateResponse>
+    pub(crate) fn call<P>(
+        &self,
+        layout: &str,
+        args: &P,
+        eval: &EvaluationContext,
+    ) -> anyhow::Result<EvaluateResponse>
     where
         P: Serialize,
     {
+        let _entered = self.slot.enter(eval.clone());
         let args_str =
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
         self.started
@@ -114,6 +136,8 @@ impl Session {
                 true => format!("{layout};main(({}))", Self::ROW),
                 false => format!("{layout};main({args_str})"),
             };
+            ctx.eval::<(), _>("globalThis.now = Date.now();")
+                .map_err(|e| map_js_error(&ctx, e))?;
             ctx.eval::<String, _>(script)
                 .map_err(|e| map_js_error(&ctx, e))
         })?;

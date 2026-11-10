@@ -161,7 +161,7 @@ class ZenEngineTest {
     @Test
     void traceOption() throws Exception {
         try (var engine = new ZenEngine(new ZenLoader.Filesystem(testDataRoot().toString()), null)) {
-            var options = new ZenEvaluateOptions((byte) 5, true);
+            var options = new ZenEvaluateOptions((byte) 5, true, null, null, null, null);
             var response = engine.evaluate("table.json", new JsonBuffer("{\"input\":12}"), options).get();
             assertNotNull(response.trace());
             assertFalse(response.trace().isEmpty());

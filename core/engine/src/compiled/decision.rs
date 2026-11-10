@@ -1,5 +1,6 @@
 use crate::compiled::content::Content;
 use crate::compiled::host::NodeHandlerExtensions;
+use crate::compiled::pinning;
 use crate::compiled::prepared::Prepared;
 use crate::compiled::traced::Traced;
 use crate::compiled::{ColumnarOutput, CompiledGraph, CompiledPlan, Invalid};
@@ -12,6 +13,7 @@ use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::EvaluationError;
 use std::cell::OnceCell;
 use std::sync::{Arc, OnceLock};
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::Columns;
 use zen_expression::variable::Variable;
 
@@ -53,13 +55,41 @@ impl CompiledDecision {
         Arc::ptr_eq(&self.source, content)
     }
 
-    pub(crate) async fn evaluate_with_opts(
+    pub(crate) async fn evaluate_pinned(
         &self,
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let eval = pinning::single(options.pinned());
+        self.evaluate_with_opts(context, options, &eval).await
+    }
+
+    pub(crate) async fn evaluate_batch_pinned(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let eval = pinning::batch(options.pinned());
+        self.evaluate_batch(contexts, options, &eval).await
+    }
+
+    pub(crate) async fn evaluate_columns_pinned<'a>(
+        &self,
+        columns: &'a Columns<'a>,
+        options: EvaluationOptions,
+    ) -> ColumnarOutput<'a> {
+        let eval = pinning::batch(options.pinned());
+        self.evaluate_columns(columns, options, &eval).await
+    }
+
+    pub(crate) async fn evaluate_with_opts(
+        &self,
+        context: Variable,
+        options: EvaluationOptions,
+        eval: &EvaluationContext,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         if options.trace {
-            return self.traced(context, options).await;
+            return self.traced(context, options, eval).await;
         }
 
         let (compiled, content) = Self::compiled(self.single()).map_err(Invalid::evaluation)?;
@@ -67,7 +97,7 @@ impl CompiledDecision {
         compiled
             .evaluate_one(
                 &content,
-                &self.extensions(&content),
+                &self.extensions(&content, eval),
                 options.max_depth,
                 context,
             )
@@ -78,12 +108,14 @@ impl CompiledDecision {
         &self,
         contexts: &[Variable],
         options: EvaluationOptions,
+        eval: &EvaluationContext,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let owned: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
         if options.trace {
             let mut responses = Vec::with_capacity(owned.len());
-            for context in owned {
-                responses.push(self.evaluate_with_opts(context, options).await);
+            for (row, context) in owned.into_iter().enumerate() {
+                responses
+                    .push(Box::pin(self.evaluate_with_opts(context, options, &eval.at(row))).await);
             }
             return responses;
         }
@@ -94,7 +126,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate(
                         &content,
-                        &self.extensions(&content),
+                        &self.extensions(&content, eval),
                         options.max_depth,
                         &owned,
                     )
@@ -108,6 +140,7 @@ impl CompiledDecision {
         &self,
         columns: &'a Columns<'a>,
         options: EvaluationOptions,
+        eval: &EvaluationContext,
     ) -> ColumnarOutput<'a> {
         match Self::compiled(self.prepared()) {
             Ok((compiled, content)) => {
@@ -115,7 +148,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate_columns(
                         &content,
-                        &self.extensions(&content),
+                        &self.extensions(&content, eval),
                         options.max_depth,
                         columns,
                     )
@@ -128,7 +161,7 @@ impl CompiledDecision {
                     trace: false,
                     ..options
                 };
-                let results = self.evaluate_batch(&contexts, options).await;
+                let results = Box::pin(self.evaluate_batch(&contexts, options, eval)).await;
                 ColumnarOutput::from_results(results)
             }
         }
@@ -138,10 +171,11 @@ impl CompiledDecision {
         &self,
         context: Variable,
         options: EvaluationOptions,
+        eval: &EvaluationContext,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let (compiled, content) = Self::compiled(self.tracing()).map_err(Invalid::evaluation)?;
         let content = compiled.schemas(content, &self.loader).await;
-        let extensions = self.extensions(&content);
+        let extensions = self.extensions(&content, eval);
         let traced = Traced {
             graph: compiled,
             content: &content,
@@ -191,7 +225,7 @@ impl CompiledDecision {
     }
 
     #[allow(clippy::arc_with_non_send_sync)]
-    fn extensions(&self, content: &Content) -> NodeHandlerExtensions {
+    fn extensions(&self, content: &Content, eval: &EvaluationContext) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             function_runtime: Default::default(),
             loader: self.loader.clone(),
@@ -201,6 +235,7 @@ impl CompiledDecision {
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
             prepared: self.children.clone(),
+            eval: eval.clone(),
         }
     }
 

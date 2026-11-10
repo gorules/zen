@@ -14,7 +14,6 @@ use pyo3::{pyclass, pymethods, Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, 
 use pyo3_async_runtimes::tokio::get_current_locals;
 use pyo3_async_runtimes::{tokio, TaskLocals};
 use pythonize::{depythonize, pythonize};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::{DecisionEngine, EvaluationOptions};
@@ -25,10 +24,14 @@ pub struct PyZenEngine {
     engine: Arc<DecisionEngine>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default)]
 pub struct PyZenEvaluateOptions {
     pub trace: Option<bool>,
     pub max_depth: Option<u8>,
+    pub now: Option<zen_engine::context::Instant>,
+    pub timezone: Option<zen_engine::context::Timezone>,
+    pub seed: Option<u64>,
+    pub locale: Option<zen_engine::context::Locale>,
 }
 
 impl From<PyZenEvaluateOptions> for EvaluationOptions {
@@ -36,8 +39,68 @@ impl From<PyZenEvaluateOptions> for EvaluationOptions {
         Self {
             max_depth: value.max_depth.unwrap_or(5),
             trace: value.trace.unwrap_or_default(),
+            now: value.now,
+            timezone: value.timezone,
+            seed: value.seed,
+            locale: value.locale,
         }
     }
+}
+
+fn present<'py>(dict: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    Ok(dict.get_item(key)?.filter(|v| !v.is_none()))
+}
+
+fn invalid(message: String) -> pyo3::PyErr {
+    pyo3::exceptions::PyValueError::new_err(message)
+}
+
+fn instant(value: &Bound<'_, PyAny>) -> PyResult<zen_engine::context::Instant> {
+    use zen_engine::context::{instant_from_millis, parse_instant};
+    if value.is_instance_of::<pyo3::types::PyBool>() {
+        return Err(invalid(
+            "invalid now, expected epoch milliseconds or an RFC 3339 string".into(),
+        ));
+    }
+    if let Ok(ms) = value.extract::<i64>() {
+        return instant_from_millis(ms)
+            .ok_or_else(|| invalid(format!("invalid now {ms}, out of range")));
+    }
+    let text =
+        match value.extract::<String>() {
+            Ok(text) => text,
+            Err(_) if value.hasattr("isoformat")? => {
+                value.call_method0("isoformat")?.extract::<String>()?
+            }
+            Err(_) => return Err(invalid(
+                "invalid now, expected epoch milliseconds, an RFC 3339 string or an aware datetime"
+                    .into(),
+            )),
+        };
+    parse_instant(&text).ok_or_else(|| {
+        invalid(format!(
+            "invalid now '{text}', expected an RFC 3339 instant with an offset"
+        ))
+    })
+}
+
+fn seed(value: &Bound<'_, PyAny>) -> PyResult<u64> {
+    if value.is_instance_of::<pyo3::types::PyBool>() {
+        return Err(invalid(
+            "invalid seed, expected an unsigned 64-bit integer".into(),
+        ));
+    }
+    if let Ok(seed) = value.extract::<u64>() {
+        return Ok(seed);
+    }
+    let text = value
+        .extract::<String>()
+        .map_err(|_| invalid("invalid seed, expected an unsigned 64-bit integer".into()))?;
+    text.parse::<u64>().map_err(|_| {
+        invalid(format!(
+            "invalid seed '{text}', expected an unsigned 64-bit integer"
+        ))
+    })
 }
 
 impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
@@ -54,16 +117,33 @@ impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
             .map(|v| v.extract::<u8>())
             .transpose()?;
 
-        Ok(PyZenEvaluateOptions { trace, max_depth })
-    }
-}
+        let now = present(dict, "now")?.map(|v| instant(&v)).transpose()?;
+        let timezone = present(dict, "timezone")?
+            .map(|v| {
+                let name = v.extract::<String>()?;
+                zen_engine::context::parse_timezone(&name).ok_or_else(|| {
+                    invalid(format!("invalid timezone '{name}', expected an IANA name"))
+                })
+            })
+            .transpose()?;
+        let seed = present(dict, "seed")?.map(|v| seed(&v)).transpose()?;
+        let locale = present(dict, "locale")?
+            .map(|v| {
+                let tag = v.extract::<String>()?;
+                zen_engine::context::parse_locale(&tag).ok_or_else(|| {
+                    invalid(format!("invalid locale '{tag}', expected a BCP 47 tag"))
+                })
+            })
+            .transpose()?;
 
-impl Default for PyZenEvaluateOptions {
-    fn default() -> Self {
-        Self {
-            trace: None,
-            max_depth: None,
-        }
+        Ok(PyZenEvaluateOptions {
+            trace,
+            max_depth,
+            now,
+            timezone,
+            seed,
+            locale,
+        })
     }
 }
 

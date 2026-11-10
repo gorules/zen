@@ -4,6 +4,7 @@ use crate::compiled::policy::{Host, PolicyPlan};
 use crate::policy::evaluator::EvalArtifact;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
+use zen_expression::context::EvaluationContext;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use zen_expression::variable::Variable;
@@ -303,6 +304,7 @@ impl Runtime {
         db: &Db,
         artifacts: &Artifacts,
         req: &EvaluateRequest,
+        eval: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         if db.is_graph(&req.policy_path) {
             return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
@@ -311,13 +313,16 @@ impl Runtime {
             return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
         }
         Self::check_imports_resolved(db, &req.policy_path)?;
-        artifacts.get(db, &req.policy_path).evaluate(req, false)
+        artifacts
+            .get(db, &req.policy_path)
+            .evaluate(req, false, eval)
     }
 
     pub(crate) fn enhance_trace(
         db: &Db,
         artifacts: &Artifacts,
         req: &EvaluateRequest,
+        eval: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         if db.is_graph(&req.policy_path) {
             return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
@@ -328,7 +333,9 @@ impl Runtime {
         Self::check_imports_resolved(db, &req.policy_path)?;
         let mut req = req.clone();
         req.trace = true;
-        artifacts.get(db, &req.policy_path).evaluate(&req, true)
+        artifacts
+            .get(db, &req.policy_path)
+            .evaluate(&req, true, eval)
     }
 
     pub(crate) fn evaluate_columns<'a>(
@@ -337,6 +344,7 @@ impl Runtime {
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
         columns: &'a zen_expression::lane::Columns<'a>,
+        eval: &EvaluationContext,
     ) -> Result<crate::compiled::ColumnarOutput<'a>, EvaluationError> {
         let probe = EvaluateRequest {
             policy_path: policy_path.clone(),
@@ -348,13 +356,14 @@ impl Runtime {
         let artifact = artifacts.get(db, policy_path);
         Ok(artifact
             .plan(goals)
-            .evaluate_columns(&artifact, policy_path, goals, columns))
+            .evaluate_columns(&artifact, policy_path, goals, columns, eval))
     }
 
     pub(crate) fn evaluate_batch(
         db: &Db,
         artifacts: &Artifacts,
         requests: &[EvaluateRequest],
+        eval: &EvaluationContext,
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
         let mut results: Vec<Option<Result<EvaluationResult, EvaluationError>>> =
             (0..requests.len()).map(|_| None).collect();
@@ -372,7 +381,8 @@ impl Runtime {
             let artifact = artifacts.get(db, &path);
             let batch: Vec<EvaluateRequest> =
                 members.iter().map(|&i| requests[i].clone()).collect();
-            for (index, result) in members.into_iter().zip(artifact.evaluate_batch(&batch)) {
+            let evaluated = artifact.evaluate_batch(&batch, &eval.rows(&members));
+            for (index, result) in members.into_iter().zip(evaluated) {
                 results[index] = Some(result);
             }
         }
@@ -423,6 +433,7 @@ impl Artifact {
         key: &str,
         input: Variable,
         trace: bool,
+        eval: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let request = EvaluateRequest {
             policy_path: Arc::from(key),
@@ -430,21 +441,22 @@ impl Artifact {
             goals: Vec::new(),
             trace,
         };
-        self.evaluate(&request, false)
+        self.evaluate(&request, false, eval)
     }
 
     pub(crate) fn evaluate(
         &self,
         req: &EvaluateRequest,
         extras: bool,
+        eval: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let plan = self.plan(&req.goals);
         if !req.trace && !extras {
-            if let Some(result) = plan.evaluate(self, std::slice::from_ref(req)).pop() {
+            if let Some(result) = plan.evaluate(self, std::slice::from_ref(req), eval).pop() {
                 return result;
             }
         }
-        plan.traced(self, req, extras)
+        plan.traced(self, req, extras, eval)
     }
 
     const GOAL_PLANS: usize = 32;
@@ -482,6 +494,7 @@ impl Artifact {
     pub(crate) fn evaluate_batch(
         &self,
         requests: &[EvaluateRequest],
+        eval: &EvaluationContext,
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
         let owned: Vec<EvaluateRequest> = requests
             .iter()
@@ -497,7 +510,12 @@ impl Artifact {
         for (index, request) in requests.iter().enumerate() {
             match request.trace {
                 true => {
-                    results[index] = Some(self.plan(&request.goals).traced(self, request, false))
+                    results[index] = Some(self.plan(&request.goals).traced(
+                        self,
+                        request,
+                        false,
+                        &eval.at(index),
+                    ))
                 }
                 false => match groups
                     .iter_mut()
@@ -511,10 +529,10 @@ impl Artifact {
         for (goals, members) in groups {
             let batch: Vec<EvaluateRequest> =
                 members.iter().map(|&i| requests[i].clone()).collect();
-            for (index, result) in members
-                .into_iter()
-                .zip(self.plan(goals).evaluate(self, &batch))
-            {
+            let evaluated = self
+                .plan(goals)
+                .evaluate(self, &batch, &eval.rows(&members));
+            for (index, result) in members.into_iter().zip(evaluated) {
                 results[index] = Some(result);
             }
         }

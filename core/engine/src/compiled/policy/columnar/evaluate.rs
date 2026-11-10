@@ -9,6 +9,7 @@ use crate::compiled::ColumnarOutput;
 use crate::workspace::types::{EvaluateRequest, EvaluationError};
 use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Columns, Kind as LaneKind, LaneProgram};
 use zen_expression::Variable;
 use zen_types::path::DotPath;
@@ -190,6 +191,7 @@ impl PolicyPlan {
         policy_path: &Arc<str>,
         goals: &[Arc<str>],
         columns: &'a Columns<'a>,
+        eval: &EvaluationContext,
     ) -> ColumnarOutput<'a> {
         let rows = columns.rows;
         let request = |row: usize| EvaluateRequest {
@@ -201,7 +203,7 @@ impl PolicyPlan {
         let sheet = Sheet::new(columns);
         let Some(mut sheet) = sheet else {
             let requests: Vec<EvaluateRequest> = (0..rows).map(request).collect();
-            return from_results(rows, self.evaluate(artifact, &requests));
+            return from_results(rows, self.evaluate(artifact, &requests, eval));
         };
         let mut errors: Vec<Option<EvaluationError>> = (0..rows).map(|_| None).collect();
         let stores: Vec<OnceCell<Variable>> = (0..rows).map(|_| OnceCell::new()).collect();
@@ -277,6 +279,7 @@ impl PolicyPlan {
                 arms: ByBlock::default(),
                 stores: &stores,
                 state: Rows {
+                    eval: eval.clone(),
                     hosts: Vec::new(),
                     picks: Vec::new(),
                     failures: errors,
@@ -367,7 +370,9 @@ impl PolicyPlan {
                 _ => shredder.visit(&sheet.object(row), 0, row),
             }
         }
-        for (&row, result) in hosted.iter().zip(self.evaluate(artifact, &requests)) {
+        eval.restart(&hosted);
+        let evaluated = self.evaluate(artifact, &requests, &eval.rows(&hosted));
+        for (&row, result) in hosted.iter().zip(evaluated) {
             match result {
                 Ok(result) => shredder.visit(&result.output, 0, row),
                 Err(error) => errors[row] = Some(error),

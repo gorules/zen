@@ -56,6 +56,18 @@
           PackagePath="runtimes/linux-arm64/native/"
           Visible="false" />
 
+    <!-- Linux musl x64 -->
+    <None Include="../build/generated/resources/linux-musl-x86-64/libzen_uniffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-musl-x64/native/"
+          Visible="false" />
+
+    <!-- Linux musl arm64 -->
+    <None Include="../build/generated/resources/linux-musl-aarch64/libzen_uniffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-musl-arm64/native/"
+          Visible="false" />
+
     <!-- Windows x64 -->
     <None Include="../build/generated/resources/win32-x86-64/zen_uniffi.dll"
           Pack="true"

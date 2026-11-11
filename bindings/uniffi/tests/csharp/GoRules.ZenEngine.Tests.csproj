@@ -7,6 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <RootNamespace>GoRules.ZenEngine.Tests</RootNamespace>
+    <LinuxNativeDir Condition="$(NETCoreSdkRuntimeIdentifier.StartsWith('linux-musl-'))">linux-musl-</LinuxNativeDir>
+    <LinuxNativeDir Condition="'$(LinuxNativeDir)' == ''">linux-</LinuxNativeDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,11 +25,11 @@
           Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"
           CopyToOutputDirectory="PreserveNewest"
           Link="libzen_uniffi.dylib" />
-    <None Include="../../build/generated/resources/linux-x86-64/libzen_uniffi.so"
+    <None Include="../../build/generated/resources/$(LinuxNativeDir)x86-64/libzen_uniffi.so"
           Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"
           CopyToOutputDirectory="PreserveNewest"
           Link="libzen_uniffi.so" />
-    <None Include="../../build/generated/resources/linux-aarch64/libzen_uniffi.so"
+    <None Include="../../build/generated/resources/$(LinuxNativeDir)aarch64/libzen_uniffi.so"
           Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"
           CopyToOutputDirectory="PreserveNewest"
           Link="libzen_uniffi.so" />

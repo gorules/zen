@@ -110,6 +110,10 @@ Full guides, including loaders for multi-decision graphs and batch evaluation:
 * **.NET** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/uniffi) | [NuGet](https://www.nuget.org/packages/GoRules.ZenEngine)
 * **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
 
+Community bindings:
+
+* **Elixir** - [GitHub](https://github.com/abitcipher/rulezenex) | [hex.pm](https://hex.pm/packages/rulezenex)
+
 ## The GoRules platform
 
 The engine is open at the core; [GoRules](https://gorules.io) is the platform around it. Managed cloud, self-hosted, or embedded with no network hop. SOC 2 Type II.

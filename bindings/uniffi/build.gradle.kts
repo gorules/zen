@@ -39,7 +39,7 @@ sourceSets {
 
     val kotlin by creating {
         kotlin {
-            srcDirs("lib/kotlin", "build/generated/kotlin")
+            srcDirs("lib/kotlin", "lib/kotlin-jvm", "build/generated/kotlin")
         }
         resources {
             srcDirs("build/generated/resources")
@@ -133,6 +133,24 @@ tasks {
         dependsOn(patchJavaNativeLoader)
     }
 
+    val patchKotlinNativeLoader by creating {
+        doLast {
+            val namespaceLibrary = file("build/generated/kotlin/io/gorules/zen_engine/kotlin/zen_uniffi.kt")
+            val lookup = "System.getProperty(\"uniffi.component.\$componentName.libraryOverride\")"
+            if (namespaceLibrary.exists() && !namespaceLibrary.readText().contains("MuslLibraryResolver")) {
+                val source = namespaceLibrary.readText()
+                if (!source.contains(lookup)) {
+                    throw GradleException("Kotlin library override lookup not found in ${namespaceLibrary.path}")
+                }
+                namespaceLibrary.writeText(source.replace(lookup, "$lookup ?: MuslLibraryResolver.libraryPath"))
+            }
+        }
+    }
+
+    named(sourceSets["kotlin"].getCompileTaskName("kotlin")) {
+        dependsOn(patchKotlinNativeLoader)
+    }
+
     val testJava by creating(Test::class) {
         group = "verification"
         testClassesDirs = sourceSets["testsJava"].output.classesDirs
@@ -184,6 +202,7 @@ tasks {
         archiveBaseName.set("zen_engine_kotlin")
         archiveClassifier.set("sources")
         from(sourceSets["kotlin"].kotlin)
+        dependsOn(patchKotlinNativeLoader)
     }
 
     val generateKotlinAndroidSourcesJar by creating(Jar::class) {

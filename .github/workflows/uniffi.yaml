@@ -20,6 +20,8 @@ jobs:
       id-token: write
     env:
       OUTPUT_NAME: zen_uniffi
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: '-C target-feature=-crt-static'
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: '-C target-feature=-crt-static'
 
     strategy:
       fail-fast: true
@@ -45,6 +47,14 @@ jobs:
             target: 'aarch64-unknown-linux-gnu'
             output: 'lib{0}.so'
             lib_dir: 'linux-aarch64'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-musl'
+            output: 'lib{0}.so'
+            lib_dir: 'linux-musl-x86-64'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-musl'
+            output: 'lib{0}.so'
+            lib_dir: 'linux-musl-aarch64'
           - host: ubuntu-latest
             target: 's390x-unknown-linux-gnu'
             output: 'lib{0}.so'
@@ -74,7 +84,13 @@ jobs:
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
-        run: cargo zigbuild --lib --release --locked --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} ${{ matrix.settings.extra_args }}
+        run: |
+          TARGET="${{ matrix.settings.target }}"
+          case "$TARGET" in
+            *-musl) ZIG_TARGET="$TARGET" ;;
+            *) ZIG_TARGET="$TARGET.$GLIBC_VERSION" ;;
+          esac
+          cargo zigbuild --lib --release --locked --target "$ZIG_TARGET" ${{ matrix.settings.extra_args }}
       - name: Build (native)
         if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: houseabsolute/actions-rust-cross@v1
@@ -84,7 +100,7 @@ jobs:
           args: '--lib --release --locked ${{ matrix.settings.extra_args }}'
 
       - name: Verify max glibc requirement
-        if: ${{ matrix.settings.host == 'ubuntu-latest' }}
+        if: ${{ matrix.settings.host == 'ubuntu-latest' && !endsWith(matrix.settings.target, '-musl') }}
         run: |
           LIB="target/${{ matrix.settings.target }}/release/lib${{ env.OUTPUT_NAME }}.so"
           MAX=$(grep -aoE 'GLIBC_2\.[0-9]+(\.[0-9]+)?' "$LIB" | sort -uV | tail -1)
@@ -92,6 +108,16 @@ jobs:
           HIGHEST=$(printf '%s\nGLIBC_%s\n' "$MAX" "${{ env.GLIBC_VERSION }}" | sort -V | tail -1)
           if [ -n "$MAX" ] && [ "$HIGHEST" != "GLIBC_${{ env.GLIBC_VERSION }}" ]; then
             echo "::error::$LIB requires $MAX (> GLIBC_${{ env.GLIBC_VERSION }})"
+            exit 1
+          fi
+
+      - name: Verify musl library links libc dynamically
+        if: ${{ endsWith(matrix.settings.target, '-musl') }}
+        run: |
+          LIB="target/${{ matrix.settings.target }}/release/lib${{ env.OUTPUT_NAME }}.so"
+          readelf -d "$LIB" | grep NEEDED
+          if ! readelf -d "$LIB" | grep -q 'NEEDED.*libc\.so'; then
+            echo "::error::$LIB does not link libc dynamically"
             exit 1
           fi
 
@@ -185,6 +211,68 @@ jobs:
       - name: Run C# tests
         run: dotnet test tests/csharp
 
+  test-musl:
+    name: Test musl (Java, Kotlin, C#) - ${{ matrix.settings.lib_dir }}
+    needs: [ build ]
+    runs-on: ${{ matrix.settings.host }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        settings:
+          - host: ubuntu-latest
+            lib_dir: 'linux-musl-x86-64'
+          - host: ubuntu-24.04-arm
+            lib_dir: 'linux-musl-aarch64'
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-test-musl-${{ matrix.settings.lib_dir }}
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
+
+      - name: Download musl native library
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.settings.lib_dir }}
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/resources/${{ matrix.settings.lib_dir }}
+
+      - name: Install uniffi-bindgen-java
+        run: cargo install uniffi-bindgen-java --version 0.4.2 --locked
+
+      - name: Install uniffi-bindgen-cs
+        run: cargo install uniffi-bindgen-cs --git https://github.com/gorules/uniffi-bindgen-cs --rev d080b41
+
+      - name: Build unstripped host library for binding generation
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: 'none'
+        run: cargo build --lib --release --locked
+
+      - name: Generate Java, Kotlin and C# sources
+        run: |
+          LIB=../../target/release/libzen_uniffi.so
+          uniffi-bindgen-java generate --out-dir build/generated/java "$LIB"
+          cargo run --locked --bin uniffi-bindgen -- generate --library "$LIB" --language kotlin --out-dir build/generated/kotlin
+          uniffi-bindgen-cs --library "$LIB" --config uniffi.toml --out-dir build/generated/csharp
+
+      - name: Run Java and Kotlin tests (Alpine)
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work/${{ env.UNIFFI_DIRECTORY }} eclipse-temurin:23-jdk-alpine ./gradlew testJava testKotlin --no-daemon
+
+      - name: Run C# tests (Alpine)
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work/${{ env.UNIFFI_DIRECTORY }} mcr.microsoft.com/dotnet/sdk:8.0-alpine dotnet test tests/csharp
+
   test-swift:
     name: Test (Swift)
     runs-on: macos-latest
@@ -229,7 +317,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     environment: release
-    needs: [ build, test-jvm-dotnet ]
+    needs: [ build, test-jvm-dotnet, test-musl ]
     if: "github.ref_type == 'tag'"
     defaults:
       run:
@@ -303,7 +391,7 @@ jobs:
   release-csharp:
     runs-on: ubuntu-latest
     environment: release
-    needs: [ build, test-jvm-dotnet ]
+    needs: [ build, test-jvm-dotnet, test-musl ]
     permissions:
       id-token: write  # Required for OIDC
     if: "github.ref_type == 'tag'"

@@ -127,6 +127,35 @@ fn engine_create_decision() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn engine_function_memory_limit() {
+    use std::sync::atomic::Ordering;
+    use zen_engine::ZEN_CONFIG;
+
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
+
+    ZEN_CONFIG
+        .function_memory_limit_bytes
+        .store(32 * 1024 * 1024, Ordering::Relaxed);
+    let result = engine
+        .evaluate("memory-function.json", json!({}).into())
+        .await;
+    ZEN_CONFIG
+        .function_memory_limit_bytes
+        .store(0, Ordering::Relaxed);
+
+    match result.unwrap_err().deref() {
+        EvaluationError::NodeError { source, .. } => {
+            assert!(
+                source.to_string().to_lowercase().contains("memory"),
+                "unexpected error: {source}"
+            );
+        }
+        _ => assert!(false, "Wrong error type"),
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn engine_errors() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 

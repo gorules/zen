@@ -470,6 +470,7 @@ pub struct NodeContextConfig {
     pub nodes_in_context: bool,
     pub max_depth: u8,
     pub function_timeout_millis: u64,
+    pub function_memory_limit_bytes: u64,
     pub http_auth: bool,
     pub validation_salt: u64,
 }
@@ -480,6 +481,9 @@ impl Default for NodeContextConfig {
             trace: false,
             nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
             function_timeout_millis: ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed),
+            function_memory_limit_bytes: ZEN_CONFIG
+                .function_memory_limit_bytes
+                .load(Ordering::Relaxed),
             http_auth: ZEN_CONFIG.http_auth.load(Ordering::Relaxed),
             max_depth: 5,
             validation_salt: 0,

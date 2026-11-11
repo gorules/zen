@@ -2,6 +2,7 @@
 *.internal.js
 *.tgz
 index.d.ts
+/index.js
 *.wasm
 npm/
 zen-engine.wasip1*

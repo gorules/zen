@@ -59,6 +59,23 @@ async fn main() {
 }
 ```
 
+### Cargo features
+
+| Feature | Default | What it enables |
+|---|---|---|
+| `zip-loader` | on | `LoaderConfig::Zip`, decisions loaded from a zip archive (`zip` crate) |
+| `http-auth` | on | IAM signing (AWS, Azure, GCP) of HTTP calls made from function nodes (`reqsign`) |
+| `arbitrary_precision` | off | arbitrary-precision numbers in `serde_json` |
+| `bindgen` | off | QuickJS bindings generated at build time |
+
+Both default features can be turned off to keep the dependency tree small when decisions come from memory or the filesystem and function nodes do not sign cloud requests:
+
+```toml
+zen-engine = { version = "2.1", default-features = false }
+```
+
+With `http-auth` off a function node that sets `auth` on an HTTP call gets an error instead of an unsigned request.
+
 ### Loaders
 
 Attach a loader to serve decisions by key. Build one declaratively from `LoaderConfig` (`Static`, `Filesystem`, `Zip`), or construct the loader structs in `zen_engine::loader` directly. With a configuration, decisions are pre-loaded and pre-compiled for faster evaluations.

@@ -38,9 +38,8 @@ impl NodeHandler for ExpressionNodeHandler {
                 .run_standard(&expression.value)
                 .with_node_context(&ctx, |err| {
                     format!(
-                        r#"Failed to evaluate expression: "{}": {}"#,
-                        &expression.value,
-                        err.into()
+                        r#"Failed to evaluate expression: "{}": {err}"#,
+                        &expression.value
                     )
                 })?;
             let value = match expression.value.contains('$') {

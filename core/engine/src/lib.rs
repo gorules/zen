@@ -147,3 +147,4 @@ pub use engine::{
 pub use error::{CompileFailure, ContentKindError, EvaluationError};
 pub use workspace::Workspace;
 pub use zen_expression::Variable;
+pub use zen_expression::{ExpressionConfig, EXPRESSION_CONFIG};

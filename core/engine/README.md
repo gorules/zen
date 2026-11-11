@@ -59,6 +59,12 @@ async fn main() {
 }
 ```
 
+### Limits for expressions
+
+Decision tables, expression and switch nodes evaluate expressions with `zen-expression`, whose two global limits
+are re-exported here as `EXPRESSION_CONFIG` (`max_steps`, `max_interval_length`; default 0 = no limit). See the
+`zen-expression` README.
+
 ### Loaders
 
 Attach a loader to serve decisions by key. Build one declaratively from `LoaderConfig` (`Static`, `Filesystem`, `Zip`), or construct the loader structs in `zen_engine::loader` directly. With a configuration, decisions are pre-loaded and pre-compiled for faster evaluations.

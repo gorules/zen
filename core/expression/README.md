@@ -23,6 +23,23 @@ fn main() {
 
 Reusable expressions compile once via `compile_expression` and evaluate repeatedly against different contexts.
 
+## Evaluation budget
+
+By default an expression can run for as long as it needs and expand an interval to any size, which is fine
+for trusted expressions. When expressions come from untrusted sources, two global limits bound one evaluation
+(`0` = no limit, the default):
+
+```rust
+use std::sync::atomic::Ordering;
+use zen_expression::EXPRESSION_CONFIG;
+
+EXPRESSION_CONFIG.max_steps.store(1_000_000, Ordering::Relaxed);       // VM instructions per evaluation
+EXPRESSION_CONFIG.max_interval_length.store(100_000, Ordering::Relaxed); // elements of an expanded `[a..b]`
+```
+
+When a limit is exceeded the evaluation fails with `VMError::BudgetExceeded`. Membership tests such as
+`x in [1..10000]` do not expand the interval and are not affected by `max_interval_length`.
+
 ## Resources
 
 - [ZEN Expression Language reference](https://docs.gorules.io/learn/zen-language/syntax) - syntax, [operators](https://docs.gorules.io/learn/zen-language/operators), [built-in functions](https://docs.gorules.io/learn/zen-language/functions) and [date operations](https://docs.gorules.io/learn/zen-language/dates)

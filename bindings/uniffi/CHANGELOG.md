@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.8](https://github.com/gorules/zen/compare/uniffi-v2.1.7...uniffi-v2.1.8) (2026-11-11)
+
+
+### Features
+
+* **uniffi:** add linux musl builds for Java, Kotlin and C# ([#564](https://github.com/gorules/zen/issues/564)) ([c318119](https://github.com/gorules/zen/commit/c318119c1fabe59d18f596d111ee6682de37264c))
+
 ## [2.1.7](https://github.com/gorules/zen/compare/uniffi-v2.1.6...uniffi-v2.1.7) (2026-11-09)
 
 ## [2.1.6](https://github.com/gorules/zen/compare/uniffi-v2.1.5...uniffi-v2.1.6) (2026-10-21)

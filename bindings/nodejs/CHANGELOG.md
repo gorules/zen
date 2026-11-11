@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.11](https://github.com/gorules/zen/compare/nodejs-v2.1.10...nodejs-v2.1.11) (2026-11-11)
+
+
+### Bug Fixes
+
+* **nodejs:** stop committing the generated index.js loader ([#567](https://github.com/gorules/zen/issues/567)) ([d07a610](https://github.com/gorules/zen/commit/d07a610eb3359160bad5152c649d882ef7213891))
+
 ## [2.1.10](https://github.com/gorules/zen/compare/nodejs-v2.1.9...nodejs-v2.1.10) (2026-11-09)
 
 ## [2.1.9](https://github.com/gorules/zen/compare/nodejs-v2.1.8...nodejs-v2.1.9) (2026-10-21)

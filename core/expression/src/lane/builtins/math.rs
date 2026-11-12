@@ -83,7 +83,9 @@ impl Math {
                     .round()
                     .to_i64()
                     .ok_or_else(|| "Invalid upper range".to_string())?;
-                Ok(Decimal::from(ctx.random_int(upper)))
+                ctx.random_int(upper)
+                    .map(Decimal::from)
+                    .ok_or_else(|| "Invalid upper range".to_string())
             })
         }],
         fail: |args| Params::fail(args, Self::NUMBER),

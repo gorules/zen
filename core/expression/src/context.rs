@@ -43,6 +43,15 @@ pub fn location(parts: &[&str]) -> u64 {
     }
 }
 
+fn entropy() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    static DRAWN: AtomicU64 = AtomicU64::new(0);
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u64(DRAWN.fetch_add(1, Ordering::Relaxed));
+    hasher.write_usize(&hasher as *const _ as usize);
+    mix(hasher.finish())
+}
+
 fn nest(scope: u64, part: u64) -> u64 {
     mix(scope.wrapping_mul(GAMMA) ^ part ^ SCOPE_KEY)
 }
@@ -110,8 +119,24 @@ impl Draw {
         (self.word(0) >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    pub fn int(&self, upper: i64) -> i64 {
-        fastrand::Rng::with_seed(self.word(0)).i64(0..=upper)
+    pub fn int(&self, upper: i64) -> Option<i64> {
+        let range = u64::try_from(upper).ok()?.wrapping_add(1);
+        let mut i = 0;
+        loop {
+            let product = self.word(i) as u128 * range as u128;
+            let low = product as u64;
+            if low >= range || low >= range.wrapping_neg() % range {
+                return Some((product >> 64) as i64);
+            }
+            i += 1;
+        }
+    }
+
+    pub fn fresh() -> Self {
+        Self {
+            base: entropy(),
+            address: entropy(),
+        }
     }
 }
 
@@ -332,11 +357,11 @@ impl Streams {
             return seed;
         }
         let seed = match stream {
-            Stream::Root => fastrand::u64(..) & DRAWN_BITS,
+            Stream::Root => entropy() & DRAWN_BITS,
             Stream::Row(row) => row_seed(self.base(Stream::Root), row as usize),
             Stream::Item(item) => match self.items.get(item as usize) {
                 Some(&Item { parent, index, .. }) => row_seed(self.base(parent), index),
-                None => fastrand::u64(..) & DRAWN_BITS,
+                None => entropy() & DRAWN_BITS,
             },
         };
         if let Some(node) = self.node(stream) {
@@ -715,7 +740,7 @@ impl EvaluationContext {
         self.draw(row, site).unit()
     }
 
-    pub fn random_int(&self, row: usize, site: Site, upper: i64) -> i64 {
+    pub fn random_int(&self, row: usize, site: Site, upper: i64) -> Option<i64> {
         self.draw(row, site).int(upper)
     }
 }
@@ -772,7 +797,7 @@ impl<'a> RowContext<'a> {
         self.context.random_f64(self.row, self.site)
     }
 
-    pub fn random_int(&self, upper: i64) -> i64 {
+    pub fn random_int(&self, upper: i64) -> Option<i64> {
         self.context.random_int(self.row, self.site, upper)
     }
 }
@@ -798,8 +823,8 @@ mod tests {
         };
         let a = EvaluationContext::new(pinned);
         let b = EvaluationContext::new(pinned);
-        let xs: Vec<i64> = (0..8).map(|_| a.random_int(0, SITE, 1000)).collect();
-        let ys: Vec<i64> = (0..8).map(|_| b.random_int(0, SITE, 1000)).collect();
+        let xs: Vec<Option<i64>> = (0..8).map(|_| a.random_int(0, SITE, 1000)).collect();
+        let ys: Vec<Option<i64>> = (0..8).map(|_| b.random_int(0, SITE, 1000)).collect();
         assert_eq!(xs, ys);
         assert_eq!(a.seed(), Some(42));
     }
@@ -996,6 +1021,53 @@ mod tests {
                 0x94BB_666A_DEFA_3647,
             ]
         );
+    }
+
+    #[test]
+    fn integers_are_pinned() {
+        let field = location(&["expression", "calc", "a"]);
+        let context = EvaluationContext::new(seeded(42)).located(field);
+        let site = Site::new(0, 0);
+        let drawn: Vec<Option<i64>> = [0, 1, 6, 100, 1_000_000, i64::MAX, -1]
+            .into_iter()
+            .map(|upper| context.random_int(0, site, upper))
+            .collect();
+        assert_eq!(
+            drawn,
+            [
+                Some(0),
+                Some(0),
+                Some(6),
+                Some(41),
+                Some(621_488),
+                Some(3_167_289_125_447_670_780),
+                None
+            ]
+        );
+    }
+
+    #[test]
+    fn integers_are_uniform() {
+        let context = EvaluationContext::new(seeded(9));
+        let mut counts = [0usize; 7];
+        let draws = 70_000;
+        for index in 0..draws {
+            let value = context.random_int(0, Site::new(0, index), 6).unwrap();
+            counts[value as usize] += 1;
+        }
+        let expected = draws as usize / 7;
+        for count in counts {
+            assert!(count.abs_diff(expected) < expected / 20, "{counts:?}");
+        }
+        let unit = Draw::new(1, 2, 3);
+        assert_eq!(unit.int(0), Some(0));
+        assert_eq!(unit.int(-5), None);
+        assert!(unit.int(i64::MAX).is_some_and(|v| v >= 0));
+        let wide = (0..2_000)
+            .filter_map(|i| Draw::new(7, i, 0).int((1 << 62) + (1 << 61)))
+            .filter(|v| *v >= 1 << 62)
+            .count();
+        assert!((500..833).contains(&wide), "{wide}");
     }
 
     #[test]

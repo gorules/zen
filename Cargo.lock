@@ -6113,7 +6113,6 @@ dependencies = [
  "chrono-tz",
  "criterion",
  "csv",
- "fastrand",
  "humantime",
  "iana-time-zone",
  "icu_locale_core",

@@ -17,7 +17,6 @@ bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
 chrono-tz = "0.10"
 humantime = { workspace = true }
-fastrand = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }

@@ -124,6 +124,7 @@ impl<'a> Run<'_, 'a> {
         };
         self.runner.evaluate_sites(
             program,
+            &self.host.extensions.context,
             scopes.slice(),
             &columns,
             &op.bound,
@@ -195,7 +196,11 @@ impl<'a> Run<'_, 'a> {
             let scope = zen_expression::Scope::new(columns.row(row));
             let message = match self
                 .runner
-                .evaluate(source, std::slice::from_ref(&scope))
+                .evaluate(
+                    source,
+                    &self.host.extensions.context.at(row),
+                    std::slice::from_ref(&scope),
+                )
                 .into_iter()
                 .next()
             {

@@ -1,5 +1,6 @@
 use crate::compiled::content::Content;
 use crate::compiled::host::NodeHandlerExtensions;
+use crate::compiled::pinning;
 use crate::compiled::prepared::Prepared;
 use crate::compiled::traced::Traced;
 use crate::compiled::{ColumnarOutput, CompiledGraph, CompiledPlan, Invalid};
@@ -12,6 +13,7 @@ use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::EvaluationError;
 use std::cell::OnceCell;
 use std::sync::{Arc, OnceLock};
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::Columns;
 use zen_expression::variable::Variable;
 
@@ -53,13 +55,41 @@ impl CompiledDecision {
         Arc::ptr_eq(&self.source, content)
     }
 
-    pub(crate) async fn evaluate_with_opts(
+    pub(crate) async fn evaluate_pinned(
         &self,
-        context: Variable,
+        input: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let context = pinning::single(options.pinned());
+        self.evaluate_with_opts(input, options, &context).await
+    }
+
+    pub(crate) async fn evaluate_batch_pinned(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let context = pinning::batch(options.pinned());
+        self.evaluate_batch(contexts, options, &context).await
+    }
+
+    pub(crate) async fn evaluate_columns_pinned<'a>(
+        &self,
+        columns: &'a Columns<'a>,
+        options: EvaluationOptions,
+    ) -> ColumnarOutput<'a> {
+        let context = pinning::batch(options.pinned());
+        self.evaluate_columns(columns, options, &context).await
+    }
+
+    pub(crate) async fn evaluate_with_opts(
+        &self,
+        input: Variable,
+        options: EvaluationOptions,
+        context: &EvaluationContext,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         if options.trace {
-            return self.traced(context, options).await;
+            return self.traced(input, options, context).await;
         }
 
         let (compiled, content) = Self::compiled(self.single()).map_err(Invalid::evaluation)?;
@@ -67,9 +97,9 @@ impl CompiledDecision {
         compiled
             .evaluate_one(
                 &content,
-                &self.extensions(&content),
+                &self.extensions(&content, context),
                 options.max_depth,
-                context,
+                input,
             )
             .await
     }
@@ -78,12 +108,15 @@ impl CompiledDecision {
         &self,
         contexts: &[Variable],
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         let owned: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
         if options.trace {
             let mut responses = Vec::with_capacity(owned.len());
-            for context in owned {
-                responses.push(self.evaluate_with_opts(context, options).await);
+            for (row, input) in owned.into_iter().enumerate() {
+                responses.push(
+                    Box::pin(self.evaluate_with_opts(input, options, &context.at(row))).await,
+                );
             }
             return responses;
         }
@@ -94,7 +127,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate(
                         &content,
-                        &self.extensions(&content),
+                        &self.extensions(&content, context),
                         options.max_depth,
                         &owned,
                     )
@@ -108,6 +141,7 @@ impl CompiledDecision {
         &self,
         columns: &'a Columns<'a>,
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> ColumnarOutput<'a> {
         match Self::compiled(self.prepared()) {
             Ok((compiled, content)) => {
@@ -115,7 +149,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate_columns(
                         &content,
-                        &self.extensions(&content),
+                        &self.extensions(&content, context),
                         options.max_depth,
                         columns,
                     )
@@ -128,7 +162,7 @@ impl CompiledDecision {
                     trace: false,
                     ..options
                 };
-                let results = self.evaluate_batch(&contexts, options).await;
+                let results = Box::pin(self.evaluate_batch(&contexts, options, context)).await;
                 ColumnarOutput::from_results(results)
             }
         }
@@ -136,12 +170,13 @@ impl CompiledDecision {
 
     async fn traced(
         &self,
-        context: Variable,
+        input: Variable,
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let (compiled, content) = Self::compiled(self.tracing()).map_err(Invalid::evaluation)?;
         let content = compiled.schemas(content, &self.loader).await;
-        let extensions = self.extensions(&content);
+        let extensions = self.extensions(&content, context);
         let traced = Traced {
             graph: compiled,
             content: &content,
@@ -150,7 +185,7 @@ impl CompiledDecision {
             iteration: 0,
             parent: None,
         };
-        traced.evaluate(context).await
+        traced.evaluate(input).await
     }
 
     fn prepared(&self) -> (&Arc<Content>, &CompiledPlan) {
@@ -191,7 +226,7 @@ impl CompiledDecision {
     }
 
     #[allow(clippy::arc_with_non_send_sync)]
-    fn extensions(&self, content: &Content) -> NodeHandlerExtensions {
+    fn extensions(&self, content: &Content, context: &EvaluationContext) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             function_runtime: Default::default(),
             loader: self.loader.clone(),
@@ -201,6 +236,7 @@ impl CompiledDecision {
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
             prepared: self.children.clone(),
+            context: context.clone(),
         }
     }
 

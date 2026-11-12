@@ -1,4 +1,4 @@
-use crate::lane::builtins::{Apply, Arg, Array, Builtin, Fail, Outcome, Params};
+use crate::lane::builtins::{Apply, Arg, Array, Builtin, Fail, Outcome, Params, RowContext};
 use crate::variable::{Variable, VariableMap};
 
 pub(crate) struct Arrays;
@@ -7,7 +7,7 @@ impl Arrays {
     const ARRAY: &'static [(&'static str, bool)] = &[("array", false)];
 
     pub(crate) const FLATTEN: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 Ok(a.with(|values| {
                     let mut flat = Vec::with_capacity(values.len());
@@ -25,7 +25,7 @@ impl Arrays {
     };
 
     pub(crate) const MERGE: Builtin = Builtin {
-        overloads: &[|args| Apply::one(args, |a: Array| a.with(Self::merge))],
+        overloads: &[|_, args| Apply::one(args, |a: Array| a.with(Self::merge))],
         fail: |args| Params::fail(args, Self::ARRAY),
     };
 
@@ -76,7 +76,7 @@ impl Arrays {
     }
 
     pub(crate) const MERGE_DEEP: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: Array| {
                 a.with(|values| {
                     let mut result = Variable::empty_object();
@@ -128,7 +128,7 @@ impl Arrays {
         fail: |_| "Argument on 0 position out of bounds".to_string(),
     };
 
-    fn keys(args: &[Arg]) -> Outcome {
+    fn keys(_ctx: &RowContext, args: &[Arg]) -> Outcome {
         Apply::one(args, |a: Arg| match a {
             Arg::Var(Variable::Array(_)) | Arg::List(_) => {
                 let len = match a {
@@ -154,7 +154,7 @@ impl Arrays {
     }
 
     pub(crate) const VALUES: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Apply::one(args, |a: &Variable| match a {
                 Variable::Object(o) => {
                     Ok(Variable::from_array(o.borrow().values().cloned().collect()))

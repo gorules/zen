@@ -123,6 +123,12 @@
 #![allow(clippy::module_inception)]
 
 mod analysis;
+pub mod context {
+    pub use zen_expression::context::{
+        clock_reads, instant_from_millis, parse_instant, parse_locale, parse_timezone, row_seed,
+        unrowed_draws, Instant, Locale, Timezone,
+    };
+}
 mod compiled;
 mod config;
 mod decision;

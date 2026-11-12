@@ -1,10 +1,15 @@
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any, Optional, TypedDict, Literal, TypeAlias, Union
 
 
 class DecisionEvaluateOptions(TypedDict, total=False):
     max_depth: int
     trace: bool
+    now: Union[int, str, datetime]
+    timezone: str
+    seed: Union[int, str]
+    locale: str
 
 
 class EvaluateResponse(TypedDict):

@@ -7,6 +7,7 @@ use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
 use std::future::Future;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Programs, Session};
 use zen_expression::variable::{ToVariable, Variable};
 use zen_types::decision::{DecisionNode, DecisionNodeKind, TransformAttributes};
@@ -18,6 +19,7 @@ pub(crate) struct Row<'a> {
     pub(crate) nodes: Option<Variable>,
     pub(crate) programs: Option<&'a Arc<Programs>>,
     pub(crate) trace: bool,
+    pub(crate) context: EvaluationContext,
 }
 
 pub(crate) struct Ctx<'a, T> {
@@ -27,8 +29,9 @@ pub(crate) struct Ctx<'a, T> {
 
 impl<'a> Row<'a> {
     pub(crate) fn session(&self) -> Session {
-        let mut session =
-            Session::with_environment(self.input.clone()).with_programs(self.programs.cloned());
+        let mut session = Session::with_environment(self.input.clone())
+            .with_programs(self.programs.cloned())
+            .with_context(self.context.clone());
         if let Some(nodes) = &self.nodes {
             session.set_local(Variable::nodes_key(), nodes.clone());
         }
@@ -36,9 +39,10 @@ impl<'a> Row<'a> {
         session
     }
 
-    pub(crate) fn with_input(&self, input: Variable) -> Self {
+    pub(crate) fn with_input(&self, input: Variable, context: EvaluationContext) -> Self {
         Self {
             input,
+            context,
             ..self.clone()
         }
     }
@@ -56,8 +60,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _| {
-                    let row = self.with_input(input);
+                self.transform(attributes, |input, _, context| {
+                    let row = self.with_input(input, context);
                     async move { row.expression(content) }
                 })
                 .await
@@ -67,8 +71,8 @@ impl<'a> Row<'a> {
                     true => &content.transform_attributes,
                     false => &plain,
                 };
-                self.transform(attributes, |input, _| {
-                    let row = self.with_input(input);
+                self.transform(attributes, |input, _, context| {
+                    let row = self.with_input(input, context);
                     async move { RowTable::graph(row, content, index) }
                 })
                 .await

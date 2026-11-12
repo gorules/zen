@@ -1,4 +1,5 @@
 use crate::compiler::{Compare, CompilerError, FetchFastTarget};
+use crate::context::Site;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{ClosureFunction, FunctionKind, InternalFunction, MethodRegistry};
 use crate::intellisense::type_provider::TypesProvider;
@@ -105,6 +106,7 @@ pub struct LaneCompiler<'a> {
     assigning: ahash::HashMap<usize, bool>,
     unresolved: bool,
     indexing: bool,
+    draws: ahash::HashMap<usize, Site>,
 }
 
 impl<'a> LaneCompiler<'a> {
@@ -121,7 +123,15 @@ impl<'a> LaneCompiler<'a> {
         hints: Option<&'a Hints>,
         types: Option<&'a TypesProvider>,
     ) -> Result<Program> {
-        Self::build(root, hints, types, false)
+        Self::build(root, hints, types, false, 0)
+    }
+
+    pub(crate) fn compile_located(
+        root: &'a Node<'a>,
+        hints: Option<&'a Hints>,
+        label: u64,
+    ) -> Result<Program> {
+        Self::build(root, hints, None, false, label)
     }
 
     fn build(
@@ -129,6 +139,7 @@ impl<'a> LaneCompiler<'a> {
         hints: Option<&'a Hints>,
         types: Option<&'a TypesProvider>,
         folding: bool,
+        label: u64,
     ) -> Result<Program> {
         let mut compiler = LaneCompiler {
             stack: vec![Builder::default()],
@@ -146,7 +157,9 @@ impl<'a> LaneCompiler<'a> {
             assigning: Default::default(),
             unresolved: false,
             indexing: false,
+            draws: Default::default(),
         };
+        compiler.number(root, label);
         let (out, layout) = match Self::shaped(root) {
             true => {
                 let layout = compiler.layout(root, &mut Vec::new())?;
@@ -230,16 +243,25 @@ impl<'a> LaneCompiler<'a> {
         chain: bool,
         hints: Option<&'a Hints>,
     ) -> Result<Program> {
+        Self::compile_many_located(roots, chain, hints, &[])
+    }
+
+    pub(crate) fn compile_many_located(
+        roots: &[(&'a str, &'a Node<'a>)],
+        chain: bool,
+        hints: Option<&'a Hints>,
+        labels: &[u64],
+    ) -> Result<Program> {
         let assigns = roots.iter().any(|(_, n)| Self::assigns(n));
         let nested = roots
             .iter()
             .any(|(a, _)| roots.iter().any(|(b, _)| DotPath::under(b, a)));
         let resolvable =
             chain && !assigns && !nested && roots.iter().all(|(_, n)| Self::dollar_static(n));
-        match Self::compile_entries(roots, chain, hints, assigns, resolvable) {
+        match Self::compile_entries(roots, chain, hints, assigns, resolvable, labels) {
             Ok(program) => Ok(program),
             Err(CompilerError::UnexpectedErrorNode) if resolvable => {
-                Self::compile_entries(roots, chain, hints, assigns, false)
+                Self::compile_entries(roots, chain, hints, assigns, false, labels)
             }
             Err(e) => Err(e),
         }
@@ -249,7 +271,7 @@ impl<'a> LaneCompiler<'a> {
         roots: &[(&'a str, &'a Node<'a>)],
         hints: Option<&'a Hints>,
     ) -> Result<Program> {
-        let mut program = Self::compile_entries(roots, false, hints, true, false)?;
+        let mut program = Self::compile_entries(roots, false, hints, true, false, &[])?;
         program.isolated = true;
         Ok(program)
     }
@@ -260,6 +282,7 @@ impl<'a> LaneCompiler<'a> {
         hints: Option<&'a Hints>,
         assigns: bool,
         resolvable: bool,
+        labels: &[u64],
     ) -> Result<Program> {
         let dynamic = chain && !resolvable;
         let mut compiler = LaneCompiler {
@@ -278,6 +301,7 @@ impl<'a> LaneCompiler<'a> {
             assigning: Default::default(),
             unresolved: false,
             indexing: chain,
+            draws: Default::default(),
         };
         let mut outputs = Vec::with_capacity(roots.len());
         for (index, (key, root)) in roots.iter().enumerate() {
@@ -287,6 +311,7 @@ impl<'a> LaneCompiler<'a> {
             compiler.emit(Op::Stage {
                 index: index as u32,
             });
+            compiler.number(root, labels.get(index).copied().unwrap_or(0));
             let out = compiler.node(root)?;
             if compiler.unresolved {
                 return Err(CompilerError::UnexpectedErrorNode);
@@ -369,6 +394,7 @@ impl<'a> LaneCompiler<'a> {
             assigning: Default::default(),
             unresolved: false,
             indexing: false,
+            draws: Default::default(),
         };
         let mut outputs = Vec::with_capacity(roots.len());
         for (key, root, output) in roots.iter() {
@@ -377,6 +403,7 @@ impl<'a> LaneCompiler<'a> {
                     index: outputs.len() as u32,
                 });
             }
+            compiler.number(root, 0);
             let out = compiler.node(root)?;
             if compiler.unresolved || compiler.writes_env {
                 return Err(CompilerError::UnexpectedErrorNode);
@@ -1205,6 +1232,7 @@ impl<'a> LaneCompiler<'a> {
             args: std::iter::once(Input::Reg(scratch))
                 .chain(args.iter().map(|id| Input::Const(*id)))
                 .collect(),
+            draw: Site::default(),
         };
         self.emit(Op::LoadCall(Box::new(LoadCall {
             dst,
@@ -1250,6 +1278,10 @@ impl<'a> LaneCompiler<'a> {
     }
 
     fn call(&mut self, kind: FunctionKind, args: Vec<Input>) -> Reg {
+        self.drawn(kind, args, Site::default())
+    }
+
+    fn drawn(&mut self, kind: FunctionKind, args: Vec<Input>, draw: Site) -> Reg {
         let listed =
             matches!(args.as_slice(), [Input::Reg(r)] if self.top().kind(*r) == Kind::List);
         self.release_args(&args);
@@ -1266,8 +1298,89 @@ impl<'a> LaneCompiler<'a> {
             dst,
             kind,
             args: args.into(),
+            draw,
         });
         dst
+    }
+
+    fn number(&mut self, root: &'a Node<'a>, label: u64) {
+        let mut next = 0u32;
+        Self::visit(root, &mut |node| {
+            if let Node::FunctionCall {
+                kind: FunctionKind::Internal(InternalFunction::Rand),
+                ..
+            } = node
+            {
+                let key = node as *const Node as usize;
+                if let std::collections::hash_map::Entry::Vacant(entry) = self.draws.entry(key) {
+                    entry.insert(Site::new(label, next));
+                    next += 1;
+                }
+            }
+        });
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn visit<'n>(node: &'n Node<'n>, f: &mut dyn FnMut(&'n Node<'n>)) {
+        f(node);
+        match node {
+            Node::Null
+            | Node::Bool(_)
+            | Node::Number(_)
+            | Node::String(_)
+            | Node::Pointer
+            | Node::Identifier(_)
+            | Node::Root => {}
+            Node::Error { node, .. } => node.iter().for_each(|n| Self::visit(n, f)),
+            Node::TemplateString(parts) | Node::Array(parts) => {
+                parts.iter().for_each(|n| Self::visit(n, f))
+            }
+            Node::Object(pairs) => pairs.iter().for_each(|(k, v)| {
+                Self::visit(k, f);
+                Self::visit(v, f);
+            }),
+            Node::Assignments { list, output } => {
+                list.iter().for_each(|(k, v)| {
+                    Self::visit(k, f);
+                    Self::visit(v, f);
+                });
+                output.iter().for_each(|n| Self::visit(n, f));
+            }
+            Node::Closure { body, .. } => Self::visit(body, f),
+            Node::Parenthesized(inner) => Self::visit(inner, f),
+            Node::Member { node, property } => {
+                Self::visit(node, f);
+                Self::visit(property, f);
+            }
+            Node::Slice { node, from, to } => {
+                Self::visit(node, f);
+                from.iter().for_each(|n| Self::visit(n, f));
+                to.iter().for_each(|n| Self::visit(n, f));
+            }
+            Node::Interval { left, right, .. } | Node::Binary { left, right, .. } => {
+                Self::visit(left, f);
+                Self::visit(right, f);
+            }
+            Node::Conditional {
+                condition,
+                on_true,
+                on_false,
+            } => {
+                Self::visit(condition, f);
+                Self::visit(on_true, f);
+                Self::visit(on_false, f);
+            }
+            Node::Unary { node, .. } => Self::visit(node, f),
+            Node::FunctionCall { arguments, .. } => {
+                arguments.iter().for_each(|n| Self::visit(n, f))
+            }
+            Node::MethodCall {
+                this, arguments, ..
+            } => {
+                Self::visit(this, f);
+                arguments.iter().for_each(|n| Self::visit(n, f));
+            }
+        }
     }
 
     fn element_field(body: &Program) -> Option<Arc<str>> {
@@ -1530,6 +1643,7 @@ impl<'a> LaneCompiler<'a> {
             assigning: Default::default(),
             unresolved: false,
             indexing: false,
+            draws: Default::default(),
         }
     }
 
@@ -1537,7 +1651,7 @@ impl<'a> LaneCompiler<'a> {
         if self.folding || Self::literal(node).is_some() || !self.pure(node) {
             return None;
         }
-        let program = Self::build(node, None, None, true).ok()?;
+        let program = Self::build(node, None, None, true, 0).ok()?;
         Some(match crate::lane::LaneRunner::constant(&program)? {
             Variable::Null => Const::Null,
             Variable::Bool(b) => Const::Bool(b),
@@ -2034,6 +2148,18 @@ impl<'a> LaneCompiler<'a> {
                                 return self.extreme(kind, *f == InternalFunction::Max, items);
                             }
                         }
+                    }
+                    if let FunctionKind::Internal(InternalFunction::Rand) = kind {
+                        let draw = self
+                            .draws
+                            .get(&(node as *const Node as usize))
+                            .copied()
+                            .unwrap_or_default();
+                        let args = arguments
+                            .iter()
+                            .map(|a| self.arg(a))
+                            .collect::<Result<Vec<_>>>()?;
+                        return Ok(self.drawn(kind.clone(), args, draw));
                     }
                     if let Some(dst) = self.load_call(kind, arguments) {
                         return Ok(dst);

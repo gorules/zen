@@ -13,6 +13,7 @@ impl PolicyPlan {
         artifact: &EvalArtifact,
         req: &EvaluateRequest,
         extras: bool,
+        context: &zen_expression::context::EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let start = Instant::now();
         let (store, order_to_run) = artifact.prepare(req)?;
@@ -23,6 +24,7 @@ impl PolicyPlan {
             req.trace,
             extras,
             &self.programs,
+            context.clone(),
         );
         let outcome = self.replay(artifact, &mut host);
 

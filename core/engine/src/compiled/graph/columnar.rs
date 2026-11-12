@@ -250,9 +250,16 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        let results = self
-                            .resumed(content, extensions, max_depth, &inputs, Some(&completed))
-                            .await;
+                        extensions.context.restart(&rows);
+                        let scoped = extensions.scoped(extensions.context.rows(&rows));
+                        let results = Box::pin(self.resumed(
+                            content,
+                            &scoped,
+                            max_depth,
+                            &inputs,
+                            Some(&completed),
+                        ))
+                        .await;
                         return output.splice(&rows, results);
                     }
                 }

@@ -1,4 +1,4 @@
-use crate::lane::date::utc_now;
+use crate::context::EvaluationContext;
 use crate::vm::VMError;
 use chrono::format::{parse, Item, ParseResult, Parsed, StrftimeItems};
 use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
@@ -82,9 +82,9 @@ impl IsoDate {
     }
 }
 
-pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
+pub(crate) fn date_time(str: &str, context: &EvaluationContext) -> VMResult<NaiveDateTime> {
     if str == "now" {
-        return Ok(utc_now().naive_utc());
+        return Ok(context.now().naive_utc());
     }
 
     if let Some(parsed) = IsoDate::parse(str) {
@@ -99,8 +99,8 @@ pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
         })
 }
 
-pub(crate) fn time(str: &str) -> VMResult<NaiveTime> {
-    let now = utc_now();
+pub(crate) fn time(str: &str, context: &EvaluationContext) -> VMResult<NaiveTime> {
+    let now = context.now();
 
     if str == "now" {
         return Ok(now.naive_utc().time());

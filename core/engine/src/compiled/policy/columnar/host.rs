@@ -20,6 +20,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 false,
                 false,
                 &self.plan.programs,
+                self.state.context.at(row),
             ));
             self.synced[row] = match prepared {
                 true => self.base,

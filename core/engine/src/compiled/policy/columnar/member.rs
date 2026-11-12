@@ -284,8 +284,13 @@ impl<'s, 'a> Pass<'s, 'a> {
         let special = self.plan.special(program, &columns);
         let program = special.as_deref().unwrap_or(program);
         Self::prefer_codes(program, &mut outs);
+        let context = match program.program().draws {
+            true => self.state.context.rows(parents),
+            false => self.state.context.clone(),
+        };
         self.runner.evaluate_sites(
             program,
+            &context,
             scopes.slice(),
             &columns,
             &bound,

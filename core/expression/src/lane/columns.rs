@@ -106,8 +106,8 @@ impl<'a> Dictionary<'a> {
         self.column().variable(row)
     }
 
-    pub fn equals(self, row: usize, k: &Variable) -> bool {
-        self.column().equals(row, k)
+    pub fn equals(self, row: usize, k: &Variable, tz: chrono_tz::Tz) -> bool {
+        self.column().equals(row, k, tz)
     }
 }
 
@@ -381,7 +381,7 @@ impl<'a> Column<'a> {
         }
     }
 
-    pub fn equals(&self, row: usize, k: &Variable) -> bool {
+    pub fn equals(&self, row: usize, k: &Variable, tz: chrono_tz::Tz) -> bool {
         if !self.valid(row) {
             return matches!(k, Variable::Null);
         }
@@ -406,10 +406,10 @@ impl<'a> Column<'a> {
             ) => self.bytes(row) == Some(s.as_bytes()),
             (Values::Any(v), k) => v
                 .get(row)
-                .is_some_and(|v| crate::lane::ops::Ops::equal(v, k)),
-            (Values::Dict { values, .. }, k) => {
-                self.code(row).is_some_and(|code| values.equals(code, k))
-            }
+                .is_some_and(|v| crate::lane::ops::Ops::equal(v, k, tz)),
+            (Values::Dict { values, .. }, k) => self
+                .code(row)
+                .is_some_and(|code| values.equals(code, k, tz)),
             (Values::List { .. }, _) => false,
             _ => false,
         }

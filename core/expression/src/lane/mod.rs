@@ -42,6 +42,7 @@ pub use session::{Programs, Session};
 #[doc(hidden)]
 pub use source::SourceInfo;
 
+use crate::context::EvaluationContext;
 use crate::lexer::Lexer;
 use crate::parser::{Node, Parser};
 use crate::scope::Scope;
@@ -84,6 +85,7 @@ pub struct LaneProgram {
     constant: Option<Const>,
     hints: Option<Arc<Hints>>,
     kernel: OnceLock<Option<Arc<Kernel>>>,
+    labels: Arc<[u64]>,
 }
 
 impl LaneProgram {
@@ -91,18 +93,27 @@ impl LaneProgram {
         Self::compile_with(source, kind, None)
     }
 
+    pub fn located(source: &str, kind: ExpressionKind, label: u64) -> Result<Self, IsolateError> {
+        Self::single(source, kind, None, label)
+    }
+
     pub fn compile_with(
         source: &str,
         kind: ExpressionKind,
         hints: Option<&Hints>,
     ) -> Result<Self, IsolateError> {
-        Self::single(source, kind, hints)
+        Self::single(source, kind, hints, 0)
+    }
+
+    pub fn labels(&self) -> &[u64] {
+        &self.labels
     }
 
     fn single(
         source: &str,
         kind: ExpressionKind,
         hints: Option<&Hints>,
+        label: u64,
     ) -> Result<Self, IsolateError> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
@@ -113,7 +124,7 @@ impl LaneProgram {
             ExpressionKind::Unary => parser.unary().parse(),
         };
         parsed.error()?;
-        let program = LaneCompiler::compile_with(parsed.root, hints)?;
+        let program = LaneCompiler::compile_located(parsed.root, hints, label)?;
         let constant = match kind {
             ExpressionKind::Standard => Const::of(parsed.root),
             ExpressionKind::Unary => None,
@@ -125,18 +136,27 @@ impl LaneProgram {
             constant,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::new(),
+            labels: match label {
+                0 => Arc::from([]),
+                label => Arc::from([label]),
+            },
         })
     }
 
     fn recompile(&self, hints: &Hints) -> Result<Self, IsolateError> {
         match &self.source {
-            Source::Single(source) => Self::compile_with(source, self.kind.clone(), Some(hints)),
+            Source::Single(source) => Self::single(
+                source,
+                self.kind.clone(),
+                Some(hints),
+                self.labels.first().copied().unwrap_or(0),
+            ),
             Source::Many(entries, chain) => {
                 let refs: Vec<(&str, &str)> = entries
                     .iter()
                     .map(|(k, s)| (k.as_str(), s.as_str()))
                     .collect();
-                Self::compile_many_with(&refs, *chain, Some(hints))
+                Self::compile_many_with(&refs, *chain, Some(hints), &self.labels)
             }
             Source::Cells(cells) => {
                 let refs: Vec<(&str, Option<&str>)> = cells
@@ -190,6 +210,9 @@ impl LaneProgram {
             roots.push((key, root));
         }
         let program = LaneCompiler::compile_isolated(&roots, hints)?;
+        if program.draws {
+            return Err(Self::unsupported("a draw"));
+        }
         let owned: Vec<(String, Option<String>)> = cells
             .iter()
             .map(|(s, f)| (s.to_string(), f.map(str::to_string)))
@@ -201,6 +224,7 @@ impl LaneProgram {
             constant: None,
             hints: None,
             kernel: OnceLock::from(None),
+            labels: Arc::from([]),
         })
     }
 
@@ -340,6 +364,7 @@ impl LaneProgram {
             constant: None,
             hints: None,
             kernel: OnceLock::new(),
+            labels: Arc::from([]),
         })
     }
 
@@ -424,6 +449,9 @@ impl LaneProgram {
             roots.push((key, root, output));
         }
         let program = LaneCompiler::compile_named(&roots, hints)?;
+        if program.draws {
+            return Err(Self::unsupported("a draw"));
+        }
         Ok(Self {
             program,
             kind: ExpressionKind::Standard,
@@ -431,17 +459,27 @@ impl LaneProgram {
             constant: None,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::from(None),
+            labels: Arc::from([]),
         })
     }
 
     pub fn compile_many(entries: &[(&str, &str)], chain: bool) -> Result<Self, IsolateError> {
-        Self::compile_many_with(entries, chain, None)
+        Self::compile_many_with(entries, chain, None, &[])
+    }
+
+    pub fn compile_many_located(
+        entries: &[(&str, &str)],
+        chain: bool,
+        labels: &[u64],
+    ) -> Result<Self, IsolateError> {
+        Self::compile_many_with(entries, chain, None, labels)
     }
 
     fn compile_many_with(
         entries: &[(&str, &str)],
         chain: bool,
         hints: Option<&Hints>,
+        labels: &[u64],
     ) -> Result<Self, IsolateError> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
@@ -452,7 +490,7 @@ impl LaneProgram {
             parsed.error()?;
             roots.push((*key, parsed.root));
         }
-        let program = LaneCompiler::compile_many(&roots, chain, hints)?;
+        let program = LaneCompiler::compile_many_located(&roots, chain, hints, labels)?;
         let owned: Vec<(String, String)> = entries
             .iter()
             .map(|(k, s)| (k.to_string(), s.to_string()))
@@ -464,6 +502,10 @@ impl LaneProgram {
             constant: None,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::new(),
+            labels: match labels.iter().any(|&label| label != 0) {
+                true => Arc::from(labels),
+                false => Arc::from([]),
+            },
         })
     }
 
@@ -711,8 +753,8 @@ impl LaneProgram {
         program
     }
 
-    pub fn try_kernel(&self, scope: &Scope) -> Option<Variable> {
-        self.kernel()?.run(scope)
+    pub fn try_kernel(&self, scope: &Scope, context: &EvaluationContext) -> Option<Variable> {
+        self.kernel()?.run(scope, context)
     }
 
     pub fn has_kernel(&self) -> bool {
@@ -791,7 +833,8 @@ impl LaneRunner {
                 frames.resize_with(program.frames, Frame::default);
             }
             let roots = [Scope::default()];
-            let mut ctx = Context::new(program, &roots);
+            let context = EvaluationContext::default();
+            let mut ctx = Context::new(program, &roots, &context);
             Executor::run(program, frames, &mut ctx, &[0]);
             frames.first_mut()?.take_result(program, 0).ok()
         })
@@ -800,15 +843,16 @@ impl LaneRunner {
     pub fn evaluate_one(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scope: &Scope,
     ) -> Result<Variable, IsolateError> {
-        if let Some(value) = program.kernel().and_then(|k| k.run(scope)) {
+        if let Some(value) = program.kernel().and_then(|k| k.run(scope, context)) {
             return Ok(value);
         }
         let p = &program.program;
         self.frames(p);
         let roots = std::slice::from_ref(scope);
-        let mut ctx = Context::new(p, roots);
+        let mut ctx = Context::new(p, roots, context);
         Executor::run(p, &mut self.frames, &mut ctx, &[0]);
         self.frames[0]
             .take_result(p, 0)
@@ -818,35 +862,39 @@ impl LaneRunner {
     pub fn evaluate(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
     ) -> Vec<Result<Variable, IsolateError>> {
         let mut out = Vec::with_capacity(scopes.len());
-        self.evaluate_with(program, scopes, |_, r| out.push(r));
+        self.evaluate_with(program, context, scopes, |_, r| out.push(r));
         out
     }
 
     pub fn evaluate_with(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         mut sink: impl FnMut(usize, Result<Variable, IsolateError>),
     ) {
         if let Some(kernel) = program.kernel() {
-            return self.evaluate_kernel(program, kernel, scopes, sink);
+            return self.evaluate_kernel(program, context, kernel, scopes, sink);
         }
         let p = &program.program;
         self.frames(p);
-        for (chunk, roots) in scopes.chunks(Word::LANES).enumerate() {
+        for (start, n) in Executor::blocks(scopes.len(), Word::LANES, p.draws, context, |i| i) {
+            let roots = &scopes[start..start + n];
             self.rows.clear();
-            self.rows.extend(0..roots.len() as u32);
-            let mut ctx = Context::new(p, roots);
+            self.rows.extend(0..n as u32);
+            let mut ctx = Context::new(p, roots, context);
+            ctx.first = start;
             Executor::run(p, &mut self.frames, &mut ctx, &self.rows);
             let frame = &mut self.frames[0];
-            for lane in 0..roots.len() {
+            for lane in 0..n {
                 let result = frame
                     .take_result(p, lane)
                     .map_err(|source| IsolateError::VMError { source });
-                sink(chunk * Word::LANES + lane, result);
+                sink(start + lane, result);
             }
         }
     }
@@ -854,6 +902,7 @@ impl LaneRunner {
     fn evaluate_kernel(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         kernel: &Kernel,
         scopes: &[Scope],
         mut sink: impl FnMut(usize, Result<Variable, IsolateError>),
@@ -869,7 +918,7 @@ impl LaneRunner {
                 true => self.rows.extend(0..roots.len() as u32),
                 false => {
                     for (lane, scope) in roots.iter().enumerate() {
-                        let value = kernel.run(scope);
+                        let value = kernel.run(scope, context);
                         if value.is_none() {
                             self.rows.push(lane as u32);
                         }
@@ -886,7 +935,8 @@ impl LaneRunner {
             }
             values.resize(roots.len(), None);
             self.frames(p);
-            let mut ctx = Context::new(p, roots);
+            let mut ctx = Context::new(p, roots, context);
+            ctx.first = start;
             Executor::run(p, &mut self.frames, &mut ctx, &self.rows);
             let frame = &mut self.frames[0];
             let mut slow = 0usize;
@@ -910,12 +960,13 @@ impl LaneRunner {
     pub fn evaluate_many(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         mask: Option<&[bool]>,
         mut sink: impl FnMut(usize, Option<Result<Vec<Variable>, (usize, IsolateError)>>),
     ) {
         let Some(kernel) = program.kernel() else {
-            return self.evaluate_many_lane(program, scopes, mask, sink);
+            return self.evaluate_many_lane(program, context, scopes, mask, sink);
         };
         let wanted = |row: usize| mask.is_none_or(|m| m.get(row).copied().unwrap_or(false));
         let mut values: Vec<Option<kernel::Values>> = Vec::with_capacity(scopes.len());
@@ -930,7 +981,7 @@ impl LaneRunner {
                 true => None,
                 false => {
                     tried += 1;
-                    kernel.run_all(scope, row, None, &[])
+                    kernel.run_all(scope, row, None, &[], context)
                 }
             };
             if value.is_none() {
@@ -942,7 +993,7 @@ impl LaneRunner {
         let mut lane: Vec<Option<Result<Vec<Variable>, (usize, IsolateError)>>> = Vec::new();
         if slow.iter().any(|s| *s) {
             lane.resize_with(scopes.len(), || None);
-            self.evaluate_many_lane(program, scopes, Some(&slow), |row, result| {
+            self.evaluate_many_lane(program, context, scopes, Some(&slow), |row, result| {
                 if let Some(slot) = lane.get_mut(row) {
                     *slot = result;
                 }
@@ -959,6 +1010,7 @@ impl LaneRunner {
 
     fn kernel_rows(
         kernel: &Kernel,
+        context: &EvaluationContext,
         scopes: &[Scope],
         columns: &Columns,
         bound: &[Binding],
@@ -970,7 +1022,7 @@ impl LaneRunner {
                 let row = subset.map_or(at, |list| list[at]);
                 let scope = scopes.get(row)?;
                 kernel
-                    .run_all(scope, row, Some(columns), bound)
+                    .run_all(scope, row, Some(columns), bound, context)
                     .map(|values| (row, values))
             })
             .collect()
@@ -979,17 +1031,19 @@ impl LaneRunner {
     fn evaluate_many_lane(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         mask: Option<&[bool]>,
         mut sink: impl FnMut(usize, Option<Result<Vec<Variable>, (usize, IsolateError)>>),
     ) {
         let p = &program.program;
         self.frames(p);
-        for (chunk, roots) in scopes.chunks(Word::LANES).enumerate() {
-            let start = chunk * Word::LANES;
+        for (start, n) in Executor::blocks(scopes.len(), Word::LANES, p.draws, context, |i| i) {
+            let roots = &scopes[start..start + n];
             self.rows.clear();
             self.rows.extend(0..roots.len() as u32);
-            let mut ctx = Context::new(p, roots);
+            let mut ctx = Context::new(p, roots, context);
+            ctx.first = start;
             let Some((frame, _)) = self.frames.split_first_mut() else {
                 return;
             };
@@ -1021,9 +1075,11 @@ impl LaneRunner {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_bound(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         columns: &Columns,
         bind: &dyn Fn(&str) -> Binding,
@@ -1034,7 +1090,8 @@ impl LaneRunner {
         let total = subset.map_or(scopes.len(), <[usize]>::len);
         if let (true, Some(kernel)) = (total <= Self::SMALL, program.kernel()) {
             let bound = kernel.bind(bind);
-            if let Some(rows) = Self::kernel_rows(kernel, scopes, columns, &bound, subset) {
+            if let Some(rows) = Self::kernel_rows(kernel, context, scopes, columns, &bound, subset)
+            {
                 let many = !p.outputs.is_empty();
                 for (row, mut values) in rows {
                     let values = match many {
@@ -1062,6 +1119,7 @@ impl LaneRunner {
                 let (frames, rows) = (&mut self.frames, &mut self.rows);
                 Self::bound_blocks(
                     p,
+                    context,
                     frames,
                     rows,
                     scopes,
@@ -1077,7 +1135,7 @@ impl LaneRunner {
                 self.wide.iter_mut().for_each(Frame::forget);
                 let (frames, rows) = (&mut self.wide, &mut self.rows);
                 Self::bound_blocks(
-                    p, frames, rows, scopes, columns, &bound, subset, LANES, &mut sink,
+                    p, context, frames, rows, scopes, columns, &bound, subset, LANES, &mut sink,
                 );
             }
         }
@@ -1087,6 +1145,7 @@ impl LaneRunner {
     pub fn evaluate_bound_into(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         columns: &Columns,
         bind: &dyn Fn(&str) -> Binding,
@@ -1103,13 +1162,16 @@ impl LaneRunner {
                 (false, Some(k)) => bind(k),
             })
             .collect();
-        self.evaluate_sites(program, scopes, columns, &bound, subset, outs, failure)
+        self.evaluate_sites(
+            program, context, scopes, columns, &bound, subset, outs, failure,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn evaluate_sites(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         scopes: &[Scope],
         columns: &Columns,
         bound: &[Binding],
@@ -1126,7 +1188,8 @@ impl LaneRunner {
         let listed = p.layout.is_some() || regs.iter().any(|r| p.kinds[*r as usize] == Kind::List);
         if let (true, false, Some(kernel)) = (total <= Self::SMALL, listed, program.kernel()) {
             let kbound = kernel.bind_sites(bound);
-            if let Some(rows) = Self::kernel_rows(kernel, scopes, columns, &kbound, subset) {
+            if let Some(rows) = Self::kernel_rows(kernel, context, scopes, columns, &kbound, subset)
+            {
                 outs.resize_with(regs.len(), Output::new);
                 for (reg, out) in regs.iter().zip(outs.iter_mut()) {
                     out.reset(p.kinds[*reg as usize], total);
@@ -1155,6 +1218,7 @@ impl LaneRunner {
                 let (frames, rows) = (&mut self.frames, &mut self.rows);
                 Self::export_blocks(
                     p,
+                    context,
                     frames,
                     rows,
                     scopes,
@@ -1171,7 +1235,8 @@ impl LaneRunner {
                 self.wide.iter_mut().for_each(Frame::forget);
                 let (frames, rows) = (&mut self.wide, &mut self.rows);
                 Self::export_blocks(
-                    p, frames, rows, scopes, columns, bound, subset, LANES, outs, &mut sink,
+                    p, context, frames, rows, scopes, columns, bound, subset, LANES, outs,
+                    &mut sink,
                 );
             }
         }
@@ -1180,6 +1245,7 @@ impl LaneRunner {
     #[allow(clippy::too_many_arguments)]
     fn export_blocks<M: LaneSet>(
         p: &Program,
+        context: &EvaluationContext,
         frames: &mut [Frame<M>],
         rows: &mut Vec<u32>,
         scopes: &[Scope],
@@ -1191,9 +1257,11 @@ impl LaneRunner {
         sink: &mut dyn FnMut(usize, usize, Fault),
     ) {
         let total = subset.map_or(scopes.len(), <[usize]>::len);
-        let mut start = 0;
-        while start < total {
-            let n = (total - start).min(width);
+        let blocks = Executor::blocks(total, width, p.draws, context, |i| match subset {
+            None => i,
+            Some(list) => list[i],
+        });
+        for (start, n) in blocks {
             rows.clear();
             let (roots, base) = match subset {
                 None => {
@@ -1205,19 +1273,19 @@ impl LaneRunner {
                     (scopes, 0)
                 }
             };
-            let mut ctx = Context::columnar(p, roots, columns, bound, base);
+            let mut ctx = Context::columnar(p, roots, columns, bound, base, context);
             Executor::run(p, frames, &mut ctx, rows);
             let Some(frame) = frames.first_mut() else {
                 return;
             };
             frame.export_outputs(p, outs, start, n, &mut *sink);
-            start += n;
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     fn bound_blocks<M: LaneSet>(
         p: &Program,
+        context: &EvaluationContext,
         frames: &mut [Frame<M>],
         rows: &mut Vec<u32>,
         scopes: &[Scope],
@@ -1229,9 +1297,11 @@ impl LaneRunner {
     ) {
         let many = !p.outputs.is_empty();
         let total = subset.map_or(scopes.len(), <[usize]>::len);
-        let mut start = 0;
-        while start < total {
-            let n = (total - start).min(width);
+        let blocks = Executor::blocks(total, width, p.draws, context, |i| match subset {
+            None => i,
+            Some(list) => list[i],
+        });
+        for (start, n) in blocks {
             rows.clear();
             let (roots, base) = match subset {
                 None => {
@@ -1243,7 +1313,7 @@ impl LaneRunner {
                     (scopes, 0)
                 }
             };
-            let mut ctx = Context::columnar(p, roots, columns, bound, base);
+            let mut ctx = Context::columnar(p, roots, columns, bound, base, context);
             Executor::run(p, frames, &mut ctx, rows);
             let Some(frame) = frames.first_mut() else {
                 return;
@@ -1265,18 +1335,18 @@ impl LaneRunner {
                 };
                 sink(row, result);
             }
-            start += n;
         }
     }
 
     pub fn evaluate_columns(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         columns: &Columns,
         mut sink: impl FnMut(usize, Result<Variable, IsolateError>),
     ) {
         let p = &program.program;
-        self.columnar(p, columns, |frame, start, n| {
+        self.columnar(p, context, columns, |frame, start, n| {
             for lane in 0..n {
                 let result = frame
                     .take_result(p, lane)
@@ -1289,6 +1359,7 @@ impl LaneRunner {
     pub fn evaluate_columns_into(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         columns: &Columns,
         out: &mut Output,
     ) {
@@ -1297,12 +1368,15 @@ impl LaneRunner {
             Some(layout) => out.reset_layout(layout, &p.kinds, columns.rows),
             None => out.reset(p.kinds[p.out as usize], columns.rows),
         }
-        self.columnar(p, columns, |frame, start, n| frame.export(p, out, start, n));
+        self.columnar(p, context, columns, |frame, start, n| {
+            frame.export(p, out, start, n)
+        });
     }
 
     pub fn evaluate_columns_many(
         &mut self,
         program: &LaneProgram,
+        context: &EvaluationContext,
         columns: &Columns,
         outs: &mut Vec<Output>,
         mut failure: impl FnMut(usize, usize, Fault),
@@ -1319,7 +1393,7 @@ impl LaneRunner {
                 _ => out.reset(p.kinds[*reg as usize], columns.rows),
             }
         }
-        self.columnar(p, columns, |frame, start, n| {
+        self.columnar(p, context, columns, |frame, start, n| {
             frame.export_outputs(p, outs, start, n, &mut failure)
         });
     }
@@ -1327,6 +1401,7 @@ impl LaneRunner {
     fn columnar(
         &mut self,
         p: &Program,
+        context: &EvaluationContext,
         columns: &Columns,
         mut chunk: impl FnMut(&mut Frame<Mask>, usize, usize),
     ) {
@@ -1345,9 +1420,7 @@ impl LaneRunner {
             false => None,
         };
         self.wide.iter_mut().for_each(Frame::forget);
-        let mut start = 0;
-        while start < columns.rows {
-            let n = (columns.rows - start).min(LANES);
+        for (start, n) in Executor::blocks(columns.rows, LANES, p.draws, context, |i| i) {
             self.rows.clear();
             self.rows.extend(0..n as u32);
             self.scopes.clear();
@@ -1359,10 +1432,9 @@ impl LaneRunner {
                     })
                 }));
             }
-            let mut ctx = Context::columnar(p, &self.scopes, columns, &bound, start);
+            let mut ctx = Context::columnar(p, &self.scopes, columns, &bound, start, context);
             Executor::run(p, &mut self.wide, &mut ctx, &self.rows);
             chunk(&mut self.wide[0], start, n);
-            start += n;
         }
     }
 }
@@ -1394,7 +1466,7 @@ impl Backend {
         }
         let program = &programs[source];
         let mut runner = Self::RUNNER.take();
-        let result = runner.evaluate_one(program, scope);
+        let result = runner.evaluate_one(program, &EvaluationContext::default(), scope);
         Self::RUNNER.set(runner);
         result
     }

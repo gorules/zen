@@ -17,7 +17,13 @@ impl<'s, 'a> Pass<'s, 'a> {
                 Some(leaf) => leaf,
                 None => self.evaluate(units, field),
             };
-            table.matched(self.runner, input, &leaf, &mut matching);
+            table.matched(
+                self.runner,
+                &self.state.context,
+                input,
+                &leaf,
+                &mut matching,
+            );
         }
         let Matching { all, host, .. } = matching;
         let outputs = table.picked().len();

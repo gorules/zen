@@ -1,3 +1,4 @@
+use crate::functions::{FunctionKind, InternalFunction};
 use crate::lexer::Lexer;
 use crate::parser::{Node, Parser};
 use bumpalo::Bump;
@@ -37,6 +38,20 @@ impl SourceInfo {
             }
         });
         found.get()
+    }
+
+    pub fn draws(source: &str) -> bool {
+        let test = |node: &Node| {
+            matches!(
+                node,
+                Node::FunctionCall {
+                    kind: FunctionKind::Internal(InternalFunction::Rand),
+                    ..
+                }
+            )
+        };
+        source.contains("rand")
+            && (Self::scan(source, false, test) || Self::scan(source, true, test))
     }
 
     pub fn reads_dollar(source: &str) -> bool {

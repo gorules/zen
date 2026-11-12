@@ -617,9 +617,11 @@ fn date_shapes() {
             op => format!("{op:?}"),
         })
         .collect();
-    assert_eq!(consts[..3], ["2024-02-29", "1704067200", "false"], "{hir}");
-    assert!(
-        matches!(hir.node(hir.outputs[3].node).op, Op::Host(..)),
-        "{hir}"
-    );
+    assert_eq!(consts[1..3], ["1704067200", "false"], "{hir}");
+    for zoned in [0, 3] {
+        assert!(
+            matches!(hir.node(hir.outputs[zoned].node).op, Op::Host(..)),
+            "{hir}"
+        );
+    }
 }

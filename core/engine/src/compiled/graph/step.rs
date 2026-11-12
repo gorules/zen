@@ -2,6 +2,7 @@ use crate::compiled::content::Content;
 use crate::compiled::graph::schedule::Replay;
 use crate::compiled::graph::{CompiledGraph, Invalid};
 use crate::compiled::host::graph::graph::DecisionGraph;
+use crate::compiled::pinning::Located;
 use crate::compiled::table::{Table, TableIr};
 use crate::decision_graph::schema_dict;
 use crate::model::DecisionNodeKind;
@@ -209,12 +210,15 @@ impl CompiledGraph {
         })
     }
 
-    fn transform(attributes: &TransformAttributes) -> Result<(Transform, Vec<Arc<str>>), String> {
+    fn transform(
+        node: &str,
+        attributes: &TransformAttributes,
+    ) -> Result<(Transform, Vec<Arc<str>>), String> {
         let input_field = attributes
             .input_field
             .as_ref()
             .map(|f| {
-                LaneProgram::standard(f)
+                LaneProgram::located(f, ExpressionKind::Standard, Located::input(node))
                     .map(|p| (p, f.clone()))
                     .map_err(|e| e.to_string())
             })
@@ -237,6 +241,7 @@ impl CompiledGraph {
     }
 
     fn expression_kind(
+        node: &str,
         content: &ExpressionNodeContent,
         sources: &mut Vec<Arc<str>>,
     ) -> Result<Kind, String> {
@@ -266,8 +271,10 @@ impl CompiledGraph {
         let mut expanded: Vec<(Arc<str>, Arc<str>, Arc<str>)> = Vec::with_capacity(entries.len());
         for (key, source) in entries.iter() {
             let read = format!("$.{}", key.split('.').next().unwrap_or_default());
-            let flat =
-                !opaque && !overlapping && !entries.iter().any(|(_, v)| v.contains(read.as_str()));
+            let flat = !opaque
+                && !overlapping
+                && !entries.iter().any(|(_, v)| v.contains(read.as_str()))
+                && !SourceInfo::draws(source);
             match flat {
                 true => Self::expand(key, source, source, &mut expanded),
                 false => expanded.push((key.clone(), source.clone(), source.clone())),
@@ -277,7 +284,12 @@ impl CompiledGraph {
             .iter()
             .map(|(k, _, v)| (k.as_ref(), v.as_ref()))
             .collect();
-        let program = LaneProgram::compile_many(&refs, true).map_err(|e| e.to_string())?;
+        let labels: Vec<u64> = expanded
+            .iter()
+            .map(|(key, _, _)| Located::expression(node, key))
+            .collect();
+        let program =
+            LaneProgram::compile_many_located(&refs, true, &labels).map_err(|e| e.to_string())?;
         let empty: Box<[bool]> = expanded
             .iter()
             .map(|(_, _, fragment)| fragment.trim() == "{}")
@@ -290,7 +302,7 @@ impl CompiledGraph {
             .into_iter()
             .map(|(key, source, _)| (key, source))
             .collect();
-        let (transform, extra) = Self::transform(&content.transform_attributes)?;
+        let (transform, extra) = Self::transform(node, &content.transform_attributes)?;
         sources.extend(extra);
         Ok(Kind::Node {
             transform: Box::new(transform),
@@ -307,6 +319,7 @@ impl CompiledGraph {
     }
 
     fn table_kind(
+        node: &str,
         content: &DecisionTableContent,
         sources: &mut Vec<Arc<str>>,
         cells: &mut Vec<Arc<str>>,
@@ -325,8 +338,15 @@ impl CompiledGraph {
             }
         }
         sources.extend(content.inputs.iter().filter_map(|i| i.field.clone()));
+        if sources
+            .iter()
+            .chain(cells.iter())
+            .any(|s| SourceInfo::draws(s))
+        {
+            return Err("table draws".into());
+        }
         let table = Table::compile(TableIr::graph(content))?;
-        let (transform, extra) = Self::transform(&content.transform_attributes)?;
+        let (transform, extra) = Self::transform(node, &content.transform_attributes)?;
         sources.extend(extra);
         Ok(Kind::Node {
             body: Body::Table(Box::new(table)),
@@ -360,9 +380,13 @@ impl CompiledGraph {
                         sources.push(s.condition.clone());
                         let condition = match s.condition.is_empty() {
                             true => Condition::Always,
-                            false => LaneProgram::standard(&s.condition)
-                                .map(|p| Condition::Program(Box::new(p)))
-                                .unwrap_or_else(|e| Condition::Invalid(Arc::from(e.to_string()))),
+                            false => LaneProgram::located(
+                                &s.condition,
+                                ExpressionKind::Standard,
+                                Located::statement(&node.id, &s.id),
+                            )
+                            .map(|p| Condition::Program(Box::new(p)))
+                            .unwrap_or_else(|e| Condition::Invalid(Arc::from(e.to_string()))),
                         };
                         (s.id.clone(), condition)
                     })
@@ -379,11 +403,11 @@ impl CompiledGraph {
                 Kind::Host(None)
             }
             DecisionNodeKind::ExpressionNode { content } => {
-                Self::expression_kind(content, &mut sources)
+                Self::expression_kind(&node.id, content, &mut sources)
                     .unwrap_or_else(|why| Kind::Host(Some(Arc::from(why))))
             }
             DecisionNodeKind::DecisionTableNode { content } => {
-                Self::table_kind(content, &mut sources, &mut cells)
+                Self::table_kind(&node.id, content, &mut sources, &mut cells)
                     .unwrap_or_else(|why| Kind::Host(Some(Arc::from(why))))
             }
             DecisionNodeKind::FunctionNode { .. }

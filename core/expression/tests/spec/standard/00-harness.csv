@@ -11,4 +11,4 @@ keys({'': 1});;['']
 "x = 1; x + 1";{};2
 "x = 1; x + 1";;!error;question: assignments need an object environment; with no input they fail
 d('2024-01-01');;'2024-01-01T00:00:00Z'
-rand(-1);;!error;bug: panics inside fastrand (empty range) instead of returning an error
+rand(-1);;!error

@@ -163,6 +163,7 @@ impl<'a> Run<'_, 'a> {
                 .collect::<Vec<(&str, Column)>>(),
         };
         let call = Call {
+            node: id,
             key: &content.key,
             extensions: self.host.extensions,
             max_depth: self.host.max_depth,
@@ -170,7 +171,10 @@ impl<'a> Run<'_, 'a> {
         };
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
-            ..call.sub_extensions(&op.content)
+            ..call.sub_extensions(
+                &op.content,
+                &self.host.extensions.context.picked(at.clone()),
+            )
         };
         let named: Vec<(&Arc<str>, Symbol, Leaf<'a>)> = op
             .nodes
@@ -276,16 +280,20 @@ impl<'a> Run<'_, 'a> {
                 failed: Vec::new(),
             };
         };
-        let results = CompiledGraph::nested_results(
+        let scoped = self
+            .host
+            .extensions
+            .scoped(self.host.extensions.context.picked(at.clone()));
+        let results = Box::pin(CompiledGraph::nested_results(
             step,
             content,
             &op.content,
             &inputs,
             &nodes,
-            self.host.extensions,
+            &scoped,
             self.host.max_depth,
             self.iteration,
-        )
+        ))
         .await;
         let mut failed = Vec::new();
         let values: Vec<Option<Variable>> = results

@@ -541,7 +541,10 @@ impl<'a, 'x> Interp<'a, 'x> {
                         V::Code(_) => return Err(Fault),
                     });
                 }
-                match Builtins::raw(host.builtin().ok_or(Fault)?, &given).map_err(|_| Fault)? {
+                let ctx = crate::lane::builtins::RowContext::new(&self.feeds.context, 0);
+                match Builtins::raw(host.builtin().ok_or(Fault)?, &given, &ctx)
+                    .map_err(|_| Fault)?
+                {
                     Out::Num(n) => Ok(V::Num(n)),
                     Out::Bool(b) => Ok(V::Bool(b)),
                     Out::Str(s) => Ok(V::Text(Cow::Owned(s.as_bytes().to_vec()))),
@@ -558,7 +561,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                 }
                 let parsed = |t: &[u8]| {
                     std::str::from_utf8(t)
-                        .map(Date::from_text)
+                        .map(|t| Date::from_text(t, self.feeds.context.timezone()))
                         .map_err(|_| Fault)
                 };
                 match (clock, vals.as_slice()) {

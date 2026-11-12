@@ -1,5 +1,5 @@
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
-use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
+use crate::engine::{EvaluationOptions, EvaluationSerializedOptions};
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::model::GraphContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
@@ -82,7 +82,7 @@ impl Decision {
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         if self.engine.compiled() {
-            return self.compiled().evaluate_with_opts(context, options).await;
+            return self.compiled().evaluate_pinned(context, options).await;
         }
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             content: self.content.clone(),
@@ -112,13 +112,7 @@ impl Decision {
         options: EvaluationSerializedOptions,
     ) -> Result<Value, Value> {
         let response = self
-            .evaluate_with_opts(
-                context,
-                EvaluationOptions {
-                    trace: options.trace != EvaluationTraceKind::None,
-                    max_depth: options.max_depth,
-                },
-            )
+            .evaluate_with_opts(context, options.unserialized())
             .await;
 
         match response {
@@ -157,7 +151,9 @@ impl Decision {
         contexts: &[Variable],
         options: EvaluationOptions,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
-        self.compiled().evaluate_batch(contexts, options).await
+        self.compiled()
+            .evaluate_batch_pinned(contexts, options)
+            .await
     }
 
     pub async fn evaluate_columns<'a>(
@@ -165,7 +161,9 @@ impl Decision {
         columns: &'a crate::columns::Columns<'a>,
         options: EvaluationOptions,
     ) -> crate::ColumnarOutput<'a> {
-        self.compiled().evaluate_columns(columns, options).await
+        self.compiled()
+            .evaluate_columns_pinned(columns, options)
+            .await
     }
 
     pub(crate) fn with_engine(mut self, engine: crate::compiled::Engine) -> Self {

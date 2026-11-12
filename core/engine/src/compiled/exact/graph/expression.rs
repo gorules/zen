@@ -2,6 +2,7 @@ use super::{Ctx, Row};
 use crate::compiled::host::expression::ExpressionNodeTrace;
 use crate::compiled::host::graph::tracer::ExpressionNodeTraceItem;
 use crate::compiled::host::NodeResult;
+use crate::compiled::pinning::Located;
 use std::rc::Rc;
 use zen_expression::variable::Variable;
 use zen_types::decision::ExpressionNodeContent;
@@ -17,6 +18,7 @@ impl Row<'_> {
                 continue;
             }
 
+            session.locate(Located::expression(ctx.row.id, &expression.key));
             let value = match session.run_standard(&expression.value) {
                 Ok(value) => value,
                 Err(_) => {

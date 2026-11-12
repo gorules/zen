@@ -7,7 +7,7 @@ use crate::lane::builtins::dates::Dates;
 use crate::lane::builtins::legacy::Legacy;
 use crate::lane::builtins::math::Math;
 use crate::lane::builtins::text::Text;
-use crate::lane::builtins::{Arg, Builtin, Fail, Out};
+use crate::lane::builtins::{Arg, Builtin, Fail, Out, RowContext};
 use crate::lane::exec::{CallFault, Fault};
 use crate::lane::ops::Ops;
 use crate::vm::VMError;
@@ -114,13 +114,16 @@ impl Builtins {
         }
     }
 
-    fn attempt(builtin: &Builtin, args: &[Arg]) -> Option<Result<Out, Fail>> {
-        builtin.overloads.iter().find_map(|overload| overload(args))
+    fn attempt(builtin: &Builtin, args: &[Arg], ctx: &RowContext) -> Option<Result<Out, Fail>> {
+        builtin
+            .overloads
+            .iter()
+            .find_map(|overload| overload(ctx, args))
     }
 
     #[cold]
     #[inline(never)]
-    fn textual(builtin: &Builtin, args: &[Arg]) -> Option<Result<Out, Fail>> {
+    fn textual(builtin: &Builtin, args: &[Arg], ctx: &RowContext) -> Option<Result<Out, Fail>> {
         let texts: SmallVec<[Option<Cow<str>>; 4]> = args
             .iter()
             .map(|a| a.date().and_then(|_| a.text()))
@@ -138,14 +141,14 @@ impl Builtins {
                     _ => *a,
                 })
                 .collect();
-            Self::attempt(builtin, &converted)
+            Self::attempt(builtin, &converted, ctx)
         })
     }
 
     #[inline]
-    fn resolve(builtin: &Builtin, args: &[Arg]) -> Result<Out, Fail> {
-        Self::attempt(builtin, args)
-            .or_else(|| Self::textual(builtin, args))
+    fn resolve(builtin: &Builtin, args: &[Arg], ctx: &RowContext) -> Result<Out, Fail> {
+        Self::attempt(builtin, args, ctx)
+            .or_else(|| Self::textual(builtin, args, ctx))
             .unwrap_or_else(|| Err((builtin.fail)(args)))
     }
 
@@ -153,8 +156,9 @@ impl Builtins {
         builtin: &Builtin,
         kind: &MethodKind,
         args: &[Arg],
+        ctx: &RowContext,
     ) -> Result<Out, VMError> {
-        Self::resolve(builtin, args).map_err(|message| {
+        Self::resolve(builtin, args, ctx).map_err(|message| {
             Ops::error("CallMethod", format!("Method `{kind}` failed: {message}"))
         })
     }
@@ -165,35 +169,37 @@ impl Builtins {
         kind: &FunctionKind,
         args: &[Arg],
         hint: &mut usize,
+        ctx: &RowContext,
     ) -> Result<Out, Fault> {
         let failed = |message: Fail| CallFault::message(kind, message);
         if let Some(overload) = builtin.overloads.get(*hint) {
-            if let Some(result) = overload(args) {
+            if let Some(result) = overload(ctx, args) {
                 return result.map_err(failed);
             }
         }
         for (index, overload) in builtin.overloads.iter().enumerate() {
-            if let Some(result) = overload(args) {
+            if let Some(result) = overload(ctx, args) {
                 *hint = index;
                 return result.map_err(failed);
             }
         }
-        match Self::textual(builtin, args) {
+        match Self::textual(builtin, args, ctx) {
             Some(result) => result.map_err(failed),
             None => Err(CallFault::fail(kind, builtin, args)),
         }
     }
 
-    pub(crate) fn raw(builtin: &Builtin, args: &[Arg]) -> Result<Out, Fail> {
-        Self::resolve(builtin, args)
+    pub(crate) fn raw(builtin: &Builtin, args: &[Arg], ctx: &RowContext) -> Result<Out, Fail> {
+        Self::resolve(builtin, args, ctx)
     }
 
     pub(crate) fn call(
         builtin: &Builtin,
         kind: &FunctionKind,
         args: &[Arg],
+        ctx: &RowContext,
     ) -> Result<Out, VMError> {
-        Self::resolve(builtin, args).map_err(|message| {
+        Self::resolve(builtin, args, ctx).map_err(|message| {
             Ops::error(
                 "CallFunction",
                 format!("Function `{kind}` failed: {message}"),

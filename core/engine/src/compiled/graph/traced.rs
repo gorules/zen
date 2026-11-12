@@ -8,6 +8,7 @@ use crate::compiled::host::graph::walker::GraphWalker;
 use crate::compiled::host::{
     NodeContextBase, NodeContextConfig, NodeError, NodeHandlerExtensions, NodeResponse, NodeResult,
 };
+use crate::compiled::pinning::Located;
 use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
 use crate::model::DecisionNodeKind;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::lane::Session;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_types::decision::{SwitchNodeContent, SwitchStatementHitPolicy};
+use zen_types::decision::{SwitchNodeContent, SwitchStatement, SwitchStatementHitPolicy};
 use zen_types::symbol::Symbol;
 
 pub(crate) struct Traced<'g> {
@@ -218,22 +219,26 @@ impl Traced<'_> {
             session.set_local(Variable::nodes_key(), nodes);
         }
 
-        let mut passes = |condition: &str| {
-            condition.is_empty()
-                || session
-                    .run_standard(condition)
-                    .is_ok_and(|value| value.as_bool().unwrap_or(false))
+        let node = &step.node.id;
+        let mut passes = |statement: &SwitchStatement| {
+            if statement.condition.is_empty() {
+                return true;
+            }
+            session.locate(Located::statement(node, &statement.id));
+            session
+                .run_standard(&statement.condition)
+                .is_ok_and(|value| value.as_bool().unwrap_or(false))
         };
         let mut statements = content.statements.iter();
         match content.hit_policy {
             SwitchStatementHitPolicy::First => statements
-                .find(|statement| passes(&statement.condition))
+                .find(|statement| passes(statement))
                 .into_iter()
                 .cloned()
                 .map(SwitchStatementTraceRow::from)
                 .collect(),
             SwitchStatementHitPolicy::Collect => statements
-                .filter(|statement| passes(&statement.condition))
+                .filter(|statement| passes(statement))
                 .cloned()
                 .map(SwitchStatementTraceRow::from)
                 .collect(),

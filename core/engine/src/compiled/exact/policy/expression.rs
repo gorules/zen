@@ -1,6 +1,7 @@
 use zen_expression::variable::Variable;
 
 use super::Exact;
+use crate::compiled::pinning::Located;
 use crate::policy::blocks::{ExecutionError, ExpressionIr};
 use crate::workspace::types::BlockTrace;
 
@@ -16,6 +17,7 @@ impl Exact<'_> {
             });
         }
 
+        self.session.locate(Located::block(self.site.block_id));
         let result = self
             .session
             .run_standard(&ir.value)

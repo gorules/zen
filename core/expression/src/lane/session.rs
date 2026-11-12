@@ -96,6 +96,11 @@ impl Session {
         self.context = Some(context);
     }
 
+    pub fn locate(&mut self, label: u64) {
+        let context = self.context.get_or_insert_with(EvaluationContext::default);
+        *context = context.located(label);
+    }
+
     pub fn with_programs(mut self, programs: Option<Arc<Programs>>) -> Self {
         self.programs = programs;
         self

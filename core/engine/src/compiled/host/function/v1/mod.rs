@@ -9,6 +9,7 @@ use crate::compiled::host::function::v1::runtime::create_runtime;
 use crate::compiled::host::function::v1::script::{Script, Session};
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextBase, NodeContextExt, NodeError};
+use crate::compiled::pinning::Located;
 use serde_json::Value;
 use zen_expression::variable::ToVariable;
 use zen_expression::Variable;
@@ -37,7 +38,7 @@ impl NodeHandler for FunctionV1NodeHandler {
             .call(
                 ctx.node.deref(),
                 &ctx.input_with_nodes(),
-                &ctx.extensions.context,
+                &ctx.extensions.context.nested(Located::function(&ctx.id)),
             )
             .await;
 
@@ -91,7 +92,7 @@ impl Batch {
         let result = session.call(
             &self.layout,
             &NodeContextBase::joined(input, nodes),
-            context,
+            &context.nested(Located::function(&self.id)),
         );
         if result.is_err() || !session.settled() {
             self.session = None;

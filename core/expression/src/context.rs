@@ -25,6 +25,96 @@ pub fn row_seed(base: u64, row: usize) -> u64 {
     mix(base ^ mix((row as u64).wrapping_add(1).wrapping_mul(GAMMA))) & DRAWN_BITS
 }
 
+const FNV_OFFSET: u64 = 0xCBF2_9CE4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01B3;
+const SCOPE_KEY: u64 = 0xA076_1D64_78BD_642F;
+const SITE_KEY: u64 = 0xE703_7ED1_A0B4_28DB;
+
+pub fn location(parts: &[&str]) -> u64 {
+    let mut hash = FNV_OFFSET;
+    for part in parts {
+        for byte in part.bytes().chain(std::iter::once(0xFF)) {
+            hash = (hash ^ byte as u64).wrapping_mul(FNV_PRIME);
+        }
+    }
+    match mix(hash) {
+        0 => 1,
+        located => located,
+    }
+}
+
+fn nest(scope: u64, part: u64) -> u64 {
+    mix(scope.wrapping_mul(GAMMA) ^ part ^ SCOPE_KEY)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Site {
+    label: u64,
+    index: u32,
+}
+
+impl Site {
+    pub const SCRIPT: Site = Site {
+        label: 0,
+        index: u32::MAX,
+    };
+
+    pub const fn new(label: u64, index: u32) -> Self {
+        Self { label, index }
+    }
+
+    pub const fn label(&self) -> u64 {
+        self.label
+    }
+
+    pub const fn index(&self) -> u32 {
+        self.index
+    }
+
+    pub const fn labelled(self, label: u64) -> Self {
+        Self {
+            label,
+            index: self.index,
+        }
+    }
+
+    fn key(&self, scope: u64, field: u64) -> u64 {
+        let field = match self.label {
+            0 => field,
+            label => label,
+        };
+        let located = mix(mix(scope ^ SITE_KEY) ^ field);
+        mix(located ^ (self.index as u64).wrapping_add(1).wrapping_mul(GAMMA))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Draw {
+    base: u64,
+    address: u64,
+}
+
+impl Draw {
+    fn new(base: u64, key: u64, n: u64) -> Self {
+        Self {
+            base,
+            address: mix(mix(key).wrapping_add(n.wrapping_add(1).wrapping_mul(GAMMA))),
+        }
+    }
+
+    pub fn word(&self, i: u64) -> u64 {
+        mix(mix(self.base ^ self.address).wrapping_add(i.wrapping_add(1).wrapping_mul(GAMMA)))
+    }
+
+    pub fn unit(&self) -> f64 {
+        (self.word(0) >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    pub fn int(&self, upper: i64) -> i64 {
+        fastrand::Rng::with_seed(self.word(0)).i64(0..=upper)
+    }
+}
+
 static CLOCK_READS: AtomicU64 = AtomicU64::new(0);
 static UNROWED: AtomicU64 = AtomicU64::new(0);
 
@@ -159,16 +249,32 @@ pub enum Stream {
     Item(u32),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct Node {
     seed: Option<u64>,
     draws: u64,
     touched: bool,
+    counts: Vec<(u64, u64)>,
 }
 
 impl Node {
     fn drew(&self) -> bool {
         self.draws > 0 || self.touched
+    }
+
+    fn count(&mut self, key: u64) -> u64 {
+        self.draws += 1;
+        match self.counts.binary_search_by_key(&key, |&(k, _)| k) {
+            Ok(at) => {
+                let n = self.counts[at].1;
+                self.counts[at].1 += 1;
+                n
+            }
+            Err(at) => {
+                self.counts.insert(at, (key, 1));
+                0
+            }
+        }
     }
 }
 
@@ -250,17 +356,11 @@ impl Streams {
         }
     }
 
-    fn next_u64(&mut self, stream: Stream) -> u64 {
+    fn draw(&mut self, stream: Stream, key: u64) -> Draw {
         let base = self.base(stream);
-        let k = match self.node(stream) {
-            Some(node) => {
-                node.draws += 1;
-                node.draws - 1
-            }
-            None => 0,
-        };
+        let n = self.node(stream).map_or(0, |node| node.count(key));
         self.touch(stream);
-        mix(base.wrapping_add(k.wrapping_add(1).wrapping_mul(GAMMA)))
+        Draw::new(base, key, n)
     }
 
     fn child(&mut self, parent: Stream, index: usize) -> Stream {
@@ -371,11 +471,11 @@ impl Shared {
             .and_then(|node| node.seed)
     }
 
-    fn next_u64(&self, stream: Stream) -> u64 {
+    fn draw(&self, stream: Stream, key: u64) -> Draw {
         if self.batch && stream == Stream::Root {
             UNROWED.fetch_add(1, Ordering::Relaxed);
         }
-        self.streams.borrow_mut().next_u64(stream)
+        self.streams.borrow_mut().draw(stream, key)
     }
 }
 
@@ -439,6 +539,8 @@ impl Rows {
 pub struct EvaluationContext {
     shared: Rc<Shared>,
     rows: Rows,
+    scope: u64,
+    field: u64,
 }
 
 impl Default for EvaluationContext {
@@ -452,6 +554,8 @@ impl EvaluationContext {
         Self {
             shared: Rc::new(Shared::new(pinned, false)),
             rows: Rows::Direct,
+            scope: 0,
+            field: 0,
         }
     }
 
@@ -459,6 +563,8 @@ impl EvaluationContext {
         Self {
             shared: Rc::new(Shared::new(pinned, true)),
             rows: Rows::Direct,
+            scope: 0,
+            field: 0,
         }
     }
 
@@ -479,7 +585,7 @@ impl EvaluationContext {
     }
 
     pub fn row(&self, row: usize) -> RowContext<'_> {
-        RowContext { context: self, row }
+        RowContext::new(self, row)
     }
 
     pub fn stream(&self, row: usize) -> Stream {
@@ -502,7 +608,35 @@ impl EvaluationContext {
         Self {
             shared: self.shared.clone(),
             rows,
+            scope: self.scope,
+            field: self.field,
         }
+    }
+
+    pub fn nested(&self, part: u64) -> Self {
+        Self {
+            shared: self.shared.clone(),
+            rows: self.rows.clone(),
+            scope: nest(self.scope, part),
+            field: 0,
+        }
+    }
+
+    pub fn located(&self, field: u64) -> Self {
+        Self {
+            shared: self.shared.clone(),
+            rows: self.rows.clone(),
+            scope: self.scope,
+            field,
+        }
+    }
+
+    pub fn scope(&self) -> u64 {
+        self.scope
+    }
+
+    pub fn field(&self) -> u64 {
+        self.field
     }
 
     pub fn rows(&self, rows: &[usize]) -> Self {
@@ -568,16 +702,21 @@ impl EvaluationContext {
         }
     }
 
-    pub fn next_u64(&self, row: usize) -> u64 {
-        self.shared.next_u64(self.stream(row))
+    pub fn draw(&self, row: usize, site: Site) -> Draw {
+        let key = site.key(self.scope, self.field);
+        self.shared.draw(self.stream(row), key)
     }
 
-    pub fn random_f64(&self, row: usize) -> f64 {
-        (self.next_u64(row) >> 11) as f64 / (1u64 << 53) as f64
+    pub fn next_u64(&self, row: usize, site: Site) -> u64 {
+        self.draw(row, site).word(0)
     }
 
-    pub fn random_int(&self, row: usize, upper: i64) -> i64 {
-        fastrand::Rng::with_seed(self.next_u64(row)).i64(0..=upper)
+    pub fn random_f64(&self, row: usize, site: Site) -> f64 {
+        self.draw(row, site).unit()
+    }
+
+    pub fn random_int(&self, row: usize, site: Site, upper: i64) -> i64 {
+        self.draw(row, site).int(upper)
     }
 }
 
@@ -585,11 +724,24 @@ impl EvaluationContext {
 pub struct RowContext<'a> {
     context: &'a EvaluationContext,
     row: usize,
+    site: Site,
 }
 
 impl<'a> RowContext<'a> {
     pub fn new(context: &'a EvaluationContext, row: usize) -> Self {
-        Self { context, row }
+        Self {
+            context,
+            row,
+            site: Site::default(),
+        }
+    }
+
+    pub fn with_site(self, site: Site) -> Self {
+        Self { site, ..self }
+    }
+
+    pub fn site(&self) -> Site {
+        self.site
     }
 
     pub fn context(&self) -> &'a EvaluationContext {
@@ -613,21 +765,23 @@ impl<'a> RowContext<'a> {
     }
 
     pub fn next_u64(&self) -> u64 {
-        self.context.next_u64(self.row)
+        self.context.next_u64(self.row, self.site)
     }
 
     pub fn random_f64(&self) -> f64 {
-        self.context.random_f64(self.row)
+        self.context.random_f64(self.row, self.site)
     }
 
     pub fn random_int(&self, upper: i64) -> i64 {
-        self.context.random_int(self.row, upper)
+        self.context.random_int(self.row, self.site, upper)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SITE: Site = Site::new(0, 0);
 
     fn seeded(seed: u64) -> Pinned {
         Pinned {
@@ -644,8 +798,8 @@ mod tests {
         };
         let a = EvaluationContext::new(pinned);
         let b = EvaluationContext::new(pinned);
-        let xs: Vec<i64> = (0..8).map(|_| a.random_int(0, 1000)).collect();
-        let ys: Vec<i64> = (0..8).map(|_| b.random_int(0, 1000)).collect();
+        let xs: Vec<i64> = (0..8).map(|_| a.random_int(0, SITE, 1000)).collect();
+        let ys: Vec<i64> = (0..8).map(|_| b.random_int(0, SITE, 1000)).collect();
         assert_eq!(xs, ys);
         assert_eq!(a.seed(), Some(42));
     }
@@ -696,13 +850,13 @@ mod tests {
     #[test]
     fn rows_replay_alone() {
         let batch = EvaluationContext::batch(seeded(7));
-        let drawn: Vec<u64> = (0..4).map(|_| batch.next_u64(3)).collect();
+        let drawn: Vec<u64> = (0..4).map(|_| batch.next_u64(3, SITE)).collect();
         let alone = EvaluationContext::new(Pinned {
             now: Some(batch.now()),
             seed: batch.row_seed(3),
             ..Pinned::default()
         });
-        let again: Vec<u64> = (0..4).map(|_| alone.next_u64(0)).collect();
+        let again: Vec<u64> = (0..4).map(|_| alone.next_u64(0, SITE)).collect();
         assert_eq!(drawn, again);
         assert_eq!(batch.row_seed(3), Some(row_seed(7, 3)));
         assert_eq!(batch.seed(), None);
@@ -712,10 +866,13 @@ mod tests {
     fn items_derive_from_their_row() {
         let batch = EvaluationContext::batch(seeded(5));
         let items = batch.rows(&[2, 4]).items(&[(1, 0), (1, 1), (0, 3)]);
-        let drawn: Vec<u64> = (0..3).map(|i| items.next_u64(i)).collect();
+        let drawn: Vec<u64> = (0..3).map(|i| items.next_u64(i, SITE)).collect();
         let alone = EvaluationContext::new(seeded(row_seed(5, 4)));
         let looped = alone.items(&[(0, 0), (0, 1)]);
-        assert_eq!(drawn[..2], [looped.next_u64(0), looped.next_u64(1)]);
+        assert_eq!(
+            drawn[..2],
+            [looped.next_u64(0, SITE), looped.next_u64(1, SITE)]
+        );
         assert_eq!(batch.row_seed(4), Some(row_seed(5, 4)));
         assert_eq!(alone.seed(), Some(row_seed(5, 4)));
         assert_eq!(batch.row_seed(1), None);
@@ -725,9 +882,9 @@ mod tests {
     fn an_item_matches_its_loop_position() {
         let alone = EvaluationContext::new(seeded(11));
         let looped = alone.items(&[(0, 0), (0, 1), (0, 2)]);
-        let expected: Vec<u64> = (0..3).map(|i| looped.next_u64(i)).collect();
+        let expected: Vec<u64> = (0..3).map(|i| looped.next_u64(i, SITE)).collect();
         let again = EvaluationContext::new(seeded(11));
-        let single: Vec<u64> = (0..3).map(|i| again.item(i).next_u64(0)).collect();
+        let single: Vec<u64> = (0..3).map(|i| again.item(i).next_u64(0, SITE)).collect();
         assert_eq!(expected, single);
     }
 
@@ -735,9 +892,9 @@ mod tests {
     fn two_contexts_do_not_share_streams() {
         let a = EvaluationContext::new(seeded(1));
         let b = EvaluationContext::new(seeded(1));
-        let first = a.next_u64(0);
-        assert_eq!(b.next_u64(0), first);
-        assert_ne!(a.next_u64(0), first);
+        let first = a.next_u64(0, SITE);
+        assert_eq!(b.next_u64(0, SITE), first);
+        assert_ne!(a.next_u64(0, SITE), first);
     }
 
     #[test]
@@ -748,6 +905,97 @@ mod tests {
         let drawn = row.next_u64();
         let alone = EvaluationContext::new(seeded(row_seed(9, 2)));
         assert_eq!(alone.row(0).next_u64(), drawn);
+    }
+
+    #[test]
+    fn sites_draw_independently() {
+        let label = location(&["expression", "node", "key"]);
+        let (first, second) = (Site::new(label, 0), Site::new(label, 1));
+        let busy = EvaluationContext::new(seeded(4));
+        for _ in 0..3 {
+            busy.next_u64(0, first);
+        }
+        let quiet = EvaluationContext::new(seeded(4));
+        assert_eq!(busy.next_u64(0, second), quiet.next_u64(0, second));
+        assert_eq!(busy.next_u64(0, second), quiet.next_u64(0, second));
+        let fresh = EvaluationContext::new(seeded(4));
+        assert_ne!(fresh.next_u64(0, first), fresh.next_u64(0, first));
+        assert_ne!(
+            EvaluationContext::new(seeded(4)).next_u64(0, first),
+            EvaluationContext::new(seeded(4)).next_u64(0, second)
+        );
+    }
+
+    #[test]
+    fn a_site_label_wins_over_the_located_field() {
+        let label = location(&["a"]);
+        let other = location(&["b"]);
+        let compiled = EvaluationContext::new(seeded(6))
+            .located(other)
+            .next_u64(0, Site::new(label, 2));
+        let runtime = EvaluationContext::new(seeded(6))
+            .located(label)
+            .next_u64(0, Site::new(0, 2));
+        assert_eq!(compiled, runtime);
+        let elsewhere = EvaluationContext::new(seeded(6))
+            .located(other)
+            .next_u64(0, Site::new(0, 2));
+        assert_ne!(compiled, elsewhere);
+    }
+
+    #[test]
+    fn narrowing_keeps_the_scope_and_field() {
+        let batch = EvaluationContext::batch(seeded(12))
+            .nested(location(&["decision", "call", "child"]))
+            .located(location(&["field"]));
+        let narrowed = batch.at(3).item(2);
+        assert_eq!(narrowed.scope(), batch.scope());
+        assert_eq!(narrowed.field(), batch.field());
+        let nested = batch.nested(location(&["decision", "inner", "child"]));
+        assert_ne!(nested.scope(), batch.scope());
+        assert_eq!(nested.field(), 0);
+        let alone = EvaluationContext::new(seeded(row_seed(12, 3)))
+            .nested(location(&["decision", "call", "child"]))
+            .located(location(&["field"]));
+        assert_eq!(batch.next_u64(3, SITE), alone.next_u64(0, SITE),);
+    }
+
+    #[test]
+    fn locations_are_stable() {
+        assert_eq!(
+            location(&["expression", "calc", "a"]),
+            0x5D68_576D_4925_C850
+        );
+        assert_ne!(location(&["ab", "c"]), location(&["a", "bc"]));
+        assert_ne!(location(&[]), 0);
+    }
+
+    #[test]
+    fn draws_are_pinned() {
+        let field = location(&["expression", "calc", "a"]);
+        let single = EvaluationContext::new(seeded(42)).located(field);
+        let batch = EvaluationContext::batch(seeded(42)).located(field);
+        let drawn = [
+            single.next_u64(0, Site::new(0, 0)),
+            single.next_u64(0, Site::new(0, 0)),
+            single.next_u64(0, Site::new(0, 1)),
+            batch.next_u64(3, Site::new(0, 0)),
+            batch.at(3).item(1).next_u64(0, Site::new(0, 0)),
+            single
+                .nested(location(&["decision", "call", "child"]))
+                .next_u64(0, Site::SCRIPT),
+        ];
+        assert_eq!(
+            drawn,
+            [
+                0xE0A0_738B_CB7C_FBB1,
+                0x0018_4DB7_C3F4_C198,
+                0xDED2_0A83_4EEC_EF04,
+                0x718F_0B89_2624_9E10,
+                0xCAFA_D1EF_8A7D_F658,
+                0x94BB_666A_DEFA_3647,
+            ]
+        );
     }
 
     #[test]

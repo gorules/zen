@@ -80,6 +80,7 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
     ) -> Result<Arc<Content>, Failure> {
         let call = Call {
+            node: "",
             key,
             extensions,
             max_depth: 0,
@@ -162,6 +163,7 @@ impl CompiledGraph {
                 .collect();
         }
         let call = Call {
+            node: &step.node.id,
             key: &content.key,
             extensions,
             max_depth,

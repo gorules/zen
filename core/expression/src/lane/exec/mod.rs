@@ -1015,6 +1015,7 @@ impl Executor {
                 dst,
                 kind: FunctionKind::Internal(InternalFunction::String),
                 args,
+                ..
             } if matches!(**args, [Input::Reg(a)] if matches!(f.kind(a), Kind::Str | Kind::Num))
                 && f.kind(*dst) == Kind::Str =>
             {
@@ -1063,6 +1064,7 @@ impl Executor {
                 dst,
                 kind: kind @ FunctionKind::Internal(InternalFunction::Rand),
                 args,
+                draw,
             } => {
                 let Some(builtin) = Builtins::of(kind) else {
                     return;
@@ -1083,13 +1085,15 @@ impl Executor {
                             kind,
                             &values,
                             &mut hint,
-                            &ctx.at(f.rows[lane]),
+                            &ctx.at(f.rows[lane]).with_site(*draw),
                         )
                     };
                     f.write_call(*dst, lane, result);
                 }
             }
-            Op::Call { dst, kind, args } => {
+            Op::Call {
+                dst, kind, args, ..
+            } => {
                 let Some(builtin) = Builtins::of(kind) else {
                     let e = Ops::error("CallFunction", format!("Function `{kind}` not found"));
                     for lane in Lanes::of(active) {

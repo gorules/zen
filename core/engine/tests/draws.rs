@@ -644,3 +644,362 @@ fn engine_policy_batches_draw_per_row() {
     }
     assert_eq!(unrowed_draws(), 0);
 }
+
+fn located(d: &Decision, x: usize, seed: u64) -> Value {
+    let result = block(d.evaluate_with_opts(row(x), options(false, seed))).unwrap();
+    serde_json::to_value(result.result).unwrap()
+}
+
+fn agree(name: &str, d: &Decision, base: u64) -> Vec<Value> {
+    let rows = rows_match_alone(name, d, base);
+    columns_match_alone(name, d, base, row_json);
+    rows
+}
+
+fn graph(nodes: Vec<Value>, edges: &[(&str, &str)]) -> Value {
+    let edges: Vec<Value> = edges
+        .iter()
+        .map(|(from, to)| json!({"id": format!("{from}-{to}"), "sourceId": from, "targetId": to, "type": "edge"}))
+        .collect();
+    json!({"nodes": nodes, "edges": edges})
+}
+
+fn passing(id: &str, fields: &[(&str, &str)]) -> Value {
+    expressions(id, fields, json!({"passThrough": true}))
+}
+
+#[test]
+fn an_inserted_draw_leaves_other_draws_alone() {
+    let plain = decision(
+        chain(vec![
+            input(),
+            passing(
+                "calc",
+                &[
+                    ("copy", "x"),
+                    ("b", "rand(1000000)"),
+                    ("m", "map(xs, rand(1000))"),
+                    ("o", "{u: rand(1000000), v: rand(1000000)}"),
+                ],
+            ),
+            output(),
+        ]),
+        &[],
+    );
+    let inserted = decision(
+        chain(vec![
+            input(),
+            passing("pre", &[("p", "rand(1000000)")]),
+            passing(
+                "calc",
+                &[
+                    ("a", "rand(1000000)"),
+                    ("copy", "x"),
+                    ("b", "rand(1000000)"),
+                    ("m", "map(xs, rand(1000))"),
+                    ("o", "{u: rand(1000000), v: rand(1000000)}"),
+                ],
+            ),
+            output(),
+        ]),
+        &[],
+    );
+    let base = 101;
+    let before = agree("plain", &plain, base);
+    let after = agree("inserted", &inserted, base);
+    for (x, (a, b)) in before.iter().zip(&after).enumerate() {
+        assert_eq!(a["b"], b["b"], "row {x}");
+        assert_eq!(a["m"], b["m"], "row {x}");
+        assert_eq!(a["o"], b["o"], "row {x}");
+        assert_ne!(a["o"]["u"], a["o"]["v"], "row {x}");
+        assert_ne!(b["a"], b["b"], "row {x}");
+        assert_ne!(b["p"], b["b"], "row {x}");
+    }
+    assert_eq!(located(&plain, 2, 5), located(&plain, 2, 5));
+}
+
+#[test]
+fn draws_in_one_expression_differ_and_ignore_evaluation_order() {
+    let parallel = |order: [&str; 2]| {
+        let node = |id: &str| match id {
+            "left" => passing("left", &[("l", "[rand(1000000), rand(1000000)]")]),
+            _ => passing(
+                "right",
+                &[("r", "x > 2 ? rand(1000000) : rand(1000000) + 1")],
+            ),
+        };
+        decision(
+            graph(
+                vec![input(), node(order[0]), node(order[1]), output()],
+                &[
+                    ("in", "left"),
+                    ("in", "right"),
+                    ("left", "out"),
+                    ("right", "out"),
+                ],
+            ),
+            &[],
+        )
+    };
+    let base = 103;
+    let a = agree("left first", &parallel(["left", "right"]), base);
+    let b = agree("right first", &parallel(["right", "left"]), base);
+    assert_eq!(a, b);
+    for r in &a {
+        assert_ne!(r["l"][0], r["l"][1], "{r}");
+    }
+    let swapped = decision(
+        chain(vec![
+            input(),
+            expressions(
+                "calc",
+                &[
+                    ("c", "x > 2 ? rand(100) : -1"),
+                    ("b", "x + rand(1000000)"),
+                    ("a", "rand(1000000)"),
+                ],
+                json!({}),
+            ),
+            output(),
+        ]),
+        &[],
+    );
+    let original = agree("top level", &top_level(), 41);
+    let reordered = agree("reordered keys", &swapped, 41);
+    assert_eq!(original, reordered);
+}
+
+#[test]
+fn repeated_runs_agree_across_paths() {
+    for (name, d) in [
+        ("top level", top_level()),
+        ("closures", closures()),
+        ("loops", looped()),
+        ("sub decisions", sub_decisions()),
+        ("tables", tables()),
+        ("branches", branches()),
+    ] {
+        let first = agree(name, &d, 107);
+        let second = agree(name, &d, 107);
+        assert_eq!(first, second, "{name}");
+    }
+}
+
+#[test]
+fn closures_and_loops_draw_stably_per_item() {
+    let rows = agree("closures", &closures(), 7);
+    let rerun = decision(
+        chain(vec![
+            input(),
+            passing("extra", &[("e", "map(xs, rand(1000000))")]),
+            expressions(
+                "calc",
+                &[
+                    ("m", "map(xs, rand(1000000))"),
+                    ("two", "map(xs, rand(1000) * 1000 + rand(1000))"),
+                    ("f", "filter(xs, rand(10) > 4)"),
+                    ("some", "some(xs, rand(10) > 7)"),
+                    (
+                        "nested",
+                        "map(filter(xs, # < 3), map(filter(xs, # < 4), rand(1000)))",
+                    ),
+                    ("fixed", "map([1, 2, 3, 4, 5], rand(1000000))"),
+                    ("after", "rand(1000000)"),
+                ],
+                json!({}),
+            ),
+            output(),
+        ]),
+        &[],
+    );
+    let again = agree("closures with a node before", &rerun, 7);
+    assert_eq!(rows, again);
+    let loops = agree("loops", &looped(), 3);
+    let shifted = decision(
+        chain(vec![
+            input(),
+            passing("first", &[("q", "rand(1000000)")]),
+            expressions(
+                "calc",
+                &[
+                    ("r", "rand(1000000)"),
+                    ("s", "n + rand(1000)"),
+                    ("inner", "map([1, 2], rand(1000))"),
+                ],
+                json!({"inputField": "items", "outputPath": "looped", "executionMode": "loop"}),
+            ),
+            expressions(
+                "after",
+                &[("z", "rand(1000000)")],
+                json!({"passThrough": true}),
+            ),
+            output(),
+        ]),
+        &[],
+    );
+    let moved = agree("loops with a node before", &shifted, 3);
+    for (a, b) in loops.iter().zip(&moved) {
+        assert_eq!(a["looped"], b["looped"]);
+        assert_eq!(a["z"], b["z"]);
+        let items = a["looped"].as_array().unwrap();
+        if items.len() > 3 {
+            assert!(distinct(items.iter().map(|i| i["r"].clone())) > items.len() / 2);
+        }
+    }
+}
+
+fn twice_called() -> Decision {
+    decision(
+        chain(vec![
+            input(),
+            json!({"id": "one", "name": "one", "type": "decisionNode", "content": {"key": "child", "outputPath": "one", "passThrough": true}}),
+            json!({"id": "two", "name": "two", "type": "decisionNode", "content": {"key": "child", "outputPath": "two", "passThrough": true}}),
+            output(),
+        ]),
+        &[("child", child())],
+    )
+}
+
+#[test]
+fn a_sub_decision_draws_per_calling_node() {
+    let rows = agree("twice called", &twice_called(), 109);
+    for r in &rows {
+        assert_ne!(r["one"]["c"], r["two"]["c"], "{r}");
+        assert_ne!(r["one"]["d"], r["two"]["d"], "{r}");
+    }
+    let alone = decision(
+        chain(vec![
+            input(),
+            json!({"id": "two", "name": "two", "type": "decisionNode", "content": {"key": "child", "outputPath": "two", "passThrough": true}}),
+            output(),
+        ]),
+        &[("child", child())],
+    );
+    let single = agree("called once", &alone, 109);
+    for (a, b) in rows.iter().zip(&single) {
+        assert_eq!(a["two"], b["two"]);
+    }
+    let looped = agree("looped sub decisions", &looped_sub_decisions(), 23);
+    assert_eq!(
+        looped,
+        agree("looped sub decisions", &looped_sub_decisions(), 23)
+    );
+}
+
+fn script(id: &str, field: &str) -> Value {
+    json!({"id": id, "name": id, "type": "functionNode", "content": {
+        "source": format!("export const handler = async (input) => ({{ ...input, {field}: Math.random(), {field}2: Math.random() }})")
+    }})
+}
+
+#[test]
+fn function_nodes_draw_independently_of_other_nodes() {
+    let plain = decision(chain(vec![input(), script("fn", "r"), output()]), &[]);
+    let preceded = decision(
+        chain(vec![
+            input(),
+            script("pre", "p"),
+            passing("calc", &[("a", "rand(1000000)")]),
+            script("fn", "r"),
+            output(),
+        ]),
+        &[],
+    );
+    let a = agree("one function", &plain, 113);
+    let b = agree("preceded function", &preceded, 113);
+    for (x, (a, b)) in a.iter().zip(&b).enumerate() {
+        assert_eq!(a["r"], b["r"], "row {x}");
+        assert_eq!(a["r2"], b["r2"], "row {x}");
+        assert_ne!(a["r"], a["r2"], "row {x}");
+        assert_ne!(b["p"], b["r"], "row {x}");
+    }
+}
+
+fn located_tables(extra: bool) -> Decision {
+    let mut rules = vec![
+        json!({"_id": "r1", "i1": "> 1", "o1": "rand(1000000)", "o2": "1"}),
+        json!({"_id": "r2", "i1": "", "o1": "rand(1000000)", "o2": "2"}),
+        json!({"_id": "r3", "i1": "", "o1": "rand(1000000)", "o2": "3"}),
+    ];
+    if extra {
+        rules.insert(
+            0,
+            json!({"_id": "r0", "i1": "rand(10) >= 0", "o1": "rand(1000000)", "o2": "0"}),
+        );
+    }
+    decision(
+        chain(vec![
+            input(),
+            json!({"id": "dt", "name": "dt", "type": "decisionTableNode", "content": {
+                "hitPolicy": "collect",
+                "inputs": [{"id": "i1", "name": "x", "field": "x"}],
+                "outputs": [{"id": "o1", "name": "r", "field": "r"}, {"id": "o2", "name": "k", "field": "k"}],
+                "rules": rules
+            }}),
+            output(),
+        ]),
+        &[],
+    )
+}
+
+#[test]
+fn table_rules_draw_by_rule_and_column() {
+    let plain = agree("tables", &located_tables(false), 127);
+    let extra = agree("tables with a rule before", &located_tables(true), 127);
+    for (a, b) in plain.iter().zip(&extra) {
+        let a = a.as_array().unwrap();
+        let b = b.as_array().unwrap();
+        assert_eq!(&b[1..], &a[..]);
+        assert_ne!(a[a.len() - 1]["r"], a[a.len() - 2]["r"]);
+    }
+}
+
+fn located_policy(extra: bool) -> zen_engine::policy::PolicyDocument {
+    let mut document = serde_json::to_value(policy_document()).unwrap();
+    if extra {
+        let blocks = document["blocks"].as_array_mut().unwrap();
+        blocks.insert(
+            2,
+            json!({"id": "e0", "type": "expression", "props": {"data": {
+                "key": "customer.first", "value": "rand(1000000)"
+            }}}),
+        );
+    }
+    serde_json::from_value(document).unwrap()
+}
+
+#[test]
+fn policies_draw_by_block() {
+    compiled();
+    let run = |extra: bool| {
+        let mut ws = zen_engine::Workspace::new();
+        ws.set_policy("policy", located_policy(extra));
+        let singles: Vec<Value> = (0..ROWS)
+            .map(|x| {
+                let r = ws
+                    .evaluate_pinned(&policy_request(x, false), &pinned(row_seed(131, x)))
+                    .unwrap();
+                serde_json::to_value(&r.output).unwrap()
+            })
+            .collect();
+        let requests: Vec<_> = (0..ROWS).map(|x| policy_request(x, false)).collect();
+        let batch = ws.evaluate_batch_pinned(&requests, &pinned(131));
+        for (x, result) in batch.into_iter().enumerate() {
+            assert_eq!(
+                serde_json::to_value(&result.unwrap().output).unwrap(),
+                singles[x],
+                "policy batch row {x} ({extra})"
+            );
+        }
+        singles
+    };
+    let plain = run(false);
+    let extra = run(true);
+    for (a, b) in plain.iter().zip(&extra) {
+        let mut b = b.clone();
+        assert!(b["customer"]["first"].is_number());
+        b["customer"].as_object_mut().unwrap().remove("first");
+        assert_eq!(a, &b);
+        assert_ne!(a["customer"]["lucky"], a["customer"]["after"]);
+    }
+}

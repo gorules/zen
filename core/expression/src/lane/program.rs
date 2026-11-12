@@ -1,4 +1,5 @@
 use crate::compiler::{Compare, FetchFastTarget};
+use crate::context::Site;
 use crate::functions::{ClosureFunction, FunctionKind, MethodKind};
 use crate::lane::effect::Effect;
 use crate::lexer::Bracket;
@@ -259,6 +260,7 @@ pub enum Op {
         dst: Reg,
         kind: FunctionKind,
         args: Box<[Input]>,
+        draw: Site,
     },
     Method {
         dst: Reg,

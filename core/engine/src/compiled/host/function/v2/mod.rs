@@ -11,6 +11,7 @@ use crate::compiled::host::function::v2::module::console::Log;
 use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextConfig, NodeError, NodeHandlerExtensions};
+use crate::compiled::pinning::Located;
 use rquickjs::prelude::Func;
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
@@ -73,7 +74,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .call_handler(
                 &module_name,
                 JsValueWithNodes(JsValue(ctx.input.clone())),
-                &ctx.extensions.context,
+                &ctx.extensions.context.nested(Located::function(&ctx.id)),
             )
             .await;
 
@@ -194,7 +195,7 @@ impl FunctionV2NodeHandler {
                 (iteration, config.max_depth, config.trace),
                 rows,
                 &tick,
-                &extensions.context,
+                &extensions.context.nested(Located::function(id)),
             )
             .await;
         function.runtime().set_interrupt_handler(None).await;

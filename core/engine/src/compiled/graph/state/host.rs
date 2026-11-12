@@ -335,6 +335,7 @@ impl CompiledGraph {
             }
             DecisionNodeKind::DecisionNode { content } => {
                 let call = call::Call {
+                    node: &node.id,
                     key: &content.key,
                     extensions: &base.extensions,
                     max_depth: base.config.max_depth,

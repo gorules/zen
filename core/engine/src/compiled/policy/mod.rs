@@ -12,6 +12,7 @@ pub(crate) use host::Host;
 
 use crate::compiled::core::special::Specialized;
 use crate::compiled::leaf::Literal;
+use crate::compiled::pinning::Located;
 use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
 use crate::compiled::policy::blocks::MatchSelection;
 use crate::compiled::policy::site::{HostState, InstanceSlot, Iterated, Pick, Picked};
@@ -27,7 +28,7 @@ use std::time::Instant;
 use zen_expression::context::EvaluationContext;
 use zen_expression::lane::SourceInfo;
 use zen_expression::lane::{LaneProgram, LaneRunner, Programs};
-use zen_expression::{Scope, Variable};
+use zen_expression::{ExpressionKind, Scope, Variable};
 use zen_types::path::DotPath;
 
 enum Native {
@@ -66,18 +67,22 @@ impl std::fmt::Display for Refused {
 }
 
 impl Native {
-    fn program(source: &str) -> Result<LaneProgram, Refused> {
-        LaneProgram::standard(source).map_err(|e| Refused::Compile(Arc::from(e.to_string())))
+    fn program(source: &str, label: u64) -> Result<LaneProgram, Refused> {
+        LaneProgram::located(source, ExpressionKind::Standard, label)
+            .map_err(|e| Refused::Compile(Arc::from(e.to_string())))
     }
 
-    fn optional(source: &str) -> Result<Option<LaneProgram>, Refused> {
+    fn optional(source: &str, label: u64) -> Result<Option<LaneProgram>, Refused> {
         match source.is_empty() {
             true => Ok(None),
-            false => Self::program(source).map(Some),
+            false => Self::program(source, label).map(Some),
         }
     }
 
     fn pick(ir: &MatchIr) -> Option<Box<LaneProgram>> {
+        if ir.arms.iter().any(|arm| SourceInfo::draws(&arm.condition)) {
+            return None;
+        }
         let mut source = String::new();
         let mut open = 0usize;
         let mut tail = String::from("null");
@@ -94,10 +99,11 @@ impl Native {
         LaneProgram::standard(&source).ok().map(Box::new)
     }
 
-    fn compile(kind: &BlockKind) -> Result<Self, Refused> {
-        match kind {
+    fn compile(block: &Block) -> Result<Self, Refused> {
+        let id = &block.id;
+        match &block.kind {
             BlockKind::Expression(ir) if !ir.key.is_empty() && !ir.value.is_empty() => {
-                Self::program(&ir.value).map(|program| Native::Expression {
+                Self::program(&ir.value, Located::block(id)).map(|program| Native::Expression {
                     key: ir.key.clone(),
                     program: Box::new(program),
                 })
@@ -107,14 +113,14 @@ impl Native {
                 conditions: ir
                     .conditions
                     .iter()
-                    .map(|c| Self::program(&c.expression))
+                    .map(|c| Self::program(&c.expression, Located::condition(id, &c.id)))
                     .collect::<Result<Vec<_>, _>>()?,
             }),
             BlockKind::Match(ir) => {
                 let values = ir
                     .arms
                     .iter()
-                    .map(|arm| Self::optional(&arm.value))
+                    .map(|arm| Self::optional(&arm.value, Located::value(id, &arm.id)))
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut runner = LaneRunner::new();
                 let constants = values
@@ -126,7 +132,7 @@ impl Native {
                     conditions: ir
                         .arms
                         .iter()
-                        .map(|arm| Self::optional(&arm.condition))
+                        .map(|arm| Self::optional(&arm.condition, Located::arm(id, &arm.id)))
                         .collect::<Result<Vec<_>, _>>()?,
                     values,
                     pick: Self::pick(ir),
@@ -252,9 +258,9 @@ impl PolicyPlan {
             .map(|(rule, owner)| {
                 let iteration = artifact.iteration(rule);
                 let (native, iterated) = match &iteration {
-                    None => (Native::compile(&rule.kind), false),
+                    None => (Native::compile(rule), false),
                     Some((_, path, _)) if Self::lane_safe(artifact, owner, rule, path) => {
-                        (Native::compile(&rule.kind), true)
+                        (Native::compile(rule), true)
                     }
                     Some(_) => (Err(Refused::Iterated), false),
                 };
@@ -262,12 +268,12 @@ impl PolicyPlan {
                     native,
                     iterated,
                     table: match &rule.kind {
-                        BlockKind::DecisionTable(ir) => Table::compile(TableIr::policy(ir)).ok(),
+                        BlockKind::DecisionTable(ir) if !ir.draws() => {
+                            Table::compile(TableIr::policy(ir)).ok()
+                        }
                         _ => None,
                     },
-                    member: iteration
-                        .as_ref()
-                        .and_then(|_| Native::compile(&rule.kind).ok()),
+                    member: iteration.as_ref().and_then(|_| Native::compile(rule).ok()),
                     iteration,
                 }
             })

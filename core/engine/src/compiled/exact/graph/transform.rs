@@ -1,5 +1,6 @@
 use super::Row;
 use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
+use crate::compiled::pinning::Located;
 use std::future::Future;
 use std::ops::Deref;
 use zen_expression::context::EvaluationContext;
@@ -21,6 +22,7 @@ impl Row<'_> {
             None => self.input.clone(),
             Some(input_field) => {
                 let mut session = self.session();
+                session.locate(Located::input(self.id));
                 session.run_standard(input_field.deref()).map_err(|err| {
                     self.fault(&trace, crate::compiled::exact::Failure::input(err))
                 })?

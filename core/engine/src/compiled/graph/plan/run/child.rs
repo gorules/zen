@@ -163,6 +163,7 @@ impl<'a> Run<'_, 'a> {
                 .collect::<Vec<(&str, Column)>>(),
         };
         let call = Call {
+            node: id,
             key: &content.key,
             extensions: self.host.extensions,
             max_depth: self.host.max_depth,

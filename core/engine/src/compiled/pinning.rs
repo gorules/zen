@@ -3,8 +3,8 @@ use rquickjs::prelude::Func;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zen_expression::context::{
-    parse_locale, parse_timezone, system_now, system_timezone, EvaluationContext, Locale, Pinned,
-    Timezone,
+    location, parse_locale, parse_timezone, system_now, system_timezone, EvaluationContext, Locale,
+    Pinned, Site, Timezone,
 };
 
 pub(crate) fn single(pinned: Pinned) -> EvaluationContext {
@@ -13,6 +13,54 @@ pub(crate) fn single(pinned: Pinned) -> EvaluationContext {
 
 pub(crate) fn batch(pinned: Pinned) -> EvaluationContext {
     EvaluationContext::batch(pinned)
+}
+
+pub(crate) struct Located;
+
+impl Located {
+    pub(crate) fn expression(node: &str, key: &str) -> u64 {
+        location(&["expression", node, key])
+    }
+
+    pub(crate) fn input(node: &str) -> u64 {
+        location(&["input", node])
+    }
+
+    pub(crate) fn statement(node: &str, statement: &str) -> u64 {
+        location(&["switch", node, statement])
+    }
+
+    pub(crate) fn cell(node: &str, rule: &str, column: &str) -> u64 {
+        location(&["cell", node, rule, column])
+    }
+
+    pub(crate) fn field(node: &str, column: &str) -> u64 {
+        location(&["field", node, column])
+    }
+
+    pub(crate) fn function(node: &str) -> u64 {
+        location(&["function", node])
+    }
+
+    pub(crate) fn decision(node: &str, key: &str) -> u64 {
+        location(&["decision", node, key])
+    }
+
+    pub(crate) fn block(block: &str) -> u64 {
+        location(&["block", block])
+    }
+
+    pub(crate) fn condition(block: &str, condition: &str) -> u64 {
+        location(&["condition", block, condition])
+    }
+
+    pub(crate) fn arm(block: &str, arm: &str) -> u64 {
+        location(&["arm", block, arm])
+    }
+
+    pub(crate) fn value(block: &str, arm: &str) -> u64 {
+        location(&["value", block, arm])
+    }
 }
 
 const PIN_JS: &str = include_str!("pinning.js");
@@ -53,8 +101,8 @@ impl JsSlot {
 
     fn random(&self) -> f64 {
         match self.0.borrow().as_ref() {
-            Some(context) => context.random_f64(0),
-            None => EvaluationContext::default().random_f64(0),
+            Some(context) => context.random_f64(0, Site::SCRIPT),
+            None => EvaluationContext::default().random_f64(0, Site::SCRIPT),
         }
     }
 

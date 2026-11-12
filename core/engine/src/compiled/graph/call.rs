@@ -3,6 +3,7 @@ use super::{CompiledGraph, Host, Nesting};
 use crate::compiled::content::Content;
 use crate::compiled::exact::graph::Row;
 use crate::compiled::host::{NodeError, NodeHandlerExtensions, NodeResponse, NodeResult};
+use crate::compiled::pinning::Located;
 use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::LoaderError;
 use crate::EvaluationError;
@@ -15,6 +16,7 @@ use zen_expression::Variable;
 use zen_types::decision::TransformAttributes;
 
 pub(crate) struct Call<'a> {
+    pub(crate) node: &'a str,
     pub(crate) key: &'a str,
     pub(crate) extensions: &'a NodeHandlerExtensions,
     pub(crate) max_depth: u8,
@@ -67,7 +69,7 @@ impl Call<'_> {
         context: &EvaluationContext,
     ) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
-            context: context.clone(),
+            context: context.nested(Located::decision(self.node, self.key)),
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),

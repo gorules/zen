@@ -35,6 +35,7 @@ impl ZenListener {
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let start = Instant::now();
         let call = Call {
+            node: "",
             key,
             extensions: &extensions,
             max_depth,
@@ -69,6 +70,7 @@ impl ZenListener {
         iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let call = Call {
+            node: "",
             key,
             extensions: &extensions,
             max_depth,

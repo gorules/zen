@@ -85,6 +85,7 @@ pub struct LaneProgram {
     constant: Option<Const>,
     hints: Option<Arc<Hints>>,
     kernel: OnceLock<Option<Arc<Kernel>>>,
+    labels: Arc<[u64]>,
 }
 
 impl LaneProgram {
@@ -92,18 +93,27 @@ impl LaneProgram {
         Self::compile_with(source, kind, None)
     }
 
+    pub fn located(source: &str, kind: ExpressionKind, label: u64) -> Result<Self, IsolateError> {
+        Self::single(source, kind, None, label)
+    }
+
     pub fn compile_with(
         source: &str,
         kind: ExpressionKind,
         hints: Option<&Hints>,
     ) -> Result<Self, IsolateError> {
-        Self::single(source, kind, hints)
+        Self::single(source, kind, hints, 0)
+    }
+
+    pub fn labels(&self) -> &[u64] {
+        &self.labels
     }
 
     fn single(
         source: &str,
         kind: ExpressionKind,
         hints: Option<&Hints>,
+        label: u64,
     ) -> Result<Self, IsolateError> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
@@ -114,7 +124,7 @@ impl LaneProgram {
             ExpressionKind::Unary => parser.unary().parse(),
         };
         parsed.error()?;
-        let program = LaneCompiler::compile_with(parsed.root, hints)?;
+        let program = LaneCompiler::compile_located(parsed.root, hints, label)?;
         let constant = match kind {
             ExpressionKind::Standard => Const::of(parsed.root),
             ExpressionKind::Unary => None,
@@ -126,18 +136,27 @@ impl LaneProgram {
             constant,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::new(),
+            labels: match label {
+                0 => Arc::from([]),
+                label => Arc::from([label]),
+            },
         })
     }
 
     fn recompile(&self, hints: &Hints) -> Result<Self, IsolateError> {
         match &self.source {
-            Source::Single(source) => Self::compile_with(source, self.kind.clone(), Some(hints)),
+            Source::Single(source) => Self::single(
+                source,
+                self.kind.clone(),
+                Some(hints),
+                self.labels.first().copied().unwrap_or(0),
+            ),
             Source::Many(entries, chain) => {
                 let refs: Vec<(&str, &str)> = entries
                     .iter()
                     .map(|(k, s)| (k.as_str(), s.as_str()))
                     .collect();
-                Self::compile_many_with(&refs, *chain, Some(hints))
+                Self::compile_many_with(&refs, *chain, Some(hints), &self.labels)
             }
             Source::Cells(cells) => {
                 let refs: Vec<(&str, Option<&str>)> = cells
@@ -191,6 +210,9 @@ impl LaneProgram {
             roots.push((key, root));
         }
         let program = LaneCompiler::compile_isolated(&roots, hints)?;
+        if program.draws {
+            return Err(Self::unsupported("a draw"));
+        }
         let owned: Vec<(String, Option<String>)> = cells
             .iter()
             .map(|(s, f)| (s.to_string(), f.map(str::to_string)))
@@ -202,6 +224,7 @@ impl LaneProgram {
             constant: None,
             hints: None,
             kernel: OnceLock::from(None),
+            labels: Arc::from([]),
         })
     }
 
@@ -341,6 +364,7 @@ impl LaneProgram {
             constant: None,
             hints: None,
             kernel: OnceLock::new(),
+            labels: Arc::from([]),
         })
     }
 
@@ -425,6 +449,9 @@ impl LaneProgram {
             roots.push((key, root, output));
         }
         let program = LaneCompiler::compile_named(&roots, hints)?;
+        if program.draws {
+            return Err(Self::unsupported("a draw"));
+        }
         Ok(Self {
             program,
             kind: ExpressionKind::Standard,
@@ -432,17 +459,27 @@ impl LaneProgram {
             constant: None,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::from(None),
+            labels: Arc::from([]),
         })
     }
 
     pub fn compile_many(entries: &[(&str, &str)], chain: bool) -> Result<Self, IsolateError> {
-        Self::compile_many_with(entries, chain, None)
+        Self::compile_many_with(entries, chain, None, &[])
+    }
+
+    pub fn compile_many_located(
+        entries: &[(&str, &str)],
+        chain: bool,
+        labels: &[u64],
+    ) -> Result<Self, IsolateError> {
+        Self::compile_many_with(entries, chain, None, labels)
     }
 
     fn compile_many_with(
         entries: &[(&str, &str)],
         chain: bool,
         hints: Option<&Hints>,
+        labels: &[u64],
     ) -> Result<Self, IsolateError> {
         let bump = Bump::new();
         let mut lexer = Lexer::new();
@@ -453,7 +490,7 @@ impl LaneProgram {
             parsed.error()?;
             roots.push((*key, parsed.root));
         }
-        let program = LaneCompiler::compile_many(&roots, chain, hints)?;
+        let program = LaneCompiler::compile_many_located(&roots, chain, hints, labels)?;
         let owned: Vec<(String, String)> = entries
             .iter()
             .map(|(k, s)| (k.to_string(), s.to_string()))
@@ -465,6 +502,10 @@ impl LaneProgram {
             constant: None,
             hints: hints.map(|h| Arc::new(h.clone())),
             kernel: OnceLock::new(),
+            labels: match labels.iter().any(|&label| label != 0) {
+                true => Arc::from(labels),
+                false => Arc::from([]),
+            },
         })
     }
 

@@ -133,3 +133,101 @@ fn interleaved_contexts_keep_their_own_clock_and_stream() {
     assert_ne!(alone[0][0][0], alone[1][0][0]);
     assert_eq!(alone[1][0][2], json!("America/New_York"));
 }
+
+fn seeded(seed: u64) -> EvaluationContext {
+    EvaluationContext::new(Pinned {
+        seed: Some(seed),
+        ..Pinned::default()
+    })
+}
+
+fn run(program: &LaneProgram, context: &EvaluationContext) -> Value {
+    let value = LaneRunner::new()
+        .evaluate_one(program, context, &scope(4))
+        .unwrap();
+    serde_json::to_value(value).unwrap()
+}
+
+#[test]
+fn draws_are_addressed_by_their_site() {
+    let first = compile("[rand(1000000), rand(1000000)]");
+    let pair = run(&first, &seeded(21));
+    assert_ne!(pair[0], pair[1]);
+    let skipped = compile("n > 100 ? rand(5) : rand(1000000)");
+    assert_eq!(run(&skipped, &seeded(21)), pair[1]);
+    let alone = compile("rand(1000000)");
+    assert_eq!(run(&alone, &seeded(21)), pair[0]);
+    let nested = compile("rand(rand(1) + 1000000)");
+    assert_eq!(run(&nested, &seeded(21)), run(&nested, &seeded(21)));
+}
+
+#[test]
+fn located_programs_draw_independently_of_each_other() {
+    use zen_expression::context::location;
+    let a = location(&["expression", "node", "a"]);
+    let b = location(&["expression", "node", "b"]);
+    let left = LaneProgram::located("rand(1000000)", ExpressionKind::Standard, a).unwrap();
+    let right = LaneProgram::located("rand(1000000)", ExpressionKind::Standard, b).unwrap();
+    let context = seeded(5);
+    let alone = run(&left, &context);
+    let shared = seeded(5);
+    let other = run(&right, &shared);
+    assert_eq!(run(&left, &shared), alone);
+    assert_ne!(other, alone);
+    let runtime = seeded(5).located(a);
+    assert_eq!(run(&compile("rand(1000000)"), &runtime), alone);
+    let many = LaneProgram::compile_many_located(
+        &[("b", "rand(1000000)"), ("a", "rand(1000000)")],
+        true,
+        &[b, a],
+    )
+    .unwrap();
+    let mut both = Vec::new();
+    LaneRunner::new().evaluate_many(&many, &seeded(5), &[scope(4)], None, |_, values| {
+        both = values.unwrap().unwrap();
+    });
+    let both: Vec<Value> = both
+        .into_iter()
+        .map(|v| serde_json::to_value(v).unwrap())
+        .collect();
+    assert_eq!(both, vec![other, alone]);
+}
+
+#[test]
+fn nested_scopes_draw_differently() {
+    use zen_expression::context::location;
+    let program = compile("rand(1000000)");
+    let root = run(&program, &seeded(8));
+    let one = run(
+        &program,
+        &seeded(8).nested(location(&["decision", "one", "child"])),
+    );
+    let two = run(
+        &program,
+        &seeded(8).nested(location(&["decision", "two", "child"])),
+    );
+    assert_ne!(one, two);
+    assert_ne!(root, one);
+    assert_eq!(
+        one,
+        run(
+            &program,
+            &seeded(8).nested(location(&["decision", "one", "child"]))
+        )
+    );
+}
+
+#[test]
+fn sessions_locate_each_evaluation() {
+    use zen_expression::context::location;
+    use zen_expression::lane::Session;
+    let mut session = Session::new().with_context(seeded(3));
+    session.locate(location(&["x"]));
+    let x = session.run_standard("rand(1000000)").unwrap();
+    session.locate(location(&["y"]));
+    let y = session.run_standard("rand(1000000)").unwrap();
+    let mut alone = Session::new().with_context(seeded(3));
+    alone.locate(location(&["y"]));
+    assert_eq!(alone.run_standard("rand(1000000)").unwrap(), y);
+    assert_ne!(x, y);
+}

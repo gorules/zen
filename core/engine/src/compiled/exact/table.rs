@@ -2,6 +2,7 @@ use crate::compiled::exact::graph::{Ctx, Row};
 use crate::compiled::host::decision_table::index::TableIndex;
 use crate::compiled::host::graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
 use crate::compiled::host::{NodeResponse, NodeResult};
+use crate::compiled::pinning::Located;
 use crate::compiled::policy::blocks::TableSelection;
 use crate::compiled::policy::site::Site;
 use crate::policy::blocks::{DecisionTableIr, ExecutionError};
@@ -24,6 +25,7 @@ type Cells = (Option<Variable>, Vec<(usize, Variable)>);
 pub(crate) struct RowTable<'t, 's> {
     pub session: &'t mut Session,
     pub inputs: &'t [DecisionTableInputField],
+    owner: &'t str,
     index: Option<&'t TableIndex>,
     site: Option<&'t Site<'s>>,
     refs: Vec<Option<Variable>>,
@@ -33,16 +35,27 @@ impl<'t, 's> RowTable<'t, 's> {
     pub fn new(
         session: &'t mut Session,
         inputs: &'t [DecisionTableInputField],
+        owner: &'t str,
         index: Option<&'t TableIndex>,
         site: Option<&'t Site<'s>>,
     ) -> Self {
         Self {
             session,
             inputs,
+            owner,
             index,
             site,
             refs: vec![None; inputs.len()],
         }
+    }
+
+    pub fn rule_id(rule: &Rule) -> &str {
+        rule.get("_id").map_or("", |id| id.as_ref())
+    }
+
+    fn locate(&mut self, rule: &Rule, column: &str) {
+        self.session
+            .locate(Located::cell(self.owner, Self::rule_id(rule), column));
     }
 
     fn fail<T>(
@@ -72,6 +85,8 @@ impl<'t, 's> RowTable<'t, 's> {
         let Some(field) = self.field(col) else {
             return Ok(None);
         };
+        self.session
+            .locate(Located::field(self.owner, &self.inputs[col].id));
         match self.session.run_standard(field) {
             Ok(value) => {
                 self.refs[col] = Some(value.shallow_clone());
@@ -143,6 +158,7 @@ impl<'t, 's> RowTable<'t, 's> {
             return Ok(true);
         };
         if self.field(col).is_none() {
+            self.locate(rule, &self.inputs[col].id);
             return match self.session.run_standard(cell) {
                 Ok(result) => Ok(result.as_bool().unwrap_or(false)),
                 Err(error) => self.fail(cell, error, false),
@@ -151,6 +167,7 @@ impl<'t, 's> RowTable<'t, 's> {
         if !self.bind(col)? {
             return Ok(false);
         }
+        self.locate(rule, &self.inputs[col].id);
         match self.session.run_unary(cell) {
             Ok(pass) => Ok(pass),
             Err(error) => self.fail(cell, error, false),
@@ -196,7 +213,13 @@ impl<'t, 's> RowTable<'t, 's> {
             .collect()
     }
 
-    pub fn output(&mut self, cell: &Arc<str>) -> Result<Option<Variable>, ExecutionError> {
+    pub fn output(
+        &mut self,
+        rule: &Rule,
+        column: &str,
+        cell: &Arc<str>,
+    ) -> Result<Option<Variable>, ExecutionError> {
+        self.locate(rule, column);
         match self.session.run_standard(cell) {
             Ok(value) => Ok(Some(value)),
             Err(error) => self.fail(cell, error, None),
@@ -240,7 +263,7 @@ impl RowTable<'_, '_> {
             let Some(cell) = rule.get(&output.id).filter(|c| !c.is_empty()) else {
                 continue;
             };
-            let value = self.output(cell).ok()??.deep_clone();
+            let value = self.output(rule, &output.id, cell).ok()??.deep_clone();
             match (collect, &object) {
                 (true, _) => lists.push((column, value)),
                 (false, Some(object)) => {
@@ -290,9 +313,11 @@ impl RowTable<'_, '_> {
         let mut ctx = Ctx::<DecisionTableNodeTrace>::new(row);
         let mut session = ctx.row.session();
         let traced = ctx.row.trace;
+        let owner = ctx.row.id.clone();
         let mut table = RowTable::new(
             &mut session,
             &content.inputs,
+            &owner,
             index.filter(|_| !traced),
             None,
         );
@@ -463,7 +488,7 @@ impl RowTable<'_, '_> {
                 else {
                     continue;
                 };
-                let value = self.output(cell)?.unwrap_or(Variable::Null);
+                let value = self.output(rule, &col.id, cell)?.unwrap_or(Variable::Null);
                 if site.trace {
                     outputs.insert(col.field.clone(), value.deep_clone());
                 }

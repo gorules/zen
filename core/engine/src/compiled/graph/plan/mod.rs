@@ -12,6 +12,7 @@ use crate::compiled::graph::call::Call;
 use crate::compiled::graph::schedule::{End, Outcome, Segment};
 use crate::compiled::graph::{Body, CompiledGraph, Condition, Kind, Step};
 use crate::compiled::leaf::Literal;
+use crate::compiled::pinning::Located;
 use crate::compiled::table::Table;
 use crate::model::DecisionNodeKind;
 use petgraph::prelude::NodeIndex;
@@ -620,10 +621,14 @@ impl<'g> Builder<'g> {
                     .iter()
                     .map(|kept| (kept.entry.0.as_ref(), kept.fragment.as_ref()))
                     .collect();
+                let labels: Vec<u64> = kept
+                    .iter()
+                    .map(|kept| Located::expression(&step.node.id, &kept.entry.0))
+                    .collect();
                 match kept.is_empty() {
                     true => None,
                     false => Some(Reduced {
-                        program: LaneProgram::compile_many(&refs, true)
+                        program: LaneProgram::compile_many_located(&refs, true, &labels)
                             .map_err(|e| Refusal::Uncompiled(Arc::from(e.to_string())))?,
                         entries: kept.into_iter().map(|kept| kept.entry).collect(),
                     }),

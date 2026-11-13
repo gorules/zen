@@ -1,5 +1,6 @@
 use super::{HttpBackend, HttpResponse};
 use crate::nodes::function::v2::error::ResultExt;
+#[cfg(feature = "http-auth")]
 use crate::nodes::function::v2::module::http::auth::{HttpConfigAuth, IamAuth};
 use crate::nodes::function::v2::module::http::{HttpMethod, HttpRequestConfig};
 use crate::nodes::function::v2::serde::JsValue;
@@ -73,6 +74,7 @@ async fn execute_http_native<'js>(
         }
     };
 
+    #[cfg(feature = "http-auth")]
     let request = match auth_method {
         Some(HttpConfigAuth::Iam(IamAuth::Aws(config))) => {
             config.build_request(http_request).await.or_throw(&ctx)?
@@ -82,6 +84,17 @@ async fn execute_http_native<'js>(
         }
         Some(HttpConfigAuth::Iam(IamAuth::Gcp(config))) => {
             config.build_request(http_request).await.or_throw(&ctx)?
+        }
+        None => Request::try_from(http_request).or_throw(&ctx)?,
+    };
+
+    #[cfg(not(feature = "http-auth"))]
+    let request = match auth_method {
+        Some(_) => {
+            return Err(rquickjs::Error::new_from_js(
+                "http",
+                "IAM auth is not available: zen-engine was built without the `http-auth` feature",
+            ));
         }
         None => Request::try_from(http_request).or_throw(&ctx)?,
     };

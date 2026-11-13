@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::content::PyZenDecisionContentJson;
 use crate::custom_node::PyCustomNode;
 use crate::decision::PyZenDecision;
+use crate::http_handler::PyHttpHandler;
 use crate::loader::PyDecisionLoader;
 use crate::mt::{block_on, worker_pool};
 use crate::value::PyValue;
@@ -157,10 +158,18 @@ impl PyZenEngine {
             None => Arc::new(PyDecisionLoader::default()),
         };
 
-        let engine = DecisionEngine::new(
+        let mut engine = DecisionEngine::new(
             loader,
             Arc::new(PyCustomNode::new(custom_node, make_locals())),
         );
+
+        if let Some(http_handler) = options.get_item("httpHandler")? {
+            engine = engine.with_http_handler(Some(Arc::new(PyHttpHandler::new(
+                http_handler.into_py_any(py)?,
+                make_locals(),
+            ))));
+        }
+
         engine.compile();
 
         Ok(Self {

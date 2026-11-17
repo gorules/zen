@@ -27,6 +27,7 @@ jobs:
         settings:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
+            toolchain: '1.99'
             output: '{0}.dll'
             lib_dir: 'win32-x86-64'
           - host: macos-latest
@@ -60,6 +61,7 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ matrix.settings.toolchain || 'stable' }}
           target: ${{ matrix.settings.target }}
 
       - uses: ./.github/actions/setup-rust
@@ -81,6 +83,7 @@ jobs:
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
           target: ${{ matrix.settings.target }}
+          toolchain: ${{ matrix.settings.toolchain || 'stable' }}
           args: '--lib --release --locked ${{ matrix.settings.extra_args }}'
 
       - name: Verify max glibc requirement

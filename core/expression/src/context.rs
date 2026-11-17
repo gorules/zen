@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
@@ -140,7 +140,10 @@ impl Draw {
     }
 }
 
-static CLOCK_READS: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    static CLOCK_READS: Cell<u64> = const { Cell::new(0) };
+}
+
 static UNROWED: AtomicU64 = AtomicU64::new(0);
 
 pub fn system_now() -> Instant {
@@ -178,7 +181,7 @@ pub fn instant_from_millis(ms: i64) -> Option<Instant> {
 }
 
 pub fn clock_reads() -> u64 {
-    CLOCK_READS.load(Ordering::Relaxed)
+    CLOCK_READS.get()
 }
 
 pub fn unrowed_draws() -> u64 {
@@ -447,7 +450,7 @@ impl Shared {
 
     fn now(&self) -> Instant {
         *self.now.get_or_init(|| {
-            CLOCK_READS.fetch_add(1, Ordering::Relaxed);
+            CLOCK_READS.set(CLOCK_READS.get() + 1);
             system_now()
         })
     }

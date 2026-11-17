@@ -114,7 +114,7 @@ impl Lab {
             let shift = if size == 7 { 3 } else { 0 };
             let frame = Frame::new(&self.hir, &self.workload.spec, chunk, shift);
             let batch = frame.batch();
-            let context = crate::context::EvaluationContext::default();
+            let context = Workload::context();
             program.run(&batch, &mut out, None, &context).expect("run");
             let typed = Self::rows_of(&out, &self.hir, &frame);
             let mut feeds = Feeds::new(&self.hir, &[], &batch, &context).expect("feeds");

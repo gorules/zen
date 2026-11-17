@@ -14,9 +14,6 @@ fn block<F: std::future::Future>(f: F) -> F::Output {
 }
 
 fn graph(middle: Value) -> Decision {
-    zen_engine::ZEN_CONFIG
-        .compiled
-        .store(true, std::sync::atomic::Ordering::Relaxed);
     let content: DecisionContent = serde_json::from_value(json!({
         "nodes": [
             {"id": "in", "name": "in", "type": "inputNode"},
@@ -30,6 +27,7 @@ fn graph(middle: Value) -> Decision {
     }))
     .unwrap();
     DecisionEngine::default()
+        .compiled_engine()
         .create_decision(Arc::new(content))
         .unwrap()
 }
@@ -205,16 +203,14 @@ fn v1_function_nodes_read_the_zone_of_the_context() {
 
 #[test]
 fn the_interpreted_engine_ignores_pinning() {
-    let v2 = functions();
+    let v2 = functions().interpreted();
     let v1 = graph(json!({
         "id": "calc", "name": "calc", "type": "functionNode",
         "content": "const handler = (input) => ({ now: Date.now(), global: now, r: Math.random(), q: Math.random() })"
-    }));
-    let zone = zoned_function();
-    let d = expressions();
-    zen_engine::ZEN_CONFIG
-        .compiled
-        .store(false, std::sync::atomic::Ordering::Relaxed);
+    }))
+    .interpreted();
+    let zone = zoned_function().interpreted();
+    let d = expressions().interpreted();
     for trace in [true, false] {
         let (a, doc) = evaluated(&d, 4, options(trace, NOW, 99));
         let (b, _) = evaluated(&d, 4, options(trace, NOW, 99));
@@ -235,7 +231,7 @@ fn the_interpreted_engine_ignores_pinning() {
         r.is_err(),
         "the interpreted host has no Intl and no zone shim"
     );
-    let engine = policy_engine();
+    let engine = policy_engine().interpreted();
     let run = |o: EvaluationOptions| {
         let r = block(engine.evaluate_with_opts(
             "policy",
@@ -255,9 +251,6 @@ fn the_interpreted_engine_ignores_pinning() {
     let doc = doc.unwrap();
     assert!(doc["properties"].is_object());
     assert!(doc["executions"].is_array());
-    zen_engine::ZEN_CONFIG
-        .compiled
-        .store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[test]

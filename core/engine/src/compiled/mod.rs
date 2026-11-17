@@ -11,6 +11,7 @@ pub(crate) mod host;
 mod leaf;
 mod lowered;
 mod output;
+pub(crate) mod pinning;
 pub(crate) mod policy;
 pub(crate) mod prepared;
 mod shred;

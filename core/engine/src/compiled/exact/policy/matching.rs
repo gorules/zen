@@ -3,6 +3,7 @@ use std::sync::Arc;
 use zen_expression::variable::Variable;
 
 use super::Exact;
+use crate::compiled::pinning::Located;
 use crate::compiled::policy::blocks::MatchSelection;
 use crate::policy::blocks::{ExecutionError, MatchIr};
 use crate::workspace::types::{BlockTrace, ConditionTrace};
@@ -19,6 +20,8 @@ impl Exact<'_> {
             let matches = if arm.condition.is_empty() {
                 true
             } else {
+                self.session
+                    .locate(Located::arm(self.site.block_id, &arm.id));
                 match self.session.run_standard(&arm.condition) {
                     Ok(value) => value.as_bool().unwrap_or(false),
                     Err(_) if self.site.extras && matched_arm.is_some() => false,
@@ -47,10 +50,13 @@ impl Exact<'_> {
             .as_ref()
             .and_then(|id| ir.arms.iter().find(|a| &a.id == id));
         let value = match matched {
-            Some(arm) if !arm.value.is_empty() => self
-                .session
-                .run_standard(&arm.value)
-                .map_err(|e| self.site.expression_error(&arm.value, e))?,
+            Some(arm) if !arm.value.is_empty() => {
+                self.session
+                    .locate(Located::value(self.site.block_id, &arm.id));
+                self.session
+                    .run_standard(&arm.value)
+                    .map_err(|e| self.site.expression_error(&arm.value, e))?
+            }
             _ => Variable::Null,
         };
 

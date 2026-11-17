@@ -30,15 +30,13 @@ impl ZenDecision {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Value> {
         let decision = self.0.clone();
-        let result = spawn_worker(move || {
-            let options = opts.unwrap_or_default();
-
-            async move {
-                let context = zen_engine::Variable::try_from_value(context).map_err(
-                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
-                )?;
-                decision.evaluate_serialized(context, options.into()).await
-            }
+        let options: zen_engine::EvaluationSerializedOptions =
+            opts.unwrap_or_default().try_into()?;
+        let result = spawn_worker(move || async move {
+            let context = zen_engine::Variable::try_from_value(context).map_err(
+                |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+            )?;
+            decision.evaluate_serialized(context, options).await
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?

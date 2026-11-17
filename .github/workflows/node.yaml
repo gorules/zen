@@ -31,6 +31,7 @@ jobs:
         settings:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
+            toolchain: '1.99'
             build: |
               yarn build -- --target x86_64-pc-windows-msvc -- --locked
 
@@ -124,7 +125,7 @@ jobs:
       - name: Install
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.settings.toolchain || 'stable' }}
           targets: ${{ matrix.settings.target }}
 
       - name: Rust cache + sccache (+ zig for linux legs)

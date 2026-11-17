@@ -1,6 +1,7 @@
 use zen_expression::variable::Variable;
 
 use super::Exact;
+use crate::compiled::pinning::Located;
 use crate::policy::blocks::{AssertionIr, ExecutionError};
 use crate::workspace::types::{BlockTrace, ConditionTrace};
 
@@ -29,6 +30,8 @@ impl Exact<'_> {
     ) -> Result<bool, ExecutionError> {
         let mut results = Vec::with_capacity(ir.conditions.len());
         for condition in &ir.conditions {
+            self.session
+                .locate(Located::condition(self.site.block_id, &condition.id));
             let cond_result = self
                 .session
                 .run_standard(&condition.expression)

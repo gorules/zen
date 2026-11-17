@@ -1019,6 +1019,18 @@ enum ColumnRef<'a> {
 }
 
 impl DecisionTableIr {
+    pub(crate) fn draws(&self) -> bool {
+        let draws = zen_expression::lane::SourceInfo::draws;
+        self.inputs
+            .iter()
+            .filter_map(|input| input.field.as_deref())
+            .any(draws)
+            || self.rules.iter().any(|rule| {
+                rule.iter()
+                    .any(|(column, cell)| !column.starts_with('_') && draws(cell))
+            })
+    }
+
     fn column_by_id(&self, id: &Arc<str>) -> Option<ColumnRef<'_>> {
         if let Some(c) = self.inputs.iter().find(|c| c.id == *id) {
             return Some(ColumnRef::Input(c));

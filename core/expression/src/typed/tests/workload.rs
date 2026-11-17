@@ -1102,9 +1102,18 @@ impl Workload {
         }
     }
 
+    const CLOCK: &'static str = "2025-03-20T10:15:30Z";
+
     pub(crate) fn mock() {
         static MOCK: std::sync::Once = std::sync::Once::new();
-        MOCK.call_once(|| std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z"));
+        MOCK.call_once(|| std::env::set_var("__ZEN_MOCK_UTC_TIME", Self::CLOCK));
+    }
+
+    pub(crate) fn context() -> crate::context::EvaluationContext {
+        crate::context::EvaluationContext::new(crate::context::Pinned {
+            now: crate::context::parse_instant(Self::CLOCK),
+            ..Default::default()
+        })
     }
 
     fn w14_spec() -> Spec {

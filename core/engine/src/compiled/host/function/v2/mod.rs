@@ -11,6 +11,7 @@ use crate::compiled::host::function::v2::module::console::Log;
 use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextConfig, NodeError, NodeHandlerExtensions};
+use crate::compiled::pinning::Located;
 use rquickjs::prelude::Func;
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
@@ -70,7 +71,11 @@ impl NodeHandler for FunctionV2NodeHandler {
             .await?;
 
         let response_result = function
-            .call_handler(&module_name, JsValueWithNodes(JsValue(ctx.input.clone())))
+            .call_handler(
+                &module_name,
+                JsValueWithNodes(JsValue(ctx.input.clone())),
+                &ctx.extensions.context.nested(Located::function(&ctx.id)),
+            )
             .await;
 
         function.runtime().set_interrupt_handler(None).await;
@@ -132,9 +137,10 @@ impl FunctionV2NodeHandler {
             return Self::run(id, &source, extensions, config, iteration, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());
-        for row in rows {
+        for (at, row) in rows.into_iter().enumerate() {
             let fresh = NodeHandlerExtensions {
                 function_runtime: Default::default(),
+                context: extensions.context.at(at),
                 ..extensions.clone()
             };
             results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
@@ -189,6 +195,7 @@ impl FunctionV2NodeHandler {
                 (iteration, config.max_depth, config.trace),
                 rows,
                 &tick,
+                &extensions.context.nested(Located::function(id)),
             )
             .await;
         function.runtime().set_interrupt_handler(None).await;

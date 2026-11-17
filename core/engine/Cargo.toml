@@ -12,6 +12,7 @@ homepage = "https://gorules.io"
 doctest = false
 
 [dependencies]
+chrono = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 base64 = "0.22"

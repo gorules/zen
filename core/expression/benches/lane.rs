@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Column, Columns, LaneProgram, LaneRunner, Values};
 use zen_expression::variable::VariableType;
 use zen_expression::vm::VM;
@@ -615,7 +616,11 @@ fn micro() -> bool {
             },
             || {
                 for scope in &scopes {
-                    black_box(runner.evaluate_one(&program, scope).is_ok());
+                    black_box(
+                        runner
+                            .evaluate_one(&program, &EvaluationContext::default(), scope)
+                            .is_ok(),
+                    );
                 }
             },
         ) / rows as f64;
@@ -625,7 +630,9 @@ fn micro() -> bool {
         }
         let batch = Bench::timed(budget, || {
             let mut n = 0usize;
-            runner.evaluate_with(&program, &scopes, |_, r| n += r.is_ok() as usize);
+            runner.evaluate_with(&program, &EvaluationContext::default(), &scopes, |_, r| {
+                n += r.is_ok() as usize
+            });
             black_box(n);
         }) / rows as f64;
         let table = Table::build(&scopes);
@@ -642,7 +649,7 @@ fn micro() -> bool {
         let mut out = zen_expression::lane::Output::new();
         if let (Ok(_), Some(p)) = (std::env::var("LANE_PROFILE_COLS"), &columnar) {
             let ns = Bench::timed(Duration::from_secs(4), || {
-                runner.evaluate_columns_into(p, &columns, &mut out);
+                runner.evaluate_columns_into(p, &EvaluationContext::default(), &columns, &mut out);
                 black_box(out.len());
             }) / rows as f64;
             println!("{entry} cols {ns:.1}");
@@ -651,7 +658,12 @@ fn micro() -> bool {
         let cols = match &columnar {
             Some(p) => {
                 Bench::timed(budget, || {
-                    runner.evaluate_columns_into(p, &columns, &mut out);
+                    runner.evaluate_columns_into(
+                        p,
+                        &EvaluationContext::default(),
+                        &columns,
+                        &mut out,
+                    );
                     black_box(out.len());
                 }) / rows as f64
             }
@@ -665,12 +677,18 @@ fn micro() -> bool {
             .expect("lane compile");
             let cold1 = Bench::timed(budget, || {
                 for scope in &scopes {
-                    black_box(runner.evaluate_one(&generic, scope).is_ok());
+                    black_box(
+                        runner
+                            .evaluate_one(&generic, &EvaluationContext::default(), scope)
+                            .is_ok(),
+                    );
                 }
             }) / rows as f64;
             let cold64 = Bench::timed(budget, || {
                 let mut n = 0usize;
-                runner.evaluate_with(&generic, &scopes, |_, r| n += r.is_ok() as usize);
+                runner.evaluate_with(&generic, &EvaluationContext::default(), &scopes, |_, r| {
+                    n += r.is_ok() as usize
+                });
                 black_box(n);
             }) / rows as f64;
             println!(
@@ -759,7 +777,13 @@ fn cells() -> bool {
         let mut runner = LaneRunner::new();
         let mut out = Vec::new();
         let lane = Bench::timed(Duration::from_millis(400), || {
-            set.evaluate(&mut runner, &values, &envs, &mut out);
+            set.evaluate(
+                &mut runner,
+                &values,
+                &envs,
+                &mut out,
+                &EvaluationContext::default(),
+            );
             black_box(out.len());
         }) / ROWS as f64;
         println!("cells rules {rules:5}: evaluate every cell (stack VM) {stack:10.0} ns/row | cell set {lane:8.1} ns/row | {:6.1}x", stack / lane);
@@ -858,15 +882,27 @@ fn nodes() -> bool {
             }) / ROWS as f64;
             let one = Bench::timed(budget, || {
                 for scope in &scopes {
-                    runner.evaluate_many(&program, std::slice::from_ref(scope), None, |_, r| {
-                        black_box(r.is_some());
-                    });
+                    runner.evaluate_many(
+                        &program,
+                        &EvaluationContext::default(),
+                        std::slice::from_ref(scope),
+                        None,
+                        |_, r| {
+                            black_box(r.is_some());
+                        },
+                    );
                 }
             }) / ROWS as f64;
             let batch = Bench::timed(budget, || {
-                runner.evaluate_many(&program, &scopes, None, |_, r| {
-                    black_box(r.is_some());
-                });
+                runner.evaluate_many(
+                    &program,
+                    &EvaluationContext::default(),
+                    &scopes,
+                    None,
+                    |_, r| {
+                        black_box(r.is_some());
+                    },
+                );
             }) / ROWS as f64;
             stack_all.push(stack);
             one_all.push(one);
@@ -939,12 +975,21 @@ fn main() {
         }) / ROWS as f64;
         let one = Bench::timed(budget, || {
             for scope in &case.scopes {
-                black_box(runner.evaluate_one(&program, scope).is_ok());
+                black_box(
+                    runner
+                        .evaluate_one(&program, &EvaluationContext::default(), scope)
+                        .is_ok(),
+                );
             }
         }) / ROWS as f64;
         let batch = Bench::timed(budget, || {
             let mut n = 0usize;
-            runner.evaluate_with(&program, &case.scopes, |_, r| n += r.is_ok() as usize);
+            runner.evaluate_with(
+                &program,
+                &EvaluationContext::default(),
+                &case.scopes,
+                |_, r| n += r.is_ok() as usize,
+            );
             black_box(n);
         }) / ROWS as f64;
         let table = Table::build(&case.scopes);
@@ -961,7 +1006,12 @@ fn main() {
             },
             || {
                 let mut n = 0usize;
-                runner.evaluate_columns(&columnar, &columns, |_, r| n += r.is_ok() as usize);
+                runner.evaluate_columns(
+                    &columnar,
+                    &EvaluationContext::default(),
+                    &columns,
+                    |_, r| n += r.is_ok() as usize,
+                );
                 black_box(n);
             },
         ) / ROWS as f64;
@@ -973,7 +1023,12 @@ fn main() {
                 budget
             },
             || {
-                runner.evaluate_columns_into(&columnar, &columns, &mut out);
+                runner.evaluate_columns_into(
+                    &columnar,
+                    &EvaluationContext::default(),
+                    &columns,
+                    &mut out,
+                );
                 black_box(out.len());
             },
         ) / ROWS as f64;
@@ -1022,12 +1077,18 @@ fn main() {
             let leg = |p: &LaneProgram, runner: &mut LaneRunner| {
                 let w1 = Bench::timed(budget, || {
                     for scope in &case.scopes {
-                        black_box(runner.evaluate_one(p, scope).is_ok());
+                        black_box(
+                            runner
+                                .evaluate_one(p, &EvaluationContext::default(), scope)
+                                .is_ok(),
+                        );
                     }
                 }) / ROWS as f64;
                 let w64 = Bench::timed(budget, || {
                     let mut n = 0usize;
-                    runner.evaluate_with(p, &case.scopes, |_, r| n += r.is_ok() as usize);
+                    runner.evaluate_with(p, &EvaluationContext::default(), &case.scopes, |_, r| {
+                        n += r.is_ok() as usize
+                    });
                     black_box(n);
                 }) / ROWS as f64;
                 (w1, w64)
@@ -1035,7 +1096,12 @@ fn main() {
             let (g1, g64) = leg(&generic, &mut runner);
             let (t1, t64) = leg(&typed_program, &mut runner);
             let gc = Bench::timed(budget, || {
-                runner.evaluate_columns_into(&generic, &columns, &mut out);
+                runner.evaluate_columns_into(
+                    &generic,
+                    &EvaluationContext::default(),
+                    &columns,
+                    &mut out,
+                );
                 black_box(out.len());
             }) / ROWS as f64;
             typing.push([s, one, batch, typed, g1, g64, gc, t1, t64]);
@@ -1525,27 +1591,43 @@ fn scenarios() -> bool {
                     "isolate" => isolate_rows(p),
                     "lane_single" => {
                         for scope in &p.case.scopes {
-                            black_box(runner.evaluate_one(&p.program, scope).is_ok());
+                            black_box(
+                                runner
+                                    .evaluate_one(&p.program, &EvaluationContext::default(), scope)
+                                    .is_ok(),
+                            );
                         }
                     }
                     "lane_batch" => {
                         let mut n = 0usize;
-                        runner.evaluate_with(&p.program, &p.case.scopes, |_, r| {
-                            n += r.is_ok() as usize
-                        });
+                        runner.evaluate_with(
+                            &p.program,
+                            &EvaluationContext::default(),
+                            &p.case.scopes,
+                            |_, r| n += r.is_ok() as usize,
+                        );
                         black_box(n);
                     }
                     "lane_columns" => {
                         if let (Some(program), Some(columns)) = (&columnar[i], &columns[i]) {
                             let mut n = 0usize;
-                            runner
-                                .evaluate_columns(program, columns, |_, r| n += r.is_ok() as usize);
+                            runner.evaluate_columns(
+                                program,
+                                &EvaluationContext::default(),
+                                columns,
+                                |_, r| n += r.is_ok() as usize,
+                            );
                             black_box(n);
                         }
                     }
                     "lane_typed" => {
                         if let (Some(program), Some(columns)) = (&columnar[i], &columns[i]) {
-                            runner.evaluate_columns_into(program, columns, &mut out);
+                            runner.evaluate_columns_into(
+                                program,
+                                &EvaluationContext::default(),
+                                columns,
+                                &mut out,
+                            );
                             black_box(out.len());
                         }
                     }
@@ -1573,17 +1655,30 @@ fn scenarios() -> bool {
         let isolate = per(Bench::timed(budget, || isolate_rows(p)));
         let single = per(Bench::timed(budget, || {
             for scope in &case.scopes {
-                black_box(runner.evaluate_one(&p.program, scope).is_ok());
+                black_box(
+                    runner
+                        .evaluate_one(&p.program, &EvaluationContext::default(), scope)
+                        .is_ok(),
+                );
             }
         }));
         let single_generic = per(Bench::timed(budget, || {
             for scope in &case.scopes {
-                black_box(runner.evaluate_one(&p.generic, scope).is_ok());
+                black_box(
+                    runner
+                        .evaluate_one(&p.generic, &EvaluationContext::default(), scope)
+                        .is_ok(),
+                );
             }
         }));
         let batch = per(Bench::timed(budget, || {
             let mut n = 0usize;
-            runner.evaluate_with(&p.program, &case.scopes, |_, r| n += r.is_ok() as usize);
+            runner.evaluate_with(
+                &p.program,
+                &EvaluationContext::default(),
+                &case.scopes,
+                |_, r| n += r.is_ok() as usize,
+            );
             black_box(n);
         }));
         let (mut columns_ns, mut typed_ns, mut specialize_columns_ns) = (None, None, None);
@@ -1596,12 +1691,22 @@ fn scenarios() -> bool {
             if let Ok(columnar) = p.generic.specialize_columns(&columns) {
                 columns_ns = Some(per(Bench::timed(budget, || {
                     let mut n = 0usize;
-                    runner.evaluate_columns(&columnar, &columns, |_, r| n += r.is_ok() as usize);
+                    runner.evaluate_columns(
+                        &columnar,
+                        &EvaluationContext::default(),
+                        &columns,
+                        |_, r| n += r.is_ok() as usize,
+                    );
                     black_box(n);
                 })));
                 let mut out = zen_expression::lane::Output::new();
                 typed_ns = Some(per(Bench::timed(budget, || {
-                    runner.evaluate_columns_into(&columnar, &columns, &mut out);
+                    runner.evaluate_columns_into(
+                        &columnar,
+                        &EvaluationContext::default(),
+                        &columns,
+                        &mut out,
+                    );
                     black_box(out.len());
                 })));
                 specialize_columns_ns = Some(compile(&mut || {

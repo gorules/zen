@@ -1,7 +1,9 @@
 use super::Row;
 use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
+use crate::compiled::pinning::Located;
 use std::future::Future;
 use std::ops::Deref;
+use zen_expression::context::EvaluationContext;
 use zen_expression::Variable;
 use zen_types::decision::{TransformAttributes, TransformExecutionMode};
 
@@ -12,7 +14,7 @@ impl Row<'_> {
         evaluate: F,
     ) -> NodeResult
     where
-        F: Fn(Variable, bool) -> Fut,
+        F: Fn(Variable, bool, EvaluationContext) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
         let mut trace = self.trace.then_some(Variable::Null);
@@ -20,6 +22,7 @@ impl Row<'_> {
             None => self.input.clone(),
             Some(input_field) => {
                 let mut session = self.session();
+                session.locate(Located::input(self.id));
                 session.run_standard(input_field.deref()).map_err(|err| {
                     self.fault(&trace, crate::compiled::exact::Failure::input(err))
                 })?
@@ -28,7 +31,7 @@ impl Row<'_> {
 
         let output = match attributes.execution_mode {
             TransformExecutionMode::Single => {
-                let response = evaluate(input, false).await?;
+                let response = evaluate(input, false, self.context.clone()).await?;
                 if let Some(td) = response.trace_data {
                     if let Some(t) = &mut trace {
                         *t = td;
@@ -49,7 +52,8 @@ impl Row<'_> {
                 let mut output_array = Vec::with_capacity(input_array.len());
                 for (index, input) in input_array.iter().enumerate() {
                     let has_more = index < input_array.len() - 1;
-                    let response = evaluate(input.clone(), has_more).await?;
+                    let response =
+                        evaluate(input.clone(), has_more, self.context.item(index)).await?;
                     if let Some(td) = response.trace_data {
                         if let Some(Variable::Array(arr)) = &trace {
                             arr.borrow_mut().push(td);

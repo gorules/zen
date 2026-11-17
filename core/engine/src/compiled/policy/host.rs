@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Programs, Session};
 use zen_expression::variable::Variable;
 use zen_expression::ExpressionKind;
@@ -23,10 +24,13 @@ impl<'a> Host<'a> {
         trace: bool,
         extras: bool,
         programs: &Arc<Programs>,
+        context: EvaluationContext,
     ) -> Self {
         Self {
             state: HostState::new(artifact, store, entry, trace, extras),
-            session: Session::new().with_programs(Some(programs.clone())),
+            session: Session::new()
+                .with_programs(Some(programs.clone()))
+                .with_context(context),
         }
     }
 

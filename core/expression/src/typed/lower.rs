@@ -1,9 +1,10 @@
+use crate::context::EvaluationContext;
 use crate::functions::defs::FunctionDefinition;
 use crate::functions::{
     ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, FunctionRegistry,
     InternalFunction, MethodKind, MethodRegistry,
 };
-use crate::lane::builtins::{Arg as Given, Builtins, Out};
+use crate::lane::builtins::{Arg as Given, Builtins, Out, RowContext};
 use crate::lane::date::Date;
 use crate::lane::effect::{Effect, Literal};
 use crate::lane::Fusion;
@@ -2563,7 +2564,8 @@ impl Lowering {
                 Lit::Code(..) => None,
             })
             .collect::<Option<Vec<Given>>>()?;
-        match Builtins::raw(host.builtin()?, &given).ok()? {
+        let context = EvaluationContext::default();
+        match Builtins::raw(host.builtin()?, &given, &RowContext::new(&context, 0)).ok()? {
             Out::Num(n) => Dec::from_decimal(&n).map(Lit::Num),
             Out::Bool(b) => Some(Lit::Bool(b)),
             Out::Str(s) => Some(Lit::Text(s.to_string())),
@@ -2608,8 +2610,7 @@ impl Lowering {
 
     fn coerced(&mut self, id: NodeId) -> NodeId {
         if let Some(Lit::Text(text)) = self.lit(id) {
-            let date = Date::from_text(text);
-            if date.is_valid() {
+            if let Some(date) = Date::fixed(text) {
                 return self.konst(Lit::Date(Stamp::of(date)));
             }
         }
@@ -2638,18 +2639,16 @@ impl Lowering {
                     let (scope, ids) = self.scoped(&[x, y])?;
                     return Ok(self.add(Op::Cmp(op, ids[0], ids[1]), Ty::boolean(), scope));
                 }
-                let hit = match self.lit(text) {
-                    Some(Lit::Text(t)) => {
-                        let parsed = Date::from_text(t);
-                        match parsed.is_valid() {
-                            true => {
-                                let other = self.konst(Lit::Date(Stamp::of(parsed)));
-                                self.dated(Cmp::Eq, date, other)?
-                            }
-                            false => self.konst(Lit::Bool(false)),
-                        }
+                let fixed = match self.lit(text) {
+                    Some(Lit::Text(t)) => Date::fixed(t),
+                    _ => None,
+                };
+                let hit = match fixed {
+                    Some(parsed) => {
+                        let other = self.konst(Lit::Date(Stamp::of(parsed)));
+                        self.dated(Cmp::Eq, date, other)?
                     }
-                    _ => {
+                    None => {
                         let (scope, ids) = self.scoped(&[date, text])?;
                         self.add(Op::Clock(Clock::Matches, ids), Ty::boolean(), scope)
                     }
@@ -2696,20 +2695,26 @@ impl Lowering {
 
     fn dates_in(&mut self, a: NodeId, items: &[&Ast], ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         let mut set: Vec<Lit> = Vec::new();
+        let mut zoned: Vec<NodeId> = Vec::new();
         for item in items {
             let id = self.expr(item, ctx, r)?;
-            let lit = match self
-                .lit(id)
-                .cloned()
-                .ok_or_else(|| Unsupported::new("in: non-literal set item"))?
-            {
-                Lit::Null => Some(Lit::Null),
-                Lit::Date(d) => d.is_valid().then_some(Lit::Date(d)),
-                Lit::Text(t) => {
-                    let date = Date::from_text(&t);
-                    date.is_valid().then(|| Lit::Date(Stamp::of(date)))
+            let lit = match self.lit(id).cloned() {
+                Some(Lit::Null) => Some(Lit::Null),
+                Some(Lit::Date(d)) => d.is_valid().then_some(Lit::Date(d)),
+                Some(Lit::Text(t)) => match Date::fixed(&t) {
+                    Some(date) => Some(Lit::Date(Stamp::of(date))),
+                    None if Date::never(&t) => None,
+                    None => {
+                        zoned.push(id);
+                        None
+                    }
+                },
+                Some(_) => None,
+                None if self.constructed(id) => {
+                    zoned.push(id);
+                    None
                 }
-                _ => None,
+                None => return Err(Unsupported::new("in: non-literal set item")),
             };
             if let Some(lit) = lit {
                 if !set.contains(&lit) {
@@ -2718,7 +2723,21 @@ impl Lowering {
             }
         }
         let scope = self.nodes[a as usize].scope;
-        Ok(self.add(Op::InSet(a, set), Ty::boolean(), scope))
+        let mut hit = self.add(Op::InSet(a, set), Ty::boolean(), scope);
+        for id in zoned {
+            let one = self.belongs(a, id)?;
+            hit = self.logic(false, hit, one)?;
+        }
+        Ok(hit)
+    }
+
+    fn constructed(&self, id: NodeId) -> bool {
+        match &self.nodes[id as usize].op {
+            Op::Host(Host::Construct, args) => args
+                .iter()
+                .all(|arg| matches!(self.lit(*arg), Some(Lit::Text(_) | Lit::Num(_)))),
+            _ => false,
+        }
     }
 
     fn date_range(

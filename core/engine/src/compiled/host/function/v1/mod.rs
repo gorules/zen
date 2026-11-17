@@ -9,6 +9,7 @@ use crate::compiled::host::function::v1::runtime::create_runtime;
 use crate::compiled::host::function::v1::script::{Script, Session};
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextBase, NodeContextExt, NodeError};
+use crate::compiled::pinning::Located;
 use serde_json::Value;
 use zen_expression::variable::ToVariable;
 use zen_expression::Variable;
@@ -33,7 +34,13 @@ impl NodeHandler for FunctionV1NodeHandler {
         runtime.set_interrupt_handler(Some(interrupt_handler));
 
         let mut script = Script::new(runtime.clone());
-        let result_response = script.call(ctx.node.deref(), &ctx.input_with_nodes()).await;
+        let result_response = script
+            .call(
+                ctx.node.deref(),
+                &ctx.input_with_nodes(),
+                &ctx.extensions.context.nested(Located::function(&ctx.id)),
+            )
+            .await;
 
         runtime.set_interrupt_handler(None);
 
@@ -75,13 +82,18 @@ impl Batch {
         &mut self,
         input: &Variable,
         nodes: Option<&Variable>,
+        context: &zen_expression::context::EvaluationContext,
     ) -> Option<Result<Variable, NodeError>> {
         if self.session.is_none() && !self.failed {
             self.session = Session::open(&self.source, MAX_DURATION);
             self.failed = self.session.is_none();
         }
         let session = self.session.as_ref()?;
-        let result = session.call(&self.layout, &NodeContextBase::joined(input, nodes));
+        let result = session.call(
+            &self.layout,
+            &NodeContextBase::joined(input, nodes),
+            &context.nested(Located::function(&self.id)),
+        );
         if result.is_err() || !session.settled() {
             self.session = None;
         }

@@ -569,6 +569,7 @@ async fn decision_table_index_matches_linear_semantics() {
                     EvaluationOptions {
                         trace: true,
                         max_depth: 5,
+                        ..Default::default()
                     },
                 )
                 .await

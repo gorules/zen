@@ -625,7 +625,9 @@ pub(crate) mod imp {
         let a = args.number(0)?;
         let upper_range = a.round().to_i64().context("Invalid upper range")?;
 
-        let random_number = fastrand::i64(0..=upper_range);
+        let random_number = crate::context::Draw::fresh()
+            .int(upper_range)
+            .context("Invalid upper range")?;
         Ok(V::Number(Decimal::from(random_number)))
     }
 

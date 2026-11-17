@@ -1,10 +1,11 @@
 use crate::compiled::decision::CompiledDecision;
 use crate::compiled::host::graph::graph::Responses;
+use crate::compiled::pinning;
 use crate::compiled::policy::artifact::Artifact;
 use crate::compiled::policy::validator::InputSchema;
 use crate::compiled::prepared::{Decisions, Policies, Prepared};
 use crate::decision_graph::graph::DecisionGraphResponse;
-use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
+use crate::engine::{EvaluationOptions, EvaluationSerializedOptions};
 use crate::loader::{DynamicLoader, LoaderResult};
 use crate::model::{DecisionContent, GraphContent};
 use crate::nodes::custom::DynamicCustomNode;
@@ -20,6 +21,7 @@ use arc_swap::ArcSwapOption;
 use serde_json::Value;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use zen_expression::context::EvaluationContext;
 use zen_expression::variable::Variable;
 
 pub(crate) struct Parts<'e> {
@@ -108,22 +110,58 @@ impl Caches {
         })
     }
 
+    pub(crate) async fn evaluate_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        input: Variable,
+        options: EvaluationOptions,
+    ) -> LoaderResult<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let context = pinning::single(options.pinned());
+        self.evaluate(parts, key, input, options, &context).await
+    }
+
+    pub(crate) async fn evaluate_serialized_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        input: Variable,
+        options: EvaluationSerializedOptions,
+    ) -> Result<Value, Value> {
+        let context = pinning::single(options.pinned());
+        self.evaluate_serialized(parts, key, input, options, &context)
+            .await
+    }
+
+    pub(crate) async fn evaluate_batch_pinned(
+        &self,
+        parts: &Parts<'_>,
+        key: &str,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        let context = pinning::batch(options.pinned());
+        self.evaluate_batch(parts, key, contexts, options, &context)
+            .await
+    }
+
     pub(crate) async fn evaluate(
         &self,
         parts: &Parts<'_>,
         key: &str,
-        context: Variable,
+        input: Variable,
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> LoaderResult<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         if let Some(entry) = self.entry(key) {
             return Ok(match entry {
                 Entry::Policy(artifact) => artifact
-                    .evaluate_entry(key, context, options.trace)
+                    .evaluate_entry(key, input, options.trace, context)
                     .map(Responses::policy)
                     .map_err(|e| Box::new(EvaluationError::Policy(e))),
                 Entry::Graph(graph) => {
                     self.decision(parts, key, &graph)
-                        .evaluate_with_opts(context, options)
+                        .evaluate_with_opts(input, options, context)
                         .await
                 }
             });
@@ -132,11 +170,11 @@ impl Caches {
         Ok(match content.as_ref() {
             DecisionContent::Graph(graph) => {
                 self.decision(parts, key, graph)
-                    .evaluate_with_opts(context, options)
+                    .evaluate_with_opts(input, options, context)
                     .await
             }
             DecisionContent::Policy(_) => {
-                self.policy(parts.loader, key, content.clone(), context, options)
+                self.policy(parts.loader, key, content.clone(), input, options, context)
                     .await
             }
         })
@@ -146,14 +184,14 @@ impl Caches {
         &self,
         parts: &Parts<'_>,
         key: &str,
-        context: Variable,
+        input: Variable,
         options: EvaluationSerializedOptions,
+        context: &EvaluationContext,
     ) -> Result<Value, Value> {
-        let opts = EvaluationOptions {
-            trace: options.trace != EvaluationTraceKind::None,
-            max_depth: options.max_depth,
-        };
-        match self.evaluate(parts, key, context, opts).await {
+        match self
+            .evaluate(parts, key, input, options.unserialized(), context)
+            .await
+        {
             Ok(response) => Responses::serialized(response, options.trace),
             Err(err) => Err(Value::String(err.to_string())),
         }
@@ -165,21 +203,22 @@ impl Caches {
         key: &str,
         contexts: &[Variable],
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
         if let Some(entry) = self.entry(key) {
             return match entry {
                 Entry::Policy(artifact) => {
                     let requests: Vec<EvaluateRequest> = contexts
                         .iter()
-                        .map(|context| EvaluateRequest {
+                        .map(|input| EvaluateRequest {
                             policy_path: Arc::from(key),
-                            input: context.clone(),
+                            input: input.clone(),
                             goals: Vec::new(),
                             trace: options.trace,
                         })
                         .collect();
                     artifact
-                        .evaluate_batch(&requests)
+                        .evaluate_batch(&requests, context)
                         .into_iter()
                         .map(|result| {
                             result
@@ -190,7 +229,7 @@ impl Caches {
                 }
                 Entry::Graph(graph) => {
                     self.decision(parts, key, &graph)
-                        .evaluate_batch(contexts, options)
+                        .evaluate_batch(contexts, options, context)
                         .await
                 }
             };
@@ -199,16 +238,21 @@ impl Caches {
             if let DecisionContent::Graph(graph) = content.as_ref() {
                 return self
                     .decision(parts, key, graph)
-                    .evaluate_batch(contexts, options)
+                    .evaluate_batch(contexts, options, context)
                     .await;
             }
         }
         let mut results = Vec::with_capacity(contexts.len());
-        for context in contexts {
+        for (row, input) in contexts.iter().enumerate() {
             results.push(
-                match self
-                    .evaluate(parts, key, context.deep_clone(), options)
-                    .await
+                match Box::pin(self.evaluate(
+                    parts,
+                    key,
+                    input.deep_clone(),
+                    options,
+                    &context.at(row),
+                ))
+                .await
                 {
                     Ok(result) => result,
                     Err(error) => Err(Box::<EvaluationError>::from(error)),
@@ -225,6 +269,7 @@ impl Caches {
         entry_content: Arc<DecisionContent>,
         input: Variable,
         options: EvaluationOptions,
+        context: &EvaluationContext,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let entry_path: Arc<str> = Arc::from(entry_key);
         let documents = Self::documents(loader, entry_path.clone(), entry_content).await?;
@@ -254,7 +299,7 @@ impl Caches {
         };
 
         let result = artifact
-            .evaluate_entry(&entry_path, input, options.trace)
+            .evaluate_entry(&entry_path, input, options.trace, context)
             .map_err(|e| Box::new(EvaluationError::Policy(e)))?;
 
         Ok(Responses::policy(result))

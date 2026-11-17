@@ -10,10 +10,12 @@ pub(crate) use dates::Dates;
 pub(crate) use functions::Builtins;
 pub(crate) use text::{Text, TextKernel};
 
+pub(crate) use crate::context::RowContext;
 use crate::lane::columns::{Column, Values};
 use crate::lane::date::Date;
 use crate::lane::date::DynamicVariableExt;
 use crate::variable::Variable;
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
 use zen_types::rccell::RcCell;
@@ -68,9 +70,9 @@ impl<'a> Arg<'a> {
         }
     }
 
-    pub(crate) fn coerce_date(&self) -> Option<Date> {
+    pub(crate) fn coerce_date(&self, tz: Tz) -> Option<Date> {
         match self {
-            Arg::Str(s) => Some(Date::from_text(s)),
+            Arg::Str(s) => Some(Date::from_text(s, tz)),
             other => other.date(),
         }
     }
@@ -284,7 +286,7 @@ pub(crate) type Fail = String;
 
 pub(crate) type Outcome = Option<Result<Out, Fail>>;
 
-pub(crate) type Overload = for<'a> fn(&[Arg<'a>]) -> Outcome;
+pub(crate) type Overload = for<'a, 'b> fn(&RowContext<'b>, &[Arg<'a>]) -> Outcome;
 
 pub(crate) struct Apply;
 

@@ -12,6 +12,7 @@ pub(crate) use host::Host;
 
 use crate::compiled::core::special::Specialized;
 use crate::compiled::leaf::Literal;
+use crate::compiled::pinning::Located;
 use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
 use crate::compiled::policy::blocks::MatchSelection;
 use crate::compiled::policy::site::{HostState, InstanceSlot, Iterated, Pick, Picked};
@@ -24,9 +25,10 @@ use schedule::{Blocks, Demand, End, Event, Replay, Segment};
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
+use zen_expression::context::EvaluationContext;
 use zen_expression::lane::SourceInfo;
 use zen_expression::lane::{LaneProgram, LaneRunner, Programs};
-use zen_expression::{Scope, Variable};
+use zen_expression::{ExpressionKind, Scope, Variable};
 use zen_types::path::DotPath;
 
 enum Native {
@@ -65,18 +67,22 @@ impl std::fmt::Display for Refused {
 }
 
 impl Native {
-    fn program(source: &str) -> Result<LaneProgram, Refused> {
-        LaneProgram::standard(source).map_err(|e| Refused::Compile(Arc::from(e.to_string())))
+    fn program(source: &str, label: u64) -> Result<LaneProgram, Refused> {
+        LaneProgram::located(source, ExpressionKind::Standard, label)
+            .map_err(|e| Refused::Compile(Arc::from(e.to_string())))
     }
 
-    fn optional(source: &str) -> Result<Option<LaneProgram>, Refused> {
+    fn optional(source: &str, label: u64) -> Result<Option<LaneProgram>, Refused> {
         match source.is_empty() {
             true => Ok(None),
-            false => Self::program(source).map(Some),
+            false => Self::program(source, label).map(Some),
         }
     }
 
     fn pick(ir: &MatchIr) -> Option<Box<LaneProgram>> {
+        if ir.arms.iter().any(|arm| SourceInfo::draws(&arm.condition)) {
+            return None;
+        }
         let mut source = String::new();
         let mut open = 0usize;
         let mut tail = String::from("null");
@@ -93,10 +99,11 @@ impl Native {
         LaneProgram::standard(&source).ok().map(Box::new)
     }
 
-    fn compile(kind: &BlockKind) -> Result<Self, Refused> {
-        match kind {
+    fn compile(block: &Block) -> Result<Self, Refused> {
+        let id = &block.id;
+        match &block.kind {
             BlockKind::Expression(ir) if !ir.key.is_empty() && !ir.value.is_empty() => {
-                Self::program(&ir.value).map(|program| Native::Expression {
+                Self::program(&ir.value, Located::block(id)).map(|program| Native::Expression {
                     key: ir.key.clone(),
                     program: Box::new(program),
                 })
@@ -106,14 +113,14 @@ impl Native {
                 conditions: ir
                     .conditions
                     .iter()
-                    .map(|c| Self::program(&c.expression))
+                    .map(|c| Self::program(&c.expression, Located::condition(id, &c.id)))
                     .collect::<Result<Vec<_>, _>>()?,
             }),
             BlockKind::Match(ir) => {
                 let values = ir
                     .arms
                     .iter()
-                    .map(|arm| Self::optional(&arm.value))
+                    .map(|arm| Self::optional(&arm.value, Located::value(id, &arm.id)))
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut runner = LaneRunner::new();
                 let constants = values
@@ -125,7 +132,7 @@ impl Native {
                     conditions: ir
                         .arms
                         .iter()
-                        .map(|arm| Self::optional(&arm.condition))
+                        .map(|arm| Self::optional(&arm.condition, Located::arm(id, &arm.id)))
                         .collect::<Result<Vec<_>, _>>()?,
                     values,
                     pick: Self::pick(ir),
@@ -191,6 +198,7 @@ pub(crate) struct PolicyPlan {
 }
 
 struct Rows<'a> {
+    context: EvaluationContext,
     hosts: Vec<Option<Host<'a>>>,
     picks: Vec<Vec<(usize, Picked)>>,
     failures: Vec<Option<EvaluationError>>,
@@ -250,9 +258,9 @@ impl PolicyPlan {
             .map(|(rule, owner)| {
                 let iteration = artifact.iteration(rule);
                 let (native, iterated) = match &iteration {
-                    None => (Native::compile(&rule.kind), false),
+                    None => (Native::compile(rule), false),
                     Some((_, path, _)) if Self::lane_safe(artifact, owner, rule, path) => {
-                        (Native::compile(&rule.kind), true)
+                        (Native::compile(rule), true)
                     }
                     Some(_) => (Err(Refused::Iterated), false),
                 };
@@ -260,12 +268,12 @@ impl PolicyPlan {
                     native,
                     iterated,
                     table: match &rule.kind {
-                        BlockKind::DecisionTable(ir) => Table::compile(TableIr::policy(ir)).ok(),
+                        BlockKind::DecisionTable(ir) if !ir.draws() => {
+                            Table::compile(TableIr::policy(ir)).ok()
+                        }
                         _ => None,
                     },
-                    member: iteration
-                        .as_ref()
-                        .and_then(|_| Native::compile(&rule.kind).ok()),
+                    member: iteration.as_ref().and_then(|_| Native::compile(rule).ok()),
                     iteration,
                 }
             })
@@ -374,6 +382,7 @@ impl PolicyPlan {
         &self,
         artifact: &EvalArtifact,
         requests: &[EvaluateRequest],
+        context: &EvaluationContext,
     ) -> Vec<Result<EvaluationResult, EvaluationError>> {
         let start = Instant::now();
         let count = requests.len();
@@ -390,10 +399,12 @@ impl PolicyPlan {
             })
             .collect();
         let mut state = Rows {
+            context: context.clone(),
             hosts: stores
                 .iter()
                 .zip(requests)
-                .map(|(store, request)| {
+                .enumerate()
+                .map(|(row, (store, request))| {
                     store.as_ref().map(|store| {
                         Host::new(
                             artifact,
@@ -402,6 +413,7 @@ impl PolicyPlan {
                             false,
                             false,
                             &self.programs,
+                            context.at(row),
                         )
                     })
                 })
@@ -551,15 +563,36 @@ impl PolicyPlan {
             .unzip()
     }
 
-    fn run(
+    fn drawn(
+        context: &EvaluationContext,
         program: &LaneProgram,
-        scopes: &[Scope],
-        sink: impl FnMut(usize, Result<Variable, zen_expression::IsolateError>),
-    ) {
-        Self::RUNNER.with_borrow_mut(|runner| runner.evaluate_with(program, scopes, sink));
+        rows: &[usize],
+    ) -> EvaluationContext {
+        match program.program().draws {
+            true => context.rows(rows),
+            false => context.clone(),
+        }
     }
 
-    fn arms(ir: &MatchIr, conditions: &[Option<LaneProgram>], scopes: Vec<Scope>) -> Vec<Arm> {
+    fn run(
+        context: &EvaluationContext,
+        program: &LaneProgram,
+        scopes: &[Scope],
+        rows: &[usize],
+        sink: impl FnMut(usize, Result<Variable, zen_expression::IsolateError>),
+    ) {
+        let context = Self::drawn(context, program, rows);
+        Self::RUNNER
+            .with_borrow_mut(|runner| runner.evaluate_with(program, &context, scopes, sink));
+    }
+
+    fn arms(
+        context: &EvaluationContext,
+        ir: &MatchIr,
+        conditions: &[Option<LaneProgram>],
+        scopes: Vec<Scope>,
+        rows: &[usize],
+    ) -> Vec<Arm> {
         let mut outcome: Vec<Option<Arm>> = (0..scopes.len()).map(|_| None).collect();
         let mut open: Vec<usize> = (0..scopes.len()).collect();
         let mut scopes = scopes;
@@ -574,7 +607,8 @@ impl PolicyPlan {
                 break;
             };
             let mut hit = vec![None; open.len()];
-            Self::run(program, &scopes, |i, result| {
+            let at: Vec<usize> = open.iter().map(|&lane| rows[lane]).collect();
+            Self::run(context, program, &scopes, &at, |i, result| {
                 hit[i] = Some(result.map(|v| v.as_bool().unwrap_or(false)).ok())
             });
             let mut next_open = Vec::with_capacity(open.len());
@@ -614,7 +648,8 @@ impl PolicyPlan {
     ) -> Vec<usize> {
         let (live, scopes) = Self::scopes(rows, state);
         let mut delegated = Vec::new();
-        for (row, arm) in live.into_iter().zip(Self::arms(ir, conditions, scopes)) {
+        let arms = Self::arms(&state.context, ir, conditions, scopes, &live);
+        for (row, arm) in live.into_iter().zip(arms) {
             match arm {
                 Arm::Failed => delegated.push(row),
                 Arm::Matched(matched_arm) => {
@@ -684,7 +719,8 @@ impl PolicyPlan {
             .iter()
             .map(|l| Scope::new(l.root.shallow_clone()))
             .collect();
-        let arms = Self::arms(ir, conditions, scopes);
+        let owners: Vec<usize> = lanes.iter().map(|l| captured[l.owner].row).collect();
+        let arms = Self::arms(&state.context, ir, conditions, scopes, &owners);
         let mut delegated = Vec::new();
         for Capture {
             row,
@@ -727,21 +763,25 @@ impl PolicyPlan {
             .iter()
             .map(|l| Scope::new(l.root.shallow_clone()))
             .collect();
+        let owners: Vec<usize> = lanes.iter().map(|l| captured[l.owner].row).collect();
+        let context = state.context.clone();
         let mut writes: Vec<Option<Option<Write>>> = (0..lanes.len()).map(|_| None).collect();
         match native {
-            Native::Expression { key, program } => Self::run(program, &scopes, |i, result| {
-                writes[i] = result.ok().map(|value| {
-                    Some(Write {
-                        path: key.clone(),
-                        value,
+            Native::Expression { key, program } => {
+                Self::run(&context, program, &scopes, &owners, |i, result| {
+                    writes[i] = result.ok().map(|value| {
+                        Some(Write {
+                            path: key.clone(),
+                            value,
+                        })
                     })
                 })
-            }),
+            }
             Native::Assertion { ir, conditions } => {
                 let mut results: Vec<Option<Vec<bool>>> =
                     (0..lanes.len()).map(|_| Some(Vec::new())).collect();
                 for program in conditions {
-                    Self::run(program, &scopes, |i, result| {
+                    Self::run(&context, program, &scopes, &owners, |i, result| {
                         match (result, &mut results[i]) {
                             (Ok(value), Some(r)) => r.push(value.as_bool().unwrap_or(false)),
                             _ => results[i] = None,
@@ -788,7 +828,8 @@ impl PolicyPlan {
                         continue;
                     };
                     let subset: Vec<Scope> = members.iter().map(|&i| scopes[i].clone()).collect();
-                    Self::run(program, &subset, |j, result| {
+                    let at: Vec<usize> = members.iter().map(|&i| owners[i]).collect();
+                    Self::run(&context, program, &subset, &at, |j, result| {
                         writes[members[j]] = result
                             .ok()
                             .map(|value| key.clone().map(|path| Write { path, value }))
@@ -809,8 +850,8 @@ impl PolicyPlan {
                     true => delegated.push(row),
                     false => {
                         if let Some(host) = state.hosts[row].as_mut() {
-                            if let Err(error) = host.commit(owner, rule, Picked::Iterated(iterated))
-                            {
+                            let committed = host.commit(owner, rule, Picked::Iterated(iterated));
+                            if let Err(error) = committed {
                                 state.failures[row] = Some(error);
                             }
                         }
@@ -866,7 +907,9 @@ impl PolicyPlan {
             };
             let (live, scopes) = Self::scopes(&members, state);
             let mut results: Vec<Option<Variable>> = vec![None; live.len()];
-            Self::run(program, &scopes, |i, result| results[i] = result.ok());
+            Self::run(&state.context, program, &scopes, &live, |i, result| {
+                results[i] = result.ok()
+            });
             for (row, result) in live.into_iter().zip(results) {
                 match result {
                     Some(value) => {
@@ -893,10 +936,16 @@ impl PolicyPlan {
         let mut results: Vec<Vec<bool>> = vec![Vec::with_capacity(conditions.len()); live.len()];
         let mut failed = vec![false; live.len()];
         for program in conditions {
-            Self::run(program, &scopes, |i, result| match result {
-                Ok(value) => results[i].push(value.as_bool().unwrap_or(false)),
-                Err(_) => failed[i] = true,
-            });
+            Self::run(
+                &state.context,
+                program,
+                &scopes,
+                &live,
+                |i, result| match result {
+                    Ok(value) => results[i].push(value.as_bool().unwrap_or(false)),
+                    Err(_) => failed[i] = true,
+                },
+            );
         }
         let mut delegated = Vec::new();
         for (i, row) in live.into_iter().enumerate() {
@@ -921,8 +970,9 @@ impl PolicyPlan {
     ) -> Vec<usize> {
         let (live, scopes) = Self::scopes(rows, state);
         let mut delegated = Vec::new();
+        let context = Self::drawn(&state.context, program, &live);
         Self::RUNNER.with_borrow_mut(|runner| {
-            runner.evaluate_with(program, &scopes, |i, result| {
+            runner.evaluate_with(program, &context, &scopes, |i, result| {
                 let row = live[i];
                 match (result, state.hosts[row].as_ref()) {
                     (Ok(value), Some(host)) => host.state.write(key, value),

@@ -34,6 +34,7 @@ impl Exact<'_> {
         RowTable::new(
             self.session,
             &ir.inputs,
+            self.site.block_id,
             self.site.indexes.of(ir).as_ref().as_ref(),
             Some(self.site),
         )
@@ -45,8 +46,14 @@ impl Exact<'_> {
         ir: &DecisionTableIr,
         selection: &TableSelection,
     ) -> Result<BlockTrace, ExecutionError> {
-        RowTable::new(self.session, &ir.inputs, None, Some(self.site))
-            .commit(ir, selection, self.site)
+        RowTable::new(
+            self.session,
+            &ir.inputs,
+            self.site.block_id,
+            None,
+            Some(self.site),
+        )
+        .commit(ir, selection, self.site)
     }
 
     fn execute_table(&mut self, ir: &DecisionTableIr) -> Result<BlockTrace, ExecutionError> {

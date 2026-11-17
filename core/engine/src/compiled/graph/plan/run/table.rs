@@ -24,6 +24,11 @@ impl<'a> Run<'_, 'a> {
             return;
         };
         let local = positions.map_or(self.store.rows, |p| p.len());
+        let context = match positions.filter(|_| table.programs().iter().any(|p| p.program().draws))
+        {
+            Some(positions) => self.host.extensions.context.rows(positions),
+            None => self.host.extensions.context.clone(),
+        };
         let mut leaves: Vec<Option<Leaf<'a>>> = op
             .reads
             .iter()
@@ -100,6 +105,7 @@ impl<'a> Run<'_, 'a> {
             }
         }
         let bound = Bound {
+            context,
             scopes: Bound::blank(evaluated),
             columns,
             bind: Box::new(move |key: &str| match key.starts_with('$') {

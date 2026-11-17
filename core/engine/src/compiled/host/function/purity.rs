@@ -124,8 +124,8 @@ impl Purity {
             &[
                 "abs", "acos", "acosh", "asin", "asinh", "atan", "atan2", "atanh", "cbrt", "ceil",
                 "clz32", "cos", "cosh", "exp", "expm1", "floor", "fround", "hypot", "imul", "log",
-                "log10", "log1p", "log2", "max", "min", "pow", "random", "round", "sign", "sin",
-                "sinh", "sqrt", "tan", "tanh", "trunc",
+                "log10", "log1p", "log2", "max", "min", "pow", "round", "sign", "sin", "sinh",
+                "sqrt", "tan", "tanh", "trunc",
             ],
         ),
         ("JSON", &["stringify", "parse"]),
@@ -1581,7 +1581,11 @@ mod tests {
             .await
             .expect("module");
         let response = function
-            .call_handler(&name, JsValueWithNodes(JsValue(Variable::Null)))
+            .call_handler(
+                &name,
+                JsValueWithNodes(JsValue(Variable::Null)),
+                &zen_expression::context::EvaluationContext::default(),
+            )
             .await
             .expect("names");
         let names = response

@@ -149,6 +149,7 @@ impl Graphs {
         EvaluationOptions {
             trace: true,
             max_depth: 10,
+            ..Default::default()
         }
     }
 
@@ -156,6 +157,7 @@ impl Graphs {
         EvaluationSerializedOptions {
             trace: EvaluationTraceKind::Reference,
             max_depth: 10,
+            ..Default::default()
         }
     }
 
@@ -331,6 +333,7 @@ impl Modes {
             let options = EvaluationSerializedOptions {
                 trace: mode,
                 max_depth: 10,
+                ..Default::default()
             };
             let reference = matches!(
                 mode,

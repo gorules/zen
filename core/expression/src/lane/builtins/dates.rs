@@ -1,5 +1,5 @@
 use crate::functions::{DateMethod, MethodKind};
-use crate::lane::builtins::{Arg, Builtin, Fail, Out, Outcome};
+use crate::lane::builtins::{Arg, Builtin, Fail, Out, Outcome, RowContext};
 use crate::lane::date::Date;
 use crate::lane::date::{Duration, DurationUnit};
 use crate::variable::Variable;
@@ -125,11 +125,11 @@ impl Dates {
         }
     }
 
-    fn other(args: &[Arg]) -> Result<Date, Fail> {
+    fn other(ctx: &RowContext, args: &[Arg]) -> Result<Date, Fail> {
         Ok(match Self::var(args, 1)? {
             Arg::Date(d) => d,
-            Arg::Str(s) => Date::text(s, None),
-            other => Date::new(other.variable(), None),
+            Arg::Str(s) => Date::text(s, None, ctx.context()),
+            other => Date::new(other.variable(), None, ctx.context()),
         })
     }
 
@@ -142,21 +142,21 @@ impl Dates {
     }
 
     pub(crate) const ADD: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| Ok(Self::date(Self::this(args)?.add(Self::duration(args, 1)?))))
         }],
         fail: Self::NEVER,
     };
 
     pub(crate) const SUB: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| Ok(Self::date(Self::this(args)?.sub(Self::duration(args, 1)?))))
         }],
         fail: Self::NEVER,
     };
 
     pub(crate) const SET: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| {
                 let this = Self::this(args)?;
                 let unit = Self::unit(args, 1)?;
@@ -170,7 +170,7 @@ impl Dates {
     };
 
     pub(crate) const FORMAT: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| {
                 let this = Self::this(args)?;
                 Ok(this.format(Self::ostr(args, 1)?.as_deref()).into())
@@ -180,24 +180,24 @@ impl Dates {
     };
 
     pub(crate) const START_OF: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| Ok(Self::date(Self::this(args)?.start_of(Self::unit(args, 1)?))))
         }],
         fail: Self::NEVER,
     };
 
     pub(crate) const END_OF: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| Ok(Self::date(Self::this(args)?.end_of(Self::unit(args, 1)?))))
         }],
         fail: Self::NEVER,
     };
 
     pub(crate) const DIFF: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|ctx: &RowContext, args| {
             Self::run(|| {
                 let this = Self::this(args)?;
-                let other = Self::other(args)?;
+                let other = Self::other(ctx, args)?;
                 let unit = Self::unit_opt(args, 2)?;
                 Ok(match this.diff(&other, unit).and_then(Decimal::from_i64) {
                     Some(n) => Out::Num(n),
@@ -209,7 +209,7 @@ impl Dates {
     };
 
     pub(crate) const TZ: Builtin = Builtin {
-        overloads: &[|args| {
+        overloads: &[|_, args| {
             Self::run(|| {
                 let this = Self::this(args)?;
                 let zone = Tz::from_str(&Self::str(args, 1)?)
@@ -220,10 +220,10 @@ impl Dates {
         fail: Self::NEVER,
     };
 
-    fn compare(args: &[Arg], op: Compare) -> Outcome {
+    fn compare(ctx: &RowContext, args: &[Arg], op: Compare) -> Outcome {
         Self::run(|| {
             let this = Self::this(args)?;
-            let other = Self::other(args)?;
+            let other = Self::other(ctx, args)?;
             let unit = Self::unit_opt(args, 2)?;
             Ok(Out::Bool(match op {
                 Compare::Same => this.is_same(&other, unit),
@@ -236,27 +236,27 @@ impl Dates {
     }
 
     pub(crate) const IS_SAME: Builtin = Builtin {
-        overloads: &[|args| Self::compare(args, Compare::Same)],
+        overloads: &[|ctx, args| Self::compare(ctx, args, Compare::Same)],
         fail: Self::NEVER,
     };
 
     pub(crate) const IS_BEFORE: Builtin = Builtin {
-        overloads: &[|args| Self::compare(args, Compare::Before)],
+        overloads: &[|ctx, args| Self::compare(ctx, args, Compare::Before)],
         fail: Self::NEVER,
     };
 
     pub(crate) const IS_AFTER: Builtin = Builtin {
-        overloads: &[|args| Self::compare(args, Compare::After)],
+        overloads: &[|ctx, args| Self::compare(ctx, args, Compare::After)],
         fail: Self::NEVER,
     };
 
     pub(crate) const IS_SAME_OR_BEFORE: Builtin = Builtin {
-        overloads: &[|args| Self::compare(args, Compare::SameOrBefore)],
+        overloads: &[|ctx, args| Self::compare(ctx, args, Compare::SameOrBefore)],
         fail: Self::NEVER,
     };
 
     pub(crate) const IS_SAME_OR_AFTER: Builtin = Builtin {
-        overloads: &[|args| Self::compare(args, Compare::SameOrAfter)],
+        overloads: &[|ctx, args| Self::compare(ctx, args, Compare::SameOrAfter)],
         fail: Self::NEVER,
     };
 
@@ -302,7 +302,7 @@ impl Dates {
         })
     }
 
-    fn part(args: &[Arg], part: Part) -> Outcome {
+    fn part(ctx: &RowContext, args: &[Arg], part: Part) -> Outcome {
         Self::run(|| {
             let this = Self::this(args)?;
             if let Part::IsValid = part {
@@ -324,12 +324,14 @@ impl Dates {
                 Part::Year => Out::Num(dt.year().into()),
                 Part::Timestamp => Out::Num(dt.timestamp_millis().into()),
                 Part::IsValid => Out::Bool(true),
-                Part::IsYesterday => {
-                    Out::Bool(this.is_same(&Date::yesterday(), Some(DurationUnit::Day)))
+                Part::IsYesterday => Out::Bool(
+                    this.is_same(&Date::yesterday(ctx.context()), Some(DurationUnit::Day)),
+                ),
+                Part::IsToday => {
+                    Out::Bool(this.is_same(&Date::now(ctx.context()), Some(DurationUnit::Day)))
                 }
-                Part::IsToday => Out::Bool(this.is_same(&Date::now(), Some(DurationUnit::Day))),
                 Part::IsTomorrow => {
-                    Out::Bool(this.is_same(&Date::tomorrow(), Some(DurationUnit::Day)))
+                    Out::Bool(this.is_same(&Date::tomorrow(ctx.context()), Some(DurationUnit::Day)))
                 }
                 Part::IsLeapYear => Out::Bool(dt.date_naive().leap_year()),
                 Part::OffsetName => dt.timezone().name().into(),
@@ -338,71 +340,71 @@ impl Dates {
     }
 
     pub(crate) const SECOND: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Second)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Second)],
         fail: Self::NEVER,
     };
     pub(crate) const MINUTE: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Minute)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Minute)],
         fail: Self::NEVER,
     };
     pub(crate) const HOUR: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Hour)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Hour)],
         fail: Self::NEVER,
     };
     pub(crate) const DAY: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Day)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Day)],
         fail: Self::NEVER,
     };
     pub(crate) const WEEKDAY: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Weekday)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Weekday)],
         fail: Self::NEVER,
     };
     pub(crate) const DAY_OF_YEAR: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::DayOfYear)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::DayOfYear)],
         fail: Self::NEVER,
     };
     pub(crate) const WEEK: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Week)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Week)],
         fail: Self::NEVER,
     };
     pub(crate) const MONTH: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Month)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Month)],
         fail: Self::NEVER,
     };
     pub(crate) const QUARTER: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Quarter)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Quarter)],
         fail: Self::NEVER,
     };
     pub(crate) const YEAR: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Year)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Year)],
         fail: Self::NEVER,
     };
     pub(crate) const TIMESTAMP: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::Timestamp)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::Timestamp)],
         fail: Self::NEVER,
     };
     pub(crate) const OFFSET_NAME: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::OffsetName)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::OffsetName)],
         fail: Self::NEVER,
     };
     pub(crate) const IS_VALID: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::IsValid)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::IsValid)],
         fail: Self::NEVER,
     };
     pub(crate) const IS_YESTERDAY: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::IsYesterday)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::IsYesterday)],
         fail: Self::NEVER,
     };
     pub(crate) const IS_TODAY: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::IsToday)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::IsToday)],
         fail: Self::NEVER,
     };
     pub(crate) const IS_TOMORROW: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::IsTomorrow)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::IsTomorrow)],
         fail: Self::NEVER,
     };
     pub(crate) const IS_LEAP_YEAR: Builtin = Builtin {
-        overloads: &[|a| Self::part(a, Part::IsLeapYear)],
+        overloads: &[|ctx, a| Self::part(ctx, a, Part::IsLeapYear)],
         fail: Self::NEVER,
     };
 }

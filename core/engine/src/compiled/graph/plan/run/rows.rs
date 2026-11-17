@@ -238,16 +238,20 @@ impl<'a> Run<'_, 'a> {
                     Ok(graph) => {
                         let (at, inputs, nodes) =
                             self.inputs(seg, Some(&op.view), &op.nodes, positions);
-                        let results = CompiledGraph::batch(
+                        let scoped = self
+                            .host
+                            .extensions
+                            .scoped(self.host.extensions.context.rows(&at));
+                        let results = Box::pin(CompiledGraph::batch(
                             step,
                             content,
                             &graph,
                             &inputs,
                             &nodes,
-                            self.host.extensions,
+                            &scoped,
                             self.host.max_depth,
                             self.iteration,
-                        )
+                        ))
                         .await;
                         {
                             self.completed
@@ -270,21 +274,24 @@ impl<'a> Run<'_, 'a> {
         let values: Vec<Variable> = match &step.kind {
             Kind::Host(_) => {
                 Census::mark("hosted");
+                let scoped = self
+                    .host
+                    .extensions
+                    .scoped(self.host.extensions.context.rows(&at));
                 let results = match &step.node.kind {
                     DecisionNodeKind::CustomNode { content } => {
-                        CompiledGraph::custom(step, content, inputs, nodes, self.host.extensions)
-                            .await
+                        Box::pin(CompiledGraph::custom(step, content, inputs, nodes, &scoped)).await
                     }
                     _ => {
-                        CompiledGraph::hosted(
+                        Box::pin(CompiledGraph::hosted(
                             step,
                             &inputs,
                             &nodes,
-                            self.host.extensions,
+                            &scoped,
                             self.host.max_depth,
                             self.iteration,
                             self.store.rows > 1,
-                        )
+                        ))
                         .await
                     }
                 };
@@ -313,7 +320,9 @@ impl<'a> Run<'_, 'a> {
             _ => {
                 let data =
                     data.unwrap_or_else(|| Data::plain((0..inputs.len()).collect(), inputs.into()));
-                let (output, failures) = graph.rowwise(&mut self.runner, step, data, &nodes);
+                let context = self.host.extensions.context.rows(&at);
+                let (output, failures) =
+                    graph.rowwise(&mut self.runner, &context, step, data, &nodes);
                 for (i, message) in failures {
                     self.store.errors.fail(at[i], &step.node, Rc::from(message));
                 }
@@ -398,7 +407,16 @@ impl<'a> Run<'_, 'a> {
             .enumerate()
             .map(|(i, input)| CompiledGraph::scope(input, nodes.get(i).and_then(Option::as_ref)))
             .collect();
-        for (result, &row) in self.runner.evaluate(program, &scopes).into_iter().zip(&at) {
+        let context = match program.program().draws {
+            true => self.host.extensions.context.rows(&at),
+            false => self.host.extensions.context.clone(),
+        };
+        for (result, &row) in self
+            .runner
+            .evaluate(program, &context, &scopes)
+            .into_iter()
+            .zip(&at)
+        {
             if matches!(result, Ok(Variable::Bool(true))) {
                 Bits::set(&mut bits, row, true);
             }

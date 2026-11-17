@@ -650,7 +650,7 @@ impl Table {
                     let (direct, typed) = Self::field_column(runner, bound, field, &mut failed);
                     let column = direct.or_else(|| typed.as_ref().map(Array::column));
                     if let (Some(truths), Some(view), true) = (&fused, direct, self.fuses(index)) {
-                        cells.indexed_column(&view, rows, &mut bits);
+                        cells.indexed_column(&view, rows, &mut bits, bound.context.timezone());
                         for other in 0..cells.others() {
                             let (Some((_, rules)), Some(truth)) = (
                                 cells.other(other),
@@ -674,7 +674,7 @@ impl Table {
                     let peeled = cells.others() > 0
                         && cells.peelable()
                         && column.is_some_and(|column| {
-                            Self::peeled(runner, cells, &column, rows, &mut bits)
+                            Self::peeled(runner, &bound.context, cells, &column, rows, &mut bits)
                         });
                     match (
                         lazy && !peeled,
@@ -684,13 +684,21 @@ impl Table {
                     ) {
                         _ if peeled => {}
                         (_, false, Some(column), _) => {
-                            cells.indexed_column(&column, rows, &mut bits)
+                            cells.indexed_column(&column, rows, &mut bits, bound.context.timezone())
                         }
-                        (true, true, Some(column), _) => {
-                            cells.evaluate_indexed_column(&column, rows, &mut bits)
-                        }
+                        (true, true, Some(column), _) => cells.evaluate_indexed_column(
+                            &column,
+                            rows,
+                            &mut bits,
+                            bound.context.timezone(),
+                        ),
                         (false, true, Some(column), Some(reference)) => {
-                            cells.indexed_column(&column, rows, &mut bits);
+                            cells.indexed_column(
+                                &column,
+                                rows,
+                                &mut bits,
+                                bound.context.timezone(),
+                            );
                             for other in 0..cells.others() {
                                 let Some((_, rules)) = cells.other(other) else {
                                     continue;
@@ -723,6 +731,7 @@ impl Table {
                         }
                         _ => {
                             let env = CellEnv {
+                                context: &bound.context,
                                 scopes,
                                 columns: &bound.columns,
                                 bind: &*bound.bind,
@@ -837,6 +846,7 @@ impl Table {
 
     fn peeled(
         runner: &mut LaneRunner,
+        context: &zen_expression::context::EvaluationContext,
         cells: &CellSet,
         column: &LaneColumn,
         rows: usize,
@@ -916,6 +926,7 @@ impl Table {
         let scopes = Bound::blank(values.len());
         let columns = zen_expression::lane::Columns::new(values.len());
         let env = CellEnv {
+            context,
             scopes: scopes.slice(),
             columns: &columns,
             bind: &|_| Binding::Row,
@@ -976,6 +987,7 @@ impl Table {
                         ),
                         (false, None) => {
                             let env = CellEnv {
+                                context: &bound.context,
                                 scopes: bound.scopes(),
                                 columns: &bound.columns,
                                 bind: &*bound.bind,

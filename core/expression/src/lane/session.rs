@@ -1,3 +1,4 @@
+use crate::context::EvaluationContext;
 use crate::lane::{LaneProgram, LaneRunner};
 use crate::scope::Scope;
 use crate::variable::Variable;
@@ -16,6 +17,13 @@ pub struct Programs {
 impl Programs {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn sources(&self) -> impl Iterator<Item = &str> {
+        self.standard
+            .keys()
+            .chain(self.unary.keys())
+            .map(|k| k.as_ref())
     }
 
     pub fn compile<'s>(sources: impl IntoIterator<Item = (&'s str, ExpressionKind)>) -> Self {
@@ -57,6 +65,7 @@ impl Programs {
 
 #[derive(Debug, Default)]
 pub struct Session {
+    context: Option<EvaluationContext>,
     scope: Scope,
     references: HashMap<String, Variable>,
     programs: Option<Arc<Programs>>,
@@ -76,6 +85,20 @@ impl Session {
         let mut session = Self::new();
         session.set_environment(variable);
         session
+    }
+
+    pub fn with_context(mut self, context: EvaluationContext) -> Self {
+        self.context = Some(context);
+        self
+    }
+
+    pub fn set_context(&mut self, context: EvaluationContext) {
+        self.context = Some(context);
+    }
+
+    pub fn locate(&mut self, label: u64) {
+        let context = self.context.get_or_insert_with(EvaluationContext::default);
+        *context = context.located(label);
     }
 
     pub fn with_programs(mut self, programs: Option<Arc<Programs>>) -> Self {
@@ -149,19 +172,24 @@ impl Session {
     }
 
     fn run(&mut self, source: &str, kind: ExpressionKind) -> Result<Variable, IsolateError> {
+        let context = self.context.get_or_insert_with(EvaluationContext::default);
         let program = match self.programs.as_deref().and_then(|p| p.get(source, &kind)) {
             Some(program) => program,
             None => self.fallback.insert(source, kind.clone()),
         };
         match program {
-            Some(program) => Self::evaluate(program, &self.scope),
-            None => Self::evaluate(&LaneProgram::compile(source, kind)?, &self.scope),
+            Some(program) => Self::evaluate(program, context, &self.scope),
+            None => Self::evaluate(&LaneProgram::compile(source, kind)?, context, &self.scope),
         }
     }
 
-    fn evaluate(program: &LaneProgram, scope: &Scope) -> Result<Variable, IsolateError> {
+    fn evaluate(
+        program: &LaneProgram,
+        context: &EvaluationContext,
+        scope: &Scope,
+    ) -> Result<Variable, IsolateError> {
         let mut runner = Self::RUNNER.take();
-        let result = runner.evaluate_one(program, scope);
+        let result = runner.evaluate_one(program, context, scope);
         Self::RUNNER.set(runner);
         result
     }

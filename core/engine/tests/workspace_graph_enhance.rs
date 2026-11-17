@@ -66,6 +66,7 @@ async fn graph_trace(documents: &[(&str, Value)], entry: &str, input: Value) -> 
             EvaluationOptions {
                 trace: true,
                 max_depth: 10,
+                ..Default::default()
             },
         )
         .await

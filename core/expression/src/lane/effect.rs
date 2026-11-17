@@ -45,12 +45,10 @@ impl Effect {
     ) -> Self {
         match kind {
             FunctionKind::Internal(InternalFunction::Date) => match literals.next() {
-                None | Some(Literal::Computed) => Effect::Clock,
-                Some(Literal::Constant) => Effect::Pure,
-                Some(Literal::Text(text)) if Date::parses(text) || Tz::from_str(text).is_err() => {
+                Some(Literal::Text(text)) if Date::never(text) && Tz::from_str(text).is_err() => {
                     Effect::Pure
                 }
-                Some(Literal::Text(_)) => Effect::Clock,
+                _ => Effect::Clock,
             },
             FunctionKind::Deprecated(DeprecatedFunction::Duration) => Effect::Pure,
             FunctionKind::Deprecated(_) => {

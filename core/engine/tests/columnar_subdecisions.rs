@@ -302,6 +302,7 @@ impl Scenario {
         let options = EvaluationOptions {
             trace: false,
             max_depth: self.max_depth,
+            ..Default::default()
         };
         let xs: Vec<i64> = (1..=Self::ROWS).collect();
         let columns = Columns::new(xs.len()).column("x", Column::new(Values::I64(&xs)));

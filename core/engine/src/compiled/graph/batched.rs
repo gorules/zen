@@ -80,6 +80,7 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
     ) -> Result<Arc<Content>, Failure> {
         let call = Call {
+            node: "",
             key,
             extensions,
             max_depth: 0,
@@ -162,6 +163,7 @@ impl CompiledGraph {
                 .collect();
         }
         let call = Call {
+            node: &step.node.id,
             key: &content.key,
             extensions,
             max_depth,
@@ -170,7 +172,7 @@ impl CompiledGraph {
         let content = compiled.schemas(graph, extensions.loader()).await;
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
-            ..call.sub_extensions(&content)
+            ..call.sub_extensions(&content, &extensions.context)
         };
         let parents: Vec<Option<Variable>> = (0..inputs.len())
             .map(|row| nodes.get(row).cloned().flatten())

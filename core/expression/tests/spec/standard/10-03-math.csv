@@ -365,7 +365,7 @@ type(rand(null));;!error
 type(rand(true));;!error
 type(rand(false));;!error
 type(rand(0));;'number'
-type(rand(-1));;!error;bug: panics (empty range in fastrand) on a negative upper bound instead of raising an error
+type(rand(-1));;!error
 type(rand(1.5));;'number'
 type(rand(79228162514264337593543950335));;!error;question: an upper bound beyond i64 is rejected
 type(rand(''));;!error
@@ -385,7 +385,7 @@ type(rand(x));{x: null};!error
 type(rand(x));{x: true};!error
 type(rand(x));{x: false};!error
 type(rand(x));{x: 0};'number'
-type(rand(x));{x: -1};!error;bug: panics (empty range in fastrand) on a negative upper bound instead of raising an error
+type(rand(x));{x: -1};!error
 type(rand(x));{x: 1.5};'number'
 type(rand(x));{x: 79228162514264337593543950335};!error;question: an upper bound beyond i64 is rejected
 type(rand(x));{x: ''};!error

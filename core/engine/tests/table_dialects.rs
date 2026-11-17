@@ -343,6 +343,7 @@ impl Table {
             EvaluationOptions {
                 trace: true,
                 max_depth: 10,
+                ..Default::default()
             },
         ));
         let graph_trace = match &traced {

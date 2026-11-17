@@ -58,6 +58,7 @@
 #![forbid(unsafe_code)]
 
 mod config;
+pub mod context;
 mod isolate;
 
 pub mod compiler;

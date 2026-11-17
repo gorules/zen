@@ -335,6 +335,7 @@ impl CompiledGraph {
             }
             DecisionNodeKind::DecisionNode { content } => {
                 let call = call::Call {
+                    node: &node.id,
                     key: &content.key,
                     extensions: &base.extensions,
                     max_depth: base.config.max_depth,
@@ -346,6 +347,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs: None,
                     trace,
+                    context: base.extensions.context.clone(),
                 };
                 call.node(row, &content.transform_attributes).await
             }
@@ -362,6 +364,7 @@ impl CompiledGraph {
                     nodes: base.nodes.clone(),
                     programs,
                     trace,
+                    context: base.extensions.context.clone(),
                 };
                 row.node(node, index, true).await
             }

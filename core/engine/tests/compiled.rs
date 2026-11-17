@@ -940,6 +940,7 @@ async fn single_row_latency() {
     let traced = EvaluationOptions {
         trace: true,
         max_depth: 10,
+        ..Default::default()
     };
     let mut columns: [Vec<f64>; 5] = Default::default();
     println!(

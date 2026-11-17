@@ -57,6 +57,7 @@ async fn main() {
             let opts = || EvaluationOptions {
                 trace,
                 max_depth: 10,
+                ..Default::default()
             };
             engine
                 .evaluate_with_opts(e.file.as_str(), input.clone(), opts())

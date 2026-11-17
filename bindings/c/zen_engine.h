@@ -30,7 +30,6 @@ typedef struct ZenEngineEvaluationOptions {
   const char *timezone;
   bool has_seed;
   uint64_t seed;
-  const char *locale;
 } ZenEngineEvaluationOptions;
 
 typedef struct ZenEngineStruct {

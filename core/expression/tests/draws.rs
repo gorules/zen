@@ -98,7 +98,6 @@ fn interleaved_contexts_keep_their_own_clock_and_stream() {
             now: parse_instant(now),
             timezone: zen_expression::context::parse_timezone(zone),
             seed: Some(seed),
-            locale: None,
         })
     };
     let pins = [

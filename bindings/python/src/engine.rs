@@ -31,7 +31,6 @@ pub struct PyZenEvaluateOptions {
     pub now: Option<zen_engine::context::Instant>,
     pub timezone: Option<zen_engine::context::Timezone>,
     pub seed: Option<u64>,
-    pub locale: Option<zen_engine::context::Locale>,
 }
 
 impl From<PyZenEvaluateOptions> for EvaluationOptions {
@@ -42,7 +41,6 @@ impl From<PyZenEvaluateOptions> for EvaluationOptions {
             now: value.now,
             timezone: value.timezone,
             seed: value.seed,
-            locale: value.locale,
         }
     }
 }
@@ -127,14 +125,6 @@ impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
             })
             .transpose()?;
         let seed = present(dict, "seed")?.map(|v| seed(&v)).transpose()?;
-        let locale = present(dict, "locale")?
-            .map(|v| {
-                let tag = v.extract::<String>()?;
-                zen_engine::context::parse_locale(&tag).ok_or_else(|| {
-                    invalid(format!("invalid locale '{tag}', expected a BCP 47 tag"))
-                })
-            })
-            .transpose()?;
 
         Ok(PyZenEvaluateOptions {
             trace,
@@ -142,7 +132,6 @@ impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
             now,
             timezone,
             seed,
-            locale,
         })
     }
 }

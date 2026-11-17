@@ -38,15 +38,15 @@ impl Debug for DecisionEngine {
 
 /// Options for one evaluation.
 ///
-/// `now`, `timezone`, `seed` and `locale` pin the evaluation context of the compiled engine:
-/// `d()`, `rand()` and the date helpers in expressions, and `Date`, `Math.random`, local time,
-/// `Intl` and `toLocale*` in function nodes read them instead of the host clock, zone and
+/// `now`, `timezone` and `seed` pin the evaluation context of the compiled engine:
+/// `d()`, `rand()` and the date helpers in expressions, and `Date`, `Math.random` and local time
+/// in function nodes read them instead of the host clock, zone and
 /// random source. Each one left `None` is resolved lazily: `now` from the host clock once per
-/// evaluation (once per batch), `timezone` from the host zone, `seed` at random on the first
-/// draw and `locale` to `en-US`. In a batch, row `i` draws from its own stream seeded with
+/// evaluation (once per batch), `timezone` from the host zone and `seed` at random on the first
+/// draw. In a batch, row `i` draws from its own stream seeded with
 /// `zen_engine::context::row_seed(seed, i)`, so it replays alone with that seed.
 ///
-/// The interpreted engine (`compiled: false`) ignores these four fields and keeps using the host
+/// The interpreted engine (`compiled: false`) ignores these three fields and keeps using the host
 /// clock, the host zone and an unseeded random source.
 ///
 /// Outbound HTTP from function nodes is not captured by the context, so replaying a graph that
@@ -61,8 +61,6 @@ pub struct EvaluationOptions {
     pub timezone: Option<zen_expression::context::Timezone>,
     /// Seed of the random streams.
     pub seed: Option<u64>,
-    /// BCP 47 locale for function nodes, `en-US` when `None`.
-    pub locale: Option<zen_expression::context::Locale>,
 }
 
 impl Default for EvaluationOptions {
@@ -73,7 +71,6 @@ impl Default for EvaluationOptions {
             now: None,
             timezone: None,
             seed: None,
-            locale: None,
         }
     }
 }
@@ -89,8 +86,6 @@ pub struct EvaluationSerializedOptions {
     pub timezone: Option<zen_expression::context::Timezone>,
     /// Seed of the random streams.
     pub seed: Option<u64>,
-    /// BCP 47 locale for function nodes, `en-US` when `None`.
-    pub locale: Option<zen_expression::context::Locale>,
 }
 
 impl Default for EvaluationSerializedOptions {
@@ -101,7 +96,6 @@ impl Default for EvaluationSerializedOptions {
             now: None,
             timezone: None,
             seed: None,
-            locale: None,
         }
     }
 }
@@ -141,7 +135,6 @@ impl EvaluationOptions {
             now: self.now,
             timezone: self.timezone,
             seed: self.seed,
-            locale: self.locale,
         }
     }
 }
@@ -158,7 +151,6 @@ impl EvaluationSerializedOptions {
             now: self.now,
             timezone: self.timezone,
             seed: self.seed,
-            locale: self.locale,
         }
     }
 }

@@ -7,8 +7,6 @@
   const offsetAt = globalThis.__zenOffset;
   const utcAt = globalThis.__zenUtc;
   const zoneOf = globalThis.__zenZone;
-  const localeOf = globalThis.__zenLocale;
-  const canonicalLocale = globalThis.__zenCanonicalLocale;
   const canonicalZone = globalThis.__zenCanonicalZone;
   const N = {};
   for (const name of [
@@ -158,28 +156,6 @@
     return Number.isNaN(t) ? 'Invalid Date' : timePart(fields(t));
   });
 
-  const STYLES = {
-    'en-US': { order: 'MDY', sep: '/', padDate: true, join: ', ', h12: true, padHour: true },
-    en: { order: 'MDY', sep: '/', padDate: true, join: ', ', h12: true, padHour: true },
-    'en-GB': { order: 'DMY', sep: '/', padDate: true, join: ', ', h12: false, padHour: true },
-    de: { order: 'DMY', sep: '.', padDate: false, join: ', ', h12: false, padHour: true },
-    fr: { order: 'DMY', sep: '/', padDate: true, join: ' ', h12: false, padHour: true },
-    es: { order: 'DMY', sep: '/', padDate: false, join: ', ', h12: false, padHour: false },
-    it: { order: 'DMY', sep: '/', padDate: false, join: ', ', h12: false, padHour: true },
-    nl: { order: 'DMY', sep: '-', padDate: false, join: ', ', h12: false, padHour: true },
-    pt: { order: 'DMY', sep: '/', padDate: true, join: ', ', h12: false, padHour: true },
-    ru: { order: 'DMY', sep: '.', padDate: true, join: ', ', h12: false, padHour: true },
-    sv: { order: 'YMD', sep: '-', padDate: true, join: ' ', h12: false, padHour: true },
-    ja: { order: 'YMD', sep: '/', padDate: false, join: ' ', h12: false, padHour: false },
-    zh: { order: 'YMD', sep: '/', padDate: false, join: ' ', h12: false, padHour: true },
-  };
-  const resolveLocale = (locales) => {
-    const tag = Array.isArray(locales) ? locales[0] : locales;
-    if (tag === undefined || tag === null) return localeOf();
-    const canonical = canonicalLocale(String(tag));
-    if (canonical === undefined || canonical === null) throw new RangeError('Incorrect locale information provided');
-    return canonical;
-  };
   const resolveZone = (options) => {
     const zone = options && options.timeZone;
     if (zone === undefined) return undefined;
@@ -187,63 +163,36 @@
     if (canonical === undefined || canonical === null) throw new RangeError('Invalid time zone specified: ' + zone);
     return canonical;
   };
-  const styleOf = (locale) => STYLES[locale] || STYLES[locale.split('-')[0]] || STYLES['en-US'];
-  const formatDate = (f, style) => {
-    const d = style.padDate ? pad(f.d) : String(f.d);
-    const m = style.padDate ? pad(f.mo + 1) : String(f.mo + 1);
-    const y = pad(f.y, 4);
-    switch (style.order) {
-      case 'DMY': return `${d}${style.sep}${m}${style.sep}${y}`;
-      case 'YMD': return `${y}${style.sep}${m}${style.sep}${d}`;
-      default: return `${m}${style.sep}${d}${style.sep}${y}`;
-    }
-  };
-  const formatTime = (f, style) => {
-    const h = style.h12 ? f.h % 12 || 12 : f.h;
-    const hour = style.padHour ? pad(h) : String(h);
-    const clock = `${hour}:${pad(f.mi)}:${pad(f.s)}`;
-    return style.h12 ? `${clock} ${f.h < 12 ? 'AM' : 'PM'}` : clock;
-  };
-  const localized = (t, locale, zone, kind) => {
+  const localized = (t, zone, kind) => {
     if (Number.isNaN(t)) return 'Invalid Date';
     const f = fields(t, zone);
-    const style = styleOf(locale);
-    if (kind === 'date') return formatDate(f, style);
-    if (kind === 'time') return formatTime(f, style);
-    return `${formatDate(f, style)}${style.join}${formatTime(f, style)}`;
+    const date = `${pad(f.mo + 1)}/${pad(f.d)}/${pad(f.y, 4)}`;
+    const clock = `${pad(f.h % 12 || 12)}:${pad(f.mi)}:${pad(f.s)} ${f.h < 12 ? 'AM' : 'PM'}`;
+    if (kind === 'date') return date;
+    if (kind === 'time') return clock;
+    return `${date}, ${clock}`;
   };
   for (const [name, kind] of [['toLocaleString', 'both'], ['toLocaleDateString', 'date'], ['toLocaleTimeString', 'time']]) {
     define(proto, name, function (locales, options) {
-      return localized(time(this), resolveLocale(locales), resolveZone(options), kind);
+      return localized(time(this), resolveZone(options), kind);
     });
   }
 
   if (typeof globalThis.Intl === 'undefined') {
     function DateTimeFormat(locales, options) {
       if (!new.target) return new DateTimeFormat(locales, options);
-      define(this, '__locale', resolveLocale(locales));
       define(this, '__zone', resolveZone(options));
     }
     define(DateTimeFormat.prototype, 'resolvedOptions', function () {
       return {
-        locale: this.__locale,
+        locale: 'en-US',
         calendar: 'gregory',
         numberingSystem: 'latn',
         timeZone: this.__zone === undefined ? zoneOf() : this.__zone,
       };
     });
-    define(DateTimeFormat.prototype, 'format', function (date) {
-      const t = date === undefined ? now() : valueOf(date);
-      return localized(t, this.__locale, this.__zone, 'date');
-    });
-    define(DateTimeFormat, 'supportedLocalesOf', (locales) =>
-      (Array.isArray(locales) ? locales : locales === undefined ? [] : [locales])
-        .map((tag) => canonicalLocale(String(tag)))
-        .filter((tag) => tag !== undefined && tag !== null));
     const Intl = {};
     define(Intl, 'DateTimeFormat', DateTimeFormat);
-    define(Intl, 'getCanonicalLocales', (locales) =>
-      (Array.isArray(locales) ? locales : locales === undefined ? [] : [locales]).map((tag) => resolveLocale(tag)));
     define(globalThis, 'Intl', Intl);
   }
   globalThis.__zenPinned = true;

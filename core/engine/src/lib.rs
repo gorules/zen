@@ -125,8 +125,8 @@
 mod analysis;
 pub mod context {
     pub use zen_expression::context::{
-        clock_reads, instant_from_millis, parse_instant, parse_locale, parse_timezone, row_seed,
-        unrowed_draws, Instant, Locale, Timezone,
+        clock_reads, instant_from_millis, parse_instant, parse_timezone, row_seed, unrowed_draws,
+        Instant, Timezone,
     };
 }
 mod compiled;

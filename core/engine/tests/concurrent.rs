@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use zen_engine::context::{parse_instant, parse_locale, parse_timezone};
+use zen_engine::context::{parse_instant, parse_timezone};
 use zen_engine::loader::{DecisionLoader, LoaderResponse, MemoryLoader};
 use zen_engine::model::DecisionContent;
 use zen_engine::{DecisionEngine, EvaluationOptions, Variable};
@@ -63,7 +63,7 @@ fn main_graph() -> Value {
                 "key": "child", "transformAttributes": {"executionMode": "single", "passThrough": true}
             }},
             {"id": "fn", "name": "fn", "type": "functionNode", "content": {
-                "source": "import zen from 'zen';\nexport const handler = async (input) => {\n  const before = Math.random();\n  const nested = await zen.evaluate('child', input);\n  const local = new Date().toString();\n  const formatted = new Date().toLocaleString();\n  const intl = Intl.DateTimeFormat().resolvedOptions();\n  return { ...input, before, nested: nested.result, now: Date.now(), after: Math.random(), local, formatted, jsZone: intl.timeZone, jsLocale: intl.locale };\n};"
+                "source": "import zen from 'zen';\nexport const handler = async (input) => {\n  const before = Math.random();\n  const nested = await zen.evaluate('child', input);\n  const local = new Date().toString();\n  const formatted = new Date().toLocaleString();\n  const intl = Intl.DateTimeFormat().resolvedOptions();\n  return { ...input, before, nested: nested.result, now: Date.now(), after: Math.random(), local, formatted, jsZone: intl.timeZone, };\n};"
             }},
             {"id": "out", "name": "out", "type": "outputNode"}
         ],
@@ -106,7 +106,6 @@ struct Pin3 {
     now: &'static str,
     zone: &'static str,
     seed: u64,
-    locale: &'static str,
     local: &'static str,
     formatted: &'static str,
 }
@@ -115,16 +114,14 @@ const A: Pin3 = Pin3 {
     now: "2026-11-04T09:30:00.125Z",
     zone: "Europe/Berlin",
     seed: 11,
-    locale: "de-DE",
     local: "Wed Nov 04 2026 10:30:00 GMT+0100",
-    formatted: "4.11.2026, 10:30:00",
+    formatted: "11/04/2026, 10:30:00 AM",
 };
 
 const B: Pin3 = Pin3 {
     now: "2031-02-17T23:15:42.500Z",
     zone: "America/New_York",
     seed: 97,
-    locale: "en-US",
     local: "Mon Feb 17 2031 18:15:42 GMT-0500",
     formatted: "02/17/2031, 06:15:42 PM",
 };
@@ -135,7 +132,6 @@ fn options(pin: Pin3, trace: bool) -> EvaluationOptions {
         now: parse_instant(pin.now),
         timezone: parse_timezone(pin.zone),
         seed: Some(pin.seed),
-        locale: parse_locale(pin.locale),
         ..Default::default()
     }
 }
@@ -194,7 +190,6 @@ fn sees_its_own_clock(value: &Value, pin: Pin3) {
     assert_eq!(value["cz"], json!(pin.zone), "{value}");
     assert_eq!(value["nested"]["cz"], json!(pin.zone), "{value}");
     assert_eq!(value["jsZone"], json!(pin.zone), "{value}");
-    assert_eq!(value["jsLocale"], json!(pin.locale), "{value}");
     assert_eq!(value["local"], json!(pin.local), "{value}");
     assert_eq!(value["formatted"], json!(pin.formatted), "{value}");
 }

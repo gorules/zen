@@ -3,8 +3,8 @@ use rquickjs::prelude::Func;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zen_expression::context::{
-    location, parse_locale, parse_timezone, system_now, system_timezone, EvaluationContext, Locale,
-    Pinned, Site, Timezone,
+    location, parse_timezone, system_now, system_timezone, EvaluationContext, Pinned, Site,
+    Timezone,
 };
 
 pub(crate) fn single(pinned: Pinned) -> EvaluationContext {
@@ -113,13 +113,6 @@ impl JsSlot {
         }
     }
 
-    fn locale(&self) -> Locale {
-        match self.0.borrow().as_ref() {
-            Some(context) => context.locale(),
-            None => Locale::default(),
-        }
-    }
-
     fn zone(&self, name: Option<String>) -> Option<Timezone> {
         match name {
             Some(name) => parse_timezone(&name),
@@ -178,12 +171,6 @@ impl JsSlot {
         globals.set(
             "__zenZone",
             Func::from(move || slot.timezone().name().to_string()),
-        )?;
-        let slot = self.clone();
-        globals.set("__zenLocale", Func::from(move || slot.locale().to_string()))?;
-        globals.set(
-            "__zenCanonicalLocale",
-            Func::from(|tag: String| parse_locale(&tag).map(|locale| locale.to_string())),
         )?;
         globals.set(
             "__zenCanonicalZone",

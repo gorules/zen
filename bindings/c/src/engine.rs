@@ -61,7 +61,6 @@ pub struct ZenEngineEvaluationOptions {
     timezone: *const c_char,
     has_seed: bool,
     seed: u64,
-    locale: *const c_char,
 }
 
 impl Default for ZenEngineEvaluationOptions {
@@ -73,21 +72,19 @@ impl Default for ZenEngineEvaluationOptions {
             timezone: std::ptr::null(),
             has_seed: false,
             seed: 0,
-            locale: std::ptr::null(),
         }
     }
 }
 
 impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
     fn into(self) -> EvaluationOptions {
-        use zen_engine::context::{parse_instant, parse_locale, parse_timezone};
+        use zen_engine::context::{parse_instant, parse_timezone};
         EvaluationOptions {
             trace: self.trace,
             max_depth: self.max_depth,
             now: safe_str_from_ptr(self.now).and_then(parse_instant),
             timezone: safe_str_from_ptr(self.timezone).and_then(parse_timezone),
             seed: self.has_seed.then_some(self.seed),
-            locale: safe_str_from_ptr(self.locale).and_then(parse_locale),
         }
     }
 }

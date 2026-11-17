@@ -92,7 +92,6 @@ pub struct ZenEvaluateOptions {
     pub timezone: Option<String>,
     #[napi(ts_type = "number | string")]
     pub seed: Option<Either<f64, String>>,
-    pub locale: Option<String>,
 }
 
 impl Default for ZenEvaluateOptions {
@@ -103,7 +102,6 @@ impl Default for ZenEvaluateOptions {
             now: None,
             timezone: None,
             seed: None,
-            locale: None,
         }
     }
 }
@@ -114,9 +112,7 @@ impl TryFrom<ZenEvaluateOptions> for EvaluationSerializedOptions {
     type Error = napi::Error;
 
     fn try_from(value: ZenEvaluateOptions) -> Result<Self, Self::Error> {
-        use zen_engine::context::{
-            instant_from_millis, parse_instant, parse_locale, parse_timezone,
-        };
+        use zen_engine::context::{instant_from_millis, parse_instant, parse_timezone};
         let now = match value.now {
             None => None,
             Some(Either::A(text)) => Some(
@@ -153,20 +149,12 @@ impl TryFrom<ZenEvaluateOptions> for EvaluationSerializedOptions {
                 anyhow!("invalid seed '{text}', expected an unsigned 64-bit integer")
             })?),
         };
-        let locale = match value.locale {
-            None => None,
-            Some(tag) => Some(
-                parse_locale(&tag)
-                    .ok_or_else(|| anyhow!("invalid locale '{tag}', expected a BCP 47 tag"))?,
-            ),
-        };
         Ok(Self {
             max_depth: value.max_depth.unwrap_or(5),
             trace: value.trace.unwrap_or_default().0,
             now,
             timezone,
             seed,
-            locale,
         })
     }
 }
@@ -178,7 +166,6 @@ pub(crate) fn unserialized(options: &EvaluationSerializedOptions) -> EvaluationO
         now: options.now,
         timezone: options.timezone,
         seed: options.seed,
-        locale: options.locale,
     }
 }
 

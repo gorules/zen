@@ -9,7 +9,6 @@ class DecisionEvaluateOptions(TypedDict, total=False):
     now: Union[int, str, datetime]
     timezone: str
     seed: Union[int, str]
-    locale: str
 
 
 class EvaluateResponse(TypedDict):

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -188,86 +188,11 @@ pub fn unrowed_draws() -> u64 {
     UNROWED.load(Ordering::Relaxed)
 }
 
-const LOCALE_CAPACITY: usize = 64;
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Locale {
-    len: u8,
-    bytes: [u8; LOCALE_CAPACITY],
-}
-
-impl Locale {
-    pub const DEFAULT: Locale = Locale::constant("en-US");
-
-    const fn constant(tag: &str) -> Self {
-        let mut bytes = [0u8; LOCALE_CAPACITY];
-        let source = tag.as_bytes();
-        let mut i = 0;
-        while i < source.len() {
-            bytes[i] = source[i];
-            i += 1;
-        }
-        Self {
-            len: source.len() as u8,
-            bytes,
-        }
-    }
-
-    pub fn parse(tag: &str) -> Option<Self> {
-        let canonical = icu_locale_core::Locale::try_from_str(tag).ok()?.to_string();
-        let source = canonical.as_bytes();
-        if source.is_empty() || source.len() > LOCALE_CAPACITY || !source.is_ascii() {
-            return None;
-        }
-        let mut bytes = [0u8; LOCALE_CAPACITY];
-        bytes[..source.len()].copy_from_slice(source);
-        Some(Self {
-            len: source.len() as u8,
-            bytes,
-        })
-    }
-
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.bytes[..self.len as usize]).unwrap_or("en-US")
-    }
-}
-
-impl Default for Locale {
-    fn default() -> Self {
-        Self::DEFAULT
-    }
-}
-
-impl Debug for Locale {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self.as_str(), f)
-    }
-}
-
-impl Display for Locale {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for Locale {
-    type Err = String;
-
-    fn from_str(tag: &str) -> Result<Self, Self::Err> {
-        Self::parse(tag).ok_or_else(|| format!("invalid locale {tag}, expected a BCP 47 tag"))
-    }
-}
-
-pub fn parse_locale(tag: &str) -> Option<Locale> {
-    Locale::parse(tag)
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Pinned {
     pub now: Option<Instant>,
     pub timezone: Option<Tz>,
     pub seed: Option<u64>,
-    pub locale: Option<Locale>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -425,7 +350,6 @@ impl Streams {
 struct Shared {
     now: OnceCell<Instant>,
     timezone: Tz,
-    locale: Locale,
     batch: bool,
     streams: RefCell<Streams>,
 }
@@ -442,7 +366,6 @@ impl Shared {
         Self {
             now: pinned.now.map_or_else(OnceCell::new, OnceCell::from),
             timezone: pinned.timezone.unwrap_or_else(system_timezone),
-            locale: pinned.locale.unwrap_or_default(),
             batch,
             streams: RefCell::new(streams),
         }
@@ -606,10 +529,6 @@ impl EvaluationContext {
 
     pub fn timezone(&self) -> Tz {
         self.shared.timezone
-    }
-
-    pub fn locale(&self) -> Locale {
-        self.shared.locale
     }
 
     pub fn row(&self, row: usize) -> RowContext<'_> {
@@ -786,10 +705,6 @@ impl<'a> RowContext<'a> {
 
     pub fn timezone(&self) -> Tz {
         self.context.timezone()
-    }
-
-    pub fn locale(&self) -> Locale {
-        self.context.locale()
     }
 
     pub fn next_u64(&self) -> u64 {
@@ -1071,20 +986,5 @@ mod tests {
             .filter(|v| *v >= 1 << 62)
             .count();
         assert!((500..833).contains(&wide), "{wide}");
-    }
-
-    #[test]
-    fn locales_are_canonical() {
-        assert_eq!(EvaluationContext::default().locale().as_str(), "en-US");
-        assert_eq!(
-            Locale::parse("de-ch").map(|l| l.to_string()),
-            Some("de-CH".into())
-        );
-        assert_eq!(
-            Locale::parse("zh-hant-tw").map(|l| l.to_string()),
-            Some("zh-Hant-TW".into())
-        );
-        assert!(Locale::parse("not a locale").is_none());
-        assert!(Locale::parse("").is_none());
     }
 }

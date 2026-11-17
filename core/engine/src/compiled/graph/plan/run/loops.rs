@@ -92,7 +92,16 @@ impl<'a> Run<'_, 'a> {
             true => self.host.extensions.context.items(&owners),
             false => self.host.extensions.context.clone(),
         };
-        let produced = CompiledGraph::items(&mut self.runner, &context, step, body, &items, &[]);
+        let probe = self.probe();
+        let produced = CompiledGraph::items(
+            &mut self.runner,
+            &context,
+            probe.as_ref(),
+            step,
+            body,
+            &items,
+            &[],
+        );
         let mut values = vec![Variable::Null; rows];
         for (row, start, end) in spans {
             let mut collected = Vec::with_capacity(end - start);
@@ -245,9 +254,11 @@ impl<'a> Run<'_, 'a> {
         }
         let items: Rc<[usize]> = (0..count).collect();
         let data = Data::record(&items, Layer::new(keys.into(), leaves, Some(present)), None);
+        let probe = self.probe();
         let (output, failures) = CompiledGraph::item_run(
             &mut self.runner,
             &self.host.extensions.context,
+            probe.as_ref(),
             step,
             body,
             &data,

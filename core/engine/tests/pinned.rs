@@ -3,6 +3,7 @@ use std::sync::Arc;
 use zen_engine::columns::{Column, Columns, Values};
 use zen_engine::context::{clock_reads, parse_instant, parse_timezone, row_seed};
 use zen_engine::model::DecisionContent;
+use zen_engine::trace::TraceFormat;
 use zen_engine::{Decision, DecisionEngine, EvaluationOptions, Variable};
 
 fn block<F: std::future::Future>(f: F) -> F::Output {
@@ -59,7 +60,7 @@ fn input(x: i64) -> Variable {
     Variable::from(json!({"x": x}))
 }
 
-fn options(trace: bool, now: &str, seed: u64) -> EvaluationOptions {
+fn options(trace: TraceFormat, now: &str, seed: u64) -> EvaluationOptions {
     EvaluationOptions {
         trace,
         now: parse_instant(now),
@@ -92,21 +93,26 @@ const NOW: &str = "2026-11-04T09:30:00.125Z";
 
 #[test]
 fn supplied_now_seed_and_zone_reproduce_results_and_traces() {
-    let d = expressions();
-    let (a, da) = evaluated(&d, 4, options(true, NOW, 99));
-    let (b, db) = evaluated(&d, 4, options(true, NOW, 99));
-    assert_eq!(a, b);
-    assert_eq!(untimed(da.clone().unwrap()), untimed(db.unwrap()));
-    assert_eq!(da.unwrap()["calc"]["traceData"]["t"]["result"], a["t"]);
-    assert_eq!(a["t"], json!(1_793_784_600_125i64));
-    assert_eq!(a["today"], json!(true));
-    assert_eq!(a["zone"], json!("Europe/Berlin"));
-    assert_eq!(a["parsed"], json!(1_767_344_400_000i64));
-    assert_ne!(a["r"], a["s"]);
-    let (c, _) = evaluated(&d, 4, options(false, NOW, 99));
-    assert_eq!(a, c);
-    let (other, _) = evaluated(&d, 4, options(false, NOW, 100));
-    assert_ne!((&a["r"], &a["s"]), (&other["r"], &other["s"]));
+    {
+        let d = expressions();
+        let (a, da) = evaluated(&d, 4, options(TraceFormat::V1, NOW, 99));
+        let (b, db) = evaluated(&d, 4, options(TraceFormat::V1, NOW, 99));
+        assert_eq!(a, b);
+        assert_eq!(untimed(da.clone().unwrap()), untimed(db.unwrap()));
+        let doc = da.unwrap();
+        assert_eq!(doc["evaluatedAt"], json!(NOW));
+        assert_eq!(doc["timezone"], json!("Europe/Berlin"));
+        assert_eq!(doc["seed"], json!(99));
+        assert_eq!(a["t"], json!(1_793_784_600_125i64));
+        assert_eq!(a["today"], json!(true));
+        assert_eq!(a["zone"], json!("Europe/Berlin"));
+        assert_eq!(a["parsed"], json!(1_767_344_400_000i64));
+        assert_ne!(a["r"], a["s"]);
+        let (c, _) = evaluated(&d, 4, options(TraceFormat::Off, NOW, 99));
+        assert_eq!(a, c);
+        let (other, _) = evaluated(&d, 4, options(TraceFormat::Off, NOW, 100));
+        assert_ne!((&a["r"], &a["s"]), (&other["r"], &other["s"]));
+    }
 }
 
 fn real_clock(millis: &Value) -> bool {
@@ -129,7 +135,7 @@ fn zoned_function() -> Decision {
 fn zoned(zone: &str) -> EvaluationOptions {
     EvaluationOptions {
         timezone: parse_timezone(zone),
-        ..options(false, NOW, 3)
+        ..options(TraceFormat::Off, NOW, 3)
     }
 }
 
@@ -201,12 +207,14 @@ fn the_interpreted_engine_ignores_pinning() {
     }));
     let zone = zoned_function().interpreted();
     let d = expressions().interpreted();
-    for trace in [true, false] {
+    for trace in [TraceFormat::V1, TraceFormat::Legacy, TraceFormat::Off] {
         let (a, doc) = evaluated(&d, 4, options(trace, NOW, 99));
         let (b, _) = evaluated(&d, 4, options(trace, NOW, 99));
         assert!(real_clock(&a["t"]), "{a}");
         assert_ne!((&a["r"], &a["s"]), (&b["r"], &b["s"]));
         if let Some(doc) = doc {
+            assert!(doc.get("version").is_none(), "{doc}");
+            assert!(doc.get("evaluatedAt").is_none());
             assert_eq!(doc["calc"]["traceData"]["t"]["result"], a["t"]);
         }
         for f in [&v2, &v1] {
@@ -234,11 +242,12 @@ fn the_interpreted_engine_ignores_pinning() {
             r.trace.map(|t| serde_json::to_value(&t).unwrap()),
         )
     };
-    let (a, doc) = run(options(true, NOW, 12));
-    let (b, _) = run(options(true, NOW, 12));
+    let (a, doc) = run(options(TraceFormat::V1, NOW, 12));
+    let (b, _) = run(options(TraceFormat::V1, NOW, 12));
     assert!(real_clock(&a["customer"]["at"]), "{a}");
     assert_ne!(a["customer"]["lucky"], b["customer"]["lucky"]);
     let doc = doc.unwrap();
+    assert!(doc.get("version").is_none(), "{doc}");
     assert!(doc["properties"].is_object());
     assert!(doc["executions"].is_array());
 }
@@ -259,30 +268,33 @@ fn an_unpinned_evaluation_uses_the_host_clock_and_a_fresh_seed() {
 #[test]
 fn function_nodes_see_the_pinned_clock_and_stream() {
     let d = functions();
-    let (a, _) = evaluated(&d, 1, options(true, NOW, 5));
+    let (a, doc) = evaluated(&d, 1, options(TraceFormat::V1, NOW, 5));
     assert_eq!(a["now"], json!(1_793_784_600_125i64));
     assert_eq!(a["iso"], json!(NOW));
     assert_eq!(a["same"], json!(true));
     assert_ne!(a["r"], a["q"]);
-    let (b, _) = evaluated(&d, 1, options(false, NOW, 5));
+    let (b, _) = evaluated(&d, 1, options(TraceFormat::Off, NOW, 5));
     assert_eq!(a, b);
+    assert_eq!(doc.unwrap()["seed"], json!(5));
 }
 
 #[test]
 fn batch_rows_replay_alone() {
     let d = expressions();
     let inputs: Vec<Variable> = (0..6).map(input).collect();
-    for trace in [true, false] {
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
         let batch = block(d.evaluate_batch(&inputs, options(trace, NOW, 31)));
         let mut seen = Vec::new();
         for (row, result) in batch.into_iter().enumerate() {
             let result = result.unwrap();
             let got = serde_json::to_value(&result.result).unwrap();
             let seed = row_seed(31, row);
-            let (alone, doc) = evaluated(&d, row as i64, options(true, NOW, seed));
+            let (alone, doc) = evaluated(&d, row as i64, options(TraceFormat::V1, NOW, seed));
             assert_eq!(got, alone, "row {row}");
             if let Some(t) = result.trace {
                 let t = serde_json::to_value(&t).unwrap();
+                assert_eq!(t["seed"], json!(seed));
+                assert_eq!(t["evaluatedAt"], json!(NOW));
                 assert_eq!(untimed(t), untimed(doc.unwrap()));
             }
             seen.push(got["r"].clone());
@@ -298,11 +310,18 @@ fn columnar_rows_replay_alone() {
     let xs: Vec<rust_decimal::Decimal> = (0..6).map(rust_decimal::Decimal::from).collect();
     let bits = vec![u64::MAX];
     let columns = Columns::new(6).column("x", Column::with_validity(Values::Dec(&xs), &bits, 0));
-    let output = block(d.evaluate_columns(&columns, options(false, NOW, 8)));
-    for row in 0..6 {
-        let got = serde_json::to_value(output.row(row)).unwrap();
-        let (alone, _) = evaluated(&d, row as i64, options(false, NOW, row_seed(8, row)));
-        assert_eq!(got, alone, "row {row}");
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
+        let output = block(d.evaluate_columns(&columns, options(trace, NOW, 8)));
+        for row in 0..6 {
+            let got = serde_json::to_value(output.row(row)).unwrap();
+            let seed = row_seed(8, row);
+            let (alone, doc) = evaluated(&d, row as i64, options(TraceFormat::V1, NOW, seed));
+            assert_eq!(got, alone, "row {row}");
+            if trace == TraceFormat::V1 {
+                let t: Value = serde_json::from_str(&output.trace_json(row).unwrap()).unwrap();
+                assert_eq!(untimed(t), untimed(doc.unwrap()));
+            }
+        }
     }
 }
 
@@ -353,7 +372,7 @@ fn the_clock_is_read_once_per_evaluation_and_batch() {
     let _ = evaluated(&plain, 1, unpinned);
     assert_eq!(clock_reads() - before, 0);
     let before = clock_reads();
-    let _ = block(d.evaluate_batch(&inputs, options(false, NOW, 1)));
+    let _ = block(d.evaluate_batch(&inputs, options(TraceFormat::Off, NOW, 1)));
     assert_eq!(clock_reads() - before, 0);
 }
 
@@ -395,23 +414,24 @@ fn policies_pin_the_clock_and_stream() {
             r.trace.map(|t| serde_json::to_value(&t).unwrap()),
         )
     };
-    let (a, doc) = run(options(true, NOW, 12));
-    let (b, again) = run(options(true, NOW, 12));
-    let (c, _) = run(options(false, NOW, 12));
+    let (a, doc) = run(options(TraceFormat::V1, NOW, 12));
+    let (b, _) = run(options(TraceFormat::Off, NOW, 12));
     assert_eq!(a, b);
-    assert_eq!(a, c);
-    assert_eq!(untimed(doc.unwrap()), untimed(again.unwrap()));
     assert_eq!(a["customer"]["at"], json!(1_793_784_600_125i64));
+    let doc = doc.unwrap();
+    assert_eq!(doc["kind"], json!("policy"));
+    assert_eq!(doc["evaluatedAt"], json!(NOW));
+    assert_eq!(doc["seed"], json!(12));
     let inputs: Vec<Variable> = (0..4)
         .map(|age| Variable::from(json!({"customer": {"age": age}})))
         .collect();
-    let batch = block(engine.evaluate_batch("policy", &inputs, options(false, NOW, 12)));
+    let batch = block(engine.evaluate_batch("policy", &inputs, options(TraceFormat::Off, NOW, 12)));
     for (row, result) in batch.into_iter().enumerate() {
         let got = serde_json::to_value(result.unwrap().result).unwrap();
         let r = block(engine.evaluate_with_opts(
             "policy",
             inputs[row].clone(),
-            options(false, NOW, row_seed(12, row)),
+            options(TraceFormat::Off, NOW, row_seed(12, row)),
         ))
         .unwrap();
         assert_eq!(got, serde_json::to_value(r.result).unwrap(), "row {row}");
@@ -425,12 +445,181 @@ fn v1_function_nodes_see_the_pinned_clock_and_stream() {
             "id": "calc", "name": "calc", "type": "functionNode",
             "content": "const handler = (input) => ({ now: Date.now(), global: now, iso: new Date().toISOString(), r: Math.random(), q: Math.random() })"
         }));
-        let (a, _) = evaluated(&d, 1, options(true, NOW, 6));
+        let (a, doc) = evaluated(&d, 1, options(TraceFormat::V1, NOW, 6));
         assert_eq!(a["now"], json!(1_793_784_600_125i64));
         assert_eq!(a["global"], json!(1_793_784_600_125i64));
         assert_eq!(a["iso"], json!(NOW));
         assert_ne!(a["r"], a["q"]);
-        let (b, _) = evaluated(&d, 1, options(false, NOW, 6));
+        let (b, _) = evaluated(&d, 1, options(TraceFormat::Off, NOW, 6));
         assert_eq!(a, b);
+        assert_eq!(doc.unwrap()["seed"], json!(6));
+    }
+}
+
+#[test]
+fn an_unpinned_evaluation_replays_from_its_trace() {
+    for d in [expressions(), functions()] {
+        let (a, doc) = evaluated(
+            &d,
+            7,
+            EvaluationOptions {
+                trace: TraceFormat::V1,
+                ..Default::default()
+            },
+        );
+        let doc = doc.unwrap();
+        let at = doc["evaluatedAt"].as_str().unwrap();
+        let zone = doc["timezone"].as_str().unwrap();
+        let seed = doc["seed"]
+            .as_u64()
+            .expect("a drawing evaluation writes its seed");
+        let replay = EvaluationOptions {
+            trace: TraceFormat::V1,
+            now: parse_instant(at),
+            timezone: parse_timezone(zone),
+            seed: Some(seed),
+            ..Default::default()
+        };
+        let (b, again) = evaluated(&d, 7, replay);
+        assert_eq!(a, b);
+        assert_eq!(untimed(doc), untimed(again.unwrap()));
+    }
+}
+
+#[test]
+fn a_plain_evaluation_writes_no_seed() {
+    let d = graph(json!({
+        "id": "calc", "name": "calc", "type": "expressionNode",
+        "content": {"expressions": [{"id": "a", "key": "a", "value": "x * 2"}]}
+    }));
+    let (_, doc) = evaluated(
+        &d,
+        1,
+        EvaluationOptions {
+            trace: TraceFormat::V1,
+            ..Default::default()
+        },
+    );
+    let doc = doc.unwrap();
+    assert!(doc["evaluatedAt"].is_string());
+    assert!(doc["timezone"].is_string());
+    assert!(doc.get("seed").is_none());
+}
+
+#[test]
+fn repeated_keys_are_stored_as_rows() {
+    let d = expressions();
+    let (_, doc) = evaluated(&d, 4, options(TraceFormat::V1, NOW, 1));
+    let doc = doc.unwrap();
+    assert!(doc["requires"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("result-rows")));
+    let calc = doc["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["id"] == "calc")
+        .unwrap();
+    let rows = calc["results"].as_array().unwrap();
+    assert_eq!(rows[0], json!({"id": "x0", "key": "v", "value": 1}));
+    assert_eq!(rows[1], json!({"id": "x1", "key": "v", "value": 5}));
+    assert_eq!(rows.len(), 8);
+    let r = block(d.evaluate_with_opts(input(4), options(TraceFormat::Legacy, NOW, 1))).unwrap();
+    let legacy = serde_json::to_value(r.trace.unwrap()).unwrap();
+    assert_eq!(legacy["calc"]["traceData"]["v"], json!({"result": 5}));
+}
+
+#[test]
+fn batches_without_draws_share_one_clock() {
+    let d = graph(json!({
+        "id": "calc", "name": "calc", "type": "expressionNode",
+        "content": {"expressions": [
+            {"id": "a", "key": "a", "value": "x * 2"},
+            {"id": "b", "key": "t", "value": "d().timestamp()"}
+        ]}
+    }));
+    let inputs: Vec<Variable> = (0..40).map(input).collect();
+    let batch = block(d.evaluate_batch(
+        &inputs,
+        EvaluationOptions {
+            trace: TraceFormat::V1,
+            ..Default::default()
+        },
+    ));
+    let docs: Vec<Value> = batch
+        .into_iter()
+        .map(|r| serde_json::to_value(r.unwrap().trace.unwrap()).unwrap())
+        .collect();
+    let at = &docs[0]["evaluatedAt"];
+    assert!(at.is_string());
+    assert!(docs
+        .iter()
+        .all(|d| &d["evaluatedAt"] == at && d.get("seed").is_none()));
+    let replay = options(TraceFormat::V1, at.as_str().unwrap(), 0);
+    let (first, doc) = evaluated(
+        &d,
+        0,
+        EvaluationOptions {
+            seed: None,
+            timezone: parse_timezone(docs[0]["timezone"].as_str().unwrap()),
+            ..replay
+        },
+    );
+    assert_eq!(untimed(docs[0].clone()), untimed(doc.unwrap()));
+    assert_eq!(first["a"], json!(0));
+}
+
+#[test]
+fn repeated_keys_are_rows_in_every_compiled_path() {
+    let single = graph(json!({
+        "id": "calc", "name": "calc", "type": "expressionNode",
+        "content": {"expressions": [
+            {"id": "a0", "key": "a", "value": "x * 2"},
+            {"id": "a1", "key": "a", "value": "$.a + 1"},
+            {"id": "b0", "key": "b", "value": "x"}
+        ]}
+    }));
+    let looped = graph(json!({
+        "id": "calc", "name": "calc", "type": "expressionNode",
+        "content": {
+            "inputField": "items", "executionMode": "loop",
+            "expressions": [
+                {"id": "a0", "key": "a", "value": "n * 2"},
+                {"id": "a1", "key": "a", "value": "$.a + 1"}
+            ]
+        }
+    }));
+    let at = options(TraceFormat::V1, NOW, 3);
+    for (d, looping) in [(single, false), (looped, true)] {
+        let inputs: Vec<Variable> = (0..20)
+            .map(|x| Variable::from(json!({"x": x, "items": [{"n": x}, {"n": x + 1}]})))
+            .collect();
+        let batch = block(d.evaluate_batch(&inputs, at));
+        let xs: Vec<rust_decimal::Decimal> = (0..20).map(rust_decimal::Decimal::from).collect();
+        let bits = vec![u64::MAX];
+        let columns =
+            Columns::new(20).column("x", Column::with_validity(Values::Dec(&xs), &bits, 0));
+        let columnar = (!looping).then(|| block(d.evaluate_columns(&columns, at)));
+        for (row, result) in batch.into_iter().enumerate() {
+            let alone = block(d.evaluate_with_opts(inputs[row].clone(), at)).unwrap();
+            let alone = serde_json::to_value(alone.trace.unwrap()).unwrap();
+            let calc = alone["nodes"][1]["results"].clone();
+            let rows = match looping {
+                false => calc.clone(),
+                true => calc[0].clone(),
+            };
+            assert_eq!(rows[0]["id"], json!("a0"), "{alone}");
+            assert_eq!(
+                rows[1]["value"],
+                json!(rows[0]["value"].as_i64().unwrap() + 1)
+            );
+            let batched = serde_json::to_value(result.unwrap().trace.unwrap()).unwrap();
+            assert_eq!(untimed(batched), untimed(alone.clone()), "batch row {row}");
+            if let Some(output) = &columnar {
+                let t: Value = serde_json::from_str(&output.trace_json(row).unwrap()).unwrap();
+                assert_eq!(untimed(t), untimed(alone), "columnar row {row}");
+            }
+        }
     }
 }

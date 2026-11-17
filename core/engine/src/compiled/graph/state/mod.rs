@@ -1,6 +1,7 @@
 mod exec;
 mod host;
 mod loops;
+mod trace;
 
 use crate::compiled::bound::{Bound, Scopes};
 use crate::compiled::content::Content;
@@ -13,6 +14,8 @@ use crate::compiled::host::graph::walker::GraphWalker;
 use crate::compiled::host::NodeError;
 use crate::compiled::host::NodeHandlerExtensions;
 use crate::compiled::leaf::{Array, Leaf};
+use crate::compiled::trace::batch::Traces;
+use crate::compiled::trace::record::Probe;
 use crate::decision_graph::cleaner::VariableCleaner;
 use crate::{EvaluationError, ZEN_CONFIG};
 use petgraph::prelude::NodeIndex;
@@ -39,6 +42,7 @@ pub(crate) struct State<'a> {
     pub(in crate::compiled::graph) results: Vec<Option<Variable>>,
     nesting: Nesting<'a>,
     with_nodes: bool,
+    pub(in crate::compiled::graph) traces: Option<Traces<'a>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -46,6 +50,7 @@ pub(crate) struct Nesting<'a> {
     pub(in crate::compiled::graph) parents: Option<&'a [Option<Variable>]>,
     pub(in crate::compiled::graph) iteration: u8,
     pub(in crate::compiled::graph) completed: Option<&'a Completed>,
+    pub(in crate::compiled::graph) traced: bool,
 }
 
 #[derive(Default)]
@@ -233,6 +238,9 @@ impl CompiledGraph {
             max_depth,
         } = host;
         let count = inputs.len();
+        if nesting.iteration == 0 && nesting.parents.is_none() {
+            crate::compiled::trace::count_run();
+        }
         let mut state = State {
             context: extensions.context.clone(),
             nodes: vec![Vec::new(); self.steps.len()],
@@ -240,6 +248,9 @@ impl CompiledGraph {
             results: vec![None; count],
             with_nodes: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
             nesting,
+            traces: nesting
+                .traced
+                .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
         if nesting.iteration >= max_depth {
             state
@@ -298,7 +309,11 @@ impl CompiledGraph {
                     visible,
                     ..
                 } => {
+                    let start = std::time::Instant::now();
                     let groups = self.switch(*node, parents, visible, &rows, &state);
+                    if state.traces.is_some() {
+                        self.trace_switch(*node, parents, &rows, &groups, start, &mut state);
+                    }
                     for (outcome, members) in groups.into_iter().rev() {
                         let members: Rc<[usize]> = match members.len() == rows.len() {
                             true => rows.clone(),
@@ -380,8 +395,10 @@ impl CompiledGraph {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn bound<'a, R>(
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         step: &Step,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
@@ -418,7 +435,7 @@ impl CompiledGraph {
                 .enumerate()
                 .map(|(row, v)| with_nodes(Scope::new(v.clone()), row))
                 .collect();
-            return f(&Bound::plain(scopes, context));
+            return f(&Bound::plain(scopes, context).probed(probe));
         }
         let blank = nodes.iter().all(Option::is_none)
             && matches!(&data.shape, data::Shape::Patched { base: None, .. });
@@ -459,6 +476,7 @@ impl CompiledGraph {
             context,
             scopes,
             columns,
+            probe: probe.cloned(),
             bind: Box::new(move |key: &str| {
                 let rebased = rebase.and_then(|base| Self::rebased(base, key));
                 let path = rebased.as_deref().unwrap_or(key);
@@ -497,44 +515,53 @@ impl CompiledGraph {
         let data = Self::input_of(state, parents, rows);
         let (nodes, extra) = self.node_inputs(step, state, visible, rows, true);
         let hits: Vec<Hit> = Self::RUNNER.with_borrow_mut(|runner| {
-            Self::bound(&state.context, step, &data, &nodes, &extra, None, |bound| {
-                conditions
-                    .iter()
-                    .map(|(_, condition)| match condition {
-                        Condition::Program(program) => {
-                            let p = program.program();
-                            let rows = bound.rows();
-                            let uniform = rows > 1
-                                && !p.opaque()
-                                && p.stable()
-                                && p.site_keys.iter().all(|key| {
-                                    key.as_deref()
-                                        .is_some_and(|key| (bound.bind)(key) == Binding::Absent)
-                                });
-                            let mut outs = Vec::new();
-                            let subset = [0usize];
-                            bound.export(
-                                runner,
-                                program,
-                                uniform.then_some(&subset[..]),
-                                &mut outs,
-                                |_, _, _| {},
-                            );
-                            match (
-                                outs.first_mut()
-                                    .map(|out| Leaf::typed(Array::from_output(out))),
-                                uniform,
-                            ) {
-                                (Some(column), true) => Hit::Uniform(column.truthy(0)),
-                                (Some(column), false) => Hit::Rows(column.truths(rows)),
-                                (None, _) => Hit::Uniform(false),
+            Self::bound(
+                &state.context,
+                None,
+                step,
+                &data,
+                &nodes,
+                &extra,
+                None,
+                |bound| {
+                    conditions
+                        .iter()
+                        .map(|(_, condition)| match condition {
+                            Condition::Program(program) => {
+                                let p = program.program();
+                                let rows = bound.rows();
+                                let uniform = rows > 1
+                                    && !p.opaque()
+                                    && p.stable()
+                                    && p.site_keys.iter().all(|key| {
+                                        key.as_deref()
+                                            .is_some_and(|key| (bound.bind)(key) == Binding::Absent)
+                                    });
+                                let mut outs = Vec::new();
+                                let subset = [0usize];
+                                bound.export(
+                                    runner,
+                                    program,
+                                    uniform.then_some(&subset[..]),
+                                    &mut outs,
+                                    |_, _, _| {},
+                                );
+                                match (
+                                    outs.first_mut()
+                                        .map(|out| Leaf::typed(Array::from_output(out))),
+                                    uniform,
+                                ) {
+                                    (Some(column), true) => Hit::Uniform(column.truthy(0)),
+                                    (Some(column), false) => Hit::Rows(column.truths(rows)),
+                                    (None, _) => Hit::Uniform(false),
+                                }
                             }
-                        }
-                        Condition::Always => Hit::Uniform(true),
-                        Condition::Invalid(_) => Hit::Uniform(false),
-                    })
-                    .collect()
-            })
+                            Condition::Always => Hit::Uniform(true),
+                            Condition::Invalid(_) => Hit::Uniform(false),
+                        })
+                        .collect()
+                },
+            )
         });
         let words = conditions.len().div_ceil(64).max(1);
         let mut groups: Vec<(Vec<u64>, Vec<usize>)> = Vec::new();

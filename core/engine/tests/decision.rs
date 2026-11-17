@@ -187,7 +187,7 @@ async fn decision_table_first_hit_trace_matches_untraced() {
         .evaluate_with_opts(
             json!({ "age": 21 }).into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )
@@ -238,7 +238,7 @@ async fn decision_table_missing_cell_key_is_treated_as_empty() {
         .evaluate_with_opts(
             json!({ "age": 1 }).into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )
@@ -330,7 +330,7 @@ async fn decision_table_first_hit_column_collect() {
         .evaluate_with_opts(
             json!({ "age": 35 }).into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )
@@ -452,7 +452,7 @@ async fn node_handlers_do_not_mutate_aliased_inputs() {
         .evaluate_with_opts(
             input.clone(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )
@@ -534,7 +534,7 @@ async fn merged_inputs_do_not_mutate_parent_node_outputs() {
         .evaluate_with_opts(
             input.clone(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 ..Default::default()
             },
         )

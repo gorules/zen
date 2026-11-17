@@ -80,7 +80,7 @@ impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
     fn into(self) -> EvaluationOptions {
         use zen_engine::context::{parse_instant, parse_timezone};
         EvaluationOptions {
-            trace: self.trace,
+            trace: self.trace.into(),
             max_depth: self.max_depth,
             now: safe_str_from_ptr(self.now).and_then(parse_instant),
             timezone: safe_str_from_ptr(self.timezone).and_then(parse_timezone),

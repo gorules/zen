@@ -323,7 +323,8 @@ pub struct PolicyEvaluateRequest {
     #[napi(ts_type = "unknown")]
     pub input: Value,
     pub goals: Option<Vec<String>>,
-    pub trace: Option<bool>,
+    #[napi(ts_type = "boolean | 'v1' | 'legacy'")]
+    pub trace: Option<crate::engine::JsTraceFormat>,
 }
 
 #[napi(object)]
@@ -964,7 +965,7 @@ impl Workspace {
             policy_path: req.policy_path.into(),
             input: req.input.into(),
             goals: goals_to_arc(req.goals),
-            trace: req.trace.unwrap_or(false),
+            trace: req.trace.unwrap_or_default().0,
         };
         Self::eval_to_value(self.inner.evaluate(&inner_req))
     }
@@ -975,7 +976,10 @@ impl Workspace {
             policy_path: req.policy_path.into(),
             input: req.input.into(),
             goals: goals_to_arc(req.goals),
-            trace: true,
+            trace: match req.trace.map(|t| t.0) {
+                Some(zen_engine::trace::TraceFormat::V1) => zen_engine::trace::TraceFormat::V1,
+                _ => zen_engine::trace::TraceFormat::Legacy,
+            },
         };
         Self::eval_to_value(self.inner.enhance_trace(&inner_req))
     }

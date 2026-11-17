@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::content::PyZenDecisionContentJson;
@@ -16,6 +17,7 @@ use pyo3_async_runtimes::{tokio, TaskLocals};
 use pythonize::{depythonize, pythonize};
 use serde_json::Value;
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
+use zen_engine::trace::TraceFormat;
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[pyclass]
@@ -26,7 +28,7 @@ pub struct PyZenEngine {
 
 #[derive(Default)]
 pub struct PyZenEvaluateOptions {
-    pub trace: Option<bool>,
+    pub trace: Option<TraceFormat>,
     pub max_depth: Option<u8>,
     pub now: Option<zen_engine::context::Instant>,
     pub timezone: Option<zen_engine::context::Timezone>,
@@ -105,10 +107,21 @@ impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let dict = ob.downcast::<PyDict>()?;
 
-        let trace = dict
-            .get_item("trace")?
-            .map(|v| v.extract::<bool>())
-            .transpose()?;
+        let trace = match dict.get_item("trace")? {
+            None => None,
+            Some(v) if v.is_none() => None,
+            Some(v) => match v.extract::<bool>() {
+                Ok(flag) => Some(TraceFormat::from(flag)),
+                Err(_) => {
+                    let name = v.extract::<String>()?;
+                    Some(TraceFormat::from_str(&name).map_err(|_| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "invalid trace format '{name}', expected true, false, 'v1' or 'legacy'"
+                        ))
+                    })?)
+                }
+            },
+        };
 
         let max_depth = dict
             .get_item("max_depth")?

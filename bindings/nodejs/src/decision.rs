@@ -30,8 +30,7 @@ impl ZenDecision {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Value> {
         let decision = self.0.clone();
-        let options: zen_engine::EvaluationSerializedOptions =
-            opts.unwrap_or_default().try_into()?;
+        let options: zen_engine::EvaluationOptions = opts.unwrap_or_default().try_into()?;
         let result = spawn_worker(move || async move {
             let context = zen_engine::Variable::try_from_value(context).map_err(
                 |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),

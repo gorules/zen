@@ -181,6 +181,7 @@ impl CompiledGraph {
             parents: Some(&parents),
             iteration: iteration + 1,
             completed: None,
+            traced: false,
         };
         let state = Box::pin(compiled.run(
             Host {

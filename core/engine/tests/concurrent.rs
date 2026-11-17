@@ -6,6 +6,7 @@ use std::sync::Arc;
 use zen_engine::context::{parse_instant, parse_timezone};
 use zen_engine::loader::{DecisionLoader, LoaderResponse, MemoryLoader};
 use zen_engine::model::DecisionContent;
+use zen_engine::trace::TraceFormat;
 use zen_engine::{DecisionEngine, EvaluationOptions, Variable};
 
 #[derive(Debug, Default)]
@@ -126,7 +127,7 @@ const B: Pin3 = Pin3 {
     formatted: "02/17/2031, 06:15:42 PM",
 };
 
-fn options(pin: Pin3, trace: bool) -> EvaluationOptions {
+fn options(pin: Pin3, trace: TraceFormat) -> EvaluationOptions {
     EvaluationOptions {
         trace,
         now: parse_instant(pin.now),
@@ -157,7 +158,7 @@ fn untimed(v: Value) -> Value {
     }
 }
 
-async fn single(engine: &DecisionEngine, pin: Pin3, trace: bool) -> (Value, Option<Value>) {
+async fn single(engine: &DecisionEngine, pin: Pin3, trace: TraceFormat) -> (Value, Option<Value>) {
     let response = engine
         .evaluate_with_opts("main", input(), options(pin, trace))
         .await
@@ -173,7 +174,7 @@ async fn single(engine: &DecisionEngine, pin: Pin3, trace: bool) -> (Value, Opti
 async fn batch(engine: &DecisionEngine, pin: Pin3) -> Vec<Value> {
     let inputs: Vec<Variable> = (0..4).map(|x| Variable::from(json!({"x": x}))).collect();
     engine
-        .evaluate_batch("main", &inputs, options(pin, false))
+        .evaluate_batch("main", &inputs, options(pin, TraceFormat::Off))
         .await
         .into_iter()
         .map(|r| serde_json::to_value(r.unwrap().result).unwrap())
@@ -204,8 +205,8 @@ struct Expected {
 fn expected(engine: &DecisionEngine) -> Expected {
     let rt = runtime();
     let expected = Expected {
-        a: rt.block_on(single(engine, A, true)),
-        b: rt.block_on(single(engine, B, true)),
+        a: rt.block_on(single(engine, A, TraceFormat::V1)),
+        b: rt.block_on(single(engine, B, TraceFormat::V1)),
         batch_a: rt.block_on(batch(engine, A)),
         batch_b: rt.block_on(batch(engine, B)),
     };
@@ -225,8 +226,8 @@ fn interleaved_evaluations_on_one_thread_see_their_own_clock() {
     for _ in 0..3 {
         let (a, b, batch_b, batch_a) = rt.block_on(async {
             tokio::join!(
-                single(&engine, A, true),
-                single(&engine, B, true),
+                single(&engine, A, TraceFormat::V1),
+                single(&engine, B, TraceFormat::V1),
                 batch(&engine, B),
                 batch(&engine, A),
             )
@@ -259,7 +260,7 @@ fn evaluations_on_two_threads_see_their_own_clock() {
                 scope.spawn(move || {
                     let rt = runtime();
                     for _ in 0..20 {
-                        assert_eq!(&rt.block_on(single(engine, pin, true)), alone);
+                        assert_eq!(&rt.block_on(single(engine, pin, TraceFormat::V1)), alone);
                         assert_eq!(&rt.block_on(batch(engine, pin)), batched);
                     }
                 })

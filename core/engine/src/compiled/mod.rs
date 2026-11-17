@@ -17,6 +17,7 @@ pub(crate) mod prepared;
 mod shred;
 pub(crate) mod switches;
 pub(crate) mod table;
+pub(crate) mod trace;
 
 pub use graph::ColumnarOutput;
 pub(crate) use graph::{call, traced, CompiledGraph, CompiledPlan, Invalid};

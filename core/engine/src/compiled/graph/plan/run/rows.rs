@@ -9,6 +9,7 @@ use crate::compiled::host::NodeError;
 use crate::compiled::leaf::Mask;
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::shred::Shredder;
+use crate::compiled::trace::record::Probe;
 use crate::decision_graph::cleaner::VariableCleaner;
 use crate::model::DecisionNodeKind;
 use std::rc::Rc;
@@ -320,9 +321,22 @@ impl<'a> Run<'_, 'a> {
             _ => {
                 let data =
                     data.unwrap_or_else(|| Data::plain((0..inputs.len()).collect(), inputs.into()));
+                let traced = self.trace.is_some();
+                let mut walked = Vec::new();
+                let probe = traced.then(|| Probe::new(CompiledGraph::wants_fields(step)));
                 let context = self.host.extensions.context.rows(&at);
-                let (output, failures) =
-                    graph.rowwise(&mut self.runner, &context, step, data, &nodes);
+                let (output, failures) = graph.rowwise(
+                    &mut self.runner,
+                    &context,
+                    probe.as_ref(),
+                    step,
+                    data,
+                    &nodes,
+                    traced.then_some(&mut walked),
+                );
+                if let Some(probe) = probe {
+                    self.hosted_rows(op.node, &output, Some(probe.finish()), walked);
+                }
                 for (i, message) in failures {
                     self.store.errors.fail(at[i], &step.node, Rc::from(message));
                 }

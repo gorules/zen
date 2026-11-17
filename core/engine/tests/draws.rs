@@ -6,6 +6,7 @@ use support::columns::Built;
 use zen_engine::context::{parse_instant, parse_timezone, row_seed, unrowed_draws};
 use zen_engine::loader::MemoryLoader;
 use zen_engine::model::DecisionContent;
+use zen_engine::trace::TraceFormat;
 use zen_engine::{Decision, DecisionEngine, EvaluationOptions, Variable};
 
 const NOW: &str = "2026-11-04T09:30:00.125Z";
@@ -292,7 +293,7 @@ fn row(x: usize) -> Variable {
     Variable::from(json!({"x": x, "xs": xs, "items": items}))
 }
 
-fn options(trace: bool, seed: u64) -> EvaluationOptions {
+fn options(trace: TraceFormat, seed: u64) -> EvaluationOptions {
     EvaluationOptions {
         trace,
         now: parse_instant(NOW),
@@ -316,8 +317,8 @@ fn untimed(v: Value) -> Value {
 }
 
 fn alone(d: &Decision, x: usize, seed: u64) -> (Value, Value) {
-    let r = block(d.evaluate_with_opts(row(x), options(true, seed))).unwrap();
-    let off = block(d.evaluate_with_opts(row(x), options(false, seed))).unwrap();
+    let r = block(d.evaluate_with_opts(row(x), options(TraceFormat::V1, seed))).unwrap();
+    let off = block(d.evaluate_with_opts(row(x), options(TraceFormat::Off, seed))).unwrap();
     let result = serde_json::to_value(&r.result).unwrap();
     assert_eq!(
         result,
@@ -330,8 +331,14 @@ fn alone(d: &Decision, x: usize, seed: u64) -> (Value, Value) {
 fn rows_match_alone(name: &str, d: &Decision, base: u64) -> Vec<Value> {
     let inputs: Vec<Variable> = (0..ROWS).map(row).collect();
     let singles: Vec<(Value, Value)> = (0..ROWS).map(|x| alone(d, x, row_seed(base, x))).collect();
-    for trace in [true, false] {
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
+        let runs = zen_engine::trace::testing::graph_runs();
         let batch = block(d.evaluate_batch(&inputs, options(trace, base)));
+        assert_eq!(
+            zen_engine::trace::testing::graph_runs() - runs,
+            1,
+            "{name}: one run per batch"
+        );
         for (x, result) in batch.into_iter().enumerate() {
             let result = result.unwrap();
             let (want, doc) = &singles[x];
@@ -340,9 +347,13 @@ fn rows_match_alone(name: &str, d: &Decision, base: u64) -> Vec<Value> {
                 want,
                 "{name}: batch row {x} ({trace:?})"
             );
-            assert_eq!(result.trace.is_some(), trace, "{name}: trace of row {x}");
             if let Some(t) = result.trace {
                 let t = serde_json::to_value(&t).unwrap();
+                assert_eq!(
+                    t["seed"],
+                    json!(row_seed(base, x)),
+                    "{name}: seed of row {x}"
+                );
                 assert_eq!(untimed(t), untimed(doc.clone()), "{name}: batch trace {x}");
             }
         }
@@ -361,16 +372,31 @@ fn columns_match_alone(name: &str, d: &Decision, base: u64, json: impl Fn(usize)
         .or_else(|| Built::new(&rows))
         .expect("columns");
     let columns = built.columns();
-    let output = block(d.evaluate_columns(&columns, options(false, base)));
-    for (x, row) in rows.iter().enumerate() {
-        let input = Variable::from(row.clone());
-        let single = block(d.evaluate_with_opts(input, options(false, row_seed(base, x)))).unwrap();
-        let got = serde_json::to_value(output.row(x)).unwrap();
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
+        let runs = zen_engine::trace::testing::graph_runs();
+        let output = block(d.evaluate_columns(&columns, options(trace, base)));
         assert_eq!(
-            got,
-            serde_json::to_value(&single.result).unwrap(),
-            "{name}: columnar row {x}"
+            zen_engine::trace::testing::graph_runs() - runs,
+            1,
+            "{name}: one columnar run"
         );
+        for (x, row) in rows.iter().enumerate() {
+            let input = Variable::from(row.clone());
+            let single =
+                block(d.evaluate_with_opts(input, options(TraceFormat::V1, row_seed(base, x))))
+                    .unwrap();
+            let got = serde_json::to_value(output.row(x)).unwrap();
+            assert_eq!(
+                got,
+                serde_json::to_value(&single.result).unwrap(),
+                "{name}: columnar row {x} ({trace:?})"
+            );
+            if trace == TraceFormat::V1 {
+                let t: Value = serde_json::from_str(&output.trace_json(x).unwrap()).unwrap();
+                let doc = serde_json::to_value(single.trace.unwrap()).unwrap();
+                assert_eq!(untimed(t), untimed(doc), "{name}: columnar trace {x}");
+            }
+        }
     }
 }
 
@@ -479,8 +505,8 @@ fn switch_branches_draw_per_row() {
 #[test]
 fn rows_with_different_seeds_differ() {
     let d = top_level();
-    let a = block(d.evaluate_with_opts(row(1), options(false, 1))).unwrap();
-    let b = block(d.evaluate_with_opts(row(1), options(false, 2))).unwrap();
+    let a = block(d.evaluate_with_opts(row(1), options(TraceFormat::Off, 1))).unwrap();
+    let b = block(d.evaluate_with_opts(row(1), options(TraceFormat::Off, 2))).unwrap();
     assert_ne!(
         serde_json::to_value(a.result).unwrap(),
         serde_json::to_value(b.result).unwrap()
@@ -527,7 +553,7 @@ fn policy_input(x: usize) -> Value {
     json!({"customer": {"age": x, "companies": companies}})
 }
 
-fn policy_request(x: usize, trace: bool) -> zen_engine::policy::EvaluateRequest {
+fn policy_request(x: usize, trace: TraceFormat) -> zen_engine::policy::EvaluateRequest {
     zen_engine::policy::EvaluateRequest {
         policy_path: Arc::from("policy"),
         input: Variable::from(policy_input(x)),
@@ -559,10 +585,10 @@ fn policy_rows_draw_from_their_streams() {
         .map(|x| {
             let seed = row_seed(base, x);
             let traced = ws
-                .evaluate_pinned(&policy_request(x, true), &pinned(seed))
+                .evaluate_pinned(&policy_request(x, TraceFormat::V1), &pinned(seed))
                 .unwrap();
             let plain = ws
-                .evaluate_pinned(&policy_request(x, false), &pinned(seed))
+                .evaluate_pinned(&policy_request(x, TraceFormat::Off), &pinned(seed))
                 .unwrap();
             let value = serde_json::to_value(&traced.output).unwrap();
             assert_eq!(
@@ -573,7 +599,7 @@ fn policy_rows_draw_from_their_streams() {
             (value, policy_trace(&traced))
         })
         .collect();
-    for trace in [true, false] {
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
         let requests: Vec<_> = (0..ROWS).map(|x| policy_request(x, trace)).collect();
         let batch = ws.evaluate_batch_pinned(&requests, &pinned(base));
         for (x, result) in batch.into_iter().enumerate() {
@@ -583,7 +609,7 @@ fn policy_rows_draw_from_their_streams() {
                 singles[x].0,
                 "policy batch row {x} ({trace:?})"
             );
-            if trace {
+            if trace == TraceFormat::V1 {
                 assert_eq!(policy_trace(&result), singles[x].1, "policy trace {x}");
             }
         }
@@ -618,7 +644,7 @@ fn engine_policy_batches_draw_per_row() {
     );
     let engine = DecisionEngine::default().with_loader(loader);
     let inputs: Vec<Variable> = (0..ROWS).map(|x| Variable::from(policy_input(x))).collect();
-    for trace in [true, false] {
+    for trace in [TraceFormat::V1, TraceFormat::Off] {
         let batch = block(engine.evaluate_batch("policy", &inputs, options(trace, 31)));
         for (x, result) in batch.into_iter().enumerate() {
             let result = result.unwrap();
@@ -638,6 +664,7 @@ fn engine_policy_batches_draw_per_row() {
                     serde_json::to_value(a).unwrap(),
                     serde_json::to_value(b).unwrap(),
                 );
+                assert_eq!(a["seed"], json!(row_seed(31, x)));
                 assert_eq!(untimed(a), untimed(b), "engine policy trace {x}");
             }
         }
@@ -646,7 +673,7 @@ fn engine_policy_batches_draw_per_row() {
 }
 
 fn located(d: &Decision, x: usize, seed: u64) -> Value {
-    let result = block(d.evaluate_with_opts(row(x), options(false, seed))).unwrap();
+    let result = block(d.evaluate_with_opts(row(x), options(TraceFormat::Off, seed))).unwrap();
     serde_json::to_value(result.result).unwrap()
 }
 
@@ -977,12 +1004,17 @@ fn policies_draw_by_block() {
         let singles: Vec<Value> = (0..ROWS)
             .map(|x| {
                 let r = ws
-                    .evaluate_pinned(&policy_request(x, false), &pinned(row_seed(131, x)))
+                    .evaluate_pinned(
+                        &policy_request(x, TraceFormat::Off),
+                        &pinned(row_seed(131, x)),
+                    )
                     .unwrap();
                 serde_json::to_value(&r.output).unwrap()
             })
             .collect();
-        let requests: Vec<_> = (0..ROWS).map(|x| policy_request(x, false)).collect();
+        let requests: Vec<_> = (0..ROWS)
+            .map(|x| policy_request(x, TraceFormat::Off))
+            .collect();
         let batch = ws.evaluate_batch_pinned(&requests, &pinned(131));
         for (x, result) in batch.into_iter().enumerate() {
             assert_eq!(
@@ -1001,5 +1033,26 @@ fn policies_draw_by_block() {
         b["customer"].as_object_mut().unwrap().remove("first");
         assert_eq!(a, &b);
         assert_ne!(a["customer"]["lucky"], a["customer"]["after"]);
+    }
+}
+
+#[test]
+fn a_seed_is_written_only_when_a_row_draws() {
+    let d = decision(
+        chain(vec![
+            input(),
+            expressions("calc", &[("r", "x > 3 ? rand(100) : 0")], json!({})),
+            output(),
+        ]),
+        &[],
+    );
+    let inputs: Vec<Variable> = (0..ROWS).map(row).collect();
+    let batch = block(d.evaluate_batch(&inputs, options(TraceFormat::V1, 9)));
+    for (x, result) in batch.into_iter().enumerate() {
+        let t = serde_json::to_value(result.unwrap().trace.unwrap()).unwrap();
+        match x > 3 {
+            true => assert_eq!(t["seed"], json!(row_seed(9, x))),
+            false => assert!(t.get("seed").is_none(), "row {x}: {t}"),
+        }
     }
 }

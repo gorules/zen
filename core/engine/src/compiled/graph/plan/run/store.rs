@@ -520,7 +520,7 @@ impl<'a> Store<'a> {
         }
     }
 
-    fn object(shape: &Shaped<'a>, row: usize) -> Variable {
+    pub(super) fn object(shape: &Shaped<'a>, row: usize) -> Variable {
         if let Some((leaf, present)) = &shape.leaf {
             if Bits::get(present, row) {
                 return leaf.get(row);

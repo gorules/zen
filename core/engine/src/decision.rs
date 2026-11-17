@@ -87,7 +87,7 @@ impl Decision {
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             content: self.content.clone(),
             max_depth: options.max_depth,
-            trace: options.trace,
+            trace: options.trace.is_on(),
             iteration: 0,
             extensions: NodeHandlerExtensions {
                 loader: self.loader.clone(),
@@ -111,18 +111,8 @@ impl Decision {
         context: Variable,
         options: EvaluationSerializedOptions,
     ) -> Result<Value, Value> {
-        let response = self
-            .evaluate_with_opts(context, options.unserialized())
-            .await;
-
-        match response {
-            Ok(ok) => Ok(ok
-                .serialize_with_mode(serde_json::value::Serializer, options.trace)
-                .unwrap_or_default()),
-            Err(err) => Err(err
-                .serialize_with_mode(serde_json::value::Serializer, options.trace)
-                .unwrap_or_default()),
-        }
+        let response = self.evaluate_with_opts(context, options).await;
+        DecisionGraphResponse::serialized(response)
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
@@ -185,6 +175,14 @@ impl Decision {
             engine: crate::compiled::Engine::Compiled,
             ..self.clone()
         }
+    }
+
+    #[doc(hidden)]
+    pub async fn evaluate_trace_pair(
+        &self,
+        context: Variable,
+    ) -> Option<(crate::trace::TraceDocument, crate::trace::TraceDocument)> {
+        self.compiled().trace_pair_pinned(context).await
     }
 
     pub(crate) fn compiled(&self) -> &crate::compiled::decision::CompiledDecision {

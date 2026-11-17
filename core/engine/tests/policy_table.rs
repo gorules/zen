@@ -16,7 +16,10 @@ fn request(input: serde_json::Value, trace: bool) -> EvaluateRequest {
         policy_path: Arc::from("p"),
         input: Variable::from(input),
         goals: Vec::new(),
-        trace,
+        trace: match trace {
+            true => zen_engine::trace::TraceFormat::Legacy,
+            false => zen_engine::trace::TraceFormat::Off,
+        },
     }
 }
 
@@ -93,6 +96,8 @@ fn no_match_trace_has_no_matched_rows() {
         .expect("evaluate");
     let trace = result.trace.expect("trace");
     let dt = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -510,6 +515,8 @@ fn unused_scalar_cells_stay_lazy() {
     let executed: Vec<String> = result
         .trace
         .expect("trace")
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .map(|e| e.block_id.to_string())

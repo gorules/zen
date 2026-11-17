@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 pub use chrono_tz::Tz as Timezone;
 
@@ -180,6 +180,51 @@ pub fn instant_from_millis(ms: i64) -> Option<Instant> {
     DateTime::from_timestamp_millis(ms)
 }
 
+pub fn format_instant(at: &Instant) -> String {
+    use chrono::Datelike;
+    let year = at.year();
+    if !(0..=9999).contains(&year) {
+        let nanos = at.nanosecond() % 1_000_000_000;
+        let format = match (nanos % 1_000_000, nanos % 1_000) {
+            (0, _) => "%Y-%m-%dT%H:%M:%S%.3fZ",
+            (_, 0) => "%Y-%m-%dT%H:%M:%S%.6fZ",
+            _ => "%Y-%m-%dT%H:%M:%S%.9fZ",
+        };
+        return at.format(format).to_string();
+    }
+    let mut out = String::with_capacity(30);
+    fn put(out: &mut String, n: u32, width: usize) {
+        let mut buf = [b'0'; 9];
+        let mut n = n;
+        for d in buf[..width].iter_mut().rev() {
+            *d = b'0' + (n % 10) as u8;
+            n /= 10;
+        }
+        out.extend(buf[..width].iter().map(|&b| b as char));
+    }
+    put(&mut out, year as u32, 4);
+    out.push('-');
+    put(&mut out, at.month(), 2);
+    out.push('-');
+    put(&mut out, at.day(), 2);
+    out.push('T');
+    put(&mut out, at.hour(), 2);
+    out.push(':');
+    put(&mut out, at.minute(), 2);
+    out.push(':');
+    let nanos = at.nanosecond();
+    put(&mut out, at.second() + nanos / 1_000_000_000, 2);
+    out.push('.');
+    let nanos = nanos % 1_000_000_000;
+    match (nanos % 1_000_000, nanos % 1_000) {
+        (0, _) => put(&mut out, nanos / 1_000_000, 3),
+        (_, 0) => put(&mut out, nanos / 1_000, 6),
+        _ => put(&mut out, nanos, 9),
+    }
+    out.push('Z');
+    out
+}
+
 pub fn clock_reads() -> u64 {
     CLOCK_READS.get()
 }
@@ -330,6 +375,12 @@ impl Streams {
         Stream::Item(item)
     }
 
+    fn reset(&mut self) {
+        self.rows.clear();
+        self.items.clear();
+        self.children.clear();
+    }
+
     fn restart(&mut self, row: u32) {
         if let Some(node) = self.rows.get_mut(row as usize) {
             *node = Node::default();
@@ -349,7 +400,9 @@ impl Streams {
 #[derive(Debug)]
 struct Shared {
     now: OnceCell<Instant>,
+    stamp: OnceCell<Arc<str>>,
     timezone: Tz,
+    zone: OnceCell<Arc<str>>,
     batch: bool,
     streams: RefCell<Streams>,
 }
@@ -365,7 +418,9 @@ impl Shared {
         };
         Self {
             now: pinned.now.map_or_else(OnceCell::new, OnceCell::from),
+            stamp: OnceCell::new(),
             timezone: pinned.timezone.unwrap_or_else(system_timezone),
+            zone: OnceCell::new(),
             batch,
             streams: RefCell::new(streams),
         }
@@ -376,6 +431,18 @@ impl Shared {
             CLOCK_READS.set(CLOCK_READS.get() + 1);
             system_now()
         })
+    }
+
+    fn evaluated_at(&self) -> Arc<str> {
+        self.stamp
+            .get_or_init(|| Arc::from(format_instant(&self.now())))
+            .clone()
+    }
+
+    fn zone(&self) -> Arc<str> {
+        self.zone
+            .get_or_init(|| Arc::from(self.timezone.name()))
+            .clone()
     }
 
     fn row_stream(&self, row: usize) -> Stream {
@@ -527,6 +594,14 @@ impl EvaluationContext {
         self.shared.now()
     }
 
+    pub fn evaluated_at(&self) -> Arc<str> {
+        self.shared.evaluated_at()
+    }
+
+    pub fn zone(&self) -> Arc<str> {
+        self.shared.zone()
+    }
+
     pub fn timezone(&self) -> Tz {
         self.shared.timezone
     }
@@ -620,6 +695,10 @@ impl EvaluationContext {
             return self.clone();
         }
         self.narrowed(Rows::One(self.rows.pick(&self.shared, row)))
+    }
+
+    pub fn reset(&self) {
+        self.shared.streams.borrow_mut().reset();
     }
 
     pub fn restart(&self, rows: &[usize]) {
@@ -986,5 +1065,25 @@ mod tests {
             .filter(|v| *v >= 1 << 62)
             .count();
         assert!((500..833).contains(&wide), "{wide}");
+    }
+
+    #[test]
+    fn instants_keep_their_precision() {
+        let at = parse_instant("2026-11-04T09:30:00.125Z").unwrap();
+        assert_eq!(format_instant(&at), "2026-11-04T09:30:00.125Z");
+        let at = parse_instant("2026-11-04T09:30:00.12525Z").unwrap();
+        assert_eq!(format_instant(&at), "2026-11-04T09:30:00.125250Z");
+        let at = parse_instant("2026-11-04T09:30:00.000000001Z").unwrap();
+        assert_eq!(format_instant(&at), "2026-11-04T09:30:00.000000001Z");
+        let at = parse_instant("2026-11-04T10:30:00+01:00").unwrap();
+        assert_eq!(format_instant(&at), "2026-11-04T09:30:00.000Z");
+        for text in ["0001-01-01T00:00:00.000Z", "1999-12-31T23:59:59.999999999Z"] {
+            let at = parse_instant(text).unwrap();
+            assert_eq!(format_instant(&at), text);
+            assert_eq!(
+                at.format("%Y-%m-%dT%H:%M:%S%.9fZ").to_string()[..19],
+                text[..19]
+            );
+        }
     }
 }

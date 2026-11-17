@@ -1,10 +1,11 @@
 use crate::compiled::bound::Bound;
-use crate::compiled::exact::graph::Row;
+use crate::compiled::exact::graph::{NodeRecorder, Row};
 use crate::compiled::graph::data::{Data, Layer};
 use crate::compiled::graph::{Body, CompiledGraph, Kind, Step, Transform};
 use crate::compiled::leaf;
 use crate::compiled::leaf::Mask;
 use crate::compiled::leaf::{ColumnBuilder, Leaf};
+use crate::compiled::trace::record::Probe;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
@@ -13,9 +14,11 @@ use zen_expression::{Scope, Variable};
 use zen_types::path::DotPath;
 
 impl CompiledGraph {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::compiled::graph) fn transformed(
         runner: &mut LaneRunner,
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         step: &Step,
         body: &Body,
         transform: &Transform,
@@ -54,6 +57,7 @@ impl CompiledGraph {
                 let mut produced = Self::items(
                     runner,
                     &context.rows(&rows),
+                    probe,
                     step,
                     body,
                     &body_inputs,
@@ -92,7 +96,8 @@ impl CompiledGraph {
                     false => context.clone(),
                 };
                 let mut produced =
-                    Self::items(runner, &looped, step, body, &items, &item_nodes).into_iter();
+                    Self::items(runner, &looped, probe, step, body, &items, &item_nodes)
+                        .into_iter();
                 let mut item_inputs = items.into_iter();
                 shaped
                     .into_iter()
@@ -138,9 +143,11 @@ impl CompiledGraph {
         outputs
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::compiled::graph) fn looped<'a>(
         runner: &mut LaneRunner,
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         step: &Step,
         body: &Body,
         transform: &Transform,
@@ -178,7 +185,7 @@ impl CompiledGraph {
             true => context.items(&owners),
             false => context.clone(),
         };
-        let produced = Self::items(runner, &looped, step, body, &items, &[]);
+        let produced = Self::items(runner, &looped, probe, step, body, &items, &[]);
         let mut values = Vec::with_capacity(spans.len());
         for (row, span) in spans.into_iter().enumerate() {
             let Some((start, end)) = span else {
@@ -223,6 +230,7 @@ impl CompiledGraph {
     pub(in crate::compiled::graph) fn items(
         runner: &mut LaneRunner,
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         step: &Step,
         body: &Body,
         inputs: &[Variable],
@@ -240,6 +248,7 @@ impl CompiledGraph {
             let mut produced = Self::items(
                 runner,
                 &context.rows(&kept),
+                probe,
                 step,
                 body,
                 &kept_inputs,
@@ -256,6 +265,7 @@ impl CompiledGraph {
                         nodes.get(i).cloned().flatten(),
                         false,
                         &context.at(i),
+                        None,
                     ),
                     false => produced.next().unwrap_or(Ok(Variable::Null)),
                 })
@@ -263,7 +273,7 @@ impl CompiledGraph {
         }
         match Self::item_data(step, body, inputs, nodes) {
             Some(data) => {
-                let (output, failures) = Self::item_run(runner, context, step, body, &data);
+                let (output, failures) = Self::item_run(runner, context, probe, step, body, &data);
                 let values = output.materialized();
                 let mut results: Vec<Result<Variable, String>> =
                     values.iter().cloned().map(Ok).collect();
@@ -274,7 +284,7 @@ impl CompiledGraph {
                 }
                 results
             }
-            None => Self::body(runner, context, body, inputs, nodes),
+            None => Self::body(runner, context, probe, body, inputs, nodes),
         }
     }
 
@@ -295,13 +305,17 @@ impl CompiledGraph {
         nodes: Option<Variable>,
         transforms: bool,
         context: &EvaluationContext,
+        recorder: Option<&NodeRecorder>,
     ) -> Result<Variable, String> {
         let row = Row {
             id: &step.node.id,
             input,
             nodes,
-            programs: step.shared_programs(),
-            trace: false,
+            programs: match recorder {
+                Some(_) => Some(step.programs()),
+                None => step.shared_programs(),
+            },
+            recorder,
             context: context.clone(),
         };
         row.now(&step.node, None, transforms)
@@ -342,11 +356,12 @@ impl CompiledGraph {
     pub(in crate::compiled::graph) fn item_run<'a>(
         runner: &mut LaneRunner,
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         step: &Step,
         body: &Body,
         data: &Data<'a>,
     ) -> (Data<'a>, Vec<(usize, String)>) {
-        Self::bound(context, step, data, &[], &[], None, |bound| {
+        Self::bound(context, probe, step, data, &[], &[], None, |bound| {
             Self::layered(runner, body, false, data, bound, None)
         })
     }
@@ -387,6 +402,7 @@ impl CompiledGraph {
     fn body(
         runner: &mut LaneRunner,
         context: &EvaluationContext,
+        probe: Option<&Rc<Probe>>,
         body: &Body,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
@@ -398,14 +414,25 @@ impl CompiledGraph {
             .collect();
         match body {
             Body::Expression {
-                program, entries, ..
+                program,
+                entries,
+                keys,
+                ..
             } => {
                 let mut out: Vec<Result<Variable, String>> = vec![Ok(Variable::Null); scopes.len()];
+                let mut results: Option<Vec<Vec<Variable>>> = probe
+                    .filter(|_| entries.len() == keys.len())
+                    .map(|_| vec![Vec::new(); scopes.len()]);
                 runner.evaluate_many(program, context, &scopes, None, |row, result| {
                     out[row] = match result {
                         Some(Ok(values)) => {
                             let object = Variable::empty_object();
                             for ((key, _), value) in entries.iter().zip(values) {
+                                if let Some(values) =
+                                    results.as_mut().and_then(|results| results.get_mut(row))
+                                {
+                                    values.push(value.clone());
+                                }
                                 object.dot_insert(key, value);
                             }
                             Ok(object)
@@ -416,13 +443,19 @@ impl CompiledGraph {
                                 .map(|(_, v)| v.as_ref())
                                 .unwrap_or_default(),
                         )),
-                        None => Ok(Variable::Null),
+                        None => {
+                            results = None;
+                            Ok(Variable::Null)
+                        }
                     };
                 });
+                if let (Some(probe), Some(results)) = (probe, results) {
+                    probe.record_row_results(keys, results);
+                }
                 out
             }
             Body::Table(table) => table
-                .evaluate(runner, &Bound::plain(scopes, context.clone()))
+                .evaluate(runner, &Bound::plain(scopes, context.clone()).probed(probe))
                 .into_iter()
                 .map(|o| Ok(table.value(o)))
                 .collect(),

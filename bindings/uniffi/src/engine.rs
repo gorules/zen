@@ -46,7 +46,10 @@ impl From<ZenEvaluateOptions> for EvaluationOptions {
         use zen_engine::context::{parse_instant, parse_timezone};
         Self {
             max_depth: value.max_depth.unwrap_or(5),
-            trace: value.trace.unwrap_or(false),
+            trace: match value.trace.unwrap_or(false) {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
             now: value.now.as_deref().and_then(parse_instant),
             timezone: value.timezone.as_deref().and_then(parse_timezone),
             seed: value.seed,

@@ -20,7 +20,7 @@ use crate::compiled::table::{Table, TableIr};
 use crate::policy::blocks::Block;
 use crate::policy::blocks::{AssertionIr, BlockKind, MatchIr};
 use crate::workspace::types::BlockRef;
-use crate::workspace::types::{EvaluateRequest, EvaluationError, EvaluationResult};
+use crate::workspace::{EvaluateRequest, EvaluationError, EvaluationResult};
 use schedule::{Blocks, Demand, End, Event, Replay, Segment};
 use std::cell::RefCell;
 use std::sync::Arc;

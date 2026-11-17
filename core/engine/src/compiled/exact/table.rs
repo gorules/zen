@@ -1,16 +1,15 @@
-use crate::compiled::exact::graph::{Ctx, Row};
+use crate::compiled::exact::graph::Row;
 use crate::compiled::host::decision_table::index::TableIndex;
-use crate::compiled::host::graph::tracer::{DecisionTableNodeTrace, DecisionTableRowTrace};
 use crate::compiled::host::{NodeResponse, NodeResult};
 use crate::compiled::pinning::Located;
 use crate::compiled::policy::blocks::TableSelection;
 use crate::compiled::policy::site::Site;
+use crate::compiled::trace::collect::{Hit, Refs};
 use crate::policy::blocks::{DecisionTableIr, ExecutionError};
 use crate::workspace::types::{BlockTrace, DecisionTableExtras};
 use ahash::{HashMap, HashSet};
 use base64::Engine as _;
 use fixedbitset::FixedBitSet;
-use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::Session;
 use zen_expression::IsolateError;
@@ -275,33 +274,19 @@ impl RowTable<'_, '_> {
         Some((object, lists))
     }
 
-    fn trace(&mut self, index: usize, rule: &Rule) -> DecisionTableRowTrace {
-        let mut expressions: HashMap<Rc<str>, Rc<str>> = HashMap::default();
-        let mut reference_map: HashMap<Rc<str>, Variable> = HashMap::default();
-        expressions.insert(
-            Rc::from("_id"),
-            rule.get("_id")
-                .map_or_else(|| Rc::from(""), |id| Rc::from(id.as_ref())),
-        );
-        if let Some(description) = rule.get("_description") {
-            expressions.insert(Rc::from("_description"), Rc::from(description.as_ref()));
-        }
+    fn hit(&mut self, index: usize, rule: &Rule) -> Hit {
+        let mut refs = Refs::new();
         for (col, input) in self.inputs.iter().enumerate() {
-            let (Some(cell), Some(field)) = (rule.get(&input.id), &input.field) else {
+            let (Some(_), Some(field)) = (rule.get(&input.id), &input.field) else {
                 continue;
             };
             if let Ok(Some(reference)) = self.reference(col) {
-                reference_map.insert(Rc::from(field.as_ref()), reference);
+                refs.push((field.clone(), reference));
             }
-            expressions.insert(
-                Rc::from(format!("{field}[{}]", input.id).as_str()),
-                Rc::from(cell.as_ref()),
-            );
         }
-        DecisionTableRowTrace {
-            index,
-            reference_map,
-            rule: expressions,
+        Hit {
+            rule: index as u32,
+            refs: Some(refs),
         }
     }
 
@@ -310,10 +295,9 @@ impl RowTable<'_, '_> {
         content: &DecisionTableContent,
         index: Option<&TableIndex>,
     ) -> NodeResult {
-        let mut ctx = Ctx::<DecisionTableNodeTrace>::new(row);
-        let mut session = ctx.row.session();
-        let traced = ctx.row.trace;
-        let owner = ctx.row.id.clone();
+        let mut session = row.session();
+        let traced = row.traced();
+        let owner = row.id.clone();
         let mut table = RowTable::new(
             &mut session,
             &content.inputs,
@@ -346,17 +330,12 @@ impl RowTable<'_, '_> {
                 continue;
             };
             if traced {
-                traces.push(table.trace(at, rule));
+                traces.push(table.hit(at, rule));
             }
             match (first, split, object) {
                 (true, false, Some(object)) => {
-                    ctx.trace(|t| {
-                        *t = traces.pop().map_or_else(
-                            DecisionTableNodeTrace::default,
-                            DecisionTableNodeTrace::FirstHit,
-                        )
-                    });
-                    return ctx.success(object);
+                    row.record(|recorder| recorder.table_hit(traces.pop()));
+                    return row.success(object);
                 }
                 (false, _, Some(object)) => items.push(object),
                 (_, _, object) => {
@@ -375,7 +354,9 @@ impl RowTable<'_, '_> {
                 trace_data: None,
             });
         }
-        ctx.trace(|t| *t = DecisionTableNodeTrace::Collect(traces));
+        if traced {
+            row.record(|recorder| recorder.table_hits(traces));
+        }
         let output = match split {
             false => Variable::from_array(items),
             true => {
@@ -392,7 +373,7 @@ impl RowTable<'_, '_> {
                 output
             }
         };
-        ctx.success(output)
+        row.success(output)
     }
 
     pub(crate) fn select(

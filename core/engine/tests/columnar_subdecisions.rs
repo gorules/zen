@@ -300,7 +300,7 @@ impl Scenario {
         let counts = Counts::default();
         let decision = self.decision(&counts);
         let options = EvaluationOptions {
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
             max_depth: self.max_depth,
             ..Default::default()
         };

@@ -1,6 +1,7 @@
 use super::Row;
-use crate::compiled::host::{NodeError, NodeResponse, NodeResult};
+use crate::compiled::host::{NodeResponse, NodeResult};
 use crate::compiled::pinning::Located;
+use crate::compiled::trace::collect::Fact;
 use std::future::Future;
 use std::ops::Deref;
 use zen_expression::context::EvaluationContext;
@@ -17,15 +18,14 @@ impl Row<'_> {
         F: Fn(Variable, bool, EvaluationContext) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
-        let mut trace = self.trace.then_some(Variable::Null);
         let input = match &attributes.input_field {
             None => self.input.clone(),
             Some(input_field) => {
                 let mut session = self.session();
                 session.locate(Located::input(self.id));
-                session.run_standard(input_field.deref()).map_err(|err| {
-                    self.fault(&trace, crate::compiled::exact::Failure::input(err))
-                })?
+                session
+                    .run_standard(input_field.deref())
+                    .map_err(|err| self.error(crate::compiled::exact::Failure::input(err)))?
             }
         };
 
@@ -33,9 +33,7 @@ impl Row<'_> {
             TransformExecutionMode::Single => {
                 let response = evaluate(input, false, self.context.clone()).await?;
                 if let Some(td) = response.trace_data {
-                    if let Some(t) = &mut trace {
-                        *t = td;
-                    }
+                    self.record(|recorder| recorder.data(td));
                 }
 
                 response.output
@@ -43,20 +41,20 @@ impl Row<'_> {
             TransformExecutionMode::Loop => {
                 let input_array_ref = input
                     .as_array()
-                    .ok_or_else(|| self.fault(&trace, "Expected an array".to_string()))?;
+                    .ok_or_else(|| self.error("Expected an array".to_string()))?;
                 let input_array = input_array_ref.borrow().clone();
-                if let Some(t) = &mut trace {
-                    *t = Variable::from_array(Vec::with_capacity(input_array.len()));
-                }
+                let mut items: Option<Vec<Fact>> =
+                    self.traced().then(|| Vec::with_capacity(input_array.len()));
 
                 let mut output_array = Vec::with_capacity(input_array.len());
                 for (index, input) in input_array.iter().enumerate() {
                     let has_more = index < input_array.len() - 1;
                     let response =
-                        evaluate(input.clone(), has_more, self.context.item(index)).await?;
-                    if let Some(td) = response.trace_data {
-                        if let Some(Variable::Array(arr)) = &trace {
-                            arr.borrow_mut().push(td);
+                        Box::pin(evaluate(input.clone(), has_more, self.context.item(index)))
+                            .await?;
+                    if let Some(items) = items.as_mut() {
+                        if let Some(recorder) = self.recorder {
+                            items.push(recorder.item(response.trace_data));
                         }
                     }
 
@@ -67,6 +65,9 @@ impl Row<'_> {
                     ));
                 }
 
+                if let Some(items) = items {
+                    self.record(|recorder| recorder.items(items));
+                }
                 Variable::from_array(output_array)
             }
         };
@@ -80,11 +81,7 @@ impl Row<'_> {
 
         Ok(NodeResponse {
             output,
-            trace_data: trace,
+            trace_data: None,
         })
-    }
-
-    fn fault(&self, trace: &Option<Variable>, message: String) -> NodeError {
-        NodeError::traced(self.id.clone(), trace.clone(), message)
     }
 }

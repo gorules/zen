@@ -10,15 +10,15 @@ pub type Completion = _Completion;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EvaluationResult {
+pub struct EvaluationResult<T = Trace> {
     pub output: Variable,
-    #[serde(serialize_with = "EvaluationResult::serialize_duration_micros")]
+    #[serde(serialize_with = "<EvaluationResult>::serialize_duration_micros")]
     pub duration: Duration,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<Trace>,
+    pub trace: Option<T>,
 }
 
-impl EvaluationResult {
+impl<T> EvaluationResult<T> {
     fn serialize_duration_micros<S: serde::Serializer>(
         d: &Duration,
         s: S,

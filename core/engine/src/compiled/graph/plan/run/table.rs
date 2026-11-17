@@ -42,7 +42,7 @@ impl<'a> Run<'_, 'a> {
                 })
             })
             .collect();
-        let keyed = match (op.mode, table.stable) {
+        let keyed = match (op.mode, table.stable && self.trace.is_none()) {
             (TableMode::First, true) => {
                 let present: Vec<Leaf<'a>> = leaves.iter().flatten().cloned().collect();
                 match present.len() > 1 {
@@ -108,6 +108,7 @@ impl<'a> Run<'_, 'a> {
             context,
             scopes: Bound::blank(evaluated),
             columns,
+            probe: self.probe(),
             bind: Box::new(move |key: &str| match key.starts_with('$') {
                 true => Bind::Row,
                 false => names

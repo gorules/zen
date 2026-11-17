@@ -194,12 +194,11 @@ fn v1_function_nodes_read_the_zone_of_the_context() {
 
 #[test]
 fn the_interpreted_engine_ignores_pinning() {
-    let v2 = functions().interpreted();
+    let v2 = functions();
     let v1 = graph(json!({
         "id": "calc", "name": "calc", "type": "functionNode",
-        "content": "const handler = (input) => ({ now: Date.now(), global: now, r: Math.random(), q: Math.random() })"
-    }))
-    .interpreted();
+        "content": "const handler = (input) => ({ now: Date.now(), r: Math.random(), q: Math.random() })"
+    }));
     let zone = zoned_function().interpreted();
     let d = expressions().interpreted();
     for trace in [true, false] {
@@ -211,10 +210,10 @@ fn the_interpreted_engine_ignores_pinning() {
             assert_eq!(doc["calc"]["traceData"]["t"]["result"], a["t"]);
         }
         for f in [&v2, &v1] {
-            let (a, _) = evaluated(f, 1, options(trace, NOW, 6));
-            let (b, _) = evaluated(f, 1, options(trace, NOW, 6));
+            let (pinned, _) = evaluated(f, 1, options(trace, NOW, 6));
+            let (a, _) = evaluated(&f.interpreted(), 1, options(trace, NOW, 6));
             assert!(real_clock(&a["now"]), "{a}");
-            assert_ne!((&a["r"], &a["q"]), (&b["r"], &b["q"]));
+            assert_ne!((&a["r"], &a["q"]), (&pinned["r"], &pinned["q"]));
         }
     }
     let r = block(zone.evaluate_with_opts(input(1), zoned("Asia/Tokyo")));

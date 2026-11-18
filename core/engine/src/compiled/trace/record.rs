@@ -1,4 +1,4 @@
-use super::batch::Facts;
+use super::batch::{Cols, Facts};
 use super::collect::{Fact, Hit, Level, Record, Slot, Template};
 use crate::compiled::leaf::Leaf;
 use smallvec::SmallVec;
@@ -118,13 +118,13 @@ impl Probe {
 }
 
 impl KernelFacts {
-    pub(crate) fn facts(
+    pub(crate) fn facts<'x>(
         self,
         template: &Template,
         slot: Slot,
         shape: NodeShape,
         count: usize,
-    ) -> Result<Facts, &'static str> {
+    ) -> Result<Facts<'x>, &'static str> {
         if matches!(shape, NodeShape::Hosted) {
             return Err("hosted node");
         }
@@ -144,7 +144,7 @@ impl KernelFacts {
                     .results
                     .filter(|(_, leaves)| leaves.iter().all(|leaf| leaf.len() == count))
                 {
-                    return Ok(Facts::Results(results));
+                    return Ok(Facts::Results((results.0, Cols::Owned(results.1))));
                 }
                 self.objects
                     .filter(|(_, values)| values.len() == count)
@@ -158,14 +158,14 @@ impl KernelFacts {
         }
     }
 
-    fn table(
+    fn table<'x>(
         self,
         template: &Template,
         slot: Slot,
         first: bool,
         derived: bool,
         count: usize,
-    ) -> Result<Facts, &'static str> {
+    ) -> Result<Facts<'x>, &'static str> {
         if first {
             let first = self
                 .first
@@ -228,7 +228,7 @@ impl KernelFacts {
         })
     }
 
-    fn looped(self, spans: Option<Rc<[(u32, u32)]>>, inner: LoopBody) -> Option<Facts> {
+    fn looped<'x>(self, spans: Option<Rc<[(u32, u32)]>>, inner: LoopBody) -> Option<Facts<'x>> {
         let spans = spans?;
         let total = spans
             .iter()
@@ -249,10 +249,12 @@ impl KernelFacts {
             ));
         }
         let inner = match inner {
-            LoopBody::Results => Facts::Results(
-                self.results
-                    .filter(|(_, leaves)| leaves.iter().all(|leaf| leaf.len() == total))?,
-            ),
+            LoopBody::Results => {
+                let (keys, leaves) = self
+                    .results
+                    .filter(|(_, leaves)| leaves.iter().all(|leaf| leaf.len() == total))?;
+                Facts::Results((keys, Cols::Owned(leaves)))
+            }
             LoopBody::FirstDerived => {
                 Facts::First(self.first.filter(|first| first.len() == total)?)
             }

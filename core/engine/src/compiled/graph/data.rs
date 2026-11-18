@@ -13,8 +13,46 @@ use zen_types::variable::VariableMap;
 pub(crate) type Col = Rc<[Variable]>;
 type Parts<'a> = (Option<Col>, Vec<Layer<'a>>, Vec<(Arc<str>, Leaf<'a>)>);
 
+enum Nest {
+    Leaf(Symbol, usize),
+    Branch(Symbol, Vec<Nest>),
+}
+
+impl Nest {
+    fn of(segments: &[Box<[Symbol]>], items: &[usize], depth: usize) -> Option<Vec<Nest>> {
+        let mut nodes: Vec<Nest> = Vec::new();
+        let mut seen: Vec<&Symbol> = Vec::new();
+        let mut start = 0;
+        while start < items.len() {
+            let key = segments[items[start]].get(depth)?;
+            let end = (start..items.len())
+                .find(|&at| segments[items[at]].get(depth) != Some(key))
+                .unwrap_or(items.len());
+            if seen.contains(&key) {
+                return None;
+            }
+            seen.push(key);
+            let group = &items[start..end];
+            let leaf = group
+                .iter()
+                .any(|&index| segments[index].len() == depth + 1);
+            match (leaf, group) {
+                (true, [index]) => nodes.push(Nest::Leaf(key.clone(), *index)),
+                (true, _) => return None,
+                (false, _) => nodes.push(Nest::Branch(
+                    key.clone(),
+                    Self::of(segments, group, depth + 1)?,
+                )),
+            }
+            start = end;
+        }
+        Some(nodes)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct Layer<'a> {
+    nest: Option<Rc<[Nest]>>,
     pub paths: Arc<[Arc<str>]>,
     keys: Rc<[Symbol]>,
     segments: Rc<[Box<[Symbol]>]>,
@@ -31,11 +69,19 @@ impl<'a> Layer<'a> {
     ) -> Layer<'a> {
         let flat = paths.iter().all(|p| !p.contains('.'));
         let keys = paths.iter().map(|p| Symbol::from(p.as_ref())).collect();
-        let segments = paths
+        let segments: Rc<[Box<[Symbol]>]> = paths
             .iter()
             .map(|p| p.split('.').map(Symbol::from).collect())
             .collect();
+        let nest = match flat {
+            true => None,
+            false => {
+                let segments: &[Box<[Symbol]>] = &segments;
+                Nest::of(segments, &(0..segments.len()).collect::<Vec<_>>(), 0).map(Rc::from)
+            }
+        };
         Layer {
+            nest,
             paths,
             keys,
             segments,
@@ -61,6 +107,12 @@ impl<'a> Layer<'a> {
                 Variable::from_object(map)
             }
             false => {
+                if let Some(nest) = &self.nest {
+                    return Variable::from_object(
+                        self.nested(nest, row)
+                            .unwrap_or_else(|| VariableMap::with_capacity(0)),
+                    );
+                }
                 let object = Variable::empty_object();
                 for (i, (segments, column)) in
                     self.segments.iter().zip(self.columns.iter()).enumerate()
@@ -72,6 +124,29 @@ impl<'a> Layer<'a> {
                 object
             }
         }
+    }
+
+    fn nested(&self, nodes: &[Nest], row: usize) -> Option<VariableMap> {
+        let mut map: Option<VariableMap> = None;
+        let mut put = |key: &Symbol, value: Variable| {
+            map.get_or_insert_with(|| VariableMap::with_capacity(nodes.len()))
+                .insert(key.clone(), value);
+        };
+        for node in nodes {
+            match node {
+                Nest::Leaf(key, index) => {
+                    if self.has(*index, row) {
+                        put(key, self.columns[*index].get(row));
+                    }
+                }
+                Nest::Branch(key, children) => {
+                    if let Some(child) = self.nested(children, row) {
+                        put(key, Variable::from_object(child));
+                    }
+                }
+            }
+        }
+        map
     }
 
     fn insert(target: &Variable, segments: &[Symbol], value: Variable) {
@@ -134,6 +209,15 @@ impl<'a> Layer<'a> {
                 return self.has(*index, row).then(|| self.columns[*index].get(row));
             }
         }
+        if let Some(nest) = &self.nest {
+            let found = nest.iter().find_map(|node| match node {
+                Nest::Branch(key, children) if key.as_str() == top => Some(children),
+                _ => None,
+            });
+            if let Some(children) = found {
+                return self.nested(children, row).map(Variable::from_object);
+            }
+        }
         let object = Variable::empty_object();
         let mut any = false;
         for &i in under {
@@ -172,6 +256,7 @@ impl<'a> Layer<'a> {
     fn gather(&self, positions: &Rc<[usize]>) -> Layer<'a> {
         Layer {
             paths: self.paths.clone(),
+            nest: self.nest.clone(),
             keys: self.keys.clone(),
             segments: self.segments.clone(),
             columns: self.columns.iter().map(|c| c.pick(positions)).collect(),
@@ -257,6 +342,19 @@ impl<'a> Data<'a> {
             shape,
             whole: OnceCell::new(),
             tops: RefCell::new(Vec::new()),
+        }
+    }
+
+    pub fn copied(&self) -> Data<'a> {
+        Data::with_shape(self.rows.clone(), self.shape.clone())
+    }
+
+    pub fn single(&self) -> bool {
+        match &self.shape {
+            Shape::Plain(values) => values
+                .iter()
+                .all(|v| matches!(v, Variable::Object(_) | Variable::Array(_))),
+            Shape::Patched { nulls, .. } => nulls.is_none(),
         }
     }
 

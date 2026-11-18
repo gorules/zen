@@ -1,5 +1,4 @@
 use super::collect::{Fact, Hit, Level, Record, Slot, Template};
-use super::record::Results;
 use super::rows::RowWriter;
 use crate::compiled::graph::data::Data;
 use crate::compiled::host::graph::walker::GraphWalker;
@@ -9,24 +8,60 @@ use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::Variable;
 
-pub(crate) enum Facts {
+pub(crate) type Masked<'a> = (crate::compiled::leaf::Leaf<'a>, Option<Rc<[u64]>>);
+
+pub(crate) enum Cols<'a> {
+    Owned(Vec<crate::compiled::leaf::Leaf<'static>>),
+    Lazy(Vec<Masked<'a>>, Option<Rc<[usize]>>),
+}
+
+impl Cols<'_> {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Cols::Owned(leaves) => leaves.len(),
+            Cols::Lazy(leaves, _) => leaves.len(),
+        }
+    }
+
+    pub(crate) fn get(&self, index: usize, position: usize) -> Variable {
+        match self {
+            Cols::Owned(leaves) => leaves[index].get(position),
+            Cols::Lazy(leaves, rows) => {
+                let row = match rows {
+                    Some(rows) => rows[position],
+                    None => position,
+                };
+                let (leaf, present) = &leaves[index];
+                match present
+                    .as_ref()
+                    .is_some_and(|present| !crate::compiled::leaf::Bits::get(present, row))
+                {
+                    true => Variable::Null,
+                    false => leaf.get(row),
+                }
+            }
+        }
+    }
+}
+
+pub(crate) enum Facts<'a> {
     None,
-    Results(Results),
+    Results((Arc<[Arc<str>]>, Cols<'a>)),
     Objects(Arc<[Arc<str>]>, Rc<[Variable]>),
     First(Vec<Option<u32>>),
     Branches(Vec<SmallVec<[u32; 4]>>),
     Rows(Vec<Fact>),
-    Loop(Rc<[(u32, u32)]>, Box<Facts>),
+    Loop(Rc<[(u32, u32)]>, Box<Facts<'a>>),
 }
 
-impl Facts {
+impl Facts<'_> {
     fn at(&self, position: usize, template: &Template, slot: Slot, input: &Variable) -> Fact {
         match self {
             Facts::None => Fact::None,
             Facts::Results((keys, leaves)) => Fact::Results(
                 keys.iter()
-                    .zip(leaves.iter())
-                    .map(|(key, leaf)| (key.clone(), leaf.get(position)))
+                    .enumerate()
+                    .map(|(index, key)| (key.clone(), leaves.get(index, position)))
                     .collect(),
             ),
             Facts::Objects(keys, values) => {
@@ -102,7 +137,7 @@ pub(crate) struct BatchEvent<'a> {
     pub(crate) input: bool,
     pub(crate) output: Option<Value<'a>>,
     pub(crate) ns: u64,
-    pub(crate) facts: Facts,
+    pub(crate) facts: Facts<'a>,
     pub(crate) encoding: Encoding<'a>,
 }
 
@@ -466,7 +501,7 @@ impl<'a> Traces<'a> {
             Encoding::Generic => return Err("generic output"),
             Encoding::Null | Encoding::Passed => {}
             Encoding::Request => {
-                let Some(value) = event.output_row(position) else {
+                let Some(value) = self.value(walk, slot) else {
                     return Err("request");
                 };
                 let same = match (&value, owned) {
@@ -609,7 +644,7 @@ impl<'a> Traces<'a> {
                     slot,
                     order
                         .iter()
-                        .map(|&i| (&*keys[i as usize], leaves[i as usize].get(position))),
+                        .map(|&i| (&*keys[i as usize], leaves.get(i as usize, position))),
                     out,
                 )
             }
@@ -645,7 +680,7 @@ impl<'a> Traces<'a> {
                                     ok &= writer.result_item(
                                         i == 0,
                                         order.iter().map(|&k| {
-                                            (&*keys[k as usize], leaves[k as usize].get(item))
+                                            (&*keys[k as usize], leaves.get(k as usize, item))
                                         }),
                                         out,
                                     );
@@ -663,7 +698,7 @@ impl<'a> Traces<'a> {
                                         for &k in order.iter() {
                                             map.insert(
                                                 (&*keys[k as usize]).into(),
-                                                leaves[k as usize].get(item),
+                                                leaves.get(k as usize, item),
                                             );
                                         }
                                         Variable::from_object(map)
@@ -747,7 +782,7 @@ impl<'a> Traces<'a> {
         match &self.events[at].facts {
             Facts::Results((keys, leaves)) => vec![order
                 .iter()
-                .map(|&k| (&*keys[k as usize], leaves[k as usize].get(position)))
+                .map(|&k| (&*keys[k as usize], leaves.get(k as usize, position)))
                 .collect()],
             Facts::Objects(keys, values) => {
                 let object = values.get(position).cloned().unwrap_or(Variable::Null);
@@ -764,7 +799,7 @@ impl<'a> Traces<'a> {
                     .map(|item| {
                         order
                             .iter()
-                            .map(|&k| (&*keys[k as usize], leaves[k as usize].get(item as usize)))
+                            .map(|&k| (&*keys[k as usize], leaves.get(k as usize, item as usize)))
                             .collect()
                     })
                     .collect(),
@@ -779,9 +814,9 @@ impl<'a> Traces<'a> {
             return false;
         }
         match &self.events[at].facts {
-            Facts::Results((_, leaves)) => leaves
-                .iter()
-                .all(|leaf| super::rows::null_free(&leaf.get(position))),
+            Facts::Results((_, leaves)) => {
+                (0..leaves.len()).all(|index| super::rows::null_free(&leaves.get(index, position)))
+            }
             Facts::Loop(spans, inner) => {
                 let (Some(&(start, count)), Facts::Results((_, leaves))) =
                     (spans.get(position), inner.as_ref())
@@ -789,9 +824,8 @@ impl<'a> Traces<'a> {
                     return false;
                 };
                 (start..start + count).all(|item| {
-                    leaves
-                        .iter()
-                        .all(|leaf| super::rows::null_free(&leaf.get(item as usize)))
+                    (0..leaves.len())
+                        .all(|index| super::rows::null_free(&leaves.get(index, item as usize)))
                 })
             }
             Facts::Objects(keys, values) => {

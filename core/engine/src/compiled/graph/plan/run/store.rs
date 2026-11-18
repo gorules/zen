@@ -564,3 +564,151 @@ impl<'a> Store<'a> {
         }
     }
 }
+
+pub(super) struct Columned<'a> {
+    pub paths: Vec<Arc<str>>,
+    pub leaves: Vec<Leaf<'a>>,
+    pub present: Vec<Vec<u64>>,
+    pub wanted: Vec<u64>,
+    pub nulls: bool,
+}
+
+impl<'a> Columned<'a> {
+    pub fn full(&self) -> bool {
+        self.present.iter().all(|present| *present == self.wanted)
+    }
+
+    pub fn at(&self, path: &str) -> Option<usize> {
+        self.paths.iter().position(|own| own.as_ref() == path)
+    }
+
+    pub fn leaf(&self, index: usize) -> (Leaf<'a>, Option<Rc<[u64]>>) {
+        let present = &self.present[index];
+        (
+            self.leaves[index].settled(),
+            (*present != self.wanted).then(|| Rc::from(present.clone())),
+        )
+    }
+
+    pub fn layer(
+        &self,
+        rows: &Rc<[usize]>,
+        total: usize,
+    ) -> crate::compiled::graph::data::Layer<'a> {
+        use crate::compiled::leaf::Mask;
+        let whole = rows.len() == total;
+        let columns = self
+            .leaves
+            .iter()
+            .map(|leaf| match whole {
+                true => leaf.settled(),
+                false => leaf.settled().pick(rows),
+            })
+            .collect();
+        let present = (!self.full()).then(|| {
+            self.present
+                .iter()
+                .map(|present| match whole {
+                    true => Mask::Bits(Rc::from(present.clone())),
+                    false => Mask::Picked(Rc::from(present.clone()), rows.clone()),
+                })
+                .collect()
+        });
+        crate::compiled::graph::data::Layer::new(self.paths.clone().into(), columns, present)
+    }
+}
+
+impl<'a> Store<'a> {
+    pub(super) fn columned(
+        shape: &Shaped<'a>,
+        rows: &[usize],
+        total: usize,
+    ) -> Option<Columned<'a>> {
+        let words = total.div_ceil(64);
+        let wanted = match rows.len() == total {
+            true => Bits::ones(total),
+            false => {
+                let mut bits = vec![0u64; words];
+                rows.iter().for_each(|&row| Bits::set(&mut bits, row, true));
+                bits
+            }
+        };
+        let word = |bits: &Rc<[u64]>, at: usize| bits.get(at).copied().unwrap_or(0);
+        if let Some((_, present)) = &shape.leaf {
+            if (0..words).any(|at| word(present, at) & wanted[at] != 0) {
+                return None;
+            }
+        }
+        let obj = shape.obj.as_ref()?;
+        if (0..words).any(|at| wanted[at] & !word(obj, at) != 0) {
+            return None;
+        }
+        let mut out = Columned {
+            paths: Vec::new(),
+            leaves: Vec::new(),
+            present: Vec::new(),
+            wanted: wanted.clone(),
+            nulls: false,
+        };
+        Self::flatten(shape, "", &wanted, total, true, &mut out)?;
+        Some(out)
+    }
+
+    fn flatten(
+        shape: &Shaped<'a>,
+        prefix: &str,
+        active: &[u64],
+        total: usize,
+        root: bool,
+        out: &mut Columned<'a>,
+    ) -> Option<()> {
+        let words = active.len();
+        let word = |bits: &Rc<[u64]>, at: usize| bits.get(at).copied().unwrap_or(0);
+        let mut exists = vec![0u64; words];
+        for (key, child) in &shape.fields {
+            if key.contains('.') {
+                return None;
+            }
+            let path: Arc<str> = match prefix.is_empty() {
+                true => Arc::from(key.as_ref()),
+                false => Arc::from(format!("{prefix}.{key}")),
+            };
+            let leaf: Vec<u64> = (0..words)
+                .map(|at| match &child.leaf {
+                    Some((_, present)) => word(present, at) & active[at],
+                    None => 0,
+                })
+                .collect();
+            let object: Vec<u64> = (0..words)
+                .map(|at| match &child.obj {
+                    Some(obj) => word(obj, at) & active[at] & !leaf[at],
+                    None => 0,
+                })
+                .collect();
+            if let Some((column, _)) = &child.leaf {
+                if !Bits::none(&leaf) {
+                    let valued = column.valued(total);
+                    out.nulls |=
+                        (0..words).any(|at| leaf[at] & !valued.get(at).copied().unwrap_or(0) != 0);
+                    out.paths.push(path.clone());
+                    out.leaves.push(column.clone());
+                    out.present.push(leaf.clone());
+                }
+            }
+            if !Bits::none(&leaf) && !child.fields.is_empty() {
+                return None;
+            }
+            match child.fields.is_empty() {
+                true if !Bits::none(&object) => return None,
+                true => {}
+                false => Self::flatten(child, &path, &object, total, false, out)?,
+            }
+            Bits::or(&mut exists, &leaf);
+            Bits::or(&mut exists, &object);
+        }
+        if !root && (0..words).any(|at| active[at] & !exists[at] != 0) {
+            return None;
+        }
+        Some(())
+    }
+}

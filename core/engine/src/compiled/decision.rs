@@ -209,7 +209,7 @@ impl CompiledDecision {
                             })
                         })
                         .collect();
-                    ColumnarOutput::from_results(results).traced(batch)
+                    ColumnarOutput::from_results(results).traced_rows(batch)
                 }
                 Err(invalid) => ColumnarOutput::from_results(
                     owned.iter().map(|_| Err(invalid.evaluation())).collect(),
@@ -250,7 +250,7 @@ impl CompiledDecision {
     ) -> Result<
         (
             Vec<Result<Variable, Box<EvaluationError>>>,
-            crate::compiled::trace::TraceBatch,
+            crate::compiled::trace::TraceBatch<'static>,
         ),
         &Invalid,
     > {

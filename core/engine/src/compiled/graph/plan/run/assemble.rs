@@ -260,17 +260,17 @@ impl CompiledGraph {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn plan_traces(
+    async fn plan_traces<'a>(
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
         max_depth: u8,
         columns: &Columns<'_>,
-        trace: super::PlanTrace,
+        trace: super::PlanTrace<'a>,
         output: &ColumnarOutput<'_>,
         deferred: &[usize],
         format: crate::compiled::trace::TraceFormat,
-    ) -> crate::compiled::trace::TraceBatch {
+    ) -> crate::compiled::trace::TraceBatch<'a> {
         let rows = columns.rows;
         let mut traces = crate::compiled::trace::batch::Traces::new(
             self.template().clone(),
@@ -367,6 +367,27 @@ impl Plan {
             }
         }
         crate::compiled::trace::count_run();
+        let overlapping = graph.steps.iter().flatten().any(|step| {
+            matches!(
+                &step.kind,
+                Kind::Node {
+                    body: crate::compiled::graph::Body::Expression {
+                        overlapping: true,
+                        ..
+                    },
+                    ..
+                }
+            )
+        });
+        let rowwise = graph.steps.iter().flatten().any(|step| {
+            step.nodes || matches!(&step.kind, Kind::Node { transform, .. } if transform.looped)
+        }) || root.ops.iter().any(|op| {
+            matches!(
+                op,
+                crate::compiled::graph::plan::Op::Rows(_)
+                    | crate::compiled::graph::plan::Op::Child(_)
+            )
+        });
         let mut store = Store::new(root, columns, dated);
         for (row, error) in failures {
             store.errors.set(row, error);
@@ -391,7 +412,8 @@ impl Plan {
                 Box::new(super::PlanTrace::new(
                     graph.steps.len(),
                     CompiledGraph::shared_rows(columns),
-                    !indexes.is_empty() || !CompiledGraph::flat_scalars(columns),
+                    !overlapping && !rowwise,
+                    indexes.is_empty() && CompiledGraph::flat_scalars(columns),
                 ))
             }),
         };

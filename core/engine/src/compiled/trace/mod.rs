@@ -589,9 +589,9 @@ pub(crate) fn collected(
     }
 }
 
-pub struct TraceBatch {
+pub struct TraceBatch<'a> {
     hint: std::cell::Cell<usize>,
-    traces: batch::Traces<'static>,
+    traces: batch::Traces<'a>,
     requests: Vec<Variable>,
     owned: Vec<Variable>,
     failures: Vec<Option<(Arc<str>, String)>>,
@@ -599,9 +599,9 @@ pub struct TraceBatch {
     context: zen_expression::context::EvaluationContext,
 }
 
-impl TraceBatch {
+impl<'a> TraceBatch<'a> {
     pub(crate) fn new(
-        traces: batch::Traces<'static>,
+        traces: batch::Traces<'a>,
         requests: Vec<Variable>,
         owned: Vec<Variable>,
         results: &[Result<Variable, Box<EvaluationError>>],
@@ -620,7 +620,7 @@ impl TraceBatch {
     }
 
     pub(crate) fn with_failures(
-        traces: batch::Traces<'static>,
+        traces: batch::Traces<'a>,
         requests: Vec<Variable>,
         owned: Vec<Variable>,
         failures: Vec<Option<(Arc<str>, String)>>,

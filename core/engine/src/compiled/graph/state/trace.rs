@@ -30,7 +30,7 @@ impl CompiledGraph {
         input: bool,
         output: Option<Value<'a>>,
         start: Instant,
-        facts: Facts,
+        facts: Facts<'a>,
         encoding: Encoding<'a>,
     ) {
         if let Some(traces) = state.traces.as_mut() {
@@ -156,7 +156,7 @@ impl CompiledGraph {
             })
     }
 
-    pub(in crate::compiled::graph) fn kernel_facts(
+    pub(in crate::compiled::graph) fn kernel_facts<'x>(
         &self,
         step: &Step,
         probe: Option<Rc<Probe>>,
@@ -164,7 +164,7 @@ impl CompiledGraph {
         event: &Execute,
         rows: &Rc<[usize]>,
         data: &Data<'_>,
-    ) -> Facts {
+    ) -> Facts<'x> {
         let slot = event.node.index() as Slot;
         let shape = Self::node_shape(step, Some(data));
         let recorded = probe

@@ -477,6 +477,23 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn settled(&self) -> Leaf<'a> {
+        match self {
+            Leaf::Records(records) => Leaf::Any(records.dense().clone()),
+            Leaf::Templated(templated) => Leaf::Any(templated.dense().clone()),
+            Leaf::Picked(picked) => Leaf::Picked(Rc::new(Picked {
+                source: picked.source.settled(),
+                positions: picked.positions.clone(),
+                dense: OnceCell::new(),
+            })),
+            Leaf::Stitched(stitched) => Leaf::stitched(
+                stitched.sources.iter().map(Leaf::settled).collect(),
+                stitched.located.clone(),
+            ),
+            other => other.clone(),
+        }
+    }
+
     pub fn pick(&self, positions: &Rc<[usize]>) -> Leaf<'a> {
         match self {
             Leaf::Picked(picked) => Leaf::Picked(Rc::new(Picked {

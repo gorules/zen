@@ -40,7 +40,7 @@ struct Run<'r, 'a> {
     completed: Completed,
     iteration: u8,
     parents: Option<Parents<'r>>,
-    trace: Option<Box<PlanTrace>>,
+    trace: Option<Box<PlanTrace<'a>>>,
 }
 
 impl<'a> Run<'_, 'a> {

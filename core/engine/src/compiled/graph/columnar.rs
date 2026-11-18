@@ -28,7 +28,60 @@ pub struct ColumnarOutput<'a> {
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<Rc<EvaluationError>>>,
     pub(crate) paths: Paths,
-    pub(crate) traces: Option<Rc<crate::compiled::trace::TraceBatch>>,
+    pub(crate) traces: Option<Traced<'a>>,
+}
+
+#[derive(Clone)]
+pub(crate) enum Traced<'a> {
+    Columns(Rc<crate::compiled::trace::TraceBatch<'a>>),
+    Rows(Rc<crate::compiled::trace::TraceBatch<'static>>),
+}
+
+pub struct ColumnarTraces<'o, 'a>(&'o Traced<'a>);
+
+impl ColumnarTraces<'_, '_> {
+    pub fn len(&self) -> usize {
+        match self.0 {
+            Traced::Columns(batch) => batch.len(),
+            Traced::Rows(batch) => batch.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn json(&self, row: usize) -> Option<String> {
+        match self.0 {
+            Traced::Columns(batch) => batch.json(row),
+            Traced::Rows(batch) => batch.json(row),
+        }
+    }
+
+    pub fn document(&self, row: usize) -> Option<crate::compiled::trace::TraceDocument> {
+        match self.0 {
+            Traced::Columns(batch) => batch.document(row),
+            Traced::Rows(batch) => batch.document(row),
+        }
+    }
+
+    pub fn write_all(&self, out: &mut String) -> Vec<usize> {
+        match self.0 {
+            Traced::Columns(batch) => batch.write_all(out),
+            Traced::Rows(batch) => batch.write_all(out),
+        }
+    }
+}
+
+impl<'a> ColumnarOutput<'a> {
+    pub fn traces(&self) -> Option<ColumnarTraces<'_, 'a>> {
+        self.traces.as_ref().map(ColumnarTraces)
+    }
+
+    pub(crate) fn traced(mut self, traces: crate::compiled::trace::TraceBatch<'a>) -> Self {
+        self.traces = Some(Traced::Columns(Rc::new(traces)));
+        self
+    }
 }
 
 impl ColumnarOutput<'_> {
@@ -59,16 +112,15 @@ impl ColumnarOutput<'_> {
         OutputColumn::row(&self.columns, row)
     }
 
-    pub fn traces(&self) -> Option<&crate::compiled::trace::TraceBatch> {
-        self.traces.as_deref()
-    }
-
     pub fn trace_json(&self, row: usize) -> Option<String> {
-        self.traces.as_ref()?.json(row)
+        self.traces().and_then(|traces| traces.json(row))
     }
 
-    pub(crate) fn traced(mut self, traces: crate::compiled::trace::TraceBatch) -> Self {
-        self.traces = Some(Rc::new(traces));
+    pub(crate) fn traced_rows(
+        mut self,
+        traces: crate::compiled::trace::TraceBatch<'static>,
+    ) -> Self {
+        self.traces = Some(Traced::Rows(Rc::new(traces)));
         self
     }
 
@@ -108,7 +160,7 @@ impl ColumnarOutput<'_> {
 }
 
 impl CompiledGraph {
-    fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
+    pub(in crate::compiled::graph) fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
         let rows = columns.rows;
         let mut paths: Vec<Arc<str>> = Vec::with_capacity(columns.columns.len());
         let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(columns.columns.len());

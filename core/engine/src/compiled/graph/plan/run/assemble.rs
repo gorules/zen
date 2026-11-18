@@ -188,23 +188,75 @@ impl<'a> Run<'_, 'a> {
 }
 
 impl CompiledGraph {
-    fn shared_row(columns: &Columns<'_>, row: usize) -> zen_expression::Variable {
-        let object = zen_expression::Variable::empty_object();
-        for (path, column) in &columns.columns {
-            let nested = matches!(column.values, Values::Any(_))
-                && columns
-                    .columns
-                    .iter()
-                    .any(|(other, _)| zen_types::path::DotPath::under(other, path));
-            let value = match nested {
-                true => column.variable(row).depth_clone(usize::MAX),
-                false => column.variable(row),
+    pub(super) fn shared_rows(columns: &Columns<'_>) -> Rc<[zen_expression::Variable]> {
+        use zen_expression::Variable;
+        use zen_types::symbol::Symbol;
+        let shapes: Vec<(Box<[Symbol]>, bool)> = columns
+            .columns
+            .iter()
+            .map(|(path, column)| {
+                let nested = matches!(column.values, Values::Any(_))
+                    && columns
+                        .columns
+                        .iter()
+                        .any(|(other, _)| zen_types::path::DotPath::under(other, path));
+                (path.split('.').map(Symbol::from).collect(), nested)
+            })
+            .collect();
+        (0..columns.rows)
+            .map(|row| {
+                let object = Variable::empty_object();
+                for ((_, column), (segments, nested)) in columns.columns.iter().zip(&shapes) {
+                    let value = match nested {
+                        true => column.variable(row).depth_clone(usize::MAX),
+                        false => column.variable(row),
+                    };
+                    if !matches!(value, Variable::Null) || column.valid(row) {
+                        Self::shared_insert(&object, segments, value);
+                    }
+                }
+                object
+            })
+            .collect()
+    }
+
+    fn flat_scalars(columns: &Columns<'_>) -> bool {
+        columns
+            .columns
+            .iter()
+            .all(|(path, column)| !path.contains('.') && !matches!(column.values, Values::Any(_)))
+    }
+
+    fn shared_insert(
+        target: &zen_expression::Variable,
+        segments: &[zen_types::symbol::Symbol],
+        value: zen_expression::Variable,
+    ) {
+        use zen_expression::Variable;
+        let Some((last, head)) = segments.split_last() else {
+            return;
+        };
+        let mut current = target.shallow_clone();
+        for part in head {
+            let Variable::Object(object) = &current else {
+                return;
             };
-            if !matches!(value, zen_expression::Variable::Null) || column.valid(row) {
-                object.dot_insert(path, value);
-            }
+            let existing = object.borrow().get(part).map(Variable::shallow_clone);
+            let next = match existing {
+                Some(existing) => existing,
+                None => {
+                    let created = Variable::empty_object();
+                    object
+                        .borrow_mut()
+                        .insert(part.clone(), created.shallow_clone());
+                    created
+                }
+            };
+            current = next;
         }
-        object
+        if let Variable::Object(object) = current {
+            object.borrow_mut().insert(last.clone(), value);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -226,8 +278,7 @@ impl CompiledGraph {
             rows,
         );
         traces.events = trace.events;
-        let requests: Vec<zen_expression::Variable> =
-            (0..rows).map(|r| Self::shared_row(columns, r)).collect();
+        let requests: Vec<zen_expression::Variable> = trace.requests.to_vec();
         let mut failures: Vec<Option<(Arc<str>, String)>> = vec![None; rows];
         for row in 0..rows {
             let errored = output.errors.get(row).is_some_and(Option::is_some);
@@ -336,7 +387,13 @@ impl Plan {
             completed: Completed::default(),
             iteration: 0,
             parents: None,
-            trace: traced.map(|_| Box::new(super::PlanTrace::new(graph.steps.len()))),
+            trace: traced.map(|_| {
+                Box::new(super::PlanTrace::new(
+                    graph.steps.len(),
+                    CompiledGraph::shared_rows(columns),
+                    !indexes.is_empty() || !CompiledGraph::flat_scalars(columns),
+                ))
+            }),
         };
         run.walk(root.clone()).await;
         let Run {

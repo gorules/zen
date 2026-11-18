@@ -44,14 +44,23 @@ pub(crate) struct PlanTrace {
     hosted: Vec<Hosted>,
     times: Vec<(NodeIndex, u64)>,
     values: Vec<Option<Column>>,
+    pub(crate) requests: Rc<[Variable]>,
+    typed_input: bool,
     pub(crate) refused: Option<&'static str>,
 }
 
 impl PlanTrace {
-    pub(crate) fn new(slots: usize) -> Self {
+    pub(crate) fn new(slots: usize, requests: Rc<[Variable]>, typed_input: bool) -> Self {
         Self {
+            events: Vec::new(),
+            kernels: Vec::new(),
+            probe: None,
+            hosted: Vec::new(),
+            times: Vec::new(),
             values: vec![None; slots],
-            ..Self::default()
+            requests,
+            typed_input,
+            refused: None,
         }
     }
 
@@ -254,17 +263,31 @@ impl<'a> Run<'_, 'a> {
             let parents: Box<[Slot]> = event.parents.iter().map(|p| p.index() as Slot).collect();
             let (input, values, output, facts, encoding) = match &step.kind {
                 Kind::Input => {
-                    let Some(view) = seg
-                        .views
-                        .iter()
-                        .rev()
-                        .find(|(n, _)| *n == event.node)
-                        .map(|(_, v)| v.clone())
-                    else {
-                        self.refuse("node without a view");
-                        return;
+                    let values: Rc<[Variable]> = match trace.typed_input {
+                        false => {
+                            let requests = &trace.requests;
+                            rows.iter()
+                                .map(|&row| {
+                                    requests
+                                        .get(row)
+                                        .map_or(Variable::Null, |v| v.depth_clone(1))
+                                })
+                                .collect()
+                        }
+                        true => {
+                            let Some(view) = seg
+                                .views
+                                .iter()
+                                .rev()
+                                .find(|(n, _)| *n == event.node)
+                                .map(|(_, v)| v.clone())
+                            else {
+                                self.refuse("node without a view");
+                                return;
+                            };
+                            self.captured(seg, &view, &rows)
+                        }
                     };
-                    let values = self.captured(seg, &view, &rows);
                     let output = Rc::new(Data::plain(rows.clone(), values.clone()));
                     (
                         false,

@@ -477,6 +477,42 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn words(&self, row: usize, key: &mut Vec<u64>) -> bool {
+        if matches!(self, Leaf::Any(_) | Leaf::Records(_)) {
+            return false;
+        }
+        let column = self.column();
+        if ColumnBuilder::null_at(&column, row) {
+            return false;
+        }
+        match column.values {
+            Values::Dict { values, .. } if !matches!(values, Dictionary::Any(_)) => {
+                match column.code(row) {
+                    Some(code) => {
+                        key.extend_from_slice(&[1, code as u64]);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            Values::Scaled { mant, scale } => match (mant.get(row), scale.get(row)) {
+                (Some(&mant), Some(&scale)) => {
+                    key.extend_from_slice(&[2, mant as u64, u64::from(scale)]);
+                    true
+                }
+                _ => false,
+            },
+            Values::I64(values) => match values.get(row) {
+                Some(&value) => {
+                    key.extend_from_slice(&[3, value as u64]);
+                    true
+                }
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
     pub fn settled(&self) -> Leaf<'a> {
         match self {
             Leaf::Records(records) => Leaf::Any(records.dense().clone()),

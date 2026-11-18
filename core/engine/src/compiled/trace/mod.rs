@@ -756,12 +756,17 @@ impl<'a> TraceBatch<'a> {
 
     pub fn write_all(&self, out: &mut String) -> Vec<usize> {
         let mut ends = Vec::with_capacity(self.len());
+        let start = out.len();
         for row in 0..self.len() {
             if !self.columnar(row, out) {
                 match self.written(row) {
                     Some(doc) => out.push_str(doc.json()),
                     None => out.push_str("null"),
                 }
+            }
+            if row == 0 {
+                let first = out.len() - start;
+                out.reserve((first + first / 16 + 16).saturating_mul(self.len() - 1));
             }
             ends.push(out.len());
             out.push('\n');

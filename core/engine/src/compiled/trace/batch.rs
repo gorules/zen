@@ -1,6 +1,6 @@
 use super::collect::{Fact, Hit, Level, Record, Slot, Template};
 use super::rows::RowWriter;
-use crate::compiled::graph::data::{Cell, Data};
+use crate::compiled::graph::data::{Data, Keys};
 use crate::compiled::host::graph::walker::GraphWalker;
 use smallvec::SmallVec;
 use std::cell::OnceCell;
@@ -151,13 +151,14 @@ pub(crate) struct Traces<'a> {
 
 #[derive(Default)]
 struct Bodies {
-    texts: super::value::FastMap<Vec<Cell>, Box<str>>,
+    texts: super::value::FastMap<Vec<u64>, Box<str>>,
     hits: u32,
     misses: u32,
     off: bool,
 }
 
 struct Plan<'a> {
+    keys: std::cell::RefCell<Keys>,
     bodies: Vec<std::cell::RefCell<Bodies>>,
     positions: Vec<Box<[u32]>>,
     perf: Vec<String>,
@@ -284,6 +285,7 @@ impl<'a> Traces<'a> {
                 })
                 .collect();
             Plan {
+                keys: Default::default(),
                 bodies: self.events.iter().map(|_| Default::default()).collect(),
                 positions,
                 perf: self
@@ -324,7 +326,7 @@ impl<'a> Traces<'a> {
         at: usize,
         position: usize,
         walk: &Walk,
-        key: &mut Vec<Cell>,
+        key: &mut Keys,
     ) -> bool {
         let event = &self.events[at];
         let (Some(edits), Some(Value::Data(after)), Encoding::Touched(Some(input))) =
@@ -339,21 +341,21 @@ impl<'a> Traces<'a> {
         {
             return false;
         }
-        key.clear();
+        key.words.clear();
         match &event.facts {
-            Facts::None => key.push(Cell::Mark(0)),
+            Facts::None => key.mark(10),
             Facts::First(rules) => match rules.get(position).copied().flatten() {
                 Some(rule) => {
-                    key.push(Cell::Mark(1));
-                    key.push(Cell::Mark(rule));
+                    key.mark(11);
+                    key.mark(u64::from(rule));
                 }
-                None => key.push(Cell::Mark(2)),
+                None => key.mark(12),
             },
             Facts::Rows(facts) => match facts.get(position) {
-                Some(Fact::None) => key.push(Cell::Mark(3)),
+                Some(Fact::None) => key.mark(13),
                 Some(Fact::Hit(Hit { rule, refs: None })) => {
-                    key.push(Cell::Mark(4));
-                    key.push(Cell::Mark(*rule));
+                    key.mark(14);
+                    key.mark(u64::from(*rule));
                 }
                 _ => return false,
             },
@@ -442,7 +444,7 @@ impl<'a> Traces<'a> {
             inputs: SmallVec::from_elem(None, self.slots),
         };
         writer.begin(engine, evaluation, out);
-        let mut key: Vec<Cell> = Vec::new();
+        let mut key = plan.keys.borrow_mut();
         for (at, event) in self.events.iter().enumerate() {
             let position = plan.positions[at][row];
             if position == ABSENT {
@@ -488,7 +490,7 @@ impl<'a> Traces<'a> {
             let keyed =
                 !bodies.off && parent.is_some() && self.keyed(plan, at, position, &walk, &mut key);
             if keyed {
-                if let Some(text) = bodies.texts.get(key.as_slice()) {
+                if let Some(text) = bodies.texts.get(key.words.as_slice()) {
                     out.push_str(text);
                     bodies.hits += 1;
                     drop(bodies);
@@ -537,7 +539,7 @@ impl<'a> Traces<'a> {
                 }
             }
             if keyed && !bodies.off {
-                bodies.texts.insert(key.clone(), out[mark..].into());
+                bodies.texts.insert(key.words.clone(), out[mark..].into());
             }
             drop(bodies);
             writer.end(event.slot, out);

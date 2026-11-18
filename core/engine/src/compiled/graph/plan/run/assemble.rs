@@ -413,7 +413,8 @@ impl Plan {
                     graph.steps.len(),
                     CompiledGraph::shared_rows(columns),
                     !overlapping && !rowwise,
-                    indexes.is_empty() && CompiledGraph::flat_scalars(columns),
+                    indexes.is_empty()
+                        && (!overlapping && !rowwise || CompiledGraph::flat_scalars(columns)),
                 ))
             }),
         };

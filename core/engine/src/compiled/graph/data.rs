@@ -158,17 +158,11 @@ impl<'a> Layer<'a> {
             let Variable::Object(object) = &current else {
                 return;
             };
-            let existing = object.borrow().get(part).map(Variable::shallow_clone);
-            let next = match existing {
-                Some(existing) => existing,
-                None => {
-                    let created = Variable::empty_object();
-                    object
-                        .borrow_mut()
-                        .insert(part.clone(), created.shallow_clone());
-                    created
-                }
-            };
+            let existing = object.borrow().get(part).map(|found| found.depth_clone(1));
+            let next = existing.unwrap_or_else(Variable::empty_object);
+            object
+                .borrow_mut()
+                .insert(part.clone(), next.shallow_clone());
             current = next;
         }
         if let Variable::Object(object) = current {
@@ -1172,14 +1166,12 @@ pub(crate) struct Edits<'a> {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Cell {
-    Skip,
     Absent,
     Container,
     Null,
     Bool(bool),
     Number(i128, u32),
     Text(Symbol),
-    Mark(u32),
 }
 
 impl Cell {
@@ -1203,6 +1195,55 @@ impl Cell {
             Some(value) => Self::of(value),
             None => Some(Cell::Absent),
         }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct Keys {
+    pub words: Vec<u64>,
+    cells: FastCells,
+}
+
+type FastCells =
+    std::collections::HashMap<Cell, u32, std::hash::BuildHasherDefault<ahash::AHasher>>;
+
+impl Keys {
+    pub fn mark(&mut self, tag: u64) {
+        self.words.push(tag);
+    }
+
+    fn cell(&mut self, cell: Cell) -> Option<()> {
+        let next = self.cells.len() as u32;
+        if next > 1 << 16 && !self.cells.contains_key(&cell) {
+            return None;
+        }
+        let id = *self.cells.entry(cell).or_insert(next);
+        self.words.extend_from_slice(&[4, id as u64]);
+        Some(())
+    }
+
+    fn scalar(&mut self, leaf: &Leaf, row: usize) -> Option<bool> {
+        if leaf.words(row, &mut self.words) {
+            return Some(true);
+        }
+        let cell = Cell::scalar(&leaf.get(row))?;
+        let valued = cell != Cell::Null;
+        self.cell(cell)?;
+        Some(valued)
+    }
+
+    fn known(&mut self, leaf: &Leaf, row: usize) -> Option<()> {
+        if leaf.words(row, &mut self.words) {
+            return Some(());
+        }
+        match leaf.get(row) {
+            Variable::Null => None,
+            value => self.cell(Cell::of(&value)?),
+        }
+    }
+
+    fn earlier(&mut self, value: Option<&Variable>) -> Option<()> {
+        self.cell(Cell::earlier(value)?)
     }
 }
 
@@ -1326,7 +1367,7 @@ impl<'a> Data<'a> {
         input: &Data<'a>,
         edits: &Edits<'a>,
         row: usize,
-        key: &mut Vec<Cell>,
+        key: &mut Keys,
     ) -> bool {
         self.edit_cells(input, edits, row, key).is_some()
     }
@@ -1336,20 +1377,16 @@ impl<'a> Data<'a> {
         input: &Data<'a>,
         edits: &Edits<'a>,
         row: usize,
-        key: &mut Vec<Cell>,
+        key: &mut Keys,
     ) -> Option<()> {
         let layer = self.extends(input)?;
         if !self.object(row) || !input.object(row) {
             return None;
         }
         let earlier = input.leaves();
-        let known = |index: usize| match earlier[index].1.get(row) {
-            Variable::Null => None,
-            value => Some(value),
-        };
         for group in &edits.groups {
             if !group.layer.iter().any(|&index| layer.has(index, row)) {
-                key.push(Cell::Skip);
+                key.mark(5);
                 continue;
             }
             let based = || {
@@ -1360,12 +1397,11 @@ impl<'a> Data<'a> {
             match &group.kind {
                 EditKind::Dynamic => return None,
                 EditKind::Flat { column, before, .. } => {
-                    let was = match before {
-                        Some(leaf) => Cell::of(&known(*leaf)?)?,
-                        None => Cell::earlier(based().as_ref())?,
+                    match before {
+                        Some(leaf) => key.known(&earlier[*leaf].1, row)?,
+                        None => key.earlier(based().as_ref())?,
                     };
-                    key.push(was);
-                    key.push(Cell::scalar(&column.get(row))?);
+                    key.scalar(column, row)?;
                 }
                 EditKind::Nested {
                     fields,
@@ -1373,8 +1409,12 @@ impl<'a> Data<'a> {
                     under,
                 } => {
                     let was = match (exact, under.is_empty()) {
-                        (Some(leaf), _) => Some(known(*leaf)?),
-                        (None, false) => match under.iter().any(|&leaf| known(leaf).is_some()) {
+                        (Some(leaf), _) => match earlier[*leaf].1.get(row) {
+                            Variable::Null => return None,
+                            value => Some(value),
+                        },
+                        (None, false) => match under.iter().any(|&leaf| !earlier[leaf].1.null(row))
+                        {
                             true => Some(Variable::empty_object()),
                             false => return None,
                         },
@@ -1382,43 +1422,42 @@ impl<'a> Data<'a> {
                     };
                     match &was {
                         Some(Variable::Object(map)) => {
-                            key.push(Cell::Mark(1));
+                            key.mark(8);
                             let outer = match (exact, under.is_empty()) {
                                 (None, false) => None,
                                 _ => Some(map),
                             };
                             for field in fields {
                                 if !layer.has(field.index, row) {
-                                    key.push(Cell::Skip);
+                                    key.mark(5);
                                     continue;
                                 }
-                                let now = Cell::scalar(&field.column.get(row))?;
-                                if now == Cell::Null {
+                                if !key.scalar(&field.column, row)? {
                                     return None;
                                 }
-                                let before = match (field.before, outer) {
-                                    (Some(leaf), _) => Cell::of(&known(leaf)?)?,
+                                match (field.before, outer) {
+                                    (Some(leaf), _) => key.known(&earlier[leaf].1, row)?,
                                     (None, Some(map)) => {
-                                        Cell::earlier(map.borrow().get_str(&field.name))?
+                                        key.earlier(map.borrow().get_str(&field.name))?
                                     }
                                     (None, None) => match based() {
                                         Some(Variable::Object(map)) => {
-                                            Cell::earlier(map.borrow().get_str(&field.name))?
+                                            key.earlier(map.borrow().get_str(&field.name))?
                                         }
-                                        _ => Cell::Absent,
+                                        _ => key.mark(6),
                                     },
                                 };
-                                key.push(before);
-                                key.push(now);
                             }
                         }
                         was => {
-                            key.push(Cell::Mark(2));
-                            key.push(Cell::earlier(was.as_ref())?);
+                            key.mark(9);
+                            key.earlier(was.as_ref())?;
                             for &index in &group.layer {
                                 match layer.has(index, row) {
-                                    true => key.push(Cell::scalar(&layer.columns[index].get(row))?),
-                                    false => key.push(Cell::Skip),
+                                    true => {
+                                        key.scalar(&layer.columns[index], row)?;
+                                    }
+                                    false => key.mark(5),
                                 }
                             }
                         }

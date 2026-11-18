@@ -56,9 +56,8 @@ impl<'t> RowWriter<'t> {
         put_value(&self.sources, value, out)
     }
 
-    pub fn request_only(&mut self, request: &Variable) {
+    pub fn request_only(&mut self) {
         self.sources.clear();
-        self.sources.push(("request", request.clone()));
         self.partial = true;
         self.missed.set(false);
     }

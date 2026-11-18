@@ -39,6 +39,17 @@ enum Own<'o, 'a> {
     Columns(&'o Columned<'a>),
 }
 
+pub(crate) enum Source<'a> {
+    Rows {
+        requests: Rc<[Variable]>,
+        shared: bool,
+    },
+    Derived {
+        data: Rc<Data<'a>>,
+        reserved: crate::compiled::trace::batch::Reserved<'a>,
+    },
+}
+
 pub(crate) struct PlanTrace<'a> {
     pub(crate) events: Vec<BatchEvent<'a>>,
     kernels: Vec<(NodeIndex, Option<KernelFacts>)>,
@@ -46,14 +57,13 @@ pub(crate) struct PlanTrace<'a> {
     hosted: Vec<Hosted>,
     times: Vec<(NodeIndex, u64)>,
     values: Vec<Option<Rc<Data<'a>>>>,
-    pub(crate) requests: Rc<[Variable]>,
+    pub(crate) source: Source<'a>,
     lazy: bool,
-    flat: bool,
     pub(crate) refused: Option<&'static str>,
 }
 
 impl<'a> PlanTrace<'a> {
-    pub(crate) fn new(slots: usize, requests: Rc<[Variable]>, lazy: bool, flat: bool) -> Self {
+    pub(crate) fn new(slots: usize, source: Source<'a>, lazy: bool) -> Self {
         Self {
             events: Vec::new(),
             kernels: Vec::new(),
@@ -61,9 +71,8 @@ impl<'a> PlanTrace<'a> {
             hosted: Vec::new(),
             times: Vec::new(),
             values: vec![None; slots],
-            requests,
+            source,
             lazy,
-            flat,
             refused: None,
         }
     }
@@ -276,19 +285,21 @@ impl<'a> Run<'_, 'a> {
             let parents: Box<[Slot]> = event.parents.iter().map(|p| p.index() as Slot).collect();
             let (input, values, output, facts, encoding) = match &step.kind {
                 Kind::Input => {
-                    let values = match trace.flat {
-                        true => {
-                            let requests = &trace.requests;
-                            Rc::new(Data::plain(
-                                rows.clone(),
-                                rows.iter()
-                                    .map(|&row| {
-                                        requests.get(row).cloned().unwrap_or(Variable::Null)
-                                    })
-                                    .collect(),
-                            ))
-                        }
-                        false => {
+                    let values = match &trace.source {
+                        Source::Derived { data, .. } => match rows.len() == total {
+                            true => data.clone(),
+                            false => Rc::new(Data::gather(std::slice::from_ref(data), &rows)),
+                        },
+                        Source::Rows {
+                            requests,
+                            shared: true,
+                        } => Rc::new(Data::plain(
+                            rows.clone(),
+                            rows.iter()
+                                .map(|&row| requests.get(row).cloned().unwrap_or(Variable::Null))
+                                .collect(),
+                        )),
+                        Source::Rows { shared: false, .. } => {
                             let Some(view) = seg
                                 .views
                                 .iter()

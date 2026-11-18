@@ -141,7 +141,58 @@ pub(crate) struct BatchEvent<'a> {
     pub(crate) encoding: Encoding<'a>,
 }
 
+pub(crate) struct Asked<'x> {
+    cell: OnceCell<Variable>,
+    make: &'x dyn Fn() -> Variable,
+}
+
+impl<'x> Asked<'x> {
+    pub(crate) fn new(make: &'x dyn Fn() -> Variable) -> Self {
+        Self {
+            cell: OnceCell::new(),
+            make,
+        }
+    }
+
+    pub(crate) fn get(&self) -> &Variable {
+        self.cell.get_or_init(|| (self.make)())
+    }
+}
+
+pub(crate) struct Reserved<'a> {
+    pub(crate) paths: bool,
+    pub(crate) leaves: Vec<crate::compiled::leaf::Leaf<'a>>,
+    pub(crate) rows: usize,
+    plain: OnceCell<bool>,
+}
+
+impl<'a> Reserved<'a> {
+    pub(crate) fn new(
+        paths: bool,
+        leaves: Vec<crate::compiled::leaf::Leaf<'a>>,
+        rows: usize,
+    ) -> Self {
+        Self {
+            paths,
+            leaves,
+            rows,
+            plain: OnceCell::new(),
+        }
+    }
+
+    fn plain(&self) -> bool {
+        *self.plain.get_or_init(|| {
+            self.paths
+                && self
+                    .leaves
+                    .iter()
+                    .all(|leaf| (0..self.rows).all(|row| !super::rows::reserved(&leaf.get(row))))
+        })
+    }
+}
+
 pub(crate) struct Traces<'a> {
+    pub(crate) derived: Option<Reserved<'a>>,
     pub(crate) template: Arc<Template>,
     pub(crate) events: Vec<BatchEvent<'a>>,
     pub(crate) slots: usize,
@@ -177,6 +228,7 @@ const ABSENT: u32 = u32::MAX;
 impl<'a> Traces<'a> {
     pub(crate) fn new(template: Arc<Template>, slots: usize, rows: usize) -> Self {
         Self {
+            derived: None,
             template,
             events: Vec::new(),
             slots,
@@ -427,7 +479,7 @@ impl<'a> Traces<'a> {
     pub(crate) fn write_row(
         &self,
         row: usize,
-        request: &Variable,
+        request: &Asked,
         owned: Option<&Variable>,
         engine: Option<&str>,
         evaluation: Option<&crate::compiled::trace::Evaluation>,
@@ -503,7 +555,7 @@ impl<'a> Traces<'a> {
                     bodies.texts = Default::default();
                 }
             }
-            writer.request_only(request);
+            writer.request_only();
             let encoded = self.encode(
                 plan,
                 at,
@@ -524,7 +576,7 @@ impl<'a> Traces<'a> {
                         .iter()
                         .filter_map(|p| self.value(&mut walk, *p).map(|value| (*p, value)))
                         .collect();
-                    writer.sources(request, sources.into_iter());
+                    writer.sources(request.get(), sources.into_iter());
                     self.encode(
                         plan,
                         at,
@@ -556,7 +608,7 @@ impl<'a> Traces<'a> {
         position: usize,
         parent: Option<Slot>,
         walk: &mut Walk,
-        request: &Variable,
+        request: &Asked,
         owned: Option<&Variable>,
         writer: &mut RowWriter<'_>,
         out: &mut String,
@@ -578,22 +630,32 @@ impl<'a> Traces<'a> {
         match &event.encoding {
             Encoding::Generic => return Err("generic output"),
             Encoding::Null | Encoding::Passed => {}
-            Encoding::Request => {
-                let Some(value) = self.value(walk, slot) else {
-                    return Err("request");
-                };
-                let same = match (&value, owned) {
-                    (Variable::Object(a), Some(Variable::Object(b))) => Rc::ptr_eq(a, b),
-                    (Variable::Array(a), Some(Variable::Array(b))) => Rc::ptr_eq(a, b),
-                    _ => false,
-                };
-                if !same && !super::rows::same(&value, request) {
-                    return Err("request changed");
+            Encoding::Request => match self.derived.as_ref().map(Reserved::plain) {
+                Some(true) => {}
+                Some(false) => {
+                    let request = request.get();
+                    if super::rows::reserved(request) && !writer.output(request, out) {
+                        return Err("value");
+                    }
                 }
-                if super::rows::reserved(request) && !writer.output(&value, out) {
-                    return Err("value");
+                None => {
+                    let Some(value) = self.value(walk, slot) else {
+                        return Err("request");
+                    };
+                    let request = request.get();
+                    let same = match (&value, owned) {
+                        (Variable::Object(a), Some(Variable::Object(b))) => Rc::ptr_eq(a, b),
+                        (Variable::Array(a), Some(Variable::Array(b))) => Rc::ptr_eq(a, b),
+                        _ => false,
+                    };
+                    if !same && !super::rows::same(&value, request) {
+                        return Err("request changed");
+                    }
+                    if super::rows::reserved(request) && !writer.output(&value, out) {
+                        return Err("value");
+                    }
                 }
-            }
+            },
             Encoding::Record => {
                 if !results {
                     let Some(value) = event.output_row(position) else {
@@ -821,7 +883,9 @@ impl<'a> Traces<'a> {
                 Some(Fact::None) => true,
                 Some(Fact::Hit(Hit { rule, refs: None })) => writer.rule(slot, *rule, out),
                 Some(Fact::Hit(hit)) => {
-                    let scope = self.input_of(walk, slot, parent).ok_or("hit scope")?;
+                    let scope = self
+                        .scope(walk, slot, parent, std::slice::from_ref(hit))
+                        .ok_or("hit scope")?;
                     writer.hits(slot, std::slice::from_ref(hit), true, &scope, out)
                 }
                 Some(Fact::Hits(hits)) if hits.is_empty() => {
@@ -829,7 +893,7 @@ impl<'a> Traces<'a> {
                     true
                 }
                 Some(Fact::Hits(hits)) => {
-                    let scope = self.input_of(walk, slot, parent).ok_or("hit scope")?;
+                    let scope = self.scope(walk, slot, parent, hits).ok_or("hit scope")?;
                     writer.hits(slot, hits, false, &scope, out)
                 }
                 Some(Fact::Results(_)) => return Err("row fact: results"),
@@ -843,6 +907,36 @@ impl<'a> Traces<'a> {
         match ok {
             true => Ok(()),
             false => Err("fact"),
+        }
+    }
+
+    fn scope(
+        &self,
+        walk: &mut Walk,
+        slot: Slot,
+        parent: Option<Slot>,
+        hits: &[Hit],
+    ) -> Option<Variable> {
+        let sparse = || {
+            if walk.inputs.get(slot as usize)?.is_some() {
+                return None;
+            }
+            let (at, position) = (*walk.ran.get(parent? as usize)?)?;
+            let Some(Value::Data(data)) = &self.events[at].output else {
+                return None;
+            };
+            let node = self.template.node(slot)?;
+            let mut fields: SmallVec<[Arc<str>; 8]> = SmallVec::new();
+            for hit in hits {
+                if let Some(derive) = &node.rules.get(hit.rule as usize)?.derive {
+                    fields.extend(derive.iter().cloned());
+                }
+            }
+            data.sparse(position, &fields)
+        };
+        match sparse() {
+            Some(scope) => Some(scope),
+            None => self.input_of(walk, slot, parent),
         }
     }
 

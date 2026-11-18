@@ -589,10 +589,41 @@ pub(crate) fn collected(
     }
 }
 
+pub(crate) enum Requests<'a> {
+    Owned(Vec<Variable>),
+    Derived {
+        data: std::rc::Rc<crate::compiled::graph::data::Data<'a>>,
+        rows: Vec<std::cell::OnceCell<Variable>>,
+    },
+}
+
+impl<'a> Requests<'a> {
+    pub(crate) fn derived(data: std::rc::Rc<crate::compiled::graph::data::Data<'a>>) -> Self {
+        let rows = (0..data.len()).map(|_| Default::default()).collect();
+        Requests::Derived { data, rows }
+    }
+
+    pub(crate) fn get(&self, row: usize) -> Option<Variable> {
+        match self {
+            Requests::Owned(rows) => rows.get(row).cloned(),
+            Requests::Derived { data, rows } => rows
+                .get(row)
+                .map(|cell| cell.get_or_init(|| data.materialize_row(row)).clone()),
+        }
+    }
+
+    fn has(&self, row: usize) -> bool {
+        match self {
+            Requests::Owned(rows) => row < rows.len(),
+            Requests::Derived { rows, .. } => row < rows.len(),
+        }
+    }
+}
+
 pub struct TraceBatch<'a> {
     hint: std::cell::Cell<usize>,
     traces: batch::Traces<'a>,
-    requests: Vec<Variable>,
+    requests: Requests<'a>,
     owned: Vec<Variable>,
     failures: Vec<Option<(Arc<str>, String)>>,
     format: TraceFormat,
@@ -611,7 +642,7 @@ impl<'a> TraceBatch<'a> {
         Self {
             hint: std::cell::Cell::new(256),
             traces,
-            requests,
+            requests: Requests::Owned(requests),
             owned,
             failures: results.iter().map(failure).collect(),
             format,
@@ -621,7 +652,7 @@ impl<'a> TraceBatch<'a> {
 
     pub(crate) fn with_failures(
         traces: batch::Traces<'a>,
-        requests: Vec<Variable>,
+        requests: Requests<'a>,
         owned: Vec<Variable>,
         failures: Vec<Option<(Arc<str>, String)>>,
         format: TraceFormat,
@@ -643,14 +674,16 @@ impl<'a> TraceBatch<'a> {
     }
 
     fn columnar(&self, row: usize, out: &mut String) -> bool {
-        let (Some(request), Some(None)) = (self.requests.get(row), self.failures.get(row)) else {
+        let (true, Some(None)) = (self.requests.has(row), self.failures.get(row)) else {
             return false;
         };
         let traces = &self.traces;
         let mark = out.len();
+        let make = || self.requests.get(row).unwrap_or(Variable::Null);
+        let asked = batch::Asked::new(&make);
         let written = traces.write_row(
             row,
-            request,
+            &asked,
             self.owned.get(row),
             Some(crate::ENGINE_VERSION),
             self.evaluation(row).as_ref(),
@@ -665,6 +698,7 @@ impl<'a> TraceBatch<'a> {
             return false;
         }
         if verify() {
+            let request = asked.get();
             let fresh = TraceDocument::new(out[mark..].to_string(), None);
             let legacy = traces.level(row).legacy();
             let back = restore(&fresh, request, None);
@@ -729,7 +763,7 @@ impl<'a> TraceBatch<'a> {
     }
 
     fn written(&self, row: usize) -> Option<TraceDocument> {
-        let request = self.requests.get(row)?;
+        let request = &self.requests.get(row)?;
         let failure = self.failures.get(row)?;
         let error = failure.as_ref().map(|(n, m)| (&**n, m.as_str()));
         Some(written_at(

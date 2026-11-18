@@ -188,6 +188,78 @@ impl<'a> Run<'_, 'a> {
 }
 
 impl CompiledGraph {
+    fn request_data<'a>(columns: &'a Columns<'a>) -> super::trace::Source<'a> {
+        use crate::compiled::graph::data::{Data, Layer};
+        use crate::compiled::leaf::Mask;
+        use zen_expression::Variable;
+        let rows = columns.rows;
+        let scalars = |values: &[Variable]| {
+            values.iter().all(|value| {
+                !matches!(
+                    value,
+                    Variable::Array(_) | Variable::Object(_) | Variable::Dynamic(_)
+                )
+            })
+        };
+        let scalar = |column: &Column<'a>| match column.values {
+            Values::List { .. } => false,
+            Values::Any(values) => scalars(values),
+            Values::Dict {
+                values: Dictionary::Any(values),
+                ..
+            } => scalars(values),
+            _ => true,
+        };
+        let clean = columns
+            .columns
+            .iter()
+            .all(|(path, _)| !path.split('.').any(|part| part.starts_with('$')));
+        let paths: Arc<[Arc<str>]> = columns
+            .columns
+            .iter()
+            .map(|(path, _)| Arc::from(*path))
+            .collect();
+        let leaves: Vec<Leaf<'a>> = columns
+            .columns
+            .iter()
+            .map(|(_, column)| match scalar(column) {
+                true => Leaf::input(*column, rows),
+                false => Leaf::Any((0..rows).map(|row| column.variable(row)).collect()),
+            })
+            .collect();
+        let present: Vec<Option<Vec<u64>>> = columns
+            .columns
+            .iter()
+            .map(|(_, column)| match column.validity {
+                None => None,
+                Some(_) => {
+                    let bits = Bits::of(rows, |row| {
+                        column.valid(row) || !matches!(column.variable(row), Variable::Null)
+                    });
+                    (0..rows).any(|row| !Bits::get(&bits, row)).then_some(bits)
+                }
+            })
+            .collect();
+        let masks = present.iter().any(Option::is_some).then(|| {
+            present
+                .into_iter()
+                .map(|bits| Mask::Bits(bits.unwrap_or_else(|| Bits::ones(rows)).into()))
+                .collect()
+        });
+        let all: Rc<[usize]> = (0..rows).collect();
+        let containers = columns
+            .columns
+            .iter()
+            .zip(&leaves)
+            .filter(|((_, column), _)| !scalar(column))
+            .map(|(_, leaf)| leaf.clone())
+            .collect();
+        super::trace::Source::Derived {
+            data: Rc::new(Data::record(&all, Layer::new(paths, leaves, masks), None)),
+            reserved: crate::compiled::trace::batch::Reserved::new(clean, containers, rows),
+        }
+    }
+
     pub(super) fn shared_rows(columns: &Columns<'_>) -> Rc<[zen_expression::Variable]> {
         use zen_expression::Variable;
         use zen_types::symbol::Symbol;
@@ -278,7 +350,15 @@ impl CompiledGraph {
             rows,
         );
         traces.events = trace.events;
-        let requests: Vec<zen_expression::Variable> = trace.requests.to_vec();
+        let requests = match trace.source {
+            super::trace::Source::Rows { requests, .. } => {
+                crate::compiled::trace::Requests::Owned(requests.to_vec())
+            }
+            super::trace::Source::Derived { data, reserved } => {
+                traces.derived = Some(reserved);
+                crate::compiled::trace::Requests::derived(data)
+            }
+        };
         let mut failures: Vec<Option<(Arc<str>, String)>> = vec![None; rows];
         for row in 0..rows {
             let errored = output.errors.get(row).is_some_and(Option::is_some);
@@ -299,7 +379,8 @@ impl CompiledGraph {
                 iteration: 0,
                 parent: None,
             };
-            let run = Box::pin(traced.run(requests[row].deep_clone())).await;
+            let request = requests.get(row).unwrap_or(zen_expression::Variable::Null);
+            let run = Box::pin(traced.run(request.deep_clone())).await;
             failures[row] = crate::compiled::trace::failure(&run.result);
             if let Some(slot) = traces.replaced.get_mut(row) {
                 *slot = Some(run.recording);
@@ -409,13 +490,15 @@ impl Plan {
             iteration: 0,
             parents: None,
             trace: traced.map(|_| {
-                Box::new(super::PlanTrace::new(
-                    graph.steps.len(),
-                    CompiledGraph::shared_rows(columns),
-                    !overlapping && !rowwise,
-                    indexes.is_empty()
-                        && (!overlapping && !rowwise || CompiledGraph::flat_scalars(columns)),
-                ))
+                let lazy = !overlapping && !rowwise;
+                let source = match (lazy && indexes.is_empty(), indexes.is_empty()) {
+                    (true, _) => CompiledGraph::request_data(columns),
+                    (false, plain) => super::trace::Source::Rows {
+                        requests: CompiledGraph::shared_rows(columns),
+                        shared: plain && CompiledGraph::flat_scalars(columns),
+                    },
+                };
+                Box::new(super::PlanTrace::new(graph.steps.len(), source, lazy))
             }),
         };
         run.walk(root.clone()).await;

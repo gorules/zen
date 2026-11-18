@@ -1362,6 +1362,30 @@ impl<'a> Data<'a> {
         Some(Edits { groups })
     }
 
+    pub fn sparse(&self, row: usize, fields: &[Arc<str>]) -> Option<Variable> {
+        let Shape::Patched {
+            base: None,
+            leaves,
+            presence: Some(presence),
+            nulls: None,
+            ..
+        } = &self.shape
+        else {
+            return None;
+        };
+        let object = Variable::empty_object();
+        for field in fields.iter().filter(|field| !field.is_empty()) {
+            let Read::Leaf(index) = Self::read(leaves, field) else {
+                return None;
+            };
+            if presence[index].at(&leaves[index].1, row) {
+                let segments: SmallVec<[Symbol; 4]> = field.split('.').map(Symbol::from).collect();
+                Layer::insert(&object, &segments, leaves[index].1.get(row));
+            }
+        }
+        Some(object)
+    }
+
     pub fn edit_key(
         &self,
         input: &Data<'a>,

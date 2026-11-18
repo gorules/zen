@@ -14,6 +14,8 @@ pub struct RowWriter<'t> {
     path: String,
     sets: Vec<(String, Variable)>,
     deletes: Vec<String>,
+    partial: bool,
+    missed: std::cell::Cell<bool>,
 }
 
 impl<'t> RowWriter<'t> {
@@ -27,7 +29,48 @@ impl<'t> RowWriter<'t> {
             path: String::new(),
             sets: Vec::new(),
             deletes: Vec::new(),
+            partial: false,
+            missed: std::cell::Cell::new(false),
         }
+    }
+
+    fn referable(value: &Variable) -> bool {
+        match value {
+            Variable::Array(a) => {
+                let a = a.borrow();
+                a.len() >= 8 || a.iter().any(Self::referable)
+            }
+            Variable::Object(o) => {
+                let o = o.borrow();
+                o.len() >= 8 || o.iter().any(|(_, x)| Self::referable(x))
+            }
+            _ => false,
+        }
+    }
+
+    fn put(&self, value: &Variable, out: &mut String) -> bool {
+        if self.partial && Self::referable(value) {
+            self.missed.set(true);
+            return true;
+        }
+        put_value(&self.sources, value, out)
+    }
+
+    pub fn request_only(&mut self, request: &Variable) {
+        self.sources.clear();
+        self.sources.push(("request", request.clone()));
+        self.partial = true;
+        self.missed.set(false);
+    }
+
+    pub fn missed(&self) -> bool {
+        self.missed.get()
+    }
+
+    pub fn retry(&mut self) {
+        self.sets.clear();
+        self.deletes.clear();
+        self.missed.set(false);
     }
 
     pub fn fits(&self, slot: Slot) -> bool {
@@ -120,6 +163,14 @@ impl<'t> RowWriter<'t> {
         self.path = path;
     }
 
+    pub fn diff_at(&mut self, pointer: &str, before: Option<&Variable>, after: Option<&Variable>) {
+        self.path.clear();
+        self.path.push_str(pointer);
+        let mut path = std::mem::take(&mut self.path);
+        self.diff(&mut path, before, after);
+        self.path = path;
+    }
+
     fn diff(&mut self, path: &mut String, before: Option<&Variable>, after: Option<&Variable>) {
         match (before, after) {
             (None, None) => {}
@@ -193,7 +244,7 @@ impl<'t> RowWriter<'t> {
                 }
                 write_str(p, out);
                 out.push(':');
-                ok &= put_value(&self.sources, v, out);
+                ok &= self.put(v, out);
             }
             out.push('}');
         }
@@ -211,10 +262,11 @@ impl<'t> RowWriter<'t> {
 
     pub fn output(&mut self, value: &Variable, out: &mut String) -> bool {
         out.push_str(",\"output\":");
-        put_value(&self.sources, value, out)
+        self.put(value, out)
     }
 
     pub fn sources(&mut self, request: &Variable, parents: impl Iterator<Item = (Slot, Variable)>) {
+        self.partial = false;
         self.sources.clear();
         self.sources.push(("request", request.clone()));
         for (slot, value) in parents {
@@ -237,7 +289,7 @@ impl<'t> RowWriter<'t> {
             if i > 0 {
                 out.push(',');
             }
-            ok &= put_value(&self.sources, x, out);
+            ok &= self.put(x, out);
         }
         out.push(']');
         ok
@@ -257,7 +309,7 @@ impl<'t> RowWriter<'t> {
             }
             write_str(k, out);
             out.push(':');
-            ok &= put_value(&self.sources, &v, out);
+            ok &= self.put(&v, out);
         }
         out.push('}');
         if let Some(at) = self

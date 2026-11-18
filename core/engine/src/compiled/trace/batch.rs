@@ -111,13 +111,14 @@ pub(crate) struct Traces<'a> {
     pub(crate) events: Vec<BatchEvent<'a>>,
     pub(crate) slots: usize,
     pub(crate) replaced: Vec<Option<Level>>,
-    plan: OnceCell<Plan>,
+    plan: OnceCell<Plan<'a>>,
 }
 
-struct Plan {
+struct Plan<'a> {
     positions: Vec<Box<[u32]>>,
     perf: Vec<String>,
     order: Vec<Option<Box<[u32]>>>,
+    edits: Vec<Option<crate::compiled::graph::data::Edits<'a>>>,
 }
 
 struct Walk {
@@ -221,8 +222,8 @@ impl BatchEvent<'_> {
     }
 }
 
-impl Traces<'_> {
-    fn plan(&self) -> &Plan {
+impl<'a> Traces<'a> {
+    fn plan(&self) -> &Plan<'a> {
         self.plan.get_or_init(|| {
             let rows = self.rows();
             let positions = self
@@ -244,6 +245,17 @@ impl Traces<'_> {
                     .events
                     .iter()
                     .map(|event| super::rows::perf(event.ns))
+                    .collect(),
+                edits: self
+                    .events
+                    .iter()
+                    .map(|event| match (&event.output, &event.encoding) {
+                        (Some(Value::Data(after)), Encoding::Touched(Some(input))) => {
+                            let keys = self.template.touched(event.slot)?;
+                            after.edits(input, keys, super::core::escape_seg)
+                        }
+                        _ => None,
+                    })
                     .collect(),
                 order: self
                     .events
@@ -381,12 +393,9 @@ impl Traces<'_> {
                 *slot = Some((at, position));
             }
             let parent = parents.first().copied();
-            let sources: SmallVec<[(Slot, Variable); 4]> = parents
-                .iter()
-                .filter_map(|p| self.value(&mut walk, *p).map(|value| (*p, value)))
-                .collect();
-            writer.sources(request, sources.into_iter());
-            self.encode(
+            let mark = out.len();
+            writer.request_only(request);
+            let encoded = self.encode(
                 plan,
                 at,
                 position,
@@ -396,7 +405,30 @@ impl Traces<'_> {
                 owned,
                 &mut writer,
                 out,
-            )?;
+            );
+            match writer.missed() {
+                false => encoded?,
+                true => {
+                    out.truncate(mark);
+                    writer.retry();
+                    let sources: SmallVec<[(Slot, Variable); 4]> = parents
+                        .iter()
+                        .filter_map(|p| self.value(&mut walk, *p).map(|value| (*p, value)))
+                        .collect();
+                    writer.sources(request, sources.into_iter());
+                    self.encode(
+                        plan,
+                        at,
+                        position,
+                        parent,
+                        &mut walk,
+                        request,
+                        owned,
+                        &mut writer,
+                        out,
+                    )?;
+                }
+            }
             writer.end(event.slot, out);
         }
         writer.finish(out);
@@ -406,7 +438,7 @@ impl Traces<'_> {
     #[allow(clippy::too_many_arguments)]
     fn encode(
         &self,
-        plan: &Plan,
+        plan: &Plan<'a>,
         at: usize,
         position: usize,
         parent: Option<Slot>,
@@ -535,17 +567,27 @@ impl Traces<'_> {
                     let (Some(keys), Some(parent)) = (self.template.touched(slot), parent) else {
                         return Err("touched");
                     };
-                    let before = match walk.inputs.get(slot as usize).cloned().flatten() {
-                        Some(merged) => Some(merged),
-                        None => self.value(walk, parent),
+                    let edited = match (&plan.edits[at], &event.output, &event.encoding) {
+                        (Some(edits), Some(Value::Data(after)), Encoding::Touched(Some(input)))
+                            if walk.inputs.get(slot as usize).is_none_or(Option::is_none) =>
+                        {
+                            after.edit(input, edits, position, &mut |pointer, before, after| {
+                                writer.diff_at(pointer, before, after)
+                            })
+                        }
+                        _ => false,
                     };
-                    let (Some(before), Some(after)) = (before, self.value(walk, slot)) else {
-                        return Err("touched input");
-                    };
-                    let (Variable::Object(a), Variable::Object(b)) = (&before, &after) else {
-                        return Err("touched shape");
-                    };
-                    {
+                    if !edited {
+                        let before = match walk.inputs.get(slot as usize).cloned().flatten() {
+                            Some(merged) => Some(merged),
+                            None => self.value(walk, parent),
+                        };
+                        let (Some(before), Some(after)) = (before, self.value(walk, slot)) else {
+                            return Err("touched input");
+                        };
+                        let (Variable::Object(a), Variable::Object(b)) = (&before, &after) else {
+                            return Err("touched shape");
+                        };
                         let (a, b) = (a.borrow(), b.borrow());
                         for key in keys.iter() {
                             writer.touched(key, a.get_str(key), b.get_str(key));

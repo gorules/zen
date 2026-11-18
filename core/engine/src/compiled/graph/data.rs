@@ -1,5 +1,6 @@
 use crate::compiled::host::graph::walker::GraphWalker;
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf, Mask};
+use smallvec::SmallVec;
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -429,6 +430,14 @@ impl<'a> Data<'a> {
                 }
                 Variable::from_object(current)
             }
+        }
+    }
+
+    pub fn object(&self, row: usize) -> bool {
+        match (self.whole.get(), &self.shape) {
+            (Some(whole), _) => matches!(whole[row], Variable::Object(_)),
+            (None, Shape::Plain(values)) => matches!(values[row], Variable::Object(_)),
+            (None, Shape::Patched { .. }) => !self.nulled(row),
         }
     }
 
@@ -1025,5 +1034,310 @@ impl<'a> Data<'a> {
                 (0..self.len()).map(|_| shared.clone()).collect()
             }
         }
+    }
+}
+
+struct EditField<'a> {
+    name: Arc<str>,
+    pointer: String,
+    index: usize,
+    column: Leaf<'a>,
+    before: Option<usize>,
+}
+
+enum EditKind<'a> {
+    Dynamic,
+    Flat {
+        index: usize,
+        column: Leaf<'a>,
+        before: Option<usize>,
+    },
+    Nested {
+        fields: Vec<EditField<'a>>,
+        exact: Option<usize>,
+        under: Vec<usize>,
+    },
+}
+
+struct EditGroup<'a> {
+    top: Arc<str>,
+    pointer: String,
+    before: Vec<Vec<usize>>,
+    after: Vec<Vec<usize>>,
+    layer: Vec<usize>,
+    kind: EditKind<'a>,
+}
+
+pub(crate) struct Edits<'a> {
+    groups: Vec<EditGroup<'a>>,
+}
+
+enum Earlier {
+    Absent,
+    Value(Variable),
+    Object,
+    Unknown,
+}
+
+impl<'a> Data<'a> {
+    fn unders(&self, top: &str) -> Vec<Vec<usize>> {
+        match &self.shape {
+            Shape::Plain(_) => Vec::new(),
+            Shape::Patched { layers, .. } => layers.iter().map(|layer| layer.under(top)).collect(),
+        }
+    }
+
+    fn based(&self, row: usize) -> Option<&Variable> {
+        match &self.shape {
+            Shape::Plain(values) => values.get(row),
+            Shape::Patched { base, .. } => base.as_ref().and_then(|base| base.get(row)),
+        }
+    }
+
+    pub fn edits(
+        &self,
+        input: &Data<'a>,
+        keys: &[Arc<str>],
+        escape: fn(&str, &mut String),
+    ) -> Option<Edits<'a>> {
+        let layer = self.extends(input)?;
+        if matches!(&input.shape, Shape::Patched { nulls: Some(_), .. }) {
+            return None;
+        }
+        let earlier = input.leaves();
+        let groups = keys
+            .iter()
+            .map(|top| {
+                let own = layer.under(top);
+                let mut pointer = String::new();
+                escape(top, &mut pointer);
+                let exact = earlier.iter().position(|(path, _)| path == top);
+                let under: Vec<usize> = earlier
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (path, _))| DotPath::under(path, top))
+                    .map(|(index, _)| index)
+                    .collect();
+                let parts = |index: usize| {
+                    layer.paths[index]
+                        .split('.')
+                        .collect::<SmallVec<[&str; 4]>>()
+                };
+                let reserved = own
+                    .iter()
+                    .any(|&index| parts(index).iter().any(|part| *part == "$nodes"));
+                let repeated = own.iter().enumerate().any(|(at, &index)| {
+                    own[..at]
+                        .iter()
+                        .any(|&other| layer.paths[other] == layer.paths[index])
+                });
+                let deeper = own.iter().any(|&index| {
+                    earlier
+                        .iter()
+                        .any(|(path, _)| DotPath::under(path, &layer.paths[index]))
+                });
+                let kind = match own.as_slice() {
+                    _ if reserved || repeated || deeper => EditKind::Dynamic,
+                    [] => EditKind::Dynamic,
+                    [index] if layer.paths[*index] == *top => match under.is_empty() {
+                        true => EditKind::Flat {
+                            index: *index,
+                            column: layer.columns[*index].clone(),
+                            before: exact,
+                        },
+                        false => EditKind::Dynamic,
+                    },
+                    all if all.iter().all(|&index| parts(index).len() == 2)
+                        && (exact.is_none() || under.is_empty()) =>
+                    {
+                        EditKind::Nested {
+                            fields: all
+                                .iter()
+                                .map(|&index| {
+                                    let name = parts(index)[1];
+                                    let mut at = pointer.clone();
+                                    escape(name, &mut at);
+                                    EditField {
+                                        name: Arc::from(name),
+                                        pointer: at,
+                                        index,
+                                        column: layer.columns[index].clone(),
+                                        before: earlier
+                                            .iter()
+                                            .position(|(path, _)| *path == layer.paths[index]),
+                                    }
+                                })
+                                .collect(),
+                            exact,
+                            under: under.clone(),
+                        }
+                    }
+                    _ => EditKind::Dynamic,
+                };
+                EditGroup {
+                    top: top.clone(),
+                    pointer,
+                    before: input.unders(top),
+                    after: self.unders(top),
+                    layer: own,
+                    kind,
+                }
+            })
+            .collect();
+        Some(Edits { groups })
+    }
+
+    pub fn edit(
+        &self,
+        input: &Data<'a>,
+        edits: &Edits<'a>,
+        row: usize,
+        emit: &mut dyn FnMut(&str, Option<&Variable>, Option<&Variable>),
+    ) -> bool {
+        let Some(layer) = self.extends(input) else {
+            return false;
+        };
+        if !self.object(row) || !input.object(row) {
+            return false;
+        }
+        let earlier = input.leaves();
+        let known = |index: usize| match earlier[index].1.get(row) {
+            Variable::Null => None,
+            value => Some(value),
+        };
+        for group in &edits.groups {
+            if !group.layer.iter().any(|&index| layer.has(index, row)) {
+                continue;
+            }
+            let based = || {
+                input
+                    .based(row)
+                    .and_then(|base| Self::lookup(base, &group.top))
+            };
+            let settled = match &group.kind {
+                EditKind::Dynamic => false,
+                EditKind::Flat {
+                    index,
+                    column,
+                    before,
+                } => {
+                    let was = match before {
+                        Some(leaf) => match known(*leaf) {
+                            Some(value) => Earlier::Value(value),
+                            None => Earlier::Unknown,
+                        },
+                        None => match based() {
+                            Some(value) => Earlier::Value(value),
+                            None => Earlier::Absent,
+                        },
+                    };
+                    let now = column.get(row);
+                    match (&was, &now) {
+                        (Earlier::Unknown, _) => false,
+                        (Earlier::Value(Variable::Object(_)), Variable::Object(_)) => false,
+                        (Earlier::Value(was), Variable::Null) => {
+                            emit(&group.pointer, Some(was), None);
+                            true
+                        }
+                        (Earlier::Value(was), now) => {
+                            emit(&group.pointer, Some(was), Some(now));
+                            true
+                        }
+                        (_, Variable::Null) => true,
+                        (_, now) => {
+                            emit(&group.pointer, None, Some(now));
+                            let _ = index;
+                            true
+                        }
+                    }
+                }
+                EditKind::Nested {
+                    fields,
+                    exact,
+                    under,
+                } => {
+                    let was = match (exact, under.is_empty()) {
+                        (Some(leaf), _) => match known(*leaf) {
+                            Some(value) => Earlier::Value(value),
+                            None => Earlier::Unknown,
+                        },
+                        (None, false) => match under.iter().any(|&leaf| known(leaf).is_some()) {
+                            true => Earlier::Object,
+                            false => Earlier::Unknown,
+                        },
+                        (None, true) => match based() {
+                            Some(value) => Earlier::Value(value),
+                            None => Earlier::Absent,
+                        },
+                    };
+                    match &was {
+                        Earlier::Unknown => false,
+                        Earlier::Absent | Earlier::Value(_)
+                            if !matches!(&was, Earlier::Value(Variable::Object(_))) =>
+                        {
+                            let whole = layer.object_key(row, &group.top, &group.layer);
+                            let before = match &was {
+                                Earlier::Value(value) => Some(value),
+                                _ => None,
+                            };
+                            emit(&group.pointer, before, whole.as_ref());
+                            true
+                        }
+                        _ => {
+                            let mut found: SmallVec<[(usize, Option<Variable>, Variable); 8]> =
+                                SmallVec::new();
+                            let mut simple = true;
+                            for (at, field) in fields.iter().enumerate() {
+                                if !layer.has(field.index, row) {
+                                    continue;
+                                }
+                                let now = field.column.get(row);
+                                let before = match field.before {
+                                    Some(leaf) => match known(leaf) {
+                                        Some(value) => Some(value),
+                                        None => {
+                                            simple = false;
+                                            break;
+                                        }
+                                    },
+                                    None => match &was {
+                                        Earlier::Value(Variable::Object(map)) => {
+                                            map.borrow().get_str(&field.name).cloned()
+                                        }
+                                        _ => based().and_then(|top| match top {
+                                            Variable::Object(map) => {
+                                                map.borrow().get_str(&field.name).cloned()
+                                            }
+                                            _ => None,
+                                        }),
+                                    },
+                                };
+                                let merges = matches!(
+                                    (&before, &now),
+                                    (Some(Variable::Object(_)), Variable::Object(_))
+                                );
+                                if matches!(now, Variable::Null) || merges {
+                                    simple = false;
+                                    break;
+                                }
+                                found.push((at, before, now));
+                            }
+                            if simple {
+                                for (at, before, now) in &found {
+                                    emit(&fields[*at].pointer, before.as_ref(), Some(now));
+                                }
+                            }
+                            simple
+                        }
+                    }
+                }
+            };
+            if !settled {
+                let before = input.materialize_key(row, &group.top, &group.before);
+                let after = self.materialize_key(row, &group.top, &group.after);
+                emit(&group.pointer, before.as_ref(), after.as_ref());
+            }
+        }
+        true
     }
 }

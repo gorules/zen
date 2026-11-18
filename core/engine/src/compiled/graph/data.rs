@@ -1170,6 +1170,42 @@ pub(crate) struct Edits<'a> {
     groups: Vec<EditGroup<'a>>,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) enum Cell {
+    Skip,
+    Absent,
+    Container,
+    Null,
+    Bool(bool),
+    Number(i128, u32),
+    Text(Symbol),
+    Mark(u32),
+}
+
+impl Cell {
+    pub fn of(value: &Variable) -> Option<Cell> {
+        match value {
+            Variable::Null => Some(Cell::Null),
+            Variable::Bool(b) => Some(Cell::Bool(*b)),
+            Variable::Number(d) => Some(Cell::Number(d.mantissa(), d.scale())),
+            Variable::String(s) => Some(Cell::Text(s.clone())),
+            Variable::Array(_) | Variable::Object(_) => Some(Cell::Container),
+            Variable::Dynamic(_) => None,
+        }
+    }
+
+    fn scalar(value: &Variable) -> Option<Cell> {
+        Self::of(value).filter(|cell| *cell != Cell::Container)
+    }
+
+    fn earlier(value: Option<&Variable>) -> Option<Cell> {
+        match value {
+            Some(value) => Self::of(value),
+            None => Some(Cell::Absent),
+        }
+    }
+}
+
 enum Earlier {
     Absent,
     Value(Variable),
@@ -1283,6 +1319,114 @@ impl<'a> Data<'a> {
             })
             .collect();
         Some(Edits { groups })
+    }
+
+    pub fn edit_key(
+        &self,
+        input: &Data<'a>,
+        edits: &Edits<'a>,
+        row: usize,
+        key: &mut Vec<Cell>,
+    ) -> bool {
+        self.edit_cells(input, edits, row, key).is_some()
+    }
+
+    fn edit_cells(
+        &self,
+        input: &Data<'a>,
+        edits: &Edits<'a>,
+        row: usize,
+        key: &mut Vec<Cell>,
+    ) -> Option<()> {
+        let layer = self.extends(input)?;
+        if !self.object(row) || !input.object(row) {
+            return None;
+        }
+        let earlier = input.leaves();
+        let known = |index: usize| match earlier[index].1.get(row) {
+            Variable::Null => None,
+            value => Some(value),
+        };
+        for group in &edits.groups {
+            if !group.layer.iter().any(|&index| layer.has(index, row)) {
+                key.push(Cell::Skip);
+                continue;
+            }
+            let based = || {
+                input
+                    .based(row)
+                    .and_then(|base| Self::lookup(base, &group.top))
+            };
+            match &group.kind {
+                EditKind::Dynamic => return None,
+                EditKind::Flat { column, before, .. } => {
+                    let was = match before {
+                        Some(leaf) => Cell::of(&known(*leaf)?)?,
+                        None => Cell::earlier(based().as_ref())?,
+                    };
+                    key.push(was);
+                    key.push(Cell::scalar(&column.get(row))?);
+                }
+                EditKind::Nested {
+                    fields,
+                    exact,
+                    under,
+                } => {
+                    let was = match (exact, under.is_empty()) {
+                        (Some(leaf), _) => Some(known(*leaf)?),
+                        (None, false) => match under.iter().any(|&leaf| known(leaf).is_some()) {
+                            true => Some(Variable::empty_object()),
+                            false => return None,
+                        },
+                        (None, true) => based(),
+                    };
+                    match &was {
+                        Some(Variable::Object(map)) => {
+                            key.push(Cell::Mark(1));
+                            let outer = match (exact, under.is_empty()) {
+                                (None, false) => None,
+                                _ => Some(map),
+                            };
+                            for field in fields {
+                                if !layer.has(field.index, row) {
+                                    key.push(Cell::Skip);
+                                    continue;
+                                }
+                                let now = Cell::scalar(&field.column.get(row))?;
+                                if now == Cell::Null {
+                                    return None;
+                                }
+                                let before = match (field.before, outer) {
+                                    (Some(leaf), _) => Cell::of(&known(leaf)?)?,
+                                    (None, Some(map)) => {
+                                        Cell::earlier(map.borrow().get_str(&field.name))?
+                                    }
+                                    (None, None) => match based() {
+                                        Some(Variable::Object(map)) => {
+                                            Cell::earlier(map.borrow().get_str(&field.name))?
+                                        }
+                                        _ => Cell::Absent,
+                                    },
+                                };
+                                key.push(before);
+                                key.push(now);
+                            }
+                        }
+                        was => {
+                            key.push(Cell::Mark(2));
+                            key.push(Cell::earlier(was.as_ref())?);
+                            for &index in &group.layer {
+                                match layer.has(index, row) {
+                                    true => key.push(Cell::scalar(&layer.columns[index].get(row))?),
+                                    false => key.push(Cell::Skip),
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Some(())
     }
 
     pub fn edit(

@@ -3,6 +3,7 @@ use std::rc::Rc;
 use ahash::HashMap;
 
 use super::cell::CellConstraint;
+use super::merge::CellKeys;
 use super::partition::Points;
 use rust_decimal::Decimal;
 
@@ -107,6 +108,7 @@ pub(super) struct RowIndex {
     stamp: Vec<usize>,
     query: usize,
     blocking: bool,
+    overlaps: HashMap<(u32, u32, u32), bool>,
 }
 
 enum Keys<'a> {
@@ -139,6 +141,7 @@ impl RowIndex {
             stamp: vec![0; cells.len()],
             query: 0,
             blocking: false,
+            overlaps: HashMap::default(),
         }
     }
 
@@ -224,7 +227,24 @@ impl RowIndex {
         }
     }
 
-    pub(super) fn candidates(&mut self, cells: &[Vec<CellConstraint>], row: usize) -> Vec<usize> {
+    fn may_overlap(cell: &CellConstraint, earlier: &CellConstraint) -> bool {
+        match (Self::keys(cell), earlier) {
+            (Keys::Exact(_) | Keys::Numbers(_), CellConstraint::Opaque(_)) => false,
+            (Keys::Exact(set), CellConstraint::Known(earlier)) => earlier.intersects(set),
+            (Keys::Numbers(_), CellConstraint::Known(earlier)) => {
+                cell.known_set().is_some_and(|own| earlier.intersects(&own))
+            }
+            _ => true,
+        }
+    }
+
+    pub(super) fn candidates(
+        &mut self,
+        cells: &[Vec<CellConstraint>],
+        keys: &CellKeys<'_>,
+        row: usize,
+    ) -> Vec<usize> {
+        const REMEMBERED: usize = 1 << 20;
         let row_cells = &cells[row];
         let driver = row_cells
             .iter()
@@ -237,42 +257,52 @@ impl RowIndex {
         };
         let mut out: Vec<usize> = Vec::new();
         self.drive(driver, Self::keys(&row_cells[driver]), row, |e| out.push(e));
+        let own = keys.row(row);
+        let overlaps = &mut self.overlaps;
         out.retain(|&e| {
+            let theirs = keys.row(e);
             row_cells.iter().enumerate().all(|(col, cell)| {
-                col == driver
-                    || match (Self::keys(cell), &cells[e][col]) {
-                        (Keys::Exact(_) | Keys::Numbers(_), CellConstraint::Opaque(_)) => false,
-                        (Keys::Exact(set), CellConstraint::Known(earlier)) => {
-                            earlier.intersects(set)
-                        }
-                        (Keys::Numbers(_), CellConstraint::Known(earlier)) => {
-                            cell.known_set().is_some_and(|own| earlier.intersects(&own))
-                        }
-                        _ => true,
-                    }
+                if col == driver {
+                    return true;
+                }
+                let pair = (col as u32, own[col], theirs[col]);
+                if let Some(&known) = overlaps.get(&pair) {
+                    debug_assert_eq!(known, Self::may_overlap(cell, &cells[e][col]));
+                    return known;
+                }
+                let found = Self::may_overlap(cell, &cells[e][col]);
+                if overlaps.len() < REMEMBERED {
+                    overlaps.insert(pair, found);
+                }
+                found
             })
         });
         out.sort_unstable();
         out
     }
 
-    pub(super) fn overlapping(
+    pub(super) fn overlapping<S: std::borrow::Borrow<ValueSet>>(
         &mut self,
-        region: &[ValueSet],
+        region: &[S],
         limit: usize,
         visit: impl FnMut(usize),
     ) -> bool {
         let driver = region
             .iter()
             .enumerate()
-            .filter_map(|(col, set)| Some((col, self.estimate(col, Self::set_keys(set))?)))
+            .filter_map(|(col, set)| Some((col, self.estimate(col, Self::set_keys(set.borrow()))?)))
             .min_by_key(|(_, size)| *size)
             .filter(|(_, size)| *size < limit)
             .map(|(col, _)| col);
         let Some(driver) = driver else {
             return false;
         };
-        self.drive(driver, Self::set_keys(&region[driver]), usize::MAX, visit);
+        self.drive(
+            driver,
+            Self::set_keys(region[driver].borrow()),
+            usize::MAX,
+            visit,
+        );
         true
     }
 

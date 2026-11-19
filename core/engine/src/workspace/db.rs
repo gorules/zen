@@ -823,11 +823,7 @@ impl Db {
             return d;
         }
         let value = if snap.graphs.contains_key(path) {
-            Arc::new(
-                self.graph_analysis(path)
-                    .map(|analysis| analysis.diagnostics.clone())
-                    .unwrap_or_default(),
-            )
+            Arc::new(self.graph_table_diagnostics(path))
         } else {
             Arc::new(self.compute_policy_diagnostics(path))
         };

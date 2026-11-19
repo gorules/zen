@@ -34,9 +34,9 @@ impl<'c, 'a> Json<'c, 'a> {
     pub fn write(&self, row: usize, out: &mut Vec<u8>) -> bool {
         let mark = out.len();
         let written = match self {
-            Json::Text(column) => match ColumnBuilder::null_at(column, row) {
-                true => None,
-                false => column
+            Json::Text(column) => match column.valid(row) {
+                false => None,
+                true => column
                     .text(row)
                     .map(|text| serde_json::to_writer(&mut *out, text).is_ok()),
             },

@@ -596,6 +596,47 @@ impl<'a> Traces<'a> {
             .as_ref()
     }
 
+    fn cell(
+        column: &zen_expression::lane::Column<'_>,
+        kind: u8,
+        item: usize,
+        text: &mut String,
+        mark: &mut u64,
+    ) -> bool {
+        if !column.valid(item) {
+            return false;
+        }
+        match kind {
+            0 => match column.text(item) {
+                Some(value) => {
+                    super::value::write_str(value, text);
+                    true
+                }
+                None => false,
+            },
+            1 => match column.number(item) {
+                Some(number) => {
+                    *mark = mark
+                        .wrapping_mul(31)
+                        .wrapping_add(u64::from(number.scale()));
+                    super::value::write_num(&number, text);
+                    true
+                }
+                None => false,
+            },
+            _ => match column.boolean(item) {
+                Some(flag) => {
+                    text.push_str(match flag {
+                        true => "true",
+                        false => "false",
+                    });
+                    true
+                }
+                None => false,
+            },
+        }
+    }
+
     fn packed(&self, plan: &Plan<'a>, at: usize, start: u32, count: u32) -> Option<Packed> {
         let Facts::Loop(_, inner) = &self.events[at].facts else {
             return None;
@@ -622,25 +663,10 @@ impl<'a> Traces<'a> {
             packed.text.push('{');
             for ((column, kind), label) in columns.iter().zip(labels.iter()) {
                 packed.text.push_str(label);
-                if crate::compiled::leaf::ColumnBuilder::null_at(column, item) {
+                if !Self::cell(column, *kind, item, &mut packed.text, &mut mark) {
                     packed.text.push_str("null");
                     packed.nulls = true;
                     mark = mark.wrapping_mul(31).wrapping_add(255);
-                    continue;
-                }
-                match kind {
-                    0 => super::value::write_str(column.text(item)?, &mut packed.text),
-                    1 => {
-                        let number = column.number(item)?;
-                        mark = mark
-                            .wrapping_mul(31)
-                            .wrapping_add(u64::from(number.scale()));
-                        super::value::write_num(&number, &mut packed.text);
-                    }
-                    _ => packed.text.push_str(match column.boolean(item)? {
-                        true => "true",
-                        false => "false",
-                    }),
                 }
             }
             packed.text.push('}');
@@ -734,25 +760,10 @@ impl<'a> Traces<'a> {
                 }
                 any = true;
                 text.push_str(label);
-                if crate::compiled::leaf::ColumnBuilder::null_at(column, item) {
+                if !Self::cell(column, *kind, item, &mut text, &mut mark) {
                     free = false;
                     text.push_str("null");
                     mark = mark.wrapping_mul(31).wrapping_add(255);
-                    continue;
-                }
-                match kind {
-                    0 => super::value::write_str(column.text(item)?, &mut text),
-                    1 => {
-                        let number = column.number(item)?;
-                        mark = mark
-                            .wrapping_mul(31)
-                            .wrapping_add(u64::from(number.scale()));
-                        super::value::write_num(&number, &mut text);
-                    }
-                    _ => text.push_str(match column.boolean(item)? {
-                        true => "true",
-                        false => "false",
-                    }),
                 }
             }
             text.push('}');

@@ -1705,8 +1705,8 @@ impl Coder {
             o.insert(self.refs.keys.get("id"), Val::str(id));
         }
         let mut cells = Obj::with_capacity(rule.cells.len());
-        for (k, v) in &rule.cells {
-            cells.insert(self.refs.keys.get(k), Val::str(v));
+        for (at, (_, v)) in rule.cells.iter().enumerate() {
+            cells.insert(self.refs.keys.get(rule.key(at)), Val::str(v));
         }
         let cells = Val::obj(cells);
         o.insert(
@@ -2450,6 +2450,29 @@ fn encode_level(
                         }
                         if let Some(i) = t.items {
                             detail.push(("items", Piece::Val(Val::str(&i))));
+                        }
+                        let mut hit: Vec<&RuleT> = Vec::new();
+                        let mut note = |h: &Hit| {
+                            if let Some(rule) = n.rules.get(h.rule as usize) {
+                                hit.push(rule);
+                            }
+                        };
+                        let mut each = |f: &Fact| match f {
+                            Fact::Hit(h) => note(h),
+                            Fact::Hits(hs) => hs.iter().for_each(&mut note),
+                            _ => {}
+                        };
+                        match fact {
+                            Fact::Items(items) => items.iter().for_each(&mut each),
+                            other => each(other),
+                        }
+                        let listed = RuleT::union(hit.into_iter());
+                        if !listed.is_empty() {
+                            let mut inputs = Obj::with_capacity(listed.len());
+                            for (id, field) in listed {
+                                inputs.insert(Rc::from(id), Val::str(field));
+                            }
+                            detail.push(("inputs", Piece::Val(Val::obj(inputs))));
                         }
                         detail.push((t.field, t.value));
                     }

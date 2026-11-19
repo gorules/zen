@@ -16,6 +16,11 @@ pub(crate) fn cell_field(k: &str) -> Option<&str> {
     Some(&k[..i])
 }
 
+pub(crate) fn cell_parts(k: &str) -> Option<(&str, &str)> {
+    let field = cell_field(k)?;
+    Some((field, &k[field.len() + 1..k.len() - 1]))
+}
+
 pub fn plain_path(f: &str) -> bool {
     f.split('.').all(|s| {
         let b = s.as_bytes();
@@ -26,7 +31,7 @@ pub fn plain_path(f: &str) -> bool {
 }
 
 pub(crate) struct RecView<'a> {
-    pub(crate) slots: [Option<&'a Val>; 22],
+    pub(crate) slots: [Option<&'a Val>; 23],
 }
 
 pub(crate) fn rec_slot(k: &str) -> usize {
@@ -44,24 +49,25 @@ pub(crate) fn rec_slot(k: &str) -> usize {
         "resultsAt" => 10,
         "scope" => 11,
         "items" => 12,
-        "rule" => 13,
-        "rules" => 14,
-        "rulesPerItem" => 15,
-        "branches" => 16,
-        "log" => 17,
-        "details" => 18,
-        "sub" => 19,
-        "loop" => 20,
-        _ => 21,
+        "inputs" => 13,
+        "rule" => 14,
+        "rules" => 15,
+        "rulesPerItem" => 16,
+        "branches" => 17,
+        "log" => 18,
+        "details" => 19,
+        "sub" => 20,
+        "loop" => 21,
+        _ => 22,
     }
 }
 
 impl<'a> RecView<'a> {
     pub(crate) fn new(rec: &'a Obj) -> Self {
-        let mut slots = [None; 22];
+        let mut slots = [None; 23];
         for (k, v) in rec.iter() {
             let i = rec_slot(k);
-            if i < 21 {
+            if i < 22 {
                 slots[i] = Some(v);
             }
         }

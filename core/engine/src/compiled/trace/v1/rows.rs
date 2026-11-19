@@ -478,6 +478,10 @@ impl<'t> RowWriter<'t> {
             };
             at.push(k as u32);
         }
+        out.push_str(&super::collect::RuleT::listing(
+            keys.iter()
+                .filter_map(|(rule, _)| node.rules.get(*rule as usize)),
+        ));
         out.push_str(",\"rules\":");
         if emit_packed(&at, texts.len(), |k| texts[k].as_str(), out) {
             return true;
@@ -558,6 +562,10 @@ impl<'t> RowWriter<'t> {
         let Some(node) = self.template.node(slot).filter(|n| !n.scoped && !n.looped) else {
             return false;
         };
+        out.push_str(&super::collect::RuleT::listing(
+            hits.iter()
+                .filter_map(|hit| node.rules.get(hit.rule as usize)),
+        ));
         out.push_str(match single {
             true => ",\"rule\":",
             false => ",\"rules\":[",
@@ -588,6 +596,7 @@ impl<'t> RowWriter<'t> {
         else {
             return false;
         };
+        out.push_str(&rule.listed);
         out.push_str(",\"rule\":");
         out.push_str(&rule.head);
         out.push('}');

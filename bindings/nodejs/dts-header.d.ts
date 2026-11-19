@@ -864,12 +864,16 @@ export type ZenTraceKeyedData = ZenTraceDataObject | ZenTraceLiteral | ZenTraceR
  * scope (the input, `scope`, or the loop item) at each cell's field, then corrected by
  * `references` and `referencesAbsent`.
  *
- * @example { "id": "r0", "cells": { "customer.age[i0]": ">= 18" }, "index": 0 }
+ * @example { "id": "r0", "cells": { "i0": ">= 18" }, "index": 0 }
  */
 export interface ZenGraphRuleEntry {
   /** The rule's `_id`, when the logged rule has a string `_id`. */
   id?: string;
-  /** The logged rule without its string `_id`: `"<field>[<input id>]": "<cell text>"`. */
+  /**
+   * The logged rule without its string `_id`. When the node has `inputs`, a key that is listed
+   * there is an input column id and stands for the logged key `"<field>[<input id>]"`; any other
+   * key is the logged key as it is.
+   */
   cells: ZenTraceKeyedData;
   /** The rule's position, as logged. */
   index: number;
@@ -908,6 +912,13 @@ export interface ZenGraphTableNode extends ZenGraphNodeBase {
   scope?: ZenJsonPointer;
   /** Loop mode: the list the table looped over, as a pointer into the input. */
   items?: ZenJsonPointer;
+  /**
+   * The input columns of the rules listed in this record: `{ "<input id>": "<field>" }`. Absent:
+   * rule cells are keyed by the logged `"<field>[<input id>]"`.
+   *
+   * @example { "i0": "customer.age", "i1": "upper(customer.country)" }
+   */
+  inputs?: ZenTraceKeyedData;
   /** The table looped over an empty list. */
   loop?: [];
 }

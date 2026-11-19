@@ -784,13 +784,106 @@ fn entry_out(e: &Val, scope: Option<&Val>) -> Val {
     Val::obj(o)
 }
 
-fn entry_in(x: &Val, scope: Option<&Val>) -> R<Val> {
+fn entry_cells<'v>(value: &'v Val, out: &mut Vec<&'v Obj>) -> bool {
+    match value {
+        Val::Arr(items) => items.iter().all(|item| entry_cells(item, out)),
+        Val::Obj(entry) => match entry.get("cells") {
+            Some(Val::Obj(cells)) => {
+                out.push(cells);
+                true
+            }
+            Some(_) => false,
+            None => true,
+        },
+        _ => true,
+    }
+}
+
+fn rekeyed(value: &Val) -> Val {
+    match value {
+        Val::Arr(items) => Val::arr(items.iter().map(rekeyed).collect()),
+        Val::Obj(entry) => {
+            let mut out = Obj::with_capacity(entry.len());
+            for (key, item) in entry.iter() {
+                match (&**key, item) {
+                    ("cells", Val::Obj(cells)) => {
+                        let mut keyed = Obj::with_capacity(cells.len());
+                        for (cell, text) in cells.iter() {
+                            match cell_parts(cell) {
+                                Some((_, id)) => keyed.insert(Rc::from(id), text.clone()),
+                                None => keyed.insert(cell.clone(), text.clone()),
+                            }
+                        }
+                        out.insert(key.clone(), Val::obj(keyed));
+                    }
+                    _ => out.insert(key.clone(), item.clone()),
+                }
+            }
+            Val::obj(out)
+        }
+        other => other.clone(),
+    }
+}
+
+fn keyed_cells(value: &Val) -> Option<(Val, Obj)> {
+    let mut all: Vec<&Obj> = Vec::new();
+    if !entry_cells(value, &mut all) {
+        return None;
+    }
+    let mut known: Vec<(&str, &str)> = Vec::new();
+    let mut plain: Vec<&str> = Vec::new();
+    for cells in all {
+        for key in cells.keys() {
+            if key.starts_with('$') {
+                return None;
+            }
+            match cell_parts(key) {
+                Some((field, id)) => match known.iter().find(|(seen, _)| *seen == id) {
+                    Some((_, other)) if *other != field => return None,
+                    Some(_) => {}
+                    None if id.starts_with('$') => return None,
+                    None => known.push((id, field)),
+                },
+                None => plain.push(key),
+            }
+        }
+    }
+    if known.is_empty()
+        || plain
+            .iter()
+            .any(|key| known.iter().any(|(id, _)| id == key))
+    {
+        return None;
+    }
+    known.sort_by(|a, b| a.0.cmp(b.0));
+    let mut inputs = Obj::with_capacity(known.len());
+    for (id, field) in known {
+        inputs.insert(Rc::from(id), Val::str(field));
+    }
+    Some((rekeyed(value), inputs))
+}
+
+fn entry_in(x: &Val, scope: Option<&Val>, inputs: Option<&Obj>) -> R<Val> {
     if let Some(v) = x.get("verbatim") {
         return Ok(unescape(v));
     }
     let rule = match x.get("cells") {
         Some(c) => {
-            let cells = unescape(c);
+            let cells = match (unescape(c), inputs) {
+                (Val::Obj(cells), Some(inputs)) => {
+                    let mut named = Obj::with_capacity(cells.len());
+                    for (key, text) in cells.iter() {
+                        match inputs.get(key).and_then(|field| field.as_str()) {
+                            Some(field) => {
+                                named.insert(Rc::from(format!("{field}[{key}]")), text.clone())
+                            }
+                            None => named.insert(key.clone(), text.clone()),
+                        }
+                    }
+                    Val::obj(named)
+                }
+                (cells, _) => cells,
+            };
             match x.get("id") {
                 Some(id) => {
                     let mut r = Obj::new();
@@ -1051,11 +1144,16 @@ fn decode_table(rec: &RecView, input: &Val) -> R<Val> {
         ),
         None => None,
     };
+    let inputs = match rec.get("inputs") {
+        Some(Val::Obj(inputs)) => Some(&**inputs),
+        Some(_) => return Err(bad("inputs must be a map")),
+        None => None,
+    };
     if let Some(r) = rec.get("rule") {
         if r.is_null() {
             return Ok(Val::Null);
         }
-        return entry_in(r, scope_of()?);
+        return entry_in(r, scope_of()?, inputs);
     }
     if let Some(rpi) = rec.get("rulesPerItem") {
         let rpi = rpi
@@ -1066,7 +1164,9 @@ fn decode_table(rec: &RecView, input: &Val) -> R<Val> {
             let arr = arr.as_arr().ok_or_else(|| bad("rulesPerItem entry"))?;
             let it = index_in(items, j);
             out.push(Val::arr(
-                arr.iter().map(|x| entry_in(x, it)).collect::<R<_>>()?,
+                arr.iter()
+                    .map(|x| entry_in(x, it, inputs))
+                    .collect::<R<_>>()?,
             ));
         }
         return Ok(Val::arr(out));
@@ -1078,7 +1178,10 @@ fn decode_table(rec: &RecView, input: &Val) -> R<Val> {
     if !rec.has("items") {
         let s = scope_of()?;
         return Ok(Val::arr(
-            rules.iter().map(|x| entry_in(x, s)).collect::<R<_>>()?,
+            rules
+                .iter()
+                .map(|x| entry_in(x, s, inputs))
+                .collect::<R<_>>()?,
         ));
     }
     let mut cur: i64 = -1;
@@ -1096,6 +1199,7 @@ fn decode_table(rec: &RecView, input: &Val) -> R<Val> {
             } else {
                 None
             },
+            inputs,
         )?);
     }
     Ok(Val::arr(out))
@@ -1548,7 +1652,13 @@ pub(crate) fn encode_entries(
                 if let Some(i) = t.items {
                     detail.push(("items", Val::str(&i)));
                 }
-                detail.push((t.field, t.value));
+                match keyed_cells(&t.value) {
+                    Some((value, inputs)) => {
+                        detail.push(("inputs", Val::obj(inputs)));
+                        detail.push((t.field, value));
+                    }
+                    None => detail.push((t.field, t.value)),
+                }
             }
             Some(Kind::Decision) => {
                 let is_loop = td.is_arr();

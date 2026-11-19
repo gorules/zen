@@ -1,4 +1,4 @@
-use super::format::graph::cell_field;
+use super::format::graph::{cell_field, cell_parts};
 use super::value::write_str;
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -36,6 +36,9 @@ pub(crate) struct RuleT {
     pub(crate) head: String,
     pub(crate) dollar: bool,
     pub(crate) index: usize,
+    pub(crate) keyed: bool,
+    pub(crate) inputs: Vec<(Arc<str>, Arc<str>)>,
+    pub(crate) listed: String,
 }
 
 impl RuleT {
@@ -103,7 +106,82 @@ impl RuleT {
             head,
             dollar,
             index,
+            keyed: false,
+            inputs: Vec::new(),
+            listed: String::new(),
         }
+    }
+
+    pub(crate) fn key(&self, at: usize) -> &str {
+        let key = &*self.cells[at].0;
+        match (self.keyed, cell_parts(key)) {
+            (true, Some((_, id))) => id,
+            _ => key,
+        }
+    }
+
+    fn rekey(&mut self) {
+        self.keyed = true;
+        let mut inputs: Vec<(Arc<str>, Arc<str>)> = self
+            .cells
+            .iter()
+            .filter_map(|(key, _)| cell_parts(key))
+            .map(|(field, id)| (Arc::from(id), Arc::from(field)))
+            .collect();
+        inputs.sort_by(|a, b| a.0.cmp(&b.0));
+        self.inputs = inputs;
+        self.listed = Self::listing(std::iter::once(&*self));
+        let mut head = String::with_capacity(self.head.len());
+        head.push('{');
+        if let Some(id) = &self.id {
+            head.push_str("\"id\":");
+            write_str(id, &mut head);
+            head.push(',');
+        }
+        head.push_str("\"cells\":{");
+        for at in 0..self.cells.len() {
+            if at > 0 {
+                head.push(',');
+            }
+            write_str(self.key(at), &mut head);
+            head.push(':');
+            write_str(&self.cells[at].1, &mut head);
+        }
+        head.push_str("},\"index\":");
+        head.push_str(&self.index.to_string());
+        self.head = head;
+    }
+
+    pub(crate) fn union<'r>(rules: impl Iterator<Item = &'r RuleT>) -> Vec<(&'r str, &'r str)> {
+        let mut all: Vec<(&str, &str)> = Vec::new();
+        for rule in rules {
+            for (id, field) in &rule.inputs {
+                if !all.iter().any(|(known, _)| *known == &**id) {
+                    all.push((id, field));
+                }
+            }
+        }
+        all.sort_by(|a, b| a.0.cmp(b.0));
+        all
+    }
+
+    pub(crate) fn listing<'r>(rules: impl Iterator<Item = &'r RuleT>) -> String {
+        let all = Self::union(rules);
+        let mut text = String::new();
+        if all.is_empty() {
+            return text;
+        }
+        text.push_str(",\"inputs\":{");
+        for (i, (id, field)) in all.iter().enumerate() {
+            if i > 0 {
+                text.push(',');
+            }
+            write_str(id, &mut text);
+            text.push(':');
+            write_str(field, &mut text);
+        }
+        text.push('}');
+        text
     }
 }
 
@@ -135,6 +213,31 @@ impl NodeT {
                 statements = content.statements.iter().map(|s| s.id.clone()).collect();
             }
             _ => {}
+        }
+        let mut known: Vec<(&str, &str)> = Vec::new();
+        let mut plain: Vec<&str> = Vec::new();
+        let mut keyed = !rules.is_empty();
+        for rule in &rules {
+            keyed &= !rule.dollar;
+            for (key, _) in &rule.cells {
+                match cell_parts(key) {
+                    Some((field, id)) => match known.iter().find(|(seen, _)| *seen == id) {
+                        Some((_, other)) => keyed &= *other == field,
+                        None => {
+                            keyed &= !id.starts_with('$');
+                            known.push((id, field));
+                        }
+                    },
+                    None => plain.push(key),
+                }
+            }
+        }
+        keyed &= !known.is_empty()
+            && !plain
+                .iter()
+                .any(|key| known.iter().any(|(id, _)| id == key));
+        if keyed {
+            rules.iter_mut().for_each(RuleT::rekey);
         }
         let exprs = match &node.kind {
             DecisionNodeKind::ExpressionNode { content } => content

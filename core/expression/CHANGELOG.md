@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.8](https://github.com/gorules/zen/compare/zen-expression-v2.1.7...zen-expression-v2.1.8) (2026-11-19)
+
+
+### Bug Fixes
+
+* table analysis memory ([#570](https://github.com/gorules/zen/issues/570)) ([1944ebe](https://github.com/gorules/zen/commit/1944ebe01feb2b11b5197c7b16f4ae1e9d26ccf3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 2.1.7 to 2.1.8
+    * zen-types bumped from 2.1.7 to 2.1.8
+
 ## [2.1.7](https://github.com/gorules/zen/compare/zen-expression-v2.1.6...zen-expression-v2.1.7) (2026-11-09)
 
 

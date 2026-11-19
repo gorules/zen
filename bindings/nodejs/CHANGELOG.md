@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.12](https://github.com/gorules/zen/compare/nodejs-v2.1.11...nodejs-v2.1.12) (2026-11-19)
+
+
+### Bug Fixes
+
+* table analysis memory ([#570](https://github.com/gorules/zen/issues/570)) ([1944ebe](https://github.com/gorules/zen/commit/1944ebe01feb2b11b5197c7b16f4ae1e9d26ccf3))
+
 ## [2.1.11](https://github.com/gorules/zen/compare/nodejs-v2.1.10...nodejs-v2.1.11) (2026-11-11)
 
 

@@ -174,19 +174,25 @@ impl KernelFacts {
             if derived {
                 return Ok(Facts::First(first));
             }
-            let fields = self.fields.as_deref().ok_or("table fields not captured")?;
-            let facts = first
-                .iter()
-                .enumerate()
-                .map(|(position, rule)| match rule {
-                    None => Some(Fact::None),
-                    Some(rule) => {
-                        Self::captured_hit(template, slot, *rule, fields, position).map(Fact::Hit)
-                    }
-                })
-                .collect::<Option<Vec<Fact>>>()
-                .ok_or("table field references")?;
-            return Ok(Facts::Rows(facts));
+            let fields = self.fields.ok_or("table fields not captured")?;
+            let mut seen: SmallVec<[u32; 16]> = SmallVec::new();
+            for rule in first.iter().flatten() {
+                if !seen.contains(rule) {
+                    seen.push(*rule);
+                }
+            }
+            let known = fields.iter().all(|field| field.values.len() >= count)
+                && seen.iter().all(|rule| {
+                    template
+                        .refs_with(slot, *rule, |name| {
+                            fields.iter().find(|f| &*f.name == name).map(|_| None)
+                        })
+                        .is_some()
+                });
+            if !known {
+                return Err("table field references");
+            }
+            return Ok(Facts::Fields(first, fields.into()));
         }
         let hits = self
             .hits
@@ -208,7 +214,7 @@ impl KernelFacts {
         Ok(Facts::Rows(facts))
     }
 
-    fn captured_hit(
+    pub(crate) fn captured_hit(
         template: &Template,
         slot: Slot,
         rule: u32,

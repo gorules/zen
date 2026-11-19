@@ -1408,6 +1408,58 @@ impl<'a> Data<'a> {
         Some(columns)
     }
 
+    pub fn scope_columns(&self, fields: &[Arc<str>]) -> Option<Vec<(Vec<u32>, u32)>> {
+        let Shape::Patched {
+            base: None,
+            leaves,
+            presence: Some(presence),
+            nulls: None,
+            ..
+        } = &self.shape
+        else {
+            return None;
+        };
+        let count = self.len();
+        let mut columns = Vec::new();
+        for field in fields.iter().filter(|field| !field.is_empty()) {
+            let Read::Leaf(index) = Self::read(leaves, field) else {
+                return None;
+            };
+            let leaf = &leaves[index].1;
+            columns.push((
+                (0..count)
+                    .map(|row| u32::from(presence[index].at(leaf, row)))
+                    .collect(),
+                2,
+            ));
+            columns.push(leaf.codes(count));
+        }
+        Some(columns)
+    }
+
+    pub fn scope_flat(&self, row: usize, fields: &[Arc<str>]) -> bool {
+        let Shape::Patched {
+            base: None,
+            leaves,
+            presence: Some(presence),
+            nulls: None,
+            ..
+        } = &self.shape
+        else {
+            return false;
+        };
+        fields
+            .iter()
+            .filter(|field| !field.is_empty())
+            .all(|field| match Self::read(leaves, field) {
+                Read::Leaf(index) => {
+                    !presence[index].at(&leaves[index].1, row)
+                        || Cell::scalar(&leaves[index].1.get(row)).is_some()
+                }
+                _ => false,
+            })
+    }
+
     pub fn sparse(&self, row: usize, fields: &[Arc<str>]) -> Option<Variable> {
         let Shape::Patched {
             base: None,

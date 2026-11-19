@@ -51,6 +51,7 @@ pub(crate) enum Facts<'a> {
     First(Vec<Option<u32>>),
     Branches(Vec<SmallVec<[u32; 4]>>),
     Rows(Vec<Fact>),
+    Fields(Vec<Option<u32>>, Rc<[super::record::FieldColumn]>),
     Loop(Rc<[(u32, u32)]>, Box<Facts<'a>>),
 }
 
@@ -83,6 +84,14 @@ impl Facts<'_> {
                 Fact::Branches(taken.get(position).cloned().unwrap_or_default())
             }
             Facts::Rows(facts) => facts.get(position).cloned().unwrap_or(Fact::None),
+            Facts::Fields(rules, fields) => rules
+                .get(position)
+                .copied()
+                .flatten()
+                .and_then(|rule| {
+                    super::record::KernelFacts::captured_hit(template, slot, rule, fields, position)
+                })
+                .map_or(Fact::None, Fact::Hit),
             Facts::Loop(spans, inner) => {
                 let Some(&(start, count)) = spans.get(position) else {
                     return Fact::None;
@@ -429,7 +438,7 @@ impl<'a> Traces<'a> {
     fn fact(&self, at: usize, position: usize) -> Option<u64> {
         match &self.events[at].facts {
             Facts::None => Some(0),
-            Facts::First(rules) => Some(
+            Facts::First(rules) | Facts::Fields(rules, _) => Some(
                 rules
                     .get(position)
                     .copied()
@@ -456,7 +465,7 @@ impl<'a> Traces<'a> {
                 };
                 let facts = match &event.facts {
                     Facts::None => 1,
-                    Facts::First(rules) => rules
+                    Facts::First(rules) | Facts::Fields(rules, _) => rules
                         .iter()
                         .flatten()
                         .max()
@@ -473,7 +482,30 @@ impl<'a> Traces<'a> {
                 };
                 let mut weight = facts;
                 let mut columns = Vec::new();
-                for (codes, card) in after.key_columns(input, edits)? {
+                let mut keyed = after.key_columns(input, edits)?;
+                if let Facts::Fields(_, fields) = &event.facts {
+                    let count = after.len();
+                    for field in fields.iter() {
+                        let values: Rc<[Variable]> =
+                            field.values.iter().take(count).cloned().collect();
+                        let (codes, card) = crate::compiled::leaf::Leaf::Any(values).codes(count);
+                        keyed.push((
+                            codes
+                                .iter()
+                                .enumerate()
+                                .map(|(row, code)| {
+                                    match field.failed.get(row).copied().unwrap_or(true) {
+                                        true => 0,
+                                        false => code + 1,
+                                    }
+                                })
+                                .collect(),
+                            card + 1,
+                        ));
+                    }
+                    keyed.extend(input.scope_columns(&self.derived(event.slot)?)?);
+                }
+                for (codes, card) in keyed {
                     columns.push((codes, weight));
                     weight = weight.checked_mul(u64::from(card))?;
                 }
@@ -490,6 +522,19 @@ impl<'a> Traces<'a> {
             .as_ref()
     }
 
+    fn derived(&self, slot: Slot) -> Option<Vec<Arc<str>>> {
+        let node = self.template.node(slot)?;
+        let mut fields: Vec<Arc<str>> = Vec::new();
+        for rule in &node.rules {
+            for field in rule.derive.iter().flatten() {
+                if !fields.contains(field) {
+                    fields.push(field.clone());
+                }
+            }
+        }
+        Some(fields)
+    }
+
     fn keyed(
         &self,
         plan: &Plan<'a>,
@@ -497,6 +542,7 @@ impl<'a> Traces<'a> {
         position: usize,
         walk: &Walk,
         key: &mut Keys,
+        columnar: bool,
     ) -> bool {
         let event = &self.events[at];
         let (Some(edits), Some(Value::Data(after)), Encoding::Touched(Some(input))) =
@@ -529,6 +575,27 @@ impl<'a> Traces<'a> {
                 }
                 _ => return false,
             },
+            Facts::Fields(rules, fields) if columnar => {
+                key.mark(15);
+                if let Some(rule) = rules.get(position).copied().flatten() {
+                    key.mark(u64::from(rule));
+                    let flat = fields.iter().all(|field| {
+                        field.failed.get(position).copied().unwrap_or(true)
+                            || field.values.get(position).is_some_and(|value| {
+                                !matches!(
+                                    value,
+                                    Variable::Array(_) | Variable::Object(_) | Variable::Dynamic(_)
+                                )
+                            })
+                    });
+                    let scoped = self
+                        .derived(event.slot)
+                        .is_some_and(|derived| input.scope_flat(position, &derived));
+                    if !flat || !scoped {
+                        return false;
+                    }
+                }
+            }
             _ => return false,
         }
         after.edit_key(input, edits, position, key)
@@ -686,7 +753,7 @@ impl<'a> Traces<'a> {
                         continue;
                     }
                     Body::Rowwise => {}
-                    Body::Unknown => match self.keyed(plan, at, position, &walk, &mut key) {
+                    Body::Unknown => match self.keyed(plan, at, position, &walk, &mut key, true) {
                         true => pending = Some((keyer, code)),
                         false => *body = Body::Rowwise,
                     },
@@ -696,7 +763,7 @@ impl<'a> Traces<'a> {
             let keyed = columnar.is_none()
                 && !bodies.off
                 && parent.is_some()
-                && self.keyed(plan, at, position, &walk, &mut key);
+                && self.keyed(plan, at, position, &walk, &mut key, false);
             if keyed {
                 if let Some(text) = bodies.texts.get(key.words.as_slice()) {
                     out.push_str(text);
@@ -1050,6 +1117,23 @@ impl<'a> Traces<'a> {
             Facts::Branches(taken) => match taken.get(position) {
                 Some(taken) => writer.branches(slot, taken, out),
                 None => false,
+            },
+            Facts::Fields(rules, fields) => match rules.get(position).copied().flatten() {
+                None => true,
+                Some(rule) => {
+                    let hit = super::record::KernelFacts::captured_hit(
+                        &self.template,
+                        slot,
+                        rule,
+                        fields,
+                        position,
+                    )
+                    .ok_or("table field references")?;
+                    let scope = self
+                        .scope(walk, slot, parent, std::slice::from_ref(&hit))
+                        .ok_or("hit scope")?;
+                    writer.hits(slot, std::slice::from_ref(&hit), true, &scope, out)
+                }
             },
             Facts::Rows(facts) => match facts.get(position) {
                 Some(Fact::None) => true,

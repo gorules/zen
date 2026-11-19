@@ -427,10 +427,6 @@ impl<'a> Run<'_, 'a> {
                     match columned {
                         Some(columned) => {
                             let layer = columned.layer(&rows, total);
-                            let values = Rc::new(match transform.pass_through {
-                                false => Data::record(&rows, layer, None),
-                                true => input.layered(layer),
-                            });
                             let facts = match self.facts(
                                 step,
                                 event,
@@ -447,6 +443,10 @@ impl<'a> Run<'_, 'a> {
                                     return;
                                 }
                             };
+                            let values = Rc::new(match transform.pass_through {
+                                false => Data::record(&rows, layer, None),
+                                true => input.layered(layer),
+                            });
                             let complete = keys(&facts).map(|paths| {
                                 let exact: Vec<Option<usize>> =
                                     paths.iter().map(|path| columned.at(path)).collect();

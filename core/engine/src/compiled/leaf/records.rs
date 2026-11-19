@@ -106,7 +106,7 @@ impl<'a> Records<'a> {
     }
 
     pub fn listing(&self) -> Option<Listing<'_>> {
-        if self.fields.len() >= 8 {
+        if self.fields.len() >= 8 && !self.fresh() || self.fields.len() > 32 {
             return None;
         }
         let fields = self

@@ -403,8 +403,7 @@ impl<'t> RowWriter<'t> {
                 at.push(found);
             }
             if !(firsts.len() * 2 > count && (1..count).all(|i| at[i] != at[i - 1])) {
-                let texts: Vec<String> = firsts.iter().map(|&i| item(i).to_string()).collect();
-                packed = emit_packed(&at, &texts, out);
+                packed = emit_packed(&at, firsts.len(), |k| item(firsts[k]), out);
             }
         }
         if !packed {
@@ -503,7 +502,7 @@ impl<'t> RowWriter<'t> {
             at.push(k as u32);
         }
         out.push_str(",\"rules\":");
-        if emit_packed(&at, &texts, out) {
+        if emit_packed(&at, texts.len(), |k| texts[k].as_str(), out) {
             return true;
         }
         out.push('[');
@@ -914,23 +913,35 @@ fn pack_list(items: &[Variable], out: &mut String) -> Option<bool> {
     if firsts.len() * 2 > n && (1..n).all(|i| at[i] != at[i - 1]) {
         return None;
     }
-    let mut texts: Vec<String> = Vec::with_capacity(firsts.len());
+    let mut texts = String::new();
+    let mut ends: Vec<usize> = Vec::with_capacity(firsts.len());
     for &i in &firsts {
-        let mut text = String::new();
-        if !write_clean(&items[i], &mut text) {
+        if !write_clean(&items[i], &mut texts) {
             return None;
         }
-        texts.push(text);
+        ends.push(texts.len());
     }
-    emit_packed(&at, &texts, out).then_some(true)
+    let text = |k: usize| {
+        let start = match k {
+            0 => 0,
+            _ => ends[k - 1],
+        };
+        &texts[start..ends[k]]
+    };
+    emit_packed(&at, firsts.len(), text, out).then_some(true)
 }
 
-fn emit_packed(at: &[u32], texts: &[String], out: &mut String) -> bool {
+fn emit_packed<'t>(
+    at: &[u32],
+    distinct: usize,
+    text: impl Fn(usize) -> &'t str,
+    out: &mut String,
+) -> bool {
     let n = at.len();
     if n < 4 {
         return false;
     }
-    let len = |i: usize| texts[at[i] as usize].len();
+    let len = |i: usize| text(at[i] as usize).len();
     let plain: usize = (0..n).map(|i| len(i) + 1).sum::<usize>() + 1;
     let mut runs: Vec<(u32, usize)> = Vec::new();
     for &k in at {
@@ -941,10 +952,10 @@ fn emit_packed(at: &[u32], texts: &[String], out: &mut String) -> bool {
     }
     let runs_size: usize = runs
         .iter()
-        .map(|(k, count)| texts[*k as usize].len() + super::core::digits(*count) + 4)
+        .map(|(k, count)| text(*k as usize).len() + super::core::digits(*count) + 4)
         .sum::<usize>()
         + 12;
-    let pick_size: usize = texts.iter().map(|t| t.len() + 1).sum::<usize>()
+    let pick_size: usize = (0..distinct).map(|k| text(k).len() + 1).sum::<usize>()
         + at.iter()
             .map(|&k| super::core::digits(k as usize) + 1)
             .sum::<usize>()
@@ -957,7 +968,7 @@ fn emit_packed(at: &[u32], texts: &[String], out: &mut String) -> bool {
                 out.push(',');
             }
             out.push('[');
-            out.push_str(&texts[*k as usize]);
+            out.push_str(text(*k as usize));
             if *count > 1 {
                 out.push(',');
                 push_digits(*count, out);
@@ -969,11 +980,11 @@ fn emit_packed(at: &[u32], texts: &[String], out: &mut String) -> bool {
     }
     if (pick_size as f64) < plain8 {
         out.push_str("{\"$pick\":[");
-        for (i, text) in texts.iter().enumerate() {
-            if i > 0 {
+        for k in 0..distinct {
+            if k > 0 {
                 out.push(',');
             }
-            out.push_str(text);
+            out.push_str(text(k));
         }
         out.push_str("],\"at\":[");
         for (i, k) in at.iter().enumerate() {

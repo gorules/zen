@@ -1362,6 +1362,52 @@ impl<'a> Data<'a> {
         Some(Edits { groups })
     }
 
+    pub fn key_columns(&self, input: &Data<'a>, edits: &Edits<'a>) -> Option<Vec<(Vec<u32>, u32)>> {
+        let layer = self.extends(input)?;
+        if !matches!(&input.shape, Shape::Patched { base: None, .. }) {
+            return None;
+        }
+        let count = self.len();
+        let earlier = input.leaves();
+        let mut leaves: Vec<&Leaf<'a>> = Vec::new();
+        let mut columns: Vec<(Vec<u32>, u32)> = Vec::new();
+        for group in &edits.groups {
+            for &index in &group.layer {
+                leaves.push(&layer.columns[index]);
+                if layer.present.is_some() {
+                    columns.push((
+                        (0..count)
+                            .map(|row| u32::from(layer.has(index, row)))
+                            .collect(),
+                        2,
+                    ));
+                }
+            }
+            match &group.kind {
+                EditKind::Dynamic => return None,
+                EditKind::Flat { before, .. } => {
+                    leaves.extend(before.iter().map(|&leaf| &earlier[leaf].1));
+                }
+                EditKind::Nested {
+                    fields,
+                    exact,
+                    under,
+                } => {
+                    leaves.extend(exact.iter().map(|&leaf| &earlier[leaf].1));
+                    leaves.extend(under.iter().map(|&leaf| &earlier[leaf].1));
+                    leaves.extend(
+                        fields
+                            .iter()
+                            .filter_map(|field| field.before)
+                            .map(|leaf| &earlier[leaf].1),
+                    );
+                }
+            }
+        }
+        columns.extend(leaves.into_iter().map(|leaf| leaf.codes(count)));
+        Some(columns)
+    }
+
     pub fn sparse(&self, row: usize, fields: &[Arc<str>]) -> Option<Variable> {
         let Shape::Patched {
             base: None,

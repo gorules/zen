@@ -72,10 +72,6 @@ impl<'t> RowWriter<'t> {
         self.missed.set(false);
     }
 
-    pub fn fits(&self, slot: Slot) -> bool {
-        self.template.node(slot).is_some_and(|n| n.head.is_some())
-    }
-
     pub fn begin(
         &mut self,
         engine: Option<&str>,
@@ -104,15 +100,16 @@ impl<'t> RowWriter<'t> {
         self.count == 0
     }
 
-    pub fn node(&mut self, slot: Slot, perf: &str, parents: &[Slot], out: &mut String) -> bool {
-        let Some(head) = self.template.node(slot).and_then(|n| n.head.as_deref()) else {
-            return false;
-        };
+    pub fn head(&self, slot: Slot, perf: &str) -> Option<Box<str>> {
+        let head = self.template.node(slot).and_then(|n| n.head.as_deref())?;
+        Some(format!("{head}{perf}").into())
+    }
+
+    pub fn node(&mut self, head: &str, parents: &[Slot], out: &mut String) -> bool {
         if self.count > 0 {
             out.push(',');
         }
         out.push_str(head);
-        out.push_str(perf);
         self.used.clear();
         match (self.count, parents.is_empty()) {
             (0, true) => {}
@@ -309,6 +306,29 @@ impl<'t> RowWriter<'t> {
             write_str(k, out);
             out.push(':');
             ok &= self.put(&v, out);
+        }
+        out.push('}');
+        if let Some(at) = self
+            .template
+            .node(slot)
+            .and_then(|n| n.results_at.as_deref())
+        {
+            out.push_str(at);
+        }
+        ok
+    }
+
+    pub fn results_with<'v>(
+        &mut self,
+        slot: Slot,
+        entries: impl Iterator<Item = (&'v str, &'v Variable)>,
+        out: &mut String,
+    ) -> bool {
+        out.push_str(",\"results\":{");
+        let mut ok = true;
+        for (key, value) in entries {
+            out.push_str(key);
+            ok &= self.put(value, out);
         }
         out.push('}');
         if let Some(at) = self

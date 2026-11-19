@@ -208,11 +208,38 @@ struct Bodies {
     off: bool,
 }
 
+enum Body {
+    Unknown,
+    Rowwise,
+    Text(Box<str>),
+}
+
+enum Bodied {
+    Dense(Vec<Body>),
+    Sparse(super::value::FastMap<u64, Body>),
+}
+
+struct Keyer {
+    facts: u64,
+    columns: Vec<(Vec<u32>, u64)>,
+    bodies: std::cell::RefCell<Bodied>,
+}
+
+impl Keyer {
+    fn key(&self, fact: u64, position: usize) -> u64 {
+        self.columns.iter().fold(fact, |key, (codes, weight)| {
+            key + u64::from(codes[position]) * weight
+        })
+    }
+}
+
 struct Plan<'a> {
+    heads: Vec<Option<Box<str>>>,
+    labels: Vec<Option<Box<[Box<str>]>>>,
+    keyers: Vec<OnceCell<Option<Keyer>>>,
     keys: std::cell::RefCell<Keys>,
     bodies: Vec<std::cell::RefCell<Bodies>>,
     positions: Vec<Box<[u32]>>,
-    perf: Vec<String>,
     order: Vec<Option<Box<[u32]>>>,
     edits: Vec<Option<crate::compiled::graph::data::Edits<'a>>>,
 }
@@ -336,15 +363,42 @@ impl<'a> Traces<'a> {
                     at.into_boxed_slice()
                 })
                 .collect();
+            let heads = {
+                let writer = RowWriter::new(&self.template);
+                self.events
+                    .iter()
+                    .map(|event| writer.head(event.slot, &super::rows::perf(event.ns)))
+                    .collect()
+            };
+            let labels = self
+                .events
+                .iter()
+                .map(|event| match &event.facts {
+                    Facts::Results((keys, _)) => sorted_keys(keys).map(|order| {
+                        order
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &k)| {
+                                let mut text = String::new();
+                                if i > 0 {
+                                    text.push(',');
+                                }
+                                super::value::write_str(&keys[k as usize], &mut text);
+                                text.push(':');
+                                text.into_boxed_str()
+                            })
+                            .collect()
+                    }),
+                    _ => None,
+                })
+                .collect();
             Plan {
+                heads,
+                labels,
+                keyers: self.events.iter().map(|_| OnceCell::new()).collect(),
                 keys: Default::default(),
                 bodies: self.events.iter().map(|_| Default::default()).collect(),
                 positions,
-                perf: self
-                    .events
-                    .iter()
-                    .map(|event| super::rows::perf(event.ns))
-                    .collect(),
                 edits: self
                     .events
                     .iter()
@@ -370,6 +424,70 @@ impl<'a> Traces<'a> {
                     .collect(),
             }
         })
+    }
+
+    fn fact(&self, at: usize, position: usize) -> Option<u64> {
+        match &self.events[at].facts {
+            Facts::None => Some(0),
+            Facts::First(rules) => Some(
+                rules
+                    .get(position)
+                    .copied()
+                    .flatten()
+                    .map_or(0, |rule| u64::from(rule) + 1),
+            ),
+            Facts::Rows(facts) => match facts.get(position) {
+                Some(Fact::None) => Some(0),
+                Some(Fact::Hit(Hit { rule, refs: None })) => Some(u64::from(*rule) + 1),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn keyer<'p>(&self, plan: &'p Plan<'a>, at: usize) -> Option<&'p Keyer> {
+        plan.keyers[at]
+            .get_or_init(|| {
+                let event = &self.events[at];
+                let (Some(edits), Some(Value::Data(after)), Encoding::Touched(Some(input))) =
+                    (&plan.edits[at], &event.output, &event.encoding)
+                else {
+                    return None;
+                };
+                let facts = match &event.facts {
+                    Facts::None => 1,
+                    Facts::First(rules) => rules
+                        .iter()
+                        .flatten()
+                        .max()
+                        .map_or(1, |rule| u64::from(*rule) + 2),
+                    Facts::Rows(facts) => facts
+                        .iter()
+                        .filter_map(|fact| match fact {
+                            Fact::Hit(hit) => Some(u64::from(hit.rule) + 2),
+                            _ => None,
+                        })
+                        .max()
+                        .unwrap_or(1),
+                    _ => return None,
+                };
+                let mut weight = facts;
+                let mut columns = Vec::new();
+                for (codes, card) in after.key_columns(input, edits)? {
+                    columns.push((codes, weight));
+                    weight = weight.checked_mul(u64::from(card))?;
+                }
+                let bodies = match weight <= 1 << 16 {
+                    true => Bodied::Dense((0..weight).map(|_| Body::Unknown).collect()),
+                    false => Bodied::Sparse(Default::default()),
+                };
+                Some(Keyer {
+                    facts,
+                    columns,
+                    bodies: std::cell::RefCell::new(bodies),
+                })
+            })
+            .as_ref()
     }
 
     fn keyed(
@@ -503,9 +621,9 @@ impl<'a> Traces<'a> {
                 continue;
             }
             let position = position as usize;
-            if !writer.fits(event.slot) {
+            let Some(head) = plan.heads[at].as_deref() else {
                 return Err("node kind");
-            }
+            };
             let parents: SmallVec<[Slot; 4]> = event
                 .parents
                 .iter()
@@ -530,7 +648,7 @@ impl<'a> Traces<'a> {
                 }
                 _ => return Err("input shape"),
             }
-            if !writer.node(event.slot, &plan.perf[at], &parents, out) {
+            if !writer.node(head, &parents, out) {
                 return Err("node");
             }
             if let Some(slot) = walk.ran.get_mut(event.slot as usize) {
@@ -538,9 +656,47 @@ impl<'a> Traces<'a> {
             }
             let parent = parents.first().copied();
             let mark = out.len();
+            let merged = walk
+                .inputs
+                .get(event.slot as usize)
+                .is_some_and(Option::is_some);
+            let columnar = match (parent, merged, self.keyer(plan, at)) {
+                (Some(_), false, Some(keyer)) => self
+                    .fact(at, position)
+                    .filter(|fact| *fact < keyer.facts)
+                    .map(|fact| (keyer, keyer.key(fact, position))),
+                _ => None,
+            };
+            let mut pending = None;
+            if let Some((keyer, code)) = columnar {
+                let mut bodied = keyer.bodies.borrow_mut();
+                let mut spare = Body::Rowwise;
+                let body = match &mut *bodied {
+                    Bodied::Dense(bodies) => &mut bodies[code as usize],
+                    Bodied::Sparse(bodies) if bodies.len() >= 1 << 16 => {
+                        bodies.get_mut(&code).unwrap_or(&mut spare)
+                    }
+                    Bodied::Sparse(bodies) => bodies.entry(code).or_insert(Body::Unknown),
+                };
+                match body {
+                    Body::Text(text) => {
+                        out.push_str(text);
+                        drop(bodied);
+                        writer.end(event.slot, out);
+                        continue;
+                    }
+                    Body::Rowwise => {}
+                    Body::Unknown => match self.keyed(plan, at, position, &walk, &mut key) {
+                        true => pending = Some((keyer, code)),
+                        false => *body = Body::Rowwise,
+                    },
+                }
+            }
             let mut bodies = plan.bodies[at].borrow_mut();
-            let keyed =
-                !bodies.off && parent.is_some() && self.keyed(plan, at, position, &walk, &mut key);
+            let keyed = columnar.is_none()
+                && !bodies.off
+                && parent.is_some()
+                && self.keyed(plan, at, position, &walk, &mut key);
             if keyed {
                 if let Some(text) = bodies.texts.get(key.words.as_slice()) {
                     out.push_str(text);
@@ -593,6 +749,15 @@ impl<'a> Traces<'a> {
             if keyed && !bodies.off {
                 bodies.texts.insert(key.words.clone(), out[mark..].into());
             }
+            if let Some((keyer, code)) = pending {
+                let text = Body::Text(out[mark..].into());
+                match &mut *keyer.bodies.borrow_mut() {
+                    Bodied::Dense(bodies) => bodies[code as usize] = text,
+                    Bodied::Sparse(bodies) => {
+                        bodies.insert(code, text);
+                    }
+                }
+            }
             drop(bodies);
             writer.end(event.slot, out);
         }
@@ -625,6 +790,12 @@ impl<'a> Traces<'a> {
                 count > 0 && matches!(inner.as_ref(), Facts::Results(_))
             }
             _ => false,
+        };
+        let fetched: SmallVec<[Variable; 8]> = match &event.facts {
+            Facts::Results((_, leaves)) => (0..leaves.len())
+                .map(|index| leaves.get(index, position))
+                .collect(),
+            _ => SmallVec::new(),
         };
         let mut items = false;
         match &event.encoding {
@@ -730,7 +901,7 @@ impl<'a> Traces<'a> {
                 }
             }
             Encoding::Touched(_) => {
-                if results && self.null_free(plan, at, position) {
+                if results && self.null_free(plan, at, position, &fetched) {
                     match span {
                         None => writer.output_from("input+results", out),
                         Some(_) => {
@@ -776,15 +947,16 @@ impl<'a> Traces<'a> {
         }
         let ok = match &event.facts {
             Facts::None => true,
-            Facts::Results((keys, leaves)) => {
-                let Some(order) = &plan.order[at] else {
+            Facts::Results(_) => {
+                let (Some(order), Some(labels)) = (&plan.order[at], &plan.labels[at]) else {
                     return Err("results keys");
                 };
-                writer.results(
+                writer.results_with(
                     slot,
                     order
                         .iter()
-                        .map(|&i| (&*keys[i as usize], leaves.get(i as usize, position))),
+                        .zip(labels.iter())
+                        .map(|(&i, label)| (&**label, &fetched[i as usize])),
                     out,
                 )
             }
@@ -981,14 +1153,12 @@ impl<'a> Traces<'a> {
         }
     }
 
-    fn null_free(&self, plan: &Plan, at: usize, position: usize) -> bool {
+    fn null_free(&self, plan: &Plan, at: usize, position: usize, fetched: &[Variable]) -> bool {
         if plan.order[at].is_none() {
             return false;
         }
         match &self.events[at].facts {
-            Facts::Results((_, leaves)) => {
-                (0..leaves.len()).all(|index| super::rows::null_free(&leaves.get(index, position)))
-            }
+            Facts::Results(_) => fetched.iter().all(super::rows::null_free),
             Facts::Loop(spans, inner) => {
                 let (Some(&(start, count)), Facts::Results((_, leaves))) =
                     (spans.get(position), inner.as_ref())

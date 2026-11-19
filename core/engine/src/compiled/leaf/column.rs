@@ -477,6 +477,65 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn codes(&self, rows: usize) -> (Vec<u32>, u32) {
+        type Fast<K> =
+            std::collections::HashMap<K, u32, std::hash::BuildHasherDefault<ahash::AHasher>>;
+        let mut numbers: Fast<(i128, u32)> = Default::default();
+        let mut texts: Fast<zen_types::symbol::Symbol> = Default::default();
+        let mut next = 5u32;
+        let mut number = |key: (i128, u32)| {
+            *numbers.entry(key).or_insert_with(|| {
+                next += 1;
+                next - 1
+            })
+        };
+        let typed = !matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_));
+        let column = typed.then(|| self.column());
+        let codes: Vec<u32> = match column.map(|column| (column, column.values)) {
+            Some((column, Values::Dict { values, .. }))
+                if !matches!(values, Dictionary::Any(_)) =>
+            {
+                (0..rows)
+                    .map(|row| match ColumnBuilder::null_at(&column, row) {
+                        true => 0,
+                        false => column.code(row).map_or(0, |code| 5 + code as u32),
+                    })
+                    .collect()
+            }
+            Some((column, Values::Scaled { mant, scale })) => (0..rows)
+                .map(|row| match ColumnBuilder::null_at(&column, row) {
+                    true => 0,
+                    false => number((i128::from(mant[row]), u32::from(scale[row]) | 1 << 31)),
+                })
+                .collect(),
+            _ => {
+                let mut next = 1u32 << 30;
+                (0..rows)
+                    .map(|row| match self.get(row) {
+                        Variable::Null => 0,
+                        Variable::Array(_) | Variable::Object(_) => 1,
+                        Variable::Dynamic(_) => 2,
+                        Variable::Bool(flag) => 3 + u32::from(flag),
+                        Variable::Number(d) => number((d.mantissa(), d.scale())),
+                        Variable::String(text) => *texts.entry(text).or_insert_with(|| {
+                            next += 1;
+                            next - 1
+                        }),
+                    })
+                    .collect()
+            }
+        };
+        let mut dense: Fast<u32> = Default::default();
+        let codes: Vec<u32> = codes
+            .into_iter()
+            .map(|code| {
+                let next = dense.len() as u32;
+                *dense.entry(code).or_insert(next)
+            })
+            .collect();
+        (codes, dense.len().max(1) as u32)
+    }
+
     pub fn words(&self, row: usize, key: &mut Vec<u64>) -> bool {
         if matches!(self, Leaf::Any(_) | Leaf::Records(_)) {
             return false;

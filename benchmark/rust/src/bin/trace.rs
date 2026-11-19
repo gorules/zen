@@ -371,7 +371,7 @@ fn fmt_ns(ns: f64) -> String {
     } else if ns >= 1e6 {
         format!("{:.2} ms", ns / 1e6)
     } else {
-        format!("{:.1} µs", ns / 1e3)
+        format!("{:.2} µs", ns / 1e3)
     }
 }
 

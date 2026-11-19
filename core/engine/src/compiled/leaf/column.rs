@@ -477,6 +477,24 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn plain(&self) -> Option<(Column<'_>, u8)> {
+        if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
+            return None;
+        }
+        let column = self.column();
+        let kind = match column.values {
+            Values::Utf8 { .. }
+            | Values::Text { .. }
+            | Values::LargeUtf8 { .. }
+            | Values::Strs(_) => 0,
+            Values::Dict { values, .. } if matches!(values, Dictionary::Text { .. }) => 0,
+            Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) => 1,
+            Values::Bool { .. } => 2,
+            _ => return None,
+        };
+        Some((column, kind))
+    }
+
     pub fn scalars(&self) -> Option<(Column<'_>, bool)> {
         if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
             return None;
@@ -488,71 +506,6 @@ impl<'a> Leaf<'a> {
         ) || matches!(column.values, Values::Dict { values, .. } if matches!(values, Dictionary::Text { .. }));
         let number = matches!(column.values, Values::Scaled { .. } | Values::I64(_));
         (text || number).then_some((column, text))
-    }
-
-    pub fn write_scalar(column: &Column, text: bool, row: usize, out: &mut Vec<u8>) -> bool {
-        if ColumnBuilder::null_at(column, row) {
-            out.extend_from_slice(b"null");
-            return true;
-        }
-        match text {
-            true => match column.text(row) {
-                Some(text) => serde_json::to_writer(&mut *out, text).is_ok(),
-                None => false,
-            },
-            false => match column.number(row) {
-                Some(number) => serde_json::to_writer(&mut *out, &Variable::Number(number)).is_ok(),
-                None => false,
-            },
-        }
-    }
-
-    pub fn write_json(&self, row: usize, out: &mut Vec<u8>) -> bool {
-        if let Leaf::Records(records) = self {
-            match records.write_json(row, out) {
-                Some(true) => return true,
-                Some(false) => {
-                    out.extend_from_slice(b"null");
-                    return false;
-                }
-                None => {}
-            }
-        }
-        if !matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
-            let column = self.column();
-            if ColumnBuilder::null_at(&column, row) {
-                out.extend_from_slice(b"null");
-                return false;
-            }
-            let text = matches!(
-                column.values,
-                Values::Utf8 { .. }
-                    | Values::Text { .. }
-                    | Values::LargeUtf8 { .. }
-                    | Values::Strs(_)
-            ) || matches!(column.values, Values::Dict { values, .. } if matches!(values, Dictionary::Text { .. }));
-            let number = matches!(column.values, Values::Scaled { .. } | Values::I64(_));
-            match (text, number) {
-                (true, _) => {
-                    if let Some(text) = column.text(row) {
-                        return serde_json::to_writer(&mut *out, text).is_ok();
-                    }
-                }
-                (_, true) => {
-                    if let Some(number) = column.number(row) {
-                        return serde_json::to_writer(&mut *out, &Variable::Number(number)).is_ok();
-                    }
-                }
-                _ => {}
-            }
-        }
-        match self.get(row) {
-            Variable::Null => {
-                out.extend_from_slice(b"null");
-                false
-            }
-            value => serde_json::to_writer(&mut *out, &value).is_ok(),
-        }
     }
 
     pub fn codes(&self, rows: usize) -> (Vec<u32>, u32) {

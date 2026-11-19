@@ -372,6 +372,61 @@ impl<'t> RowWriter<'t> {
         ok
     }
 
+    pub fn results_texts(
+        &mut self,
+        slot: Slot,
+        text: &str,
+        ends: &[u32],
+        marks: &[u64],
+        out: &mut String,
+    ) -> bool {
+        out.push_str(",\"results\":");
+        let count = ends.len();
+        let item = |i: usize| {
+            let start = match i {
+                0 => 0,
+                _ => ends[i - 1] as usize,
+            };
+            &text[start..ends[i] as usize]
+        };
+        let mut packed = false;
+        if count >= 4 {
+            let mut seen: super::value::FastMap<(&str, u64), u32> = Default::default();
+            let mut firsts: Vec<usize> = Vec::new();
+            let mut at: Vec<u32> = Vec::with_capacity(count);
+            for i in 0..count {
+                let next = firsts.len() as u32;
+                let found = *seen.entry((item(i), marks[i])).or_insert(next);
+                if found == next {
+                    firsts.push(i);
+                }
+                at.push(found);
+            }
+            if !(firsts.len() * 2 > count && (1..count).all(|i| at[i] != at[i - 1])) {
+                let texts: Vec<String> = firsts.iter().map(|&i| item(i).to_string()).collect();
+                packed = emit_packed(&at, &texts, out);
+            }
+        }
+        if !packed {
+            out.push('[');
+            for i in 0..count {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(item(i));
+            }
+            out.push(']');
+        }
+        if let Some(at) = self
+            .template
+            .node(slot)
+            .and_then(|n| n.results_at.as_deref())
+        {
+            out.push_str(at);
+        }
+        true
+    }
+
     pub fn results_open(&mut self, out: &mut String) {
         out.push_str(",\"results\":[");
     }

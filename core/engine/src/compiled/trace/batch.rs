@@ -23,6 +23,17 @@ impl Cols<'_> {
         }
     }
 
+    fn plain(&self, index: usize) -> Option<(zen_expression::lane::Column<'_>, u8)> {
+        match self {
+            Cols::Owned(leaves) => leaves.get(index)?.plain(),
+            Cols::Lazy(leaves, None) => match leaves.get(index)? {
+                (leaf, None) => leaf.plain(),
+                _ => None,
+            },
+            Cols::Lazy(..) => None,
+        }
+    }
+
     pub(crate) fn get(&self, index: usize, position: usize) -> Variable {
         match self {
             Cols::Owned(leaves) => leaves[index].get(position),
@@ -255,6 +266,13 @@ impl Keyer {
     }
 }
 
+struct Packed {
+    text: String,
+    ends: Vec<u32>,
+    marks: Vec<u64>,
+    nulls: bool,
+}
+
 struct Hitter {
     derived: Vec<Arc<str>>,
     texts: std::cell::RefCell<super::value::FastMap<Vec<u64>, Box<str>>>,
@@ -274,6 +292,7 @@ struct Plan<'a> {
 }
 
 struct Walk {
+    free: SmallVec<[(usize, bool); 8]>,
     ran: SmallVec<[Option<(usize, usize)>; 16]>,
     values: SmallVec<[Option<Variable>; 16]>,
     inputs: SmallVec<[Option<Variable>; 16]>,
@@ -402,8 +421,16 @@ impl<'a> Traces<'a> {
             let labels = self
                 .events
                 .iter()
-                .map(|event| match &event.facts {
-                    Facts::Results((keys, _)) => sorted_keys(keys).map(|order| {
+                .map(|event| {
+                    let keys = match &event.facts {
+                        Facts::Results((keys, _)) => keys,
+                        Facts::Loop(_, inner) => match inner.as_ref() {
+                            Facts::Results((keys, _)) => keys,
+                            _ => return None,
+                        },
+                        _ => return None,
+                    };
+                    sorted_keys(keys).map(|order| {
                         order
                             .iter()
                             .enumerate()
@@ -417,8 +444,7 @@ impl<'a> Traces<'a> {
                                 text.into_boxed_str()
                             })
                             .collect()
-                    }),
-                    _ => None,
+                    })
                 })
                 .collect();
             Plan {
@@ -542,6 +568,60 @@ impl<'a> Traces<'a> {
                 })
             })
             .as_ref()
+    }
+
+    fn packed(&self, plan: &Plan<'a>, at: usize, start: u32, count: u32) -> Option<Packed> {
+        let Facts::Loop(_, inner) = &self.events[at].facts else {
+            return None;
+        };
+        let Facts::Results((keys, leaves)) = inner.as_ref() else {
+            return None;
+        };
+        if count == 0 || keys.iter().any(|key| key.starts_with('$')) {
+            return None;
+        }
+        let (order, labels) = (plan.order[at].as_ref()?, plan.labels[at].as_ref()?);
+        let columns: SmallVec<[(zen_expression::lane::Column<'_>, u8); 8]> = order
+            .iter()
+            .map(|&k| leaves.plain(k as usize))
+            .collect::<Option<_>>()?;
+        let mut packed = Packed {
+            text: String::with_capacity(count as usize * 48),
+            ends: Vec::with_capacity(count as usize),
+            marks: Vec::with_capacity(count as usize),
+            nulls: false,
+        };
+        for item in start as usize..(start + count) as usize {
+            let mut mark = 0u64;
+            packed.text.push('{');
+            for ((column, kind), label) in columns.iter().zip(labels.iter()) {
+                packed.text.push_str(label);
+                if crate::compiled::leaf::ColumnBuilder::null_at(column, item) {
+                    packed.text.push_str("null");
+                    packed.nulls = true;
+                    mark = mark.wrapping_mul(31).wrapping_add(255);
+                    continue;
+                }
+                match kind {
+                    0 => super::value::write_str(column.text(item)?, &mut packed.text),
+                    1 => {
+                        let number = column.number(item)?;
+                        mark = mark
+                            .wrapping_mul(31)
+                            .wrapping_add(u64::from(number.scale()));
+                        super::value::write_num(&number, &mut packed.text);
+                    }
+                    _ => packed.text.push_str(match column.boolean(item)? {
+                        true => "true",
+                        false => "false",
+                    }),
+                }
+            }
+            packed.text.push('}');
+            packed.ends.push(packed.text.len() as u32);
+            packed.marks.push(mark);
+        }
+        Some(packed)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -780,6 +860,7 @@ impl<'a> Traces<'a> {
         let plan = self.plan();
         let mut writer = RowWriter::new(&self.template);
         let mut walk = Walk {
+            free: SmallVec::new(),
             ran: SmallVec::from_elem(None, self.slots),
             values: SmallVec::from_elem(None, self.slots),
             inputs: SmallVec::from_elem(None, self.slots),
@@ -1011,6 +1092,10 @@ impl<'a> Traces<'a> {
             },
             _ => None,
         };
+        let packed = match span {
+            Some((start, count)) => self.packed(plan, at, start, count),
+            None => None,
+        };
         let fetched: SmallVec<[Variable; 8]> = match &event.facts {
             Facts::Results((_, leaves)) => (0..leaves.len())
                 .map(|index| leaves.get(index, position))
@@ -1122,9 +1207,12 @@ impl<'a> Traces<'a> {
                 }
             }
             Encoding::Touched(_) => {
-                let free = match &rowed {
-                    Some(rowed) => rowed.iter().all(|(_, value)| super::rows::null_free(value)),
-                    None => self.null_free(plan, at, position, &fetched),
+                let free = match (&rowed, &packed) {
+                    (Some(rowed), _) => {
+                        rowed.iter().all(|(_, value)| super::rows::null_free(value))
+                    }
+                    (None, Some(packed)) => !packed.nulls,
+                    (None, None) => self.null_free(plan, at, position, &fetched, walk),
                 };
                 if results && free {
                     match span {
@@ -1224,6 +1312,16 @@ impl<'a> Traces<'a> {
                                 }
                                 writer.results_close(slot, out);
                                 ok
+                            }
+                            false if packed.is_some() => {
+                                let packed = packed.as_ref().ok_or("loop span")?;
+                                writer.results_texts(
+                                    slot,
+                                    &packed.text,
+                                    &packed.ends,
+                                    &packed.marks,
+                                    out,
+                                )
                             }
                             false => {
                                 let list: Vec<Variable> = range
@@ -1412,12 +1510,31 @@ impl<'a> Traces<'a> {
         }
     }
 
-    fn null_free(&self, plan: &Plan, at: usize, position: usize, fetched: &[Variable]) -> bool {
+    fn null_free(
+        &self,
+        plan: &Plan,
+        at: usize,
+        position: usize,
+        fetched: &[Variable],
+        walk: &mut Walk,
+    ) -> bool {
         if plan.order[at].is_none() {
             return false;
         }
         match &self.events[at].facts {
-            Facts::Results(_) => fetched.iter().all(super::rows::null_free),
+            Facts::Results(_) => fetched.iter().all(|value| {
+                let address = match value {
+                    Variable::Array(items) => Rc::as_ptr(items) as usize,
+                    Variable::Object(map) => Rc::as_ptr(map) as usize,
+                    _ => return super::rows::null_free(value),
+                };
+                if let Some((_, free)) = walk.free.iter().find(|(known, _)| *known == address) {
+                    return *free;
+                }
+                let free = super::rows::null_free(value);
+                walk.free.push((address, free));
+                free
+            }),
             Facts::Loop(spans, inner) => {
                 let (Some(&(start, count)), Facts::Results((_, leaves))) =
                     (spans.get(position), inner.as_ref())

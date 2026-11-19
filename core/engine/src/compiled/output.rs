@@ -1,4 +1,4 @@
-use crate::compiled::leaf::Leaf;
+use crate::compiled::leaf::{Json, Leaf};
 use std::sync::Arc;
 use zen_expression::lane::Column;
 use zen_expression::Variable;
@@ -60,12 +60,7 @@ impl Layout {
         Some(parts)
     }
 
-    fn fill(
-        parts: &[Part],
-        columns: &[(Arc<str>, OutputColumn)],
-        row: usize,
-        out: &mut Vec<u8>,
-    ) -> bool {
+    fn fill(parts: &[Part], cells: &[Json], row: usize, out: &mut Vec<u8>) -> bool {
         let mut any = false;
         for part in parts {
             let mark = out.len();
@@ -75,12 +70,12 @@ impl Layout {
             let written = match part {
                 Part::Leaf(label, index) => {
                     out.extend_from_slice(label.as_bytes());
-                    columns[*index].1 .0.write_json(row, out)
+                    cells[*index].write(row, out)
                 }
                 Part::Branch(label, children) => {
                     out.extend_from_slice(label.as_bytes());
                     out.push(b'{');
-                    let filled = Self::fill(children, columns, row, out);
+                    let filled = Self::fill(children, cells, row, out);
                     out.push(b'}');
                     filled
                 }
@@ -93,16 +88,24 @@ impl Layout {
         any
     }
 
+    pub(crate) fn cells<'c, 'a>(columns: &'c [(Arc<str>, OutputColumn<'a>)]) -> Vec<Json<'c, 'a>> {
+        columns
+            .iter()
+            .map(|(_, column)| Json::of(&column.0))
+            .collect()
+    }
+
     pub(crate) fn write(
         &self,
         columns: &[(Arc<str>, OutputColumn)],
+        cells: &[Json],
         row: usize,
         out: &mut Vec<u8>,
     ) {
         match &self.0 {
             Some(parts) => {
                 out.push(b'{');
-                Self::fill(parts, columns, row, out);
+                Self::fill(parts, cells, row, out);
                 out.push(b'}');
             }
             None => {

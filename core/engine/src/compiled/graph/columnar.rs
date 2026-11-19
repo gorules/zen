@@ -114,13 +114,14 @@ impl ColumnarOutput<'_> {
 
     pub fn write_rows(&self, out: &mut String) -> Vec<usize> {
         let layout = crate::compiled::output::Layout::new(&self.columns);
+        let cells = crate::compiled::output::Layout::cells(&self.columns);
         let mut bytes = std::mem::take(out).into_bytes();
         let mut ends = Vec::with_capacity(self.rows);
         let start = bytes.len();
         for row in 0..self.rows {
             match self.errors.get(row).is_some_and(Option::is_some) {
                 true => bytes.extend_from_slice(b"null"),
-                false => layout.write(&self.columns, row, &mut bytes),
+                false => layout.write(&self.columns, &cells, row, &mut bytes),
             }
             if row == 0 {
                 let first = bytes.len() - start;

@@ -92,9 +92,8 @@ impl<'a> Records<'a> {
         Records::new(rows, offsets, valid, fields, nulled)
     }
 
-    pub fn write_json(&self, row: usize, out: &mut Vec<u8>) -> Option<bool> {
-        let labels = self
-            .labels
+    pub(super) fn labels(&self) -> Option<&[Box<str>]> {
+        self.labels
             .get_or_init(|| {
                 self.fields
                     .iter()
@@ -107,51 +106,7 @@ impl<'a> Records<'a> {
                     })
                     .collect()
             })
-            .as_ref()?;
-        let Some((start, end)) = self.range(row) else {
-            return Some(false);
-        };
-        let fast: smallvec::SmallVec<[Option<(Column<'_>, bool)>; 16]> = self
-            .fields
-            .iter()
-            .map(|(_, leaf, _)| leaf.scalars())
-            .collect();
-        out.push(b'[');
-        for item in start..end {
-            if item > start {
-                out.push(b',');
-            }
-            if self.nulled.as_ref().is_some_and(|n| Bits::get(n, item)) {
-                out.extend_from_slice(b"null");
-                continue;
-            }
-            out.push(b'{');
-            let mut any = false;
-            for (((_, leaf, present), label), fast) in
-                self.fields.iter().zip(labels).zip(fast.iter())
-            {
-                if !Bits::get(present, item) {
-                    continue;
-                }
-                if any {
-                    out.push(b',');
-                }
-                any = true;
-                out.extend_from_slice(label.as_bytes());
-                let mark = out.len();
-                let done = match fast {
-                    Some((column, text)) => Leaf::write_scalar(column, *text, item, out),
-                    None => false,
-                };
-                if !done {
-                    out.truncate(mark);
-                    leaf.write_json(item, out);
-                }
-            }
-            out.push(b'}');
-        }
-        out.push(b']');
-        Some(true)
+            .as_deref()
     }
 
     pub fn plain(&self) -> bool {

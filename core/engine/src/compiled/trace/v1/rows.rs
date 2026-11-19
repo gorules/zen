@@ -96,6 +96,10 @@ impl<'t> RowWriter<'t> {
         out.push_str("]}");
     }
 
+    pub fn open(&self) -> &[Slot] {
+        &self.open
+    }
+
     pub fn first(&self) -> bool {
         self.count == 0
     }

@@ -697,6 +697,7 @@ impl<'a> Traces<'a> {
                 .copied()
                 .filter(|p| walk.ran.get(*p as usize).is_some_and(Option::is_some))
                 .collect();
+            let mut shown: SmallVec<[Slot; 4]> = SmallVec::new();
             match (writer.first(), parents.as_slice(), event.input) {
                 (true, [], false) => {}
                 (false, [p], true) => {
@@ -709,13 +710,28 @@ impl<'a> Traces<'a> {
                 }
                 (false, [_, _, ..], true) => {
                     let merged = self.merged(&mut walk, &parents).ok_or("merge")?;
+                    let open: SmallVec<[Slot; 4]> = writer.open().iter().copied().collect();
+                    let reordered = open.len() == parents.len()
+                        && open != parents
+                        && parents.iter().all(|parent| open.contains(parent));
+                    if reordered
+                        && self
+                            .merged(&mut walk, &open)
+                            .is_some_and(|other| super::rows::same(&other, &merged))
+                    {
+                        shown = open;
+                    }
                     if let Some(slot) = walk.inputs.get_mut(event.slot as usize) {
                         *slot = Some(merged);
                     }
                 }
                 _ => return Err("input shape"),
             }
-            if !writer.node(head, &parents, out) {
+            let shown = match shown.is_empty() {
+                true => &parents,
+                false => &shown,
+            };
+            if !writer.node(head, shown, out) {
                 return Err("node");
             }
             if let Some(slot) = walk.ran.get_mut(event.slot as usize) {
@@ -856,7 +872,40 @@ impl<'a> Traces<'a> {
             (Facts::Loop(_, inner), Some((_, count))) => {
                 count > 0 && matches!(inner.as_ref(), Facts::Results(_))
             }
+            (Facts::Rows(facts), _) => matches!(facts.get(position), Some(Fact::Results(_))),
             _ => false,
+        };
+        let rowed: Option<Vec<(&str, Variable)>> = match &event.facts {
+            Facts::Rows(facts) => match facts.get(position) {
+                Some(Fact::Results(found)) => {
+                    let mut sorted: Vec<(&str, Variable)> = found
+                        .iter()
+                        .map(|(key, value)| (&**key, value.clone()))
+                        .collect();
+                    sorted.sort_by(|a, b| a.0.cmp(b.0));
+                    if sorted.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+                        return Err("results keys");
+                    }
+                    let nested = |a: &str, b: &str| {
+                        b.len() > a.len() && b.starts_with(a) && b.as_bytes()[a.len()] == b'.'
+                    };
+                    let tangled = sorted.iter().any(|(key, _)| {
+                        key.split('.').any(|part| part.starts_with('$'))
+                            || sorted.iter().any(|(other, _)| nested(key, other))
+                    });
+                    let reserved = self
+                        .template
+                        .node(slot)
+                        .and_then(|node| node.at.as_deref())
+                        .is_some_and(|path| path.split('.').any(|part| part.starts_with('$')));
+                    if tangled || reserved {
+                        return Err("row fact: results");
+                    }
+                    Some(sorted)
+                }
+                _ => None,
+            },
+            _ => None,
         };
         let fetched: SmallVec<[Variable; 8]> = match &event.facts {
             Facts::Results((_, leaves)) => (0..leaves.len())
@@ -924,9 +973,10 @@ impl<'a> Traces<'a> {
                         Some(before.ok_or("checked input")?)
                     }
                 };
-                let entries = match results {
-                    true => self.entries(plan, at, position),
-                    false => Vec::new(),
+                let entries = match (results, &rowed) {
+                    (true, Some(rowed)) => vec![rowed.clone()],
+                    (true, None) => self.entries(plan, at, position),
+                    (false, _) => Vec::new(),
                 };
                 let fits = results
                     && writer
@@ -968,7 +1018,11 @@ impl<'a> Traces<'a> {
                 }
             }
             Encoding::Touched(_) => {
-                if results && self.null_free(plan, at, position, &fetched) {
+                let free = match &rowed {
+                    Some(rowed) => rowed.iter().all(|(_, value)| super::rows::null_free(value)),
+                    None => self.null_free(plan, at, position, &fetched),
+                };
+                if results && free {
                     match span {
                         None => writer.output_from("input+results", out),
                         Some(_) => {
@@ -1152,7 +1206,10 @@ impl<'a> Traces<'a> {
                     let scope = self.scope(walk, slot, parent, hits).ok_or("hit scope")?;
                     writer.hits(slot, hits, false, &scope, out)
                 }
-                Some(Fact::Results(_)) => return Err("row fact: results"),
+                Some(Fact::Results(_)) => match rowed {
+                    Some(rowed) => writer.results(slot, rowed.into_iter(), out),
+                    None => return Err("row fact: results"),
+                },
                 Some(Fact::Items(_)) => return Err("row fact: items"),
                 Some(Fact::Data(_)) => return Err("row fact: data"),
                 Some(Fact::Sub(_)) => return Err("row fact: sub"),

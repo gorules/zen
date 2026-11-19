@@ -546,9 +546,9 @@ fn columnar_json(output: &zen_engine::ColumnarOutput, _mode: Mode) -> usize {
 #[cfg(not(feature = "base"))]
 fn columnar_json(output: &zen_engine::ColumnarOutput, _mode: Mode) -> usize {
     if std::env::var("TRACE_ALL").is_ok() {
-        let results: usize = (0..output.rows)
-            .map(|row| serde_json::to_string(&output.row(row)).unwrap().len())
-            .sum();
+        let mut rows = String::new();
+        output.write_rows(&mut rows);
+        let results = rows.len().saturating_sub(output.rows);
         let mut out = String::new();
         let rows = output
             .traces()

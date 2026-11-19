@@ -112,6 +112,27 @@ impl ColumnarOutput<'_> {
         OutputColumn::row(&self.columns, row)
     }
 
+    pub fn write_rows(&self, out: &mut String) -> Vec<usize> {
+        let layout = crate::compiled::output::Layout::new(&self.columns);
+        let mut bytes = std::mem::take(out).into_bytes();
+        let mut ends = Vec::with_capacity(self.rows);
+        let start = bytes.len();
+        for row in 0..self.rows {
+            match self.errors.get(row).is_some_and(Option::is_some) {
+                true => bytes.extend_from_slice(b"null"),
+                false => layout.write(&self.columns, row, &mut bytes),
+            }
+            if row == 0 {
+                let first = bytes.len() - start;
+                bytes.reserve((first + first / 16 + 16).saturating_mul(self.rows - 1));
+            }
+            ends.push(bytes.len());
+            bytes.push(b'\n');
+        }
+        *out = String::from_utf8(bytes).unwrap_or_default();
+        ends
+    }
+
     pub fn trace_json(&self, row: usize) -> Option<String> {
         self.traces().and_then(|traces| traces.json(row))
     }

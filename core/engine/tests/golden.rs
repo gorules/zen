@@ -219,6 +219,18 @@ impl Graphs {
             let output = decision
                 .evaluate_columns(&columns, EvaluationOptions::default())
                 .await;
+            let mut written = String::new();
+            let ends = output.write_rows(&mut written);
+            let mut start = 0;
+            for (row, end) in ends.iter().enumerate() {
+                let want = match &output.errors[row] {
+                    Some(_) => Value::Null,
+                    None => serde_json::to_value(output.row(row)).unwrap(),
+                };
+                let got: Value = serde_json::from_str(&written[start..*end]).unwrap();
+                assert_eq!(got, want, "{id}: result row {row}");
+                start = end + 1;
+            }
             for row in 0..columns.rows {
                 let input = columns.row(row);
                 let key = Canon::key(id, &[], &input);

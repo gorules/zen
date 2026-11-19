@@ -20,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update stable
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: benchmark-rust
@@ -48,9 +50,9 @@ jobs:
           cache: yarn
           cache-dependency-path: 'bindings/nodejs/yarn.lock'
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
-          toolchain: stable
+          toolchain: 1.99.0
           targets: x86_64-unknown-linux-gnu
       - uses: ./.github/actions/setup-rust
         with:
@@ -75,7 +77,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install Rust
-        run: rustup update stable
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: benchmark-python

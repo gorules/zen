@@ -122,9 +122,9 @@ jobs:
           cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
       - name: Install
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
-          toolchain: stable
+          toolchain: 1.99.0
           targets: ${{ matrix.settings.target }}
 
       - name: Rust cache + sccache (+ zig for linux legs)

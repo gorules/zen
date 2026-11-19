@@ -45,7 +45,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.99.0
           override: true
           target: ${{ matrix.settings.target }}
       - uses: ./.github/actions/setup-rust

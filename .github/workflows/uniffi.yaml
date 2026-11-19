@@ -97,6 +97,7 @@ jobs:
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
           target: ${{ matrix.settings.target }}
+          toolchain: 1.99.0
           args: '--lib --release --locked ${{ matrix.settings.extra_args }}'
 
       - name: Verify max glibc requirement

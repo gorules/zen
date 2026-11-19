@@ -1719,11 +1719,35 @@ pub(crate) fn encode_entries(
         if let Some(r) = &rres {
             match r {
                 Results::Many(ms) => {
-                    let list = ms
-                        .iter()
-                        .map(|m| map_vals(m, &mut |v| Ok(refs.encode(v))).map(Val::obj))
-                        .collect::<R<Vec<_>>>()?;
-                    rec.insert(Rc::from("results"), Val::arr(list));
+                    let aligned = ms.len() >= 2
+                        && ms.first().is_some_and(|first| {
+                            first.len() > 0
+                                && ms.iter().all(|m| {
+                                    m.len() == first.len()
+                                        && m.keys().zip(first.keys()).all(|(a, b)| a == b)
+                                })
+                        });
+                    match aligned {
+                        true => {
+                            let keys: Vec<Key> = ms[0].keys().cloned().collect();
+                            let mut columns = Obj::with_capacity(keys.len());
+                            for key in keys {
+                                let values = ms
+                                    .iter()
+                                    .map(|m| refs.encode(m.get(&key).unwrap_or(&Val::Null)))
+                                    .collect();
+                                columns.insert(key, Val::arr(values));
+                            }
+                            rec.insert(Rc::from("resultColumns"), Val::obj(columns));
+                        }
+                        false => {
+                            let list = ms
+                                .iter()
+                                .map(|m| map_vals(m, &mut |v| Ok(refs.encode(v))).map(Val::obj))
+                                .collect::<R<Vec<_>>>()?;
+                            rec.insert(Rc::from("results"), Val::arr(list));
+                        }
+                    }
                 }
                 Results::One(m, fk) => {
                     let mv = map_vals(m, &mut |v| Ok(refs.encode(v)))?;
@@ -1871,7 +1895,41 @@ fn decode_trace(t: &Val, req: &Val, paths: &[Val], ctx: &mut DecodeCtx) -> R<Val
         let mut rb: Option<Vec<RBase>> = None;
         let mut results: Option<ResultsVal> = None;
         let mut nulls: Vec<usize> = Vec::new();
-        if let Some(r) = rec.get("results") {
+        let columns = match rec.get("resultColumns") {
+            Some(Val::Obj(columns)) => {
+                let mut count: Option<usize> = None;
+                for (_, values) in columns.iter() {
+                    let len = values
+                        .as_arr()
+                        .ok_or_else(|| bad("resultColumns entry must be a list"))?
+                        .len();
+                    if count.is_some_and(|known| known != len) {
+                        return Err(bad("resultColumns lists differ in length"));
+                    }
+                    count = Some(len);
+                }
+                let count = count.ok_or_else(|| bad("resultColumns must not be empty"))?;
+                Some(Val::arr(
+                    (0..count)
+                        .map(|item| {
+                            let mut map = Obj::with_capacity(columns.len());
+                            for (key, values) in columns.iter() {
+                                let value = values
+                                    .as_arr()
+                                    .and_then(|list| list.get(item))
+                                    .cloned()
+                                    .unwrap_or(Val::Null);
+                                map.insert(key.clone(), value);
+                            }
+                            Val::obj(map)
+                        })
+                        .collect(),
+                ))
+            }
+            Some(_) => return Err(bad("resultColumns must be a map")),
+            None => None,
+        };
+        if let Some(r) = rec.get("results").or(columns.as_ref()) {
             let mut ids: Vec<(Key, Key)> = Vec::new();
             let rv = match r {
                 Val::Arr(a) if ctx.rows && a.iter().all(super::marks::is_row) => {

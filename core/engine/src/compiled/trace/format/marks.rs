@@ -148,6 +148,7 @@ pub(crate) fn child(pos: Pos, parent: &Val, key: &str) -> Pos {
         Pos::Record => match key {
             "input" | "output" | "log" | "details" => Pos::Value,
             "results" => Pos::Results,
+            "resultColumns" => Pos::EachSet,
             "inputs" => Pos::KeyedMap,
             "rule" => Pos::Entry,
             "rules" => Pos::Entries,

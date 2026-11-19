@@ -2557,6 +2557,28 @@ fn encode_level(
             rec.push(("output", o));
         }
         match results {
+            Some(Results::Many(ms))
+                if ms.len() >= 2
+                    && rows.iter().all(Option::is_none)
+                    && ms.first().is_some_and(|first| {
+                        !first.is_empty()
+                            && ms.iter().all(|m| {
+                                m.len() == first.len()
+                                    && m.iter().zip(first.iter()).all(|(a, b)| a.0 == b.0)
+                            })
+                    }) =>
+            {
+                let keys: Vec<Key> = ms[0].iter().map(|(key, _)| key.clone()).collect();
+                let mut columns = Obj::with_capacity(keys.len());
+                for (at, key) in keys.into_iter().enumerate() {
+                    let values = ms
+                        .iter()
+                        .map(|m| coder.refs.encode(&mut coder.m, &m[at].1))
+                        .collect();
+                    columns.insert(key, Val::arr(values));
+                }
+                rec.push(("resultColumns", Piece::Val(Val::obj(columns))));
+            }
             Some(Results::Many(ms)) => {
                 let mut list = Vec::with_capacity(ms.len());
                 for (i, m) in ms.into_iter().enumerate() {

@@ -383,16 +383,19 @@ impl<'t> RowWriter<'t> {
         ok
     }
 
-    pub fn results_texts(
+    pub fn result_columns<'v>(
         &mut self,
         slot: Slot,
-        text: &str,
-        ends: &[u32],
-        marks: &[u64],
+        columns: impl Iterator<Item = (&'v str, Vec<Variable>)>,
         out: &mut String,
     ) -> bool {
-        out.push_str(",\"results\":");
-        list_texts(text, ends, marks, out);
+        out.push_str(",\"resultColumns\":{");
+        let mut ok = true;
+        for (label, values) in columns {
+            out.push_str(label);
+            ok &= self.list(&values, out);
+        }
+        out.push('}');
         if let Some(at) = self
             .template
             .node(slot)
@@ -400,7 +403,7 @@ impl<'t> RowWriter<'t> {
         {
             out.push_str(at);
         }
-        true
+        ok
     }
 
     pub fn results_open(&mut self, out: &mut String) {

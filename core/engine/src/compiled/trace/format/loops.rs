@@ -45,7 +45,7 @@ pub struct Shapes {
     pub depth: usize,
 }
 
-pub const REC_ORDER: [&str; 22] = [
+pub const REC_ORDER: [&str; 23] = [
     "id",
     "name",
     "type",
@@ -55,6 +55,7 @@ pub const REC_ORDER: [&str; 22] = [
     "input",
     "output",
     "results",
+    "resultColumns",
     "failedKey",
     "resultsAt",
     "scope",

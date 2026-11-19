@@ -843,6 +843,14 @@ export interface ZenGraphExpressionNode extends ZenGraphNodeBase {
   output?: ZenGraphOutput<ZenGraphOutputBase | ZenGraphResultsBase>;
   /** What each expression evaluated to. */
   results?: ZenGraphResults;
+  /**
+   * Loop mode, in place of `results`, when the loop has at least two items and every item
+   * evaluated the same keys: `{ "<key>": [value per item] }`. Item *k*'s results are
+   * `{ key: column[k] }` over the keys in this order.
+   *
+   * @example { "total": [10, 20, 30], "premium": [false, false, true] }
+   */
+  resultColumns?: Record<string, ZenTraceList<ZenGraphValue>>;
   /** The key that was being evaluated when the node failed. */
   failedKey?: string;
   /** Where the results are placed in the output. Absent: at the root. */

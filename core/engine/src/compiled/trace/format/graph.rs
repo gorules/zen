@@ -31,7 +31,7 @@ pub fn plain_path(f: &str) -> bool {
 }
 
 pub(crate) struct RecView<'a> {
-    pub(crate) slots: [Option<&'a Val>; 23],
+    pub(crate) slots: [Option<&'a Val>; 24],
 }
 
 pub(crate) fn rec_slot(k: &str) -> usize {
@@ -45,29 +45,30 @@ pub(crate) fn rec_slot(k: &str) -> usize {
         "input" => 6,
         "output" => 7,
         "results" => 8,
-        "failedKey" => 9,
-        "resultsAt" => 10,
-        "scope" => 11,
-        "items" => 12,
-        "inputs" => 13,
-        "rule" => 14,
-        "rules" => 15,
-        "rulesPerItem" => 16,
-        "branches" => 17,
-        "log" => 18,
-        "details" => 19,
-        "sub" => 20,
-        "loop" => 21,
-        _ => 22,
+        "resultColumns" => 9,
+        "failedKey" => 10,
+        "resultsAt" => 11,
+        "scope" => 12,
+        "items" => 13,
+        "inputs" => 14,
+        "rule" => 15,
+        "rules" => 16,
+        "rulesPerItem" => 17,
+        "branches" => 18,
+        "log" => 19,
+        "details" => 20,
+        "sub" => 21,
+        "loop" => 22,
+        _ => 23,
     }
 }
 
 impl<'a> RecView<'a> {
     pub(crate) fn new(rec: &'a Obj) -> Self {
-        let mut slots = [None; 23];
+        let mut slots = [None; 24];
         for (k, v) in rec.iter() {
             let i = rec_slot(k);
-            if i < 22 {
+            if i < 23 {
                 slots[i] = Some(v);
             }
         }

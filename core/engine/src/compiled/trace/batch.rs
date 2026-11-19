@@ -290,13 +290,6 @@ impl Keyer {
     }
 }
 
-struct Packed {
-    text: String,
-    ends: Vec<u32>,
-    marks: Vec<u64>,
-    nulls: bool,
-}
-
 struct Hitter {
     derived: Vec<Arc<str>>,
     texts: std::cell::RefCell<super::value::FastMap<Vec<u64>, Box<str>>>,
@@ -637,7 +630,7 @@ impl<'a> Traces<'a> {
         }
     }
 
-    fn packed(&self, plan: &Plan<'a>, at: usize, start: u32, count: u32) -> Option<Packed> {
+    fn packed(&self, plan: &Plan<'a>, at: usize, start: u32, count: u32) -> Option<bool> {
         let Facts::Loop(_, inner) = &self.events[at].facts else {
             return None;
         };
@@ -647,33 +640,22 @@ impl<'a> Traces<'a> {
         if count == 0 || keys.iter().any(|key| key.starts_with('$')) {
             return None;
         }
-        let (order, labels) = (plan.order[at].as_ref()?, plan.labels[at].as_ref()?);
+        let order = plan.order[at].as_ref()?;
         let columns: SmallVec<[(zen_expression::lane::Column<'_>, u8); 8]> = order
             .iter()
             .map(|&k| leaves.plain(k as usize))
             .collect::<Option<_>>()?;
-        let mut packed = Packed {
-            text: String::with_capacity(count as usize * 48),
-            ends: Vec::with_capacity(count as usize),
-            marks: Vec::with_capacity(count as usize),
-            nulls: false,
-        };
-        for item in start as usize..(start + count) as usize {
-            let mut mark = 0u64;
-            packed.text.push('{');
-            for ((column, kind), label) in columns.iter().zip(labels.iter()) {
-                packed.text.push_str(label);
-                if !Self::cell(column, *kind, item, &mut packed.text, &mut mark) {
-                    packed.text.push_str("null");
-                    packed.nulls = true;
-                    mark = mark.wrapping_mul(31).wrapping_add(255);
-                }
-            }
-            packed.text.push('}');
-            packed.ends.push(packed.text.len() as u32);
-            packed.marks.push(mark);
-        }
-        Some(packed)
+        let nulls = (start as usize..(start + count) as usize).any(|item| {
+            columns.iter().any(|(column, kind)| {
+                !column.valid(item)
+                    || match kind {
+                        0 => column.text(item).is_none(),
+                        1 => column.number(item).is_none(),
+                        _ => column.boolean(item).is_none(),
+                    }
+            })
+        });
+        Some(nulls)
     }
 
     fn listed(
@@ -1415,7 +1397,7 @@ impl<'a> Traces<'a> {
                     (Some(rowed), _) => {
                         rowed.iter().all(|(_, value)| super::rows::null_free(value))
                     }
-                    (None, Some(packed)) => !packed.nulls,
+                    (None, Some(nulls)) => !nulls,
                     (None, None) => {
                         listed_free && self.null_free(plan, at, position, &fetched, walk)
                     }
@@ -1532,7 +1514,26 @@ impl<'a> Traces<'a> {
                         let Some(order) = &plan.order[at] else {
                             return Err("results keys");
                         };
+                        let aligned = count >= 2 && !keys.is_empty();
                         let ok = match keys.iter().any(|k| k.starts_with('$')) {
+                            _ if aligned => {
+                                let Some(labels) = &plan.labels[at] else {
+                                    return Err("results keys");
+                                };
+                                writer.result_columns(
+                                    slot,
+                                    order.iter().zip(labels.iter()).map(|(&k, label)| {
+                                        (
+                                            &**label,
+                                            range
+                                                .clone()
+                                                .map(|item| leaves.get(k as usize, item))
+                                                .collect(),
+                                        )
+                                    }),
+                                    out,
+                                )
+                            }
                             true => {
                                 writer.results_open(out);
                                 let mut ok = true;
@@ -1547,16 +1548,6 @@ impl<'a> Traces<'a> {
                                 }
                                 writer.results_close(slot, out);
                                 ok
-                            }
-                            false if packed.is_some() => {
-                                let packed = packed.as_ref().ok_or("loop span")?;
-                                writer.results_texts(
-                                    slot,
-                                    &packed.text,
-                                    &packed.ends,
-                                    &packed.marks,
-                                    out,
-                                )
                             }
                             false => {
                                 let list: Vec<Variable> = range

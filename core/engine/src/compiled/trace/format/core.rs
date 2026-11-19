@@ -2884,8 +2884,9 @@ pub fn placeholder_on(root: &Val, path: &[Seg]) -> Option<Val> {
     }
     None
 }
-const KEYED: [&str; 8] = [
+const KEYED: [&str; 9] = [
     "inputs",
+    "resultColumns",
     "results",
     "keys",
     "columns",

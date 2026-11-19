@@ -618,3 +618,68 @@ async fn unknown_relationship_target_in_import_refuses_importer() {
     assert!(reported.contains(&("main", "policy")), "{failures:#?}");
     assert!(reported.contains(&("child", "policy")), "{failures:#?}");
 }
+
+#[tokio::test]
+async fn v1_policy_trace_names_matched_rules() {
+    let policy = json!({
+        "blocks": [
+            { "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "order",
+                "properties": [
+                    { "id": "p1", "name": "amount", "type": "number", "array": false, "optional": false }
+                ]
+            } }, "children": [] },
+            { "id": "dt", "type": "decisionTable", "props": { "data": {
+                "inputs": [ { "id": "i1", "name": "", "field": "order.amount" } ],
+                "outputs": [ { "id": "o1", "name": "", "field": "order.tier" } ],
+                "rules": [
+                    { "_id": "small", "i1": "< 100", "o1": "\"small\"" },
+                    { "i1": "< 1000", "o1": "\"medium\"" },
+                    { "_id": "large", "i1": ">= 1000", "o1": "\"large\"" }
+                ]
+            } }, "children": [] }
+        ]
+    });
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("policy", make_policy_content(policy));
+    let engine = engine_with(loader).compiled_engine();
+    for (amount, rows, positions) in [
+        (
+            5000,
+            Some(json!([{ "index": 2, "id": "large" }])),
+            json!([2]),
+        ),
+        (500, None, json!([1])),
+    ] {
+        let request = json!({ "order": { "amount": amount } });
+        let mut tables = Vec::new();
+        for format in [TraceFormat::V1, TraceFormat::Legacy] {
+            let options = EvaluationSerializedOptions {
+                trace: format,
+                ..Default::default()
+            };
+            let response = engine
+                .evaluate_serialized("policy", request.clone().into(), options)
+                .await
+                .expect("evaluate ok");
+            let table = response
+                .pointer("/trace/executions")
+                .and_then(|list| list.as_array())
+                .and_then(|list| {
+                    list.iter().find(|e| {
+                        e.get("block") == Some(&json!("dt"))
+                            || e.get("blockId") == Some(&json!("dt"))
+                    })
+                })
+                .cloned()
+                .expect("table execution");
+            tables.push(table);
+        }
+        assert_eq!(tables[0].get("rows"), rows.as_ref());
+        assert_eq!(
+            tables[0].pointer("/details/trace/matchedRows"),
+            Some(&positions)
+        );
+        assert_eq!(tables[1].pointer("/trace/matchedRows"), Some(&positions));
+    }
+}

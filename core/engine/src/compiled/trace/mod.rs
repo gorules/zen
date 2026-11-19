@@ -277,9 +277,11 @@ fn policy_level(trace: Trace) -> collect::PolicyLevel {
                 },
                 BlockTrace::DecisionTable {
                     matched_rows,
+                    matched_ids,
                     evaluations,
                     extras,
                 } => PolicyFact::Table {
+                    ids: matched_ids,
                     rows: matched_rows,
                     evaluations: evaluations.into_iter().map(sorted).collect(),
                     input_pass: extras.map(|x| x.input_pass),

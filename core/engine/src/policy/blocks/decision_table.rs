@@ -943,6 +943,17 @@ impl DecisionTableIr {
             });
 
         Ok(BlockTrace::DecisionTable {
+            matched_ids: selection
+                .matched_rows
+                .iter()
+                .map(|row| {
+                    self.rules
+                        .get(*row as usize)
+                        .and_then(|rule| rule.get(ROW_ID_KEY))
+                        .filter(|id| !id.is_empty())
+                        .cloned()
+                })
+                .collect(),
             matched_rows: selection.matched_rows.clone(),
             evaluations,
             extras,

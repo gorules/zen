@@ -42,6 +42,23 @@ fn evaluations_of(evaluations: &[Vec<(std::sync::Arc<str>, Variable)>]) -> Varia
     )
 }
 
+pub(crate) fn matched(rows: &[u32], ids: &[Option<std::sync::Arc<str>>]) -> Val {
+    Val::arr(
+        rows.iter()
+            .enumerate()
+            .map(|(at, row)| match ids.get(at).and_then(Option::as_ref) {
+                Some(id) => {
+                    let mut entry = Obj::with_capacity(2);
+                    entry.insert(Rc::from("index"), Val::int(*row as i64));
+                    entry.insert(Rc::from("id"), Val::str(id));
+                    Val::obj(entry)
+                }
+                None => Val::int(*row as i64),
+            })
+            .collect(),
+    )
+}
+
 fn bools(list: &[(std::sync::Arc<str>, bool)]) -> Val {
     Val::arr(list.iter().map(|(_, r)| Val::Bool(*r)).collect())
 }
@@ -102,9 +119,13 @@ fn record(e: &PolicyExecution, markers: bool) -> Result<Obj, Miss> {
         }
         PolicyFact::Table {
             rows,
+            ids,
             evaluations,
             input_pass: None,
         } => {
+            if ids.iter().any(Option::is_some) {
+                rec.insert(k("rows"), matched(rows, ids));
+            }
             let mut whole = Obj::new();
             whole.insert(k("kind"), Val::str("decisionTable"));
             whole.insert(
@@ -119,13 +140,11 @@ fn record(e: &PolicyExecution, markers: bool) -> Result<Obj, Miss> {
         }
         PolicyFact::Table {
             rows,
+            ids,
             evaluations,
             input_pass: Some(input_pass),
         } => {
-            rec.insert(
-                k("rows"),
-                Val::arr(rows.iter().map(|r| Val::int(*r as i64)).collect()),
-            );
+            rec.insert(k("rows"), matched(rows, ids));
             match super::policy::infer_shape(Some(&Val::str(input_pass))) {
                 Some(shape) => {
                     rec.insert(k("ruleCount"), Val::int(shape.rules as i64));

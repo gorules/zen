@@ -380,6 +380,7 @@ fn walk_graph(
                             inherited_instance,
                         ),
                         trace: BlockTrace::DecisionTable {
+                            matched_ids: Vec::new(),
                             matched_rows,
                             evaluations,
                             extras,

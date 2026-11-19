@@ -735,6 +735,7 @@ pub enum PolicyFact {
     },
     Table {
         rows: Vec<u32>,
+        ids: Vec<Option<Arc<str>>>,
         evaluations: Vec<Vec<(Arc<str>, Variable)>>,
         input_pass: Option<String>,
     },

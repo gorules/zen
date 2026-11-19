@@ -534,9 +534,10 @@ enum Fact {
         conditions: Vec<(Arc<str>, bool)>,
         result: bool,
     },
-    Whole(Frozen),
+    Whole(Frozen, Option<(Vec<u32>, Vec<Option<Arc<str>>>)>),
     Table {
         rows: Vec<u32>,
+        ids: Vec<Option<Arc<str>>>,
         input_pass: String,
         evaluations: Option<Frozen>,
     },
@@ -568,9 +569,11 @@ impl Exec {
             PolicyFact::Assertion { conditions, result } => Fact::Assertion { conditions, result },
             PolicyFact::Table {
                 rows,
+                ids,
                 evaluations,
                 input_pass: None,
             } => {
+                let named = ids.iter().any(Option::is_some).then(|| (rows.clone(), ids));
                 let mut whole = VariableMap::with_capacity(3);
                 whole.insert("kind".into(), Variable::String("decisionTable".into()));
                 whole.insert(
@@ -582,10 +585,11 @@ impl Exec {
                     ),
                 );
                 whole.insert("evaluations".into(), evaluations_of(&evaluations));
-                Fact::Whole(freezer.freeze(&Variable::from_object(whole)))
+                Fact::Whole(freezer.freeze(&Variable::from_object(whole)), named)
             }
             PolicyFact::Table {
                 rows,
+                ids,
                 evaluations,
                 input_pass: Some(input_pass),
             } => {
@@ -595,6 +599,7 @@ impl Exec {
                     .then(|| freezer.freeze(&evaluations_of(&evaluations)));
                 Fact::Table {
                     rows,
+                    ids,
                     input_pass,
                     evaluations,
                 }
@@ -613,7 +618,7 @@ impl Exec {
             Fact::Expression { .. } => "expression",
             Fact::Match { .. } => "match",
             Fact::Assertion { .. } => "assertion",
-            Fact::Whole(_) | Fact::Table { .. } => "decisionTable",
+            Fact::Whole(..) | Fact::Table { .. } => "decisionTable",
         }
     }
 }
@@ -649,7 +654,7 @@ impl Serialize for Details<'_> {
                 }
                 map.serialize_entry("value", result)?;
             }
-            Fact::Whole(trace) => map.serialize_entry("trace", trace)?,
+            Fact::Whole(trace, _) => map.serialize_entry("trace", trace)?,
             Fact::Table {
                 input_pass,
                 evaluations,
@@ -697,9 +702,12 @@ impl Serialize for Record<'_> {
                 map.serialize_entry("conditions", &Bools(conditions))?
             }
             Fact::Table {
-                rows, input_pass, ..
+                rows,
+                ids,
+                input_pass,
+                ..
             } => {
-                let list = Val::arr(rows.iter().map(|r| Val::int(*r as i64)).collect());
+                let list = super::native_policy::matched(rows, ids);
                 map.serialize_entry("rows", &ValSer(&pack(&list)))?;
                 if let Some(shape) = super::policy::infer_shape(Some(&Val::str(input_pass))) {
                     shaped = true;
@@ -717,6 +725,10 @@ impl Serialize for Record<'_> {
                     }
                 }
             }
+            Fact::Whole(_, Some((rows, ids))) => map.serialize_entry(
+                "rows",
+                &ValSer(&pack(&super::native_policy::matched(rows, ids))),
+            )?,
             _ => {}
         }
         if self.1 {

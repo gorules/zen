@@ -548,10 +548,21 @@ fn trace_in(rec: &Obj, det: &Obj, block: &str, writes: &Writes) -> R<Option<Val>
         "decisionTable" => {
             let rows = match det.get("matchedRows") {
                 Some(r) => r.clone(),
-                None => rec
-                    .get("rows")
-                    .cloned()
-                    .ok_or_else(|| bad("table without rows"))?,
+                None => match rec.get("rows") {
+                    Some(Val::Arr(rows)) => Val::arr(
+                        rows.iter()
+                            .map(|row| match row {
+                                Val::Obj(entry) => entry
+                                    .get("index")
+                                    .cloned()
+                                    .ok_or_else(|| bad("row without index")),
+                                other => Ok(other.clone()),
+                            })
+                            .collect::<R<_>>()?,
+                    ),
+                    Some(other) => other.clone(),
+                    None => return Err(bad("table without rows")),
+                },
             };
             let extras = match det.get("extras") {
                 Some(x) => x.clone(),

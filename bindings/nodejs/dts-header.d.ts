@@ -860,6 +860,14 @@ export interface ZenGraphExpressionNode extends ZenGraphNodeBase {
 export type ZenTraceKeyedData = ZenTraceDataObject | ZenTraceLiteral | ZenTraceRedacted | ZenTraceOmittedValue;
 
 /**
+ * A matched decision table row of a policy: its 0-based position, or the position with the
+ * rule's `_id` when the rule has one.
+ *
+ * @example { "index": 3, "id": "r3" }
+ */
+export type ZenPolicyRow = number | { index: number; id: string };
+
+/**
  * A matched table rule, as the legacy trace logged it. Its `reference_map` is derived from the
  * scope (the input, `scope`, or the loop item) at each cell's field, then corrected by
  * `references` and `referencesAbsent`.
@@ -1345,7 +1353,7 @@ export interface ZenPolicyAssertionFields {
 export interface ZenPolicyDecisionTableFields {
   kind: 'decisionTable';
   /** The matched rows (0-based rule positions). */
-  rows?: ZenTraceList<number>;
+  rows?: ZenTraceList<ZenPolicyRow>;
   /** The number of rules. */
   ruleCount?: number;
   /** The number of input columns. */
@@ -1389,7 +1397,7 @@ export type ZenPolicyMemberFields = ZenPolicyExecutionFields & {
   kind?: ZenPolicyBlockKind;
   arms?: ZenTraceList<boolean>;
   conditions?: ZenTraceList<boolean>;
-  rows?: ZenTraceList<number>;
+  rows?: ZenTraceList<ZenPolicyRow>;
   ruleCount?: number;
   inputCount?: number;
   failedCells?: ZenPolicyFailedCells;
@@ -1426,7 +1434,7 @@ export interface ZenPolicyRun extends ZenPolicyExecutionHead, Omit<ZenPolicyExec
     | ZenTraceList<{ path: ZenJsonPointer; values: ZenTraceList<ZenPolicyWriteValue> }>;
   arms?: ZenPolicyColumn<ZenTraceList<boolean>>;
   conditions?: ZenPolicyColumn<ZenTraceList<boolean>>;
-  rows?: ZenPolicyColumn<ZenTraceList<number>>;
+  rows?: ZenPolicyColumn<ZenTraceList<ZenPolicyRow>>;
   ruleCount?: number;
   inputCount?: number;
   failedCells?: ZenPolicyColumn<ZenPolicyFailedCells>;

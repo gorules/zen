@@ -498,7 +498,9 @@ impl Plan {
                         shared: plain && CompiledGraph::flat_scalars(columns),
                     },
                 };
-                Box::new(super::PlanTrace::new(graph.steps.len(), source, lazy))
+                let mut trace = super::PlanTrace::new(graph.steps.len(), source, lazy);
+                trace.aliased = overlapping;
+                Box::new(trace)
             }),
         };
         run.walk(root.clone()).await;

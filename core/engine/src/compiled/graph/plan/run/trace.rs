@@ -59,6 +59,7 @@ pub(crate) struct PlanTrace<'a> {
     values: Vec<Option<Rc<Data<'a>>>>,
     pub(crate) source: Source<'a>,
     lazy: bool,
+    pub(crate) aliased: bool,
     pub(crate) refused: Option<&'static str>,
 }
 
@@ -73,6 +74,7 @@ impl<'a> PlanTrace<'a> {
             values: vec![None; slots],
             source,
             lazy,
+            aliased: true,
             refused: None,
         }
     }
@@ -196,11 +198,14 @@ impl<'a> Run<'_, 'a> {
         if let Some(trace) = self.trace.as_mut() {
             trace.hosted.push(Hosted {
                 node,
-                values: output
-                    .materialized()
-                    .iter()
-                    .map(Variable::deep_clone)
-                    .collect(),
+                values: match trace.aliased {
+                    true => output
+                        .materialized()
+                        .iter()
+                        .map(Variable::deep_clone)
+                        .collect(),
+                    false => output.materialized(),
+                },
                 kernel,
                 walked,
             });

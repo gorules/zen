@@ -1,9 +1,17 @@
 mod cache;
 mod constraints;
+mod cover;
+mod gaps;
 mod index;
+mod intern;
 mod merge;
+#[cfg(test)]
+mod merge_reference;
 mod missing;
 mod partition;
+mod sets;
+#[cfg(test)]
+mod tests;
 mod verify;
 mod witness;
 
@@ -26,8 +34,11 @@ use serde_json::{Map, Value};
 pub(crate) use value_set::ValueSet;
 
 use print::CellText;
+use std::fmt::Write as _;
+use std::rc::Rc;
 use value_set::StringSet;
-use verify::{Finding, GapCase};
+
+use verify::{Finding, GapCase, GapTable};
 
 pub(crate) struct TableColumn;
 
@@ -412,7 +423,7 @@ impl VerifyTable<'_> {
     }
 
     fn missing_cases(
-        cases: Vec<GapCase>,
+        cases: Rc<GapTable>,
         total: usize,
         location: &impl Fn(Option<Arc<str>>) -> DiagnosticLocation,
     ) -> Diagnostic {
@@ -426,40 +437,45 @@ impl VerifyTable<'_> {
                 .collect::<Vec<_>>()
                 .join(" and ")
         };
-        let descriptions: Vec<String> = cases.iter().map(describe).collect();
-        let shown: Vec<String> = descriptions.iter().take(5).cloned().collect();
+        let mut shown: Vec<String> = Vec::with_capacity(5);
+        let mut json_cases = String::from("[");
+        for (index, case) in cases.cases().enumerate() {
+            let description = describe(&case);
+            if index < 5 {
+                shown.push(description.clone());
+            }
+            let mut entry = Map::new();
+            entry.insert("description".into(), Value::String(description));
+            if let Some(cells) = case.cells {
+                let cells: Map<String, Value> = cells
+                    .into_iter()
+                    .map(|(col, text)| (col.to_string(), Value::String(text)))
+                    .collect();
+                entry.insert("cells".into(), Value::Object(cells));
+            }
+            if let Some(example) = case.example {
+                entry.insert("example".into(), example);
+            }
+            if index > 0 {
+                json_cases.push(',');
+            }
+            let _ = write!(json_cases, "{}", Value::Object(entry));
+        }
+        json_cases.push(']');
+        json_cases.shrink_to_fit();
         let more = total.saturating_sub(shown.len());
         let noun = if total == 1 { "case" } else { "cases" };
         let mut message = format!("no row matches {total} input {noun}: {}", shown.join("; "));
         if more > 0 {
             message.push_str(&format!("; and {more} more"));
         }
-        let json_cases: Vec<Value> = cases
-            .iter()
-            .zip(&descriptions)
-            .map(|(case, description)| {
-                let mut entry = Map::new();
-                entry.insert("description".into(), Value::String(description.clone()));
-                if let Some(cells) = &case.cells {
-                    let cells: Map<String, Value> = cells
-                        .iter()
-                        .map(|(col, text)| (col.to_string(), Value::String(text.clone())))
-                        .collect();
-                    entry.insert("cells".into(), Value::Object(cells));
-                }
-                if let Some(example) = &case.example {
-                    entry.insert("example".into(), example.clone());
-                }
-                Value::Object(entry)
-            })
-            .collect();
         let mut diagnostic =
             Diagnostic::hint(DiagnosticCode::MissingCases, location(None), message);
         diagnostic.args = DiagnosticArgs::from([
             ("count", total.to_string()),
             ("shown", shown.join("; ")),
             ("more", more.to_string()),
-            ("cases", Value::Array(json_cases).to_string()),
+            ("cases", json_cases),
         ]);
         diagnostic
     }

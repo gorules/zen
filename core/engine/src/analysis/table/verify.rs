@@ -6,14 +6,19 @@ use serde_json::{Map, Value};
 use zen_expression::intellisense::IntelliSense;
 
 use super::cell::CellConstraint;
+use super::cover::Coverage;
+use super::gaps::Bits;
 use super::index::RowIndex;
+use super::intern::Interner;
+use super::merge::CellKeys;
+use super::partition::Partition;
 use super::print::{CellText, DateDay};
 use super::value_set::{ValueKind, ValueSet};
 
 pub(crate) const MAX_INPUTS: usize = 30;
 pub(super) const MAX_FRAGMENTS: usize = 100_000;
 const TOTAL_BUDGET: usize = 20_000_000;
-const MAX_MINIMIZE: usize = 12;
+pub(super) const MAX_MINIMIZE: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HitMode {
@@ -74,7 +79,7 @@ pub(crate) enum Finding {
         redundant: bool,
     },
     MissingCases {
-        cases: Vec<GapCase>,
+        cases: Rc<GapTable>,
         total: usize,
     },
     CompressibleTable {
@@ -103,10 +108,138 @@ pub(crate) struct GapCase {
     pub(crate) example: Option<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum GapValues {
+    Patterns { words: usize, data: Vec<u64> },
+    Sets(Vec<ValueSet>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GapAxis {
+    pub(super) label: Arc<str>,
+    pub(super) column: Option<Arc<str>>,
+    pub(super) subject: Option<String>,
+    pub(super) path: Option<Arc<str>>,
+    pub(super) input: bool,
+    pub(super) dated: bool,
+    pub(super) prefer: Option<ValueKind>,
+    pub(super) domain: ValueSet,
+    pub(super) atoms: Vec<ValueSet>,
+    pub(super) values: GapValues,
+}
+
+struct GapValue {
+    text: Option<String>,
+    cell: Option<String>,
+    example: Option<Value>,
+}
+
+impl GapAxis {
+    fn len(&self) -> usize {
+        match &self.values {
+            GapValues::Patterns { words, data } => data.len() / words,
+            GapValues::Sets(sets) => sets.len(),
+        }
+    }
+
+    fn set(&self, value: usize) -> ValueSet {
+        match &self.values {
+            GapValues::Sets(sets) => sets[value].clone(),
+            GapValues::Patterns { words, data } => Partition::union(
+                Bits::ones(&data[value * words..(value + 1) * words]).map(|atom| &self.atoms[atom]),
+            ),
+        }
+    }
+
+    fn describe(&self, value: usize) -> GapValue {
+        let set = self.set(value);
+        let text = CellText::of(&set, &self.domain, self.dated);
+        let skipped = text.as_ref().is_some_and(String::is_empty);
+        let cell = match (&text, &self.subject) {
+            _ if skipped => None,
+            (None, _) => None,
+            (Some(_), Some(subject)) => CellText::standard(&set, &self.domain, self.dated, subject),
+            (Some(text), None) => Some(text.clone()),
+        };
+        let example = match (skipped, self.dated) {
+            (true, _) => None,
+            (false, true) => DateDay::example(&set),
+            (false, false) => set.example(self.prefer),
+        };
+        GapValue {
+            text,
+            cell,
+            example,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GapTable {
+    pub(super) axes: Vec<GapAxis>,
+    pub(super) rows: Vec<u32>,
+}
+
+impl GapTable {
+    pub(crate) fn cases(&self) -> impl Iterator<Item = GapCase> + '_ {
+        let mut described: Vec<Vec<Option<GapValue>>> = self
+            .axes
+            .iter()
+            .map(|axis| (0..axis.len()).map(|_| None).collect())
+            .collect();
+        self.rows
+            .chunks_exact(self.axes.len().max(1))
+            .map(move |row| self.case(row, &mut described))
+    }
+
+    fn case(&self, row: &[u32], described: &mut [Vec<Option<GapValue>>]) -> GapCase {
+        let mut parts = Vec::new();
+        let mut cells = Some(Vec::new());
+        let mut example = Some(Map::new());
+        for ((axis, described), &value) in self.axes.iter().zip(described.iter_mut()).zip(row) {
+            let value = match &mut described[value as usize] {
+                Some(value) => value,
+                slot => slot.insert(axis.describe(value as usize)),
+            };
+            match &value.text {
+                Some(text) if text.is_empty() => continue,
+                Some(text) => {
+                    if !axis.input {
+                        example = None;
+                    }
+                    if let (Some(list), Some(column)) = (cells.as_mut(), &axis.column) {
+                        match &value.cell {
+                            Some(cell) => list.push((column.clone(), cell.clone())),
+                            None => cells = None,
+                        }
+                    }
+                    parts.push((axis.label.clone(), text.clone()));
+                }
+                None => {
+                    cells = None;
+                    parts.push((axis.label.clone(), "…".to_string()));
+                }
+            }
+            match (&axis.path, &value.example, example.as_mut()) {
+                (Some(path), Some(value), Some(root)) => {
+                    VerifyTable::insert(root, path, value.clone())
+                }
+                _ => example = None,
+            }
+        }
+        GapCase {
+            parts,
+            cells,
+            example: example.filter(|root| !root.is_empty()).map(Value::Object),
+        }
+    }
+}
+
 pub(super) type Region = Vec<ValueSet>;
 
 type Coverer<'c> = (usize, Vec<&'c ValueSet>);
 
+#[cfg_attr(test, derive(Clone))]
 pub(super) struct Budget {
     pub(super) remaining: usize,
 }
@@ -193,30 +326,29 @@ impl<'a> VerifyTable<'a> {
         if self.inputs.is_empty() {
             return findings;
         }
-        let cells: Vec<Vec<CellConstraint>> = self
-            .rules
-            .iter()
-            .map(|rule| {
-                self.inputs
-                    .iter()
-                    .map(|col| {
-                        let source = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
-                        match &col.subject {
-                            Some(subject) => {
-                                CellConstraint::parse_subject(is, source, subject, col.dated)
-                            }
-                            None => CellConstraint::parse(
-                                is,
-                                source,
-                                col.unary,
-                                col.analyzable,
-                                col.dated,
-                            ),
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
+        let mut parsed: Vec<HashMap<&str, usize>> =
+            self.inputs.iter().map(|_| HashMap::default()).collect();
+        let mut cells: Vec<Vec<CellConstraint>> = Vec::with_capacity(self.rules.len());
+        for (row, rule) in self.rules.iter().enumerate() {
+            let mut row_cells = Vec::with_capacity(self.inputs.len());
+            for (index, (col, known)) in self.inputs.iter().zip(parsed.iter_mut()).enumerate() {
+                let source = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
+                if let Some(&first) = known.get(source) {
+                    row_cells.push(cells[first][index].clone());
+                    continue;
+                }
+                let cell = match &col.subject {
+                    Some(subject) => CellConstraint::parse_subject(is, source, subject, col.dated),
+                    None => CellConstraint::parse(is, source, col.unary, col.analyzable, col.dated),
+                };
+                if !matches!(cell, CellConstraint::Opaque(_)) {
+                    known.insert(source, row);
+                }
+                row_cells.push(cell);
+            }
+            cells.push(row_cells);
+        }
+        drop(parsed);
 
         let mut satisfiable = vec![true; self.rules.len()];
         for (row, row_cells) in cells.iter().enumerate() {
@@ -239,9 +371,18 @@ impl<'a> VerifyTable<'a> {
         };
         let mut index =
             (self.mode != HitMode::Collect).then(|| RowIndex::new(&cells, self.inputs.len()));
+        let mut regions = index
+            .as_ref()
+            .and_then(|_| Coverage::new(&cells, self.inputs.len()));
         let mut reported: Vec<bool> = satisfiable.iter().map(|s| !s).collect();
         let mut warned: Vec<bool> = vec![false; self.rules.len()];
-        let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
+        let keys = CellKeys::new(&cells, self.inputs.len());
+        let outputs = self.output_ids();
+        let mut seen: Interner<u32> = Interner::new(self.inputs.len() + 1);
+        let mut first_with: Vec<usize> = Vec::new();
+        let mut signature: Vec<u32> = Vec::with_capacity(self.inputs.len() + 1);
+        #[cfg(test)]
+        let mut seen_sets: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
         let mut blocked_by: HashMap<usize, usize> = HashMap::default();
         for row in 0..self.rules.len() {
             if let Some(index) = index.as_mut().filter(|_| row > 0) {
@@ -252,29 +393,46 @@ impl<'a> VerifyTable<'a> {
             if !satisfiable[row] {
                 continue;
             }
-            match seen.entry(self.row_signature(&cells[row], row)) {
-                std::collections::hash_map::Entry::Occupied(first) => {
-                    let of = *first.get();
-                    reported[row] = true;
-                    let redundant = self.mode != HitMode::Collect && !self.contributes_collect(row);
-                    findings.push(Finding::DuplicateRule { row, of, redundant });
-                    continue;
-                }
-                std::collections::hash_map::Entry::Vacant(slot) => {
-                    slot.insert(row);
-                }
+            signature.clear();
+            signature.extend_from_slice(keys.row(row));
+            signature.push(outputs[row]);
+            let fresh = seen.len();
+            let slot = seen.intern(&signature) as usize;
+            #[cfg(test)]
+            assert_eq!(
+                *seen_sets
+                    .entry(self.row_signature(&cells[row], row))
+                    .or_insert(row),
+                first_with.get(slot).copied().unwrap_or(row),
+                "duplicate detection diverged from the reference at row {row}"
+            );
+            if slot < fresh {
+                let of = first_with[slot];
+                reported[row] = true;
+                let redundant = self.mode != HitMode::Collect && !self.contributes_collect(row);
+                findings.push(Finding::DuplicateRule { row, of, redundant });
+                continue;
             }
+            first_with.push(row);
             if coverage_incomplete {
                 continue;
             }
             let Some(index) = index.as_mut() else {
                 continue;
             };
-            let Some(requirements) = self.requirements(row, || index.candidates(&cells, row))
+            let Some(requirements) =
+                self.requirements(row, || index.candidates(&cells, &keys, row))
             else {
                 continue;
             };
-            match self.dead(&cells, row, &requirements, &mut budget, index) {
+            match self.dead(
+                &cells,
+                row,
+                &requirements,
+                &mut budget,
+                index,
+                regions.as_mut(),
+            ) {
                 Some(Some(covered_by)) => {
                     reported[row] = true;
                     let redundant = self.blank_outputs(row)
@@ -284,8 +442,16 @@ impl<'a> VerifyTable<'a> {
                     warned[row] = !redundant;
                     let same_conditions = !redundant
                         && covered_by.len() == 1
-                        && self.row_signature(&cells[row], row).0
-                            == self.row_signature(&cells[covered_by[0]], covered_by[0]).0;
+                        && keys.row(row) == keys.row(covered_by[0]);
+                    #[cfg(test)]
+                    assert_eq!(
+                        same_conditions,
+                        !redundant
+                            && covered_by.len() == 1
+                            && self.row_signature(&cells[row], row).0
+                                == self.row_signature(&cells[covered_by[0]], covered_by[0]).0,
+                        "row conditions comparison diverged from the reference at row {row}"
+                    );
                     let blocker = match covered_by.as_slice() {
                         [only] if !same_conditions || self.catch_all_row(*only) => Some(*only),
                         _ => None,
@@ -326,7 +492,7 @@ impl<'a> VerifyTable<'a> {
                 None => gaps_incomplete = true,
             }
         }
-        findings.extend(self.compress(&cells, &satisfiable, &warned));
+        findings.extend(self.compress(&cells, &satisfiable, &warned, keys, &outputs));
         findings.extend(self.covering_cells(&cells, &satisfiable));
         findings.extend(self.unproduced(is, &reported));
         if coverage_incomplete || gaps_incomplete {
@@ -407,6 +573,22 @@ impl<'a> VerifyTable<'a> {
         self.rules[row].get(id).map(|c| c.trim()).unwrap_or("")
     }
 
+    fn output_ids(&self) -> Vec<u32> {
+        let mut ids: HashMap<Vec<&str>, u32> = HashMap::default();
+        (0..self.rules.len())
+            .map(|row| {
+                let key: Vec<&str> = self
+                    .outputs
+                    .iter()
+                    .map(|col| self.text(row, &col.id))
+                    .collect();
+                let next = ids.len() as u32;
+                *ids.entry(key).or_insert(next)
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
     fn row_signature(
         &self,
         cells: &[CellConstraint],
@@ -468,6 +650,53 @@ impl<'a> VerifyTable<'a> {
 
     fn dead(
         &self,
+        cells: &[Vec<CellConstraint>],
+        row: usize,
+        requirements: &[Vec<usize>],
+        budget: &mut Budget,
+        index: &RowIndex,
+        coverage: Option<&mut Coverage>,
+    ) -> Option<Option<Vec<usize>>> {
+        let Some(coverage) = coverage else {
+            return Self::dead_sets(cells, row, requirements, budget, index);
+        };
+        #[cfg(test)]
+        let mut shadow = budget.clone();
+        let found = Self::covered(cells, row, requirements, budget, index, coverage);
+        #[cfg(test)]
+        {
+            let expected = Self::dead_sets(cells, row, requirements, &mut shadow, index);
+            assert_eq!(
+                (&found, budget.remaining),
+                (&expected, shadow.remaining),
+                "row coverage diverged between the dense and set-based paths at row {row}"
+            );
+        }
+        found
+    }
+
+    fn covered(
+        cells: &[Vec<CellConstraint>],
+        row: usize,
+        requirements: &[Vec<usize>],
+        budget: &mut Budget,
+        index: &RowIndex,
+        coverage: &mut Coverage,
+    ) -> Option<Option<Vec<usize>>> {
+        let region: Region = cells[row]
+            .iter()
+            .map(|cell| cell.known_set().unwrap_or_else(ValueSet::all))
+            .collect();
+        for earlier in requirements {
+            budget.spend(earlier.len())?;
+            if Self::escapes(cells, row, &region, earlier, index) {
+                return Some(None);
+            }
+        }
+        coverage.covered_by(row, requirements, budget)
+    }
+
+    fn dead_sets(
         cells: &[Vec<CellConstraint>],
         row: usize,
         requirements: &[Vec<usize>],

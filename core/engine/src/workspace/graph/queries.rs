@@ -10,8 +10,12 @@ use crate::workspace::graph::analysis::{
 };
 use crate::workspace::reads::ReadView;
 
+use crate::analysis::table::VerifyTable;
+use crate::model::DecisionNodeKind;
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest};
+use crate::workspace::types::{
+    Diagnostic, DiagnosticLocation, InputProperty, OutputProperty, PropertyKind, ScopeRequest,
+};
 
 impl Db {
     pub(crate) fn graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
@@ -31,6 +35,52 @@ impl Db {
         }
         self.store_graph_analysis(path, frame, functions, analysis.clone());
         Some(analysis)
+    }
+
+    pub(crate) fn graph_table_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let Some(analysis) = self.graph_analysis(path) else {
+            return Vec::new();
+        };
+        let snap = self.snapshot();
+        let content = snap.graphs.get(path).and_then(|doc| doc.as_graph());
+        let (Some(content), false) = (content, analysis.table_checks.is_empty()) else {
+            return analysis.diagnostics.clone();
+        };
+        let intellisense = self.graph_intellisense();
+        let mut out = Vec::with_capacity(analysis.diagnostics.len());
+        let mut cursor = 0;
+        for check in &analysis.table_checks {
+            out.extend(analysis.diagnostics[cursor..check.at].iter().cloned());
+            cursor = check.at;
+            let rules = content.nodes.iter().find_map(|node| match &node.kind {
+                DecisionNodeKind::DecisionTableNode { content } if node.id == check.node => {
+                    Some(&content.rules)
+                }
+                _ => None,
+            });
+            let Some(rules) = rules else {
+                continue;
+            };
+            let table = VerifyTable {
+                mode: check.mode,
+                inputs: check.inputs.clone(),
+                outputs: check.outputs.clone(),
+                rules,
+                fallible: check.fallible.clone(),
+            };
+            out.extend(table.diagnostics(
+                &mut intellisense.borrow_mut(),
+                |row| GraphAnalyzer::row_key(&rules[row], row),
+                |expression_id| match expression_id {
+                    Some(id) => {
+                        DiagnosticLocation::expression(path.clone(), check.node.clone(), id, None)
+                    }
+                    None => DiagnosticLocation::block(path.clone(), check.node.clone()),
+                },
+            ));
+        }
+        out.extend(analysis.diagnostics[cursor..].iter().cloned());
+        out
     }
 
     pub(crate) fn is_graph(&self, path: &str) -> bool {

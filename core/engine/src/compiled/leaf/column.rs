@@ -477,6 +477,32 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn shared(&self, row: usize) -> Variable {
+        match self {
+            Leaf::Records(records) => records.dense().get(row).cloned().unwrap_or(Variable::Null),
+            Leaf::Templated(templated) => templated
+                .dense()
+                .get(row)
+                .cloned()
+                .unwrap_or(Variable::Null),
+            Leaf::Picked(_) | Leaf::Stitched(_) => self
+                .source(row)
+                .map_or(Variable::Null, |(leaf, at)| leaf.shared(at)),
+            _ => self.get(row),
+        }
+    }
+
+    pub fn listed(&self, row: usize) -> Option<(&Records<'a>, usize)> {
+        match self {
+            Leaf::Records(records) => Some((records, row)),
+            Leaf::Picked(_) | Leaf::Stitched(_) => {
+                let (leaf, at) = self.source(row)?;
+                leaf.listed(at)
+            }
+            _ => None,
+        }
+    }
+
     pub fn plain(&self) -> Option<(Column<'_>, u8)> {
         if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
             return None;
@@ -487,7 +513,12 @@ impl<'a> Leaf<'a> {
             | Values::Text { .. }
             | Values::LargeUtf8 { .. }
             | Values::Strs(_) => 0,
-            Values::Dict { values, .. } if matches!(values, Dictionary::Text { .. }) => 0,
+            Values::Dict { values, .. } => match values {
+                Dictionary::Text { .. } => 0,
+                Dictionary::Scaled { .. } => 1,
+                Dictionary::Bool { .. } => 2,
+                _ => return None,
+            },
             Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) => 1,
             Values::Bool { .. } => 2,
             _ => return None,
@@ -542,7 +573,14 @@ impl<'a> Leaf<'a> {
             _ => {
                 let mut next = 1u32 << 30;
                 (0..rows)
-                    .map(|row| match self.get(row) {
+                    .map(|row| match self.listed(row) {
+                        Some((records, at)) => match records.range(at) {
+                            Some(_) => Variable::empty_array(),
+                            None => Variable::Null,
+                        },
+                        None => self.get(row),
+                    })
+                    .map(|value| match value {
                         Variable::Null => 0,
                         Variable::Array(_) | Variable::Object(_) => 1,
                         Variable::Dynamic(_) => 2,
@@ -600,23 +638,6 @@ impl<'a> Leaf<'a> {
                 None => false,
             },
             _ => false,
-        }
-    }
-
-    pub fn settled(&self) -> Leaf<'a> {
-        match self {
-            Leaf::Records(records) => Leaf::Any(records.dense().clone()),
-            Leaf::Templated(templated) => Leaf::Any(templated.dense().clone()),
-            Leaf::Picked(picked) => Leaf::Picked(Rc::new(Picked {
-                source: picked.source.settled(),
-                positions: picked.positions.clone(),
-                dense: OnceCell::new(),
-            })),
-            Leaf::Stitched(stitched) => Leaf::stitched(
-                stitched.sources.iter().map(Leaf::settled).collect(),
-                stitched.located.clone(),
-            ),
-            other => other.clone(),
         }
     }
 

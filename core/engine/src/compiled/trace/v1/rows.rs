@@ -12,7 +12,7 @@ pub struct RowWriter<'t> {
     count: usize,
     used: SmallVec<[Slot; 8]>,
     path: String,
-    sets: Vec<(String, Variable)>,
+    sets: Vec<(String, Variable, Option<Box<str>>)>,
     deletes: Vec<String>,
     partial: bool,
     missed: std::cell::Cell<bool>,
@@ -163,6 +163,11 @@ impl<'t> RowWriter<'t> {
         self.path = path;
     }
 
+    pub fn set_text(&mut self, pointer: &str, text: String) {
+        self.sets
+            .push((pointer.to_string(), Variable::Null, Some(text.into())));
+    }
+
     pub fn diff_at(&mut self, pointer: &str, before: Option<&Variable>, after: Option<&Variable>) {
         self.path.clear();
         self.path.push_str(pointer);
@@ -175,7 +180,7 @@ impl<'t> RowWriter<'t> {
         match (before, after) {
             (None, None) => {}
             (Some(_), None) => self.deletes.push(path.clone()),
-            (None, Some(b)) => self.sets.push((path.clone(), b.clone())),
+            (None, Some(b)) => self.sets.push((path.clone(), b.clone(), None)),
             (Some(a), Some(b)) => {
                 if same_prim(a, b) {
                     return;
@@ -201,7 +206,7 @@ impl<'t> RowWriter<'t> {
                         }
                     }
                     _ if veq(a, b) => {}
-                    _ => self.sets.push((path.clone(), b.clone())),
+                    _ => self.sets.push((path.clone(), b.clone(), None)),
                 }
             }
         }
@@ -238,13 +243,16 @@ impl<'t> RowWriter<'t> {
                 out.push(',');
             }
             out.push_str("\"$set\":{");
-            for (i, (p, v)) in self.sets.iter().enumerate() {
+            for (i, (p, v, text)) in self.sets.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
                 write_str(p, out);
                 out.push(':');
-                ok &= self.put(v, out);
+                match text {
+                    Some(text) => out.push_str(text),
+                    None => ok &= self.put(v, out),
+                }
             }
             out.push('}');
         }
@@ -325,14 +333,17 @@ impl<'t> RowWriter<'t> {
     pub fn results_with<'v>(
         &mut self,
         slot: Slot,
-        entries: impl Iterator<Item = (&'v str, &'v Variable)>,
+        entries: impl Iterator<Item = (&'v str, &'v Variable, Option<&'v str>)>,
         out: &mut String,
     ) -> bool {
         out.push_str(",\"results\":{");
         let mut ok = true;
-        for (key, value) in entries {
+        for (key, value, text) in entries {
             out.push_str(key);
-            ok &= self.put(value, out);
+            match text {
+                Some(text) => out.push_str(text),
+                None => ok &= self.put(value, out),
+            }
         }
         out.push('}');
         if let Some(at) = self
@@ -381,41 +392,7 @@ impl<'t> RowWriter<'t> {
         out: &mut String,
     ) -> bool {
         out.push_str(",\"results\":");
-        let count = ends.len();
-        let item = |i: usize| {
-            let start = match i {
-                0 => 0,
-                _ => ends[i - 1] as usize,
-            };
-            &text[start..ends[i] as usize]
-        };
-        let mut packed = false;
-        if count >= 4 {
-            let mut seen: super::value::FastMap<(&str, u64), u32> = Default::default();
-            let mut firsts: Vec<usize> = Vec::new();
-            let mut at: Vec<u32> = Vec::with_capacity(count);
-            for i in 0..count {
-                let next = firsts.len() as u32;
-                let found = *seen.entry((item(i), marks[i])).or_insert(next);
-                if found == next {
-                    firsts.push(i);
-                }
-                at.push(found);
-            }
-            if !(firsts.len() * 2 > count && (1..count).all(|i| at[i] != at[i - 1])) {
-                packed = emit_packed(&at, firsts.len(), |k| item(firsts[k]), out);
-            }
-        }
-        if !packed {
-            out.push('[');
-            for i in 0..count {
-                if i > 0 {
-                    out.push(',');
-                }
-                out.push_str(item(i));
-            }
-            out.push(']');
-        }
+        list_texts(text, ends, marks, out);
         if let Some(at) = self
             .template
             .node(slot)
@@ -636,6 +613,44 @@ impl<'t> RowWriter<'t> {
     }
 }
 
+pub fn list_texts(text: &str, ends: &[u32], marks: &[u64], out: &mut String) {
+    let count = ends.len();
+    let item = |i: usize| {
+        let start = match i {
+            0 => 0,
+            _ => ends[i - 1] as usize,
+        };
+        &text[start..ends[i] as usize]
+    };
+    let mut packed = false;
+    if count >= 4 {
+        let mut seen: super::value::FastMap<(&str, u64), u32> = Default::default();
+        let mut firsts: Vec<usize> = Vec::new();
+        let mut at: Vec<u32> = Vec::with_capacity(count);
+        for i in 0..count {
+            let next = firsts.len() as u32;
+            let found = *seen.entry((item(i), marks[i])).or_insert(next);
+            if found == next {
+                firsts.push(i);
+            }
+            at.push(found);
+        }
+        if !(firsts.len() * 2 > count && (1..count).all(|i| at[i] != at[i - 1])) {
+            packed = emit_packed(&at, firsts.len(), |k| item(firsts[k]), out);
+        }
+    }
+    if !packed {
+        out.push('[');
+        for i in 0..count {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(item(i));
+        }
+        out.push(']');
+    }
+}
+
 pub fn perf(ns: u64) -> String {
     match super::core::duration_perf(std::time::Duration::from_nanos(ns)) {
         Ok(n) => n.to_string(),
@@ -742,14 +757,28 @@ fn reference(sources: &[(&str, Variable)], v: &Variable, out: &mut String) -> bo
     false
 }
 
+thread_local! {
+    static UNRESOLVED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn unresolved(reset: bool) -> bool {
+    UNRESOLVED.with(|unresolved| match reset {
+        true => unresolved.replace(false),
+        false => unresolved.get(),
+    })
+}
+
 fn put_value(sources: &[(&str, Variable)], v: &Variable, out: &mut String) -> bool {
     let big = match v {
         Variable::Array(a) => a.borrow().len() >= 8,
         Variable::Object(o) => o.borrow().len() >= 8,
         _ => false,
     };
-    if big && reference(sources, v, out) {
-        return true;
+    if big {
+        if reference(sources, v, out) {
+            return true;
+        }
+        UNRESOLVED.with(|unresolved| unresolved.set(true));
     }
     match v {
         Variable::Array(a) => {

@@ -460,15 +460,14 @@ impl Plan {
                 }
             )
         });
-        let rowwise = graph.steps.iter().flatten().any(|step| {
-            step.nodes || matches!(&step.kind, Kind::Node { transform, .. } if transform.looped)
-        }) || root.ops.iter().any(|op| {
-            matches!(
-                op,
-                crate::compiled::graph::plan::Op::Rows(_)
-                    | crate::compiled::graph::plan::Op::Child(_)
-            )
-        });
+        let hosted_rows = graph.steps.iter().flatten().any(|step| step.nodes)
+            || root.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    crate::compiled::graph::plan::Op::Rows(_)
+                        | crate::compiled::graph::plan::Op::Child(_)
+                )
+            });
         let mut store = Store::new(root, columns, dated);
         for (row, error) in failures {
             store.errors.set(row, error);
@@ -490,7 +489,7 @@ impl Plan {
             iteration: 0,
             parents: None,
             trace: traced.map(|_| {
-                let lazy = !overlapping && !rowwise;
+                let lazy = !overlapping && !hosted_rows;
                 let source = match (lazy && indexes.is_empty(), indexes.is_empty()) {
                     (true, _) => CompiledGraph::request_data(columns),
                     (false, plain) => super::trace::Source::Rows {

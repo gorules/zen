@@ -15,11 +15,35 @@ pub(crate) enum Cols<'a> {
     Lazy(Vec<Masked<'a>>, Option<Rc<[usize]>>),
 }
 
-impl Cols<'_> {
+impl<'a> Cols<'a> {
     pub(crate) fn len(&self) -> usize {
         match self {
             Cols::Owned(leaves) => leaves.len(),
             Cols::Lazy(leaves, _) => leaves.len(),
+        }
+    }
+
+    fn listed(
+        &self,
+        index: usize,
+        position: usize,
+    ) -> Option<(&crate::compiled::leaf::Leaf<'a>, usize)> {
+        match self {
+            Cols::Owned(_) => None,
+            Cols::Lazy(leaves, rows) => {
+                let row = match rows {
+                    Some(rows) => *rows.get(position)?,
+                    None => position,
+                };
+                let (leaf, present) = leaves.get(index)?;
+                if present
+                    .as_ref()
+                    .is_some_and(|present| !crate::compiled::leaf::Bits::get(present, row))
+                {
+                    return None;
+                }
+                Some((leaf, row))
+            }
         }
     }
 
@@ -48,7 +72,7 @@ impl Cols<'_> {
                     .is_some_and(|present| !crate::compiled::leaf::Bits::get(present, row))
                 {
                     true => Variable::Null,
-                    false => leaf.get(row),
+                    false => leaf.shared(row),
                 }
             }
         }
@@ -279,6 +303,7 @@ struct Hitter {
 }
 
 struct Plan<'a> {
+    narrow: Vec<std::cell::Cell<(u32, u32)>>,
     hit_keys: std::cell::RefCell<Keys>,
     hitters: Vec<OnceCell<Option<Hitter>>>,
     heads: Vec<Option<Box<str>>>,
@@ -448,6 +473,7 @@ impl<'a> Traces<'a> {
                 })
                 .collect();
             Plan {
+                narrow: self.events.iter().map(|_| Default::default()).collect(),
                 hit_keys: Default::default(),
                 hitters: self.events.iter().map(|_| OnceCell::new()).collect(),
                 heads,
@@ -622,6 +648,120 @@ impl<'a> Traces<'a> {
             packed.marks.push(mark);
         }
         Some(packed)
+    }
+
+    fn listed(
+        &self,
+        walk: &Walk,
+        parents: &[Slot],
+        leaf: &crate::compiled::leaf::Leaf<'a>,
+        row: usize,
+    ) -> Option<(String, bool)> {
+        let (records, at) = leaf.listed(row)?;
+        let (start, end) = records.range(at)?;
+        if end - start >= 8 {
+            let mut inspected = true;
+            for parent in parents {
+                let (event, position) = (*walk.ran.get(*parent as usize)?)?;
+                let keys = match &self.events[event].output {
+                    Some(Value::Data(data)) => data.lists(position, records.id(), at),
+                    _ => None,
+                };
+                match keys.as_deref() {
+                    None => inspected = false,
+                    Some([]) => {}
+                    Some([key]) if inspected || records.fresh() => {
+                        let mut path = self.template.node(*parent)?.source.clone();
+                        super::core::escape_seg(key, &mut path);
+                        let mut text = String::from("{\"$ref\":");
+                        super::value::write_str(&path, &mut text);
+                        text.push('}');
+                        let listing = records.listing()?;
+                        let free = (start..end).all(|item| {
+                            !listing.nulled.is_some_and(|nulled| {
+                                crate::compiled::leaf::Bits::get(nulled, item)
+                            }) && listing.fields.iter().all(|(_, present, column, _)| {
+                                !crate::compiled::leaf::Bits::get(present, item)
+                                    || !crate::compiled::leaf::ColumnBuilder::null_at(column, item)
+                            })
+                        });
+                        return Some((text, free));
+                    }
+                    Some(_) => return None,
+                }
+            }
+            if !inspected && !records.fresh() {
+                return None;
+            }
+        }
+        let listing = records.listing()?;
+        let labels: SmallVec<[String; 8]> = listing
+            .fields
+            .iter()
+            .map(|(key, ..)| {
+                let mut text = String::new();
+                super::value::write_str(key, &mut text);
+                text.push(':');
+                text
+            })
+            .collect();
+        let count = end - start;
+        let mut text = String::with_capacity(count * 48);
+        let mut ends: Vec<u32> = Vec::with_capacity(count);
+        let mut marks: Vec<u64> = Vec::with_capacity(count);
+        let mut free = true;
+        for item in start..end {
+            let mut mark = 0u64;
+            if listing
+                .nulled
+                .is_some_and(|nulled| crate::compiled::leaf::Bits::get(nulled, item))
+            {
+                free = false;
+                text.push_str("null");
+                ends.push(text.len() as u32);
+                marks.push(u64::MAX);
+                continue;
+            }
+            text.push('{');
+            let mut any = false;
+            for ((_, present, column, kind), label) in listing.fields.iter().zip(labels.iter()) {
+                if !crate::compiled::leaf::Bits::get(present, item) {
+                    mark = mark.wrapping_mul(31).wrapping_add(254);
+                    continue;
+                }
+                if any {
+                    text.push(',');
+                }
+                any = true;
+                text.push_str(label);
+                if crate::compiled::leaf::ColumnBuilder::null_at(column, item) {
+                    free = false;
+                    text.push_str("null");
+                    mark = mark.wrapping_mul(31).wrapping_add(255);
+                    continue;
+                }
+                match kind {
+                    0 => super::value::write_str(column.text(item)?, &mut text),
+                    1 => {
+                        let number = column.number(item)?;
+                        mark = mark
+                            .wrapping_mul(31)
+                            .wrapping_add(u64::from(number.scale()));
+                        super::value::write_num(&number, &mut text);
+                    }
+                    _ => text.push_str(match column.boolean(item)? {
+                        true => "true",
+                        false => "false",
+                    }),
+                }
+            }
+            text.push('}');
+            ends.push(text.len() as u32);
+            marks.push(mark);
+        }
+        let mut out = String::with_capacity(text.len() + 16);
+        super::rows::list_texts(&text, &ends, &marks, &mut out);
+        Some((out, free))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -994,24 +1134,56 @@ impl<'a> Traces<'a> {
             match writer.missed() {
                 false => encoded?,
                 true => {
-                    out.truncate(mark);
-                    writer.retry();
-                    let sources: SmallVec<[(Slot, Variable); 4]> = parents
-                        .iter()
-                        .filter_map(|p| self.value(&mut walk, *p).map(|value| (*p, value)))
-                        .collect();
-                    writer.sources(request.get(), sources.into_iter());
-                    self.encode(
-                        plan,
-                        at,
-                        position,
-                        parent,
-                        &mut walk,
-                        request,
-                        owned,
-                        &mut writer,
-                        out,
-                    )?;
+                    let (hit, miss) = plan.narrow[at].get();
+                    let narrow = match miss <= hit {
+                        false => None,
+                        true => {
+                            out.truncate(mark);
+                            writer.retry();
+                            writer.sources(request.get(), std::iter::empty());
+                            super::rows::unresolved(true);
+                            let narrow = self.encode(
+                                plan,
+                                at,
+                                position,
+                                parent,
+                                &mut walk,
+                                request,
+                                owned,
+                                &mut writer,
+                                out,
+                            );
+                            let resolved = !super::rows::unresolved(true);
+                            plan.narrow[at].set(match resolved {
+                                true => (hit.saturating_add(1), miss),
+                                false => (hit, miss.saturating_add(1)),
+                            });
+                            resolved.then_some(narrow)
+                        }
+                    };
+                    match narrow {
+                        Some(narrow) => narrow?,
+                        None => {
+                            out.truncate(mark);
+                            writer.retry();
+                            let sources: SmallVec<[(Slot, Variable); 4]> = parents
+                                .iter()
+                                .filter_map(|p| self.value(&mut walk, *p).map(|value| (*p, value)))
+                                .collect();
+                            writer.sources(request.get(), sources.into_iter());
+                            self.encode(
+                                plan,
+                                at,
+                                position,
+                                parent,
+                                &mut walk,
+                                request,
+                                owned,
+                                &mut writer,
+                                out,
+                            )?;
+                        }
+                    }
                 }
             }
             if keyed && !bodies.off {
@@ -1096,12 +1268,33 @@ impl<'a> Traces<'a> {
             Some((start, count)) => self.packed(plan, at, start, count),
             None => None,
         };
+        let around: SmallVec<[Slot; 4]> = event
+            .parents
+            .iter()
+            .copied()
+            .filter(|p| walk.ran.get(*p as usize).is_some_and(Option::is_some))
+            .collect();
+        let mut listed: SmallVec<[Option<(String, bool)>; 8]> = SmallVec::new();
         let fetched: SmallVec<[Variable; 8]> = match &event.facts {
             Facts::Results((_, leaves)) => (0..leaves.len())
-                .map(|index| leaves.get(index, position))
+                .map(|index| {
+                    let direct = match &event.encoding {
+                        Encoding::Checked(_) => None,
+                        _ => leaves
+                            .listed(index, position)
+                            .and_then(|(leaf, row)| self.listed(walk, &around, leaf, row)),
+                    };
+                    let value = match direct {
+                        Some(_) => Variable::Bool(true),
+                        None => leaves.get(index, position),
+                    };
+                    listed.push(direct);
+                    value
+                })
                 .collect(),
             _ => SmallVec::new(),
         };
+        let listed_free = listed.iter().flatten().all(|(_, free)| *free);
         let mut items = false;
         match &event.encoding {
             Encoding::Generic => return Err("generic output"),
@@ -1212,7 +1405,9 @@ impl<'a> Traces<'a> {
                         rowed.iter().all(|(_, value)| super::rows::null_free(value))
                     }
                     (None, Some(packed)) => !packed.nulls,
-                    (None, None) => self.null_free(plan, at, position, &fetched, walk),
+                    (None, None) => {
+                        listed_free && self.null_free(plan, at, position, &fetched, walk)
+                    }
                 };
                 if results && free {
                     match span {
@@ -1230,9 +1425,35 @@ impl<'a> Traces<'a> {
                         (Some(edits), Some(Value::Data(after)), Encoding::Touched(Some(input)))
                             if walk.inputs.get(slot as usize).is_none_or(Option::is_none) =>
                         {
-                            after.edit(input, edits, position, &mut |pointer, before, after| {
-                                writer.diff_at(pointer, before, after)
-                            })
+                            let texts: std::cell::RefCell<Vec<(String, String)>> =
+                                Default::default();
+                            let parents: SmallVec<[Slot; 4]> = event
+                                .parents
+                                .iter()
+                                .copied()
+                                .filter(|p| walk.ran.get(*p as usize).is_some_and(Option::is_some))
+                                .collect();
+                            let edited = after.edit(
+                                input,
+                                edits,
+                                position,
+                                &mut |pointer, before, after| {
+                                    writer.diff_at(pointer, before, after)
+                                },
+                                &mut |pointer, leaf, row| match self
+                                    .listed(walk, &parents, leaf, row)
+                                {
+                                    Some((text, _)) => {
+                                        texts.borrow_mut().push((pointer.to_string(), text));
+                                        true
+                                    }
+                                    None => false,
+                                },
+                            );
+                            for (pointer, text) in texts.into_inner() {
+                                writer.set_text(&pointer, text);
+                            }
+                            edited
                         }
                         _ => false,
                     };
@@ -1266,10 +1487,13 @@ impl<'a> Traces<'a> {
                 };
                 writer.results_with(
                     slot,
-                    order
-                        .iter()
-                        .zip(labels.iter())
-                        .map(|(&i, label)| (&**label, &fetched[i as usize])),
+                    order.iter().zip(labels.iter()).map(|(&i, label)| {
+                        (
+                            &**label,
+                            &fetched[i as usize],
+                            listed[i as usize].as_ref().map(|(text, _)| text.as_str()),
+                        )
+                    }),
                     out,
                 )
             }

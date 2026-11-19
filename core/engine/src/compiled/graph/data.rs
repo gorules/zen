@@ -101,7 +101,7 @@ impl<'a> Layer<'a> {
                 let mut map = VariableMap::with_capacity(self.keys.len());
                 for (i, (key, column)) in self.keys.iter().zip(self.columns.iter()).enumerate() {
                     if self.has(i, row) {
-                        map.insert(key.clone(), column.get(row));
+                        map.insert(key.clone(), column.shared(row));
                     }
                 }
                 Variable::from_object(map)
@@ -118,7 +118,7 @@ impl<'a> Layer<'a> {
                     self.segments.iter().zip(self.columns.iter()).enumerate()
                 {
                     if self.has(i, row) {
-                        Self::insert(&object, segments, column.get(row));
+                        Self::insert(&object, segments, column.shared(row));
                     }
                 }
                 object
@@ -136,7 +136,7 @@ impl<'a> Layer<'a> {
             match node {
                 Nest::Leaf(key, index) => {
                     if self.has(*index, row) {
-                        put(key, self.columns[*index].get(row));
+                        put(key, self.columns[*index].shared(row));
                     }
                 }
                 Nest::Branch(key, children) => {
@@ -200,7 +200,9 @@ impl<'a> Layer<'a> {
     fn object_key(&self, row: usize, top: &str, under: &[usize]) -> Option<Variable> {
         if let [index] = under {
             if self.paths[*index].as_ref() == top {
-                return self.has(*index, row).then(|| self.columns[*index].get(row));
+                return self
+                    .has(*index, row)
+                    .then(|| self.columns[*index].shared(row));
             }
         }
         if let Some(nest) = &self.nest {
@@ -216,7 +218,7 @@ impl<'a> Layer<'a> {
         let mut any = false;
         for &i in under {
             if self.has(i, row) {
-                Self::insert(&object, &self.segments[i], self.columns[i].get(row));
+                Self::insert(&object, &self.segments[i], self.columns[i].shared(row));
                 any = true;
             }
         }
@@ -233,7 +235,7 @@ impl<'a> Layer<'a> {
             true => {
                 for (i, (key, column)) in self.keys.iter().zip(self.columns.iter()).enumerate() {
                     if self.has(i, row) {
-                        Self::put(current, key, &column.get(row));
+                        Self::put(current, key, &column.shared(row));
                     }
                 }
             }
@@ -705,7 +707,7 @@ impl<'a> Data<'a> {
         match &self.shape {
             Shape::Plain(values) => Self::lookup(&values[row], path).unwrap_or(Variable::Null),
             Shape::Patched { base, leaves, .. } => match Self::read(leaves, path) {
-                Read::Leaf(index) => leaves[index].1.get(row),
+                Read::Leaf(index) => leaves[index].1.shared(row),
                 Read::Base => base
                     .as_ref()
                     .and_then(|b| Self::lookup(&b[row], path))
@@ -968,7 +970,7 @@ impl<'a> Data<'a> {
                 (true, None) => {
                     let leaf = Leaf::Any(
                         (0..count)
-                            .map(|row| match (has(row), column.get(row)) {
+                            .map(|row| match (has(row), column.shared(row)) {
                                 (false, _) => self.resolve(path, row),
                                 (true, value @ Variable::Object(_)) => {
                                     match self.resolve(path, row) {
@@ -1230,6 +1232,9 @@ impl Keys {
         if leaf.words(row, &mut self.words) {
             return Some(true);
         }
+        if leaf.listed(row).is_some() {
+            return None;
+        }
         let cell = Cell::scalar(&leaf.get(row))?;
         let valued = cell != Cell::Null;
         self.cell(cell)?;
@@ -1239,6 +1244,12 @@ impl Keys {
     fn known(&mut self, leaf: &Leaf, row: usize) -> Option<()> {
         if leaf.words(row, &mut self.words) {
             return Some(());
+        }
+        if let Some((records, at)) = leaf.listed(row) {
+            return match records.range(at) {
+                Some(_) => self.cell(Cell::Container),
+                None => None,
+            };
         }
         match leaf.get(row) {
             Variable::Null => None,
@@ -1458,10 +1469,61 @@ impl<'a> Data<'a> {
             .all(|field| match Self::read(leaves, field) {
                 Read::Leaf(index) => {
                     !presence[index].at(&leaves[index].1, row)
-                        || Cell::scalar(&leaves[index].1.get(row)).is_some()
+                        || leaves[index].1.listed(row).is_none()
+                            && Cell::scalar(&leaves[index].1.get(row)).is_some()
                 }
                 _ => false,
             })
+    }
+
+    pub fn counts(&self, path: &str) -> Option<Vec<Option<u32>>> {
+        let Shape::Patched { leaves, .. } = &self.shape else {
+            return None;
+        };
+        let Read::Leaf(index) = Self::read(leaves, path) else {
+            return None;
+        };
+        let leaf = &leaves[index].1;
+        Some(
+            (0..self.len())
+                .map(|row| match leaf.listed(row) {
+                    Some((records, at)) => {
+                        records.range(at).map(|(start, end)| (end - start) as u32)
+                    }
+                    None => leaf
+                        .get(row)
+                        .as_array()
+                        .map(|items| items.borrow().len() as u32),
+                })
+                .collect(),
+        )
+    }
+
+    pub fn lists(&self, row: usize, id: usize, at: usize) -> Option<SmallVec<[&str; 2]>> {
+        let Shape::Patched {
+            base: None,
+            leaves,
+            presence,
+            ..
+        } = &self.shape
+        else {
+            return None;
+        };
+        Some(
+            leaves
+                .iter()
+                .enumerate()
+                .filter(|(_, (path, _))| !path.contains('.'))
+                .filter(|(index, (_, leaf))| {
+                    leaf.listed(row)
+                        .is_some_and(|(records, found)| records.id() == id && found == at)
+                        && presence
+                            .as_ref()
+                            .is_none_or(|presence| presence[*index].at(leaf, row))
+                })
+                .map(|(_, (path, _))| &**path)
+                .collect(),
+        )
     }
 
     pub fn sparse(&self, row: usize, fields: &[Arc<str>]) -> Option<Variable> {
@@ -1482,7 +1544,7 @@ impl<'a> Data<'a> {
             };
             if presence[index].at(&leaves[index].1, row) {
                 let segments: SmallVec<[Symbol; 4]> = field.split('.').map(Symbol::from).collect();
-                Layer::insert(&object, &segments, leaves[index].1.get(row));
+                Layer::insert(&object, &segments, leaves[index].1.shared(row));
             }
         }
         Some(object)
@@ -1535,7 +1597,7 @@ impl<'a> Data<'a> {
                     under,
                 } => {
                     let was = match (exact, under.is_empty()) {
-                        (Some(leaf), _) => match earlier[*leaf].1.get(row) {
+                        (Some(leaf), _) => match earlier[*leaf].1.shared(row) {
                             Variable::Null => return None,
                             value => Some(value),
                         },
@@ -1600,6 +1662,7 @@ impl<'a> Data<'a> {
         edits: &Edits<'a>,
         row: usize,
         emit: &mut dyn FnMut(&str, Option<&Variable>, Option<&Variable>),
+        list: &mut dyn FnMut(&str, &Leaf<'a>, usize) -> bool,
     ) -> bool {
         let Some(layer) = self.extends(input) else {
             return false;
@@ -1608,7 +1671,7 @@ impl<'a> Data<'a> {
             return false;
         }
         let earlier = input.leaves();
-        let known = |index: usize| match earlier[index].1.get(row) {
+        let known = |index: usize| match earlier[index].1.shared(row) {
             Variable::Null => None,
             value => Some(value),
         };
@@ -1638,7 +1701,16 @@ impl<'a> Data<'a> {
                             None => Earlier::Absent,
                         },
                     };
-                    let now = column.get(row);
+                    if matches!(was, Earlier::Absent)
+                        && column
+                            .listed(row)
+                            .is_some_and(|(records, at)| records.range(at).is_some())
+                        && list(&group.pointer, column, row)
+                    {
+                        let _ = index;
+                        continue;
+                    }
+                    let now = column.shared(row);
                     match (&was, &now) {
                         (Earlier::Unknown, _) => false,
                         (Earlier::Value(Variable::Object(_)), Variable::Object(_)) => false,
@@ -1698,7 +1770,7 @@ impl<'a> Data<'a> {
                                 if !layer.has(field.index, row) {
                                     continue;
                                 }
-                                let now = field.column.get(row);
+                                let now = field.column.shared(row);
                                 let before = match field.before {
                                     Some(leaf) => match known(leaf) {
                                         Some(value) => Some(value),

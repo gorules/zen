@@ -567,8 +567,7 @@ impl<'a> Run<'_, 'a> {
         let reason = match (looped, body) {
             (true, _) => match kernel {
                 Some(kernel) => {
-                    let data = Data::plain(rows.clone(), input.materialized());
-                    let shape = CompiledGraph::node_shape(step, Some(&data));
+                    let shape = CompiledGraph::node_shape(step, Some(input));
                     let slot = event.node.index() as Slot;
                     match kernel.facts(self.graph.template(), slot, shape, count) {
                         Ok(facts) => return Some(facts),

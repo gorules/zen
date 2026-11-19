@@ -227,6 +227,14 @@ impl CompiledGraph {
             .and_then(|(program, _)| program.path())?;
         let mut spans: Vec<(u32, u32)> = Vec::with_capacity(data.len());
         let mut total = 0u32;
+        if let Some(counts) = data.counts(source) {
+            for count in counts {
+                let count = count?;
+                spans.push((total, count));
+                total += count;
+            }
+            return Some(spans.into());
+        }
         for list in data.subtree(source).iter() {
             let count = list.as_array()?.borrow().len() as u32;
             spans.push((total, count));

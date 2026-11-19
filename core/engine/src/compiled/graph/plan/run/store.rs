@@ -585,7 +585,7 @@ impl<'a> Columned<'a> {
     pub fn leaf(&self, index: usize) -> (Leaf<'a>, Option<Rc<[u64]>>) {
         let present = &self.present[index];
         (
-            self.leaves[index].settled(),
+            self.leaves[index].clone(),
             (*present != self.wanted).then(|| Rc::from(present.clone())),
         )
     }
@@ -601,8 +601,8 @@ impl<'a> Columned<'a> {
             .leaves
             .iter()
             .map(|leaf| match whole {
-                true => leaf.settled(),
-                false => leaf.settled().pick(rows),
+                true => leaf.clone(),
+                false => leaf.pick(rows),
             })
             .collect();
         let present = (!self.full()).then(|| {

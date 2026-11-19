@@ -7,6 +7,11 @@ use zen_types::symbol::Symbol;
 use zen_types::variable::VariableMap;
 
 pub(crate) type Field<'a> = (Symbol, Leaf<'a>, Rc<[u64]>);
+
+pub(crate) struct Listing<'c> {
+    pub fields: Vec<(&'c str, &'c [u64], Column<'c>, u8)>,
+    pub nulled: Option<&'c [u64]>,
+}
 type Lanes = (Vec<Vec<u64>>, Option<Vec<u64>>);
 
 #[derive(Debug)]
@@ -90,6 +95,36 @@ impl<'a> Records<'a> {
             .as_ref()
             .map(|nulled| Rc::from(Bits::gather(nulled, &items)));
         Records::new(rows, offsets, valid, fields, nulled)
+    }
+
+    pub fn fresh(&self) -> bool {
+        self.dense.get().is_none()
+    }
+
+    pub fn id(&self) -> usize {
+        self as *const Self as usize
+    }
+
+    pub fn listing(&self) -> Option<Listing<'_>> {
+        if self.fields.len() >= 8 {
+            return None;
+        }
+        let fields = self
+            .fields
+            .iter()
+            .map(|(key, leaf, present)| {
+                let key = key.as_str();
+                if key.starts_with('$') || key.contains('.') {
+                    return None;
+                }
+                let (column, kind) = leaf.plain()?;
+                Some((key, &**present, column, kind))
+            })
+            .collect::<Option<_>>()?;
+        Some(Listing {
+            fields,
+            nulled: self.nulled.as_deref(),
+        })
     }
 
     pub(super) fn labels(&self) -> Option<&[Box<str>]> {

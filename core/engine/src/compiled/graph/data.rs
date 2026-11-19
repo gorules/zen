@@ -1222,6 +1222,10 @@ impl Keys {
         Some(())
     }
 
+    pub fn value(&mut self, value: &Variable) -> Option<()> {
+        self.cell(Cell::scalar(value)?)
+    }
+
     fn scalar(&mut self, leaf: &Leaf, row: usize) -> Option<bool> {
         if leaf.words(row, &mut self.words) {
             return Some(true);

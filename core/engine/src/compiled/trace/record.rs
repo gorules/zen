@@ -198,20 +198,25 @@ impl KernelFacts {
             .hits
             .filter(|hits| hits.len() == count)
             .ok_or("collected rules not captured")?;
-        let fields = self.fields.as_deref().ok_or("table fields not captured")?;
-        let facts = hits
-            .iter()
-            .enumerate()
-            .map(|(position, rules)| {
-                rules
-                    .iter()
-                    .map(|rule| Self::captured_hit(template, slot, *rule, fields, position))
-                    .collect::<Option<Vec<Hit>>>()
-                    .map(Fact::Hits)
-            })
-            .collect::<Option<Vec<Fact>>>()
-            .ok_or("table field references")?;
-        Ok(Facts::Rows(facts))
+        let fields = self.fields.ok_or("table fields not captured")?;
+        let mut seen: SmallVec<[u32; 16]> = SmallVec::new();
+        for rule in hits.iter().flatten() {
+            if !seen.contains(rule) {
+                seen.push(*rule);
+            }
+        }
+        let known = fields.iter().all(|field| field.values.len() >= count)
+            && seen.iter().all(|rule| {
+                template
+                    .refs_with(slot, *rule, |name| {
+                        fields.iter().find(|f| &*f.name == name).map(|_| None)
+                    })
+                    .is_some()
+            });
+        if !known {
+            return Err("table field references");
+        }
+        Ok(Facts::Collected(hits, fields.into()))
     }
 
     pub(crate) fn captured_hit(

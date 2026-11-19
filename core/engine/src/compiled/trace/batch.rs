@@ -52,6 +52,7 @@ pub(crate) enum Facts<'a> {
     Branches(Vec<SmallVec<[u32; 4]>>),
     Rows(Vec<Fact>),
     Fields(Vec<Option<u32>>, Rc<[super::record::FieldColumn]>),
+    Collected(super::record::RuleHits, Rc<[super::record::FieldColumn]>),
     Loop(Rc<[(u32, u32)]>, Box<Facts<'a>>),
 }
 
@@ -92,6 +93,18 @@ impl Facts<'_> {
                     super::record::KernelFacts::captured_hit(template, slot, rule, fields, position)
                 })
                 .map_or(Fact::None, Fact::Hit),
+            Facts::Collected(rules, fields) => Fact::Hits(
+                rules
+                    .get(position)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rule| {
+                        super::record::KernelFacts::captured_hit(
+                            template, slot, *rule, fields, position,
+                        )
+                    })
+                    .collect(),
+            ),
             Facts::Loop(spans, inner) => {
                 let Some(&(start, count)) = spans.get(position) else {
                     return Fact::None;
@@ -242,7 +255,14 @@ impl Keyer {
     }
 }
 
+struct Hitter {
+    derived: Vec<Arc<str>>,
+    texts: std::cell::RefCell<super::value::FastMap<Vec<u64>, Box<str>>>,
+}
+
 struct Plan<'a> {
+    hit_keys: std::cell::RefCell<Keys>,
+    hitters: Vec<OnceCell<Option<Hitter>>>,
     heads: Vec<Option<Box<str>>>,
     labels: Vec<Option<Box<[Box<str>]>>>,
     keyers: Vec<OnceCell<Option<Keyer>>>,
@@ -402,6 +422,8 @@ impl<'a> Traces<'a> {
                 })
                 .collect();
             Plan {
+                hit_keys: Default::default(),
+                hitters: self.events.iter().map(|_| OnceCell::new()).collect(),
                 heads,
                 labels,
                 keyers: self.events.iter().map(|_| OnceCell::new()).collect(),
@@ -520,6 +542,88 @@ impl<'a> Traces<'a> {
                 })
             })
             .as_ref()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn hits(
+        &self,
+        plan: &Plan<'a>,
+        at: usize,
+        position: usize,
+        rules: &[u32],
+        fields: &[super::record::FieldColumn],
+        single: bool,
+        walk: &mut Walk,
+        parent: Option<Slot>,
+        writer: &mut RowWriter<'_>,
+        out: &mut String,
+    ) -> Result<bool, &'static str> {
+        let slot = self.events[at].slot;
+        let scope = self.scope(walk, slot, parent, rules).ok_or("hit scope")?;
+        let hitter = plan.hitters[at]
+            .get_or_init(|| {
+                Some(Hitter {
+                    derived: self.derived(slot)?,
+                    texts: Default::default(),
+                })
+            })
+            .as_ref();
+        let mut keys = plan.hit_keys.borrow_mut();
+        let keyed = hitter.is_some_and(|hitter| {
+            keys.words.clear();
+            keys.mark(rules.len() as u64);
+            rules.iter().for_each(|rule| keys.mark(u64::from(*rule)));
+            let fields = fields.iter().all(|field| {
+                match field.failed.get(position).copied().unwrap_or(true) {
+                    true => {
+                        keys.mark(5);
+                        true
+                    }
+                    false => field
+                        .values
+                        .get(position)
+                        .is_some_and(|value| keys.value(value).is_some()),
+                }
+            });
+            fields
+                && hitter.derived.iter().all(|field| {
+                    match super::native::dotted_get(Some(&scope), field) {
+                        None => {
+                            keys.mark(6);
+                            true
+                        }
+                        Some(value) => keys.value(&value).is_some(),
+                    }
+                })
+        });
+        if let (true, Some(hitter)) = (keyed, hitter) {
+            if let Some(text) = hitter.texts.borrow().get(keys.words.as_slice()) {
+                out.push_str(text);
+                return Ok(true);
+            }
+        }
+        let hits: Vec<Hit> = rules
+            .iter()
+            .map(|rule| {
+                super::record::KernelFacts::captured_hit(
+                    &self.template,
+                    slot,
+                    *rule,
+                    fields,
+                    position,
+                )
+            })
+            .collect::<Option<_>>()
+            .ok_or("table field references")?;
+        let mark = out.len();
+        let ok = writer.hits(slot, &hits, single, &scope, out);
+        if let (true, true, Some(hitter)) = (ok, keyed, hitter) {
+            let mut texts = hitter.texts.borrow_mut();
+            if texts.len() < 4096 {
+                texts.insert(keys.words.clone(), out[mark..].into());
+            }
+        }
+        Ok(ok)
     }
 
     fn derived(&self, slot: Slot) -> Option<Vec<Arc<str>>> {
@@ -1174,27 +1278,40 @@ impl<'a> Traces<'a> {
             },
             Facts::Fields(rules, fields) => match rules.get(position).copied().flatten() {
                 None => true,
-                Some(rule) => {
-                    let hit = super::record::KernelFacts::captured_hit(
-                        &self.template,
-                        slot,
-                        rule,
-                        fields,
-                        position,
-                    )
-                    .ok_or("table field references")?;
-                    let scope = self
-                        .scope(walk, slot, parent, std::slice::from_ref(&hit))
-                        .ok_or("hit scope")?;
-                    writer.hits(slot, std::slice::from_ref(&hit), true, &scope, out)
-                }
+                Some(rule) => self.hits(
+                    plan,
+                    at,
+                    position,
+                    &[rule],
+                    fields,
+                    true,
+                    walk,
+                    parent,
+                    writer,
+                    out,
+                )?,
             },
+            Facts::Collected(rules, fields) => {
+                let rules = rules
+                    .get(position)
+                    .map(|rules| rules.as_slice())
+                    .unwrap_or(&[]);
+                match rules.is_empty() {
+                    true => {
+                        writer.empty_loop(out);
+                        true
+                    }
+                    false => self.hits(
+                        plan, at, position, rules, fields, false, walk, parent, writer, out,
+                    )?,
+                }
+            }
             Facts::Rows(facts) => match facts.get(position) {
                 Some(Fact::None) => true,
                 Some(Fact::Hit(Hit { rule, refs: None })) => writer.rule(slot, *rule, out),
                 Some(Fact::Hit(hit)) => {
                     let scope = self
-                        .scope(walk, slot, parent, std::slice::from_ref(hit))
+                        .scope(walk, slot, parent, &[hit.rule])
                         .ok_or("hit scope")?;
                     writer.hits(slot, std::slice::from_ref(hit), true, &scope, out)
                 }
@@ -1203,7 +1320,8 @@ impl<'a> Traces<'a> {
                     true
                 }
                 Some(Fact::Hits(hits)) => {
-                    let scope = self.scope(walk, slot, parent, hits).ok_or("hit scope")?;
+                    let rules: SmallVec<[u32; 4]> = hits.iter().map(|hit| hit.rule).collect();
+                    let scope = self.scope(walk, slot, parent, &rules).ok_or("hit scope")?;
                     writer.hits(slot, hits, false, &scope, out)
                 }
                 Some(Fact::Results(_)) => match rowed {
@@ -1228,7 +1346,7 @@ impl<'a> Traces<'a> {
         walk: &mut Walk,
         slot: Slot,
         parent: Option<Slot>,
-        hits: &[Hit],
+        rules: &[u32],
     ) -> Option<Variable> {
         let sparse = || {
             if walk.inputs.get(slot as usize)?.is_some() {
@@ -1240,8 +1358,8 @@ impl<'a> Traces<'a> {
             };
             let node = self.template.node(slot)?;
             let mut fields: SmallVec<[Arc<str>; 8]> = SmallVec::new();
-            for hit in hits {
-                if let Some(derive) = &node.rules.get(hit.rule as usize)?.derive {
+            for rule in rules {
+                if let Some(derive) = &node.rules.get(*rule as usize)?.derive {
                     fields.extend(derive.iter().cloned());
                 }
             }

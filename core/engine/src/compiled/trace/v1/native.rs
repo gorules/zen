@@ -181,7 +181,7 @@ pub(crate) fn vpath(v: &Variable, path: &[Seg]) -> Option<Variable> {
     Some(cur)
 }
 
-fn dotted_get(v: Option<&Variable>, f: &str) -> Option<Variable> {
+pub(crate) fn dotted_get(v: Option<&Variable>, f: &str) -> Option<Variable> {
     let mut cur = v?.clone();
     for s in f.split('.') {
         cur = match &cur {

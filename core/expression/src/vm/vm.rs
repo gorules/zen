@@ -1,4 +1,5 @@
 use crate::compiler::{Compare, FetchFastTarget, Jump, Opcode};
+use crate::config::EXPRESSION_CONFIG;
 use crate::functions::arguments::Arguments;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{internal, MethodRegistry};
@@ -13,6 +14,7 @@ use crate::vm::VmDate;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::string::String as StdString;
 use zen_types::symbol::Symbol;
 
@@ -85,7 +87,21 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
             self.ip = 0;
         }
 
+        let max_steps = EXPRESSION_CONFIG.max_steps.load(Ordering::Relaxed);
+        let max_interval_length = EXPRESSION_CONFIG.max_interval_length.load(Ordering::Relaxed);
+        let mut steps: u64 = 0;
+
         while self.ip < self.bytecode.len() as u32 {
+            if max_steps > 0 {
+                steps += 1;
+                if steps > max_steps {
+                    return Err(BudgetExceeded {
+                        budget: "steps",
+                        limit: max_steps,
+                    });
+                }
+            }
+
             let op = self
                 .bytecode
                 .get(self.ip as usize)
@@ -978,14 +994,27 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                 iter: 0,
                             })
                         }
-                        _ => match var.dynamic::<VmInterval>().map(|s| s.to_array()).flatten() {
+                        _ => match var.dynamic::<VmInterval>() {
+                            Some(interval) => {
+                                if max_interval_length > 0 {
+                                    if let Some(len) = interval.len() {
+                                        if len > max_interval_length {
+                                            return Err(BudgetExceeded {
+                                                budget: "interval length",
+                                                limit: max_interval_length,
+                                            });
+                                        }
+                                    }
+                                }
+
+                                interval.to_array().map(|arr| LoopScope {
+                                    len: arr.len(),
+                                    array: Variable::from_array(arr),
+                                    count: 0,
+                                    iter: 0,
+                                })
+                            }
                             None => None,
-                            Some(arr) => Some(LoopScope {
-                                len: arr.len(),
-                                array: Variable::from_array(arr),
-                                count: 0,
-                                iter: 0,
-                            }),
                         },
                     };
 

@@ -16,6 +16,9 @@ pub enum VMError {
 
     #[error("Number conversion error")]
     NumberConversionError,
+
+    #[error("Evaluation budget exceeded: {budget} over {limit}")]
+    BudgetExceeded { budget: &'static str, limit: u64 },
 }
 
 pub(crate) type VMResult<T> = Result<T, VMError>;

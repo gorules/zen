@@ -60,6 +60,7 @@
 mod isolate;
 
 pub mod compiler;
+pub mod config;
 mod dates;
 mod exports;
 pub mod expression;
@@ -78,6 +79,7 @@ pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
 };
 pub use expression::{Expression, ExpressionKind, OpcodeCache};
+pub use config::{ExpressionConfig, EXPRESSION_CONFIG};
 pub use isolate::{Isolate, IsolateError};
 pub use scope::Scope;
 pub use variable::Variable;

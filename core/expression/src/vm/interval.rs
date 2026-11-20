@@ -32,7 +32,13 @@ impl DynamicVariable for VmInterval {
 }
 
 impl VmInterval {
-    pub fn to_array(&self) -> Option<Vec<Variable>> {
+    /// Number of elements `to_array` would produce, if the interval is a numeric one.
+    pub fn len(&self) -> Option<u64> {
+        let (start, end) = self.bounds()?;
+        Some(end.checked_sub(start)?.checked_add(1)? as u64)
+    }
+
+    fn bounds(&self) -> Option<(i64, i64)> {
         let (left, right) = match (&self.left, &self.right) {
             (VmIntervalData::Number(l), VmIntervalData::Number(r)) => (*l, *r),
             _ => return None,
@@ -50,6 +56,11 @@ impl VmInterval {
             _ => return None,
         };
 
+        Some((start, end))
+    }
+
+    pub fn to_array(&self) -> Option<Vec<Variable>> {
+        let (start, end) = self.bounds()?;
         let list = (start..=end)
             .map(|n| Variable::Number(Decimal::from(n)))
             .collect::<Vec<_>>();

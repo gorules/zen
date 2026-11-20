@@ -1046,3 +1046,36 @@ fn string_index_at_usize_max_returns_null() {
     let result = isolate.run_standard("s[i]").unwrap();
     assert_eq!(result, Variable::Null);
 }
+
+#[test]
+fn evaluation_budget_limits_steps_and_intervals() {
+    use std::sync::atomic::Ordering;
+    use zen_expression::EXPRESSION_CONFIG;
+
+    let mut isolate = Isolate::new();
+
+    // No limit by default
+    assert!(isolate.run_standard("len(map([1..10000], # * 2))").is_ok());
+
+    EXPRESSION_CONFIG.max_steps.store(5_000, Ordering::Relaxed);
+    let err = isolate
+        .run_standard("len(map([1..10000], # * 2))")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("budget exceeded") && err.contains("steps"), "{err}");
+    assert!(isolate.run_standard("len(map([1..100], # * 2))").is_ok());
+    EXPRESSION_CONFIG.max_steps.store(0, Ordering::Relaxed);
+
+    EXPRESSION_CONFIG
+        .max_interval_length
+        .store(1_000, Ordering::Relaxed);
+    let err = isolate
+        .run_standard("len(map([1..10000], # * 2))")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("budget exceeded") && err.contains("interval"), "{err}");
+    // Membership tests on intervals do not expand them
+    assert!(isolate.run_standard("5 in [1..10000]").is_ok());
+    assert!(isolate.run_standard("len(map([1..1000], # * 2))").is_ok());
+    EXPRESSION_CONFIG.max_interval_length.store(0, Ordering::Relaxed);
+}

@@ -36,8 +36,11 @@ impl NodeHandler for ExpressionNodeHandler {
 
             let value = isolate
                 .run_standard(&expression.value)
-                .with_node_context(&ctx, |_| {
-                    format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
+                .with_node_context(&ctx, |err| {
+                    format!(
+                        r#"Failed to evaluate expression: "{}": {err}"#,
+                        &expression.value
+                    )
                 })?;
             let value = match expression.value.contains('$') {
                 true => value.deep_clone(),

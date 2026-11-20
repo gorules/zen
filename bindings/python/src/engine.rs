@@ -239,10 +239,17 @@ impl PyZenEngine {
             None => Arc::new(PyDecisionLoader::default()),
         };
 
-        let engine = DecisionEngine::new(
+        let mut engine = DecisionEngine::new(
             loader,
             Arc::new(PyCustomNode::new(custom_node, make_locals())),
         );
+        if let Some(version) = options.get_item("version")? {
+            let version: u32 = version.extract()?;
+            engine.set_version(
+                zen_engine::EngineVersion::try_from(version)
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+            );
+        }
         engine.compile();
 
         Ok(Self {

@@ -119,6 +119,13 @@ struct ZenResult_ZenEngineStruct zen_engine_new_with_loader_config(struct ZenEng
                                                                    struct ZenCustomNodeResult (*maybe_custom_node)(const char *request));
 
 /**
+ * Selects the engine version of a ZenEngine instance: 1 is the interpreted engine, 2 the
+ * compiled engine. Returns false, and leaves the engine as it is, for any other value or a
+ * null engine.
+ */
+bool zen_engine_set_version(struct ZenEngineStruct *engine, uint32_t version);
+
+/**
  * Frees the ZenEngine instance reference from the memory
  */
 void zen_engine_free(struct ZenEngineStruct *engine);

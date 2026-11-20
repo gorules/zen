@@ -119,6 +119,22 @@ pub extern "C" fn zen_engine_new_with_loader_config(
     ZenResult::ok(Box::into_raw(Box::new(engine)) as *mut ZenEngineStruct)
 }
 
+/// Selects the engine version of a ZenEngine instance: 1 is the interpreted engine, 2 the
+/// compiled engine. Returns false, and leaves the engine as it is, for any other value or a
+/// null engine.
+#[no_mangle]
+pub extern "C" fn zen_engine_set_version(engine: *mut ZenEngineStruct, version: u32) -> bool {
+    if engine.is_null() {
+        return false;
+    }
+    let Ok(version) = zen_engine::EngineVersion::try_from(version) else {
+        return false;
+    };
+    let zen_engine = unsafe { &mut *(engine as *mut ZenEngine) };
+    zen_engine.set_version(version);
+    true
+}
+
 /// Frees the ZenEngine instance reference from the memory
 #[no_mangle]
 pub extern "C" fn zen_engine_free(engine: *mut ZenEngineStruct) {

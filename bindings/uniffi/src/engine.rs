@@ -57,12 +57,11 @@ impl From<ZenEvaluateOptions> for EvaluationOptions {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl ZenEngine {
-    #[uniffi::constructor(default(loader = None, custom_node = None))]
-    pub fn new(
+    fn build(
         loader: Option<ZenLoader>,
         custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
+        version: Option<u32>,
     ) -> Result<Self, ZenError> {
         let loader: DynamicLoader = match loader {
             Some(loader) => loader.into_dynamic_loader()?,
@@ -71,17 +70,45 @@ impl ZenEngine {
             ))),
         };
 
-        let engine = DecisionEngine::new(
+        let mut engine = DecisionEngine::new(
             loader,
             Arc::new(ZenCustomNodeCallbackWrapper(
                 custom_node.unwrap_or_else(|| Box::new(NoopCustomNodeCallback)),
             )),
         );
+        if let Some(version) = version {
+            engine.set_version(
+                zen_engine::EngineVersion::try_from(version)
+                    .map_err(|e| ZenError::ValidationError(e.to_string()))?,
+            );
+        }
         engine.compile();
 
         Ok(Self {
             engine: Arc::new(engine),
         })
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ZenEngine {
+    #[uniffi::constructor(default(loader = None, custom_node = None))]
+    pub fn new(
+        loader: Option<ZenLoader>,
+        custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
+    ) -> Result<Self, ZenError> {
+        Self::build(loader, custom_node, None)
+    }
+
+    /// Creates an engine of the given version: 1 is the interpreted engine, 2 the compiled
+    /// engine.
+    #[uniffi::constructor(default(loader = None, custom_node = None))]
+    pub fn with_version(
+        version: u32,
+        loader: Option<ZenLoader>,
+        custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
+    ) -> Result<Self, ZenError> {
+        Self::build(loader, custom_node, Some(version))
     }
 
     pub async fn evaluate(

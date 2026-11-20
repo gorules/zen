@@ -194,6 +194,15 @@ impl Workspace {
             .map_err(Into::into)
     }
 
+    pub fn with_version(mut self, version: crate::EngineVersion) -> Self {
+        self.engine = version.into();
+        self
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
+    }
+
     #[doc(hidden)]
     pub fn interpreted(mut self) -> Self {
         self.engine = crate::compiled::Engine::Interpreted;

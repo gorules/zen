@@ -161,6 +161,17 @@ impl Decision {
         self
     }
 
+    pub fn with_version(&self, version: crate::EngineVersion) -> Self {
+        Self {
+            engine: version.into(),
+            ..self.clone()
+        }
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
+    }
+
     #[doc(hidden)]
     pub fn interpreted(&self) -> Self {
         Self {

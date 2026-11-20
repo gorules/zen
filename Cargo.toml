@@ -31,6 +31,9 @@ nohash-hasher = "0.2"
 anyhow = "1"
 thiserror = "1"
 
+[profile.test]
+opt-level = 1
+
 [profile.release]
 lto = true
 codegen-units = 1

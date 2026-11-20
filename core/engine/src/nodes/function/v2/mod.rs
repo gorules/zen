@@ -48,6 +48,12 @@ impl NodeHandler for FunctionV2NodeHandler {
             .set_interrupt_handler(Some(interrupt_handler))
             .await;
 
+        if let Ok(limit) = usize::try_from(ctx.config.function_memory_limit_bytes) {
+            if limit > 0 {
+                function.runtime().set_memory_limit(limit).await;
+            }
+        }
+
         let function_context = FunctionContext {
             start,
             context: &ctx,

@@ -59,6 +59,19 @@ async fn main() {
 }
 ```
 
+### Limits for function nodes
+
+`ZEN_CONFIG` holds the global settings. Function nodes (JavaScript) have a time limit, `function_timeout_millis`
+(default 5000), and a memory limit for their runtime, `function_memory_limit_bytes` (default 0 = no limit). When the
+limit is reached the node fails with an error and the rest of the process is unaffected.
+
+```rust
+use std::sync::atomic::Ordering;
+use zen_engine::ZEN_CONFIG;
+
+ZEN_CONFIG.function_memory_limit_bytes.store(64 * 1024 * 1024, Ordering::Relaxed);
+```
+
 ### Loaders
 
 Attach a loader to serve decisions by key. Build one declaratively from `LoaderConfig` (`Static`, `Filesystem`, `Zip`), or construct the loader structs in `zen_engine::loader` directly. With a configuration, decisions are pre-loaded and pre-compiled for faster evaluations.

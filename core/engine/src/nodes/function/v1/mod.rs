@@ -28,6 +28,11 @@ impl NodeHandler for FunctionV1NodeHandler {
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
 
         runtime.set_interrupt_handler(Some(interrupt_handler));
+        if let Ok(limit) = usize::try_from(ctx.config.function_memory_limit_bytes) {
+            if limit > 0 {
+                runtime.set_memory_limit(limit);
+            }
+        }
 
         let mut script = Script::new(runtime.clone());
         let result_response = script.call(ctx.node.deref(), &ctx.input_with_nodes()).await;

@@ -390,7 +390,6 @@ impl CompiledGraph {
 }
 
 impl Plan {
-    #[allow(clippy::too_many_arguments)]
     pub async fn evaluate<'a>(
         &self,
         graph: &CompiledGraph,

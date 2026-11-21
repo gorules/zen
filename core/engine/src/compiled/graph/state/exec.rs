@@ -21,7 +21,6 @@ use zen_expression::Variable;
 use zen_types::decision::FunctionNodeContent;
 
 impl CompiledGraph {
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::compiled::graph) async fn execute<'a>(
         &self,
         event: &Execute,
@@ -248,7 +247,6 @@ impl CompiledGraph {
         results
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn scripted(
         step: &Step,
         mut batch: Batch,

@@ -94,7 +94,6 @@ impl CompiledGraph {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn batch(
         step: &Step,
         content: &DecisionNodeContent,
@@ -121,7 +120,6 @@ impl CompiledGraph {
             .collect()
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn nested_results(
         step: &Step,
         content: &DecisionNodeContent,

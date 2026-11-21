@@ -43,6 +43,7 @@ ZenLoaderCallback: TypeAlias = Callable[[str], Union[str, dict, ZenDecisionConte
 class ZenEngineOptions(TypedDict, total=False):
     loader: Union[ZenLoaderCallback, ZenLoaderConfig]
     customHandler: Callable
+    version: Literal[1, 2]
 
 
 class EvaluateBatchRequest(TypedDict):

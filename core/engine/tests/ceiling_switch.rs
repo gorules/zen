@@ -1,6 +1,7 @@
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::hint::black_box;
@@ -454,7 +455,7 @@ async fn ceiling_multi_switch() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024);
-    let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+    let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
     compiled.compile();
     assert!(matches!(
         zen_engine::diagnostics::compiled_verdict(&compiled),

@@ -59,12 +59,7 @@ impl Case {
         let frame = Frame::new(&self.hir, &self.workload.spec, rows, 0);
         let mut out = self.program.outputs();
         self.program
-            .run(
-                &frame.batch(),
-                &mut out,
-                select,
-                &crate::context::EvaluationContext::default(),
-            )
+            .run(&frame.batch(), &mut out, select, &Workload::context())
             .expect("run");
         (0..rows.len())
             .map(|r| {
@@ -432,12 +427,7 @@ fn member_outputs_with_offset_lists() {
         let frame = Frame::new(&hir, &workload.spec, &rows, shift);
         let mut out = program.outputs();
         program
-            .run(
-                &frame.batch(),
-                &mut out,
-                None,
-                &crate::context::EvaluationContext::default(),
-            )
+            .run(&frame.batch(), &mut out, None, &Workload::context())
             .expect("run");
         for (r, row) in rows.iter().enumerate() {
             if out.faults().get(r) {
@@ -478,12 +468,7 @@ fn outputs_move_out() {
     );
     let mut out = case.program.outputs();
     case.program
-        .run(
-            &frame.batch(),
-            &mut out,
-            None,
-            &crate::context::EvaluationContext::default(),
-        )
+        .run(&frame.batch(), &mut out, None, &Workload::context())
         .expect("run");
     let (mant, scale, valid) = out.slot_mut(0).and_then(|s| s.take_num()).expect("num");
     assert_eq!((mant[0], scale[0], valid[0] & 1), (2, 0, 1));
@@ -491,12 +476,7 @@ fn outputs_move_out() {
     let (bits, _) = out.slot_mut(1).and_then(|s| s.take_bool()).expect("bool");
     assert_eq!(bits[0] & 1, 0);
     case.program
-        .run(
-            &frame.batch(),
-            &mut out,
-            None,
-            &crate::context::EvaluationContext::default(),
-        )
+        .run(&frame.batch(), &mut out, None, &Workload::context())
         .expect("rerun");
     assert_eq!(out.slots()[0].num(0), Some(Dec::int(2)));
 }
@@ -555,12 +535,7 @@ fn rules_fault_strictly() {
             let frame = Frame::new(&hir, &spec, &rows, 0);
             let mut out = program.outputs();
             program
-                .run(
-                    &frame.batch(),
-                    &mut out,
-                    None,
-                    &crate::context::EvaluationContext::default(),
-                )
+                .run(&frame.batch(), &mut out, None, &Workload::context())
                 .expect("run");
             let got: Vec<String> = (0..rows.len())
                 .map(|r| {
@@ -613,12 +588,7 @@ fn programs_share_across_threads() {
                     let frame = Frame::new(hir, spec, chunk, 0);
                     let mut out = program.outputs();
                     program
-                        .run(
-                            &frame.batch(),
-                            &mut out,
-                            None,
-                            &crate::context::EvaluationContext::default(),
-                        )
+                        .run(&frame.batch(), &mut out, None, &Workload::context())
                         .expect("run");
                     for r in (0..chunk.len()).filter(|r| !out.faults().get(*r)) {
                         let got: Vec<Val> = out
@@ -703,12 +673,7 @@ fn wide_lanes_stay_exact() {
     let frame = Frame::new(&case.hir, &case.workload.spec, &rows, 0);
     let mut out = case.program.outputs();
     case.program
-        .run(
-            &frame.batch(),
-            &mut out,
-            None,
-            &crate::context::EvaluationContext::default(),
-        )
+        .run(&frame.batch(), &mut out, None, &Workload::context())
         .expect("run");
     assert!(!out.slots()[0].wide.is_empty());
     assert!(!out.slots()[2].wide.is_empty());

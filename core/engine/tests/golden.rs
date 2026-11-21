@@ -1,8 +1,8 @@
-mod compiled_default;
 #[allow(dead_code)]
 mod conformance;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 #[allow(dead_code)]
 #[path = "support/policies.rs"]
 mod policies;
@@ -13,6 +13,7 @@ mod support;
 use conformance::run::{GraphRun, Guard, PolicyRun};
 use conformance::{Dialect, Mode, Spec, Suite};
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use policies::{Anchor, Generated, PolicyCase};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -148,7 +149,7 @@ impl Graphs {
         EvaluationOptions {
             trace: zen_engine::trace::TraceFormat::Legacy,
             max_depth: 10,
-            ..Default::default()
+            ..crate::support::Clock::options()
         }
     }
 
@@ -159,7 +160,11 @@ impl Graphs {
         input: &Variable,
         traced: bool,
     ) {
-        let plain = Outcome::graph(&walker.evaluate(input.depth_clone(64)).await);
+        let plain = Outcome::graph(
+            &walker
+                .evaluate_with_opts(input.depth_clone(64), crate::support::Clock::options())
+                .await,
+        );
         let entry = Entry::new(id, &[], input, plain);
         let entry = match traced {
             true => {
@@ -187,7 +192,11 @@ impl Graphs {
         let Some(entry) = check.entry(golden, &key) else {
             return;
         };
-        let plain = Outcome::graph(&decision.evaluate(input.depth_clone(64)).await);
+        let plain = Outcome::graph(
+            &decision
+                .evaluate_with_opts(input.depth_clone(64), crate::support::Clock::options())
+                .await,
+        );
         check.same(
             &key,
             Mode::Single,
@@ -217,7 +226,7 @@ impl Graphs {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = decision
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             let mut written = String::new();
             let ends = output.write_rows(&mut written);
@@ -268,7 +277,7 @@ impl Graphs {
             .map(|input| Canon::key(id, &[], input))
             .collect();
         let results = decision
-            .evaluate_batch(inputs, EvaluationOptions::default())
+            .evaluate_batch(inputs, crate::support::Clock::options())
             .await;
         for (key, result) in keys.into_iter().zip(&results) {
             if let Some(entry) = check.entry(golden, &key) {
@@ -310,7 +319,7 @@ impl Modes {
             let options = EvaluationSerializedOptions {
                 trace: mode,
                 max_depth: 10,
-                ..Default::default()
+                ..crate::support::Clock::options()
             };
             let reference = false;
             let want = Canon::mode(
@@ -405,7 +414,10 @@ impl Policies {
             Mode::Single,
             "single",
             &entry.plain,
-            &Outcome::policy(ws.evaluate(&Self::request(path, input, goals, false))),
+            &Outcome::policy(ws.evaluate_pinned(
+                &Self::request(path, input, goals, false),
+                &crate::support::Clock::options(),
+            )),
         );
         if let Some(traced) = &entry.traced {
             check.same(
@@ -413,7 +425,10 @@ impl Policies {
                 Mode::Traced,
                 "traced",
                 traced,
-                &Outcome::policy_traced(ws.evaluate(&Self::request(path, input, goals, true))),
+                &Outcome::policy_traced(ws.evaluate_pinned(
+                    &Self::request(path, input, goals, true),
+                    &crate::support::Clock::options(),
+                )),
             );
         }
         if let Some(enhanced) = &entry.enhanced {
@@ -422,9 +437,10 @@ impl Policies {
                 Mode::Traced,
                 "enhanced",
                 enhanced,
-                &Outcome::policy_traced(
-                    ws.enhance_trace(&Self::request(path, input, goals, false)),
-                ),
+                &Outcome::policy_traced(ws.enhance_trace_pinned(
+                    &Self::request(path, input, goals, false),
+                    &crate::support::Clock::options(),
+                )),
             );
         }
     }
@@ -441,7 +457,10 @@ impl Policies {
             .iter()
             .map(|(input, goals)| Self::request(path, input, goals, false))
             .collect();
-        for ((input, goals), result) in requests.iter().zip(ws.evaluate_batch(&batch)) {
+        for ((input, goals), result) in requests
+            .iter()
+            .zip(ws.evaluate_batch_pinned(&batch, &crate::support::Clock::options()))
+        {
             let key = Canon::key(id, goals, input);
             if let Some(entry) = check.entry(golden, &key) {
                 check.same(
@@ -467,7 +486,12 @@ impl Policies {
         let targets: Vec<Arc<str>> = goals.iter().map(|g| Arc::from(g.as_str())).collect();
         for (built, structs) in builds {
             Rows::with(built, *structs, |columns| {
-                let output = ws.evaluate_columns(&Arc::from(path), &targets, columns);
+                let output = ws.evaluate_columns_pinned(
+                    &Arc::from(path),
+                    &targets,
+                    columns,
+                    &crate::support::Clock::options(),
+                );
                 for row in 0..columns.rows {
                     let input = columns.row(row);
                     let key = Canon::key(id, goals, &input);
@@ -934,7 +958,7 @@ impl Corpus {
     }
 
     fn compiled(fixture: &Fixture) -> Decision {
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         compiled
     }
@@ -942,7 +966,9 @@ impl Corpus {
     async fn graph_fixtures(golden: &mut Golden) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
-            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+            let walker = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .interpreted();
             for input in Self::fixture_inputs(&fixture) {
                 Graphs::record(
                     golden,
@@ -1023,9 +1049,11 @@ impl Corpus {
     async fn modes_graph_fixtures(live: &Golden, check: &mut Check) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures().into_iter().filter(|f| !Self::slow(f)) {
-            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+            let walker = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .interpreted();
             let compiled = Self::compiled(&fixture);
-            let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
+            let uncompiled = Decision::from(Arc::new(fixture.content.clone())).latest();
             let inputs = Self::fixture_inputs(&fixture);
             check.collected(&fixture.name, &inputs);
             for input in inputs {
@@ -1124,7 +1152,11 @@ impl Corpus {
                             {
                                 let engine = Outcome::graph(
                                     &run.engine
-                                        .evaluate(GraphRun::MAIN, case.input.depth_clone(64))
+                                        .evaluate_with_opts(
+                                            GraphRun::MAIN,
+                                            case.input.depth_clone(64),
+                                            crate::support::Clock::options(),
+                                        )
                                         .await,
                                 );
                                 check.same(&key, Mode::Engine, "engine", &entry.plain, &engine);
@@ -1199,10 +1231,11 @@ impl Corpus {
                             .is_none_or(|e| !e.covers(Mode::Engine))
                     {
                         if let Some(entry) = check.entry(golden, &key) {
-                            let engine = match Guard::block(
-                                run.engine
-                                    .evaluate(PolicyRun::MAIN, case.input.depth_clone(64)),
-                            ) {
+                            let engine = match Guard::block(run.engine.evaluate_with_opts(
+                                PolicyRun::MAIN,
+                                case.input.depth_clone(64),
+                                crate::support::Clock::options(),
+                            )) {
                                 Ok(response) => Outcome::Ok(Canon::variable(&response.result)),
                                 Err(error) => match *error {
                                     EvaluationError::Policy(error) => Outcome::policy(Err(error)),
@@ -1383,7 +1416,7 @@ impl Corpus {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
             let compiled = Self::compiled(&fixture);
-            let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
+            let uncompiled = Decision::from(Arc::new(fixture.content.clone())).latest();
             let inputs = Self::fixture_inputs(&fixture);
             check.collected(&fixture.name, &inputs);
             for input in &inputs {

@@ -199,7 +199,7 @@ fn v1_function_nodes_read_the_zone_of_the_context() {
 }
 
 #[test]
-fn the_interpreted_engine_ignores_pinning() {
+fn the_interpreted_engine_pins_only_the_expression_clock() {
     let v2 = functions();
     let v1 = graph(json!({
         "id": "calc", "name": "calc", "type": "functionNode",
@@ -207,10 +207,12 @@ fn the_interpreted_engine_ignores_pinning() {
     }));
     let zone = zoned_function().interpreted();
     let d = expressions().interpreted();
+    let pinned_millis = parse_instant(NOW).unwrap().timestamp_millis();
     for trace in [TraceFormat::V1, TraceFormat::Legacy, TraceFormat::Off] {
         let (a, doc) = evaluated(&d, 4, options(trace, NOW, 99));
         let (b, _) = evaluated(&d, 4, options(trace, NOW, 99));
-        assert!(real_clock(&a["t"]), "{a}");
+        assert_eq!(a["t"], json!(pinned_millis), "{a}");
+        assert_eq!(a["t"], b["t"]);
         assert_ne!((&a["r"], &a["s"]), (&b["r"], &b["s"]));
         if let Some(doc) = doc {
             assert!(doc.get("version").is_none(), "{doc}");
@@ -244,7 +246,8 @@ fn the_interpreted_engine_ignores_pinning() {
     };
     let (a, doc) = run(options(TraceFormat::V1, NOW, 12));
     let (b, _) = run(options(TraceFormat::V1, NOW, 12));
-    assert!(real_clock(&a["customer"]["at"]), "{a}");
+    assert_eq!(a["customer"]["at"], b["customer"]["at"], "{a}");
+    assert!(!real_clock(&a["customer"]["at"]), "{a}");
     assert_ne!(a["customer"]["lucky"], b["customer"]["lucky"]);
     let doc = doc.unwrap();
     assert!(doc.get("version").is_none(), "{doc}");

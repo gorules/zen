@@ -50,8 +50,25 @@ impl SpecCase {
         Spec::guard(|| self.run_stack(Spec::describe).map(Spec::settle))
     }
 
+    pub fn laned(&self) -> Result<Variable, String> {
+        Spec::guard(|| {
+            self.run_isolate(
+                Isolate::new().with_now(Spec::now()).with_lane(true),
+                Spec::describe,
+            )
+            .map(Spec::settle)
+        })
+    }
+
     fn run_stack(&self, render: impl Fn(&IsolateError) -> String) -> Result<Variable, String> {
-        let mut isolate = Isolate::new();
+        self.run_isolate(Isolate::new().with_now(Spec::now()), render)
+    }
+
+    fn run_isolate(
+        &self,
+        mut isolate: Isolate,
+        render: impl Fn(&IsolateError) -> String,
+    ) -> Result<Variable, String> {
         if let Some(input) = &self.input {
             isolate.set_environment(input.depth_clone(64));
         }
@@ -133,7 +150,19 @@ impl Spec {
             "TZ",
             std::env::var("SPEC_TZ").unwrap_or_else(|_| "UTC".to_string()),
         );
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z");
+    }
+
+    pub const CLOCK: &'static str = "2025-03-20T10:15:30Z";
+
+    pub fn now() -> Option<zen_expression::context::Instant> {
+        zen_expression::context::parse_instant(Self::CLOCK)
+    }
+
+    pub fn context() -> zen_expression::context::EvaluationContext {
+        zen_expression::context::EvaluationContext::new(zen_expression::context::Pinned {
+            now: Self::now(),
+            ..Default::default()
+        })
     }
 
     pub fn files() -> Vec<(ExpressionKind, PathBuf)> {

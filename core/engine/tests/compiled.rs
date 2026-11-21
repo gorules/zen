@@ -1,9 +1,10 @@
-mod compiled_default;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 mod support;
 
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use serde_json::json;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -129,8 +130,8 @@ async fn compiled_graphs_match_the_walker() {
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
-        let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())));
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())).latest());
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         let verdict = zen_engine::diagnostics::compiled_verdict(&compiled);
         let key = match &verdict {
@@ -144,18 +145,34 @@ async fn compiled_graphs_match_the_walker() {
         }
         let variants = fixture.variants();
         let contexts: Vec<Variable> = variants.iter().map(|v| Variable::from(v.clone())).collect();
-        let options = EvaluationOptions::default();
+        let options = crate::support::Clock::options();
         let batch = compiled.evaluate_batch(&contexts, options).await;
         for (i, input) in variants.iter().enumerate() {
             let context = Variable::from(input.clone());
             let want = reference
                 .graph(
                     || Canon::key(&fixture.name, &[], &context),
-                    || async { Outcome::of(walker.evaluate(Variable::from(input.clone())).await) },
+                    || async {
+                        Outcome::of(
+                            walker
+                                .evaluate_with_opts(
+                                    Variable::from(input.clone()),
+                                    crate::support::Clock::options(),
+                                )
+                                .await,
+                        )
+                    },
                     Outcome::recorded,
                 )
                 .await;
-            let single = Outcome::of(compiled.evaluate(Variable::from(input.clone())).await);
+            let single = Outcome::of(
+                compiled
+                    .evaluate_with_opts(
+                        Variable::from(input.clone()),
+                        crate::support::Clock::options(),
+                    )
+                    .await,
+            );
             let batched = batch.get(i).map(|r| match r {
                 Ok(r) => Ok(serde_json::to_string(&r.result).unwrap_or_default()),
                 Err(e) => Err(serde_json::to_value(&**e)
@@ -205,7 +222,7 @@ async fn compiled_graphs_match_the_walker() {
 #[tokio::test]
 #[ignore]
 async fn compiled_graph_throughput() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let rows: usize = std::env::var("BENCH_ROWS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -225,7 +242,7 @@ async fn compiled_graph_throughput() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -238,7 +255,7 @@ async fn compiled_graph_throughput() {
         let contexts: Vec<Variable> = (0..rows)
             .map(|i| Variable::from(variants[i % variants.len()].clone()))
             .collect();
-        let options = EvaluationOptions::default();
+        let options = crate::support::Clock::options();
         if let Ok(seconds) = std::env::var("BENCH_PROFILE") {
             let until = std::time::Instant::now()
                 + std::time::Duration::from_secs(seconds.parse().unwrap_or(5));
@@ -247,7 +264,9 @@ async fn compiled_graph_throughput() {
                 match single {
                     true => {
                         for c in &contexts {
-                            let _ = compiled.evaluate(c.clone()).await;
+                            let _ = compiled
+                                .evaluate_with_opts(c.clone(), crate::support::Clock::options())
+                                .await;
                         }
                     }
                     false => {
@@ -262,12 +281,16 @@ async fn compiled_graph_throughput() {
         for _ in 0..5 {
             let start = std::time::Instant::now();
             for c in &contexts {
-                let _ = walker.evaluate(c.clone()).await;
+                let _ = walker
+                    .evaluate_with_opts(c.clone(), crate::support::Clock::options())
+                    .await;
             }
             best[0] = best[0].min(time(start.elapsed(), rows));
             let start = std::time::Instant::now();
             for c in &contexts {
-                let _ = compiled.evaluate(c.clone()).await;
+                let _ = compiled
+                    .evaluate_with_opts(c.clone(), crate::support::Clock::options())
+                    .await;
             }
             best[1] = best[1].min(time(start.elapsed(), rows));
             let start = std::time::Instant::now();
@@ -315,7 +338,7 @@ async fn columnar_graphs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -342,7 +365,7 @@ async fn columnar_graphs_match_the_walker() {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = compiled
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             for row in 0..built.rows {
                 let input = columns.row(row);
@@ -350,7 +373,10 @@ async fn columnar_graphs_match_the_walker() {
                     .graph(
                         || Canon::key(&fixture.name, &[], &input),
                         || async {
-                            match walker.evaluate(input.clone()).await {
+                            match walker
+                                .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+                                .await
+                            {
                                 Ok(r) => Ok(Built::normalized(r.result.to_value())),
                                 Err(e) => Err(serde_json::to_value(&*e)
                                     .map(|v| v.to_string())
@@ -410,7 +436,7 @@ async fn struct_inputs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -499,11 +525,14 @@ async fn struct_inputs_match_the_walker() {
             ),
         );
         let output = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         for row in 0..rows.len() {
             let input = columns.row(row);
-            let want = match walker.evaluate(input.clone()).await {
+            let want = match walker
+                .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+                .await
+            {
                 Ok(r) => Ok(Built::normalized(r.result.to_value())),
                 Err(e) => Err(serde_json::to_value(&*e)
                     .map(|v| v.to_string())
@@ -563,7 +592,7 @@ async fn columnar_tables_match_coded_nulls_against_null_cells() {
             ]
         }))
         .expect("graph");
-        let mut decision = Decision::from(Arc::new(content));
+        let mut decision = Decision::from(Arc::new(content)).latest();
         decision.compile();
         decision
     };
@@ -587,7 +616,7 @@ async fn columnar_tables_match_coded_nulls_against_null_cells() {
     let want = ["other", "null", "other", "null", "other"];
     for (label, decision) in [("dispatched", &dispatched), ("generic", &generic)] {
         let output = decision
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         for (row, want) in want.iter().enumerate() {
             assert!(
@@ -610,14 +639,14 @@ async fn columnar_function_rows_time_out_independently() {
         .into_iter()
         .find(|f| f.name == "infinite-function.json")
         .expect("fixture");
-    let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+    let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
     compiled.compile();
     let rows: Vec<Value> = (0..3).map(|i| serde_json::json!({ "row": i })).collect();
     let built = Built::new(&rows).expect("columns");
     let columns = built.columns();
     let started = std::time::Instant::now();
     let output = compiled
-        .evaluate_columns(&columns, EvaluationOptions::default())
+        .evaluate_columns(&columns, crate::support::Clock::options())
         .await;
     let elapsed = started.elapsed();
     let messages: Vec<String> = output
@@ -693,13 +722,16 @@ impl FunctionNode {
         let columns = built.columns();
         let mut failures = Vec::new();
         for content in contents {
-            let mut compiled = Decision::from(FunctionNode::graph(content.clone()));
+            let mut compiled = Decision::from(FunctionNode::graph(content.clone())).latest();
             compiled.compile();
             let output = compiled
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             for row in 0..rows.len() {
-                let want = match compiled.evaluate(columns.row(row)).await {
+                let want = match compiled
+                    .evaluate_with_opts(columns.row(row), crate::support::Clock::options())
+                    .await
+                {
                     Ok(r) => Ok(Built::normalized(r.result.to_value())),
                     Err(e) => Err(serde_json::to_value(&*e)
                         .map(|v| v.to_string())
@@ -774,7 +806,7 @@ async fn columnar_function_v1_inputs_match_literals() {
 
 #[tokio::test]
 async fn columnar_function_v1_batches_match_rows() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let rows = FunctionNode::rows(12);
     let contents: Vec<Value> = FunctionNode::V1
         .iter()
@@ -797,7 +829,7 @@ async fn columnar_function_v1_batches_match_rows() {
 #[tokio::test]
 #[ignore]
 async fn columnar_graph_throughput() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let rows: usize = std::env::var("BENCH_ROWS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -815,7 +847,7 @@ async fn columnar_graph_throughput() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         if loader {
             compiled = compiled.with_loader(Arc::new(support::create_fs_loader()));
         }
@@ -851,7 +883,7 @@ async fn columnar_graph_throughput() {
         let structs = built.structs(&fields);
         let columns = built.columns_with(&structs);
         let contexts: Vec<Variable> = (0..rows).map(|r| columns.row(r)).collect();
-        let options = EvaluationOptions::default();
+        let options = crate::support::Clock::options();
         if let Ok(seconds) = std::env::var("BENCH_PROFILE") {
             let until = std::time::Instant::now()
                 + std::time::Duration::from_secs(seconds.parse().unwrap_or(5));
@@ -869,7 +901,9 @@ async fn columnar_graph_throughput() {
             if call < 5 {
                 let start = std::time::Instant::now();
                 for c in contexts.iter().take(256) {
-                    let _ = walker.evaluate(c.clone()).await;
+                    let _ = walker
+                        .evaluate_with_opts(c.clone(), crate::support::Clock::options())
+                        .await;
                 }
                 best[0] = best[0].min(start.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             }
@@ -931,7 +965,7 @@ impl Latency {
 #[tokio::test]
 #[ignore]
 async fn single_row_latency() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", Outcome::CLOCK);
+    crate::support::Clock::set(Outcome::CLOCK);
     let reps: usize = std::env::var("BENCH_REPS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -940,7 +974,7 @@ async fn single_row_latency() {
     let traced = EvaluationOptions {
         trace: zen_engine::trace::TraceFormat::Legacy,
         max_depth: 10,
-        ..Default::default()
+        ..crate::support::Clock::options()
     };
     let mut columns: [Vec<f64>; 5] = Default::default();
     println!(
@@ -957,7 +991,7 @@ async fn single_row_latency() {
             continue;
         }
         let content = Arc::new(fixture.content.clone());
-        let mut compiled = Decision::from(content.clone());
+        let mut compiled = Decision::from(content.clone()).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -975,12 +1009,25 @@ async fn single_row_latency() {
         let times = [
             Latency::measure(&contexts, reps, |c| {
                 let compiled = &compiled;
-                async move { drop(compiled.evaluate(c).await) }
+                async move {
+                    drop(
+                        compiled
+                            .evaluate_with_opts(c, crate::support::Clock::options())
+                            .await,
+                    )
+                }
             })
             .await,
             Latency::measure(&contexts, reps, |c| {
                 let content = content.clone();
-                async move { drop(Decision::from(content).evaluate(c).await) }
+                async move {
+                    drop(
+                        Decision::from(content)
+                            .latest()
+                            .evaluate_with_opts(c, crate::support::Clock::options())
+                            .await,
+                    )
+                }
             })
             .await,
             Latency::measure(&contexts, reps, |c| {
@@ -990,7 +1037,13 @@ async fn single_row_latency() {
             .await,
             Latency::measure(&contexts, reps, |c| {
                 let walker = &walker;
-                async move { drop(walker.evaluate(c).await) }
+                async move {
+                    drop(
+                        walker
+                            .evaluate_with_opts(c, crate::support::Clock::options())
+                            .await,
+                    )
+                }
             })
             .await,
             Latency::measure(&contexts, reps, |c| {
@@ -1217,7 +1270,7 @@ impl Wide {
 #[tokio::test]
 #[ignore]
 async fn wide_inputs_match_the_walker() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let rows: usize = std::env::var("WIDE_ROWS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -1234,7 +1287,7 @@ async fn wide_inputs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -1246,12 +1299,19 @@ async fn wide_inputs_match_the_walker() {
         let inputs = Wide::rows(&fixture, rows, Wide::seed(&fixture.name));
         let contexts: Vec<Variable> = inputs.iter().map(|v| Variable::from(v.clone())).collect();
         let batch = compiled
-            .evaluate_batch(&contexts, EvaluationOptions::default())
+            .evaluate_batch(&contexts, crate::support::Clock::options())
             .await;
         let mut wants = Vec::with_capacity(inputs.len());
         let mut batched = 0usize;
         for (i, input) in inputs.iter().enumerate() {
-            let want = Outcome::of(walker.evaluate(Variable::from(input.clone())).await);
+            let want = Outcome::of(
+                walker
+                    .evaluate_with_opts(
+                        Variable::from(input.clone()),
+                        crate::support::Clock::options(),
+                    )
+                    .await,
+            );
             let got = batch.get(i).map(|r| match r {
                 Ok(r) => Ok(serde_json::to_string(&r.result).unwrap_or_default()),
                 Err(e) => Err(serde_json::to_value(&**e)
@@ -1280,11 +1340,14 @@ async fn wide_inputs_match_the_walker() {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = compiled
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             for row in 0..built.rows {
                 let input = columns.row(row);
-                let want = match walker.evaluate(input.clone()).await {
+                let want = match walker
+                    .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+                    .await
+                {
                     Ok(r) => Ok(Built::normalized(r.result.to_value())),
                     Err(e) => Err(serde_json::to_value(&*e)
                         .map(|v| v.to_string())
@@ -1364,7 +1427,7 @@ async fn plan_census() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         let variants = match std::env::var("BENCH_VALID").is_ok() && !fixture.inputs.is_empty() {
             true => fixture.inputs.clone(),
@@ -1388,12 +1451,12 @@ async fn plan_census() {
         };
         let columns = built.columns();
         let _ = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         let _ = zen_engine::diagnostics::census();
         let start = std::time::Instant::now();
         let _ = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         println!(
             "CENSUS\t{}\ttotal\t1\t{}\t{}",
@@ -1494,7 +1557,7 @@ impl Chain {
         rows: &[Value],
         failures: &mut Vec<String>,
     ) -> (usize, usize) {
-        let mut compiled = Decision::from(Arc::new(content));
+        let mut compiled = Decision::from(Arc::new(content)).latest();
         compiled.compile();
         assert!(
             matches!(
@@ -1508,11 +1571,14 @@ impl Chain {
         let built = Built::new(rows).expect("columns");
         let columns = built.columns();
         let output = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         for row in 0..built.rows {
             let input = columns.row(row);
-            let want = match walker.evaluate(input.clone()).await {
+            let want = match walker
+                .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+                .await
+            {
                 Ok(r) => Ok(Built::normalized(r.result.to_value()).to_string()),
                 Err(e) => Err(serde_json::to_value(&*e)
                     .map(|v| v.to_string())

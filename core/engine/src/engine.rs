@@ -95,7 +95,7 @@ impl Default for DecisionEngine {
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
             caches: Default::default(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -108,7 +108,7 @@ impl DecisionEngine {
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
             caches: Default::default(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 
@@ -196,17 +196,11 @@ impl DecisionEngine {
                 .evaluate_pinned(&self.parts(), key_str, context, options)
                 .await?;
         }
-        if self.engine.scopes() {
-            return crate::compiled::Engine::interpreting(
-                self.evaluate_with_opts(key_str, context, options),
-            )
-            .await;
-        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace.is_on())
+                        .evaluate_entry(key_str, context, options.trace.is_on(), options.now)
                         .map(DecisionGraphResponse::from)
                         .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                     CompiledEntry::Graph(graph) => {
@@ -252,19 +246,18 @@ impl DecisionEngine {
                 .evaluate_serialized_pinned(&self.parts(), key_str, context, options)
                 .await;
         }
-        if self.engine.scopes() {
-            return crate::compiled::Engine::interpreting(
-                self.evaluate_serialized(key_str, context, options),
-            )
-            .await;
-        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 match entry {
                     CompiledEntry::Policy(artifact) => {
                         return DecisionGraphResponse::serialized(
                             artifact
-                                .evaluate_entry(key_str, context, options.trace.is_on())
+                                .evaluate_entry(
+                                    key_str,
+                                    context,
+                                    options.trace.is_on(),
+                                    options.now,
+                                )
                                 .map(DecisionGraphResponse::from)
                                 .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                         );
@@ -314,6 +307,19 @@ impl DecisionEngine {
         self.caches
             .evaluate_batch_pinned(&self.parts(), key.as_ref(), contexts, options)
             .await
+    }
+
+    pub fn with_version(mut self, version: crate::EngineVersion) -> Self {
+        self.engine = version.into();
+        self
+    }
+
+    pub fn set_version(&mut self, version: crate::EngineVersion) {
+        self.engine = version.into();
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
     }
 
     #[doc(hidden)]

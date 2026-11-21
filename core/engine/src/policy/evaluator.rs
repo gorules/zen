@@ -41,7 +41,11 @@ pub(crate) struct EvalArtifact {
 }
 
 impl Db {
-    pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
+    pub fn evaluate_at(
+        &self,
+        req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
+    ) -> Result<EvaluationResult, EvaluationError> {
         if self.is_graph(&req.policy_path) {
             return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
         }
@@ -49,12 +53,14 @@ impl Db {
             return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
         }
         self.check_imports_resolved(&req.policy_path)?;
-        self.eval_artifact(&req.policy_path).evaluate(req, false)
+        self.eval_artifact(&req.policy_path)
+            .evaluate(req, false, now)
     }
 
     pub fn enhance_trace(
         &self,
         req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
     ) -> Result<EvaluationResult, EvaluationError> {
         if self.is_graph(&req.policy_path) {
             return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
@@ -65,7 +71,8 @@ impl Db {
         self.check_imports_resolved(&req.policy_path)?;
         let mut req = req.clone();
         req.trace = true;
-        self.eval_artifact(&req.policy_path).evaluate(&req, true)
+        self.eval_artifact(&req.policy_path)
+            .evaluate(&req, true, now)
     }
 
     fn check_imports_resolved(&self, entry: &Arc<str>) -> Result<(), EvaluationError> {
@@ -99,6 +106,7 @@ impl EvalArtifact {
         key: &str,
         input: Variable,
         trace: bool,
+        now: Option<zen_expression::context::Instant>,
     ) -> Result<EvaluationResult, EvaluationError> {
         let request = EvaluateRequest {
             policy_path: Arc::from(key),
@@ -106,13 +114,14 @@ impl EvalArtifact {
             goals: Vec::new(),
             trace,
         };
-        self.evaluate(&request, false)
+        self.evaluate(&request, false, now)
     }
 
     pub(crate) fn evaluate(
         &self,
         req: &EvaluateRequest,
         extras: bool,
+        now: Option<zen_expression::context::Instant>,
     ) -> Result<EvaluationResult, EvaluationError> {
         let start = Instant::now();
 
@@ -138,7 +147,7 @@ impl EvalArtifact {
         } else {
             req.goals.clone()
         };
-        let mut driver = Driver::new(self, &store, &req.policy_path, req.trace, extras);
+        let mut driver = Driver::new(self, &store, &req.policy_path, req.trace, extras, now);
         let outcome = roots.iter().try_for_each(|root| driver.demand(root));
 
         let trace = req.trace.then(|| Trace {
@@ -417,10 +426,13 @@ impl<'a> Driver<'a> {
         entry: &'a Arc<str>,
         trace: bool,
         extras: bool,
+        now: Option<zen_expression::context::Instant>,
     ) -> Self {
         Self {
             isolate: Rc::new(RefCell::new(
-                Isolate::new().with_cache(Some(artifact.opcode_cache.clone())),
+                Isolate::new()
+                    .with_cache(Some(artifact.opcode_cache.clone()))
+                    .with_now(now),
             )),
             artifact,
             store,

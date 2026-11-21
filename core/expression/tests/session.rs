@@ -191,8 +191,10 @@ struct Pair<'r> {
 impl<'r> Pair<'r> {
     fn new(report: &'r mut Report, label: &str, programs: Option<Arc<Programs>>) -> Self {
         Self {
-            isolate: Isolate::new(),
-            session: Session::new().with_programs(programs),
+            isolate: Isolate::new().with_now(conformance::Spec::now()),
+            session: Session::new()
+                .with_context(conformance::Spec::context())
+                .with_programs(programs),
             report,
             label: label.to_string(),
         }
@@ -650,6 +652,7 @@ fn session_programs_are_shared_across_threads() {
             let programs = programs.clone();
             std::thread::spawn(move || {
                 let mut session = Session::with_environment(Variable::from(json!({"a": i})))
+                    .with_context(conformance::Spec::context())
                     .with_programs(Some(programs));
                 let value = session.run_standard("a + 1").map(|v| v.to_value());
                 let _ = session.set_reference_value(Variable::from(json!(i)));
@@ -694,7 +697,7 @@ fn session_compile_errors_match_isolate_exactly() {
     ];
     let mut failures = Vec::new();
     for (source, kind) in sources {
-        let mut isolate = Isolate::new();
+        let mut isolate = Isolate::new().with_now(conformance::Spec::now());
         let want = match kind {
             ExpressionKind::Standard => isolate.compile_standard(source).map(|_| ()),
             ExpressionKind::Unary => isolate.compile_unary(source).map(|_| ()),
@@ -817,8 +820,10 @@ fn session_shares_rc_like_isolate() {
     let mut rows = Vec::new();
     let mut differences = Vec::new();
     for (name, source) in cases {
-        let mut isolate = Isolate::with_environment(env.deep_clone());
-        let mut session = Session::with_environment(env.deep_clone());
+        let mut isolate =
+            Isolate::with_environment(env.deep_clone()).with_now(conformance::Spec::now());
+        let mut session =
+            Session::with_environment(env.deep_clone()).with_context(conformance::Spec::context());
         isolate.set_local(Variable::nodes_key(), nodes.deep_clone());
         session.set_local(Variable::nodes_key(), nodes.deep_clone());
         isolate

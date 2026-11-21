@@ -23,6 +23,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) compiled_cache: Option<Arc<OpcodeCache>>,
     pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
+    pub(crate) now: Option<zen_expression::context::Instant>,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -37,6 +38,7 @@ impl Default for NodeHandlerExtensions {
             stripped_functions: None,
             dt_indexes: None,
             http_handler: None,
+            now: None,
         }
     }
 }

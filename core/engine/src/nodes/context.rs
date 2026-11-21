@@ -330,8 +330,9 @@ pub(crate) fn make_isolate(
     nodes: Option<&Variable>,
     extensions: &NodeHandlerExtensions,
 ) -> Isolate {
-    let mut isolate =
-        Isolate::with_environment(input.clone()).with_cache(extensions.compiled_cache.clone());
+    let mut isolate = Isolate::with_environment(input.clone())
+        .with_cache(extensions.compiled_cache.clone())
+        .with_now(extensions.now);
     if let Some(nodes) = nodes {
         isolate.set_local(Variable::nodes_key(), nodes.clone());
     }

@@ -8,15 +8,14 @@ use flate2::Compression;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::atomic::Ordering;
 use zen_engine::trace::TraceFormat;
-use zen_engine::{DecisionGraphResponse, EvaluationError, EvaluationOptions, ZEN_CONFIG};
+use zen_engine::{DecisionGraphResponse, EngineVersion, EvaluationError, EvaluationOptions};
 
 fn options(format: TraceFormat) -> EvaluationOptions {
     EvaluationOptions {
         trace: format,
         max_depth: 10,
-        ..Default::default()
+        ..crate::support::Clock::options()
     }
 }
 
@@ -83,18 +82,10 @@ fn policy(
     })
 }
 
-fn serial_tests() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    Spec::prepare();
-    guard
-}
-
-fn engines(compiled: bool) -> &'static str {
-    ZEN_CONFIG.compiled.store(compiled, Ordering::Relaxed);
+fn engines(compiled: bool) -> (EngineVersion, &'static str) {
     match compiled {
-        true => "compiled",
-        false => "interpreted",
+        true => (EngineVersion::V2, "compiled"),
+        false => (EngineVersion::V1, "interpreted"),
     }
 }
 
@@ -149,12 +140,13 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
     let traced = options(format);
     let (suites, _) = Spec::suites(Dialect::Graph);
     for suite in &suites {
-        let Ok(run) = GraphRun::new(suite) else {
+        let Ok(mut run) = GraphRun::new(suite) else {
             continue;
         };
         let id = suite.id();
         for flag in [false, true] {
-            let engine = engines(flag);
+            let (version, engine) = engines(flag);
+            run.version(version);
             for (case, c) in suite.cases.iter().enumerate() {
                 let input = || c.input.depth_clone(64);
                 let mut push = |variant: String, outcome: Value| {
@@ -204,7 +196,7 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 );
             }
         }
-        engines(false);
+        run.version(EngineVersion::V1);
         let inputs: Vec<_> = suite
             .cases
             .iter()
@@ -228,7 +220,7 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
     }
     let (suites, _) = Spec::suites(Dialect::Policy);
     for suite in &suites {
-        let Ok(run) = PolicyRun::new(suite) else {
+        let Ok(mut run) = PolicyRun::new(suite) else {
             continue;
         };
         let id = suite.id();
@@ -239,7 +231,8 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
             req
         };
         for flag in [false, true] {
-            let engine = engines(flag);
+            let (version, engine) = engines(flag);
+            run.version(version);
             for (case, c) in suite.cases.iter().enumerate() {
                 let mut push = |variant: String, outcome: Value| {
                     sink(Run {
@@ -254,7 +247,10 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 };
                 push(
                     format!("{engine} workspace"),
-                    policy(run.workspace.evaluate(&request(c))),
+                    policy(
+                        run.workspace
+                            .evaluate_pinned(&request(c), &crate::support::Clock::options()),
+                    ),
                 );
                 let mut enhanced = PolicyRun::request(c);
                 if format == TraceFormat::V1 {
@@ -262,7 +258,10 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 }
                 push(
                     format!("{engine} enhanced"),
-                    policy(run.workspace.enhance_trace(&enhanced)),
+                    policy(
+                        run.workspace
+                            .enhance_trace_pinned(&enhanced, &crate::support::Clock::options()),
+                    ),
                 );
                 if c.goals.is_empty() {
                     push(
@@ -284,11 +283,11 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 }
             }
         }
-        engines(false);
+        run.version(EngineVersion::V1);
         let requests: Vec<_> = suite.cases.iter().map(request).collect();
         for (case, result) in run
             .workspace
-            .evaluate_batch(&requests)
+            .evaluate_batch_pinned(&requests, &crate::support::Clock::options())
             .into_iter()
             .enumerate()
         {
@@ -363,7 +362,7 @@ fn parse(text: &str) -> Value {
 
 type Key = (String, String, usize, String);
 
-fn golden() -> HashMap<Key, Value> {
+fn golden() -> HashMap<Key, std::sync::Arc<Value>> {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/trace-base.jsonl.gz");
     let file = std::fs::File::open(path).unwrap();
@@ -375,6 +374,7 @@ fn golden() -> HashMap<Key, Value> {
         let kind = v["kind"].as_str().unwrap().to_string();
         let suite = v["suite"].as_str().unwrap().to_string();
         let case = v["case"].as_u64().unwrap() as usize;
+        let outcome = std::sync::Arc::new(v["outcome"].clone());
         for variant in v["variants"].as_array().unwrap() {
             out.insert(
                 (
@@ -383,7 +383,7 @@ fn golden() -> HashMap<Key, Value> {
                     case,
                     variant.as_str().unwrap().to_string(),
                 ),
-                v["outcome"].clone(),
+                outcome.clone(),
             );
         }
     }
@@ -561,7 +561,9 @@ fn compare(format: TraceFormat) {
                 "interpreted" | "compiled" => engine,
                 _ => "compiled",
             };
-            golden.get(&key(&format!("{engine} serialized")))
+            golden
+                .get(&key(&format!("{engine} serialized")))
+                .map(|v| &**v)
         });
         let interpreted = run.variant.starts_with("interpreted ");
         let got = match (format, interpreted) {
@@ -682,7 +684,7 @@ fn legacy_and_restored_v1() {
 
 #[test]
 fn legacy_traces_equal_restored_v1_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(legacy_and_restored_v1);
     }
@@ -699,7 +701,7 @@ fn big_stack(f: impl FnOnce() + Send + 'static) {
 
 #[test]
 fn legacy_traces_equal_the_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(|| compare(TraceFormat::Legacy));
     }
@@ -707,7 +709,7 @@ fn legacy_traces_equal_the_base_traces() {
 
 #[test]
 fn v1_restores_to_the_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(|| compare(TraceFormat::V1));
     }
@@ -715,7 +717,7 @@ fn v1_restores_to_the_base_traces() {
 
 #[test]
 fn capture_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if !cfg!(feature = "arbitrary_precision") {
         return;
     }
@@ -872,7 +874,7 @@ fn native_and_convert() {
 
 #[test]
 fn native_and_convert_restore_identically() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(native_and_convert);
 }
 
@@ -950,15 +952,15 @@ fn outcome_of(result: &Result<zen_engine::DecisionGraphResponse, Box<EvaluationE
 
 fn batch_rows() {
     Spec::prepare();
-    let previous = ZEN_CONFIG.compiled.swap(true, Ordering::Relaxed);
     let (suites, _) = Spec::suites(Dialect::Graph);
     let options = options(TraceFormat::V1);
     let (mut rows, mut equal, mut deviating, mut intermediate) = (0usize, 0usize, 0usize, 0usize);
     let mut failures: Vec<String> = Vec::new();
     for suite in &suites {
-        let Ok(run) = GraphRun::new(suite) else {
+        let Ok(mut run) = GraphRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V2);
         let inputs: Vec<_> = suite
             .cases
             .iter()
@@ -993,7 +995,6 @@ fn batch_rows() {
             }
         }
     }
-    ZEN_CONFIG.compiled.store(previous, Ordering::Relaxed);
     eprintln!(
         "batch rows re-evaluated for their facts: {:?}",
         zen_engine::trace::testing::reevaluations()
@@ -1020,7 +1021,7 @@ fn batch_rows() {
 
 #[test]
 fn batch_rows_equal_single_row_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(batch_rows);
 }
 
@@ -1175,7 +1176,6 @@ const COLUMNAR_INTERMEDIATE: [&str; 3] = [
 
 fn columnar_rows() {
     Spec::prepare();
-    let previous = ZEN_CONFIG.compiled.swap(true, Ordering::Relaxed);
     let (suites, _) = Spec::suites(Dialect::Graph);
     let options = options(TraceFormat::V1);
     let (mut rows, mut equal, mut deviating, mut intermediate, mut skipped) =
@@ -1183,9 +1183,10 @@ fn columnar_rows() {
     let (planned, batched) = zen_engine::trace::testing::columnar_traced();
     let mut failures: Vec<String> = Vec::new();
     for suite in &suites {
-        let Ok(run) = GraphRun::new(suite) else {
+        let Ok(mut run) = GraphRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V2);
         let inputs: Vec<Value> = suite.cases.iter().map(|c| c.input.to_value()).collect();
         let groups: Vec<(Built, Vec<usize>)> = match built(&inputs) {
             Some(all) => vec![(all, (0..inputs.len()).collect())],
@@ -1246,7 +1247,6 @@ fn columnar_rows() {
             }
         }
     }
-    ZEN_CONFIG.compiled.store(previous, Ordering::Relaxed);
     eprintln!(
         "columnar rows re-evaluated for their facts: {:?}",
         zen_engine::trace::testing::reevaluations()
@@ -1275,7 +1275,7 @@ fn columnar_rows() {
 
 #[test]
 fn columnar_rows_equal_single_row_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(columnar_rows);
 }
 
@@ -1299,14 +1299,18 @@ fn policy_native_and_convert() {
         )
     });
     for suite in &suites {
-        let Ok(run) = PolicyRun::new(suite) else {
+        let Ok(mut run) = PolicyRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V1);
         let documents = release(suite);
         for case in &suite.cases {
             let mut req = PolicyRun::request(case);
             req.trace = TraceFormat::Legacy;
-            let trace = match run.workspace.evaluate(&req) {
+            let trace = match run
+                .workspace
+                .evaluate_pinned(&req, &crate::support::Clock::options())
+            {
                 Ok(r) => r.trace.and_then(|t| t.into_legacy()),
                 Err(zen_engine::policy::EvaluationError::ExpressionFailed {
                     partial_trace,
@@ -1391,7 +1395,7 @@ fn policy_native_and_convert() {
 
 #[test]
 fn policy_native_and_convert_restore_identically() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(policy_native_and_convert);
     }
@@ -1647,27 +1651,30 @@ fn timing_stress(sets: u64) {
 
 #[test]
 fn v1_restores_loop_traces_with_any_timings() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(|| timing_stress(64));
 }
 
 #[test]
 fn trace_documents_move_across_threads() {
-    let _serial = serial_tests();
+    Spec::prepare();
     fn sendable<T: Send + Sync + 'static>() {}
     sendable::<zen_engine::trace::TraceDocument>();
     Spec::prepare();
-    engines(true);
     let (suites, _) = Spec::suites(Dialect::Policy);
     let mut moved = 0usize;
     for suite in suites.iter().take(40) {
-        let Ok(run) = PolicyRun::new(suite) else {
+        let Ok(mut run) = PolicyRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V2);
         for case in &suite.cases {
             let mut request = PolicyRun::request(case);
             request.trace = TraceFormat::V1;
-            let Ok(result) = run.workspace.evaluate(&request) else {
+            let Ok(result) = run
+                .workspace
+                .evaluate_pinned(&request, &crate::support::Clock::options())
+            else {
                 continue;
             };
             let Some(doc) = result.trace.as_ref().and_then(|t| t.as_v1()).cloned() else {
@@ -1682,7 +1689,6 @@ fn trace_documents_move_across_threads() {
             moved += 1;
         }
     }
-    engines(false);
     assert!(moved > 0);
 }
 
@@ -1748,12 +1754,12 @@ fn dump_all(dir: &str) {
     let mut interpreted = std::env::var("TRACE_DUMP_INTERPRETED")
         .is_ok()
         .then(|| file("interpreted.jsonl"));
-    let previous = ZEN_CONFIG.compiled.swap(true, Ordering::Relaxed);
     let (suites, _) = Spec::suites(Dialect::Graph);
     for suite in &suites {
-        let Ok(run) = GraphRun::new(suite) else {
+        let Ok(mut run) = GraphRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V2);
         let id = suite.id();
         for format in [TraceFormat::V1, TraceFormat::Legacy] {
             let traced = options(format);
@@ -1772,12 +1778,10 @@ fn dump_all(dir: &str) {
             }
             if format == TraceFormat::Legacy {
                 if let Some(interpreted) = interpreted.as_mut() {
-                    ZEN_CONFIG.compiled.store(false, Ordering::Relaxed);
+                    let old = run.uncompiled.with_version(EngineVersion::V1);
                     for (case, c) in suite.cases.iter().enumerate() {
-                        let result = Guard::block(
-                            run.uncompiled
-                                .evaluate_with_opts(c.input.depth_clone(64), traced),
-                        );
+                        let result =
+                            Guard::block(old.evaluate_with_opts(c.input.depth_clone(64), traced));
                         writeln!(
                             interpreted,
                             "{id} #{case} {name}\t{}",
@@ -1785,7 +1789,6 @@ fn dump_all(dir: &str) {
                         )
                         .unwrap();
                     }
-                    ZEN_CONFIG.compiled.store(true, Ordering::Relaxed);
                 }
             }
             let batch = Guard::block(run.compiled.evaluate_batch(&inputs, traced));
@@ -1827,9 +1830,10 @@ fn dump_all(dir: &str) {
     }
     let (suites, _) = Spec::suites(Dialect::Policy);
     for suite in &suites {
-        let Ok(run) = PolicyRun::new(suite) else {
+        let Ok(mut run) = PolicyRun::new(suite) else {
             continue;
         };
+        run.version(EngineVersion::V2);
         let id = suite.id();
         for format in [TraceFormat::V1, TraceFormat::Legacy] {
             let name = <&str>::from(format);
@@ -1839,7 +1843,10 @@ fn dump_all(dir: &str) {
                 req
             };
             for (case, c) in suite.cases.iter().enumerate() {
-                let out = policy_dump(run.workspace.evaluate(&request(c)));
+                let out = policy_dump(
+                    run.workspace
+                        .evaluate_pinned(&request(c), &crate::support::Clock::options()),
+                );
                 writeln!(policies, "{id} #{case} {name}\t{out}").unwrap();
                 if c.goals.is_empty() {
                     let result = Guard::block(run.engine.evaluate_with_opts(
@@ -1858,7 +1865,7 @@ fn dump_all(dir: &str) {
             let requests: Vec<_> = suite.cases.iter().map(request).collect();
             for (case, result) in run
                 .workspace
-                .evaluate_batch(&requests)
+                .evaluate_batch_pinned(&requests, &crate::support::Clock::options())
                 .into_iter()
                 .enumerate()
             {
@@ -1871,12 +1878,11 @@ fn dump_all(dir: &str) {
             }
         }
     }
-    ZEN_CONFIG.compiled.store(previous, Ordering::Relaxed);
 }
 
 #[test]
 fn dump_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if let Ok(dir) = std::env::var("TRACE_DUMP_ALL") {
         big_stack(move || dump_all(&dir));
     }

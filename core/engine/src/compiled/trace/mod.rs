@@ -402,71 +402,83 @@ impl Request {
     }
 }
 
-static MISSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Counters {
+    pub misses: usize,
+    pub columnar: usize,
+    pub rowwise: usize,
+    pub planned: usize,
+    pub batched: usize,
+    pub runs: usize,
+    pub reevaluated: std::collections::BTreeMap<&'static str, usize>,
+}
 
-static COLUMNAR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-static ROWWISE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+impl Counters {
+    pub fn add(&mut self, other: &Counters) {
+        self.misses += other.misses;
+        self.columnar += other.columnar;
+        self.rowwise += other.rowwise;
+        self.planned += other.planned;
+        self.batched += other.batched;
+        self.runs += other.runs;
+        for (reason, rows) in &other.reevaluated {
+            *self.reevaluated.entry(reason).or_default() += rows;
+        }
+    }
+}
 
 thread_local! {
-    static RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static COUNTERS: std::cell::RefCell<Counters> = std::cell::RefCell::new(Counters::default());
+}
+
+fn count(update: impl FnOnce(&mut Counters)) {
+    COUNTERS.with_borrow_mut(update);
+}
+
+#[doc(hidden)]
+pub fn counters() -> Counters {
+    COUNTERS.with_borrow(Clone::clone)
 }
 
 pub(crate) fn count_run() {
-    RUNS.set(RUNS.get() + 1);
+    count(|c| c.runs += 1);
 }
 
 #[doc(hidden)]
 pub fn graph_runs() -> usize {
-    RUNS.get()
+    COUNTERS.with_borrow(|c| c.runs)
 }
 
-static PLANNED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-static BATCHED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
 pub(crate) fn count_columnar(planned: bool, rows: usize) {
-    let counter = match planned {
-        true => &PLANNED,
-        false => &BATCHED,
-    };
-    counter.fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+    count(|c| match planned {
+        true => c.planned += rows,
+        false => c.batched += rows,
+    });
 }
 
 #[doc(hidden)]
 pub fn columnar_traced() -> (usize, usize) {
-    (
-        PLANNED.load(std::sync::atomic::Ordering::Relaxed),
-        BATCHED.load(std::sync::atomic::Ordering::Relaxed),
-    )
+    COUNTERS.with_borrow(|c| (c.planned, c.batched))
 }
 
 #[doc(hidden)]
 pub fn batch_writes() -> (usize, usize) {
-    (
-        COLUMNAR.load(std::sync::atomic::Ordering::Relaxed),
-        ROWWISE.load(std::sync::atomic::Ordering::Relaxed),
-    )
+    COUNTERS.with_borrow(|c| (c.columnar, c.rowwise))
 }
 
-static REEVALUATED: std::sync::Mutex<std::collections::BTreeMap<&'static str, usize>> =
-    std::sync::Mutex::new(std::collections::BTreeMap::new());
-
 pub(crate) fn reevaluated(reason: &'static str, rows: usize) {
-    if let Ok(mut counts) = REEVALUATED.lock() {
-        *counts.entry(reason).or_default() += rows;
-    }
+    count(|c| *c.reevaluated.entry(reason).or_default() += rows);
 }
 
 #[doc(hidden)]
 pub fn reevaluations() -> Vec<(&'static str, usize)> {
-    REEVALUATED
-        .lock()
-        .map(|counts| counts.iter().map(|(k, v)| (*k, *v)).collect())
-        .unwrap_or_default()
+    COUNTERS.with_borrow(|c| c.reevaluated.iter().map(|(k, v)| (*k, *v)).collect())
 }
 
 #[doc(hidden)]
 pub fn native_misses() -> usize {
-    MISSES.load(std::sync::atomic::Ordering::Relaxed)
+    COUNTERS.with_borrow(|c| c.misses)
 }
 
 pub(crate) fn written_at(
@@ -489,7 +501,7 @@ pub(crate) fn written_at(
     match v1::write::write(args) {
         Ok(output) => TraceDocument::from_output(output),
         Err(miss) => {
-            MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            count(|c| c.misses += 1);
             if std::env::var("ZEN_TRACE_NATIVE_DEBUG").is_ok_and(|v| v != "0") {
                 eprintln!("native trace fell back: {miss}");
             }
@@ -696,7 +708,7 @@ impl<'a> TraceBatch<'a> {
                 eprintln!("columnar fallback: {reason}");
             }
             out.truncate(mark);
-            ROWWISE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            count(|c| c.rowwise += 1);
             return false;
         }
         if verify() {
@@ -717,11 +729,11 @@ impl<'a> TraceBatch<'a> {
                     eprintln!("columnar trace row {row} differs: {}", &out[mark..]);
                 }
                 out.truncate(mark);
-                ROWWISE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                count(|c| c.rowwise += 1);
                 return false;
             }
         }
-        COLUMNAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        count(|c| c.columnar += 1);
         true
     }
 

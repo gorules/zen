@@ -151,7 +151,9 @@ pub mod columns {
 }
 
 pub use compiled::trace::api as trace;
-pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
+pub use compiled::{
+    ColumnarOutput, EngineVersion, OutputColumn, RecordsView, UnknownEngineVersion,
+};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use decision_graph::{

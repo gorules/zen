@@ -34,6 +34,7 @@ pub(crate) struct GraphWalker {
     visited_switch_nodes: Vec<NodeIndex>,
 
     nodes_in_context: bool,
+    pub(crate) now: Option<zen_expression::context::Instant>,
 }
 
 const ITER_MAX: usize = 1_000;
@@ -63,6 +64,7 @@ impl GraphWalker {
             iter: 0,
 
             nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
+            now: None,
         }
     }
 
@@ -168,7 +170,7 @@ impl GraphWalker {
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
                     let (input, input_trace) = self.incoming_node_data(g, nid);
-                    let mut isolate = Isolate::with_environment(input);
+                    let mut isolate = Isolate::with_environment(input).with_now(self.now);
                     if let Some(nodes) = self.nodes_context() {
                         isolate.set_local(Variable::nodes_key(), nodes);
                     }

@@ -100,10 +100,8 @@ pub(crate) fn date_time(str: &str, context: &EvaluationContext) -> VMResult<Naiv
 }
 
 pub(crate) fn time(str: &str, context: &EvaluationContext) -> VMResult<NaiveTime> {
-    let now = context.now();
-
     if str == "now" {
-        return Ok(now.naive_utc().time());
+        return Ok(context.now().naive_utc().time());
     }
 
     NaiveTime::parse_from_str(str, DATE_TIME)

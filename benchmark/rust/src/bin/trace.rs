@@ -8,7 +8,7 @@ use std::time::Instant;
 use zen_engine::columns::{Column, Columns, Values};
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions, MemoryLoader};
 use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationOptions, ZEN_CONFIG};
+use zen_engine::{DecisionEngine, EvaluationOptions};
 use zen_expression::Variable;
 
 struct Counting;
@@ -667,10 +667,10 @@ async fn main() {
     let manifest_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "../manifest.json".to_string());
-    ZEN_CONFIG.compiled.store(
-        std::env::var("BENCH_ENGINE").map_or(true, |e| e != "interpreted"),
-        Ordering::Relaxed,
-    );
+    let version = match std::env::var("BENCH_ENGINE").is_ok_and(|e| e == "interpreted") {
+        true => zen_engine::EngineVersion::V1,
+        false => zen_engine::EngineVersion::V2,
+    };
     let filter = std::env::var("TRACE_BENCH").ok();
     let small_iters: usize = std::env::var("SMALL_ITERS")
         .ok()
@@ -709,7 +709,8 @@ async fn main() {
             }
             DecisionEngine::default().with_loader(memory)
         }
-    };
+    }
+    .with_version(version);
     let mut scenarios: Vec<Scenario> = manifest
         .iter()
         .filter(|e| e.file.starts_with("graphs/") || e.file.starts_with("policies/"))
@@ -737,7 +738,9 @@ async fn main() {
             serde_json::from_value::<DecisionContent>(graph).unwrap(),
         );
     }
-    let big = DecisionEngine::default().with_loader(loader);
+    let big = DecisionEngine::default()
+        .with_loader(loader)
+        .with_version(version);
     scenarios.push(Scenario {
         name: "loops, 50 items".to_string(),
         engine: big.clone(),

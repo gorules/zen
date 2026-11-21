@@ -79,9 +79,6 @@ fn main_graph() -> Value {
 }
 
 fn engine() -> (DecisionEngine, Arc<Yielding>) {
-    zen_engine::ZEN_CONFIG
-        .compiled
-        .store(true, Ordering::Relaxed);
     let loader = Arc::new(Yielding::default());
     for (key, graph) in [("main", main_graph()), ("child", child())] {
         loader.memory.add(
@@ -90,7 +87,9 @@ fn engine() -> (DecisionEngine, Arc<Yielding>) {
         );
     }
     (
-        DecisionEngine::default().with_loader(loader.clone()),
+        DecisionEngine::default()
+            .with_version(zen_engine::EngineVersion::V2)
+            .with_loader(loader.clone()),
         loader,
     )
 }

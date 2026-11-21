@@ -57,7 +57,6 @@
 
 #![forbid(unsafe_code)]
 
-mod config;
 pub mod context;
 mod isolate;
 
@@ -78,7 +77,6 @@ pub mod validate;
 pub mod variable;
 pub mod vm;
 
-pub use config::{ZenExpressionConfig, ZEN_EXPRESSION_CONFIG};
 pub use dates::DateValue;
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,

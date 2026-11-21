@@ -1104,14 +1104,13 @@ impl Workload {
 
     const CLOCK: &'static str = "2025-03-20T10:15:30Z";
 
-    pub(crate) fn mock() {
-        static MOCK: std::sync::Once = std::sync::Once::new();
-        MOCK.call_once(|| std::env::set_var("__ZEN_MOCK_UTC_TIME", Self::CLOCK));
+    pub(crate) fn now() -> Option<crate::context::Instant> {
+        crate::context::parse_instant(Self::CLOCK)
     }
 
     pub(crate) fn context() -> crate::context::EvaluationContext {
         crate::context::EvaluationContext::new(crate::context::Pinned {
-            now: crate::context::parse_instant(Self::CLOCK),
+            now: Self::now(),
             ..Default::default()
         })
     }
@@ -1134,7 +1133,6 @@ impl Workload {
     }
 
     fn w14() -> Workload {
-        Self::mock();
         let rules = [
             ("< d('2000-01-01')", "'old'", "d('1999-12-31')"),
             (
@@ -1171,7 +1169,6 @@ impl Workload {
     }
 
     fn w15() -> Workload {
-        Self::mock();
         Workload {
             name: "W15",
             spec: Self::w14_spec(),
@@ -1185,7 +1182,6 @@ impl Workload {
     }
 
     fn w19() -> Workload {
-        Self::mock();
         Workload {
             name: "W19",
             spec: Self::w14_spec(),
@@ -1294,7 +1290,6 @@ impl Workload {
     }
 
     fn w18() -> Workload {
-        Self::mock();
         Workload {
             name: "W18",
             spec: Spec {
@@ -1391,7 +1386,6 @@ impl Workload {
     }
 
     fn w16() -> Workload {
-        Self::mock();
         Workload {
             name: "W16",
             spec: Self::w16_spec(),
@@ -1405,7 +1399,6 @@ impl Workload {
     }
 
     fn w17() -> Workload {
-        Self::mock();
         Workload {
             name: "W17",
             spec: Self::w16_spec(),

@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-mod compiled_default;
 mod conformance;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 #[path = "support/policies.rs"]
 mod policies;
 #[path = "support/policy_gen.rs"]
@@ -13,6 +13,7 @@ mod support;
 use conformance::run::{GraphRun, PolicyRun};
 use conformance::{Dialect, Spec};
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use policies::Anchor;
 use policy_gen::{Gen, Rng};
 use serde_json::{json, Value};
@@ -21,7 +22,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use support::columns::Built;
 use zen_engine::policy::{EvaluateRequest, PolicyWorkspace};
-use zen_engine::{Decision, DecisionEngine, EvaluationOptions};
+use zen_engine::{Decision, DecisionEngine};
 use zen_expression::Variable;
 
 struct Matrix {
@@ -138,25 +139,33 @@ impl Matrix {
         rt.block_on(async {
             for decision in [&job.walker, &job.compiled] {
                 for input in fresh().into_iter().take(2) {
-                    let _ = decision.evaluate(input).await;
+                    let _ = decision
+                        .evaluate_with_opts(input, crate::support::Clock::options())
+                        .await;
                 }
             }
             let _ = job
                 .compiled
-                .evaluate_batch(&fresh(), EvaluationOptions::default())
+                .evaluate_batch(&fresh(), crate::support::Clock::options())
                 .await;
         });
         let old = self.best(count, fresh, |inputs| {
             rt.block_on(async {
                 for input in inputs {
-                    let _ = job.walker.evaluate(input).await;
+                    let _ = job
+                        .walker
+                        .evaluate_with_opts(input, crate::support::Clock::options())
+                        .await;
                 }
             })
         });
         let single = self.best(count, fresh, |inputs| {
             rt.block_on(async {
                 for input in inputs {
-                    let _ = job.compiled.evaluate(input).await;
+                    let _ = job
+                        .compiled
+                        .evaluate_with_opts(input, crate::support::Clock::options())
+                        .await;
                 }
             })
         });
@@ -164,7 +173,9 @@ impl Matrix {
             Some((engine, key)) => self.best(count, fresh, |inputs| {
                 rt.block_on(async {
                     for input in inputs {
-                        let _ = engine.evaluate(key, input).await;
+                        let _ = engine
+                            .evaluate_with_opts(key, input, crate::support::Clock::options())
+                            .await;
                     }
                 })
             }),
@@ -174,7 +185,7 @@ impl Matrix {
             rt.block_on(async {
                 drop(
                     job.compiled
-                        .evaluate_batch(&inputs, EvaluationOptions::default())
+                        .evaluate_batch(&inputs, crate::support::Clock::options())
                         .await,
                 );
             })
@@ -185,14 +196,14 @@ impl Matrix {
             rt.block_on(async {
                 drop(
                     job.compiled
-                        .evaluate_columns(columns, EvaluationOptions::default())
+                        .evaluate_columns(columns, crate::support::Clock::options())
                         .await,
                 );
                 for _ in 0..reps {
                     let start = Instant::now();
                     drop(
                         job.compiled
-                            .evaluate_columns(columns, EvaluationOptions::default())
+                            .evaluate_columns(columns, crate::support::Clock::options())
                             .await,
                     );
                     columnar = columnar.min(start.elapsed().as_nanos() as f64 / count as f64);
@@ -207,7 +218,9 @@ impl Matrix {
                 let walker = job.cold.clone().interpreted();
                 rt.block_on(async {
                     for input in inputs {
-                        let _ = walker.evaluate(input).await;
+                        let _ = walker
+                            .evaluate_with_opts(input, crate::support::Clock::options())
+                            .await;
                     }
                 })
             },
@@ -219,7 +232,9 @@ impl Matrix {
                 let decision = job.cold.clone();
                 rt.block_on(async {
                     for input in inputs {
-                        let _ = decision.evaluate(input).await;
+                        let _ = decision
+                            .evaluate_with_opts(input, crate::support::Clock::options())
+                            .await;
                     }
                 })
             },
@@ -252,10 +267,10 @@ impl Matrix {
         };
         let ws = job.workspace;
         for request in requests().iter().take(2) {
-            let _ = ws.evaluate_with_driver(request);
-            let _ = ws.evaluate(request);
+            let _ = ws.evaluate_with_driver(request, crate::support::Clock::now());
+            let _ = ws.evaluate_pinned(request, &crate::support::Clock::options());
         }
-        drop(ws.evaluate_batch(&requests()));
+        drop(ws.evaluate_batch_pinned(&requests(), &crate::support::Clock::options()));
         let time = |run: &dyn Fn(Vec<EvaluateRequest>)| {
             let mut best = f64::INFINITY;
             for _ in 0..self.reps {
@@ -266,9 +281,19 @@ impl Matrix {
             }
             best
         };
-        let old = time(&|batch| batch.iter().for_each(|r| drop(ws.evaluate_with_driver(r))));
-        let single = time(&|batch| batch.iter().for_each(|r| drop(ws.evaluate(r))));
-        let batch = time(&|batch| drop(ws.evaluate_batch(&batch)));
+        let old = time(&|batch| {
+            batch
+                .iter()
+                .for_each(|r| drop(ws.evaluate_with_driver(r, crate::support::Clock::now())))
+        });
+        let single = time(&|batch| {
+            batch
+                .iter()
+                .for_each(|r| drop(ws.evaluate_pinned(r, &crate::support::Clock::options())))
+        });
+        let batch = time(&|batch| {
+            drop(ws.evaluate_batch_pinned(&batch, &crate::support::Clock::options()))
+        });
         let engine = match job.engine {
             Some((engine, key)) => {
                 let rt = &self.runtime;
@@ -280,7 +305,9 @@ impl Matrix {
                 self.best(count, fresh, |inputs| {
                     rt.block_on(async {
                         for input in inputs {
-                            let _ = engine.evaluate(key, input).await;
+                            let _ = engine
+                                .evaluate_with_opts(key, input, crate::support::Clock::options())
+                                .await;
                         }
                     })
                 })
@@ -290,10 +317,20 @@ impl Matrix {
         let mut columnar = f64::INFINITY;
         let reps = self.reps;
         Self::columns(&rows, |columns| {
-            drop(ws.evaluate_columns(&job.path, &job.goals, columns));
+            drop(ws.evaluate_columns_pinned(
+                &job.path,
+                &job.goals,
+                columns,
+                &crate::support::Clock::options(),
+            ));
             for _ in 0..reps {
                 let start = Instant::now();
-                drop(ws.evaluate_columns(&job.path, &job.goals, columns));
+                drop(ws.evaluate_columns_pinned(
+                    &job.path,
+                    &job.goals,
+                    columns,
+                    &crate::support::Clock::options(),
+                ));
                 columnar = columnar.min(start.elapsed().as_nanos() as f64 / count as f64);
             }
         });
@@ -308,8 +345,12 @@ impl Matrix {
                         let start = Instant::now();
                         let ws = build();
                         match driver {
-                            true => drop(ws.evaluate_with_driver(&request)),
-                            false => drop(ws.evaluate(&request)),
+                            true => drop(
+                                ws.evaluate_with_driver(&request, crate::support::Clock::now()),
+                            ),
+                            false => drop(
+                                ws.evaluate_pinned(&request, &crate::support::Clock::options()),
+                            ),
                         }
                         best = best.min(start.elapsed().as_nanos() as f64);
                     }
@@ -372,7 +413,7 @@ fn bench_matrix() {
     }
 
     if wants("fixtures") {
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+        crate::support::Clock::set("2025-08-19T16:55:02.078Z");
         let loader = Arc::new(support::create_fs_loader());
         for fixture in Fixture::load_all() {
             if NETWORK_BOUND.contains(&fixture.name.as_str())
@@ -380,8 +421,9 @@ fn bench_matrix() {
             {
                 continue;
             }
-            let decision =
-                Decision::from(Arc::new(fixture.content.clone())).with_loader(loader.clone());
+            let decision = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .with_loader(loader.clone());
             let job = GraphJob {
                 corpus: "fixtures",
                 case: fixture.name.clone(),
@@ -439,13 +481,13 @@ fn bench_matrix() {
                 continue;
             };
             let build = || {
-                let mut ws = PolicyWorkspace::new();
+                let mut ws = PolicyWorkspace::new().latest();
                 if let Ok(parsed) = serde_json::from_value(Gen::document(seed)) {
                     ws.set_policy("generated.json", parsed);
                 }
                 ws
             };
-            let mut ws = PolicyWorkspace::new();
+            let mut ws = PolicyWorkspace::new().latest();
             ws.set_policy("generated.json", parsed);
             let mut rng = Rng(seed.wrapping_mul(7919) | 1);
             let rows: Vec<Value> = (0..64).map(|_| Gen::valid_input(&mut rng)).collect();
@@ -505,8 +547,8 @@ fn columnar_reasons() {
                  decision: &Decision,
                  rows: Vec<Value>| {
         Matrix::columns(&rows, |columns| {
-            let output =
-                runtime.block_on(decision.evaluate_columns(columns, EvaluationOptions::default()));
+            let output = runtime
+                .block_on(decision.evaluate_columns(columns, crate::support::Clock::options()));
             let verdict = match zen_engine::diagnostics::plan_verdict(decision, columns) {
                 Some(Ok(())) => "planned".to_string(),
                 Some(Err(reason)) => reason,
@@ -538,7 +580,7 @@ fn columnar_reasons() {
             graph(&mut out, "spec-graph", suite.id(), &run.compiled, rows)
         }));
     }
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let loader = Arc::new(support::create_fs_loader());
     for fixture in Fixture::load_all() {
         if NETWORK_BOUND.contains(&fixture.name.as_str())
@@ -546,8 +588,9 @@ fn columnar_reasons() {
         {
             continue;
         }
-        let decision =
-            Decision::from(Arc::new(fixture.content.clone())).with_loader(loader.clone());
+        let decision = Decision::from(Arc::new(fixture.content.clone()))
+            .latest()
+            .with_loader(loader.clone());
         let rows = cycled(&fixture.variants());
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             graph(&mut out, "fixtures", fixture.name.clone(), &decision, rows)
@@ -561,7 +604,12 @@ fn columnar_reasons() {
                   goals: &[Arc<str>],
                   rows: Vec<Value>| {
         Matrix::columns(&rows, |columns| {
-            let line = match ws.evaluate_columns(path, goals, columns) {
+            let line = match ws.evaluate_columns_pinned(
+                path,
+                goals,
+                columns,
+                &crate::support::Clock::options(),
+            ) {
                 Ok(output) => {
                     let paths = output.paths();
                     let errors = output.errors.iter().filter(|e| e.is_some()).count();
@@ -612,7 +660,7 @@ fn columnar_reasons() {
         let Ok(parsed) = serde_json::from_value(Gen::document(seed)) else {
             continue;
         };
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         ws.set_policy("generated.json", parsed);
         let mut rng = Rng(seed.wrapping_mul(7919) | 1);
         let rows = cycled(

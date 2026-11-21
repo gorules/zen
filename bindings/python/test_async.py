@@ -8,7 +8,7 @@ import os
 
 import zen
 
-os.environ['__ZEN_MOCK_UTC_TIME'] = '2025-08-19T16:55:02.078Z'
+NOW = "2025-08-19T16:55:02.078Z"
 
 async def loader(key):
     with open("../../test-data/" + key, "r") as f:
@@ -90,9 +90,9 @@ class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
             for test_case in json_contents["tests"]:
                 key = os.path.basename(json_file)
 
-                engine_response = await engine.async_evaluate(key, test_case["input"])
+                engine_response = await engine.async_evaluate(key, test_case["input"], {"now": NOW})
                 decision = engine.get_decision(key)
-                decision_response = await decision.async_evaluate(test_case["input"])
+                decision_response = await decision.async_evaluate(test_case["input"], {"now": NOW})
 
                 self.assertEqual(engine_response["result"], test_case["output"])
                 self.assertEqual(decision_response["result"], test_case["output"])

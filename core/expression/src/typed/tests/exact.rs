@@ -25,7 +25,6 @@ struct Report {
 
 impl Lab {
     fn new(workload: Workload, rows: Vec<Row>) -> Self {
-        Workload::mock();
         let hir = workload.hir().expect("lowering");
         let oracle = Oracle::new(&workload, &hir);
         let expected = rows
@@ -212,24 +211,14 @@ impl Bench {
         let program = Program::new(hir).expect("program");
         let mut out = program.outputs();
         program
-            .run(
-                &batch,
-                &mut out,
-                None,
-                &crate::context::EvaluationContext::default(),
-            )
+            .run(&batch, &mut out, None, &Workload::context())
             .expect("run");
         let mut best = f64::MAX;
         for _ in 0..reps {
             let t = Instant::now();
             for _ in 0..50 {
                 program
-                    .run(
-                        &batch,
-                        &mut out,
-                        None,
-                        &crate::context::EvaluationContext::default(),
-                    )
+                    .run(&batch, &mut out, None, &Workload::context())
                     .expect("run");
             }
             best = best.min(t.elapsed().as_nanos() as f64 / 50.0 / size as f64);

@@ -1,6 +1,7 @@
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::fs;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use support::test_data_root;
 use zen_engine::model::DecisionContent;
-use zen_engine::{Decision, EvaluationOptions};
+use zen_engine::Decision;
 use zen_expression::Variable;
 
 enum Buf {
@@ -651,20 +652,20 @@ impl Fixture {
 #[tokio::test]
 #[ignore]
 async fn ceiling_product_listing_scoring() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
     let rows: usize = std::env::var("BENCH_ROWS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024);
     let (content, variants) = Fixture::load();
-    let mut compiled = Decision::from(Arc::new(content));
+    let mut compiled = Decision::from(Arc::new(content)).latest();
     compiled.compile();
     assert!(matches!(
         zen_engine::diagnostics::compiled_verdict(&compiled),
         Some(Ok(()))
     ));
     let walker = compiled.interpreted();
-    let options = EvaluationOptions::default();
+    let options = crate::support::Clock::options();
     let sets: Vec<(&str, Vec<Value>)> = vec![
         (
             "harness",
@@ -685,7 +686,10 @@ async fn ceiling_product_listing_scoring() {
         let engine = compiled.evaluate_columns(&columns, options).await;
         let mut mismatches = 0;
         for r in 0..rows {
-            let want = match walker.evaluate(columns.row(r)).await {
+            let want = match walker
+                .evaluate_with_opts(columns.row(r), crate::support::Clock::options())
+                .await
+            {
                 Ok(v) => Some(Built::normalized(v.result.to_value())),
                 Err(_) => None,
             };
@@ -750,7 +754,9 @@ async fn ceiling_product_listing_scoring() {
         for _ in 0..9 {
             let t = Instant::now();
             for c in (0..rows.min(256)).map(|r| columns.row(r)) {
-                let _ = walker.evaluate(c).await;
+                let _ = walker
+                    .evaluate_with_opts(c, crate::support::Clock::options())
+                    .await;
             }
             best[0] = best[0].min(t.elapsed().as_nanos() as f64 / rows.min(256) as f64);
             let t = Instant::now();

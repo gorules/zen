@@ -293,7 +293,8 @@ pub fn restore_json(args: RestoreArgs) -> Result<String, TraceError> {
 pub mod testing {
     pub use crate::compiled::trace::value::{eq, json_len, parse, Obj, Val};
     pub use crate::compiled::trace::{
-        batch_writes, columnar_traced, graph_runs, native_misses, policy_pair, reevaluations,
+        batch_writes, columnar_traced, counters, graph_runs, native_misses, policy_pair,
+        reevaluations, Counters,
     };
 
     pub fn repack(doc: &str) -> Option<String> {

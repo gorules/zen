@@ -811,11 +811,17 @@ impl Scaled {
     }
 }
 
+fn clock() -> EvaluationOptions {
+    EvaluationOptions {
+        now: zen_engine::context::parse_instant("2025-08-19T16:55:02.078Z"),
+        ..Default::default()
+    }
+}
+
 struct Ceiling;
 
 impl Ceiling {
     async fn measure(label: &str, inputs_json: &[Value], runs: usize) {
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
         let fixture = Fixture::load();
         let mut compiled = Decision::from(Arc::new(fixture.content.clone())).compiled_engine();
         compiled.compile();
@@ -827,7 +833,7 @@ impl Ceiling {
         let built = Built::new(inputs_json).unwrap();
         let rows = built.rows;
         let columns = built.columns();
-        let options = EvaluationOptions::default();
+        let options = clock();
         let inputs = Inputs::of(&built);
         let folded = Folded::new();
         let mut codes = Vec::with_capacity(rows);
@@ -849,7 +855,7 @@ impl Ceiling {
         for row in 0..rows {
             let input = columns.row(row);
             let walked = walker
-                .evaluate(input.clone())
+                .evaluate_with_opts(input.clone(), clock())
                 .await
                 .map(|r| Built::normalized(r.result.to_value()))
                 .map_err(|e| e.to_string());
@@ -892,7 +898,7 @@ impl Ceiling {
         for _ in 0..runs {
             let start = std::time::Instant::now();
             for c in (0..rows.min(256)).map(|r| columns.row(r)) {
-                let _ = walker.evaluate(c).await;
+                let _ = walker.evaluate_with_opts(c, clock()).await;
             }
             best[0] = best[0].min(per(start, rows.min(256)));
             let start = std::time::Instant::now();
@@ -969,7 +975,6 @@ async fn traffic_ceiling() {
 #[tokio::test]
 #[ignore]
 async fn traffic_profile_engine() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
     let fixture = Fixture::load();
     let variants = fixture.typed_variants();
     let random = std::env::var("BENCH_RANDOM").is_ok();
@@ -994,9 +999,7 @@ async fn traffic_profile_engine() {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
     let mut calls = 0usize;
     while std::time::Instant::now() < until {
-        let _ = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
-            .await;
+        let _ = compiled.evaluate_columns(&columns, clock()).await;
         calls += 1;
     }
     println!("calls {calls}");

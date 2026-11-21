@@ -23,14 +23,28 @@ async fn engine_memory_loader() {
 
     let engine = DecisionEngine::default().with_loader(memory_loader.clone());
     let table = engine
-        .evaluate("table", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "table",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
     let function = engine
-        .evaluate("function", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "function",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
 
     memory_loader.remove("function");
-    let not_found = engine.evaluate("function", json!({}).into()).await;
+    let not_found = engine
+        .evaluate_with_opts(
+            "function",
+            json!({}).into(),
+            crate::support::Clock::options(),
+        )
+        .await;
 
     assert_eq!(table.unwrap().result, json!({"output": 10}).into());
     assert_eq!(function.unwrap().result, json!({"output": 24}).into());
@@ -49,7 +63,11 @@ async fn engine_precompiles_graphs() {
 
     memory_loader.remove("table");
     let table = engine
-        .evaluate("table", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "table",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
 
     assert_eq!(table.unwrap().result, json!({"output": 10}).into());
@@ -60,12 +78,26 @@ async fn engine_precompiles_graphs() {
 async fn engine_filesystem_loader() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
     let table = engine
-        .evaluate("table.json", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "table.json",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
     let function = engine
-        .evaluate("function.json", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "function.json",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
-    let not_found = engine.evaluate("invalid_file", json!({}).into()).await;
+    let not_found = engine
+        .evaluate_with_opts(
+            "invalid_file",
+            json!({}).into(),
+            crate::support::Clock::options(),
+        )
+        .await;
 
     assert_eq!(table.unwrap().result, json!({"output": 10}).into());
     assert_eq!(function.unwrap().result, json!({"output": 24}).into());
@@ -84,12 +116,26 @@ async fn engine_closure_loader() {
     });
 
     let table = engine
-        .evaluate("table", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "table",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
     let function = engine
-        .evaluate("function", json!({ "input": 12 }).into())
+        .evaluate_with_opts(
+            "function",
+            json!({ "input": 12 }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
-    let not_found = engine.evaluate("invalid_file", json!({}).into()).await;
+    let not_found = engine
+        .evaluate_with_opts(
+            "invalid_file",
+            json!({}).into(),
+            crate::support::Clock::options(),
+        )
+        .await;
 
     assert_eq!(table.unwrap().result, json!({"output": 10}).into());
     assert_eq!(function.unwrap().result, json!({"output": 24}).into());
@@ -101,7 +147,11 @@ fn engine_noop_loader() {
     let rt = Builder::new_current_thread().build().unwrap();
     // Default engine is noop
     let engine = DecisionEngine::default();
-    let result = rt.block_on(engine.evaluate("any.json", json!({}).into()));
+    let result = rt.block_on(engine.evaluate_with_opts(
+        "any.json",
+        json!({}).into(),
+        crate::support::Clock::options(),
+    ));
 
     assert_eq!(result.unwrap_err().to_string(), "Loader error");
 }
@@ -131,7 +181,11 @@ async fn engine_errors() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let infinite_fn = engine
-        .evaluate("infinite-function.json", json!({}).into())
+        .evaluate_with_opts(
+            "infinite-function.json",
+            json!({}).into(),
+            crate::support::Clock::options(),
+        )
         .await;
     match infinite_fn.unwrap_err().deref() {
         EvaluationError::NodeError {
@@ -144,7 +198,11 @@ async fn engine_errors() {
     }
 
     let recursive = engine
-        .evaluate("recursive-table1.json", json!({}).into())
+        .evaluate_with_opts(
+            "recursive-table1.json",
+            json!({}).into(),
+            crate::support::Clock::options(),
+        )
         .await;
     match recursive.unwrap_err().deref() {
         EvaluationError::NodeError { source, .. } => {
@@ -160,13 +218,17 @@ fn engine_with_trace() {
     let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
-    let table_r = rt.block_on(engine.evaluate("table.json", json!({ "input": 12 }).into()));
+    let table_r = rt.block_on(engine.evaluate_with_opts(
+        "table.json",
+        json!({ "input": 12 }).into(),
+        crate::support::Clock::options(),
+    ));
     let table_opt_r = rt.block_on(engine.evaluate_with_opts(
         "table.json",
         json!({ "input": 12 }).into(),
         EvaluationOptions {
             trace: zen_engine::trace::TraceFormat::Legacy,
-            ..Default::default()
+            ..crate::support::Clock::options()
         },
     ));
 
@@ -218,7 +280,10 @@ async fn engine_function_imports() {
     let decision = DecisionEngine::default()
         .create_decision(Arc::new(function_content.into()))
         .unwrap();
-    let response = decision.evaluate(json!({}).into()).await.unwrap();
+    let response = decision
+        .evaluate_with_opts(json!({}).into(), crate::support::Clock::options())
+        .await
+        .unwrap();
 
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
@@ -242,7 +307,11 @@ async fn engine_switch_node() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let switch_node_r = engine
-        .evaluate("switch-node.json", json!({ "color": "yellow" }).into())
+        .evaluate_with_opts(
+            "switch-node.json",
+            json!({ "color": "yellow" }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
 
     let table = switch_node_r.unwrap();
@@ -293,9 +362,13 @@ async fn engine_graph_tests() {
 
         for test_case in test_data.tests {
             let input = test_case.input.clone();
-            let result = decision.evaluate(input.clone()).await.unwrap().result;
+            let result = decision
+                .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+                .await
+                .unwrap()
+                .result;
             let result_compiled = decision_compiled
-                .evaluate(input.clone())
+                .evaluate_with_opts(input.clone(), crate::support::Clock::options())
                 .await
                 .unwrap()
                 .result;
@@ -314,7 +387,7 @@ async fn engine_graph_tests() {
 }
 
 fn mock_datetime() {
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    crate::support::Clock::set("2025-08-19T16:55:02.078Z");
 }
 
 #[tokio::test]
@@ -371,7 +444,7 @@ async fn engine_snapshot_tests() {
                     input.clone(),
                     EvaluationOptions {
                         trace: zen_engine::trace::TraceFormat::Legacy,
-                        ..Default::default()
+                        ..crate::support::Clock::options()
                     },
                 )
                 .await
@@ -381,7 +454,7 @@ async fn engine_snapshot_tests() {
                     input.clone(),
                     EvaluationOptions {
                         trace: zen_engine::trace::TraceFormat::Legacy,
-                        ..Default::default()
+                        ..crate::support::Clock::options()
                     },
                 )
                 .await
@@ -412,7 +485,7 @@ async fn engine_function_v2() {
                 json!({ "input": 12 }).into(),
                 EvaluationOptions {
                     trace: zen_engine::trace::TraceFormat::Legacy,
-                    ..Default::default()
+                    ..crate::support::Clock::options()
                 },
             )
             .await;
@@ -455,22 +528,35 @@ async fn test_validation() {
     });
 
     assert!(engine
-        .evaluate("customer-input-schema.json", context_valid.clone().into())
+        .evaluate_with_opts(
+            "customer-input-schema.json",
+            context_valid.clone().into(),
+            crate::support::Clock::options()
+        )
         .await
         .is_ok());
     assert!(engine
-        .evaluate("customer-input-schema.json", context_invalid.clone().into())
+        .evaluate_with_opts(
+            "customer-input-schema.json",
+            context_invalid.clone().into(),
+            crate::support::Clock::options()
+        )
         .await
         .is_err());
 
     assert!(engine
-        .evaluate("customer-output-schema.json", context_valid.clone().into())
+        .evaluate_with_opts(
+            "customer-output-schema.json",
+            context_valid.clone().into(),
+            crate::support::Clock::options()
+        )
         .await
         .is_ok());
     assert!(engine
-        .evaluate(
+        .evaluate_with_opts(
             "customer-output-schema.json",
-            context_invalid.clone().into()
+            context_invalid.clone().into(),
+            crate::support::Clock::options()
         )
         .await
         .is_err());
@@ -482,7 +568,11 @@ async fn test_nodes_reference() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let evaluation = engine
-        .evaluate("$nodes-parent.json", json!({ "hello": "world" }).into())
+        .evaluate_with_opts(
+            "$nodes-parent.json",
+            json!({ "hello": "world" }).into(),
+            crate::support::Clock::options(),
+        )
         .await;
 
     assert!(evaluation.is_ok());
@@ -559,7 +649,7 @@ async fn decision_table_index_matches_linear_semantics() {
 
         for probe in &probes {
             let indexed = decision
-                .evaluate(Variable::from(probe))
+                .evaluate_with_opts(Variable::from(probe), crate::support::Clock::options())
                 .await
                 .unwrap()
                 .result;
@@ -569,7 +659,7 @@ async fn decision_table_index_matches_linear_semantics() {
                     EvaluationOptions {
                         trace: zen_engine::trace::TraceFormat::Legacy,
                         max_depth: 5,
-                        ..Default::default()
+                        ..crate::support::Clock::options()
                     },
                 )
                 .await

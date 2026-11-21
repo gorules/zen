@@ -23,92 +23,62 @@ pub use graph::ColumnarOutput;
 pub(crate) use graph::{call, traced, CompiledGraph, CompiledPlan, Invalid};
 pub use output::{OutputColumn, RecordsView};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EngineVersion {
+    #[default]
+    V1,
+    V2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("unknown engine version {0}, expected 1 or 2")]
+pub struct UnknownEngineVersion(pub u32);
+
+impl TryFrom<u32> for EngineVersion {
+    type Error = UnknownEngineVersion;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(EngineVersion::V1),
+            2 => Ok(EngineVersion::V2),
+            other => Err(UnknownEngineVersion(other)),
+        }
+    }
+}
+
+impl From<EngineVersion> for u32 {
+    fn from(value: EngineVersion) -> Self {
+        match value {
+            EngineVersion::V1 => 1,
+            EngineVersion::V2 => 2,
+        }
+    }
+}
+
+impl From<EngineVersion> for Engine {
+    fn from(value: EngineVersion) -> Self {
+        match value {
+            EngineVersion::V1 => Engine::Interpreted,
+            EngineVersion::V2 => Engine::Compiled,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Engine {
-    Configured,
     Interpreted,
     Compiled,
 }
 
-thread_local! {
-    static INTERPRETING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 impl Engine {
-    pub(crate) fn compiled(self) -> bool {
+    pub(crate) fn version(self) -> EngineVersion {
         match self {
-            Engine::Configured => {
-                !INTERPRETING.get()
-                    && crate::ZEN_CONFIG
-                        .compiled
-                        .load(std::sync::atomic::Ordering::Relaxed)
-            }
-            Engine::Interpreted => false,
-            Engine::Compiled => true,
+            Engine::Compiled => EngineVersion::V2,
+            Engine::Interpreted => EngineVersion::V1,
         }
     }
 
-    pub(crate) fn scopes(self) -> bool {
-        self == Engine::Interpreted && !INTERPRETING.get()
-    }
-
-    pub(crate) fn interpreting<F: std::future::Future>(future: F) -> Interpreting<F> {
-        Interpreting(Box::pin(future))
-    }
-}
-
-pub(crate) struct Interpreting<F>(std::pin::Pin<Box<F>>);
-
-struct Restore(bool);
-
-impl Drop for Restore {
-    fn drop(&mut self) {
-        INTERPRETING.set(self.0);
-    }
-}
-
-impl<F: std::future::Future> std::future::Future for Interpreting<F> {
-    type Output = F::Output;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<F::Output> {
-        let _restore = Restore(INTERPRETING.replace(true));
-        self.0.as_mut().poll(cx)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Engine;
-
-    fn run<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("runtime")
-            .block_on(future)
-    }
-
-    #[test]
-    fn the_interpreting_scope_overrides_only_the_configured_engine() {
-        let inside = run(Engine::interpreting(async {
-            (
-                Engine::Configured.compiled(),
-                Engine::Compiled.compiled(),
-                Engine::Interpreted.scopes(),
-            )
-        }));
-        assert_eq!(inside, (false, true, false));
-        assert!(Engine::Interpreted.scopes());
-    }
-
-    #[test]
-    fn the_interpreting_scope_is_restored_after_a_panic() {
-        let panicked = std::panic::catch_unwind(|| {
-            run(Engine::interpreting(async { panic!("inside the scope") }))
-        });
-        assert!(panicked.is_err());
-        assert!(Engine::Interpreted.scopes());
+    pub(crate) fn compiled(self) -> bool {
+        self == Engine::Compiled
     }
 }

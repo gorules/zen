@@ -20,12 +20,6 @@ fn block<F: std::future::Future>(f: F) -> F::Output {
         .block_on(f)
 }
 
-fn compiled() {
-    zen_engine::ZEN_CONFIG
-        .compiled
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-}
-
 fn chain(nodes: Vec<Value>) -> Value {
     let ids: Vec<String> = nodes
         .iter()
@@ -64,13 +58,13 @@ fn content(graph: Value) -> Arc<DecisionContent> {
 }
 
 fn decision(graph: Value, children: &[(&str, Value)]) -> Decision {
-    compiled();
     let loader = Arc::new(MemoryLoader::default());
     for (key, child) in children {
         let child: DecisionContent = serde_json::from_value(child.clone()).unwrap();
         loader.add(*key, child);
     }
     DecisionEngine::default()
+        .with_version(zen_engine::EngineVersion::V2)
         .with_loader(loader)
         .create_decision(content(graph))
         .unwrap()
@@ -577,8 +571,7 @@ fn policy_trace(result: &zen_engine::policy::EvaluationResult) -> Value {
 
 #[test]
 fn policy_rows_draw_from_their_streams() {
-    compiled();
-    let mut ws = zen_engine::Workspace::new();
+    let mut ws = zen_engine::Workspace::new().with_version(zen_engine::EngineVersion::V2);
     ws.set_policy("policy", policy_document());
     let base = 29;
     let singles: Vec<(Value, Value)> = (0..ROWS)
@@ -634,7 +627,6 @@ fn policy_rows_draw_from_their_streams() {
 
 #[test]
 fn engine_policy_batches_draw_per_row() {
-    compiled();
     let loader = Arc::new(MemoryLoader::default());
     loader.add(
         "policy",
@@ -642,7 +634,9 @@ fn engine_policy_batches_draw_per_row() {
             Arc::new(policy_document()),
         )),
     );
-    let engine = DecisionEngine::default().with_loader(loader);
+    let engine = DecisionEngine::default()
+        .with_version(zen_engine::EngineVersion::V2)
+        .with_loader(loader);
     let inputs: Vec<Variable> = (0..ROWS).map(|x| Variable::from(policy_input(x))).collect();
     for trace in [TraceFormat::V1, TraceFormat::Off] {
         let batch = block(engine.evaluate_batch("policy", &inputs, options(trace, 31)));
@@ -997,9 +991,8 @@ fn located_policy(extra: bool) -> zen_engine::policy::PolicyDocument {
 
 #[test]
 fn policies_draw_by_block() {
-    compiled();
     let run = |extra: bool| {
-        let mut ws = zen_engine::Workspace::new();
+        let mut ws = zen_engine::Workspace::new().with_version(zen_engine::EngineVersion::V2);
         ws.set_policy("policy", located_policy(extra));
         let singles: Vec<Value> = (0..ROWS)
             .map(|x| {

@@ -30,7 +30,7 @@ impl From<GraphContent> for Decision {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: OnceLock::new(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -43,7 +43,7 @@ impl From<Arc<GraphContent>> for Decision {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: OnceLock::new(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -97,6 +97,7 @@ impl Decision {
                 dt_indexes: self.content.dt_indexes.clone(),
                 stripped_functions: self.content.stripped_functions.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.content.validator_cache.clone())),
+                now: options.now,
                 ..Default::default()
             },
         })?;
@@ -159,6 +160,17 @@ impl Decision {
     pub(crate) fn with_engine(mut self, engine: crate::compiled::Engine) -> Self {
         self.engine = engine;
         self
+    }
+
+    pub fn with_version(&self, version: crate::EngineVersion) -> Self {
+        Self {
+            engine: version.into(),
+            ..self.clone()
+        }
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
     }
 
     #[doc(hidden)]

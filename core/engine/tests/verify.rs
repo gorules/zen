@@ -1,13 +1,14 @@
 #[allow(dead_code)]
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use support::columns::Built;
 use zen_engine::model::GraphContent;
 use zen_engine::policy::{EvaluateRequest, EvaluationResult, PolicyWorkspace};
-use zen_engine::{Decision, DecisionGraphResponse, EvaluationError, EvaluationOptions};
+use zen_engine::{Decision, DecisionGraphResponse, EvaluationError};
 use zen_expression::Variable;
 
 struct Graphs;
@@ -60,7 +61,7 @@ impl Graphs {
     }
 
     fn decision(graph: &Value) -> Decision {
-        Decision::from(Arc::new(Self::content(graph)))
+        Decision::from(Arc::new(Self::content(graph))).latest()
     }
 
     fn text(result: Result<DecisionGraphResponse, Box<EvaluationError>>) -> String {
@@ -113,7 +114,7 @@ struct Policies;
 
 impl Policies {
     fn workspace(doc: Value) -> PolicyWorkspace {
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         ws.set_policy("p", serde_json::from_value(doc).unwrap());
         ws
     }
@@ -142,7 +143,14 @@ impl Policies {
         columns: &zen_expression::lane::Columns,
         rows: usize,
     ) -> Vec<String> {
-        let output = ws.evaluate_columns(&Arc::from("p"), &[], columns).unwrap();
+        let output = ws
+            .evaluate_columns_pinned(
+                &Arc::from("p"),
+                &[],
+                columns,
+                &crate::support::Clock::options(),
+            )
+            .unwrap();
         (0..rows)
             .map(|row| match &output.errors[row] {
                 Some(error) => format!("ERR {error:?}"),
@@ -155,18 +163,28 @@ impl Policies {
         let ws = Self::workspace(doc);
         let driver: Vec<String> = inputs
             .iter()
-            .map(|input| Self::text(ws.evaluate_with_driver(&Self::request(input, false))))
+            .map(|input| {
+                Self::text(ws.evaluate_with_driver(
+                    &Self::request(input, false),
+                    crate::support::Clock::now(),
+                ))
+            })
             .collect();
         let single = inputs
             .iter()
-            .map(|input| Self::text(ws.evaluate(&Self::request(input, false))))
+            .map(|input| {
+                Self::text(ws.evaluate_pinned(
+                    &Self::request(input, false),
+                    &crate::support::Clock::options(),
+                ))
+            })
             .collect();
         let requests: Vec<EvaluateRequest> = inputs
             .iter()
             .map(|input| Self::request(input, false))
             .collect();
         let batch = ws
-            .evaluate_batch(&requests)
+            .evaluate_batch_pinned(&requests, &crate::support::Clock::options())
             .into_iter()
             .map(Self::text)
             .collect();
@@ -197,7 +215,6 @@ impl Policies {
 
 #[tokio::test]
 async fn compiled_table_cells_reread_the_clock() {
-    assert!(std::env::var("__ZEN_MOCK_UTC_TIME").is_err());
     let graph = Graphs::chain(vec![
         Graphs::expression(
             "ex",
@@ -228,34 +245,55 @@ async fn compiled_table_cells_reread_the_clock() {
     };
     let run = || async {
         let columnar = compiled
-            .evaluate_columns(&columns, EvaluationOptions::default())
+            .evaluate_columns(&columns, crate::support::Clock::options())
             .await;
         [
             (
                 "walker",
-                Graphs::text(walker.evaluate(Variable::from(input.clone())).await),
+                Graphs::text(
+                    walker
+                        .evaluate_with_opts(
+                            Variable::from(input.clone()),
+                            crate::support::Clock::options(),
+                        )
+                        .await,
+                ),
             ),
             (
                 "single",
-                Graphs::text(single.evaluate(Variable::from(input.clone())).await),
+                Graphs::text(
+                    single
+                        .evaluate_with_opts(
+                            Variable::from(input.clone()),
+                            crate::support::Clock::options(),
+                        )
+                        .await,
+                ),
             ),
             (
                 "batch",
                 first(
                     batch
-                        .evaluate_batch(&contexts, EvaluationOptions::default())
+                        .evaluate_batch(&contexts, crate::support::Clock::options())
                         .await,
                 ),
             ),
             (
                 "compiled-single",
-                Graphs::text(compiled.evaluate(Variable::from(input.clone())).await),
+                Graphs::text(
+                    compiled
+                        .evaluate_with_opts(
+                            Variable::from(input.clone()),
+                            crate::support::Clock::options(),
+                        )
+                        .await,
+                ),
             ),
             (
                 "compiled-batch",
                 first(
                     compiled
-                        .evaluate_batch(&contexts, EvaluationOptions::default())
+                        .evaluate_batch(&contexts, crate::support::Clock::options())
                         .await,
                 ),
             ),
@@ -380,25 +418,36 @@ fn policy_collects_in_output_order() {
             })
             .unwrap_or_default()
     };
-    let output = Policies::text(ws.evaluate(&request));
-    let log = writes(ws.enhance_trace(&request).unwrap());
+    let output = Policies::text(ws.evaluate_pinned(&request, &crate::support::Clock::options()));
+    let log = writes(
+        ws.enhance_trace_pinned(&request, &crate::support::Clock::options())
+            .unwrap(),
+    );
     assert_eq!(log, ["order.a", "order.b", "order.c", "order.d", "order.e"]);
     let unordered = |text: &str| serde_json::from_str::<Value>(text).ok();
-    let mut driver_log = writes(ws.enhance_trace_with_driver(&request).unwrap());
+    let mut driver_log = writes(
+        ws.enhance_trace_with_driver(&request, crate::support::Clock::now())
+            .unwrap(),
+    );
     driver_log.sort();
     assert_eq!(driver_log, log);
     assert_eq!(
-        unordered(&Policies::text(ws.evaluate_with_driver(&request))),
+        unordered(&Policies::text(
+            ws.evaluate_with_driver(&request, crate::support::Clock::now())
+        )),
         unordered(&output)
     );
     for run in 0..32 {
         assert_eq!(
-            Policies::text(ws.evaluate(&request)),
+            Policies::text(ws.evaluate_pinned(&request, &crate::support::Clock::options())),
             output,
             "run {run}: output order"
         );
         assert_eq!(
-            writes(ws.enhance_trace(&request).unwrap()),
+            writes(
+                ws.enhance_trace_pinned(&request, &crate::support::Clock::options())
+                    .unwrap()
+            ),
             log,
             "run {run}: write log order"
         );
@@ -417,16 +466,21 @@ async fn sub_decisions_reuse_stripped_functions() {
     let input = Variable::from(json!({ "x": 1 }));
     let top = Graphs::text(
         Decision::from(Arc::new(Stripped::primed()))
-            .evaluate(input.clone())
+            .latest()
+            .evaluate_with_opts(input.clone(), crate::support::Clock::options())
             .await,
     );
     assert!(
         top.contains("cache"),
         "top-level function must use the stripped cache: {top}"
     );
-    let single = Graphs::text(parent.evaluate(input.clone()).await);
+    let single = Graphs::text(
+        parent
+            .evaluate_with_opts(input.clone(), crate::support::Clock::options())
+            .await,
+    );
     let batch: Vec<String> = parent
-        .evaluate_batch(&[input.clone(), input], EvaluationOptions::default())
+        .evaluate_batch(&[input.clone(), input], crate::support::Clock::options())
         .await
         .into_iter()
         .map(Graphs::text)

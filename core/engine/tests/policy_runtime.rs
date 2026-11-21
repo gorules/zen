@@ -683,3 +683,44 @@ async fn v1_policy_trace_names_matched_rules() {
         assert_eq!(tables[1].pointer("/trace/matchedRows"), Some(&positions));
     }
 }
+
+#[tokio::test]
+async fn engine_version_selects_the_engine() {
+    use zen_engine::EngineVersion;
+
+    assert_eq!(EngineVersion::try_from(1), Ok(EngineVersion::V1));
+    assert_eq!(EngineVersion::try_from(2), Ok(EngineVersion::V2));
+    assert!(EngineVersion::try_from(3).is_err());
+
+    let build = || {
+        let loader = Arc::new(MemoryLoader::default());
+        loader.add("policy", make_policy_content(simple_policy_json()));
+        engine_with(loader)
+    };
+    assert_eq!(build().version(), EngineVersion::V1);
+
+    for (version, format) in [
+        (EngineVersion::V1, TraceFormat::Legacy),
+        (EngineVersion::V2, TraceFormat::V1),
+    ] {
+        let engine = build().with_version(version);
+        assert_eq!(engine.version(), version);
+        let options = EvaluationSerializedOptions {
+            trace: TraceFormat::from(true),
+            ..Default::default()
+        };
+        let response = engine
+            .evaluate_serialized(
+                "policy",
+                json!({ "customer": { "age": 30 } }).into(),
+                options,
+            )
+            .await
+            .expect("evaluate ok");
+        assert_eq!(
+            response.pointer("/result/customer/isAdult"),
+            Some(&json!(true))
+        );
+        assert_trace_format(response, format);
+    }
+}

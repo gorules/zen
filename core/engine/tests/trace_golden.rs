@@ -82,13 +82,6 @@ fn policy(
     })
 }
 
-fn serial_tests() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    Spec::prepare();
-    guard
-}
-
 fn engines(compiled: bool) -> (EngineVersion, &'static str) {
     match compiled {
         true => (EngineVersion::V2, "compiled"),
@@ -688,7 +681,7 @@ fn legacy_and_restored_v1() {
 
 #[test]
 fn legacy_traces_equal_restored_v1_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(legacy_and_restored_v1);
     }
@@ -705,7 +698,7 @@ fn big_stack(f: impl FnOnce() + Send + 'static) {
 
 #[test]
 fn legacy_traces_equal_the_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(|| compare(TraceFormat::Legacy));
     }
@@ -713,7 +706,7 @@ fn legacy_traces_equal_the_base_traces() {
 
 #[test]
 fn v1_restores_to_the_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(|| compare(TraceFormat::V1));
     }
@@ -721,7 +714,7 @@ fn v1_restores_to_the_base_traces() {
 
 #[test]
 fn capture_base_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if !cfg!(feature = "arbitrary_precision") {
         return;
     }
@@ -878,7 +871,7 @@ fn native_and_convert() {
 
 #[test]
 fn native_and_convert_restore_identically() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(native_and_convert);
 }
 
@@ -1025,7 +1018,7 @@ fn batch_rows() {
 
 #[test]
 fn batch_rows_equal_single_row_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(batch_rows);
 }
 
@@ -1279,7 +1272,7 @@ fn columnar_rows() {
 
 #[test]
 fn columnar_rows_equal_single_row_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(columnar_rows);
 }
 
@@ -1399,7 +1392,7 @@ fn policy_native_and_convert() {
 
 #[test]
 fn policy_native_and_convert_restore_identically() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if cfg!(feature = "arbitrary_precision") {
         big_stack(policy_native_and_convert);
     }
@@ -1655,13 +1648,13 @@ fn timing_stress(sets: u64) {
 
 #[test]
 fn v1_restores_loop_traces_with_any_timings() {
-    let _serial = serial_tests();
+    Spec::prepare();
     big_stack(|| timing_stress(64));
 }
 
 #[test]
 fn trace_documents_move_across_threads() {
-    let _serial = serial_tests();
+    Spec::prepare();
     fn sendable<T: Send + Sync + 'static>() {}
     sendable::<zen_engine::trace::TraceDocument>();
     Spec::prepare();
@@ -1886,7 +1879,7 @@ fn dump_all(dir: &str) {
 
 #[test]
 fn dump_traces() {
-    let _serial = serial_tests();
+    Spec::prepare();
     if let Ok(dir) = std::env::var("TRACE_DUMP_ALL") {
         big_stack(move || dump_all(&dir));
     }

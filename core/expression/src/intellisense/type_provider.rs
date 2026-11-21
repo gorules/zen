@@ -612,6 +612,14 @@ impl TypesProvider {
                     FunctionKind::Internal(InternalFunction::Values) => {
                         self.values_typecheck(&type_list, arguments)
                     }
+                    FunctionKind::Internal(
+                        f @ (InternalFunction::First
+                        | InternalFunction::Last
+                        | InternalFunction::Distinct
+                        | InternalFunction::TopK
+                        | InternalFunction::ArgMax
+                        | InternalFunction::ArgMin),
+                    ) => self.element_typecheck(*f, kind, &type_list, arguments),
                     FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
@@ -869,6 +877,49 @@ impl TypesProvider {
         };
 
         Self::merge_deep_from_types(std::slice::from_ref(&*element))
+    }
+
+    fn element_typecheck(
+        &mut self,
+        function: InternalFunction,
+        kind: &FunctionKind,
+        arg_types: &[VariableType],
+        arg_nodes: &[&Node],
+    ) -> TypeInfo {
+        let Some(def) = FunctionRegistry::get_definition(kind) else {
+            return TypeInfo::from(VariableType::Any);
+        };
+        let typecheck = def.check_types(arg_types);
+        for (i, arg_error) in typecheck.arguments {
+            let code = Self::mismatch(def.param_type_str(i), &arg_types[i]);
+            self.set_coded_error(arg_nodes[i], arg_error, code);
+        }
+        if typecheck.general.is_some() {
+            return TypeInfo {
+                kind: VariableType::Any,
+                error: typecheck.general,
+            };
+        }
+
+        let element = arg_types
+            .first()
+            .and_then(|t| t.iterator())
+            .map(|t| t.unwrap_nullable().0.clone())
+            .unwrap_or(VariableType::Any);
+        let nullable = |t: VariableType| match t {
+            VariableType::Any | VariableType::Null | VariableType::Nullable(_) => t,
+            other => VariableType::Nullable(Rc::new(other)),
+        };
+        TypeInfo::from(match function {
+            InternalFunction::First | InternalFunction::Last => nullable(element),
+            InternalFunction::Distinct | InternalFunction::TopK => {
+                VariableType::Array(Rc::new(element))
+            }
+            _ => match element.iterator() {
+                Some(inner) => nullable(inner.unwrap_nullable().0.clone()),
+                None => VariableType::Any,
+            },
+        })
     }
 
     fn flatten_typecheck(&mut self, arg_types: &[VariableType], arg_nodes: &[&Node]) -> TypeInfo {

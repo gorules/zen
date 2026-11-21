@@ -29,6 +29,7 @@ rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 nohash-hasher = { workspace = true }
 strsim = "0.11"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 iana-time-zone = "0.1"
 
 zen-macros = { path = "../macros", version = "2.1.6" }

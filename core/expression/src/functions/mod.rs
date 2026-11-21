@@ -1,13 +1,14 @@
 pub use crate::functions::date_method::DateMethod;
 pub use crate::functions::defs::FunctionTypecheck;
 pub use crate::functions::deprecated::DeprecatedFunction;
-pub use crate::functions::internal::InternalFunction;
+pub use crate::functions::internal::{CallbackSlot, InternalFunction};
 pub use crate::functions::method::{MethodKind, MethodRegistry};
 pub use crate::functions::registry::FunctionRegistry;
 
 use std::fmt::Display;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
+pub(crate) mod aggregate;
 pub(crate) mod arguments;
 mod date_method;
 pub(crate) mod defs;
@@ -15,6 +16,8 @@ mod deprecated;
 pub(crate) mod internal;
 mod method;
 pub(crate) mod registry;
+pub mod sketch;
+pub(crate) mod stats;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FunctionKind {

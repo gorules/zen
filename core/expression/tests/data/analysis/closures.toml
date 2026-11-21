@@ -262,3 +262,96 @@ diagnostics = [{ source = "type_check", severity = "error" }]
 
 [test.strict]
 diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "sum with projection and filter"
+expression = "sum(orders, #.total, #.paid)"
+input = '{"orders": [{"total": 100, "paid": true}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "sum with alias, projection and filter"
+expression = "sum(orders as o, o.total, o.paid)"
+input = '{"orders": [{"total": 100, "paid": true}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "first with alias and condition types the item"
+expression = "first(orders as o, o.total > 10).total"
+input = '{"orders": [{"total": 100}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[[test]]
+name = "first with projection types the projection"
+expression = "first(orders as o, o.code, o.total > 10)"
+input = '{"orders": [{"total": 100, "code": "a"}]}'
+
+[test.loose]
+return_type = '{"Nullable":"String"}'
+
+[test.strict]
+return_type = '{"Nullable":"String"}'
+
+[[test]]
+name = "argMax with alias types the value"
+expression = "argMax(orders as o, o.code, o.total)"
+input = '{"orders": [{"total": 100, "code": "a"}]}'
+
+[test.loose]
+return_type = '"Any"'
+
+[[test]]
+name = "countDistinct with alias"
+expression = "countDistinct(orders as o, o.code)"
+input = '{"orders": [{"code": "a"}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "distinct keeps the element type"
+expression = "distinct(orders as o, o.code)"
+input = '{"orders": [{"code": "a"}]}'
+
+[test.loose]
+return_type = '{"Array":"String"}'
+
+[test.strict]
+return_type = '{"Array":"String"}'
+
+[[test]]
+name = "nested aliases see the outer name"
+expression = "some(cards as c, count(c.txns as t, t.amount > c.limit) > 3)"
+input = '{"cards": [{"limit": 5, "txns": [{"amount": 10}]}]}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "stddev is nullable"
+expression = "stddev(orders, #.total)"
+input = '{"orders": [{"total": 100}]}'
+
+[test.loose]
+return_type = '{"Nullable":"Number"}'
+
+[test.strict]
+return_type = '{"Nullable":"Number"}'

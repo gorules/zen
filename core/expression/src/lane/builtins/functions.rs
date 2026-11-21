@@ -6,6 +6,7 @@ use crate::lane::builtins::convert::Convert;
 use crate::lane::builtins::dates::Dates;
 use crate::lane::builtins::legacy::Legacy;
 use crate::lane::builtins::math::Math;
+use crate::lane::builtins::registered::Registered;
 use crate::lane::builtins::text::Text;
 use crate::lane::builtins::{Arg, Builtin, Fail, Out, RowContext};
 use crate::lane::exec::{CallFault, Fault};
@@ -75,6 +76,7 @@ impl Builtins {
             F::Bool => &Convert::BOOL,
             F::Type => &Convert::TYPE,
             F::Date => &Convert::DATE,
+            other => return Registered::of(other),
         })
     }
 

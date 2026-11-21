@@ -1,10 +1,11 @@
 use crate::functions::defs::{
     CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
 };
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
+use strum_macros::{EnumIter, EnumString, IntoStaticStr};
 
-#[derive(Debug, PartialEq, Eq, Hash, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
 #[strum(serialize_all = "camelCase")]
 pub enum InternalFunction {
     // General
@@ -38,6 +39,40 @@ pub enum InternalFunction {
     Ceil,
     Round,
     Trunc,
+    Stddev,
+    Variance,
+    StddevPop,
+    VariancePop,
+    Skew,
+    Kurtosis,
+    Percentile,
+    PercentileApprox,
+
+    // Aggregate
+    #[strum(to_string = "countDistinct", serialize = "count_distinct")]
+    CountDistinct,
+    CountDistinctApprox,
+    #[strum(to_string = "distinct", serialize = "unique")]
+    Distinct,
+    TopK,
+    First,
+    Last,
+    #[strum(to_string = "argMax", serialize = "maxBy")]
+    ArgMax,
+    #[strum(to_string = "argMin", serialize = "minBy")]
+    ArgMin,
+    #[strum(serialize = "@sum")]
+    AggregateSum,
+    #[strum(serialize = "@avg")]
+    AggregateAvg,
+    #[strum(serialize = "@min")]
+    AggregateMin,
+    #[strum(serialize = "@max")]
+    AggregateMax,
+    #[strum(serialize = "@median")]
+    AggregateMedian,
+    #[strum(serialize = "@mode")]
+    AggregateMode,
 
     // Type
     IsNumeric,
@@ -52,6 +87,110 @@ pub enum InternalFunction {
 
     #[strum(serialize = "d")]
     Date,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CallbackSlot {
+    Callback,
+    Parameter,
+}
+
+impl InternalFunction {
+    pub fn callback_slots(&self, arguments: usize) -> Option<&'static [CallbackSlot]> {
+        use CallbackSlot::{Callback as C, Parameter as P};
+        use InternalFunction as IF;
+        Some(match (self, arguments) {
+            (
+                IF::Sum
+                | IF::Avg
+                | IF::Min
+                | IF::Max
+                | IF::Median
+                | IF::Mode
+                | IF::Stddev
+                | IF::Variance
+                | IF::StddevPop
+                | IF::VariancePop
+                | IF::Skew
+                | IF::Kurtosis
+                | IF::CountDistinct
+                | IF::CountDistinctApprox
+                | IF::Distinct
+                | IF::First
+                | IF::Last,
+                2,
+            ) => &[C],
+            (
+                IF::Sum
+                | IF::Avg
+                | IF::Min
+                | IF::Max
+                | IF::Median
+                | IF::Mode
+                | IF::Stddev
+                | IF::Variance
+                | IF::StddevPop
+                | IF::VariancePop
+                | IF::Skew
+                | IF::Kurtosis
+                | IF::CountDistinct
+                | IF::CountDistinctApprox
+                | IF::Distinct
+                | IF::First
+                | IF::Last,
+                3,
+            ) => &[C, C],
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, 3) => &[C, P],
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, 4) => &[C, P, C],
+            (IF::ArgMax | IF::ArgMin, 2) => &[C],
+            (IF::ArgMax | IF::ArgMin, 3) => &[C, C],
+            (IF::ArgMax | IF::ArgMin, 4) => &[C, C, C],
+            _ => return None,
+        })
+    }
+
+    pub fn aggregated(&self) -> Option<InternalFunction> {
+        use InternalFunction as IF;
+        Some(match self {
+            IF::Sum => IF::AggregateSum,
+            IF::Avg => IF::AggregateAvg,
+            IF::Min => IF::AggregateMin,
+            IF::Max => IF::AggregateMax,
+            IF::Median => IF::AggregateMedian,
+            IF::Mode => IF::AggregateMode,
+            _ => return None,
+        })
+    }
+
+    pub fn aggregate_of(&self) -> Option<InternalFunction> {
+        use InternalFunction as IF;
+        Some(match self {
+            IF::AggregateSum => IF::Sum,
+            IF::AggregateAvg => IF::Avg,
+            IF::AggregateMin => IF::Min,
+            IF::AggregateMax => IF::Max,
+            IF::AggregateMedian => IF::Median,
+            IF::AggregateMode => IF::Mode,
+            _ => return None,
+        })
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.aggregate_of().is_some()
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self.aggregate_of() {
+            Some(base) => base.into(),
+            None => self.into(),
+        }
+    }
+}
+
+impl Display for InternalFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
@@ -259,6 +398,107 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
+            IF::Stddev | IF::Variance | IF::StddevPop | IF::VariancePop | IF::Skew
+            | IF::Kurtosis | IF::AggregateAvg | IF::AggregateMedian => {
+                Rc::new(StaticFunction {
+                    implementation: Rc::new(match value {
+                        IF::Stddev => imp::stddev,
+                        IF::Variance => imp::variance,
+                        IF::StddevPop => imp::stddev_pop,
+                        IF::VariancePop => imp::variance_pop,
+                        IF::Skew => imp::skew,
+                        IF::Kurtosis => imp::kurtosis,
+                        IF::AggregateAvg => imp::aggregate_avg,
+                        _ => imp::aggregate_median,
+                    }),
+                    signature: FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Number)).array(),
+                        VT::Nullable(Rc::new(VT::Number)),
+                    ),
+                })
+            }
+
+            IF::Percentile | IF::PercentileApprox => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Percentile => imp::percentile,
+                    _ => imp::percentile_approx,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Nullable(Rc::new(VT::Number)).array(), VT::Number],
+                    return_type: VT::Nullable(Rc::new(VT::Number)),
+                },
+            }),
+
+            IF::AggregateSum => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::aggregate_sum),
+                signature: FunctionSignature::single(
+                    VT::Nullable(Rc::new(VT::Number)).array(),
+                    VT::Number,
+                ),
+            }),
+
+            IF::AggregateMin | IF::AggregateMax => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::AggregateMin => imp::aggregate_min,
+                    _ => imp::aggregate_max,
+                }),
+                signatures: vec![
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Number)).array(),
+                        VT::Nullable(Rc::new(VT::Number)),
+                    ),
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Date)).array(),
+                        VT::Nullable(Rc::new(VT::Date)),
+                    ),
+                ],
+            }),
+
+            IF::AggregateMode => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::aggregate_mode),
+                signatures: vec![
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Number)).array(),
+                        VT::Nullable(Rc::new(VT::Number)),
+                    ),
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::String)).array(),
+                        VT::Nullable(Rc::new(VT::String)),
+                    ),
+                ],
+            }),
+
+            IF::CountDistinct | IF::CountDistinctApprox => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::CountDistinct => imp::count_distinct,
+                    _ => imp::count_distinct_approx,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Number),
+            }),
+
+            IF::Distinct => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::distinct),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any.array()),
+            }),
+
+            IF::TopK => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::top_k),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
+            }),
+
+            IF::First | IF::Last | IF::ArgMax | IF::ArgMin => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::First => imp::first,
+                    IF::Last => imp::last,
+                    IF::ArgMax => imp::arg_max,
+                    _ => imp::arg_min,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any),
+            }),
+
             IF::Type => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::to_type),
                 signature: FunctionSignature::single(VT::Any, VT::String),
@@ -324,6 +564,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 }
 
 pub(crate) mod imp {
+    use crate::functions::aggregate;
     use crate::functions::arguments::Arguments;
     use crate::vm::date::DynamicVariableExt;
     use crate::vm::VmDate;
@@ -721,6 +962,113 @@ pub(crate) mod imp {
             .context("Empty array")?;
 
         Ok(V::Number(most_common))
+    }
+
+    fn __internal_list(args: &Arguments, pos: usize) -> anyhow::Result<Vec<V>> {
+        let a = args.array(pos)?;
+        let items = a.borrow();
+        Ok(items.clone())
+    }
+
+    fn __internal_aggregate(
+        args: Arguments,
+        f: impl FnOnce(&[V]) -> anyhow::Result<V>,
+    ) -> anyhow::Result<V> {
+        let a = args.array(0)?;
+        let items = a.borrow();
+        f(&items)
+    }
+
+    pub fn stddev(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::stddev(items, true))
+    }
+
+    pub fn variance(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::variance(items, true))
+    }
+
+    pub fn stddev_pop(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::stddev(items, false))
+    }
+
+    pub fn variance_pop(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::variance(items, false))
+    }
+
+    pub fn skew(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::skew)
+    }
+
+    pub fn kurtosis(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::kurtosis)
+    }
+
+    pub fn percentile(args: Arguments) -> anyhow::Result<V> {
+        let q = args.number(1)?;
+        __internal_aggregate(args, |items| aggregate::percentile(items, q))
+    }
+
+    pub fn percentile_approx(args: Arguments) -> anyhow::Result<V> {
+        let q = args.number(1)?;
+        let items = __internal_list(&args, 0)?;
+        aggregate::percentile_approx(&items, q)
+    }
+
+    pub fn aggregate_sum(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::sum)
+    }
+
+    pub fn aggregate_avg(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::avg)
+    }
+
+    pub fn aggregate_min(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::extreme(items, false))
+    }
+
+    pub fn aggregate_max(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::extreme(items, true))
+    }
+
+    pub fn aggregate_median(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::median)
+    }
+
+    pub fn aggregate_mode(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::mode)
+    }
+
+    pub fn count_distinct(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::count_distinct(items)))
+    }
+
+    pub fn count_distinct_approx(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::count_distinct_approx(items)))
+    }
+
+    pub fn distinct(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::distinct(items)))
+    }
+
+    pub fn top_k(args: Arguments) -> anyhow::Result<V> {
+        let k = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| Ok(aggregate::top_k(items, k)))
+    }
+
+    pub fn first(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::first(items)))
+    }
+
+    pub fn last(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::last(items)))
+    }
+
+    pub fn arg_max(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::arg_extreme(items, true))
+    }
+
+    pub fn arg_min(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::arg_extreme(items, false))
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

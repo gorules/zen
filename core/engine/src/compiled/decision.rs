@@ -342,7 +342,7 @@ impl CompiledDecision {
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
             prepared: self.children.clone(),
             context: invocation.context.clone(),
-            limits: invocation.limits,
+            settings: invocation.settings,
             depth: 0,
         }
     }

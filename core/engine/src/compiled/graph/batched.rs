@@ -142,7 +142,7 @@ impl CompiledGraph {
                     .collect()
             }
         };
-        if extensions.depth.saturating_add(1) >= extensions.limits.max_depth {
+        if extensions.depth.saturating_add(1) >= extensions.settings.max_depth {
             return inputs
                 .iter()
                 .map(|_| {

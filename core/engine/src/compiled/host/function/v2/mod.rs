@@ -45,7 +45,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .unwrap_or_else(|| strip::TypeStripper::strip(ctx.node.source.deref()));
         let module_name = function.suggest_module_name(ctx.id.deref(), source.as_ref());
 
-        let max_duration = Duration::from_millis(ctx.config.function_timeout_millis);
+        let max_duration = Duration::from_millis(ctx.extensions.settings.function_timeout_millis);
         let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
 
         function
@@ -99,7 +99,7 @@ impl FunctionV2NodeHandler {
             let config = Object::new(ctx.clone()).catch(&ctx)?;
 
             config.prop("iteration", node_ctx.extensions.depth).catch(&ctx)?;
-            config.prop("maxDepth", node_ctx.extensions.limits.max_depth).catch(&ctx)?;
+            config.prop("maxDepth", node_ctx.extensions.settings.max_depth).catch(&ctx)?;
             config.prop("trace", node_ctx.config.trace).catch(&ctx)?;
 
             ctx.globals().set("config", config).catch(&ctx)?;
@@ -172,7 +172,7 @@ impl FunctionV2NodeHandler {
         };
         let base = Instant::now();
         let started = Arc::new(AtomicU64::new(0));
-        let limit = Duration::from_millis(config.function_timeout_millis);
+        let limit = Duration::from_millis(extensions.settings.function_timeout_millis);
         let watched = started.clone();
         function
             .runtime()
@@ -186,7 +186,11 @@ impl FunctionV2NodeHandler {
         let results = function
             .call_rows(
                 &module_name,
-                (extensions.depth, extensions.limits.max_depth, config.trace),
+                (
+                    extensions.depth,
+                    extensions.settings.max_depth,
+                    config.trace,
+                ),
                 rows,
                 &tick,
                 &extensions.context.nested(Located::function(id)),

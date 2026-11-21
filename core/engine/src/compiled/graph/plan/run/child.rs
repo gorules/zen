@@ -51,7 +51,7 @@ impl<'a> Run<'_, 'a> {
             .unwrap_or_else(|| (0..self.store.rows).collect());
         let count = at.len();
         let produced = match self.host.extensions.depth.saturating_add(1)
-            >= self.host.extensions.limits.max_depth
+            >= self.host.extensions.settings.max_depth
         {
             true => Produced {
                 leaves: Vec::new(),

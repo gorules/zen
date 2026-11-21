@@ -12,21 +12,31 @@ use std::cell::OnceCell;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Limits {
+pub(crate) struct Settings {
     pub(crate) max_depth: u8,
+    pub(crate) function_timeout_millis: u64,
+    pub(crate) nodes_in_context: bool,
 }
 
-impl Limits {
+impl Settings {
     pub(crate) fn of(options: &crate::EvaluationOptions) -> Self {
         Self {
             max_depth: options.max_depth,
+            ..Default::default()
         }
     }
 }
 
-impl Default for Limits {
+impl Default for Settings {
     fn default() -> Self {
-        Self { max_depth: 5 }
+        use std::sync::atomic::Ordering;
+        Self {
+            max_depth: 5,
+            function_timeout_millis: crate::ZEN_CONFIG
+                .function_timeout_millis
+                .load(Ordering::Relaxed),
+            nodes_in_context: crate::ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
+        }
     }
 }
 
@@ -43,7 +53,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
     pub(crate) prepared: Arc<crate::compiled::prepared::Prepared>,
     pub(crate) context: zen_expression::context::EvaluationContext,
-    pub(crate) limits: Limits,
+    pub(crate) settings: Settings,
     pub(crate) depth: u8,
 }
 
@@ -60,7 +70,7 @@ impl Default for NodeHandlerExtensions {
             http_handler: None,
             prepared: Default::default(),
             context: Default::default(),
-            limits: Default::default(),
+            settings: Default::default(),
             depth: 0,
         }
     }

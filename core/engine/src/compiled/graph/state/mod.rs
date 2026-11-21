@@ -17,10 +17,9 @@ use crate::compiled::leaf::{Array, Leaf};
 use crate::compiled::trace::batch::Traces;
 use crate::compiled::trace::record::Probe;
 use crate::decision_graph::cleaner::VariableCleaner;
-use crate::{EvaluationError, ZEN_CONFIG};
+use crate::EvaluationError;
 use petgraph::prelude::NodeIndex;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Binding, Columns};
@@ -262,13 +261,13 @@ impl CompiledGraph {
             nodes: vec![Vec::new(); self.steps.len()],
             errors: RowErrors::new(count),
             results: vec![None; count],
-            with_nodes: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
+            with_nodes: extensions.settings.nodes_in_context,
             nesting,
             traces: nesting
                 .traced
                 .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
-        if extensions.depth >= extensions.limits.max_depth {
+        if extensions.depth >= extensions.settings.max_depth {
             state
                 .errors
                 .fill(|| Box::new(EvaluationError::DepthLimitExceeded));

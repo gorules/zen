@@ -5,14 +5,12 @@ use crate::compiled::host::result::{NodeResponse, NodeResult};
 use crate::compiled::host::validator_cache::Validators;
 use crate::compiled::host::variable_json::{Guards, VariableNode};
 use crate::compiled::host::NodeError;
-use crate::ZEN_CONFIG;
 use ahash::HashSet;
 use jsonschema::ValidationError;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_types::symbol::Symbol;
@@ -407,7 +405,6 @@ impl<'a> From<ValidationError<'a>> for ValidationErrorJson {
 #[derive(Clone)]
 pub struct NodeContextConfig {
     pub trace: bool,
-    pub function_timeout_millis: u64,
     pub validation_salt: u64,
 }
 
@@ -415,7 +412,6 @@ impl Default for NodeContextConfig {
     fn default() -> Self {
         Self {
             trace: false,
-            function_timeout_millis: ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed),
             validation_salt: 0,
         }
     }

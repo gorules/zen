@@ -1,6 +1,6 @@
 use crate::compiled::call::{Call, Load};
 use crate::compiled::host::custom::DynamicCustomNode;
-use crate::compiled::host::extensions::Limits;
+use crate::compiled::host::extensions::Settings;
 use crate::compiled::host::function::v2::error::{FunctionResult, ResultExt};
 use crate::compiled::host::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use crate::compiled::host::function::v2::module::export_default;
@@ -143,7 +143,10 @@ impl RuntimeListener for ZenListener {
                                     http_handler: http_handler.clone(),
                                     prepared: prepared.clone(),
                                     context,
-                                    limits: Limits { max_depth },
+                                    settings: Settings {
+                                        max_depth,
+                                        ..Default::default()
+                                    },
                                     depth: iteration,
                                     ..Default::default()
                                 };

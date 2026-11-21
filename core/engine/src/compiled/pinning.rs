@@ -22,7 +22,7 @@ pub(crate) fn batch(options: &EvaluationOptions) -> EvaluationContext {
 #[derive(Debug, Clone)]
 pub(crate) struct Invocation {
     pub(crate) trace: crate::compiled::trace::TraceFormat,
-    pub(crate) limits: crate::compiled::host::Limits,
+    pub(crate) settings: crate::compiled::host::Settings,
     pub(crate) context: EvaluationContext,
 }
 
@@ -30,7 +30,7 @@ impl Invocation {
     fn new(options: &EvaluationOptions, context: EvaluationContext) -> Self {
         Self {
             trace: options.trace,
-            limits: crate::compiled::host::Limits::of(options),
+            settings: crate::compiled::host::Settings::of(options),
             context,
         }
     }

@@ -10,11 +10,10 @@ use crate::compiled::pinning::Located;
 use crate::compiled::trace::collect::Slot;
 use crate::compiled::trace::record::{Recording, TraceEvent, Tracer};
 use crate::model::DecisionNodeKind;
-use crate::{EvaluationError, ZEN_CONFIG};
+use crate::EvaluationError;
 use petgraph::prelude::NodeIndex;
 use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::lane::Session;
@@ -45,14 +44,14 @@ impl Traced<'_> {
             crate::compiled::trace::count_run();
         }
         let mut tracer = Tracer::new(self.graph.template(), self.graph.steps.len());
-        if self.extensions.depth >= self.extensions.limits.max_depth {
+        if self.extensions.depth >= self.extensions.settings.max_depth {
             return Run {
                 result: Err(Box::new(EvaluationError::DepthLimitExceeded)),
                 recording: tracer.finish(),
             };
         }
 
-        let with_nodes = ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed);
+        let with_nodes = self.extensions.settings.nodes_in_context;
         let mut slots: Vec<Option<Held>> = (0..self.graph.steps.len()).map(|_| None).collect();
         let mut segment = self.graph.root.clone();
         let ending = loop {

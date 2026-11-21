@@ -322,7 +322,7 @@ impl CompiledGraph {
         columns: &'a Columns<'a>,
         format: crate::compiled::trace::TraceFormat,
     ) -> Option<ColumnarOutput<'a>> {
-        if extensions.limits.max_depth == 0 {
+        if extensions.settings.max_depth == 0 {
             return None;
         }
         let admitted = self.planned_input(content, extensions, columns).await?;
@@ -355,7 +355,7 @@ impl CompiledGraph {
         extensions: &NodeHandlerExtensions,
         columns: &'a Columns<'a>,
     ) -> ColumnarOutput<'a> {
-        if extensions.limits.max_depth > 0 {
+        if extensions.settings.max_depth > 0 {
             if let Some(admitted) = self.planned_input(content, extensions, columns).await {
                 match self
                     .plan()

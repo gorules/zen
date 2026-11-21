@@ -56,6 +56,16 @@ registered! {
     SORT = Sort;
     SORT_BY = SortBy;
     IS_EMPTY = IsEmpty;
+    CLAMP = Clamp;
+    SQRT = Sqrt;
+    LN = Ln;
+    LOG = Log;
+    EXP = Exp;
+    SIGN = Sign;
+    PAD_START = PadStart;
+    PAD_END = PadEnd;
+    SPLIT_PART = SplitPart;
+    EXTRACT_ALL = ExtractAll;
     STDDEV = Stddev;
     VARIANCE = Variance;
     STDDEV_POP = StddevPop;

@@ -35,6 +35,10 @@ pub enum InternalFunction {
     Soundex,
     JaroWinkler,
     TokenSetSimilarity,
+    PadStart,
+    PadEnd,
+    SplitPart,
+    ExtractAll,
 
     // Math
     Abs,
@@ -49,6 +53,12 @@ pub enum InternalFunction {
     Ceil,
     Round,
     Trunc,
+    Clamp,
+    Sqrt,
+    Ln,
+    Log,
+    Exp,
+    Sign,
     Stddev,
     Variance,
     StddevPop,
@@ -621,6 +631,68 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             IF::IsEmpty => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::is_empty),
                 signature: FunctionSignature::single(VT::Any, VT::Bool),
+            }),
+
+            IF::Clamp => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::clamp),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Number, VT::Number, VT::Number],
+                    return_type: VT::Number,
+                },
+            }),
+
+            IF::Sqrt | IF::Ln | IF::Exp | IF::Sign => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Sqrt => imp::sqrt,
+                    IF::Ln => imp::ln,
+                    IF::Exp => imp::exp,
+                    _ => imp::sign,
+                }),
+                signature: FunctionSignature::single(VT::Number, VT::Number),
+            }),
+
+            IF::Log => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::log),
+                signatures: vec![
+                    FunctionSignature::single(VT::Number, VT::Number),
+                    FunctionSignature {
+                        parameters: vec![VT::Number, VT::Number],
+                        return_type: VT::Number,
+                    },
+                ],
+            }),
+
+            IF::PadStart | IF::PadEnd => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::PadStart => imp::pad_start,
+                    _ => imp::pad_end,
+                }),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::Number],
+                        return_type: VT::String,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::Number, VT::String],
+                        return_type: VT::String,
+                    },
+                ],
+            }),
+
+            IF::SplitPart => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::split_part),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String, VT::Number],
+                    return_type: VT::Nullable(Rc::new(VT::String)),
+                },
+            }),
+
+            IF::ExtractAll => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::extract_all),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String],
+                    return_type: VT::String.array(),
+                },
             }),
 
             IF::Type => Rc::new(StaticFunction {
@@ -1352,6 +1424,144 @@ pub(crate) mod imp {
             }
         };
         Ok(V::Bool(empty))
+    }
+
+    pub fn clamp(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        let low = args.number(1)?;
+        let high = args.number(2)?;
+        if low > high {
+            return Err(anyhow!(
+                "The lower bound {low} is above the upper bound {high}"
+            ));
+        }
+        Ok(V::Number(x.max(low).min(high)))
+    }
+
+    fn __internal_math(value: Option<Decimal>) -> anyhow::Result<V> {
+        value
+            .map(|v| V::Number(v.normalize()))
+            .context("Number overflow")
+    }
+
+    pub fn sqrt(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        if x.is_sign_negative() && !x.is_zero() {
+            return Err(anyhow!("Square root of a negative number"));
+        }
+        __internal_math(x.sqrt())
+    }
+
+    fn __internal_ln(x: Decimal) -> anyhow::Result<Decimal> {
+        use rust_decimal::MathematicalOps;
+        if x <= Decimal::ZERO {
+            return Err(anyhow!("Logarithm of a number that is not positive"));
+        }
+        x.checked_ln().context("Number overflow")
+    }
+
+    pub fn ln(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        __internal_math(Some(__internal_ln(x)?))
+    }
+
+    pub fn log(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        match args.onumber(1)? {
+            None => {
+                if x <= Decimal::ZERO {
+                    return Err(anyhow!("Logarithm of a number that is not positive"));
+                }
+                __internal_math(x.checked_log10())
+            }
+            Some(base) => {
+                if base <= Decimal::ZERO || base == Decimal::ONE {
+                    return Err(anyhow!("Invalid logarithm base {base}"));
+                }
+                let value = __internal_ln(x)?.checked_div(__internal_ln(base)?);
+                __internal_math(value.map(|v| v.round_dp(20)))
+            }
+        }
+    }
+
+    pub fn exp(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        __internal_math(x.checked_exp())
+    }
+
+    pub fn sign(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        Ok(V::Number(match x {
+            x if x.is_zero() => Decimal::ZERO,
+            x if x.is_sign_negative() => Decimal::NEGATIVE_ONE,
+            _ => Decimal::ONE,
+        }))
+    }
+
+    fn __internal_pad(args: Arguments, start: bool) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let length = aggregate::count(args.var(1)?, 1)?;
+        let pad = args.ostr(2)?.unwrap_or(" ");
+        let current = text.chars().count();
+        if current >= length || pad.is_empty() {
+            return Ok(V::String(text.into()));
+        }
+        let filler: String = pad.chars().cycle().take(length - current).collect();
+        Ok(V::String(
+            match start {
+                true => format!("{filler}{text}"),
+                false => format!("{text}{filler}"),
+            }
+            .into(),
+        ))
+    }
+
+    pub fn pad_start(args: Arguments) -> anyhow::Result<V> {
+        __internal_pad(args, true)
+    }
+
+    pub fn pad_end(args: Arguments) -> anyhow::Result<V> {
+        __internal_pad(args, false)
+    }
+
+    pub fn split_part(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let delimiter = args.str(1)?;
+        let n = args.number(2)?;
+        if !n.fract().is_zero() || n.is_zero() {
+            return Err(anyhow!("Expected a part number other than 0, got {n}"));
+        }
+        let parts: Vec<&str> = match delimiter.is_empty() {
+            true => vec![text],
+            false => text.split(delimiter).collect(),
+        };
+        let index = match n.to_i64() {
+            Some(n) if n > 0 => Some(n as usize - 1),
+            Some(n) => parts.len().checked_sub(n.unsigned_abs() as usize),
+            None => None,
+        };
+        Ok(index
+            .and_then(|i| parts.get(i))
+            .map_or(V::Null, |part| V::String((*part).into())))
+    }
+
+    pub fn extract_all(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let pattern = args.str(1)?;
+        let regex = Regex::new(pattern).context("Invalid regular expression")?;
+        let grouped = regex.captures_len() > 1;
+        let out = regex
+            .captures_iter(text)
+            .filter_map(|captures| match grouped {
+                true => captures.get(1),
+                false => captures.get(0),
+            })
+            .map(|m| V::String(m.as_str().into()))
+            .collect();
+        Ok(V::from_array(out))
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

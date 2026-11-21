@@ -16,6 +16,30 @@ fn drive(function: F, args: &[Arg]) -> Outcome {
     )
 }
 
+fn host(args: &[Arg]) -> Outcome {
+    let Some(Arg::Str(name)) = args.first() else {
+        return Some(Err("Host function name is missing".to_string()));
+    };
+    let kind = FunctionKind::Host(std::sync::Arc::from(*name));
+    let Some(definition) = FunctionRegistry::get_definition(&kind) else {
+        return Some(Err(format!("Function `{name}` not found")));
+    };
+    let values: Vec<Variable> = args[1..].iter().map(Arg::variable).collect();
+    Some(
+        definition
+            .call(Arguments(&values))
+            .map(Out::Var)
+            .map_err(|error| error.to_string()),
+    )
+}
+
+impl Registered {
+    pub(crate) const HOST: Builtin = Builtin {
+        overloads: &[|_, args| host(args)],
+        fail: |_| String::new(),
+    };
+}
+
 macro_rules! registered {
     ($($name:ident = $function:ident;)*) => {
         impl Registered {

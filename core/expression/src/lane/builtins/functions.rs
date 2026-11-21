@@ -40,6 +40,7 @@ impl Builtins {
                 })
             }
             FunctionKind::Closure(_) => return None,
+            FunctionKind::Host(_) => return Some(&Registered::HOST),
         };
         Some(match function {
             F::Len => &Text::LEN,

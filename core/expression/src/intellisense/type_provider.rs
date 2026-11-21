@@ -626,7 +626,9 @@ impl TypesProvider {
                         | InternalFunction::ArgMax
                         | InternalFunction::ArgMin),
                     ) => self.element_typecheck(*f, kind, &type_list, arguments),
-                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                    FunctionKind::Internal(_)
+                    | FunctionKind::Deprecated(_)
+                    | FunctionKind::Host(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
                         };

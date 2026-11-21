@@ -55,7 +55,9 @@ jobs:
           sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
           sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
           sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
-      - run: cargo test --workspace ${{ matrix.features.flags }} --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --locked
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run --workspace ${{ matrix.features.flags }} --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --locked --no-fail-fast
+      - run: cargo test --doc --workspace ${{ matrix.features.flags }} --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --exclude zen-engine --locked
 
   fmt:
     name: Cargo FMT

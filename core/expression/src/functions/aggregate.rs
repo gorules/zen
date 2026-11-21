@@ -13,6 +13,16 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::str::FromStr;
 
+pub(crate) fn index(n: Decimal, len: usize) -> Option<Option<usize>> {
+    match n.to_usize() {
+        Some(index) => Some(Some(index)),
+        None => match n.to_i64() {
+            Some(back) if back < 0 => Some(len.checked_sub(back.unsigned_abs() as usize)),
+            _ => None,
+        },
+    }
+}
+
 pub(crate) fn present(items: &[V]) -> impl Iterator<Item = &V> {
     items.iter().filter(|v| !matches!(v, V::Null))
 }
@@ -319,4 +329,103 @@ pub(crate) fn arg_extreme(items: &[V], max: bool) -> anyhow::Result<V> {
         }
     }
     Ok(best.map_or(V::Null, |(value, _, _)| value.clone()))
+}
+
+pub(crate) fn find_index(items: &[V], last: bool) -> anyhow::Result<V> {
+    let mut found: Option<usize> = None;
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            V::Bool(true) => {
+                found = Some(index);
+                if !last {
+                    break;
+                }
+            }
+            V::Bool(false) => {}
+            other => bail!("Expected a condition, got a {}", other.type_name()),
+        }
+    }
+    Ok(V::Number(match found {
+        Some(index) => Decimal::from(index),
+        None => Decimal::NEGATIVE_ONE,
+    }))
+}
+
+enum SortKey<'a> {
+    Number(Decimal),
+    Text(&'a str),
+    Date(&'a VmDate),
+}
+
+fn sort_key(value: &V) -> anyhow::Result<Option<SortKey<'_>>> {
+    Ok(Some(match value {
+        V::Null => return Ok(None),
+        V::Number(n) => SortKey::Number(*n),
+        V::String(s) => SortKey::Text(s.as_str()),
+        other => match date_of(other) {
+            Some(date) => SortKey::Date(date),
+            None => bail!("Cannot sort a {}", other.type_name()),
+        },
+    }))
+}
+
+fn compare_keys(
+    a: &Option<SortKey>,
+    b: &Option<SortKey>,
+    descending: bool,
+) -> anyhow::Result<Ordering> {
+    Ok(match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(a), Some(b)) => {
+            let ordering = match (a, b) {
+                (SortKey::Number(a), SortKey::Number(b)) => a.cmp(b),
+                (SortKey::Text(a), SortKey::Text(b)) => a.cmp(b),
+                (SortKey::Date(a), SortKey::Date(b)) => a.cmp(b),
+                _ => bail!("Cannot sort values of different types"),
+            };
+            match descending {
+                true => ordering.reverse(),
+                false => ordering,
+            }
+        }
+    })
+}
+
+fn sorted_by_keys(keys: Vec<Option<SortKey>>, descending: bool) -> anyhow::Result<Vec<usize>> {
+    for window in keys
+        .iter()
+        .filter(|k| k.is_some())
+        .collect::<Vec<_>>()
+        .windows(2)
+    {
+        compare_keys(window[0], window[1], false)?;
+    }
+    let mut order: Vec<usize> = (0..keys.len()).collect();
+    order.sort_by(|a, b| compare_keys(&keys[*a], &keys[*b], descending).unwrap_or(Ordering::Equal));
+    Ok(order)
+}
+
+pub(crate) fn sort(items: &[V], descending: bool) -> anyhow::Result<V> {
+    let keys = items
+        .iter()
+        .map(sort_key)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let order = sorted_by_keys(keys, descending)?;
+    Ok(V::from_array(
+        order.into_iter().map(|i| items[i].clone()).collect(),
+    ))
+}
+
+pub(crate) fn sort_by(items: &[V], descending: bool) -> anyhow::Result<V> {
+    let pairs = pairs(items)?;
+    let keys = pairs
+        .iter()
+        .map(|(_, key)| sort_key(key))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let order = sorted_by_keys(keys, descending)?;
+    Ok(V::from_array(
+        order.into_iter().map(|i| pairs[i].0.clone()).collect(),
+    ))
 }

@@ -55,11 +55,7 @@ impl Hll {
     pub fn estimate(&self) -> u64 {
         let m = HLL_REGISTERS as f64;
         let alpha = 0.7213 / (1.0 + 1.079 / m);
-        let sum: f64 = self
-            .registers
-            .iter()
-            .map(|r| 2f64.powi(-(*r as i32)))
-            .sum();
+        let sum: f64 = self.registers.iter().map(|r| 2f64.powi(-(*r as i32))).sum();
         let zeros = self.registers.iter().filter(|r| **r == 0).count();
         let raw = alpha * m * m / sum;
         let estimate = if raw <= 2.5 * m && zeros > 0 {

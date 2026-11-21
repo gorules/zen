@@ -122,22 +122,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                         (Array(a), Number(n)) => {
                             let arr = a.borrow();
-                            self.push(
-                                arr.get(n.to_usize().ok_or_else(|| OpcodeErr {
+                            let index = crate::functions::aggregate::index(n, arr.len())
+                                .ok_or_else(|| OpcodeErr {
                                     opcode: "Fetch".into(),
                                     message: "Failed to convert to usize".into(),
-                                })?)
-                                .cloned()
-                                .unwrap_or(Null),
-                            )
+                                })?;
+                            self.push(index.and_then(|i| arr.get(i)).cloned().unwrap_or(Null))
                         }
                         (String(str), Number(n)) => {
-                            let index = n.to_usize().ok_or_else(|| OpcodeErr {
-                                opcode: "Fetch".into(),
-                                message: "Failed to convert to usize".into(),
-                            })?;
+                            let index = crate::functions::aggregate::index(n, str.len())
+                                .ok_or_else(|| OpcodeErr {
+                                    opcode: "Fetch".into(),
+                                    message: "Failed to convert to usize".into(),
+                                })?;
 
-                            let slice = index.checked_add(1).and_then(|end| str.get(index..end));
+                            let slice = index
+                                .and_then(|index| index.checked_add(1).map(|end| (index, end)))
+                                .and_then(|(index, end)| str.get(index..end));
                             if let Some(slice) = slice {
                                 self.push(String((slice).into()));
                             } else {

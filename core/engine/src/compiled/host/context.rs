@@ -31,7 +31,6 @@ where
     pub nodes: Option<Variable>,
     pub trace: Option<RefCell<TraceData>>,
     pub extensions: NodeHandlerExtensions,
-    pub iteration: u8,
     pub config: NodeContextConfig,
 }
 
@@ -51,7 +50,6 @@ where
             input: base.input,
             nodes: base.nodes,
             extensions: base.extensions,
-            iteration: base.iteration,
             trace: base.config.trace.then(Default::default),
             node: data,
             config: base.config,
@@ -339,7 +337,6 @@ pub struct NodeContextBase {
     pub name: Arc<str>,
     pub input: Variable,
     pub nodes: Option<Variable>,
-    pub iteration: u8,
     pub extensions: NodeHandlerExtensions,
     pub config: NodeContextConfig,
     pub trace: Option<RefCell<Variable>>,

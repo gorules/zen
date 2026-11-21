@@ -249,7 +249,6 @@ impl CompiledGraph {
                         graph: self,
                         content,
                         extensions: &fresh,
-                        iteration: 0,
                         parent: None,
                     };
                     let run = Box::pin(traced.run(request.deep_clone())).await;

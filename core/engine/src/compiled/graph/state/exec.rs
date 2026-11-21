@@ -72,26 +72,12 @@ impl CompiledGraph {
                             .collect(),
                         false => nodes,
                     };
-                    let (results, facts) = Box::pin(Self::hosted_traced(
-                        step,
-                        &materialized,
-                        &nodes,
-                        &scoped,
-                        state.nesting.iteration,
-                    ))
-                    .await;
+                    let (results, facts) =
+                        Box::pin(Self::hosted_traced(step, &materialized, &nodes, &scoped)).await;
                     (results, Facts::Rows(facts))
                 }
                 (None, false) => (
-                    Box::pin(Self::hosted(
-                        step,
-                        &materialized,
-                        &nodes,
-                        &scoped,
-                        state.nesting.iteration,
-                        batched,
-                    ))
-                    .await,
+                    Box::pin(Self::hosted(step, &materialized, &nodes, &scoped, batched)).await,
                     Facts::None,
                 ),
                 (Some(replayed), false) => {
@@ -108,15 +94,7 @@ impl CompiledGraph {
                         false => {
                             let at: Vec<usize> = missing.iter().map(|&i| rows[i]).collect();
                             let scoped = extensions.scoped(state.context.rows(&at));
-                            Box::pin(Self::hosted(
-                                step,
-                                &inputs,
-                                &parents,
-                                &scoped,
-                                state.nesting.iteration,
-                                batched,
-                            ))
-                            .await
+                            Box::pin(Self::hosted(step, &inputs, &parents, &scoped, batched)).await
                         }
                     }
                     .into_iter();
@@ -212,17 +190,14 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
         batched: bool,
     ) -> Vec<Result<Variable, NodeError>> {
         if let DecisionNodeKind::DecisionNode { content } = &step.node.kind {
-            if let Some(results) =
-                Self::nested(step, content, inputs, nodes, extensions, iteration).await
-            {
+            if let Some(results) = Self::nested(step, content, inputs, nodes, extensions).await {
                 return results;
             }
         }
-        let single = iteration > 0 && inputs.len() == 1;
+        let single = extensions.depth > 0 && inputs.len() == 1;
         if let (
             DecisionNodeKind::FunctionNode {
                 content: FunctionNodeContent::Version2(content),
@@ -244,7 +219,6 @@ impl CompiledGraph {
                 content,
                 extensions,
                 &config,
-                iteration,
                 inputs,
             )
             .await;
@@ -254,8 +228,7 @@ impl CompiledGraph {
         } = &step.node.kind
         {
             if let Some(batch) = FunctionV1NodeHandler::batch(&step.node.id, source, inputs.len()) {
-                return Self::scripted(step, batch, inputs, nodes, extensions, iteration, batched)
-                    .await;
+                return Self::scripted(step, batch, inputs, nodes, extensions, batched).await;
             }
         }
         let mut results = Vec::with_capacity(inputs.len());
@@ -267,7 +240,6 @@ impl CompiledGraph {
                     value.clone(),
                     nodes,
                     &extensions.scoped(extensions.context.at(i)),
-                    iteration,
                     batched,
                 ))
                 .await,
@@ -283,7 +255,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
         batched: bool,
     ) -> Vec<Result<Variable, NodeError>> {
         let mut results = Vec::with_capacity(inputs.len());
@@ -298,7 +269,6 @@ impl CompiledGraph {
                         value.clone(),
                         nodes,
                         &extensions.scoped(context),
-                        iteration,
                         batched,
                     ))
                     .await,

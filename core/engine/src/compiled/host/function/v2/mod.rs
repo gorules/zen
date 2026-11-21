@@ -98,7 +98,7 @@ impl FunctionV2NodeHandler {
         async_with!(function.context() => |ctx| {
             let config = Object::new(ctx.clone()).catch(&ctx)?;
 
-            config.prop("iteration", node_ctx.iteration).catch(&ctx)?;
+            config.prop("iteration", node_ctx.extensions.depth).catch(&ctx)?;
             config.prop("maxDepth", node_ctx.extensions.limits.max_depth).catch(&ctx)?;
             config.prop("trace", node_ctx.config.trace).catch(&ctx)?;
 
@@ -125,7 +125,6 @@ impl FunctionV2NodeHandler {
         content: &FunctionContent,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
-        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let source = extensions
@@ -134,12 +133,12 @@ impl FunctionV2NodeHandler {
             .and_then(|stripped| stripped.get(content.source.as_ref()).cloned())
             .unwrap_or_else(|| strip::TypeStripper::strip(content.source.deref()));
         if rows.len() < 2 || Purity::module(source.as_ref()) {
-            return Self::run(id, &source, extensions, config, iteration, rows).await;
+            return Self::run(id, &source, extensions, config, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());
         for (at, row) in rows.into_iter().enumerate() {
             let fresh = extensions.row(at);
-            results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
+            results.extend(Self::run(id, &source, &fresh, config, vec![row]).await);
         }
         results
     }
@@ -149,7 +148,6 @@ impl FunctionV2NodeHandler {
         source: &Arc<str>,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
-        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let failed = |source: Box<dyn std::error::Error>| NodeError::new(id.clone(), source);
@@ -188,7 +186,7 @@ impl FunctionV2NodeHandler {
         let results = function
             .call_rows(
                 &module_name,
-                (iteration, extensions.limits.max_depth, config.trace),
+                (extensions.depth, extensions.limits.max_depth, config.trace),
                 rows,
                 &tick,
                 &extensions.context.nested(Located::function(id)),

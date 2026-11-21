@@ -18,7 +18,6 @@ pub(crate) struct Call<'a> {
     pub(crate) node: &'a str,
     pub(crate) key: &'a str,
     pub(crate) extensions: &'a NodeHandlerExtensions,
-    pub(crate) iteration: u8,
 }
 
 pub(crate) enum Load {
@@ -66,6 +65,7 @@ impl Call<'_> {
     ) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             context: context.nested(Located::decision(self.node, self.key)),
+            depth: self.extensions.depth + 1,
             dt_indexes: content.dt_indexes.clone(),
             stripped_functions: content.stripped_functions.clone(),
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
@@ -87,7 +87,6 @@ impl Call<'_> {
         let inputs = [input];
         let nesting = Nesting {
             parents: Some(&parents),
-            iteration: self.iteration + 1,
             completed: None,
             traced: false,
         };
@@ -122,7 +121,6 @@ impl Call<'_> {
             graph: compiled,
             content: &content,
             extensions: &extensions,
-            iteration: self.iteration + 1,
             parent,
         };
         Ok(Box::pin(traced.run(input)).await)

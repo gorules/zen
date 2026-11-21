@@ -274,7 +274,6 @@ impl CompiledDecision {
             graph: compiled,
             content: &content,
             extensions: &extensions,
-            iteration: 0,
             parent: None,
         };
         Ok(traced.run(input).await)
@@ -344,6 +343,7 @@ impl CompiledDecision {
             prepared: self.children.clone(),
             context: invocation.context.clone(),
             limits: invocation.limits,
+            depth: 0,
         }
     }
 

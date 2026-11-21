@@ -83,7 +83,6 @@ impl CompiledGraph {
             node: "",
             key,
             extensions,
-            iteration: 0,
         };
         match call.load().await {
             Err(error) => Err(Failure::Loader(error)),
@@ -103,10 +102,9 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
     ) -> Vec<Result<Variable, NodeError>> {
         let attributes = &content.transform_attributes;
-        Self::nested_results(step, content, graph, inputs, nodes, extensions, iteration)
+        Self::nested_results(step, content, graph, inputs, nodes, extensions)
             .await
             .into_iter()
             .zip(inputs)
@@ -131,7 +129,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
     ) -> Vec<Result<Variable, NodeError>> {
         let fault = |source: Box<dyn Error>| NodeError::new(step.node.id.clone(), source);
         let compiled = match Call::compiled(graph) {
@@ -147,7 +144,7 @@ impl CompiledGraph {
                     .collect()
             }
         };
-        if iteration.saturating_add(1) >= extensions.limits.max_depth {
+        if extensions.depth.saturating_add(1) >= extensions.limits.max_depth {
             return inputs
                 .iter()
                 .map(|_| {
@@ -161,7 +158,6 @@ impl CompiledGraph {
             node: &step.node.id,
             key: &content.key,
             extensions,
-            iteration,
         };
         let content = compiled.schemas(graph, extensions.loader()).await;
         let extensions = NodeHandlerExtensions {
@@ -173,7 +169,6 @@ impl CompiledGraph {
             .collect();
         let nesting = Nesting {
             parents: Some(&parents),
-            iteration: iteration + 1,
             completed: None,
             traced: false,
         };
@@ -204,16 +199,13 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
     ) -> Option<Vec<Result<Variable, NodeError>>> {
         let attributes = &content.transform_attributes;
         if !Self::batchable(attributes, inputs.len()) {
             return None;
         }
         match Self::resolve(content, extensions).await {
-            Ok(graph) => {
-                Some(Self::batch(step, content, &graph, inputs, nodes, extensions, iteration).await)
-            }
+            Ok(graph) => Some(Self::batch(step, content, &graph, inputs, nodes, extensions).await),
             Err(failure) => failure.errors(step, &content.key, inputs.len()),
         }
     }

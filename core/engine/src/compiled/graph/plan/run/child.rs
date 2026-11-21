@@ -50,33 +50,34 @@ impl<'a> Run<'_, 'a> {
             .cloned()
             .unwrap_or_else(|| (0..self.store.rows).collect());
         let count = at.len();
-        let produced =
-            match self.iteration.saturating_add(1) >= self.host.extensions.limits.max_depth {
-                true => Produced {
-                    leaves: Vec::new(),
-                    failed: (0..count)
-                        .map(|i| {
-                            (
-                                i,
-                                NodeError::new(
-                                    step.node.id.clone(),
-                                    EvaluationError::DepthLimitExceeded.to_string(),
-                                ),
-                            )
-                        })
-                        .collect(),
-                },
-                false => match self.columns(seg, op, &at) {
-                    Some(leaves) => {
-                        Census::mark("columnar");
-                        self.nested(op, &step.node.id, content, &at, leaves).await
-                    }
-                    None => {
-                        Census::mark("batched");
-                        self.fallback(seg, op, content, positions, &at).await
-                    }
-                },
-            };
+        let produced = match self.host.extensions.depth.saturating_add(1)
+            >= self.host.extensions.limits.max_depth
+        {
+            true => Produced {
+                leaves: Vec::new(),
+                failed: (0..count)
+                    .map(|i| {
+                        (
+                            i,
+                            NodeError::new(
+                                step.node.id.clone(),
+                                EvaluationError::DepthLimitExceeded.to_string(),
+                            ),
+                        )
+                    })
+                    .collect(),
+            },
+            false => match self.columns(seg, op, &at) {
+                Some(leaves) => {
+                    Census::mark("columnar");
+                    self.nested(op, &step.node.id, content, &at, leaves).await
+                }
+                None => {
+                    Census::mark("batched");
+                    self.fallback(seg, op, content, positions, &at).await
+                }
+            },
+        };
         let mut failed = vec![false; count];
         for (i, error) in produced.failed {
             failed[i] = true;
@@ -167,7 +168,6 @@ impl<'a> Run<'_, 'a> {
             node: id,
             key: &content.key,
             extensions: self.host.extensions,
-            iteration: self.iteration,
         };
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
@@ -219,7 +219,6 @@ impl<'a> Run<'_, 'a> {
             failures: Vec::new(),
             shreds: Vec::new(),
             completed: Completed::default(),
-            iteration: self.iteration + 1,
             parents: Some(&parents),
             trace: None,
         };
@@ -291,7 +290,6 @@ impl<'a> Run<'_, 'a> {
             &inputs,
             &nodes,
             &scoped,
-            self.iteration,
         ))
         .await;
         let mut failed = Vec::new();

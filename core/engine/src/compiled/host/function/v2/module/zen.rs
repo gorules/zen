@@ -31,14 +31,12 @@ impl ZenListener {
         key: &str,
         context: JsValue,
         extensions: NodeHandlerExtensions,
-        iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let start = Instant::now();
         let call = Call {
             node: "",
             key,
             extensions: &extensions,
-            iteration,
         };
         let graph = match call.load().await.or_throw(ctx)? {
             Load::Graph(graph) => graph,
@@ -65,13 +63,11 @@ impl ZenListener {
         key: &str,
         context: JsValue,
         extensions: NodeHandlerExtensions,
-        iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let call = Call {
             node: "",
             key,
             extensions: &extensions,
-            iteration,
         };
         let graph = match call.load().await.or_throw(ctx)? {
             Load::Graph(graph) => graph,
@@ -148,15 +144,12 @@ impl RuntimeListener for ZenListener {
                                     prepared: prepared.clone(),
                                     context,
                                     limits: Limits { max_depth },
+                                    depth: iteration,
                                     ..Default::default()
                                 };
                                 let response = match trace {
-                                    true => {
-                                        Self::walk(&ctx, &key, input, extensions, iteration).await?
-                                    }
-                                    false => {
-                                        Self::call(&ctx, &key, input, extensions, iteration).await?
-                                    }
+                                    true => Self::walk(&ctx, &key, input, extensions).await?,
+                                    false => Self::call(&ctx, &key, input, extensions).await?,
                                 };
                                 let k = serde_json::to_value(response).or_throw(&ctx)?.into();
 

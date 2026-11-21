@@ -47,7 +47,6 @@ pub(crate) struct State<'a> {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Nesting<'a> {
     pub(in crate::compiled::graph) parents: Option<&'a [Option<Variable>]>,
-    pub(in crate::compiled::graph) iteration: u8,
     pub(in crate::compiled::graph) completed: Option<&'a Completed>,
     pub(in crate::compiled::graph) traced: bool,
 }
@@ -236,7 +235,7 @@ impl CompiledGraph {
             extensions,
         } = host;
         let count = inputs.len();
-        if nesting.iteration == 0 && nesting.parents.is_none() {
+        if extensions.depth == 0 && nesting.parents.is_none() {
             crate::compiled::trace::count_run();
         }
         let mut state = State {
@@ -250,7 +249,7 @@ impl CompiledGraph {
                 .traced
                 .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
-        if nesting.iteration >= extensions.limits.max_depth {
+        if extensions.depth >= extensions.limits.max_depth {
             state
                 .errors
                 .fill(|| Box::new(EvaluationError::DepthLimitExceeded));

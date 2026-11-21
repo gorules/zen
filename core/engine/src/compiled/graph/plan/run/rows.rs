@@ -244,13 +244,7 @@ impl<'a> Run<'_, 'a> {
                             .extensions
                             .scoped(self.host.extensions.context.rows(&at));
                         let results = Box::pin(CompiledGraph::batch(
-                            step,
-                            content,
-                            &graph,
-                            &inputs,
-                            &nodes,
-                            &scoped,
-                            self.iteration,
+                            step, content, &graph, &inputs, &nodes, &scoped,
                         ))
                         .await;
                         {
@@ -288,7 +282,6 @@ impl<'a> Run<'_, 'a> {
                             &inputs,
                             &nodes,
                             &scoped,
-                            self.iteration,
                             self.store.rows > 1,
                         ))
                         .await

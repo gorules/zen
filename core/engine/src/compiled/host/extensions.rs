@@ -44,6 +44,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) prepared: Arc<crate::compiled::prepared::Prepared>,
     pub(crate) context: zen_expression::context::EvaluationContext,
     pub(crate) limits: Limits,
+    pub(crate) depth: u8,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -60,6 +61,7 @@ impl Default for NodeHandlerExtensions {
             prepared: Default::default(),
             context: Default::default(),
             limits: Default::default(),
+            depth: 0,
         }
     }
 }

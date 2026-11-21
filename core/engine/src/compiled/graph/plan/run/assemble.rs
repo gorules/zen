@@ -369,7 +369,6 @@ impl CompiledGraph {
                 graph: self,
                 content,
                 extensions: &fresh,
-                iteration: 0,
                 parent: None,
             };
             let request = requests.get(row).unwrap_or(zen_expression::Variable::Null);
@@ -477,7 +476,6 @@ impl Plan {
             failures: Vec::new(),
             shreds: Vec::new(),
             completed: Completed::default(),
-            iteration: 0,
             parents: None,
             trace: traced.map(|_| {
                 let lazy = !overlapping && !hosted_rows;

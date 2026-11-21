@@ -323,7 +323,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        iteration: u8,
     ) -> (Vec<Result<Variable, NodeError>>, Vec<Fact>) {
         let shared: Option<Runtime> = match &step.node.kind {
             DecisionNodeKind::FunctionNode {
@@ -358,7 +357,6 @@ impl CompiledGraph {
                     context: extensions.context.at(i),
                     ..extensions.clone()
                 },
-                iteration,
                 trace: Some(RefCell::new(Variable::Null)),
                 config: NodeContextConfig {
                     trace: true,

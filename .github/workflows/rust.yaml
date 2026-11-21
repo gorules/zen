@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   test:
-    name: cargo test (${{ matrix.os }})
+    name: cargo test (${{ matrix.os }}, ${{ matrix.features.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +37,13 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
+        features:
+          - name: all features
+            key: all
+            flags: --all-features
+          - name: default features
+            key: default
+            flags: ''
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -44,13 +51,11 @@ jobs:
         run: rustup update stable
       - uses: ./.github/actions/setup-rust
         with:
-          shared-key: rust-test-${{ matrix.os }}
+          shared-key: rust-test-${{ matrix.os }}-${{ matrix.features.key }}
           sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
           sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
           sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
-      - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --locked
-      - name: Test without arbitrary_precision
-        run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --locked
+      - run: cargo test --workspace ${{ matrix.features.flags }} --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --locked
 
   fmt:
     name: Cargo FMT

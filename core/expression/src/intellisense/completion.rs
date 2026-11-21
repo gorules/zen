@@ -432,6 +432,24 @@ fn function_info(fk: &FunctionKind) -> String {
                 "The last non-null item; last(items, #.ok) the last matching item; last(items, #.amount, #.ok) its projection"
             }
             InternalFunction::Take => "The first n items of the array",
+            InternalFunction::Clamp => "Limits a number to a range: clamp(x, low, high)",
+            InternalFunction::Sqrt => "Square root of a number",
+            InternalFunction::Ln => "Natural logarithm of a positive number",
+            InternalFunction::Log => "Logarithm of a positive number, base 10 or the given base",
+            InternalFunction::Exp => "e raised to the power of a number",
+            InternalFunction::Sign => "-1, 0 or 1 for a negative, zero or positive number",
+            InternalFunction::PadStart => {
+                "Pads the start of a string to a length, with spaces or the given text"
+            }
+            InternalFunction::PadEnd => {
+                "Pads the end of a string to a length, with spaces or the given text"
+            }
+            InternalFunction::SplitPart => {
+                "The nth part (from 1; negative counts from the end) of a string split by a delimiter, null when missing"
+            }
+            InternalFunction::ExtractAll => {
+                "Every match of a regular expression, or of its first group when it has one"
+            }
             InternalFunction::TakeLast => "The last n items of the array",
             InternalFunction::Find => {
                 "The first item matching a condition: find(items, #.status == 'declined')"
@@ -579,6 +597,15 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
                 vec!["arr", "fraction"]
             }
             InternalFunction::TopK => vec!["arr", "k"],
+            InternalFunction::Clamp => vec!["num", "low", "high"],
+            InternalFunction::Sqrt
+            | InternalFunction::Ln
+            | InternalFunction::Exp
+            | InternalFunction::Sign => vec!["num"],
+            InternalFunction::Log => vec!["num", "base"],
+            InternalFunction::PadStart | InternalFunction::PadEnd => vec!["str", "length", "pad"],
+            InternalFunction::SplitPart => vec!["str", "delimiter", "part"],
+            InternalFunction::ExtractAll => vec!["str", "pattern"],
             InternalFunction::Take | InternalFunction::TakeLast => vec!["arr", "n"],
             InternalFunction::Find
             | InternalFunction::FindLast

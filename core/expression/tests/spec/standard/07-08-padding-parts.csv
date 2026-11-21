@@ -1,0 +1,31 @@
+expression (string);input (json 5);output (json 5);note
+# padStart and padEnd: to a length in characters, spaces by default
+padStart('7', 3, '0');;'007'
+padEnd('7', 3, '0');;'700'
+padStart('ab', 5);;'   ab'
+padEnd('ab', 5);;'ab   '
+padStart('abc', 7, 'xy');;'xyxyabc'
+padStart('abcdef', 3, '0');;'abcdef'
+padStart('é', 3, '*');;'**é'
+padStart('a', 3, '');;'a'
+padStart('a', -1);;!error
+padStart(5, 3, '0');;!error
+padStart('a');;!error
+# splitPart: the nth part from 1, negative counts from the end, null when missing
+splitPart('a,b,c', ',', 2);;'b'
+splitPart('a,b,c', ',', -1);;'c'
+splitPart('a,b,c', ',', 4);;null
+splitPart('a,b,c', ',', -4);;null
+splitPart('a,,c', ',', 2);;''
+splitPart('abc', '', 1);;'abc'
+splitPart('2024-01-31', '-', 1);;'2024'
+splitPart('a,b', ',', 0);;!error
+splitPart('a,b', ',', 1.5);;!error
+splitPart(null, ',', 1);;!error
+# extractAll: every match, or the first group of every match
+extractAll('a1b22c333', '\d+');;['1', '22', '333']
+extractAll('k=1, j=2', '(\w)=\d');;['k', 'j']
+extractAll('abc', '\d');;[]
+extractAll('', 'a');;[]
+extractAll('abc', '(');;!error
+extractAll(1, 'a');;!error

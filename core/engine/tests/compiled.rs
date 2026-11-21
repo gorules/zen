@@ -1,9 +1,10 @@
-mod compiled_default;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 mod support;
 
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use serde_json::json;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -129,8 +130,8 @@ async fn compiled_graphs_match_the_walker() {
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0usize;
     for fixture in Fixture::load_all() {
-        let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())));
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let walker = Live::walker(&Decision::from(Arc::new(fixture.content.clone())).latest());
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         let verdict = zen_engine::diagnostics::compiled_verdict(&compiled);
         let key = match &verdict {
@@ -225,7 +226,7 @@ async fn compiled_graph_throughput() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -315,7 +316,7 @@ async fn columnar_graphs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -410,7 +411,7 @@ async fn struct_inputs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -563,7 +564,7 @@ async fn columnar_tables_match_coded_nulls_against_null_cells() {
             ]
         }))
         .expect("graph");
-        let mut decision = Decision::from(Arc::new(content));
+        let mut decision = Decision::from(Arc::new(content)).latest();
         decision.compile();
         decision
     };
@@ -610,7 +611,7 @@ async fn columnar_function_rows_time_out_independently() {
         .into_iter()
         .find(|f| f.name == "infinite-function.json")
         .expect("fixture");
-    let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+    let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
     compiled.compile();
     let rows: Vec<Value> = (0..3).map(|i| serde_json::json!({ "row": i })).collect();
     let built = Built::new(&rows).expect("columns");
@@ -693,7 +694,7 @@ impl FunctionNode {
         let columns = built.columns();
         let mut failures = Vec::new();
         for content in contents {
-            let mut compiled = Decision::from(FunctionNode::graph(content.clone()));
+            let mut compiled = Decision::from(FunctionNode::graph(content.clone())).latest();
             compiled.compile();
             let output = compiled
                 .evaluate_columns(&columns, EvaluationOptions::default())
@@ -815,7 +816,7 @@ async fn columnar_graph_throughput() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         if loader {
             compiled = compiled.with_loader(Arc::new(support::create_fs_loader()));
         }
@@ -957,7 +958,7 @@ async fn single_row_latency() {
             continue;
         }
         let content = Arc::new(fixture.content.clone());
-        let mut compiled = Decision::from(content.clone());
+        let mut compiled = Decision::from(content.clone()).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -980,7 +981,7 @@ async fn single_row_latency() {
             .await,
             Latency::measure(&contexts, reps, |c| {
                 let content = content.clone();
-                async move { drop(Decision::from(content).evaluate(c).await) }
+                async move { drop(Decision::from(content).latest().evaluate(c).await) }
             })
             .await,
             Latency::measure(&contexts, reps, |c| {
@@ -1234,7 +1235,7 @@ async fn wide_inputs_match_the_walker() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         if !matches!(
             zen_engine::diagnostics::compiled_verdict(&compiled),
@@ -1364,7 +1365,7 @@ async fn plan_census() {
         {
             continue;
         }
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         let variants = match std::env::var("BENCH_VALID").is_ok() && !fixture.inputs.is_empty() {
             true => fixture.inputs.clone(),
@@ -1494,7 +1495,7 @@ impl Chain {
         rows: &[Value],
         failures: &mut Vec<String>,
     ) -> (usize, usize) {
-        let mut compiled = Decision::from(Arc::new(content));
+        let mut compiled = Decision::from(Arc::new(content)).latest();
         compiled.compile();
         assert!(
             matches!(

@@ -1,6 +1,7 @@
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use support::columns::Built;
@@ -111,7 +112,8 @@ async fn date_schemas_match_row_evaluation_in_one_columnar_batch() {
             Case::output(None),
         ],
         vec![],
-    ));
+    ))
+    .latest();
     let rows = vec![
         json!({ "at": "2024-01-31T10:00:00Z", "day": "2024-02-29", "customer": { "born": "1990-05-01", "name": "a" }, "count": 1 }),
         json!({ "at": "2024-01-31T10:00:00+02:00", "day": null, "customer": { "name": "b" }, "count": 2 }),
@@ -141,7 +143,8 @@ async fn dates_inside_lists_and_untouched_dates_match_row_evaluation() {
             Case::output(None),
         ],
         vec![],
-    ));
+    ))
+    .latest();
     let rows = vec![
         json!({ "visits": ["2024-01-01", "2024-02-01"], "plain": "2024-01-01" }),
         json!({ "visits": ["2024-03-01"], "plain": "x" }),
@@ -172,6 +175,7 @@ async fn dictionary_schemas_match_row_evaluation_in_one_columnar_batch() {
         ],
         vec!["dicts"],
     ))
+    .latest()
     .with_loader(loader);
     let rows = vec![
         json!({ "tier": "VIP", "since": "2024-01-01" }),
@@ -212,7 +216,7 @@ async fn output_schemas_over_mixed_columns_match_row_evaluation() {
             Case::output(Some(schema)),
         ],
         vec![],
-    ));
+    )).latest();
     let rows: Vec<Value> = ["a", "b", "c", "d", "e", "f", "g", "h", "z", "a", "z"]
         .iter()
         .map(|kind| json!({ "kind": kind }))
@@ -240,7 +244,8 @@ async fn unmodelled_property_keywords_match_row_evaluation() {
             Case::output(None),
         ],
         vec![],
-    ));
+    ))
+    .latest();
     let rows = vec![
         json!({ "email": "a@b.co", "code": "DE12", "step": 1.5, "contact": "x", "customer": { "vat": "DE1" } }),
         json!({ "email": "not-an-email", "code": "DE12", "step": 1.5, "contact": 2, "customer": { "vat": "DE1" } }),
@@ -286,7 +291,7 @@ async fn output_schemas_over_constant_columns_match_row_evaluation() {
                 Case::output(Some(schema)),
             ],
             vec![],
-        ));
+        )).latest();
         let rows: Vec<Value> = (0..8).map(|i| json!({ "kind": format!("k{i}") })).collect();
         Case::compare(&decision, rows).await;
     }

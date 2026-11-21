@@ -1,7 +1,8 @@
 #[allow(dead_code)]
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use support::columns::Built;
@@ -60,7 +61,7 @@ impl Graphs {
     }
 
     fn decision(graph: &Value) -> Decision {
-        Decision::from(Arc::new(Self::content(graph)))
+        Decision::from(Arc::new(Self::content(graph))).latest()
     }
 
     fn text(result: Result<DecisionGraphResponse, Box<EvaluationError>>) -> String {
@@ -113,7 +114,7 @@ struct Policies;
 
 impl Policies {
     fn workspace(doc: Value) -> PolicyWorkspace {
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         ws.set_policy("p", serde_json::from_value(doc).unwrap());
         ws
     }
@@ -417,6 +418,7 @@ async fn sub_decisions_reuse_stripped_functions() {
     let input = Variable::from(json!({ "x": 1 }));
     let top = Graphs::text(
         Decision::from(Arc::new(Stripped::primed()))
+            .latest()
             .evaluate(input.clone())
             .await,
     );

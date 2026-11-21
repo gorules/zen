@@ -1,6 +1,6 @@
-mod compiled_default;
 #[allow(dead_code)]
 mod conformance;
+mod latest;
 #[allow(dead_code)]
 #[path = "support/policies.rs"]
 mod policies;
@@ -8,6 +8,7 @@ mod policies;
 mod policy_gen;
 mod support;
 
+use latest::Latest;
 use policies::{Anchor, Batch, Generated, PolicyCase};
 use policy_gen::{Gen, Rng};
 use serde_json::json;
@@ -276,7 +277,7 @@ fn compiled_policy_throughput() {
     let time = |elapsed: std::time::Duration| elapsed.as_nanos() as f64 / rows as f64;
     let mut ratios: Vec<(f64, f64, f64)> = Vec::new();
     for seed in 0..seeds {
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         let Ok(parsed) = serde_json::from_value(Gen::document(seed)) else {
             continue;
         };
@@ -394,7 +395,7 @@ async fn engine_batch_matches_single_evaluations() {
             _ => Variable::from(Gen::input(&mut rng)),
         })
         .collect();
-    let engine = DecisionEngine::default().with_loader(loader);
+    let engine = DecisionEngine::default().latest().with_loader(loader);
     for compiled in [false, true] {
         if compiled {
             engine.compile();

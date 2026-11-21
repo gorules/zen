@@ -101,7 +101,7 @@ impl Anchor {
         crate::support::switches();
         let literal = conformance::literal::Parser::document(policy).expect("policy literal");
         let document = conformance::policy::Policy::expand(&literal[0]).expect("policy expand");
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().with_version(zen_engine::EngineVersion::V2);
         ws.set_policy(
             "anchor",
             serde_json::from_value(document).expect("policy json"),
@@ -474,7 +474,8 @@ impl PolicyCase {
         file.test
             .into_iter()
             .map(|case| {
-                let mut workspace = PolicyWorkspace::new();
+                let mut workspace =
+                    PolicyWorkspace::new().with_version(zen_engine::EngineVersion::V2);
                 for path in &case.policies {
                     let text = std::fs::read_to_string(format!("{}{path}", Self::FIXTURES_DIR))
                         .expect("fixture");
@@ -581,7 +582,7 @@ impl Generated {
 
     pub fn workspace(seed: u64) -> Option<PolicyWorkspace> {
         let parsed = serde_json::from_value(Gen::document(seed)).ok()?;
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().with_version(zen_engine::EngineVersion::V2);
         ws.set_policy(Self::PATH, parsed);
         Some(ws)
     }

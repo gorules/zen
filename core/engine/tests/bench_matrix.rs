@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-mod compiled_default;
 mod conformance;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 #[path = "support/policies.rs"]
 mod policies;
 #[path = "support/policy_gen.rs"]
@@ -13,6 +13,7 @@ mod support;
 use conformance::run::{GraphRun, PolicyRun};
 use conformance::{Dialect, Spec};
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use policies::Anchor;
 use policy_gen::{Gen, Rng};
 use serde_json::{json, Value};
@@ -380,8 +381,9 @@ fn bench_matrix() {
             {
                 continue;
             }
-            let decision =
-                Decision::from(Arc::new(fixture.content.clone())).with_loader(loader.clone());
+            let decision = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .with_loader(loader.clone());
             let job = GraphJob {
                 corpus: "fixtures",
                 case: fixture.name.clone(),
@@ -439,13 +441,13 @@ fn bench_matrix() {
                 continue;
             };
             let build = || {
-                let mut ws = PolicyWorkspace::new();
+                let mut ws = PolicyWorkspace::new().latest();
                 if let Ok(parsed) = serde_json::from_value(Gen::document(seed)) {
                     ws.set_policy("generated.json", parsed);
                 }
                 ws
             };
-            let mut ws = PolicyWorkspace::new();
+            let mut ws = PolicyWorkspace::new().latest();
             ws.set_policy("generated.json", parsed);
             let mut rng = Rng(seed.wrapping_mul(7919) | 1);
             let rows: Vec<Value> = (0..64).map(|_| Gen::valid_input(&mut rng)).collect();
@@ -546,8 +548,9 @@ fn columnar_reasons() {
         {
             continue;
         }
-        let decision =
-            Decision::from(Arc::new(fixture.content.clone())).with_loader(loader.clone());
+        let decision = Decision::from(Arc::new(fixture.content.clone()))
+            .latest()
+            .with_loader(loader.clone());
         let rows = cycled(&fixture.variants());
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             graph(&mut out, "fixtures", fixture.name.clone(), &decision, rows)
@@ -612,7 +615,7 @@ fn columnar_reasons() {
         let Ok(parsed) = serde_json::from_value(Gen::document(seed)) else {
             continue;
         };
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         ws.set_policy("generated.json", parsed);
         let mut rng = Rng(seed.wrapping_mul(7919) | 1);
         let rows = cycled(

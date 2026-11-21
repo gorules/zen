@@ -49,7 +49,7 @@ impl Workspace {
         Self {
             db: Db::new(),
             compiled: Default::default(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 
@@ -197,6 +197,10 @@ impl Workspace {
     pub fn with_version(mut self, version: crate::EngineVersion) -> Self {
         self.engine = version.into();
         self
+    }
+
+    pub fn set_version(&mut self, version: crate::EngineVersion) {
+        self.engine = version.into();
     }
 
     pub fn version(&self) -> crate::EngineVersion {

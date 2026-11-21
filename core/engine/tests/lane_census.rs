@@ -1,4 +1,3 @@
-mod compiled_default;
 mod conformance;
 #[allow(dead_code)]
 #[path = "support/fixture.rs"]

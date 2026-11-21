@@ -1,5 +1,6 @@
-mod compiled_default;
+mod latest;
 
+use latest::Latest;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use zen_engine::loader::MemoryLoader;
@@ -29,12 +30,12 @@ fn content() -> DecisionContent {
 fn engine() -> DecisionEngine {
     let loader = Arc::new(MemoryLoader::default());
     loader.add(KEY, content());
-    DecisionEngine::default().with_loader(loader)
+    DecisionEngine::default().latest().with_loader(loader)
 }
 
 fn decision() -> Decision {
     match content() {
-        DecisionContent::Graph(graph) => Decision::from(graph),
+        DecisionContent::Graph(graph) => Decision::from(graph).latest(),
         DecisionContent::Policy(_) => unreachable!("graph content"),
     }
 }

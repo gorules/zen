@@ -97,14 +97,17 @@ impl GraphRun {
         }
         shared.add(Self::MAIN, content(&suite.content)?);
         let engine = DecisionEngine::default()
+            .with_version(zen_engine::EngineVersion::V2)
             .with_loader(shared)
             .with_adapter(Arc::new(SpecNodes));
         engine.compile();
         let uncompiled = Decision::from(graph.clone())
+            .with_version(zen_engine::EngineVersion::V2)
             .with_loader(plain)
             .with_adapter(Arc::new(SpecNodes));
         let walker = Live::walker(&uncompiled);
         let mut compiled = Decision::from(graph)
+            .with_version(zen_engine::EngineVersion::V2)
             .with_loader(built)
             .with_adapter(Arc::new(SpecNodes));
         compiled.compile();
@@ -117,6 +120,12 @@ impl GraphRun {
     }
 
     pub const MAIN: &'static str = "spec-main";
+
+    pub fn version(&mut self, version: zen_engine::EngineVersion) {
+        self.uncompiled = self.uncompiled.with_version(version);
+        self.compiled = self.compiled.with_version(version);
+        self.engine.set_version(version);
+    }
 
     pub fn compiled(content: DecisionContent) -> DecisionContent {
         match content {
@@ -155,8 +164,13 @@ pub struct PolicyRun {
 impl PolicyRun {
     pub const MAIN: &'static str = "main";
 
+    pub fn version(&mut self, version: zen_engine::EngineVersion) {
+        self.workspace.set_version(version);
+        self.engine.set_version(version);
+    }
+
     pub fn new(suite: &Suite) -> Result<PolicyRun, String> {
-        let mut workspace = PolicyWorkspace::new();
+        let mut workspace = PolicyWorkspace::new().with_version(zen_engine::EngineVersion::V2);
         let loader = Arc::new(MemoryLoader::default());
         let policy = |value: &Value| {
             serde_json::from_value(value.clone())
@@ -188,7 +202,9 @@ impl PolicyRun {
                 .collect();
         blocking.sort();
         blocking.dedup();
-        let engine = DecisionEngine::default().with_loader(loader);
+        let engine = DecisionEngine::default()
+            .with_version(zen_engine::EngineVersion::V2)
+            .with_loader(loader);
         let gate = suite.diagnostics.is_none();
         Ok(PolicyRun {
             workspace,

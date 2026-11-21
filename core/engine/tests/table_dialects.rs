@@ -1,6 +1,7 @@
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use support::columns::Built;
@@ -218,7 +219,7 @@ impl Table {
         else {
             panic!("not a graph");
         };
-        let mut decision = Decision::from(graph);
+        let mut decision = Decision::from(graph).latest();
         decision.compile();
         decision
     }
@@ -245,7 +246,7 @@ impl Table {
                 {"id": "t", "type": "decisionTable", "props": {"data": self.data("x.", "x.")}}
             ]}),
         };
-        let mut ws = PolicyWorkspace::new();
+        let mut ws = PolicyWorkspace::new().latest();
         ws.set_policy("p", serde_json::from_value(doc).expect("policy"));
         ws
     }

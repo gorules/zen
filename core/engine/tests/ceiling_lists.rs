@@ -1,6 +1,7 @@
-mod compiled_default;
+mod latest;
 mod support;
 
+use latest::Latest;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::fs;
@@ -657,7 +658,7 @@ async fn ceiling_product_listing_scoring() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024);
     let (content, variants) = Fixture::load();
-    let mut compiled = Decision::from(Arc::new(content));
+    let mut compiled = Decision::from(Arc::new(content)).latest();
     compiled.compile();
     assert!(matches!(
         zen_engine::diagnostics::compiled_verdict(&compiled),

@@ -95,7 +95,7 @@ impl Default for DecisionEngine {
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
             caches: Default::default(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -108,7 +108,7 @@ impl DecisionEngine {
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
             caches: Default::default(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 
@@ -196,12 +196,6 @@ impl DecisionEngine {
                 .evaluate_pinned(&self.parts(), key_str, context, options)
                 .await?;
         }
-        if self.engine.scopes() {
-            return crate::compiled::Engine::interpreting(
-                self.evaluate_with_opts(key_str, context, options),
-            )
-            .await;
-        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
@@ -251,12 +245,6 @@ impl DecisionEngine {
                 .caches
                 .evaluate_serialized_pinned(&self.parts(), key_str, context, options)
                 .await;
-        }
-        if self.engine.scopes() {
-            return crate::compiled::Engine::interpreting(
-                self.evaluate_serialized(key_str, context, options),
-            )
-            .await;
         }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {

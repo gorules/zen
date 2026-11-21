@@ -1,8 +1,8 @@
-mod compiled_default;
 #[allow(dead_code)]
 mod conformance;
 #[path = "support/fixture.rs"]
 mod fixture;
+mod latest;
 #[allow(dead_code)]
 #[path = "support/policies.rs"]
 mod policies;
@@ -13,6 +13,7 @@ mod support;
 use conformance::run::{GraphRun, Guard, PolicyRun};
 use conformance::{Dialect, Mode, Spec, Suite};
 use fixture::{Fixture, NETWORK_BOUND, TIME_BOUND};
+use latest::Latest;
 use policies::{Anchor, Generated, PolicyCase};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -934,7 +935,7 @@ impl Corpus {
     }
 
     fn compiled(fixture: &Fixture) -> Decision {
-        let mut compiled = Decision::from(Arc::new(fixture.content.clone()));
+        let mut compiled = Decision::from(Arc::new(fixture.content.clone())).latest();
         compiled.compile();
         compiled
     }
@@ -942,7 +943,9 @@ impl Corpus {
     async fn graph_fixtures(golden: &mut Golden) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
-            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+            let walker = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .interpreted();
             for input in Self::fixture_inputs(&fixture) {
                 Graphs::record(
                     golden,
@@ -1023,9 +1026,11 @@ impl Corpus {
     async fn modes_graph_fixtures(live: &Golden, check: &mut Check) {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures().into_iter().filter(|f| !Self::slow(f)) {
-            let walker = Decision::from(Arc::new(fixture.content.clone())).interpreted();
+            let walker = Decision::from(Arc::new(fixture.content.clone()))
+                .latest()
+                .interpreted();
             let compiled = Self::compiled(&fixture);
-            let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
+            let uncompiled = Decision::from(Arc::new(fixture.content.clone())).latest();
             let inputs = Self::fixture_inputs(&fixture);
             check.collected(&fixture.name, &inputs);
             for input in inputs {
@@ -1383,7 +1388,7 @@ impl Corpus {
         let _guard = Nodes::lock();
         for fixture in Self::fixtures() {
             let compiled = Self::compiled(&fixture);
-            let uncompiled = Decision::from(Arc::new(fixture.content.clone()));
+            let uncompiled = Decision::from(Arc::new(fixture.content.clone())).latest();
             let inputs = Self::fixture_inputs(&fixture);
             check.collected(&fixture.name, &inputs);
             for input in &inputs {

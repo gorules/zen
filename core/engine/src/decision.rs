@@ -30,7 +30,7 @@ impl From<GraphContent> for Decision {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: OnceLock::new(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -43,7 +43,7 @@ impl From<Arc<GraphContent>> for Decision {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: OnceLock::new(),
-            engine: crate::compiled::Engine::Configured,
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }

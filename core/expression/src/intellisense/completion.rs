@@ -341,6 +341,32 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Split => {
                 "Splits a string into an array of substrings using the specified delimiter"
             }
+            InternalFunction::Join => {
+                "Joins the items into a string with a separator (`,` by default); null items are skipped"
+            }
+            InternalFunction::Replace => {
+                "Replaces the first match of a regular expression; $1 in the replacement refers to a group"
+            }
+            InternalFunction::ReplaceAll => {
+                "Replaces every match of a regular expression; $1 in the replacement refers to a group"
+            }
+            InternalFunction::Unaccent => "Removes diacritics: Kovačić becomes Kovacic",
+            InternalFunction::Squish => {
+                "Trims the string and collapses every run of whitespace to one space"
+            }
+            InternalFunction::TokenSort => {
+                "Lower-cases the words, drops punctuation and sorts them: the same for any word order"
+            }
+            InternalFunction::NameKey => {
+                "One key for a name: lower-cased, diacritics removed, punctuation dropped, words sorted"
+            }
+            InternalFunction::Soundex => "American Soundex code of how the text sounds (R163)",
+            InternalFunction::JaroWinkler => {
+                "Jaro-Winkler similarity from 0 to 1, favouring a shared beginning; also of each string of a list"
+            }
+            InternalFunction::TokenSetSimilarity => {
+                "Share of words two texts have in common, from 0 to 1, ignoring order, case and punctuation; also of each string of a list"
+            }
             InternalFunction::Abs => "Returns the absolute value of a number",
             InternalFunction::Sum | InternalFunction::AggregateSum => {
                 "Returns the sum of all elements in the input array; sum(items, #.amount, #.ok) adds a projection of each item, optionally filtered, skipping nulls (0 when nothing remains)"
@@ -490,6 +516,18 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             InternalFunction::Matches | InternalFunction::Extract => vec!["str", "pattern"],
             InternalFunction::FuzzyMatch => vec!["haystack", "needle"],
             InternalFunction::Split => vec!["str", "delimiter"],
+            InternalFunction::Join => vec!["arr", "separator"],
+            InternalFunction::Replace | InternalFunction::ReplaceAll => {
+                vec!["str", "pattern", "replacement"]
+            }
+            InternalFunction::Unaccent
+            | InternalFunction::Squish
+            | InternalFunction::TokenSort
+            | InternalFunction::NameKey
+            | InternalFunction::Soundex => vec!["str"],
+            InternalFunction::JaroWinkler | InternalFunction::TokenSetSimilarity => {
+                vec!["str", "other"]
+            }
             InternalFunction::Abs | InternalFunction::Floor | InternalFunction::Ceil => {
                 vec!["num"]
             }

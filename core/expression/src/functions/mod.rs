@@ -15,6 +15,7 @@ pub(crate) mod defs;
 mod deprecated;
 pub(crate) mod internal;
 mod method;
+pub(crate) mod normalize;
 pub(crate) mod registry;
 pub mod sketch;
 pub(crate) mod stats;

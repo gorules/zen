@@ -406,6 +406,13 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     DeprecatedFunction::StartOf => CompareWithReference(Equal),
                     DeprecatedFunction::EndOf => CompareWithReference(Equal),
                 },
+                FunctionKind::Host(_) => match FunctionRegistry::get_definition(kind)
+                    .map(|definition| definition.return_type())
+                {
+                    Some(VariableType::Bool) => AsBoolean,
+                    Some(VariableType::Array(_)) => CompareWithReference(In),
+                    _ => CompareWithReference(Equal),
+                },
                 FunctionKind::Closure(c) => match c {
                     ClosureFunction::All => AsBoolean,
                     ClosureFunction::Some => AsBoolean,

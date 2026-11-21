@@ -27,6 +27,7 @@ impl Effect {
             FunctionKind::Deprecated(DeprecatedFunction::Duration) => Effect::Pure,
             FunctionKind::Deprecated(_) => Effect::Clock,
             FunctionKind::Internal(_) | FunctionKind::Closure(_) => Effect::Pure,
+            FunctionKind::Host(_) => Effect::Clock,
         }
     }
 

@@ -218,6 +218,11 @@ impl Completions {
                 .filter(|f| !f.is_hidden())
                 .map(FunctionKind::Internal)
                 .chain(ClosureFunction::iter().map(FunctionKind::Closure))
+                .chain(
+                    FunctionRegistry::host_functions()
+                        .into_iter()
+                        .map(|(name, _)| FunctionKind::Host(name)),
+                )
                 .map(|fk| Self::function(fk, None)),
         );
 
@@ -250,6 +255,7 @@ impl Completions {
             FunctionKind::Internal(_) => Some(10),
             FunctionKind::Closure(_) => None,
             FunctionKind::Deprecated(_) => Some(-20),
+            FunctionKind::Host(_) => Some(5),
         });
 
         Completion {
@@ -320,6 +326,9 @@ impl Completions {
 
 fn function_info(fk: &FunctionKind) -> String {
     let s = match fk {
+        FunctionKind::Host(name) => {
+            return FunctionRegistry::host_description(name).unwrap_or_default();
+        }
         FunctionKind::Internal(i) => match i {
             InternalFunction::Len => "Returns the length of variable",
             InternalFunction::Contains => "Checks if variable contains a needle",
@@ -659,13 +668,13 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             DeprecatedFunction::Duration => vec!["duration"],
             DeprecatedFunction::StartOf | DeprecatedFunction::EndOf => vec!["timestamp", "unit"],
         },
-        FunctionKind::Closure(_) => vec![],
+        FunctionKind::Closure(_) | FunctionKind::Host(_) => vec![],
     }
 }
 
 fn function_signature(fk: &FunctionKind) -> String {
     match fk {
-        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
             let param_names = function_param_names(fk);
             let Some(definition) = FunctionRegistry::get_definition(fk) else {
                 return String::new();

@@ -215,6 +215,7 @@ impl Completions {
 
         completions.extend(
             InternalFunction::iter()
+                .filter(|f| !f.is_hidden())
                 .map(FunctionKind::Internal)
                 .chain(ClosureFunction::iter().map(FunctionKind::Closure))
                 .map(|fk| Self::function(fk, None)),
@@ -341,17 +342,75 @@ fn function_info(fk: &FunctionKind) -> String {
                 "Splits a string into an array of substrings using the specified delimiter"
             }
             InternalFunction::Abs => "Returns the absolute value of a number",
-            InternalFunction::Sum => "Returns the sum of all elements in the input array",
-            InternalFunction::Avg => "Calculates the average of all elements in the input array",
-            InternalFunction::Min => "Returns the smallest of the elements in the input array",
-            InternalFunction::Max => "Returns the largest of the elements in the input array",
+            InternalFunction::Sum | InternalFunction::AggregateSum => {
+                "Returns the sum of all elements in the input array; sum(items, #.amount, #.ok) adds a projection of each item, optionally filtered, skipping nulls (0 when nothing remains)"
+            }
+            InternalFunction::Avg | InternalFunction::AggregateAvg => {
+                "Calculates the average of all elements in the input array; avg(items, #.amount, #.ok) averages a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
+            InternalFunction::Min | InternalFunction::AggregateMin => {
+                "Returns the smallest of the elements in the input array; min(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
+            InternalFunction::Max | InternalFunction::AggregateMax => {
+                "Returns the largest of the elements in the input array; max(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
             InternalFunction::Rand => {
                 "Generates a random number between 0 (inclusive) and max (inclusive); every call, and every item of a closure, draws anew from the evaluation's seeded stream"
             }
-            InternalFunction::Median => {
-                "Calculates the median value of all elements in the input array"
+            InternalFunction::Median | InternalFunction::AggregateMedian => {
+                "Calculates the median value of all elements in the input array; median(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls"
             }
-            InternalFunction::Mode => "Finds the mode(s) of the input array",
+            InternalFunction::Mode | InternalFunction::AggregateMode => {
+                "Finds the most common value of the input array; mode(items, #.status, #.ok) counts a projection of each item (numbers or strings), optionally filtered, skipping nulls"
+            }
+            InternalFunction::Stddev => {
+                "Sample standard deviation of the numbers, nulls skipped (null below two values); stddev(items, #.amount, #.ok) projects and filters items"
+            }
+            InternalFunction::Variance => {
+                "Sample variance of the numbers, nulls skipped (null below two values); variance(items, #.amount, #.ok) projects and filters items"
+            }
+            InternalFunction::StddevPop => {
+                "Population standard deviation of the numbers, nulls skipped (null when empty)"
+            }
+            InternalFunction::VariancePop => {
+                "Population variance of the numbers, nulls skipped (null when empty)"
+            }
+            InternalFunction::Skew => {
+                "Skewness of the numbers, nulls skipped (null below two distinct values)"
+            }
+            InternalFunction::Kurtosis => {
+                "Excess kurtosis of the numbers, nulls skipped (null below two distinct values)"
+            }
+            InternalFunction::Percentile => {
+                "The value at a fraction (0 to 1) of the sorted numbers, interpolated linearly; percentile(items, #.amount, 0.9, #.ok) projects and filters items"
+            }
+            InternalFunction::PercentileApprox => {
+                "The t-digest estimate of the value at a fraction (0 to 1) of the numbers; percentileApprox(items, #.amount, 0.9, #.ok) projects and filters items"
+            }
+            InternalFunction::CountDistinct => {
+                "Counts the distinct non-null values; countDistinct(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::CountDistinctApprox => {
+                "Estimates the number of distinct non-null values with HyperLogLog; countDistinctApprox(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::Distinct => {
+                "The distinct non-null values in first-seen order; distinct(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::TopK => {
+                "The k most frequent non-null values, most frequent first; topK(items, #.merchant, 3, #.ok) projects and filters items"
+            }
+            InternalFunction::First => {
+                "The first non-null item; first(items, #.ok) the first matching item; first(items, #.amount, #.ok) its projection"
+            }
+            InternalFunction::Last => {
+                "The last non-null item; last(items, #.ok) the last matching item; last(items, #.amount, #.ok) its projection"
+            }
+            InternalFunction::ArgMax => {
+                "The item with the largest key: argMax(items, #.amount), or a projection of it: argMax(items, #.id, #.amount, #.ok)"
+            }
+            InternalFunction::ArgMin => {
+                "The item with the smallest key: argMin(items, #.amount), or a projection of it: argMin(items, #.id, #.amount, #.ok)"
+            }
             InternalFunction::Floor => "Rounds a number down to the nearest integer",
             InternalFunction::Ceil => "Rounds a number up to the nearest integer",
             InternalFunction::Round => "Rounds a number to a specified number of decimal places",
@@ -439,7 +498,29 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             | InternalFunction::Min
             | InternalFunction::Max
             | InternalFunction::Median
-            | InternalFunction::Mode => vec!["arr"],
+            | InternalFunction::Mode
+            | InternalFunction::AggregateSum
+            | InternalFunction::AggregateAvg
+            | InternalFunction::AggregateMin
+            | InternalFunction::AggregateMax
+            | InternalFunction::AggregateMedian
+            | InternalFunction::AggregateMode
+            | InternalFunction::Stddev
+            | InternalFunction::Variance
+            | InternalFunction::StddevPop
+            | InternalFunction::VariancePop
+            | InternalFunction::Skew
+            | InternalFunction::Kurtosis
+            | InternalFunction::CountDistinct
+            | InternalFunction::CountDistinctApprox
+            | InternalFunction::Distinct
+            | InternalFunction::First
+            | InternalFunction::Last => vec!["arr"],
+            InternalFunction::Percentile | InternalFunction::PercentileApprox => {
+                vec!["arr", "fraction"]
+            }
+            InternalFunction::TopK => vec!["arr", "k"],
+            InternalFunction::ArgMax | InternalFunction::ArgMin => vec!["pairs"],
             InternalFunction::Rand => vec!["max"],
             InternalFunction::Round | InternalFunction::Trunc => vec!["num", "digits"],
             InternalFunction::IsNumeric
@@ -489,11 +570,18 @@ fn function_signature(fk: &FunctionKind) -> String {
                 })
                 .collect();
 
-            format!(
+            let plain = format!(
                 "({}) -> {}",
                 params.join(", "),
                 definition.return_type_str()
-            )
+            );
+            match fk {
+                FunctionKind::Internal(i) => match callback_forms(i) {
+                    Some(forms) => format!("{plain} | {forms}"),
+                    None => plain,
+                },
+                _ => plain,
+            }
         }
         FunctionKind::Closure(c) => match c {
             ClosureFunction::All
@@ -516,6 +604,42 @@ fn function_signature(fk: &FunctionKind) -> String {
             }
         },
     }
+}
+
+fn callback_forms(function: &InternalFunction) -> Option<&'static str> {
+    use InternalFunction as F;
+    Some(match function {
+        F::Sum
+        | F::Avg
+        | F::Min
+        | F::Max
+        | F::Median
+        | F::Mode
+        | F::Stddev
+        | F::Variance
+        | F::StddevPop
+        | F::VariancePop
+        | F::Skew
+        | F::Kurtosis
+        | F::CountDistinct
+        | F::CountDistinctApprox
+        | F::Distinct => {
+            "<T>(array: T[], value: Callback<T, any>, filter?: Callback<T, boolean>)"
+        }
+        F::Percentile | F::PercentileApprox => {
+            "<T>(array: T[], value: Callback<T, number>, fraction: number, filter?: Callback<T, boolean>) -> number"
+        }
+        F::TopK => {
+            "<T, U>(array: T[], value: Callback<T, U>, k: number, filter?: Callback<T, boolean>) -> U[]"
+        }
+        F::First | F::Last => {
+            "<T>(array: T[], filter: Callback<T, boolean>) -> T | <T, U>(array: T[], value: Callback<T, U>, filter: Callback<T, boolean>) -> U"
+        }
+        F::ArgMax | F::ArgMin => {
+            "<T>(array: T[], key: Callback<T, any>) -> T | <T, U>(array: T[], value: Callback<T, U>, key: Callback<T, any>, filter?: Callback<T, boolean>) -> U"
+        }
+        _ => return None,
+    })
 }
 
 fn method_info(mk: &MethodKind) -> String {

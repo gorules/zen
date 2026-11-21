@@ -1,0 +1,7 @@
+expression (string);input (json 5);output (json 5);note
+# aggregate forms in unary cells
+sum($, #.a) > 2;{$: [{a: 1}, {a: 2}]};true
+sum($ as x, x.a, x.ok) > 2;{$: [{a: 1, ok: true}, {a: 2, ok: false}]};false
+countDistinct($, #.m) == 2;{$: [{m: 1}, {m: 2}, {m: 1}]};true
+stddev($) > 1;{$: [1, 5]};true
+first($, # > 1) == 2;{$: [1, 2, 3]};true

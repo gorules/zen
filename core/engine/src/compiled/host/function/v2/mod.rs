@@ -138,11 +138,7 @@ impl FunctionV2NodeHandler {
         }
         let mut results = Vec::with_capacity(rows.len());
         for (at, row) in rows.into_iter().enumerate() {
-            let fresh = NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                context: extensions.context.at(at),
-                ..extensions.clone()
-            };
+            let fresh = extensions.row(at);
             results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
         }
         results

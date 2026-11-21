@@ -244,12 +244,7 @@ impl CompiledGraph {
                         results.push(Err(error));
                         continue;
                     };
-                    extensions.context.restart(&[row]);
-                    let fresh = NodeHandlerExtensions {
-                        function_runtime: Default::default(),
-                        context: extensions.context.at(row),
-                        ..extensions.clone()
-                    };
+                    let fresh = extensions.rerun_row(row);
                     let traced = traced::Traced {
                         graph: self,
                         content,

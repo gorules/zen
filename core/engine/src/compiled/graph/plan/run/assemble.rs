@@ -364,12 +364,7 @@ impl CompiledGraph {
             if !errored && !deferred.contains(&row) {
                 continue;
             }
-            extensions.context.restart(&[row]);
-            let fresh = NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                context: extensions.context.at(row),
-                ..extensions.clone()
-            };
+            let fresh = extensions.rerun_row(row);
             let traced = crate::compiled::traced::Traced {
                 graph: self,
                 content,

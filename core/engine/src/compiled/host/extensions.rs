@@ -97,6 +97,31 @@ impl NodeHandlerExtensions {
         }
     }
 
+    pub(crate) fn isolated(&self) -> Self {
+        Self {
+            function_runtime: Default::default(),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn row(&self, row: usize) -> Self {
+        Self {
+            function_runtime: Default::default(),
+            context: self.context.at(row),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn rerun_row(&self, row: usize) -> Self {
+        self.context.restart(&[row]);
+        self.row(row)
+    }
+
+    pub(crate) fn rerun_rows(&self, rows: &[usize]) -> Self {
+        self.context.restart(rows);
+        self.scoped(self.context.rows(rows))
+    }
+
     pub fn validator_cache(&self) -> &ValidatorCache {
         self.validator_cache
             .get_or_init(|| ValidatorCache::default())

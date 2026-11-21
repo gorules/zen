@@ -341,8 +341,7 @@ impl CompiledGraph {
                 let inputs = Self::input_data(columns).materialized();
                 let inputs: Vec<Variable> = rows.iter().map(|&row| inputs[row].clone()).collect();
                 let completed = completed.subset(&rows);
-                extensions.context.restart(&rows);
-                let scoped = extensions.scoped(extensions.context.rows(&rows));
+                let scoped = extensions.rerun_rows(&rows);
                 let results =
                     Box::pin(self.resumed(content, &scoped, &inputs, Some(&completed))).await;
                 Some(output.splice(&rows, results))
@@ -374,8 +373,7 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        extensions.context.restart(&rows);
-                        let scoped = extensions.scoped(extensions.context.rows(&rows));
+                        let scoped = extensions.rerun_rows(&rows);
                         let results =
                             Box::pin(self.resumed(content, &scoped, &inputs, Some(&completed)))
                                 .await;

@@ -290,10 +290,7 @@ impl CompiledGraph {
     ) -> Result<Variable, NodeError> {
         let node = &step.node;
         let extensions = match &node.kind {
-            DecisionNodeKind::DecisionNode { .. } if batched => NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                ..extensions.clone()
-            },
+            DecisionNodeKind::DecisionNode { .. } if batched => extensions.isolated(),
             _ => extensions.clone(),
         };
         let base = NodeContextBase {

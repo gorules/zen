@@ -432,6 +432,16 @@ fn function_info(fk: &FunctionKind) -> String {
                 "The last non-null item; last(items, #.ok) the last matching item; last(items, #.amount, #.ok) its projection"
             }
             InternalFunction::Take => "The first n items of the array",
+            InternalFunction::Md5 => "MD5 hash of a string, as lower-case hex",
+            InternalFunction::Sha256 => "SHA-256 hash of a string, as lower-case hex",
+            InternalFunction::Xxhash64 => "xxHash64 (seed 0) of a string, as 16 lower-case hex digits",
+            InternalFunction::JsonParse => "Parses a JSON string into a value",
+            InternalFunction::JsonString => "Writes a value as a JSON string",
+            InternalFunction::Entries => "The [key, value] pairs of an object",
+            InternalFunction::Zip => "Pairs the items of two arrays: [[a0, b0], [a1, b1]], as long as the shorter one",
+            InternalFunction::GroupBy => {
+                "Groups items by a key into an object of arrays: groupBy(items, #.status); null keys are skipped"
+            }
             InternalFunction::Clamp => "Limits a number to a range: clamp(x, low, high)",
             InternalFunction::Sqrt => "Square root of a number",
             InternalFunction::Ln => "Natural logarithm of a positive number",
@@ -597,6 +607,14 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
                 vec!["arr", "fraction"]
             }
             InternalFunction::TopK => vec!["arr", "k"],
+            InternalFunction::Md5
+            | InternalFunction::Sha256
+            | InternalFunction::Xxhash64
+            | InternalFunction::JsonParse => vec!["str"],
+            InternalFunction::JsonString => vec!["value"],
+            InternalFunction::Entries => vec!["obj"],
+            InternalFunction::Zip => vec!["arr", "other"],
+            InternalFunction::GroupBy => vec!["pairs"],
             InternalFunction::Clamp => vec!["num", "low", "high"],
             InternalFunction::Sqrt
             | InternalFunction::Ln
@@ -733,6 +751,7 @@ fn callback_forms(function: &InternalFunction) -> Option<&'static str> {
         F::FindIndex | F::FindLastIndex => {
             "<T>(array: T[], condition: Callback<T, boolean>) -> number"
         }
+        F::GroupBy => "<T>(array: T[], key: Callback<T, string>) -> { [key: string]: T[] }",
         F::SortBy => "<T>(array: T[], key: Callback<T, any>, direction?: string) -> T[]",
         F::ArgMax | F::ArgMin => {
             "<T>(array: T[], key: Callback<T, any>) -> T | <T, U>(array: T[], value: Callback<T, U>, key: Callback<T, any>, filter?: Callback<T, boolean>) -> U"

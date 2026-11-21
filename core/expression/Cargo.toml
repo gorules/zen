@@ -30,6 +30,8 @@ rust_decimal_macros = { workspace = true }
 nohash-hasher = { workspace = true }
 strsim = "0.11"
 unicode-normalization = "0.1"
+md-5 = "0.10"
+sha2 = "0.10"
 xxhash-rust = { version = "0.8", features = ["xxh64"] }
 iana-time-zone = "0.1"
 

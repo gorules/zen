@@ -39,6 +39,11 @@ pub enum InternalFunction {
     PadEnd,
     SplitPart,
     ExtractAll,
+    Md5,
+    Sha256,
+    Xxhash64,
+    JsonParse,
+    JsonString,
 
     // Math
     Abs,
@@ -113,6 +118,9 @@ pub enum InternalFunction {
     // Map
     Keys,
     Values,
+    Entries,
+    Zip,
+    GroupBy,
 
     #[strum(serialize = "d")]
     Date,
@@ -172,7 +180,7 @@ impl InternalFunction {
             (IF::Percentile | IF::PercentileApprox | IF::TopK, 3) => &[C, P],
             (IF::Percentile | IF::PercentileApprox | IF::TopK, 4) => &[C, P, C],
             (IF::Find | IF::FindLast | IF::FindIndex | IF::FindLastIndex, 2) => &[C],
-            (IF::SortBy, 2) => &[C],
+            (IF::SortBy | IF::GroupBy, 2) => &[C],
             (IF::SortBy, 3) => &[C, P],
             (IF::ArgMax | IF::ArgMin, 2) => &[C],
             (IF::ArgMax | IF::ArgMin, 3) => &[C, C],
@@ -693,6 +701,49 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::String.array(),
                 },
+            }),
+
+            IF::Md5 | IF::Sha256 | IF::Xxhash64 => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Md5 => imp::md5,
+                    IF::Sha256 => imp::sha256,
+                    _ => imp::xxhash64,
+                }),
+                signature: FunctionSignature::single(VT::String, VT::String),
+            }),
+
+            IF::JsonParse => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::json_parse),
+                signature: FunctionSignature::single(VT::String, VT::Any),
+            }),
+
+            IF::JsonString => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::json_string),
+                signature: FunctionSignature::single(VT::Any, VT::String),
+            }),
+
+            IF::Entries => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::entries),
+                signature: FunctionSignature::single(
+                    VT::Object(Default::default()),
+                    VT::Any.array().array(),
+                ),
+            }),
+
+            IF::Zip => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::zip),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Any.array()],
+                    return_type: VT::Any.array().array(),
+                },
+            }),
+
+            IF::GroupBy => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::group_by),
+                signature: FunctionSignature::single(
+                    VT::Any.array(),
+                    VT::Object(Default::default()),
+                ),
             }),
 
             IF::Type => Rc::new(StaticFunction {
@@ -1562,6 +1613,71 @@ pub(crate) mod imp {
             .map(|m| V::String(m.as_str().into()))
             .collect();
         Ok(V::from_array(out))
+    }
+
+    fn __internal_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    pub fn md5(args: Arguments) -> anyhow::Result<V> {
+        use md5::Digest;
+        let text = args.str(0)?;
+        Ok(V::String(
+            __internal_hex(&md5::Md5::digest(text.as_bytes())).into(),
+        ))
+    }
+
+    pub fn sha256(args: Arguments) -> anyhow::Result<V> {
+        use sha2::Digest;
+        let text = args.str(0)?;
+        Ok(V::String(
+            __internal_hex(&sha2::Sha256::digest(text.as_bytes())).into(),
+        ))
+    }
+
+    pub fn xxhash64(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let hash = xxhash_rust::xxh64::xxh64(text.as_bytes(), 0);
+        Ok(V::String(format!("{hash:016x}").into()))
+    }
+
+    pub fn json_parse(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let value: serde_json::Value = serde_json::from_str(text).context("Invalid JSON")?;
+        Ok(V::from(value))
+    }
+
+    pub fn json_string(args: Arguments) -> anyhow::Result<V> {
+        let value = args.var(0)?;
+        let text = serde_json::to_string(value).context("Cannot convert to JSON")?;
+        Ok(V::String(text.into()))
+    }
+
+    pub fn entries(args: Arguments) -> anyhow::Result<V> {
+        let a = args.object(0)?;
+        let obj = a.borrow();
+        let out = obj
+            .iter()
+            .map(|(key, value)| V::from_array(vec![V::String(key.clone()), value.clone()]))
+            .collect();
+        Ok(V::from_array(out))
+    }
+
+    pub fn zip(args: Arguments) -> anyhow::Result<V> {
+        let a = args.array(0)?;
+        let b = args.array(1)?;
+        let a = a.borrow();
+        let b = b.borrow();
+        let out = a
+            .iter()
+            .zip(b.iter())
+            .map(|(x, y)| V::from_array(vec![x.clone(), y.clone()]))
+            .collect();
+        Ok(V::from_array(out))
+    }
+
+    pub fn group_by(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::group_by)
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

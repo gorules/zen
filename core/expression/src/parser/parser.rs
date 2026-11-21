@@ -993,6 +993,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 call(target, &[map(list, condition)])
             }
             (IF::Find | IF::FindLast, [condition]) => call(target, &[filter(list, condition)]),
+            (IF::GroupBy, [key]) => call(target, &[map(list, pair(make(Node::Pointer), key))]),
             (IF::SortBy, [key]) => call(target, &[map(list, pair(make(Node::Pointer), key))]),
             (IF::SortBy, [key, direction]) => call(
                 target,

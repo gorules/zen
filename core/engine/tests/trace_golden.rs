@@ -362,7 +362,7 @@ fn parse(text: &str) -> Value {
 
 type Key = (String, String, usize, String);
 
-fn golden() -> HashMap<Key, Value> {
+fn golden() -> HashMap<Key, std::sync::Arc<Value>> {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/trace-base.jsonl.gz");
     let file = std::fs::File::open(path).unwrap();
@@ -374,6 +374,7 @@ fn golden() -> HashMap<Key, Value> {
         let kind = v["kind"].as_str().unwrap().to_string();
         let suite = v["suite"].as_str().unwrap().to_string();
         let case = v["case"].as_u64().unwrap() as usize;
+        let outcome = std::sync::Arc::new(v["outcome"].clone());
         for variant in v["variants"].as_array().unwrap() {
             out.insert(
                 (
@@ -382,7 +383,7 @@ fn golden() -> HashMap<Key, Value> {
                     case,
                     variant.as_str().unwrap().to_string(),
                 ),
-                v["outcome"].clone(),
+                outcome.clone(),
             );
         }
     }
@@ -560,7 +561,9 @@ fn compare(format: TraceFormat) {
                 "interpreted" | "compiled" => engine,
                 _ => "compiled",
             };
-            golden.get(&key(&format!("{engine} serialized")))
+            golden
+                .get(&key(&format!("{engine} serialized")))
+                .map(|v| &**v)
         });
         let interpreted = run.variant.starts_with("interpreted ");
         let got = match (format, interpreted) {

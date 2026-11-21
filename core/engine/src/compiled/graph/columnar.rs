@@ -28,6 +28,60 @@ pub struct ColumnarOutput<'a> {
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<Rc<EvaluationError>>>,
     pub(crate) paths: Paths,
+    pub(crate) traces: Option<Traced<'a>>,
+}
+
+#[derive(Clone)]
+pub(crate) enum Traced<'a> {
+    Columns(Rc<crate::compiled::trace::TraceBatch<'a>>),
+    Rows(Rc<crate::compiled::trace::TraceBatch<'static>>),
+}
+
+pub struct ColumnarTraces<'o, 'a>(&'o Traced<'a>);
+
+impl ColumnarTraces<'_, '_> {
+    pub fn len(&self) -> usize {
+        match self.0 {
+            Traced::Columns(batch) => batch.len(),
+            Traced::Rows(batch) => batch.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn json(&self, row: usize) -> Option<String> {
+        match self.0 {
+            Traced::Columns(batch) => batch.json(row),
+            Traced::Rows(batch) => batch.json(row),
+        }
+    }
+
+    pub fn document(&self, row: usize) -> Option<crate::compiled::trace::TraceDocument> {
+        match self.0 {
+            Traced::Columns(batch) => batch.document(row),
+            Traced::Rows(batch) => batch.document(row),
+        }
+    }
+
+    pub fn write_all(&self, out: &mut String) -> Vec<usize> {
+        match self.0 {
+            Traced::Columns(batch) => batch.write_all(out),
+            Traced::Rows(batch) => batch.write_all(out),
+        }
+    }
+}
+
+impl<'a> ColumnarOutput<'a> {
+    pub fn traces(&self) -> Option<ColumnarTraces<'_, 'a>> {
+        self.traces.as_ref().map(ColumnarTraces)
+    }
+
+    pub(crate) fn traced(mut self, traces: crate::compiled::trace::TraceBatch<'a>) -> Self {
+        self.traces = Some(Traced::Columns(Rc::new(traces)));
+        self
+    }
 }
 
 impl ColumnarOutput<'_> {
@@ -50,11 +104,46 @@ impl ColumnarOutput<'_> {
                 hosted: rows,
                 ..Paths::default()
             },
+            traces: None,
         }
     }
 
     pub fn row(&self, row: usize) -> Variable {
         OutputColumn::row(&self.columns, row)
+    }
+
+    pub fn write_rows(&self, out: &mut String) -> Vec<usize> {
+        let layout = crate::compiled::output::Layout::new(&self.columns);
+        let cells = crate::compiled::output::Layout::cells(&self.columns);
+        let mut bytes = std::mem::take(out).into_bytes();
+        let mut ends = Vec::with_capacity(self.rows);
+        let start = bytes.len();
+        for row in 0..self.rows {
+            match self.errors.get(row).is_some_and(Option::is_some) {
+                true => bytes.extend_from_slice(b"null"),
+                false => layout.write(&self.columns, &cells, row, &mut bytes),
+            }
+            if row == 0 {
+                let first = bytes.len() - start;
+                bytes.reserve((first + first / 16 + 16).saturating_mul(self.rows - 1));
+            }
+            ends.push(bytes.len());
+            bytes.push(b'\n');
+        }
+        *out = String::from_utf8(bytes).unwrap_or_default();
+        ends
+    }
+
+    pub fn trace_json(&self, row: usize) -> Option<String> {
+        self.traces().and_then(|traces| traces.json(row))
+    }
+
+    pub(crate) fn traced_rows(
+        mut self,
+        traces: crate::compiled::trace::TraceBatch<'static>,
+    ) -> Self {
+        self.traces = Some(Traced::Rows(Rc::new(traces)));
+        self
     }
 
     #[doc(hidden)]
@@ -87,12 +176,13 @@ impl ColumnarOutput<'_> {
                 hosted: self.paths.hosted + rows.len(),
                 ..self.paths
             },
+            traces: self.traces,
         }
     }
 }
 
 impl CompiledGraph {
-    fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
+    pub(in crate::compiled::graph) fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
         let rows = columns.rows;
         let mut paths: Vec<Arc<str>> = Vec::with_capacity(columns.columns.len());
         let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(columns.columns.len());
@@ -225,6 +315,51 @@ impl CompiledGraph {
         Leaf::Any(values.into())
     }
 
+    pub(crate) async fn evaluate_columns_traced<'a>(
+        &self,
+        content: &Arc<Content>,
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        columns: &'a Columns<'a>,
+        format: crate::compiled::trace::TraceFormat,
+    ) -> Option<ColumnarOutput<'a>> {
+        if max_depth == 0 {
+            return None;
+        }
+        let admitted = self.planned_input(content, extensions, columns).await?;
+        match self
+            .plan()
+            .evaluate(
+                self,
+                content,
+                extensions,
+                max_depth,
+                columns,
+                admitted,
+                Some(format),
+            )
+            .await
+        {
+            PlanOutcome::Skipped | PlanOutcome::Untraced => None,
+            PlanOutcome::Done(output) => Some(output),
+            PlanOutcome::Partial {
+                output,
+                rows,
+                completed,
+            } => {
+                let inputs = Self::input_data(columns).materialized();
+                let inputs: Vec<Variable> = rows.iter().map(|&row| inputs[row].clone()).collect();
+                let completed = completed.subset(&rows);
+                extensions.context.restart(&rows);
+                let scoped = extensions.scoped(extensions.context.rows(&rows));
+                let results =
+                    Box::pin(self.resumed(content, &scoped, max_depth, &inputs, Some(&completed)))
+                        .await;
+                Some(output.splice(&rows, results))
+            }
+        }
+    }
+
     pub(crate) async fn evaluate_columns<'a>(
         &self,
         content: &Arc<Content>,
@@ -236,10 +371,12 @@ impl CompiledGraph {
             if let Some(admitted) = self.planned_input(content, extensions, columns).await {
                 match self
                     .plan()
-                    .evaluate(self, content, extensions, max_depth, columns, admitted)
+                    .evaluate(
+                        self, content, extensions, max_depth, columns, admitted, None,
+                    )
                     .await
                 {
-                    PlanOutcome::Skipped => {}
+                    PlanOutcome::Skipped | PlanOutcome::Untraced => {}
                     PlanOutcome::Done(output) => return output,
                     PlanOutcome::Partial {
                         output,

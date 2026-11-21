@@ -7,6 +7,11 @@ use zen_types::symbol::Symbol;
 use zen_types::variable::VariableMap;
 
 pub(crate) type Field<'a> = (Symbol, Leaf<'a>, Rc<[u64]>);
+
+pub(crate) struct Listing<'c> {
+    pub fields: Vec<(&'c str, &'c [u64], Column<'c>, u8)>,
+    pub nulled: Option<&'c [u64]>,
+}
 type Lanes = (Vec<Vec<u64>>, Option<Vec<u64>>);
 
 #[derive(Debug)]
@@ -19,6 +24,7 @@ pub(crate) struct Records<'a> {
     dense: OnceCell<Rc<[Variable]>>,
     lanes: OnceCell<Lanes>,
     maker: OnceCell<Option<Maker>>,
+    labels: OnceCell<Option<Vec<Box<str>>>>,
 }
 
 #[derive(Debug)]
@@ -91,6 +97,53 @@ impl<'a> Records<'a> {
         Records::new(rows, offsets, valid, fields, nulled)
     }
 
+    pub fn fresh(&self) -> bool {
+        self.dense.get().is_none()
+    }
+
+    pub fn id(&self) -> usize {
+        self as *const Self as usize
+    }
+
+    pub fn listing(&self) -> Option<Listing<'_>> {
+        if self.fields.len() >= 8 && !self.fresh() || self.fields.len() > 32 {
+            return None;
+        }
+        let fields = self
+            .fields
+            .iter()
+            .map(|(key, leaf, present)| {
+                let key = key.as_str();
+                if key.starts_with('$') || key.contains('.') {
+                    return None;
+                }
+                let (column, kind) = leaf.plain()?;
+                Some((key, &**present, column, kind))
+            })
+            .collect::<Option<_>>()?;
+        Some(Listing {
+            fields,
+            nulled: self.nulled.as_deref(),
+        })
+    }
+
+    pub(super) fn labels(&self) -> Option<&[Box<str>]> {
+        self.labels
+            .get_or_init(|| {
+                self.fields
+                    .iter()
+                    .map(|(key, _, _)| {
+                        (!key.as_str().contains('.')).then(|| {
+                            let mut text = serde_json::to_string(key.as_str()).unwrap_or_default();
+                            text.push(':');
+                            text.into_boxed_str()
+                        })
+                    })
+                    .collect()
+            })
+            .as_deref()
+    }
+
     pub fn plain(&self) -> bool {
         self.nulled.is_none()
     }
@@ -115,6 +168,7 @@ impl<'a> Records<'a> {
             dense: OnceCell::new(),
             lanes: OnceCell::new(),
             maker: OnceCell::new(),
+            labels: OnceCell::new(),
         }
     }
 

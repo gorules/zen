@@ -477,6 +477,170 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn shared(&self, row: usize) -> Variable {
+        match self {
+            Leaf::Records(records) => records.dense().get(row).cloned().unwrap_or(Variable::Null),
+            Leaf::Templated(templated) => templated
+                .dense()
+                .get(row)
+                .cloned()
+                .unwrap_or(Variable::Null),
+            Leaf::Picked(_) | Leaf::Stitched(_) => self
+                .source(row)
+                .map_or(Variable::Null, |(leaf, at)| leaf.shared(at)),
+            _ => self.get(row),
+        }
+    }
+
+    pub fn listed(&self, row: usize) -> Option<(&Records<'a>, usize)> {
+        match self {
+            Leaf::Records(records) => Some((records, row)),
+            Leaf::Picked(_) | Leaf::Stitched(_) => {
+                let (leaf, at) = self.source(row)?;
+                leaf.listed(at)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn plain(&self) -> Option<(Column<'_>, u8)> {
+        if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
+            return None;
+        }
+        let column = self.column();
+        let kind = match column.values {
+            Values::Utf8 { .. }
+            | Values::Text { .. }
+            | Values::LargeUtf8 { .. }
+            | Values::Strs(_) => 0,
+            Values::Dict { values, .. } => match values {
+                Dictionary::Text { .. } => 0,
+                Dictionary::Scaled { .. } => 1,
+                Dictionary::Bool { .. } => 2,
+                _ => return None,
+            },
+            Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) => 1,
+            Values::Bool { .. } => 2,
+            _ => return None,
+        };
+        Some((column, kind))
+    }
+
+    pub fn scalars(&self) -> Option<(Column<'_>, bool)> {
+        if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
+            return None;
+        }
+        let column = self.column();
+        let text = matches!(
+            column.values,
+            Values::Utf8 { .. } | Values::Text { .. } | Values::LargeUtf8 { .. } | Values::Strs(_)
+        ) || matches!(column.values, Values::Dict { values, .. } if matches!(values, Dictionary::Text { .. }));
+        let number = matches!(column.values, Values::Scaled { .. } | Values::I64(_));
+        (text || number).then_some((column, text))
+    }
+
+    pub fn codes(&self, rows: usize) -> (Vec<u32>, u32) {
+        type Fast<K> =
+            std::collections::HashMap<K, u32, std::hash::BuildHasherDefault<ahash::AHasher>>;
+        let mut numbers: Fast<(i128, u32)> = Default::default();
+        let mut texts: Fast<zen_types::symbol::Symbol> = Default::default();
+        let mut next = 5u32;
+        let mut number = |key: (i128, u32)| {
+            *numbers.entry(key).or_insert_with(|| {
+                next += 1;
+                next - 1
+            })
+        };
+        let typed = !matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_));
+        let column = typed.then(|| self.column());
+        let codes: Vec<u32> = match column.map(|column| (column, column.values)) {
+            Some((column, Values::Dict { values, .. }))
+                if !matches!(values, Dictionary::Any(_)) =>
+            {
+                (0..rows)
+                    .map(|row| match ColumnBuilder::null_at(&column, row) {
+                        true => 0,
+                        false => column.code(row).map_or(0, |code| 5 + code as u32),
+                    })
+                    .collect()
+            }
+            Some((column, Values::Scaled { mant, scale })) => (0..rows)
+                .map(|row| match ColumnBuilder::null_at(&column, row) {
+                    true => 0,
+                    false => number((i128::from(mant[row]), u32::from(scale[row]) | 1 << 31)),
+                })
+                .collect(),
+            _ => {
+                let mut next = 1u32 << 30;
+                (0..rows)
+                    .map(|row| match self.listed(row) {
+                        Some((records, at)) => match records.range(at) {
+                            Some(_) => Variable::empty_array(),
+                            None => Variable::Null,
+                        },
+                        None => self.get(row),
+                    })
+                    .map(|value| match value {
+                        Variable::Null => 0,
+                        Variable::Array(_) | Variable::Object(_) => 1,
+                        Variable::Dynamic(_) => 2,
+                        Variable::Bool(flag) => 3 + u32::from(flag),
+                        Variable::Number(d) => number((d.mantissa(), d.scale())),
+                        Variable::String(text) => *texts.entry(text).or_insert_with(|| {
+                            next += 1;
+                            next - 1
+                        }),
+                    })
+                    .collect()
+            }
+        };
+        let mut dense: Fast<u32> = Default::default();
+        let codes: Vec<u32> = codes
+            .into_iter()
+            .map(|code| {
+                let next = dense.len() as u32;
+                *dense.entry(code).or_insert(next)
+            })
+            .collect();
+        (codes, dense.len().max(1) as u32)
+    }
+
+    pub fn words(&self, row: usize, key: &mut Vec<u64>) -> bool {
+        if matches!(self, Leaf::Any(_) | Leaf::Records(_)) {
+            return false;
+        }
+        let column = self.column();
+        if ColumnBuilder::null_at(&column, row) {
+            return false;
+        }
+        match column.values {
+            Values::Dict { values, .. } if !matches!(values, Dictionary::Any(_)) => {
+                match column.code(row) {
+                    Some(code) => {
+                        key.extend_from_slice(&[1, code as u64]);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            Values::Scaled { mant, scale } => match (mant.get(row), scale.get(row)) {
+                (Some(&mant), Some(&scale)) => {
+                    key.extend_from_slice(&[2, mant as u64, u64::from(scale)]);
+                    true
+                }
+                _ => false,
+            },
+            Values::I64(values) => match values.get(row) {
+                Some(&value) => {
+                    key.extend_from_slice(&[3, value as u64]);
+                    true
+                }
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
     pub fn pick(&self, positions: &Rc<[usize]>) -> Leaf<'a> {
         match self {
             Leaf::Picked(picked) => Leaf::Picked(Rc::new(Picked {

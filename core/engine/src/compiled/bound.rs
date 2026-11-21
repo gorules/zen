@@ -1,4 +1,5 @@
 use crate::compiled::core::special::Specialized;
+use crate::compiled::trace::record::Probe;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zen_expression::context::EvaluationContext;
@@ -24,6 +25,7 @@ pub(crate) struct Bound<'a> {
     pub scopes: Scopes,
     pub columns: Columns<'a>,
     pub bind: Box<dyn Fn(&str) -> Binding + 'a>,
+    pub probe: Option<Rc<Probe>>,
 }
 
 pub(crate) struct Outs(Vec<Output>);
@@ -100,6 +102,14 @@ impl<'a> Bound<'a> {
             scopes: Scopes::Owned(scopes),
             columns: Columns::new(rows),
             bind: Box::new(|_| Binding::Row),
+            probe: None,
+        }
+    }
+
+    pub fn probed(self, probe: Option<&Rc<Probe>>) -> Self {
+        Self {
+            probe: probe.cloned(),
+            ..self
         }
     }
 

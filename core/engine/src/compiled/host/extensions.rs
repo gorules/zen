@@ -11,6 +11,8 @@ use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
 
+pub(crate) type Runtime = Arc<tokio::sync::OnceCell<Function>>;
+
 #[derive(Debug, Clone)]
 pub struct NodeHandlerExtensions {
     pub(crate) function_runtime: Arc<tokio::sync::OnceCell<Function>>,

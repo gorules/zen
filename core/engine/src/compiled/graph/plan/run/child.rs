@@ -222,6 +222,7 @@ impl<'a> Run<'_, 'a> {
             completed: Completed::default(),
             iteration: self.iteration + 1,
             parents: Some(&parents),
+            trace: None,
         };
         Box::pin(run.walk(op.root.clone())).await;
         let Run {

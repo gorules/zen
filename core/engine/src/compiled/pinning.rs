@@ -1,18 +1,41 @@
+use crate::engine::EvaluationOptions;
 use chrono::{DateTime, Duration, LocalResult, Offset, TimeZone};
 use rquickjs::prelude::Func;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zen_expression::context::{
-    location, parse_timezone, system_now, system_timezone, EvaluationContext, Pinned, Site,
-    Timezone,
+    location, parse_timezone, system_now, system_timezone, EvaluationContext, Site, Timezone,
 };
 
-pub(crate) fn single(pinned: Pinned) -> EvaluationContext {
-    EvaluationContext::new(pinned)
+pub(crate) fn single(options: &EvaluationOptions) -> EvaluationContext {
+    let context = EvaluationContext::new(options.pinned());
+    if options.trace.is_on() {
+        context.now();
+    }
+    context
 }
 
-pub(crate) fn batch(pinned: Pinned) -> EvaluationContext {
-    EvaluationContext::batch(pinned)
+pub(crate) fn batch(options: &EvaluationOptions) -> EvaluationContext {
+    EvaluationContext::batch(options.pinned())
+}
+
+pub(crate) fn evaluation(context: &EvaluationContext) -> crate::compiled::trace::Evaluation {
+    crate::compiled::trace::Evaluation {
+        evaluated_at: Some(context.evaluated_at()),
+        timezone: Some(context.zone()),
+        seed: context.seed(),
+    }
+}
+
+pub(crate) fn row_evaluation(
+    context: &EvaluationContext,
+    row: usize,
+) -> crate::compiled::trace::Evaluation {
+    crate::compiled::trace::Evaluation {
+        evaluated_at: Some(context.evaluated_at()),
+        timezone: Some(context.zone()),
+        seed: context.row_seed(row),
+    }
 }
 
 pub(crate) struct Located;

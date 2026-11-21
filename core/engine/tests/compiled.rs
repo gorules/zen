@@ -938,7 +938,7 @@ async fn single_row_latency() {
         .unwrap_or(5);
     let filter = std::env::var("BENCH_FILE").ok();
     let traced = EvaluationOptions {
-        trace: true,
+        trace: zen_engine::trace::TraceFormat::Legacy,
         max_depth: 10,
         ..Default::default()
     };

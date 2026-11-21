@@ -3,11 +3,11 @@ use std::sync::Arc;
 use zen_expression::variable::Variable;
 
 #[derive(Debug, Clone)]
-pub struct EvaluateRequest {
+pub struct EvaluateRequest<T = bool> {
     pub policy_path: Arc<str>,
     pub input: Variable,
     pub goals: Vec<Arc<str>>,
-    pub trace: bool,
+    pub trace: T,
 }
 
 #[derive(Debug, Clone)]

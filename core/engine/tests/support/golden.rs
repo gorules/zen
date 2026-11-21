@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use zen_engine::policy::{
     EvaluateRequest, EvaluationError as PolicyError, EvaluationResult, PolicyWorkspace,
 };
-use zen_engine::{Decision, DecisionGraphResponse, EvaluationError, EvaluationTraceKind};
+use zen_engine::{Decision, DecisionGraphResponse, EvaluationError};
 use zen_expression::variable::{RcValue, VariableMap};
 use zen_expression::Variable;
 
@@ -40,23 +40,14 @@ impl Outcome {
         }
     }
 
-    pub fn graph_traced(
-        result: &Result<DecisionGraphResponse, Box<EvaluationError>>,
-        mode: EvaluationTraceKind,
-    ) -> Outcome {
+    pub fn graph_traced(result: &Result<DecisionGraphResponse, Box<EvaluationError>>) -> Outcome {
         match result {
             Ok(response) => Outcome::Ok(Canon::redacted(
-                response
-                    .serialize_with_mode(serde_json::value::Serializer, mode)
-                    .unwrap_or(Value::Null),
+                serde_json::to_value(response).unwrap_or(Value::Null),
             )),
             Err(error) => Outcome::Err {
                 debug: Canon::unaddressed(&error.to_string()),
-                value: Canon::redacted(
-                    error
-                        .serialize_with_mode(serde_json::value::Serializer, mode)
-                        .unwrap_or(Value::Null),
-                ),
+                value: Canon::redacted(serde_json::to_value(&**error).unwrap_or(Value::Null)),
             },
         }
     }

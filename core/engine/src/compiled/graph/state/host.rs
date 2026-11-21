@@ -1,6 +1,6 @@
 use crate::compiled::bound::Bound;
 use crate::compiled::content::Content;
-use crate::compiled::exact::graph::Row;
+use crate::compiled::exact::graph::{NodeRecorder, Row};
 use crate::compiled::graph::data::{Col, Data, Layer};
 use crate::compiled::graph::{call, schema, Body, CompiledGraph, Step};
 use crate::compiled::host::custom::CustomNodeHandler;
@@ -19,6 +19,7 @@ use crate::compiled::table::TableOut;
 use crate::loader::DynamicLoader;
 use crate::model::DecisionNodeKind;
 use jsonschema::Validator;
+use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{LaneRunner, Programs};
 use zen_expression::Variable;
@@ -134,11 +135,13 @@ impl CompiledGraph {
                 .map(|out| table.value(out))
                 .collect(),
         };
-        let layer = Layer::new(
-            Arc::from([path.clone()]),
-            vec![Leaf::Any(values.into())],
-            None,
-        );
+        let values: Rc<[Variable]> = values.into();
+        if let Body::Expression { keys, .. } = body {
+            if let Some(probe) = &bound.probe {
+                probe.record_objects(keys, &values);
+            }
+        }
+        let layer = Layer::new(Arc::from([path.clone()]), vec![Leaf::Any(values)], None);
         let data = match pass_through {
             true => input.layered(layer),
             false => Data::record(&input.rows, layer, None),
@@ -183,13 +186,16 @@ impl CompiledGraph {
                         .map(|key| Arc::from(format!("{prefix}.{key}")))
                         .collect(),
                 };
-                let layer = Layer::new(
-                    keys,
-                    outs.iter_mut()
-                        .map(|out| Leaf::typed(Array::from_output(out)))
-                        .collect(),
-                    None,
-                );
+                let leaves: Vec<Leaf> = outs
+                    .iter_mut()
+                    .map(|out| Leaf::typed(Array::from_output(out)))
+                    .collect();
+                if let Body::Expression { keys, .. } = body {
+                    if let Some(probe) = &bound.probe {
+                        probe.record_results(keys, &leaves);
+                    }
+                }
+                let layer = Layer::new(keys, leaves, None);
                 let data = match pass_through {
                     true => input.layered(layer),
                     false => Data::record(&rows, layer, None),
@@ -311,7 +317,7 @@ impl CompiledGraph {
             | DecisionNodeKind::CustomNode { .. }
             | DecisionNodeKind::ExpressionNode { .. }
             | DecisionNodeKind::DecisionTableNode { .. } => {
-                Self::dispatch(step, base, step.shared_programs())
+                Self::dispatch(step, base, step.shared_programs(), None)
                     .await
                     .map(|r| r.output)
             }
@@ -323,9 +329,9 @@ impl CompiledGraph {
         step: &Step,
         base: NodeContextBase,
         programs: Option<&Arc<Programs>>,
+        recorder: Option<&NodeRecorder>,
     ) -> NodeResult {
         let node = &step.node;
-        let trace = base.config.trace;
         match &node.kind {
             DecisionNodeKind::FunctionNode { content } => {
                 DecisionGraph::handle(base, content.clone(), FunctionNodeHandler).await
@@ -346,7 +352,7 @@ impl CompiledGraph {
                     input: base.input.clone(),
                     nodes: base.nodes.clone(),
                     programs: None,
-                    trace,
+                    recorder,
                     context: base.extensions.context.clone(),
                 };
                 call.node(row, &content.transform_attributes).await
@@ -363,7 +369,7 @@ impl CompiledGraph {
                     input: base.input.clone(),
                     nodes: base.nodes.clone(),
                     programs,
-                    trace,
+                    recorder,
                     context: base.extensions.context.clone(),
                 };
                 row.node(node, index, true).await

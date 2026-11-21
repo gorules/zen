@@ -6,7 +6,7 @@ mod step;
 pub(crate) mod traced;
 pub use columnar::ColumnarOutput;
 pub(super) mod columnar;
-mod data;
+pub(crate) mod data;
 pub(crate) mod errors;
 mod schedule;
 mod schema;
@@ -36,6 +36,7 @@ pub struct CompiledGraph {
     root: Arc<Segment>,
     dictionaries: bool,
     plan: OnceLock<plan::Plan>,
+    template: OnceLock<Arc<crate::compiled::trace::collect::Template>>,
     census: usize,
 }
 
@@ -142,6 +143,16 @@ impl CompiledGraph {
         self.plan.get_or_init(|| plan::Plan::analyze(self))
     }
 
+    pub(crate) fn template(&self) -> &Arc<crate::compiled::trace::collect::Template> {
+        self.template.get_or_init(|| {
+            Arc::new(crate::compiled::trace::collect::Template::new(
+                self.steps
+                    .iter()
+                    .map(|step| step.as_ref().map(|step| step.node.clone())),
+            ))
+        })
+    }
+
     pub(crate) fn plan_verdict(&self, columns: &Columns) -> Result<(), String> {
         self.plan()
             .verdict(self, columns)
@@ -198,6 +209,70 @@ impl CompiledGraph {
                 }),
             })
             .collect()
+    }
+
+    pub(crate) async fn traced_batch(
+        &self,
+        content: &Arc<Content>,
+        extensions: &NodeHandlerExtensions,
+        max_depth: u8,
+        inputs: &[Variable],
+        requests: &[Variable],
+    ) -> (
+        Vec<Result<Variable, Box<EvaluationError>>>,
+        crate::compiled::trace::batch::Traces<'static>,
+    ) {
+        let nesting = Nesting {
+            traced: true,
+            ..Nesting::default()
+        };
+        let mut state = self
+            .run(
+                Host {
+                    content,
+                    extensions,
+                    max_depth,
+                },
+                inputs,
+                nesting,
+            )
+            .await;
+        let mut traces = state.traces.take().unwrap_or_else(|| {
+            crate::compiled::trace::batch::Traces::new(self.template().clone(), 0, inputs.len())
+        });
+        let errors = state.errors.into_vec();
+        let mut results = Vec::with_capacity(inputs.len());
+        for (row, (error, result)) in errors.into_iter().zip(state.results).enumerate() {
+            match error {
+                None => results.push(Ok(result.unwrap_or_else(Variable::empty_object))),
+                Some(error) => {
+                    let Some(request) = requests.get(row) else {
+                        results.push(Err(error));
+                        continue;
+                    };
+                    extensions.context.restart(&[row]);
+                    let fresh = NodeHandlerExtensions {
+                        function_runtime: Default::default(),
+                        context: extensions.context.at(row),
+                        ..extensions.clone()
+                    };
+                    let traced = traced::Traced {
+                        graph: self,
+                        content,
+                        extensions: &fresh,
+                        max_depth,
+                        iteration: 0,
+                        parent: None,
+                    };
+                    let run = Box::pin(traced.run(request.deep_clone())).await;
+                    if let Some(slot) = traces.replaced.get_mut(row) {
+                        *slot = Some(run.recording);
+                    }
+                    results.push(Err(error));
+                }
+            }
+        }
+        (results, traces)
     }
 
     pub(crate) async fn evaluate_one(

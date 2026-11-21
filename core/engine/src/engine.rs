@@ -1,18 +1,18 @@
 use crate::decision::Decision;
-use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::error::ContentKindError;
 use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::{DecisionContent, GraphContent};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::policy::runtime::{CompiledEntry, CompiledSet};
+use crate::trace::TraceFormat;
 use crate::{CompileFailure, EvaluationError};
 use arc_swap::ArcSwapOption;
 use serde_json::Value;
 use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
-use strum::{EnumString, IntoStaticStr};
 use zen_expression::variable::Variable;
 
 /// Structure used for generating and evaluating JDM decisions
@@ -53,7 +53,7 @@ impl Debug for DecisionEngine {
 /// makes such calls is not guaranteed to reproduce its result.
 #[derive(Debug, Clone, Copy)]
 pub struct EvaluationOptions {
-    pub trace: bool,
+    pub trace: TraceFormat,
     pub max_depth: u8,
     /// Instant the evaluation runs at.
     pub now: Option<zen_expression::context::Instant>,
@@ -66,7 +66,7 @@ pub struct EvaluationOptions {
 impl Default for EvaluationOptions {
     fn default() -> Self {
         Self {
-            trace: false,
+            trace: TraceFormat::Off,
             max_depth: 10,
             now: None,
             timezone: None,
@@ -75,79 +75,11 @@ impl Default for EvaluationOptions {
     }
 }
 
-/// [`EvaluationOptions`] with a serialized trace; the context fields behave the same.
-#[derive(Debug, Clone, Copy)]
-pub struct EvaluationSerializedOptions {
-    pub trace: EvaluationTraceKind,
-    pub max_depth: u8,
-    /// Instant the evaluation runs at.
-    pub now: Option<zen_expression::context::Instant>,
-    /// IANA time zone for local dates, e.g. `Europe/Berlin`.
-    pub timezone: Option<zen_expression::context::Timezone>,
-    /// Seed of the random streams.
-    pub seed: Option<u64>,
-}
-
-impl Default for EvaluationSerializedOptions {
-    fn default() -> Self {
-        Self {
-            trace: EvaluationTraceKind::None,
-            max_depth: 10,
-            now: None,
-            timezone: None,
-            seed: None,
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr)]
-#[strum(serialize_all = "camelCase")]
-pub enum EvaluationTraceKind {
-    #[default]
-    None,
-    Default,
-    String,
-    Reference,
-    ReferenceString,
-}
-
-impl EvaluationTraceKind {
-    pub fn serialize_trace(&self, trace: &Variable) -> Value {
-        match self {
-            EvaluationTraceKind::None => Value::Null,
-            EvaluationTraceKind::Default => serde_json::to_value(&trace).unwrap_or_default(),
-            EvaluationTraceKind::String => {
-                Value::String(serde_json::to_string(&trace).unwrap_or_default())
-            }
-            EvaluationTraceKind::Reference => {
-                serde_json::to_value(&trace.serialize_ref()).unwrap_or_default()
-            }
-            EvaluationTraceKind::ReferenceString => {
-                Value::String(serde_json::to_string(&trace.serialize_ref()).unwrap_or_default())
-            }
-        }
-    }
-}
+pub type EvaluationSerializedOptions = EvaluationOptions;
 
 impl EvaluationOptions {
     pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
         zen_expression::context::Pinned {
-            now: self.now,
-            timezone: self.timezone,
-            seed: self.seed,
-        }
-    }
-}
-
-impl EvaluationSerializedOptions {
-    pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
-        self.unserialized().pinned()
-    }
-
-    pub(crate) fn unserialized(&self) -> EvaluationOptions {
-        EvaluationOptions {
-            trace: self.trace != EvaluationTraceKind::None,
-            max_depth: self.max_depth,
             now: self.now,
             timezone: self.timezone,
             seed: self.seed,
@@ -274,13 +206,9 @@ impl DecisionEngine {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace)
-                        .map(|r| DecisionGraphResponse {
-                            performance: format!("{:.1?}", r.duration),
-                            result: r.output,
-                            trace: r.trace.map(EvaluationTrace::Policy),
-                        })
-                        .map_err(|e| Box::new(EvaluationError::Policy(e))),
+                        .evaluate_entry(key_str, context, options.trace.is_on())
+                        .map(DecisionGraphResponse::from)
+                        .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                     CompiledEntry::Graph(graph) => {
                         self.decision_from_graph(graph)
                             .evaluate_with_opts(context, options)
@@ -334,26 +262,12 @@ impl DecisionEngine {
             if let Some(entry) = set.get(key_str) {
                 match entry {
                     CompiledEntry::Policy(artifact) => {
-                        let trace_mode = options.trace;
-                        let trace = options.trace != EvaluationTraceKind::None;
-                        return match artifact.evaluate_entry(key_str, context, trace) {
-                            Ok(r) => {
-                                let response = DecisionGraphResponse {
-                                    performance: format!("{:.1?}", r.duration),
-                                    result: r.output,
-                                    trace: r.trace.map(EvaluationTrace::Policy),
-                                };
-                                Ok(response
-                                    .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                                    .unwrap_or_default())
-                            }
-                            Err(e) => {
-                                let err = EvaluationError::Policy(e);
-                                Err(err
-                                    .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                                    .unwrap_or_default())
-                            }
-                        };
+                        return DecisionGraphResponse::serialized(
+                            artifact
+                                .evaluate_entry(key_str, context, options.trace.is_on())
+                                .map(DecisionGraphResponse::from)
+                                .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
+                        );
                     }
                     CompiledEntry::Graph(graph) => {
                         return self
@@ -375,26 +289,16 @@ impl DecisionEngine {
                 let decision = self.decision_from_graph_arc(content);
                 decision.evaluate_serialized(context, options).await
             }
-            DecisionContent::Policy(_) => {
-                let inner_opts = options.unserialized();
-                let trace_mode = options.trace;
-                let response = crate::policy::runtime::evaluate_policy(
+            DecisionContent::Policy(_) => DecisionGraphResponse::serialized(
+                crate::policy::runtime::evaluate_policy(
                     &self.loader,
                     key_str,
                     content,
                     context,
-                    inner_opts,
+                    options,
                 )
-                .await;
-                match response {
-                    Ok(ok) => Ok(ok
-                        .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                        .unwrap_or_default()),
-                    Err(err) => Err(err
-                        .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                        .unwrap_or_default()),
-                }
-            }
+                .await,
+            ),
         }
     }
 

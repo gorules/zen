@@ -246,7 +246,7 @@ impl Matrix {
                     policy_path: job.path.clone(),
                     input: Variable::from(r.clone()),
                     goals: job.goals.clone(),
-                    trace: false,
+                    trace: zen_engine::trace::TraceFormat::Off,
                 })
                 .collect()
         };

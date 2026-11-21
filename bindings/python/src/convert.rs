@@ -135,6 +135,9 @@ impl PortableResponse {
             Some(EvaluationTrace::Policy(policy)) => {
                 PortableTrace::Json(serde_json::to_value(&policy).unwrap_or_default())
             }
+            Some(EvaluationTrace::V1(document)) => {
+                PortableTrace::Arena(Self::add(&mut nodes, &mut memo, &document.to_variable()))
+            }
         };
 
         Self {
@@ -285,6 +288,7 @@ pub fn response_to_py(py: Python<'_>, response: DecisionGraphResponse) -> PyResu
                 let value = serde_json::to_value(&policy).unwrap_or_default();
                 value_to_object(py, &value)?
             }
+            EvaluationTrace::V1(document) => converter.convert(&document.to_variable())?,
         };
 
         dict.set_item("trace", trace_obj)?;

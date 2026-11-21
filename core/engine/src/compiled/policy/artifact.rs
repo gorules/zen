@@ -11,15 +11,14 @@ use zen_expression::variable::Variable;
 
 use zen_expression::lane::{Bits, Programs};
 
+use crate::compiled::trace::{PolicyTrace, TraceFormat};
 use crate::policy::blocks::Block;
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, WriteScope};
 use crate::policy::queries::scope::{EntityForm, ReferenceField};
 use crate::policy::refs::RefPoolIndex;
 use crate::workspace::db::Db;
-use crate::workspace::types::{
-    BlockRef, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
-};
+use crate::workspace::{BlockRef, EvaluateRequest, EvaluationError, EvaluationResult, Trace};
 use zen_types::path::DotPath;
 
 pub(crate) struct Artifact {
@@ -30,6 +29,8 @@ pub(crate) struct Artifact {
     requirements: OnceLock<Requirements>,
     programs: OnceLock<Arc<Programs>>,
     pub(crate) indexes: TableIndexes,
+    documents: Arc<[Arc<crate::model::DecisionContent>]>,
+    documents_json: OnceLock<Arc<str>>,
 }
 
 impl Deref for Artifact {
@@ -41,15 +42,102 @@ impl Deref for Artifact {
 }
 
 impl Artifact {
-    pub(crate) fn new(base: Arc<EvalArtifact>, input_schema: InputSchema) -> Self {
+    pub(crate) fn new(db: &Db, policy: &str, base: Arc<EvalArtifact>) -> Self {
         Self {
             base,
-            input_schema,
+            input_schema: InputSchema::of(db, policy),
             compiled: OnceLock::new(),
             goal_plans: Mutex::new(HashMap::new()),
             requirements: OnceLock::new(),
             programs: OnceLock::new(),
             indexes: TableIndexes::default(),
+            documents: Self::release_of(db, policy),
+            documents_json: OnceLock::new(),
+        }
+    }
+
+    fn release_of(db: &Db, policy: &str) -> Arc<[Arc<crate::model::DecisionContent>]> {
+        let mut seen: Vec<Arc<str>> = vec![Arc::from(policy)];
+        let mut out: Vec<Arc<crate::model::DecisionContent>> = Vec::new();
+        let mut at = 0;
+        while at < seen.len() {
+            let path = seen[at].clone();
+            at += 1;
+            let Some(doc) = db.raw_document(&path) else {
+                continue;
+            };
+            if let crate::model::DecisionContent::Policy(policy) = doc.as_ref() {
+                for import in &policy.0.imports {
+                    if !seen.iter().any(|s| s == import) {
+                        seen.push(import.clone());
+                    }
+                }
+            }
+            out.push(doc);
+        }
+        Arc::from(out)
+    }
+
+    pub(crate) fn snapshot(&self, req: &EvaluateRequest, extras: bool) -> Option<Variable> {
+        (req.trace == TraceFormat::V1).then(|| match extras {
+            true => req.input.deep_clone(),
+            false => req.input.clone(),
+        })
+    }
+
+    fn documents_json(&self) -> &str {
+        self.documents_json.get_or_init(|| {
+            Arc::from(serde_json::to_string(&*self.documents).unwrap_or_else(|_| "[]".to_string()))
+        })
+    }
+
+    fn converted(
+        &self,
+        request: &Variable,
+        trace: PolicyTrace,
+        context: &EvaluationContext,
+    ) -> PolicyTrace {
+        match trace {
+            PolicyTrace::Legacy(trace) => PolicyTrace::V1(crate::compiled::trace::policy_v1(
+                trace,
+                request,
+                self.documents_json(),
+                Some(&crate::compiled::pinning::evaluation(context)),
+            )),
+            other => other,
+        }
+    }
+
+    pub(crate) fn finish(
+        &self,
+        req: &EvaluateRequest,
+        request: Option<Variable>,
+        result: Result<EvaluationResult, EvaluationError>,
+        context: &EvaluationContext,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        let Some(request) = request.filter(|_| req.trace == TraceFormat::V1) else {
+            return result;
+        };
+        match result {
+            Ok(mut result) => {
+                result.trace = result.trace.map(|t| self.converted(&request, t, context));
+                Ok(result)
+            }
+            Err(EvaluationError::ExpressionFailed {
+                policy_path,
+                block_id,
+                expression,
+                source,
+                partial_trace,
+            }) => Err(EvaluationError::ExpressionFailed {
+                policy_path,
+                block_id,
+                expression,
+                source,
+                partial_trace: partial_trace
+                    .map(|t| Box::new(self.converted(&request, *t, context))),
+            }),
+            Err(other) => Err(other),
         }
     }
 
@@ -289,7 +377,7 @@ impl Artifacts {
                 return kept.clone();
             }
         }
-        let artifact = Arc::new(Artifact::new(base, InputSchema::of(db, policy)));
+        let artifact = Arc::new(Artifact::new(db, policy, base));
         self.kept
             .borrow_mut()
             .insert(Arc::from(policy), artifact.clone());
@@ -332,7 +420,9 @@ impl Runtime {
         }
         Self::check_imports_resolved(db, &req.policy_path)?;
         let mut req = req.clone();
-        req.trace = true;
+        if req.trace != crate::compiled::trace::TraceFormat::V1 {
+            req.trace = crate::compiled::trace::TraceFormat::Legacy;
+        }
         artifacts
             .get(db, &req.policy_path)
             .evaluate(&req, true, context)
@@ -350,7 +440,7 @@ impl Runtime {
             policy_path: policy_path.clone(),
             input: Variable::Null,
             goals: goals.to_vec(),
-            trace: false,
+            trace: crate::compiled::trace::TraceFormat::Off,
         };
         Self::check_evaluable(db, &probe)?;
         let artifact = artifacts.get(db, policy_path);
@@ -432,7 +522,7 @@ impl Artifact {
         &self,
         key: &str,
         input: Variable,
-        trace: bool,
+        trace: crate::compiled::trace::TraceFormat,
         context: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let request = EvaluateRequest {
@@ -451,7 +541,7 @@ impl Artifact {
         context: &EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let plan = self.plan(&req.goals);
-        if !req.trace && !extras {
+        if !req.trace.is_on() && !extras {
             if let Some(result) = plan
                 .evaluate(self, std::slice::from_ref(req), context)
                 .pop()
@@ -459,7 +549,13 @@ impl Artifact {
                 return result;
             }
         }
-        plan.traced(self, req, extras, context)
+        let request = self.snapshot(req, extras);
+        self.finish(
+            req,
+            request,
+            plan.traced(self, req, extras, context),
+            context,
+        )
     }
 
     const GOAL_PLANS: usize = 32;
@@ -511,14 +607,14 @@ impl Artifact {
             (0..requests.len()).map(|_| None).collect();
         let mut groups: Vec<(&[Arc<str>], Vec<usize>)> = Vec::new();
         for (index, request) in requests.iter().enumerate() {
-            match request.trace {
+            match request.trace.is_on() {
                 true => {
-                    results[index] = Some(self.plan(&request.goals).traced(
-                        self,
-                        request,
-                        false,
-                        &context.at(index),
-                    ))
+                    let context = context.at(index);
+                    let snapshot = self.snapshot(request, false);
+                    let traced = self
+                        .plan(&request.goals)
+                        .traced(self, request, false, &context);
+                    results[index] = Some(self.finish(request, snapshot, traced, &context))
                 }
                 false => match groups
                     .iter_mut()
@@ -847,6 +943,12 @@ impl StoreOps for Variable {
     }
 }
 
+impl From<crate::policy::blocks::ExecutionError> for EvaluationError {
+    fn from(error: crate::policy::blocks::ExecutionError) -> Self {
+        <crate::workspace::types::EvaluationError>::from(error).into()
+    }
+}
+
 impl EvaluationError {
     pub(crate) fn partially_traced(self, trace: Option<Trace>) -> Self {
         match (self, trace) {
@@ -864,7 +966,7 @@ impl EvaluationError {
                 block_id,
                 expression,
                 source,
-                partial_trace: Some(Box::new(trace)),
+                partial_trace: Some(Box::new(crate::compiled::trace::PolicyTrace::Legacy(trace))),
             },
             (other, _) => other,
         }

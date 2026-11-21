@@ -2,7 +2,7 @@ use crate::compiled::diagnostics::Paths;
 use crate::compiled::output::OutputColumn;
 use crate::compiled::shred::Shredder;
 use crate::compiled::ColumnarOutput;
-use crate::workspace::types::{EvaluationError, EvaluationResult};
+use crate::workspace::{EvaluationError, EvaluationResult};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ pub(super) fn output<'a>(
             .map(|error| error.map(|error| Rc::new(crate::EvaluationError::Policy(error))))
             .collect(),
         paths,
+        traces: None,
     }
 }
 

@@ -11,8 +11,10 @@ impl<'a> Run<'_, 'a> {
         positions: Option<&Rc<[usize]>>,
         first: bool,
         conditions: &[Cond],
+        ids: &[std::sync::Arc<str>],
         children: &mut Vec<Branch>,
     ) {
+        let start = std::time::Instant::now();
         let rows = self.store.rows;
         let truths: Vec<Option<Rc<[u64]>>> = conditions
             .iter()
@@ -165,6 +167,20 @@ impl<'a> Run<'_, 'a> {
                 Some(p) => p.iter().for_each(|&row| visit(row)),
                 None => (0..rows).for_each(&mut visit),
             }
+        }
+        if self.trace.is_some() {
+            let groups: Box<super::trace::Groups> = keys
+                .chunks_exact(words)
+                .zip(&sets)
+                .map(|(key, members)| {
+                    (
+                        key.to_vec(),
+                        (!members.is_empty()).then(|| Rc::from(members.as_slice())),
+                    )
+                })
+                .collect();
+            let ns = start.elapsed().as_nanos() as u64;
+            self.trace_switch(seg, positions, ids, &groups, ns);
         }
         for (key, members) in keys.chunks_exact(words).zip(sets) {
             let child = seg.child(self.graph, self.layout, key);

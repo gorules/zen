@@ -133,7 +133,10 @@ fn run_evaluation(file_name: &str, toml_data: &str) {
             policy_path: Arc::from(test.policies[0].as_str()),
             input: Variable::from(toml_to_json(&test.input)),
             goals: Vec::new(),
-            trace: test.trace.is_some(),
+            trace: match test.trace.is_some() {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
         };
         let result = ws
             .evaluate(&req)
@@ -159,6 +162,8 @@ fn run_evaluation(file_name: &str, toml_data: &str) {
         for (block_id, expectation) in &expected_trace.blocks {
             let expected = normalize_block_expectation(expectation);
             let candidates: Vec<serde_json::Value> = trace
+                .as_legacy()
+                .expect("legacy trace")
                 .executions
                 .iter()
                 .filter(|e| e.block_id.as_ref() == block_id.as_str())
@@ -168,6 +173,8 @@ fn run_evaluation(file_name: &str, toml_data: &str) {
                 !candidates.is_empty(),
                 "{ctx} block '{block_id}' not found in trace; executed: {:?}",
                 trace
+                    .as_legacy()
+                    .expect("legacy trace")
                     .executions
                     .iter()
                     .map(|e| e.block_id.as_ref())

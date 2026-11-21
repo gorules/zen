@@ -6,7 +6,7 @@ use crate::compiled::policy::entity::Entity;
 use crate::compiled::policy::{PolicyPlan, Rows};
 use crate::compiled::shred::{Shred, Shredder};
 use crate::compiled::ColumnarOutput;
-use crate::workspace::types::{EvaluateRequest, EvaluationError};
+use crate::workspace::{EvaluateRequest, EvaluationError};
 use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
@@ -198,7 +198,7 @@ impl PolicyPlan {
             policy_path: policy_path.clone(),
             input: columns.row(row),
             goals: goals.to_vec(),
-            trace: false,
+            trace: crate::compiled::trace::TraceFormat::Off,
         };
         let sheet = Sheet::new(columns);
         let Some(mut sheet) = sheet else {

@@ -2,7 +2,6 @@ use crate::compiled::decision::CompiledDecision;
 use crate::compiled::host::graph::graph::Responses;
 use crate::compiled::pinning;
 use crate::compiled::policy::artifact::Artifact;
-use crate::compiled::policy::validator::InputSchema;
 use crate::compiled::prepared::{Decisions, Policies, Prepared};
 use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::engine::{EvaluationOptions, EvaluationSerializedOptions};
@@ -12,9 +11,7 @@ use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::policy::raw::PolicyDocument;
 use crate::workspace::db::Db;
-use crate::workspace::types::{
-    EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity,
-};
+use crate::workspace::{EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity};
 use crate::EvaluationError;
 use ahash::{HashMap, HashSet, HashSetExt};
 use arc_swap::ArcSwapOption;
@@ -80,7 +77,7 @@ impl Caches {
                 .into_iter()
                 .any(|d| d.severity == Severity::Error);
             if !blocked {
-                let artifact = Artifact::new(db.eval_artifact(key), InputSchema::of(&db, key));
+                let artifact = Artifact::new(&db, key, db.eval_artifact(key));
                 entries.insert(key.clone(), Entry::Policy(Arc::new(artifact)));
             }
         }
@@ -117,7 +114,7 @@ impl Caches {
         input: Variable,
         options: EvaluationOptions,
     ) -> LoaderResult<Result<DecisionGraphResponse, Box<EvaluationError>>> {
-        let context = pinning::single(options.pinned());
+        let context = pinning::single(&options);
         self.evaluate(parts, key, input, options, &context).await
     }
 
@@ -128,7 +125,7 @@ impl Caches {
         input: Variable,
         options: EvaluationSerializedOptions,
     ) -> Result<Value, Value> {
-        let context = pinning::single(options.pinned());
+        let context = pinning::single(&options);
         self.evaluate_serialized(parts, key, input, options, &context)
             .await
     }
@@ -140,7 +137,7 @@ impl Caches {
         contexts: &[Variable],
         options: EvaluationOptions,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
-        let context = pinning::batch(options.pinned());
+        let context = pinning::batch(&options);
         self.evaluate_batch(parts, key, contexts, options, &context)
             .await
     }
@@ -188,11 +185,8 @@ impl Caches {
         options: EvaluationSerializedOptions,
         context: &EvaluationContext,
     ) -> Result<Value, Value> {
-        match self
-            .evaluate(parts, key, input, options.unserialized(), context)
-            .await
-        {
-            Ok(response) => Responses::serialized(response, options.trace),
+        match self.evaluate(parts, key, input, options, context).await {
+            Ok(response) => Responses::serialized(response),
             Err(err) => Err(Value::String(err.to_string())),
         }
     }
@@ -285,8 +279,9 @@ impl Caches {
                 .any(|d| d.severity == Severity::Error);
             (!blocked).then(|| {
                 Arc::new(Artifact::new(
+                    &db,
+                    &entry_path,
                     db.eval_artifact(&entry_path),
-                    InputSchema::of(&db, &entry_path),
                 ))
             })
         });

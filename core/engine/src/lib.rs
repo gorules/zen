@@ -125,8 +125,8 @@
 mod analysis;
 pub mod context {
     pub use zen_expression::context::{
-        clock_reads, instant_from_millis, parse_instant, parse_timezone, row_seed, unrowed_draws,
-        Instant, Timezone,
+        clock_reads, format_instant, instant_from_millis, parse_instant, parse_timezone, row_seed,
+        unrowed_draws, Instant, Timezone,
     };
 }
 mod compiled;
@@ -150,15 +150,14 @@ pub mod columns {
     pub use zen_expression::lane::{Column, Columns, Dictionary, Values};
 }
 
+pub use compiled::trace::api as trace;
 pub use compiled::{ColumnarOutput, OutputColumn, RecordsView};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use decision_graph::{
     DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError, EvaluationTrace,
 };
-pub use engine::{
-    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
-};
+pub use engine::{DecisionEngine, EvaluationOptions, EvaluationSerializedOptions};
 pub use error::{CompileFailure, ContentKindError, EvaluationError};
 pub use workspace::Workspace;
 pub use zen_expression::Variable;

@@ -95,8 +95,7 @@ impl<'a> Run<'_, 'a> {
         let probe = self.probe();
         let produced = CompiledGraph::items(
             &mut self.runner,
-            &context,
-            probe.as_ref(),
+            crate::compiled::graph::state::Lane::new(&context, probe.as_ref()),
             step,
             body,
             &items,
@@ -257,8 +256,7 @@ impl<'a> Run<'_, 'a> {
         let probe = self.probe();
         let (output, failures) = CompiledGraph::item_run(
             &mut self.runner,
-            &self.host.extensions.context,
-            probe.as_ref(),
+            crate::compiled::graph::state::Lane::new(&self.host.extensions.context, probe.as_ref()),
             step,
             body,
             &data,

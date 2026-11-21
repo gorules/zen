@@ -34,6 +34,25 @@ pub(in crate::compiled::graph) struct Host<'r> {
     pub(in crate::compiled::graph) extensions: &'r NodeHandlerExtensions,
 }
 
+#[derive(Clone, Copy)]
+pub(in crate::compiled::graph) struct Lane<'r> {
+    pub(in crate::compiled::graph) context: &'r EvaluationContext,
+    pub(in crate::compiled::graph) probe: Option<&'r Rc<Probe>>,
+}
+
+impl<'r> Lane<'r> {
+    pub(in crate::compiled::graph) fn new(
+        context: &'r EvaluationContext,
+        probe: Option<&'r Rc<Probe>>,
+    ) -> Self {
+        Self { context, probe }
+    }
+
+    pub(in crate::compiled::graph) fn with(self, context: &'r EvaluationContext) -> Self {
+        Self { context, ..self }
+    }
+}
+
 pub(crate) struct State<'a> {
     context: EvaluationContext,
     nodes: Vec<Vec<Rc<Data<'a>>>>,
@@ -390,10 +409,8 @@ impl CompiledGraph {
         out
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn bound<'a, R>(
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
@@ -401,6 +418,7 @@ impl CompiledGraph {
         rebase: Option<&str>,
         f: impl FnOnce(&Bound) -> R,
     ) -> R {
+        let Lane { context, probe } = lane;
         let context = context.picked(data.rows.clone());
         let with_nodes = |scope: Scope, row: usize| match nodes.get(row).cloned().flatten() {
             None => scope,
@@ -511,8 +529,7 @@ impl CompiledGraph {
         let (nodes, extra) = self.node_inputs(step, state, visible, rows, true);
         let hits: Vec<Hit> = Self::RUNNER.with_borrow_mut(|runner| {
             Self::bound(
-                &state.context,
-                None,
+                Lane::new(&state.context, None),
                 step,
                 &data,
                 &nodes,

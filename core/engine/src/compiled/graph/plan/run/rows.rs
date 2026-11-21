@@ -318,8 +318,7 @@ impl<'a> Run<'_, 'a> {
                 let context = self.host.extensions.context.rows(&at);
                 let (output, failures) = graph.rowwise(
                     &mut self.runner,
-                    &context,
-                    probe.as_ref(),
+                    crate::compiled::graph::state::Lane::new(&context, probe.as_ref()),
                     step,
                     data,
                     &nodes,

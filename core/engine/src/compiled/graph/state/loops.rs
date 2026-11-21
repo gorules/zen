@@ -1,11 +1,11 @@
 use crate::compiled::bound::Bound;
 use crate::compiled::exact::graph::{NodeRecorder, Row};
 use crate::compiled::graph::data::{Data, Layer};
+use crate::compiled::graph::state::Lane;
 use crate::compiled::graph::{Body, CompiledGraph, Kind, Step, Transform};
 use crate::compiled::leaf;
 use crate::compiled::leaf::Mask;
 use crate::compiled::leaf::{ColumnBuilder, Leaf};
-use crate::compiled::trace::record::Probe;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
@@ -14,17 +14,16 @@ use zen_expression::{Scope, Variable};
 use zen_types::path::DotPath;
 
 impl CompiledGraph {
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::compiled::graph) fn transformed(
         runner: &mut LaneRunner,
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         body: &Body,
         transform: &Transform,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
     ) -> Vec<Result<Variable, String>> {
+        let Lane { context, probe } = lane;
         let effective: Vec<Result<Variable, String>> = match &transform.input_field {
             None => inputs.iter().cloned().map(Ok).collect(),
             Some((program, _)) => {
@@ -56,8 +55,7 @@ impl CompiledGraph {
                     .collect();
                 let mut produced = Self::items(
                     runner,
-                    &context.rows(&rows),
-                    probe,
+                    Lane::new(&context.rows(&rows), probe),
                     step,
                     body,
                     &body_inputs,
@@ -96,7 +94,7 @@ impl CompiledGraph {
                     false => context.clone(),
                 };
                 let mut produced =
-                    Self::items(runner, &looped, probe, step, body, &items, &item_nodes)
+                    Self::items(runner, lane.with(&looped), step, body, &items, &item_nodes)
                         .into_iter();
                 let mut item_inputs = items.into_iter();
                 shaped
@@ -143,17 +141,16 @@ impl CompiledGraph {
         outputs
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::compiled::graph) fn looped<'a>(
         runner: &mut LaneRunner,
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         body: &Body,
         transform: &Transform,
         path: &Arc<str>,
         data: &Data<'a>,
     ) -> (Data<'a>, Vec<(usize, String)>) {
+        let context = lane.context;
         let source = transform
             .input_field
             .as_ref()
@@ -185,7 +182,7 @@ impl CompiledGraph {
             true => context.items(&owners),
             false => context.clone(),
         };
-        let produced = Self::items(runner, &looped, probe, step, body, &items, &[]);
+        let produced = Self::items(runner, lane.with(&looped), step, body, &items, &[]);
         let mut values = Vec::with_capacity(spans.len());
         for (row, span) in spans.into_iter().enumerate() {
             let Some((start, end)) = span else {
@@ -229,13 +226,13 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn items(
         runner: &mut LaneRunner,
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         body: &Body,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
     ) -> Vec<Result<Variable, String>> {
+        let Lane { context, probe } = lane;
         if inputs.iter().any(Self::foreign) {
             let kept: Vec<usize> = (0..inputs.len())
                 .filter(|&i| !Self::foreign(&inputs[i]))
@@ -247,8 +244,7 @@ impl CompiledGraph {
                 .collect();
             let mut produced = Self::items(
                 runner,
-                &context.rows(&kept),
-                probe,
+                Lane::new(&context.rows(&kept), probe),
                 step,
                 body,
                 &kept_inputs,
@@ -273,7 +269,7 @@ impl CompiledGraph {
         }
         match Self::item_data(step, body, inputs, nodes) {
             Some(data) => {
-                let (output, failures) = Self::item_run(runner, context, probe, step, body, &data);
+                let (output, failures) = Self::item_run(runner, lane, step, body, &data);
                 let values = output.materialized();
                 let mut results: Vec<Result<Variable, String>> =
                     values.iter().cloned().map(Ok).collect();
@@ -284,7 +280,7 @@ impl CompiledGraph {
                 }
                 results
             }
-            None => Self::body(runner, context, probe, body, inputs, nodes),
+            None => Self::body(runner, lane, body, inputs, nodes),
         }
     }
 
@@ -355,13 +351,12 @@ impl CompiledGraph {
 
     pub(in crate::compiled::graph) fn item_run<'a>(
         runner: &mut LaneRunner,
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         body: &Body,
         data: &Data<'a>,
     ) -> (Data<'a>, Vec<(usize, String)>) {
-        Self::bound(context, probe, step, data, &[], &[], None, |bound| {
+        Self::bound(lane, step, data, &[], &[], None, |bound| {
             Self::layered(runner, body, false, data, bound, None)
         })
     }
@@ -401,12 +396,12 @@ impl CompiledGraph {
 
     fn body(
         runner: &mut LaneRunner,
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         body: &Body,
         inputs: &[Variable],
         nodes: &[Option<Variable>],
     ) -> Vec<Result<Variable, String>> {
+        let Lane { context, probe } = lane;
         let scopes: Vec<Scope> = inputs
             .iter()
             .enumerate()

@@ -54,7 +54,9 @@ fn root(value: Decimal) -> Option<Decimal> {
     }
     let mut x = guess;
     for _ in 0..4 {
-        x = x.checked_add(value.checked_div(x)?)?.checked_div(Decimal::TWO)?;
+        x = x
+            .checked_add(value.checked_div(x)?)?
+            .checked_div(Decimal::TWO)?;
     }
     Some(x)
 }
@@ -192,7 +194,16 @@ mod tests {
 
     #[test]
     fn spreads_match_the_textbook() {
-        let values = [dec!(2), dec!(4), dec!(4), dec!(4), dec!(5), dec!(5), dec!(7), dec!(9)];
+        let values = [
+            dec!(2),
+            dec!(4),
+            dec!(4),
+            dec!(4),
+            dec!(5),
+            dec!(5),
+            dec!(7),
+            dec!(9),
+        ];
         assert_eq!(variance(&values, false).unwrap(), Some(dec!(4)));
         assert_eq!(stddev(&values, false).unwrap(), Some(dec!(2)));
         assert_eq!(variance(&values, true).unwrap(), Some(dec!(4.571428571429)));

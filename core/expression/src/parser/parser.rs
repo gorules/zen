@@ -871,12 +871,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 Some(alias)
             }
             alias_token => {
-                errors.push(self.error(AstNodeError::Custom {
-                    message: afmt!(self, "Expected identifier after 'as'"),
-                    span: alias_token
-                        .map(|t| t.span)
-                        .unwrap_or((self.prev_token_end(), self.prev_token_end())),
-                }));
+                errors.push(
+                    self.error(AstNodeError::Custom {
+                        message: afmt!(self, "Expected identifier after 'as'"),
+                        span: alias_token
+                            .map(|t| t.span)
+                            .unwrap_or((self.prev_token_end(), self.prev_token_end())),
+                    }),
+                );
                 None
             }
         }
@@ -987,6 +989,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             (IF::First | IF::Last, [value, condition]) => {
                 call(target, &[map(filter(list, condition), value)])
             }
+            (IF::FindIndex | IF::FindLastIndex, [condition]) => {
+                call(target, &[map(list, condition)])
+            }
+            (IF::Find | IF::FindLast, [condition]) => call(target, &[filter(list, condition)]),
+            (IF::SortBy, [key]) => call(target, &[map(list, pair(make(Node::Pointer), key))]),
+            (IF::SortBy, [key, direction]) => call(
+                target,
+                &[map(list, pair(make(Node::Pointer), key)), direction],
+            ),
             (IF::ArgMax | IF::ArgMin, [key]) => {
                 call(target, &[map(list, pair(make(Node::Pointer), key))])
             }

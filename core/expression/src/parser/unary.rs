@@ -2,13 +2,13 @@ use crate::functions::{
     ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, FunctionRegistry,
     InternalFunction, MethodKind,
 };
-use crate::variable::VariableType;
 use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind};
 use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
 use crate::parser::parser::{Parser, ParserContext};
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
 use crate::parser::{NodeMetadata, ParserResult};
+use crate::variable::VariableType;
 
 #[derive(Debug)]
 pub struct Unary;
@@ -380,13 +380,15 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Values => CompareWithReference(In),
                     InternalFunction::Type => CompareWithReference(Equal),
                     InternalFunction::Date => CompareWithReference(Equal),
-                    other => match FunctionRegistry::get_definition(&FunctionKind::Internal(*other))
-                        .map(|definition| definition.return_type())
-                    {
-                        Some(VariableType::Bool) => AsBoolean,
-                        Some(VariableType::Array(_)) => CompareWithReference(In),
-                        _ => CompareWithReference(Equal),
-                    },
+                    other => {
+                        match FunctionRegistry::get_definition(&FunctionKind::Internal(*other))
+                            .map(|definition| definition.return_type())
+                        {
+                            Some(VariableType::Bool) => AsBoolean,
+                            Some(VariableType::Array(_)) => CompareWithReference(In),
+                            _ => CompareWithReference(Equal),
+                        }
+                    }
                 },
                 FunctionKind::Deprecated(d) => match d {
                     DeprecatedFunction::Date => CompareWithReference(Equal),

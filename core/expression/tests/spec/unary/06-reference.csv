@@ -244,10 +244,10 @@ $[0] == 1;{$: [1, 2]};true
 $[0] == 1;{$: [2, 1]};false
 $[0] == 1;{$: []};false
 $[0] == 1;{$: null};false
-$[-1] == 2;{$: [1, 2]};true;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
-$[-1] == 2;{$: [2, 1]};false;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
-$[-1] == 2;{$: [2]};true;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
-$[-1] == 2;{$: []};false;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
+$[-1] == 2;{$: [1, 2]};true
+$[-1] == 2;{$: [2, 1]};false
+$[-1] == 2;{$: [2]};true
+$[-1] == 2;{$: []};false
 len($) == 0;{$: []};true
 len($) == 0;{$: [1]};false
 len($) == 0;{$: ''};true

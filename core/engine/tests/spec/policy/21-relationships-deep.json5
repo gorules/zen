@@ -127,7 +127,7 @@
     ],
     [
       {customer: {companies: []}},
-      "!error: ExpressionFailed",
+      {customer: {companies: [], first: null, second: -1, lastCompanyDepts: 0}},
     ],
   ],
 }

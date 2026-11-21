@@ -47,6 +47,15 @@ registered! {
     SOUNDEX = Soundex;
     JARO_WINKLER = JaroWinkler;
     TOKEN_SET_SIMILARITY = TokenSetSimilarity;
+    TAKE = Take;
+    TAKE_LAST = TakeLast;
+    FIND = Find;
+    FIND_LAST = FindLast;
+    FIND_INDEX = FindIndex;
+    FIND_LAST_INDEX = FindLastIndex;
+    SORT = Sort;
+    SORT_BY = SortBy;
+    IS_EMPTY = IsEmpty;
     STDDEV = Stddev;
     VARIANCE = Variance;
     STDDEV_POP = StddevPop;

@@ -617,6 +617,12 @@ impl TypesProvider {
                         | InternalFunction::Last
                         | InternalFunction::Distinct
                         | InternalFunction::TopK
+                        | InternalFunction::Take
+                        | InternalFunction::TakeLast
+                        | InternalFunction::Sort
+                        | InternalFunction::Find
+                        | InternalFunction::FindLast
+                        | InternalFunction::SortBy
                         | InternalFunction::ArgMax
                         | InternalFunction::ArgMin),
                     ) => self.element_typecheck(*f, kind, &type_list, arguments),
@@ -911,10 +917,23 @@ impl TypesProvider {
             other => VariableType::Nullable(Rc::new(other)),
         };
         TypeInfo::from(match function {
-            InternalFunction::First | InternalFunction::Last => nullable(element),
+            InternalFunction::First
+            | InternalFunction::Last
+            | InternalFunction::Find
+            | InternalFunction::FindLast => nullable(element),
             InternalFunction::Distinct | InternalFunction::TopK => {
                 VariableType::Array(Rc::new(element))
             }
+            InternalFunction::Take | InternalFunction::TakeLast | InternalFunction::Sort => {
+                arg_types
+                    .first()
+                    .map(|t| t.unwrap_nullable().0.clone())
+                    .unwrap_or(VariableType::Any)
+            }
+            InternalFunction::SortBy => match element.iterator() {
+                Some(inner) => VariableType::Array(Rc::new(inner.unwrap_nullable().0.clone())),
+                None => VariableType::Any.array(),
+            },
             _ => match element.iterator() {
                 Some(inner) => nullable(inner.unwrap_nullable().0.clone()),
                 None => VariableType::Any,

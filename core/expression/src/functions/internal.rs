@@ -71,6 +71,15 @@ pub enum InternalFunction {
     ArgMax,
     #[strum(to_string = "argMin", serialize = "minBy")]
     ArgMin,
+    Take,
+    TakeLast,
+    Find,
+    FindLast,
+    FindIndex,
+    FindLastIndex,
+    Sort,
+    SortBy,
+    IsEmpty,
     #[strum(serialize = "@sum")]
     AggregateSum,
     #[strum(serialize = "@avg")]
@@ -152,6 +161,9 @@ impl InternalFunction {
             ) => &[C, C],
             (IF::Percentile | IF::PercentileApprox | IF::TopK, 3) => &[C, P],
             (IF::Percentile | IF::PercentileApprox | IF::TopK, 4) => &[C, P, C],
+            (IF::Find | IF::FindLast | IF::FindIndex | IF::FindLastIndex, 2) => &[C],
+            (IF::SortBy, 2) => &[C],
+            (IF::SortBy, 3) => &[C, P],
             (IF::ArgMax | IF::ArgMin, 2) => &[C],
             (IF::ArgMax | IF::ArgMin, 3) => &[C, C],
             (IF::ArgMax | IF::ArgMin, 4) => &[C, C, C],
@@ -460,25 +472,29 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
-            IF::Stddev | IF::Variance | IF::StddevPop | IF::VariancePop | IF::Skew
-            | IF::Kurtosis | IF::AggregateAvg | IF::AggregateMedian => {
-                Rc::new(StaticFunction {
-                    implementation: Rc::new(match value {
-                        IF::Stddev => imp::stddev,
-                        IF::Variance => imp::variance,
-                        IF::StddevPop => imp::stddev_pop,
-                        IF::VariancePop => imp::variance_pop,
-                        IF::Skew => imp::skew,
-                        IF::Kurtosis => imp::kurtosis,
-                        IF::AggregateAvg => imp::aggregate_avg,
-                        _ => imp::aggregate_median,
-                    }),
-                    signature: FunctionSignature::single(
-                        VT::Nullable(Rc::new(VT::Number)).array(),
-                        VT::Nullable(Rc::new(VT::Number)),
-                    ),
-                })
-            }
+            IF::Stddev
+            | IF::Variance
+            | IF::StddevPop
+            | IF::VariancePop
+            | IF::Skew
+            | IF::Kurtosis
+            | IF::AggregateAvg
+            | IF::AggregateMedian => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Stddev => imp::stddev,
+                    IF::Variance => imp::variance,
+                    IF::StddevPop => imp::stddev_pop,
+                    IF::VariancePop => imp::variance_pop,
+                    IF::Skew => imp::skew,
+                    IF::Kurtosis => imp::kurtosis,
+                    IF::AggregateAvg => imp::aggregate_avg,
+                    _ => imp::aggregate_median,
+                }),
+                signature: FunctionSignature::single(
+                    VT::Nullable(Rc::new(VT::Number)).array(),
+                    VT::Nullable(Rc::new(VT::Number)),
+                ),
+            }),
 
             IF::Percentile | IF::PercentileApprox => Rc::new(StaticFunction {
                 implementation: Rc::new(match value {
@@ -559,6 +575,52 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                     _ => imp::arg_min,
                 }),
                 signature: FunctionSignature::single(VT::Any.array(), VT::Any),
+            }),
+
+            IF::Take | IF::TakeLast => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Take => imp::take,
+                    _ => imp::take_last,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
+            }),
+
+            IF::Find | IF::FindLast => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Find => imp::first,
+                    _ => imp::last,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any),
+            }),
+
+            IF::FindIndex | IF::FindLastIndex => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::FindIndex => imp::find_index,
+                    _ => imp::find_last_index,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Number),
+            }),
+
+            IF::Sort | IF::SortBy => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::Sort => imp::sort,
+                    _ => imp::sort_by,
+                }),
+                signatures: vec![
+                    FunctionSignature::single(VT::Any.array(), VT::Any.array()),
+                    FunctionSignature {
+                        parameters: vec![VT::Any.array(), VT::String],
+                        return_type: VT::Any.array(),
+                    },
+                ],
+            }),
+
+            IF::IsEmpty => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::is_empty),
+                signature: FunctionSignature::single(VT::Any, VT::Bool),
             }),
 
             IF::Type => Rc::new(StaticFunction {
@@ -844,7 +906,10 @@ pub(crate) mod imp {
                 }
                 Ok(V::from_array(out))
             }
-            _ => Err(anyhow!("Similarity not available for type {}", a.type_name())),
+            _ => Err(anyhow!(
+                "Similarity not available for type {}",
+                a.type_name()
+            )),
         }
     }
 
@@ -1228,6 +1293,65 @@ pub(crate) mod imp {
 
     pub fn arg_min(args: Arguments) -> anyhow::Result<V> {
         __internal_aggregate(args, |items| aggregate::arg_extreme(items, false))
+    }
+
+    pub fn take(args: Arguments) -> anyhow::Result<V> {
+        let n = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| {
+            Ok(V::from_array(items.iter().take(n).cloned().collect()))
+        })
+    }
+
+    pub fn take_last(args: Arguments) -> anyhow::Result<V> {
+        let n = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| {
+            Ok(V::from_array(
+                items[items.len().saturating_sub(n)..].to_vec(),
+            ))
+        })
+    }
+
+    pub fn find_index(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::find_index(items, false))
+    }
+
+    pub fn find_last_index(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::find_index(items, true))
+    }
+
+    fn __internal_direction(args: &Arguments, pos: usize) -> anyhow::Result<bool> {
+        match args.ostr(pos)? {
+            None | Some("asc") => Ok(false),
+            Some("desc") => Ok(true),
+            Some(other) => Err(anyhow!("Expected 'asc' or 'desc', got '{other}'")),
+        }
+    }
+
+    pub fn sort(args: Arguments) -> anyhow::Result<V> {
+        let descending = __internal_direction(&args, 1)?;
+        __internal_aggregate(args, |items| aggregate::sort(items, descending))
+    }
+
+    pub fn sort_by(args: Arguments) -> anyhow::Result<V> {
+        let descending = __internal_direction(&args, 1)?;
+        __internal_aggregate(args, |items| aggregate::sort_by(items, descending))
+    }
+
+    pub fn is_empty(args: Arguments) -> anyhow::Result<V> {
+        let a = args.var(0)?;
+        let empty = match a {
+            V::Null => true,
+            V::String(s) => s.is_empty(),
+            V::Array(items) => items.borrow().is_empty(),
+            V::Object(map) => map.borrow().is_empty(),
+            other => {
+                return Err(anyhow!(
+                    "Cannot tell whether a {} is empty",
+                    other.type_name()
+                ))
+            }
+        };
+        Ok(V::Bool(empty))
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

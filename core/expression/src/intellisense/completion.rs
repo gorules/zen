@@ -431,6 +431,27 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Last => {
                 "The last non-null item; last(items, #.ok) the last matching item; last(items, #.amount, #.ok) its projection"
             }
+            InternalFunction::Take => "The first n items of the array",
+            InternalFunction::TakeLast => "The last n items of the array",
+            InternalFunction::Find => {
+                "The first item matching a condition: find(items, #.status == 'declined')"
+            }
+            InternalFunction::FindLast => {
+                "The last item matching a condition: findLast(items, #.status == 'declined')"
+            }
+            InternalFunction::FindIndex => {
+                "The position of the first item matching a condition, -1 when none"
+            }
+            InternalFunction::FindLastIndex => {
+                "The position of the last item matching a condition, -1 when none"
+            }
+            InternalFunction::Sort => {
+                "Sorts numbers, strings or dates, 'asc' (default) or 'desc'; nulls go last"
+            }
+            InternalFunction::SortBy => {
+                "Sorts items by a key: sortBy(items, #.amount, 'desc'); stable, nulls go last"
+            }
+            InternalFunction::IsEmpty => "True for null, an empty string, array or object",
             InternalFunction::ArgMax => {
                 "The item with the largest key: argMax(items, #.amount), or a projection of it: argMax(items, #.id, #.amount, #.ok)"
             }
@@ -558,6 +579,14 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
                 vec!["arr", "fraction"]
             }
             InternalFunction::TopK => vec!["arr", "k"],
+            InternalFunction::Take | InternalFunction::TakeLast => vec!["arr", "n"],
+            InternalFunction::Find
+            | InternalFunction::FindLast
+            | InternalFunction::FindIndex
+            | InternalFunction::FindLastIndex => vec!["arr"],
+            InternalFunction::Sort => vec!["arr", "direction"],
+            InternalFunction::SortBy => vec!["pairs", "direction"],
+            InternalFunction::IsEmpty => vec!["value"],
             InternalFunction::ArgMax | InternalFunction::ArgMin => vec!["pairs"],
             InternalFunction::Rand => vec!["max"],
             InternalFunction::Round | InternalFunction::Trunc => vec!["num", "digits"],
@@ -673,6 +702,11 @@ fn callback_forms(function: &InternalFunction) -> Option<&'static str> {
         F::First | F::Last => {
             "<T>(array: T[], filter: Callback<T, boolean>) -> T | <T, U>(array: T[], value: Callback<T, U>, filter: Callback<T, boolean>) -> U"
         }
+        F::Find | F::FindLast => "<T>(array: T[], condition: Callback<T, boolean>) -> T",
+        F::FindIndex | F::FindLastIndex => {
+            "<T>(array: T[], condition: Callback<T, boolean>) -> number"
+        }
+        F::SortBy => "<T>(array: T[], key: Callback<T, any>, direction?: string) -> T[]",
         F::ArgMax | F::ArgMin => {
             "<T>(array: T[], key: Callback<T, any>) -> T | <T, U>(array: T[], value: Callback<T, U>, key: Callback<T, any>, filter?: Callback<T, boolean>) -> U"
         }

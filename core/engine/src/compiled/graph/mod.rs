@@ -163,18 +163,15 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         inputs: &[Variable],
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
-        self.resumed(content, extensions, max_depth, inputs, None)
-            .await
+        self.resumed(content, extensions, inputs, None).await
     }
 
     pub(in crate::compiled::graph) async fn resumed(
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         inputs: &[Variable],
         completed: Option<&Completed>,
     ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
@@ -188,7 +185,6 @@ impl CompiledGraph {
                 Host {
                     content,
                     extensions,
-                    max_depth,
                 },
                 inputs,
                 nesting,
@@ -215,7 +211,6 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         inputs: &[Variable],
         requests: &[Variable],
     ) -> (
@@ -231,7 +226,6 @@ impl CompiledGraph {
                 Host {
                     content,
                     extensions,
-                    max_depth,
                 },
                 inputs,
                 nesting,
@@ -260,7 +254,6 @@ impl CompiledGraph {
                         graph: self,
                         content,
                         extensions: &fresh,
-                        max_depth,
                         iteration: 0,
                         parent: None,
                     };
@@ -279,7 +272,6 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         input: Variable,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let start = Instant::now();
@@ -289,7 +281,6 @@ impl CompiledGraph {
                 Host {
                     content,
                     extensions,
-                    max_depth,
                 },
                 &inputs,
                 Nesting::default(),

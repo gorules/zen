@@ -323,7 +323,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> (Vec<Result<Variable, NodeError>>, Vec<Fact>) {
         let shared: Option<Runtime> = match &step.node.kind {
@@ -362,7 +361,6 @@ impl CompiledGraph {
                 iteration,
                 trace: Some(RefCell::new(Variable::Null)),
                 config: NodeContextConfig {
-                    max_depth,
                     trace: true,
                     ..Default::default()
                 },

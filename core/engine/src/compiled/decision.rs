@@ -1,5 +1,5 @@
 use crate::compiled::content::Content;
-use crate::compiled::host::NodeHandlerExtensions;
+use crate::compiled::host::{Limits, NodeHandlerExtensions};
 use crate::compiled::pinning;
 use crate::compiled::prepared::Prepared;
 use crate::compiled::traced::Traced;
@@ -112,8 +112,7 @@ impl CompiledDecision {
         compiled
             .evaluate_one(
                 &content,
-                &self.extensions(&content, context),
-                options.max_depth,
+                &self.extensions(&content, context, Limits::of(&options)),
                 input,
             )
             .await
@@ -151,8 +150,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate(
                         &content,
-                        &self.extensions(&content, context),
-                        options.max_depth,
+                        &self.extensions(&content, context, Limits::of(&options)),
                         &owned,
                     )
                     .await
@@ -182,8 +180,7 @@ impl CompiledDecision {
                 if let Some(output) = compiled
                     .evaluate_columns_traced(
                         &content,
-                        &self.extensions(&content, context),
-                        options.max_depth,
+                        &self.extensions(&content, context, Limits::of(&options)),
                         columns,
                         options.trace,
                     )
@@ -222,8 +219,7 @@ impl CompiledDecision {
                 compiled
                     .evaluate_columns(
                         &content,
-                        &self.extensions(&content, context),
-                        options.max_depth,
+                        &self.extensions(&content, context, Limits::of(&options)),
                         columns,
                     )
                     .await
@@ -259,8 +255,7 @@ impl CompiledDecision {
         let (results, traces) = compiled
             .traced_batch(
                 &content,
-                &self.extensions(&content, context),
-                options.max_depth,
+                &self.extensions(&content, context, Limits::of(&options)),
                 owned,
                 requests,
             )
@@ -284,7 +279,7 @@ impl CompiledDecision {
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let start = std::time::Instant::now();
         let request = crate::compiled::trace::Request::wanted(options.trace, &input);
-        let run = self.run(input, options.max_depth, context).await?;
+        let run = self.run(input, Limits::of(&options), context).await?;
         let evaluation = pinning::evaluation(context);
         crate::compiled::trace::collected(options.trace, request, run, start, Some(&evaluation))
     }
@@ -292,17 +287,16 @@ impl CompiledDecision {
     async fn run(
         &self,
         input: Variable,
-        max_depth: u8,
+        limits: Limits,
         context: &EvaluationContext,
     ) -> Result<crate::compiled::traced::Run, Box<EvaluationError>> {
         let (compiled, content) = Self::compiled(self.tracing()).map_err(Invalid::evaluation)?;
         let content = compiled.schemas(content, &self.loader).await;
-        let extensions = self.extensions(&content, context);
+        let extensions = self.extensions(&content, context, limits);
         let traced = Traced {
             graph: compiled,
             content: &content,
             extensions: &extensions,
-            max_depth,
             iteration: 0,
             parent: None,
         };
@@ -318,7 +312,10 @@ impl CompiledDecision {
         crate::compiled::trace::TraceDocument,
     )> {
         let request = crate::compiled::trace::Request::take(&input);
-        let run = self.run(input, 10, context).await.ok()?;
+        let run = self
+            .run(input, Limits { max_depth: 10 }, context)
+            .await
+            .ok()?;
         let evaluation = pinning::evaluation(context);
         crate::compiled::trace::pair(request, run, Some(&evaluation))
     }
@@ -361,7 +358,12 @@ impl CompiledDecision {
     }
 
     #[allow(clippy::arc_with_non_send_sync)]
-    fn extensions(&self, content: &Content, context: &EvaluationContext) -> NodeHandlerExtensions {
+    fn extensions(
+        &self,
+        content: &Content,
+        context: &EvaluationContext,
+        limits: Limits,
+    ) -> NodeHandlerExtensions {
         NodeHandlerExtensions {
             function_runtime: Default::default(),
             loader: self.loader.clone(),
@@ -372,6 +374,7 @@ impl CompiledDecision {
             validator_cache: Arc::new(OnceCell::from(content.validator_cache.clone())),
             prepared: self.children.clone(),
             context: context.clone(),
+            limits,
         }
     }
 

@@ -32,7 +32,6 @@ pub(super) type NodeColumn<'a> = (Arc<str>, Leaf<'a>);
 pub(in crate::compiled::graph) struct Host<'r> {
     pub(in crate::compiled::graph) content: &'r Arc<Content>,
     pub(in crate::compiled::graph) extensions: &'r NodeHandlerExtensions,
-    pub(in crate::compiled::graph) max_depth: u8,
 }
 
 pub(crate) struct State<'a> {
@@ -235,7 +234,6 @@ impl CompiledGraph {
         let Host {
             content,
             extensions,
-            max_depth,
         } = host;
         let count = inputs.len();
         if nesting.iteration == 0 && nesting.parents.is_none() {
@@ -252,7 +250,7 @@ impl CompiledGraph {
                 .traced
                 .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
-        if nesting.iteration >= max_depth {
+        if nesting.iteration >= extensions.limits.max_depth {
             state
                 .errors
                 .fill(|| Box::new(EvaluationError::DepthLimitExceeded));
@@ -272,10 +270,8 @@ impl CompiledGraph {
                 {
                     Some(step) => self.execute_now(step, event, &rows, &mut state),
                     None => {
-                        self.execute(
-                            event, &rows, inputs, &mut state, content, extensions, max_depth,
-                        )
-                        .await
+                        self.execute(event, &rows, inputs, &mut state, content, extensions)
+                            .await
                     }
                 }
             }

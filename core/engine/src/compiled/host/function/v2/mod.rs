@@ -99,7 +99,7 @@ impl FunctionV2NodeHandler {
             let config = Object::new(ctx.clone()).catch(&ctx)?;
 
             config.prop("iteration", node_ctx.iteration).catch(&ctx)?;
-            config.prop("maxDepth", node_ctx.config.max_depth).catch(&ctx)?;
+            config.prop("maxDepth", node_ctx.extensions.limits.max_depth).catch(&ctx)?;
             config.prop("trace", node_ctx.config.trace).catch(&ctx)?;
 
             ctx.globals().set("config", config).catch(&ctx)?;
@@ -192,7 +192,7 @@ impl FunctionV2NodeHandler {
         let results = function
             .call_rows(
                 &module_name,
-                (iteration, config.max_depth, config.trace),
+                (iteration, extensions.limits.max_depth, config.trace),
                 rows,
                 &tick,
                 &extensions.context.nested(Located::function(id)),

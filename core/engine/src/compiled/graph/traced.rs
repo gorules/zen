@@ -26,7 +26,6 @@ pub(crate) struct Traced<'g> {
     pub(crate) graph: &'g CompiledGraph,
     pub(crate) content: &'g Arc<Content>,
     pub(crate) extensions: &'g NodeHandlerExtensions,
-    pub(crate) max_depth: u8,
     pub(crate) iteration: u8,
     pub(crate) parent: Option<Variable>,
 }
@@ -47,7 +46,7 @@ impl Traced<'_> {
             crate::compiled::trace::count_run();
         }
         let mut tracer = Tracer::new(self.graph.template(), self.graph.steps.len());
-        if self.iteration >= self.max_depth {
+        if self.iteration >= self.extensions.limits.max_depth {
             return Run {
                 result: Err(Box::new(EvaluationError::DepthLimitExceeded)),
                 recording: tracer.finish(),
@@ -263,7 +262,6 @@ impl Traced<'_> {
             iteration: self.iteration,
             trace: Some(RefCell::new(Variable::Null)),
             config: NodeContextConfig {
-                max_depth: self.max_depth,
                 trace: true,
                 ..Default::default()
             },

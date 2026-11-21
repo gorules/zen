@@ -1,5 +1,6 @@
 use crate::compiled::call::{Call, Load};
 use crate::compiled::host::custom::DynamicCustomNode;
+use crate::compiled::host::extensions::Limits;
 use crate::compiled::host::function::v2::error::{FunctionResult, ResultExt};
 use crate::compiled::host::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use crate::compiled::host::function::v2::module::export_default;
@@ -30,7 +31,6 @@ impl ZenListener {
         key: &str,
         context: JsValue,
         extensions: NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let start = Instant::now();
@@ -38,7 +38,6 @@ impl ZenListener {
             node: "",
             key,
             extensions: &extensions,
-            max_depth,
             iteration,
         };
         let graph = match call.load().await.or_throw(ctx)? {
@@ -66,14 +65,12 @@ impl ZenListener {
         key: &str,
         context: JsValue,
         extensions: NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> rquickjs::Result<DecisionGraphResponse> {
         let call = Call {
             node: "",
             key,
             extensions: &extensions,
-            max_depth,
             iteration,
         };
         let graph = match call.load().await.or_throw(ctx)? {
@@ -150,20 +147,15 @@ impl RuntimeListener for ZenListener {
                                     http_handler: http_handler.clone(),
                                     prepared: prepared.clone(),
                                     context,
+                                    limits: Limits { max_depth },
                                     ..Default::default()
                                 };
                                 let response = match trace {
                                     true => {
-                                        Self::walk(
-                                            &ctx, &key, input, extensions, max_depth, iteration,
-                                        )
-                                        .await?
+                                        Self::walk(&ctx, &key, input, extensions, iteration).await?
                                     }
                                     false => {
-                                        Self::call(
-                                            &ctx, &key, input, extensions, max_depth, iteration,
-                                        )
-                                        .await?
+                                        Self::call(&ctx, &key, input, extensions, iteration).await?
                                     }
                                 };
                                 let k = serde_json::to_value(response).or_throw(&ctx)?.into();

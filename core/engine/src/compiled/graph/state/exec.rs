@@ -30,7 +30,6 @@ impl CompiledGraph {
         state: &mut State<'a>,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
     ) {
         let Some(step) = self.step_at(event.node) else {
             return;
@@ -78,7 +77,6 @@ impl CompiledGraph {
                         &materialized,
                         &nodes,
                         &scoped,
-                        max_depth,
                         state.nesting.iteration,
                     ))
                     .await;
@@ -90,7 +88,6 @@ impl CompiledGraph {
                         &materialized,
                         &nodes,
                         &scoped,
-                        max_depth,
                         state.nesting.iteration,
                         batched,
                     ))
@@ -116,7 +113,6 @@ impl CompiledGraph {
                                 &inputs,
                                 &parents,
                                 &scoped,
-                                max_depth,
                                 state.nesting.iteration,
                                 batched,
                             ))
@@ -216,15 +212,12 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
         batched: bool,
     ) -> Vec<Result<Variable, NodeError>> {
         if let DecisionNodeKind::DecisionNode { content } = &step.node.kind {
-            if let Some(results) = Self::nested(
-                step, content, inputs, nodes, extensions, max_depth, iteration,
-            )
-            .await
+            if let Some(results) =
+                Self::nested(step, content, inputs, nodes, extensions, iteration).await
             {
                 return results;
             }
@@ -238,7 +231,6 @@ impl CompiledGraph {
         ) = (&step.node.kind, single)
         {
             let config = NodeContextConfig {
-                max_depth,
                 trace: false,
                 ..Default::default()
             };
@@ -262,10 +254,8 @@ impl CompiledGraph {
         } = &step.node.kind
         {
             if let Some(batch) = FunctionV1NodeHandler::batch(&step.node.id, source, inputs.len()) {
-                return Self::scripted(
-                    step, batch, inputs, nodes, extensions, max_depth, iteration, batched,
-                )
-                .await;
+                return Self::scripted(step, batch, inputs, nodes, extensions, iteration, batched)
+                    .await;
             }
         }
         let mut results = Vec::with_capacity(inputs.len());
@@ -277,7 +267,6 @@ impl CompiledGraph {
                     value.clone(),
                     nodes,
                     &extensions.scoped(extensions.context.at(i)),
-                    max_depth,
                     iteration,
                     batched,
                 ))
@@ -294,7 +283,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
         batched: bool,
     ) -> Vec<Result<Variable, NodeError>> {
@@ -310,7 +298,6 @@ impl CompiledGraph {
                         value.clone(),
                         nodes,
                         &extensions.scoped(context),
-                        max_depth,
                         iteration,
                         batched,
                     ))

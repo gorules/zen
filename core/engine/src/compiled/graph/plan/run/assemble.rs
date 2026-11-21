@@ -336,7 +336,6 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &Columns<'_>,
         trace: super::PlanTrace<'a>,
         output: &ColumnarOutput<'_>,
@@ -375,7 +374,6 @@ impl CompiledGraph {
                 graph: self,
                 content,
                 extensions: &fresh,
-                max_depth,
                 iteration: 0,
                 parent: None,
             };
@@ -404,7 +402,6 @@ impl Plan {
         graph: &CompiledGraph,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &'a Columns<'a>,
         admitted: Admitted<'a>,
         traced: Option<crate::compiled::trace::TraceFormat>,
@@ -479,7 +476,6 @@ impl Plan {
             host: Host {
                 content,
                 extensions,
-                max_depth,
             },
             store,
             settled: true,
@@ -523,9 +519,7 @@ impl Plan {
         let output = match (traced, trace) {
             (Some(format), Some(trace)) => {
                 let batch = graph
-                    .plan_traces(
-                        content, extensions, max_depth, columns, *trace, &output, &rows, format,
-                    )
+                    .plan_traces(content, extensions, columns, *trace, &output, &rows, format)
                     .await;
                 output.traced(batch)
             }

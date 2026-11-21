@@ -18,7 +18,6 @@ pub(crate) struct Call<'a> {
     pub(crate) node: &'a str,
     pub(crate) key: &'a str,
     pub(crate) extensions: &'a NodeHandlerExtensions,
-    pub(crate) max_depth: u8,
     pub(crate) iteration: u8,
 }
 
@@ -96,7 +95,6 @@ impl Call<'_> {
             Host {
                 content: &content,
                 extensions: &extensions,
-                max_depth: self.max_depth,
             },
             &inputs,
             nesting,
@@ -124,7 +122,6 @@ impl Call<'_> {
             graph: compiled,
             content: &content,
             extensions: &extensions,
-            max_depth: self.max_depth,
             iteration: self.iteration + 1,
             parent,
         };

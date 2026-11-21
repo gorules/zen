@@ -83,7 +83,6 @@ impl CompiledGraph {
             node: "",
             key,
             extensions,
-            max_depth: 0,
             iteration: 0,
         };
         match call.load().await {
@@ -104,27 +103,24 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> Vec<Result<Variable, NodeError>> {
         let attributes = &content.transform_attributes;
-        Self::nested_results(
-            step, content, graph, inputs, nodes, extensions, max_depth, iteration,
-        )
-        .await
-        .into_iter()
-        .zip(inputs)
-        .map(|(result, input)| {
-            result.map(|value| {
-                crate::compiled::exact::Attributes::finish(
-                    attributes.output_path.as_deref(),
-                    attributes.pass_through,
-                    input,
-                    value,
-                )
+        Self::nested_results(step, content, graph, inputs, nodes, extensions, iteration)
+            .await
+            .into_iter()
+            .zip(inputs)
+            .map(|(result, input)| {
+                result.map(|value| {
+                    crate::compiled::exact::Attributes::finish(
+                        attributes.output_path.as_deref(),
+                        attributes.pass_through,
+                        input,
+                        value,
+                    )
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -135,7 +131,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> Vec<Result<Variable, NodeError>> {
         let fault = |source: Box<dyn Error>| NodeError::new(step.node.id.clone(), source);
@@ -152,7 +147,7 @@ impl CompiledGraph {
                     .collect()
             }
         };
-        if iteration.saturating_add(1) >= max_depth {
+        if iteration.saturating_add(1) >= extensions.limits.max_depth {
             return inputs
                 .iter()
                 .map(|_| {
@@ -166,7 +161,6 @@ impl CompiledGraph {
             node: &step.node.id,
             key: &content.key,
             extensions,
-            max_depth,
             iteration,
         };
         let content = compiled.schemas(graph, extensions.loader()).await;
@@ -187,7 +181,6 @@ impl CompiledGraph {
             Host {
                 content: &content,
                 extensions: &extensions,
-                max_depth,
             },
             inputs,
             nesting,
@@ -211,7 +204,6 @@ impl CompiledGraph {
         inputs: &[Variable],
         nodes: &[Option<Variable>],
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
     ) -> Option<Vec<Result<Variable, NodeError>>> {
         let attributes = &content.transform_attributes;
@@ -219,12 +211,9 @@ impl CompiledGraph {
             return None;
         }
         match Self::resolve(content, extensions).await {
-            Ok(graph) => Some(
-                Self::batch(
-                    step, content, &graph, inputs, nodes, extensions, max_depth, iteration,
-                )
-                .await,
-            ),
+            Ok(graph) => {
+                Some(Self::batch(step, content, &graph, inputs, nodes, extensions, iteration).await)
+            }
             Err(failure) => failure.errors(step, &content.key, inputs.len()),
         }
     }

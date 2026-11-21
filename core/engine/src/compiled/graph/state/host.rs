@@ -285,7 +285,6 @@ impl CompiledGraph {
         input: Variable,
         nodes: Option<Variable>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         iteration: u8,
         batched: bool,
     ) -> Result<Variable, NodeError> {
@@ -306,7 +305,6 @@ impl CompiledGraph {
             iteration,
             trace: None,
             config: NodeContextConfig {
-                max_depth,
                 trace: false,
                 ..Default::default()
             },
@@ -344,7 +342,6 @@ impl CompiledGraph {
                     node: &node.id,
                     key: &content.key,
                     extensions: &base.extensions,
-                    max_depth: base.config.max_depth,
                     iteration: base.iteration,
                 };
                 let row = Row {

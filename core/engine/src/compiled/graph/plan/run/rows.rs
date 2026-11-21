@@ -250,7 +250,6 @@ impl<'a> Run<'_, 'a> {
                             &inputs,
                             &nodes,
                             &scoped,
-                            self.host.max_depth,
                             self.iteration,
                         ))
                         .await;
@@ -289,7 +288,6 @@ impl<'a> Run<'_, 'a> {
                             &inputs,
                             &nodes,
                             &scoped,
-                            self.host.max_depth,
                             self.iteration,
                             self.store.rows > 1,
                         ))

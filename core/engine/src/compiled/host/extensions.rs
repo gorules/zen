@@ -11,6 +11,25 @@ use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Limits {
+    pub(crate) max_depth: u8,
+}
+
+impl Limits {
+    pub(crate) fn of(options: &crate::EvaluationOptions) -> Self {
+        Self {
+            max_depth: options.max_depth,
+        }
+    }
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self { max_depth: 5 }
+    }
+}
+
 pub(crate) type Runtime = Arc<tokio::sync::OnceCell<Function>>;
 
 #[derive(Debug, Clone)]
@@ -24,6 +43,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
     pub(crate) prepared: Arc<crate::compiled::prepared::Prepared>,
     pub(crate) context: zen_expression::context::EvaluationContext,
+    pub(crate) limits: Limits,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -39,6 +59,7 @@ impl Default for NodeHandlerExtensions {
             http_handler: None,
             prepared: Default::default(),
             context: Default::default(),
+            limits: Default::default(),
         }
     }
 }

@@ -25,6 +25,16 @@ pub enum InternalFunction {
     Extract,
     FuzzyMatch,
     Split,
+    Join,
+    Replace,
+    ReplaceAll,
+    Unaccent,
+    Squish,
+    TokenSort,
+    NameKey,
+    Soundex,
+    JaroWinkler,
+    TokenSetSimilarity,
 
     // Math
     Abs,
@@ -300,6 +310,58 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 },
             }),
 
+            IF::Join => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::join),
+                signatures: vec![
+                    FunctionSignature::single(VT::Any.array(), VT::String),
+                    FunctionSignature {
+                        parameters: vec![VT::Any.array(), VT::String],
+                        return_type: VT::String,
+                    },
+                ],
+            }),
+
+            IF::Replace | IF::ReplaceAll => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Replace => imp::replace,
+                    _ => imp::replace_all,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String, VT::String],
+                    return_type: VT::String,
+                },
+            }),
+
+            IF::Unaccent | IF::Squish | IF::TokenSort | IF::NameKey | IF::Soundex => {
+                Rc::new(StaticFunction {
+                    implementation: Rc::new(match value {
+                        IF::Unaccent => imp::unaccent,
+                        IF::Squish => imp::squish,
+                        IF::TokenSort => imp::token_sort,
+                        IF::NameKey => imp::name_key,
+                        _ => imp::soundex,
+                    }),
+                    signature: FunctionSignature::single(VT::String, VT::String),
+                })
+            }
+
+            IF::JaroWinkler | IF::TokenSetSimilarity => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::JaroWinkler => imp::jaro_winkler,
+                    _ => imp::token_set_similarity,
+                }),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::String],
+                        return_type: VT::Number,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::String.array(), VT::String],
+                        return_type: VT::Number.array(),
+                    },
+                ],
+            }),
+
             IF::FuzzyMatch => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::fuzzy_match),
                 signatures: vec![
@@ -566,6 +628,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 pub(crate) mod imp {
     use crate::functions::aggregate;
     use crate::functions::arguments::Arguments;
+    use crate::functions::normalize;
     use crate::vm::date::DynamicVariableExt;
     use crate::vm::VmDate;
     use crate::{Variable as V, Variable};
@@ -695,6 +758,102 @@ pub(crate) mod imp {
         );
 
         Ok(V::from_array(arr))
+    }
+
+    pub fn join(args: Arguments) -> anyhow::Result<V> {
+        let array = args.array(0)?;
+        let separator = args.ostr(1)?.unwrap_or(",");
+        let items = array.borrow();
+        let mut out = String::new();
+        let mut first = true;
+        for item in items.iter() {
+            let text: std::borrow::Cow<str> = match item {
+                V::Null => continue,
+                V::String(s) => std::borrow::Cow::Borrowed(s.as_str()),
+                V::Number(n) => n.normalize().to_string().into(),
+                V::Bool(b) => b.to_string().into(),
+                V::Dynamic(d) if d.as_date().is_some() => d.to_string().into(),
+                other => return Err(anyhow!("Cannot join type {}", other.type_name())),
+            };
+            if !first {
+                out.push_str(separator);
+            }
+            first = false;
+            out.push_str(&text);
+        }
+
+        Ok(V::String(out.into()))
+    }
+
+    fn regex_replace(args: Arguments, all: bool) -> anyhow::Result<V> {
+        let a = args.str(0)?;
+        let pattern = args.str(1)?;
+        let with = args.str(2)?;
+        let regex = Regex::new(pattern).context("Invalid regular expression")?;
+        let out = match all {
+            true => regex.replace_all(a, with),
+            false => regex.replace(a, with),
+        };
+        Ok(V::String(out.as_ref().into()))
+    }
+
+    pub fn replace(args: Arguments) -> anyhow::Result<V> {
+        regex_replace(args, false)
+    }
+
+    pub fn replace_all(args: Arguments) -> anyhow::Result<V> {
+        regex_replace(args, true)
+    }
+
+    fn text_map(args: Arguments, f: fn(&str) -> String) -> anyhow::Result<V> {
+        let a = args.str(0)?;
+        Ok(V::String(f(a).into()))
+    }
+
+    pub fn unaccent(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::unaccent)
+    }
+
+    pub fn squish(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::squish)
+    }
+
+    pub fn token_sort(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::token_sort)
+    }
+
+    pub fn name_key(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::name_key)
+    }
+
+    pub fn soundex(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::soundex)
+    }
+
+    fn similarity(args: Arguments, f: fn(&str, &str) -> f64) -> anyhow::Result<V> {
+        let a = args.var(0)?;
+        let b = args.str(1)?;
+        let score = |x: &str| V::Number(Decimal::from_f64(f(x, b)).unwrap_or(dec!(0)));
+        match (a, a.as_str()) {
+            (_, Some(a)) => Ok(score(a)),
+            (V::Array(items), _) => {
+                let items = items.borrow();
+                let mut out = Vec::with_capacity(items.len());
+                for v in items.iter() {
+                    out.push(score(v.as_str().context("Expected string array")?));
+                }
+                Ok(V::from_array(out))
+            }
+            _ => Err(anyhow!("Similarity not available for type {}", a.type_name())),
+        }
+    }
+
+    pub fn jaro_winkler(args: Arguments) -> anyhow::Result<V> {
+        similarity(args, normalize::jaro_winkler)
+    }
+
+    pub fn token_set_similarity(args: Arguments) -> anyhow::Result<V> {
+        similarity(args, normalize::token_set_similarity)
     }
 
     pub fn flatten(args: Arguments) -> anyhow::Result<V> {

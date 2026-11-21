@@ -37,6 +37,16 @@ macro_rules! registered {
 }
 
 registered! {
+    JOIN = Join;
+    REPLACE = Replace;
+    REPLACE_ALL = ReplaceAll;
+    UNACCENT = Unaccent;
+    SQUISH = Squish;
+    TOKEN_SORT = TokenSort;
+    NAME_KEY = NameKey;
+    SOUNDEX = Soundex;
+    JARO_WINKLER = JaroWinkler;
+    TOKEN_SET_SIMILARITY = TokenSetSimilarity;
     STDDEV = Stddev;
     VARIANCE = Variance;
     STDDEV_POP = StddevPop;

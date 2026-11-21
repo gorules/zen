@@ -429,3 +429,32 @@ pub(crate) fn sort_by(items: &[V], descending: bool) -> anyhow::Result<V> {
         order.into_iter().map(|i| pairs[i].0.clone()).collect(),
     ))
 }
+
+pub(crate) fn group_by(items: &[V]) -> anyhow::Result<V> {
+    let mut groups: Vec<(String, Vec<V>)> = Vec::new();
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    for (value, key) in pairs(items)? {
+        let key = match &key {
+            V::Null => continue,
+            V::String(s) => s.to_string(),
+            V::Number(n) => n.normalize().to_string(),
+            V::Bool(b) => b.to_string(),
+            other => match date_of(other) {
+                Some(_) => other.to_string(),
+                None => bail!("Cannot group by a {}", other.type_name()),
+            },
+        };
+        match positions.get(&key) {
+            Some(index) => groups[*index].1.push(value),
+            None => {
+                positions.insert(key.clone(), groups.len());
+                groups.push((key, vec![value]));
+            }
+        }
+    }
+    let mut map = zen_types::variable::VariableMap::with_capacity(groups.len());
+    for (key, values) in groups {
+        map.insert(key.as_str().into(), V::from_array(values));
+    }
+    Ok(V::from_object(map))
+}

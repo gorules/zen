@@ -66,6 +66,14 @@ registered! {
     PAD_END = PadEnd;
     SPLIT_PART = SplitPart;
     EXTRACT_ALL = ExtractAll;
+    MD5 = Md5;
+    SHA256 = Sha256;
+    XXHASH64 = Xxhash64;
+    JSON_PARSE = JsonParse;
+    JSON_STRING = JsonString;
+    ENTRIES = Entries;
+    ZIP = Zip;
+    GROUP_BY = GroupBy;
     STDDEV = Stddev;
     VARIANCE = Variance;
     STDDEV_POP = StddevPop;

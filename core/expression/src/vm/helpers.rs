@@ -26,10 +26,8 @@ pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
 }
 
 pub(crate) fn time(str: &str) -> VMResult<NaiveTime> {
-    let now = utc_now();
-
     if str == "now" {
-        return Ok(now.naive_utc().time());
+        return Ok(utc_now().naive_utc().time());
     }
 
     return NaiveTime::parse_from_str(str, DATE_TIME)

@@ -1,8 +1,6 @@
 mod conformance;
 
 use conformance::Spec;
-use std::sync::atomic::Ordering;
-use zen_expression::ZEN_EXPRESSION_CONFIG;
 
 #[test]
 fn isolate_matches_on_both_engines_when_lane_is_enabled() {
@@ -13,16 +11,14 @@ fn isolate_matches_on_both_engines_when_lane_is_enabled() {
         "malformed spec:\n{}",
         problems.join("\n")
     );
-    let run = || -> Vec<bool> {
-        cases
-            .iter()
-            .map(|case| case.verdict(&case.exact()).is_none())
-            .collect()
-    };
-    let stack = run();
-    ZEN_EXPRESSION_CONFIG.lane.store(true, Ordering::Relaxed);
-    let lane = run();
-    ZEN_EXPRESSION_CONFIG.lane.store(false, Ordering::Relaxed);
+    let stack: Vec<bool> = cases
+        .iter()
+        .map(|case| case.verdict(&case.exact()).is_none())
+        .collect();
+    let lane: Vec<bool> = cases
+        .iter()
+        .map(|case| case.verdict(&case.laned()).is_none())
+        .collect();
     let failures: Vec<String> = cases
         .iter()
         .zip(stack.iter().zip(&lane))

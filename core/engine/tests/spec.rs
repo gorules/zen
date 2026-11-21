@@ -9,7 +9,6 @@ use std::sync::Arc;
 use support::columns::Built;
 use support::golden::{Canon, Live, Outcome, Reference};
 use zen_engine::policy::EvaluateRequest;
-use zen_engine::EvaluationOptions;
 use zen_expression::Variable;
 
 #[derive(Default)]
@@ -263,10 +262,17 @@ impl Engines {
             .collect();
         let batch = run
             .compiled
-            .evaluate_batch(&cycled, EvaluationOptions::default())
+            .evaluate_batch(&cycled, crate::support::Clock::options())
             .await;
         for (i, case) in suite.cases.iter().enumerate() {
-            let single = GraphRun::outcome(run.compiled.evaluate(case.input.depth_clone(64)).await);
+            let single = GraphRun::outcome(
+                run.compiled
+                    .evaluate_with_opts(
+                        case.input.depth_clone(64),
+                        crate::support::Clock::options(),
+                    )
+                    .await,
+            );
             Differential::compare(
                 suite,
                 case,
@@ -277,7 +283,11 @@ impl Engines {
             );
             let engine = GraphRun::outcome(
                 run.engine
-                    .evaluate(GraphRun::MAIN, case.input.depth_clone(64))
+                    .evaluate_with_opts(
+                        GraphRun::MAIN,
+                        case.input.depth_clone(64),
+                        crate::support::Clock::options(),
+                    )
                     .await,
             );
             Differential::compare(
@@ -321,7 +331,7 @@ impl Engines {
             let columns = built.columns_with(&structs);
             let output = run
                 .compiled
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             self.typed += output.paths().typed;
             self.laned += output.paths().laned;
@@ -332,7 +342,14 @@ impl Engines {
                     .graph(
                         || Canon::key(&suite.id(), &[], &input),
                         || async {
-                            match run.walker.evaluate(input.depth_clone(64)).await {
+                            match run
+                                .walker
+                                .evaluate_with_opts(
+                                    input.depth_clone(64),
+                                    crate::support::Clock::options(),
+                                )
+                                .await
+                            {
                                 Ok(r) => Ok(Built::normalized(r.result.to_value())),
                                 Err(e) => Err(GraphRun::error(&e)),
                             }
@@ -384,7 +401,9 @@ impl Engines {
         let requests: Vec<EvaluateRequest> = (0..suite.cases.len() * 3)
             .map(|i| PolicyRun::request(&suite.cases[i % suite.cases.len()]))
             .collect();
-        let batch = run.workspace.evaluate_batch(&requests);
+        let batch = run
+            .workspace
+            .evaluate_batch_pinned(&requests, &crate::support::Clock::options());
         for (i, case) in suite.cases.iter().enumerate() {
             let want = Self::driver(&self.reference, &run, suite, case);
             let single = run.compiled(case);
@@ -460,10 +479,12 @@ impl Engines {
         targets: &[Arc<str>],
         columns: &zen_expression::lane::Columns,
     ) {
-        let Ok(output) =
-            run.workspace
-                .evaluate_columns(&Arc::from(PolicyRun::MAIN), targets, columns)
-        else {
+        let Ok(output) = run.workspace.evaluate_columns_pinned(
+            &Arc::from(PolicyRun::MAIN),
+            targets,
+            columns,
+            &crate::support::Clock::options(),
+        ) else {
             return;
         };
         self.hosted += output.paths().hosted;
@@ -704,7 +725,7 @@ impl Snapshot {
             for call in 1..=Self::CALLS {
                 let output = run
                     .compiled
-                    .evaluate_columns(&columns, EvaluationOptions::default())
+                    .evaluate_columns(&columns, crate::support::Clock::options())
                     .await;
                 let errors = output.errors.iter().flatten().map(|e| format!("{e:?}"));
                 self.lines.push(format!(
@@ -748,7 +769,7 @@ impl Snapshot {
                     false => built.columns(),
                 };
                 for call in 1..=Self::CALLS {
-                    let line = match run.workspace.evaluate_columns(&Arc::from(PolicyRun::MAIN), &targets, &columns) {
+                    let line = match run.workspace.evaluate_columns_pinned(&Arc::from(PolicyRun::MAIN), &targets, &columns, &crate::support::Clock::options()) {
                         Ok(output) => format!(
                             "rows={}\ttyped={}\tlaned={}\thosted={}\terrors=[{}]\tpaths={:016x}\torder={:016x}",
                             output.rows,

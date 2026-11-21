@@ -150,7 +150,11 @@ impl GraphRun {
     }
 
     pub async fn walker(&self, case: &Case) -> Result<Variable, String> {
-        Self::outcome(self.walker.evaluate(case.input.depth_clone(64)).await)
+        Self::outcome(
+            self.walker
+                .evaluate_with_opts(case.input.depth_clone(64), crate::support::Clock::options())
+                .await,
+        )
     }
 }
 
@@ -232,11 +236,19 @@ impl PolicyRun {
     }
 
     pub fn compiled(&self, case: &Case) -> Result<Variable, String> {
-        self.gated(&self.workspace.evaluate(&Self::request(case)))
+        self.gated(
+            &self
+                .workspace
+                .evaluate_pinned(&Self::request(case), &crate::support::Clock::options()),
+        )
     }
 
     pub fn engine(&self, case: &Case) -> Result<Variable, String> {
-        let result = Guard::block(self.engine.evaluate(Self::MAIN, case.input.depth_clone(64)));
+        let result = Guard::block(self.engine.evaluate_with_opts(
+            Self::MAIN,
+            case.input.depth_clone(64),
+            crate::support::Clock::options(),
+        ));
         match (&result, self.blocking.is_empty()) {
             (Err(_), false) => Err(format!("CompilationErrors {:?}", self.blocking)),
             (Err(error), true) => match &**error {

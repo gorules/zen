@@ -9,6 +9,33 @@ use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 use zen_engine::model::{DecisionContent, GraphContent};
 
 #[allow(dead_code)]
+pub struct Clock;
+
+#[allow(dead_code)]
+impl Clock {
+    fn cell() -> &'static std::sync::OnceLock<Option<zen_engine::context::Instant>> {
+        static NOW: std::sync::OnceLock<Option<zen_engine::context::Instant>> =
+            std::sync::OnceLock::new();
+        &NOW
+    }
+
+    pub fn set(text: &str) {
+        let _ = Self::cell().set(zen_engine::context::parse_instant(text));
+    }
+
+    pub fn now() -> Option<zen_engine::context::Instant> {
+        Self::cell().get().copied().flatten()
+    }
+
+    pub fn options() -> zen_engine::EvaluationOptions {
+        zen_engine::EvaluationOptions {
+            now: Self::now(),
+            ..Default::default()
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub struct Switches {
     pub typed: bool,
     pub census: bool,

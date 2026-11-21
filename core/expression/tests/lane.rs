@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::ops::Index;
-use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Column, Columns, Fusion, LaneProgram, LaneRunner, Output, Values};
 use zen_expression::variable::VariableType;
 use zen_expression::{ExpressionKind, Isolate, Scope, Variable};
@@ -28,7 +27,6 @@ impl Differential {
             "TZ",
             std::env::var("LANE_TZ").unwrap_or_else(|_| "UTC".to_string()),
         );
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z");
         Self {
             kind,
             runner: LaneRunner::new(),
@@ -64,7 +62,7 @@ impl Differential {
     }
 
     fn stack_of(&self, expression: &str, input: Option<Variable>) -> Result<Value, String> {
-        let mut isolate = Isolate::new();
+        let mut isolate = Isolate::new().with_now(conformance::Spec::now());
         if let Some(input) = input {
             isolate.set_environment(input);
         }
@@ -138,7 +136,7 @@ impl Differential {
             .expect("typed compile");
             let batch = self
                 .runner
-                .evaluate(&typed, &EvaluationContext::default(), &scopes);
+                .evaluate(&typed, &conformance::Spec::context(), &scopes);
             for ((input, exp), got) in inputs.iter().zip(&expected).zip(batch) {
                 self.compared += 1;
                 let got = self.lane(got);
@@ -153,7 +151,7 @@ impl Differential {
         for (input, exp) in inputs.iter().zip(&expected) {
             let got = self.runner.evaluate_one(
                 &specialized,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 &Self::scope(input),
             );
             let got = self.lane(got);
@@ -166,7 +164,7 @@ impl Differential {
         }
         let batch = self
             .runner
-            .evaluate(&specialized, &EvaluationContext::default(), &scopes);
+            .evaluate(&specialized, &conformance::Spec::context(), &scopes);
         for ((input, exp), got) in inputs.iter().zip(&expected).zip(batch) {
             self.compared += 1;
             let got = self.lane(got);
@@ -178,7 +176,7 @@ impl Differential {
         }
         let batch = self
             .runner
-            .evaluate(&program, &EvaluationContext::default(), &scopes);
+            .evaluate(&program, &conformance::Spec::context(), &scopes);
         for ((input, exp), got) in inputs.iter().zip(&expected).zip(batch) {
             self.compared += 1;
             let got = self.lane(got);
@@ -193,7 +191,7 @@ impl Differential {
         for (input, exp) in inputs.iter().zip(&expected) {
             let got = self.runner.evaluate_one(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 &Self::scope(input),
             );
             let got = self.lane(got);
@@ -238,7 +236,7 @@ impl Differential {
             let mut raw = Vec::new();
             self.runner.evaluate_columns(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 &columns,
                 |i, r| raw.push((i, r)),
             );
@@ -257,7 +255,7 @@ impl Differential {
             let mut out = Output::new();
             self.runner.evaluate_columns_into(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 &columns,
                 &mut out,
             );
@@ -607,7 +605,7 @@ fn lane_struct_outputs_stay_typed() {
         .expect("specialize");
     let mut runner = LaneRunner::new();
     let mut out = Output::new();
-    runner.evaluate_columns_into(&program, &EvaluationContext::default(), &columns, &mut out);
+    runner.evaluate_columns_into(&program, &conformance::Spec::context(), &columns, &mut out);
     let fields = out.fields();
     assert_eq!(
         fields.iter().map(|(k, _)| k.as_ref()).collect::<Vec<_>>(),
@@ -1318,11 +1316,11 @@ fn lane_cell_sets_match_unary_evaluation() {
             &values,
             &envs,
             &mut out,
-            &EvaluationContext::default(),
+            &conformance::Spec::context(),
         );
         let words = set.words();
         for (row, value) in values.iter().enumerate() {
-            let mut isolate = Isolate::new();
+            let mut isolate = Isolate::new().with_now(conformance::Spec::now());
             for (rule, cell) in cells.iter().enumerate() {
                 let expected = match cell.trim() {
                     "" => true,
@@ -1441,7 +1439,7 @@ fn lane_many_matches_expression_node_semantics() {
         let mut got: Vec<Option<ManyResult>> = vec![None; inputs.len()];
         runner.evaluate_many(
             &program,
-            &EvaluationContext::default(),
+            &conformance::Spec::context(),
             &scopes,
             Some(&mask),
             |row, r| {
@@ -1459,7 +1457,8 @@ fn lane_many_matches_expression_node_semantics() {
                 }
                 continue;
             }
-            let mut isolate = Isolate::with_environment(input.clone().into());
+            let mut isolate =
+                Isolate::with_environment(input.clone().into()).with_now(conformance::Spec::now());
             let mut outputs = Vec::new();
             let mut expected: Result<Vec<Value>, (usize, String)> = Ok(Vec::new());
             for (index, (key, source)) in entries.iter().enumerate() {
@@ -2495,7 +2494,7 @@ impl SpecLane {
         for case in cases.iter() {
             self.rows += 1;
             if self
-                .guarded(|_| program.try_kernel(&Self::scope(case), &EvaluationContext::default()))
+                .guarded(|_| program.try_kernel(&Self::scope(case), &conformance::Spec::context()))
                 .flatten()
                 .is_some()
             {
@@ -2504,7 +2503,7 @@ impl SpecLane {
         }
         for (case, want) in cases.iter().zip(&want) {
             let got = match self.guarded(|r| {
-                r.evaluate_one(&plain, &EvaluationContext::default(), &Self::scope(case))
+                r.evaluate_one(&plain, &conformance::Spec::context(), &Self::scope(case))
                     .map(conformance::Spec::settle)
             }) {
                 Some(got) => Self::normalize(&kind, got),
@@ -2523,7 +2522,7 @@ impl SpecLane {
         }
         for (case, want) in cases.iter().zip(&want) {
             let got = match self.guarded(|r| {
-                r.evaluate_one(&program, &EvaluationContext::default(), &Self::scope(case))
+                r.evaluate_one(&program, &conformance::Spec::context(), &Self::scope(case))
                     .map(conformance::Spec::settle)
             }) {
                 Some(got) => Self::normalize(&kind, got),
@@ -2548,13 +2547,13 @@ impl SpecLane {
         }
         let n = cases.len();
         let batch = self
-            .guarded(|r| r.evaluate(&program, &EvaluationContext::default(), &scopes()))
+            .guarded(|r| r.evaluate(&program, &conformance::Spec::context(), &scopes()))
             .unwrap_or_else(|| Self::panicked(n));
         for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
             self.compare("batch", case, want, Self::normalize(&kind, got));
         }
         let batch = self
-            .guarded(|r| r.evaluate(&plain, &EvaluationContext::default(), &scopes()))
+            .guarded(|r| r.evaluate(&plain, &conformance::Spec::context(), &scopes()))
             .unwrap_or_else(|| Self::panicked(n));
         for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
             self.compare(
@@ -2569,7 +2568,7 @@ impl SpecLane {
                 let got = match self.guarded(|r| {
                     r.evaluate_one(
                         &specialized,
-                        &EvaluationContext::default(),
+                        &conformance::Spec::context(),
                         &Self::scope(case),
                     )
                     .map(conformance::Spec::settle)
@@ -2580,7 +2579,7 @@ impl SpecLane {
                 self.compare("specialized", case, want, got);
             }
             let batch = self
-                .guarded(|r| r.evaluate(&specialized, &EvaluationContext::default(), &scopes()))
+                .guarded(|r| r.evaluate(&specialized, &conformance::Spec::context(), &scopes()))
                 .unwrap_or_else(|| Self::panicked(n));
             for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
                 self.compare("specialized batch", case, want, Self::normalize(&kind, got));
@@ -2591,7 +2590,7 @@ impl SpecLane {
             LaneProgram::compile_typed(expression, kind.clone(), &VariableType::from(&shape))
         {
             let batch = self
-                .guarded(|r| r.evaluate(&typed, &EvaluationContext::default(), &scopes()))
+                .guarded(|r| r.evaluate(&typed, &conformance::Spec::context(), &scopes()))
                 .unwrap_or_else(|| Self::panicked(n));
             for ((case, want), got) in cases.iter().zip(&want).zip(batch) {
                 self.compare("typed", case, want, Self::normalize(&kind, got));
@@ -2674,6 +2673,7 @@ fn lane_regression_cloned_programs_keep_object_keys() {
     let src = "{a: {x: 1, y: 2}, b: {p: 3, q: 4}}";
     let scope = Scope::new(Variable::from(json!({})));
     let expected = Isolate::new()
+        .with_now(conformance::Spec::now())
         .run_standard(src)
         .expect("old vm")
         .to_value()
@@ -2681,13 +2681,13 @@ fn lane_regression_cloned_programs_keep_object_keys() {
     for _ in 0..40 {
         let mut runner = LaneRunner::new();
         let first = LaneProgram::standard(src).expect("compile");
-        let _ = runner.evaluate_one(&first, &EvaluationContext::default(), &scope);
+        let _ = runner.evaluate_one(&first, &conformance::Spec::context(), &scope);
         let second = first.clone();
         drop(first);
         let mut current = second.clone();
         for _ in 0..50 {
             let got = runner
-                .evaluate_one(&current, &EvaluationContext::default(), &scope)
+                .evaluate_one(&current, &conformance::Spec::context(), &scope)
                 .expect("lane")
                 .to_value()
                 .to_string();
@@ -2712,7 +2712,8 @@ fn lane_regression_many_entries_do_not_share_assignments() {
     ];
     let mut runner = LaneRunner::new();
     for (entries, input) in cases {
-        let mut isolate = Isolate::with_environment(input.clone().into());
+        let mut isolate =
+            Isolate::with_environment(input.clone().into()).with_now(conformance::Spec::now());
         let mut expected = Vec::new();
         for (key, source) in entries.iter() {
             let v = isolate.run_standard(source).expect("old vm");
@@ -2723,7 +2724,7 @@ fn lane_regression_many_entries_do_not_share_assignments() {
         let mut got = None;
         runner.evaluate_many(
             &program,
-            &EvaluationContext::default(),
+            &conformance::Spec::context(),
             &[Scope::new(input.clone().into())],
             None,
             |_, r| {
@@ -2743,17 +2744,17 @@ fn lane_regression_empty_many_program_does_not_panic() {
     let program = LaneProgram::compile_many(&[], true).expect("compile");
     let mut runner = LaneRunner::new();
     let scope = Scope::new(Variable::from(json!({"a": 1})));
-    let _ = runner.evaluate_one(&program, &EvaluationContext::default(), &scope);
+    let _ = runner.evaluate_one(&program, &conformance::Spec::context(), &scope);
     runner.evaluate_many(
         &program,
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
         std::slice::from_ref(&scope),
         None,
         |_, _| {},
     );
     let columns = Columns::new(3);
     let mut out = Output::new();
-    runner.evaluate_columns_into(&program, &EvaluationContext::default(), &columns, &mut out);
+    runner.evaluate_columns_into(&program, &conformance::Spec::context(), &columns, &mut out);
     conformance::Spec::no_fallbacks();
 }
 
@@ -2770,12 +2771,13 @@ fn lane_regression_dates_cross_between_engines() {
     ];
     let mut runner = LaneRunner::new();
     let old_date = Isolate::new()
+        .with_now(conformance::Spec::now())
         .run_standard("d('2024-03-15 10:00:00')")
         .expect("old vm");
     let lane_date = runner
         .evaluate_one(
             &LaneProgram::standard("d('2024-03-15 10:00:00')").expect("compile"),
-            &EvaluationContext::default(),
+            &conformance::Spec::context(),
             &Scope::default(),
         )
         .expect("lane");
@@ -2784,6 +2786,7 @@ fn lane_regression_dates_cross_between_engines() {
         input.dot_insert("x", date);
         for e in expressions {
             let want = Isolate::with_environment(input.depth_clone(64))
+                .with_now(conformance::Spec::now())
                 .run_standard(e)
                 .map(|v| v.to_value())
                 .map_err(|e| conformance::Spec::describe(&e));
@@ -2791,7 +2794,7 @@ fn lane_regression_dates_cross_between_engines() {
             let got = runner
                 .evaluate_one(
                     &program,
-                    &EvaluationContext::default(),
+                    &conformance::Spec::context(),
                     &Scope::new(input.depth_clone(64)),
                 )
                 .map(|v| v.to_value())
@@ -2800,13 +2803,14 @@ fn lane_regression_dates_cross_between_engines() {
             let again = runner
                 .evaluate_one(
                     &program,
-                    &EvaluationContext::default(),
+                    &conformance::Spec::context(),
                     &Scope::new(input.depth_clone(64)),
                 )
                 .expect("lane");
             let back = Variable::from(json!({"y": null}));
             back.dot_insert("y", again);
             let reread = Isolate::with_environment(back)
+                .with_now(conformance::Spec::now())
                 .run_standard("y")
                 .map(|v| v.to_value())
                 .map_err(|e| conformance::Spec::describe(&e));
@@ -2830,12 +2834,13 @@ impl Rows {
                 let mut out = Output::new();
                 runner.evaluate_columns_into(
                     &program,
-                    &EvaluationContext::default(),
+                    &conformance::Spec::context(),
                     columns,
                     &mut out,
                 );
                 for r in 0..columns.rows {
                     let want = Isolate::with_environment(columns.row(r))
+                        .with_now(conformance::Spec::now())
                         .run_standard(e)
                         .map(|v| v.to_value())
                         .ok();
@@ -2906,7 +2911,7 @@ fn lane_regression_rand_is_not_memoized() {
     let mut out = Output::new();
     LaneRunner::new().evaluate_columns_into(
         &LaneProgram::standard("rand(a)").expect("compile"),
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
         &columns,
         &mut out,
     );
@@ -2945,11 +2950,11 @@ fn lane_regression_cells_near_decimal_max() {
         &values,
         &envs,
         &mut out,
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
     );
     for (row, value) in values.iter().enumerate() {
         for (rule, cell) in cells.iter().enumerate() {
-            let mut isolate = Isolate::new();
+            let mut isolate = Isolate::new().with_now(conformance::Spec::now());
             let _ = isolate.set_reference_value(value.clone());
             let expected = isolate.run_unary(cell).unwrap_or(false);
             let got = out[row * set.words() + rule / 64] >> (rule % 64) & 1 == 1;
@@ -3038,7 +3043,8 @@ fn lane_regression_chained_dollar_matches_isolate() {
     ];
     let mut runner = LaneRunner::new();
     for (entries, input) in cases {
-        let mut isolate = Isolate::with_environment(input.clone().into());
+        let mut isolate =
+            Isolate::with_environment(input.clone().into()).with_now(conformance::Spec::now());
         let mut expected = Vec::new();
         for (key, source) in entries.iter() {
             let v = isolate.run_standard(source).map(|v| v.to_value()).ok();
@@ -3056,7 +3062,7 @@ fn lane_regression_chained_dollar_matches_isolate() {
             let mut got = None;
             runner.evaluate_many(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 std::slice::from_ref(&scope),
                 None,
                 |_, r| {
@@ -3098,11 +3104,12 @@ fn lane_regression_cells_survive_invalid_neighbours() {
         &values,
         &envs,
         &mut out,
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
     );
     for (row, value) in values.iter().enumerate() {
         for (rule, cell) in cells.iter().enumerate() {
-            let mut isolate = Isolate::with_environment(json!({"limit": 2}).into());
+            let mut isolate = Isolate::with_environment(json!({"limit": 2}).into())
+                .with_now(conformance::Spec::now());
             let _ = isolate.set_reference_value(value.clone());
             let expected = cell
                 .and_then(|c| isolate.run_unary(c).ok())
@@ -3138,11 +3145,11 @@ fn lane_regression_cells_probe_between_close_bounds() {
         &values,
         &envs,
         &mut out,
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
     );
     for (row, value) in values.iter().enumerate() {
         for (rule, cell) in cells.iter().enumerate() {
-            let mut isolate = Isolate::new();
+            let mut isolate = Isolate::new().with_now(conformance::Spec::now());
             let _ = isolate.set_reference_value(value.clone());
             let expected = isolate.run_unary(cell).unwrap_or(false);
             let got = out[row * set.words() + rule / 64] >> (rule % 64) & 1 == 1;
@@ -3260,6 +3267,7 @@ fn lane_regression_date_inputs_keep_their_text() {
         .collect();
     let want = |e: &str, s: &Scope| {
         Isolate::with_environment(s.base().clone())
+            .with_now(conformance::Spec::now())
             .run_standard(e)
             .map(|v| v.to_value())
             .ok()
@@ -3279,7 +3287,7 @@ fn lane_regression_date_inputs_keep_their_text() {
         ];
         for program in &programs {
             let got: Vec<_> = runner
-                .evaluate(program, &EvaluationContext::default(), &scopes)
+                .evaluate(program, &conformance::Spec::context(), &scopes)
                 .into_iter()
                 .map(|r| r.map(|v| v.to_value()).ok())
                 .collect();
@@ -3288,7 +3296,7 @@ fn lane_regression_date_inputs_keep_their_text() {
         }
         let columns = Columns::new(values.len()).column("x", Column::new(Values::Any(&values)));
         let mut out = Output::new();
-        runner.evaluate_columns_into(&plain, &EvaluationContext::default(), &columns, &mut out);
+        runner.evaluate_columns_into(&plain, &conformance::Spec::context(), &columns, &mut out);
         for (r, s) in scopes.iter().enumerate() {
             assert_eq!(
                 out.variable(r).and_then(|x| x.ok()).map(|v| v.to_value()),
@@ -3303,7 +3311,6 @@ fn lane_regression_date_inputs_keep_their_text() {
 #[test]
 fn lane_regression_constant_folding_keeps_runtime_semantics() {
     std::env::set_var("TZ", "UTC");
-    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z");
     let cases = [
         "1 + 2 * 3",
         "(1 / 0) ?? 5",
@@ -3335,13 +3342,14 @@ fn lane_regression_constant_folding_keeps_runtime_semantics() {
     let scope = Scope::new(Variable::from(json!({"x": false})));
     for e in cases {
         let want = Isolate::with_environment(Variable::from(json!({"x": false})))
+            .with_now(conformance::Spec::now())
             .run_standard(e)
             .map(|v| v.to_value())
             .ok();
         let program = LaneProgram::standard(e).expect("compile");
         for _ in 0..2 {
             let got = runner
-                .evaluate_one(&program, &EvaluationContext::default(), &scope)
+                .evaluate_one(&program, &conformance::Spec::context(), &scope)
                 .map(|v| v.to_value())
                 .ok();
             assert_eq!(got, want, "{e}");
@@ -3351,7 +3359,7 @@ fn lane_regression_constant_folding_keeps_runtime_semantics() {
     let values: std::collections::BTreeSet<String> = (0..20)
         .filter_map(|_| {
             runner
-                .evaluate_one(&rand, &EvaluationContext::default(), &scope)
+                .evaluate_one(&rand, &conformance::Spec::context(), &scope)
                 .ok()
         })
         .map(|v| v.to_value().to_string())
@@ -3388,7 +3396,7 @@ fn lane_regression_long_strings_and_list_membership() {
             program.specialize(&rows).expect("specialize"),
         ] {
             let got: Vec<_> = runner
-                .evaluate(&program, &EvaluationContext::default(), &rows)
+                .evaluate(&program, &conformance::Spec::context(), &rows)
                 .into_iter()
                 .map(|r| r.map(|v| v.to_value()).ok())
                 .collect();
@@ -3396,6 +3404,7 @@ fn lane_regression_long_strings_and_list_membership() {
                 .iter()
                 .map(|s| {
                     Isolate::with_environment(s.base().clone())
+                        .with_now(conformance::Spec::now())
                         .run_standard(e)
                         .map(|v| v.to_value())
                         .ok()
@@ -3474,7 +3483,8 @@ fn lane_regression_chained_dotted_keys_resolve() {
     ];
     let mut runner = LaneRunner::new();
     for (entries, input) in cases {
-        let mut isolate = Isolate::with_environment(input.clone().into());
+        let mut isolate =
+            Isolate::with_environment(input.clone().into()).with_now(conformance::Spec::now());
         let mut expected = Vec::new();
         for (key, source) in entries.iter() {
             let v = isolate.run_standard(source).map(|v| v.to_value()).ok();
@@ -3486,7 +3496,7 @@ fn lane_regression_chained_dotted_keys_resolve() {
         let mut got = None;
         runner.evaluate_many(
             &program,
-            &EvaluationContext::default(),
+            &conformance::Spec::context(),
             std::slice::from_ref(&scope),
             None,
             |_, r| {
@@ -3520,7 +3530,8 @@ fn lane_builtin_failures_keep_messages() {
     let mut runner = LaneRunner::new();
     let mut mismatches = Vec::new();
     for expression in expressions {
-        let mut isolate = Isolate::with_environment(Variable::from(input.clone()));
+        let mut isolate = Isolate::with_environment(Variable::from(input.clone()))
+            .with_now(conformance::Spec::now());
         let stack = isolate
             .run_standard(expression)
             .map(|v| v.to_value())
@@ -3531,7 +3542,7 @@ fn lane_builtin_failures_keep_messages() {
         let lane = runner
             .evaluate(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 std::slice::from_ref(&scope),
             )
             .remove(0)
@@ -3588,7 +3599,7 @@ fn lane_isolated_cells_keep_evaluating_after_a_fault() {
     let mut failures = Vec::new();
     runner.evaluate_bound_into(
         &program,
-        &EvaluationContext::default(),
+        &conformance::Spec::context(),
         &scopes,
         &columns,
         &bind,
@@ -3856,19 +3867,20 @@ impl StructLists {
                 let mut out = Output::new();
                 runner.evaluate_columns_into(
                     &program,
-                    &EvaluationContext::default(),
+                    &conformance::Spec::context(),
                     &columns,
                     &mut out,
                 );
                 let mut values = Vec::new();
                 runner.evaluate_columns(
                     &program,
-                    &EvaluationContext::default(),
+                    &conformance::Spec::context(),
                     &columns,
                     |_, r| values.push(r.map(|v| v.to_value()).ok()),
                 );
                 for r in 0..columns.rows {
                     let want = Isolate::with_environment(columns.row(r))
+                        .with_now(conformance::Spec::now())
                         .run_standard(e)
                         .map(|v| v.to_value())
                         .ok();
@@ -4138,7 +4150,8 @@ impl Fused {
     fn expected(env: Variable, entries: &[Fusion]) -> Option<Vec<Value>> {
         let mut outputs = Vec::new();
         for entry in entries {
-            let mut isolate = Isolate::with_environment(env.depth_clone(usize::MAX));
+            let mut isolate = Isolate::with_environment(env.depth_clone(usize::MAX))
+                .with_now(conformance::Spec::now());
             let (key, value) = match entry {
                 Fusion::Output { key, source } | Fusion::Hidden { key, source } => {
                     (key, isolate.run_standard(source).ok()?)
@@ -4186,7 +4199,7 @@ impl Fused {
             let mut failed = vec![false; rows.len()];
             runner.evaluate_columns_many(
                 &program,
-                &EvaluationContext::default(),
+                &conformance::Spec::context(),
                 &columns,
                 &mut outs,
                 |row, _, _| failed[row] = true,

@@ -147,13 +147,7 @@ thread_local! {
 static UNROWED: AtomicU64 = AtomicU64::new(0);
 
 pub fn system_now() -> Instant {
-    static MOCK: OnceLock<Option<Instant>> = OnceLock::new();
-    MOCK.get_or_init(|| {
-        std::env::var("__ZEN_MOCK_UTC_TIME")
-            .ok()
-            .and_then(|v| v.parse::<Instant>().ok())
-    })
-    .unwrap_or_else(Utc::now)
+    Utc::now()
 }
 
 pub fn system_timezone() -> Tz {

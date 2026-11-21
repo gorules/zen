@@ -171,6 +171,7 @@ impl DecisionGraph {
         }
 
         let mut walker = GraphWalker::new(&self.graph);
+        walker.now = self.config.extensions.now;
         let mut tracer = NodeTracer::new(self.config.trace);
 
         while let Some(nid) = walker.next(&mut self.graph, tracer.trace_callback()) {

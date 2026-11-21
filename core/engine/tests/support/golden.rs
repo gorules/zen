@@ -674,7 +674,7 @@ impl Golden {
 
     pub fn prepare() {
         std::env::set_var("TZ", "UTC");
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", Self::CLOCK);
+        crate::support::Clock::set(Self::CLOCK);
     }
 
     pub fn new(name: &str) -> Golden {
@@ -874,14 +874,14 @@ impl Live {
         ws: &PolicyWorkspace,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, PolicyError> {
-        ws.evaluate_with_driver(req)
+        ws.evaluate_with_driver(req, crate::support::Clock::now())
     }
 
     pub fn enhanced(
         ws: &PolicyWorkspace,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, PolicyError> {
-        ws.enhance_trace_with_driver(req)
+        ws.enhance_trace_with_driver(req, crate::support::Clock::now())
     }
 }
 
@@ -914,7 +914,7 @@ impl Reference {
     pub fn prepare(live: &str) {
         match Self::recorded() {
             true => Golden::prepare(),
-            false => std::env::set_var("__ZEN_MOCK_UTC_TIME", live),
+            false => crate::support::Clock::set(live),
         }
     }
 

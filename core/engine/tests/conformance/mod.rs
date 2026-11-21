@@ -170,7 +170,7 @@ impl Spec {
             "TZ",
             std::env::var("SPEC_TZ").unwrap_or_else(|_| "UTC".to_string()),
         );
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z");
+        crate::support::Clock::set("2025-03-20T10:15:30Z");
     }
 
     pub fn files(dialect: Dialect) -> Vec<PathBuf> {

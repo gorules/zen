@@ -10,7 +10,6 @@ use std::cell::OnceCell;
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 // Duration is a modified copy of `humantime`
 mod duration;
@@ -649,16 +648,24 @@ impl DynamicVariableExt for dyn DynamicVariable {
     }
 }
 
-pub(crate) fn utc_now() -> DateTime<Utc> {
-    static CURRENT_DATE_VALUE: OnceLock<Option<DateTime<Utc>>> = OnceLock::new();
+thread_local! {
+    static PINNED: std::cell::Cell<Option<DateTime<Utc>>> = const { std::cell::Cell::new(None) };
+}
 
-    CURRENT_DATE_VALUE
-        .get_or_init(|| match std::env::var("__ZEN_MOCK_UTC_TIME") {
-            Ok(v) => {
-                let now = v.parse::<DateTime<Utc>>().unwrap();
-                Some(now)
-            }
-            Err(_) => None,
-        })
-        .unwrap_or_else(|| Utc::now())
+pub(crate) struct PinnedNow(Option<DateTime<Utc>>);
+
+impl PinnedNow {
+    pub(crate) fn enter(now: Option<DateTime<Utc>>) -> Self {
+        Self(PINNED.replace(now))
+    }
+}
+
+impl Drop for PinnedNow {
+    fn drop(&mut self) {
+        PINNED.set(self.0);
+    }
+}
+
+pub(crate) fn utc_now() -> DateTime<Utc> {
+    PINNED.get().unwrap_or_else(Utc::now)
 }

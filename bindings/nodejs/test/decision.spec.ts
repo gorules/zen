@@ -127,6 +127,7 @@ describe('ZenEngine', () => {
     const loader = async (key: string) => fs.readFile(path.join(graphsRoot, key));
 
     const engine = new ZenEngine({ loader });
+    const now = '2025-08-19T16:55:02.078Z';
 
     const entries = await fs.readdir(graphsRoot);
     for (const entry of entries) {
@@ -136,12 +137,12 @@ describe('ZenEngine', () => {
       const fileData: Graph = JSON.parse(fileContents.toString('utf8'));
 
       for (const testCase of fileData.tests) {
-        const engineResponse = await engine.safeEvaluate(entry, testCase.input);
+        const engineResponse = await engine.safeEvaluate(entry, testCase.input, { now });
 
         const decision = await engine.safeGetDecision(entry);
         assert.ok(decision.success, 'Decision must exist');
 
-        const decisionResponse = await decision.data.safeEvaluate(testCase.input);
+        const decisionResponse = await decision.data.safeEvaluate(testCase.input, { now });
 
         assert.ok(engineResponse.success, 'Engine response must be ok');
         assert.ok(decisionResponse.success, 'Decision response must be ok');

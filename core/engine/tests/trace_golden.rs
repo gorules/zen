@@ -15,7 +15,7 @@ fn options(format: TraceFormat) -> EvaluationOptions {
     EvaluationOptions {
         trace: format,
         max_depth: 10,
-        ..Default::default()
+        ..crate::support::Clock::options()
     }
 }
 
@@ -254,7 +254,10 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 };
                 push(
                     format!("{engine} workspace"),
-                    policy(run.workspace.evaluate(&request(c))),
+                    policy(
+                        run.workspace
+                            .evaluate_pinned(&request(c), &crate::support::Clock::options()),
+                    ),
                 );
                 let mut enhanced = PolicyRun::request(c);
                 if format == TraceFormat::V1 {
@@ -262,7 +265,10 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
                 }
                 push(
                     format!("{engine} enhanced"),
-                    policy(run.workspace.enhance_trace(&enhanced)),
+                    policy(
+                        run.workspace
+                            .enhance_trace_pinned(&enhanced, &crate::support::Clock::options()),
+                    ),
                 );
                 if c.goals.is_empty() {
                     push(
@@ -288,7 +294,7 @@ fn each(format: TraceFormat, sink: &mut dyn FnMut(Run)) {
         let requests: Vec<_> = suite.cases.iter().map(request).collect();
         for (case, result) in run
             .workspace
-            .evaluate_batch(&requests)
+            .evaluate_batch_pinned(&requests, &crate::support::Clock::options())
             .into_iter()
             .enumerate()
         {
@@ -1305,7 +1311,10 @@ fn policy_native_and_convert() {
         for case in &suite.cases {
             let mut req = PolicyRun::request(case);
             req.trace = TraceFormat::Legacy;
-            let trace = match run.workspace.evaluate(&req) {
+            let trace = match run
+                .workspace
+                .evaluate_pinned(&req, &crate::support::Clock::options())
+            {
                 Ok(r) => r.trace.and_then(|t| t.into_legacy()),
                 Err(zen_engine::policy::EvaluationError::ExpressionFailed {
                     partial_trace,
@@ -1666,7 +1675,10 @@ fn trace_documents_move_across_threads() {
         for case in &suite.cases {
             let mut request = PolicyRun::request(case);
             request.trace = TraceFormat::V1;
-            let Ok(result) = run.workspace.evaluate(&request) else {
+            let Ok(result) = run
+                .workspace
+                .evaluate_pinned(&request, &crate::support::Clock::options())
+            else {
                 continue;
             };
             let Some(doc) = result.trace.as_ref().and_then(|t| t.as_v1()).cloned() else {
@@ -1835,7 +1847,10 @@ fn dump_all(dir: &str) {
                 req
             };
             for (case, c) in suite.cases.iter().enumerate() {
-                let out = policy_dump(run.workspace.evaluate(&request(c)));
+                let out = policy_dump(
+                    run.workspace
+                        .evaluate_pinned(&request(c), &crate::support::Clock::options()),
+                );
                 writeln!(policies, "{id} #{case} {name}\t{out}").unwrap();
                 if c.goals.is_empty() {
                     let result = Guard::block(run.engine.evaluate_with_opts(
@@ -1854,7 +1869,7 @@ fn dump_all(dir: &str) {
             let requests: Vec<_> = suite.cases.iter().map(request).collect();
             for (case, result) in run
                 .workspace
-                .evaluate_batch(&requests)
+                .evaluate_batch_pinned(&requests, &crate::support::Clock::options())
                 .into_iter()
                 .enumerate()
             {

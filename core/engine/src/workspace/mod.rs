@@ -107,15 +107,23 @@ impl Workspace {
                 &context,
             );
         }
-        self.evaluate_with_driver(req)
+        self.evaluate_with_driver(req, options.now)
     }
 
     pub fn enhance_trace(
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
+        self.enhance_trace_pinned(req, &Default::default())
+    }
+
+    pub fn enhance_trace_pinned(
+        &self,
+        req: &EvaluateRequest,
+        options: &crate::EvaluationOptions,
+    ) -> Result<EvaluationResult, EvaluationError> {
         if self.engine.compiled() {
-            let context = crate::compiled::pinning::single(&Default::default());
+            let context = crate::compiled::pinning::single(options);
             return crate::compiled::policy::artifact::Runtime::enhance_trace(
                 &self.db,
                 &self.compiled,
@@ -123,7 +131,7 @@ impl Workspace {
                 &context,
             );
         }
-        self.enhance_trace_with_driver(req)
+        self.enhance_trace_with_driver(req, options.now)
     }
 
     pub fn evaluate_batch(
@@ -176,9 +184,10 @@ impl Workspace {
     pub fn evaluate_with_driver(
         &self,
         req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
     ) -> Result<EvaluationResult, EvaluationError> {
         self.db
-            .evaluate(&req.legacy())
+            .evaluate_at(&req.legacy(), now)
             .map(Into::into)
             .map_err(Into::into)
     }
@@ -187,9 +196,10 @@ impl Workspace {
     pub fn enhance_trace_with_driver(
         &self,
         req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
     ) -> Result<EvaluationResult, EvaluationError> {
         self.db
-            .enhance_trace(&req.legacy())
+            .enhance_trace(&req.legacy(), now)
             .map(Into::into)
             .map_err(Into::into)
     }

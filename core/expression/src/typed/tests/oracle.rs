@@ -86,7 +86,7 @@ impl fmt::Display for Val {
 
 impl Oracle {
     pub(crate) fn new(workload: &Workload, hir: &Hir) -> Self {
-        let mut isolate = Isolate::new();
+        let mut isolate = Isolate::new().with_now(Workload::now());
         let mut standard = |source: &str| -> Code {
             isolate
                 .compile_standard(source)
@@ -115,6 +115,7 @@ impl Oracle {
                                 true => None,
                                 false => Some(
                                     Isolate::new()
+                                        .with_now(Workload::now())
                                         .compile_unary(cell)
                                         .map(|e| e.bytecode().clone())
                                         .expect("unary cell"),
@@ -204,7 +205,7 @@ impl Oracle {
     }
 
     pub(crate) fn run(&self, input: Variable) -> RowResult {
-        let mut isolate = Isolate::new();
+        let mut isolate = Isolate::new().with_now(Workload::now());
         let result = Variable::empty_object();
         isolate.set_environment(input.shallow_clone());
         for step in &self.steps {
@@ -226,7 +227,7 @@ impl Oracle {
                             }
                         }
                         env.dot_insert(alias, item.shallow_clone());
-                        let mut member = Isolate::new();
+                        let mut member = Isolate::new().with_now(Workload::now());
                         member.set_environment(env.shallow_clone());
                         let value = member.run_compiled(code).map_err(|e| e.to_string())?;
                         env.dot_insert(key, value);

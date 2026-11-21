@@ -104,11 +104,14 @@ impl Differential {
             .enumerate()
             .map(|(i, input)| Self::with_goals(path, input, &PolicyCase::goals(&computed, i)))
             .collect();
-        let batch = ws.evaluate_batch(&requests);
+        let batch = ws.evaluate_batch_pinned(&requests, &crate::support::Clock::options());
         for (i, (input, batched)) in inputs.iter().zip(&batch).enumerate() {
             let goals = PolicyCase::goals(&computed, i);
             let want = self.driver(label, ws, path, input, &goals);
-            let single = Self::shape(&ws.evaluate(&Self::with_goals(path, input, &goals)));
+            let single = Self::shape(&ws.evaluate_pinned(
+                &Self::with_goals(path, input, &goals),
+                &crate::support::Clock::options(),
+            ));
             let batched = Self::shape(batched);
             self.compared += 1;
             self.succeeded += usize::from(want.is_ok());
@@ -226,7 +229,12 @@ impl Columnar {
         columns: &zen_expression::lane::Columns,
         failures: &mut Vec<String>,
     ) {
-        let Ok(output) = ws.evaluate_columns(&Arc::from(Generated::PATH), &[], columns) else {
+        let Ok(output) = ws.evaluate_columns_pinned(
+            &Arc::from(Generated::PATH),
+            &[],
+            columns,
+            &crate::support::Clock::options(),
+        ) else {
             return;
         };
         for row in 0..columns.rows {
@@ -291,7 +299,9 @@ fn compiled_policy_throughput() {
                 + std::time::Duration::from_secs(profile.parse().unwrap_or(1));
             while std::time::Instant::now() < until {
                 match std::env::var("BENCH_MODE").as_deref() {
-                    Ok("single") => requests.iter().for_each(|r| drop(ws.evaluate(r))),
+                    Ok("single") => requests.iter().for_each(|r| {
+                        drop(ws.evaluate_pinned(r, &crate::support::Clock::options()))
+                    }),
                     Ok("columns") => {
                         if let Some(columns) = Built::new(
                             &requests
@@ -302,10 +312,17 @@ fn compiled_policy_throughput() {
                         .as_ref()
                         .map(Built::columns)
                         {
-                            drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns));
+                            drop(ws.evaluate_columns_pinned(
+                                &Arc::from("generated.json"),
+                                &[],
+                                &columns,
+                                &crate::support::Clock::options(),
+                            ));
                         }
                     }
-                    _ => drop(ws.evaluate_batch(&requests)),
+                    _ => {
+                        drop(ws.evaluate_batch_pinned(&requests, &crate::support::Clock::options()))
+                    }
                 }
             }
             continue;
@@ -325,19 +342,28 @@ fn compiled_policy_throughput() {
         for _ in 0..5 {
             let batch = fresh();
             let start = std::time::Instant::now();
-            batch.iter().for_each(|r| drop(ws.evaluate_with_driver(r)));
+            batch
+                .iter()
+                .for_each(|r| drop(ws.evaluate_with_driver(r, crate::support::Clock::now())));
             best[0] = best[0].min(time(start.elapsed()));
             let batch = fresh();
             let start = std::time::Instant::now();
-            batch.iter().for_each(|r| drop(ws.evaluate(r)));
+            batch
+                .iter()
+                .for_each(|r| drop(ws.evaluate_pinned(r, &crate::support::Clock::options())));
             best[1] = best[1].min(time(start.elapsed()));
             let batch = fresh();
             let start = std::time::Instant::now();
-            drop(ws.evaluate_batch(&batch));
+            drop(ws.evaluate_batch_pinned(&batch, &crate::support::Clock::options()));
             best[2] = best[2].min(time(start.elapsed()));
             if let Some(columns) = built.as_ref().map(Built::columns) {
                 let start = std::time::Instant::now();
-                drop(ws.evaluate_columns(&Arc::from("generated.json"), &[], &columns));
+                drop(ws.evaluate_columns_pinned(
+                    &Arc::from("generated.json"),
+                    &[],
+                    &columns,
+                    &crate::support::Clock::options(),
+                ));
                 best[3] = best[3].min(time(start.elapsed()));
             }
         }
@@ -365,7 +391,7 @@ fn compiled_policy_throughput() {
 async fn engine_batch_matches_single_evaluations() {
     use zen_engine::loader::MemoryLoader;
     use zen_engine::model::{DecisionContent, PolicyContent};
-    use zen_engine::{DecisionEngine, EvaluationOptions};
+    use zen_engine::DecisionEngine;
 
     let loader = Arc::new(MemoryLoader::default());
     let mut rng = Rng(11);
@@ -403,12 +429,12 @@ async fn engine_batch_matches_single_evaluations() {
         for key in ["policy", "graph"] {
             let fresh: Vec<Variable> = contexts.iter().map(Variable::deep_clone).collect();
             let batch = engine
-                .evaluate_batch(key, &fresh, EvaluationOptions::default())
+                .evaluate_batch(key, &fresh, crate::support::Clock::options())
                 .await;
             assert_eq!(batch.len(), contexts.len());
             for (context, batched) in contexts.iter().zip(batch) {
                 let single = engine
-                    .evaluate_with_opts(key, context.deep_clone(), EvaluationOptions::default())
+                    .evaluate_with_opts(key, context.deep_clone(), crate::support::Clock::options())
                     .await;
                 let shape = |r: Result<
                     zen_engine::DecisionGraphResponse,
@@ -587,7 +613,12 @@ impl Anchor {
         failures: &mut Vec<String>,
     ) -> (usize, usize, usize) {
         let output = ws
-            .evaluate_columns(&Arc::from(Anchor::PATH), &[], columns)
+            .evaluate_columns_pinned(
+                &Arc::from(Anchor::PATH),
+                &[],
+                columns,
+                &crate::support::Clock::options(),
+            )
             .expect("columnar");
         for row in 0..columns.rows {
             let input = columns.row(row);
@@ -899,7 +930,12 @@ fn policy_columnar_shredded_irregular_lists() {
     let mut failures = Vec::new();
     for columns in [&columns, &nulled] {
         let output = ws
-            .evaluate_columns(&Arc::from("anchor"), &[], columns)
+            .evaluate_columns_pinned(
+                &Arc::from("anchor"),
+                &[],
+                columns,
+                &crate::support::Clock::options(),
+            )
             .expect("columnar");
         for row in 0..columns.rows {
             let request = EvaluateRequest {
@@ -909,7 +945,7 @@ fn policy_columnar_shredded_irregular_lists() {
                 trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = ws
-                .evaluate_with_driver(&request)
+                .evaluate_with_driver(&request, crate::support::Clock::now())
                 .map(|r| Built::normalized(r.output.to_value()))
                 .map_err(|e| format!("{e:?}"));
             let got = match output.errors[row].as_deref() {
@@ -977,7 +1013,12 @@ fn policy_columnar_converts_declared_dates_without_hosting() {
         let structs = built.structs(&fields);
         let columns = built.columns_with(&structs);
         let output = ws
-            .evaluate_columns(&Arc::from("anchor"), &[], &columns)
+            .evaluate_columns_pinned(
+                &Arc::from("anchor"),
+                &[],
+                &columns,
+                &crate::support::Clock::options(),
+            )
             .expect("columnar");
         assert_eq!(output.paths().hosted, 0, "dated rows were hosted");
         for row in 0..columns.rows {
@@ -988,7 +1029,7 @@ fn policy_columnar_converts_declared_dates_without_hosting() {
                 trace: zen_engine::trace::TraceFormat::Off,
             };
             let want = ws
-                .evaluate_with_driver(&request)
+                .evaluate_with_driver(&request, crate::support::Clock::now())
                 .map(|r| Built::normalized(r.output.to_value()))
                 .map_err(|e| format!("{e:?}"));
             let got = match output.errors[row].as_deref() {
@@ -1095,7 +1136,12 @@ fn policy_member_blocks_reading_their_own_list_match_the_driver() {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = ws
-                .evaluate_columns(&Arc::from("anchor"), &[], &columns)
+                .evaluate_columns_pinned(
+                    &Arc::from("anchor"),
+                    &[],
+                    &columns,
+                    &crate::support::Clock::options(),
+                )
                 .expect("columnar");
             if columnar {
                 assert_eq!(output.paths().hosted, 0, "sibling reads were hosted");
@@ -1108,7 +1154,7 @@ fn policy_member_blocks_reading_their_own_list_match_the_driver() {
                     trace: zen_engine::trace::TraceFormat::Off,
                 };
                 let want = ws
-                    .evaluate_with_driver(&request)
+                    .evaluate_with_driver(&request, crate::support::Clock::now())
                     .map(|r| Built::normalized(r.output.to_value()))
                     .map_err(|e| format!("{e:?}"));
                 let got = match output.errors[row].as_deref() {
@@ -1162,7 +1208,12 @@ fn policy_column_order_is_path_independent() {
         let columns = built.columns();
         for call in 0..8 {
             let output = ws
-                .evaluate_columns(&Arc::from("anchor"), &[], &columns)
+                .evaluate_columns_pinned(
+                    &Arc::from("anchor"),
+                    &[],
+                    &columns,
+                    &crate::support::Clock::options(),
+                )
                 .expect("columnar");
             let got: Vec<&str> = output
                 .columns
@@ -1202,7 +1253,12 @@ fn policy_tables_match_coded_nulls_against_null_cells() {
     let want = ["other", "null", "other", "null", "other"];
     for call in 0..4 {
         let output = ws
-            .evaluate_columns(&Arc::from("anchor"), &[], &columns)
+            .evaluate_columns_pinned(
+                &Arc::from("anchor"),
+                &[],
+                &columns,
+                &crate::support::Clock::options(),
+            )
             .expect("columnar");
         for (row, want) in want.iter().enumerate() {
             assert!(
@@ -1462,21 +1518,33 @@ fn single_row_latency() {
             "evaluate",
             Anchor::time(count, || {
                 let fresh = Anchor::fresh(&rows);
-                Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate(r))))
+                Anchor::clock(|| {
+                    fresh.iter().for_each(|r| {
+                        drop(ws.evaluate_pinned(r, &crate::support::Clock::options()))
+                    })
+                })
             }),
         ),
         (
             "evaluate traced",
             Anchor::time(count, || {
                 let fresh = traced(&rows);
-                Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate(r))))
+                Anchor::clock(|| {
+                    fresh.iter().for_each(|r| {
+                        drop(ws.evaluate_pinned(r, &crate::support::Clock::options()))
+                    })
+                })
             }),
         ),
         (
             "enhance_trace",
             Anchor::time(count, || {
                 let fresh = Anchor::fresh(&rows);
-                Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.enhance_trace(r))))
+                Anchor::clock(|| {
+                    fresh.iter().for_each(|r| {
+                        drop(ws.enhance_trace_pinned(r, &crate::support::Clock::options()))
+                    })
+                })
             }),
         ),
     ];
@@ -1517,7 +1585,7 @@ fn policy_anchor_throughput() {
         .iter()
         .map(|r| {
             Built::normalized(
-                ws.evaluate_with_driver(r)
+                ws.evaluate_with_driver(r, crate::support::Clock::now())
                     .expect("driver")
                     .output
                     .to_value(),
@@ -1532,7 +1600,12 @@ fn policy_anchor_throughput() {
         let until = std::time::Instant::now()
             + std::time::Duration::from_secs(seconds.parse().unwrap_or(4));
         while std::time::Instant::now() < until {
-            drop(ws.evaluate_columns(&path, &[], &columns));
+            drop(ws.evaluate_columns_pinned(
+                &path,
+                &[],
+                &columns,
+                &crate::support::Clock::options(),
+            ));
         }
         return;
     }
@@ -1541,20 +1614,26 @@ fn policy_anchor_throughput() {
         "driver",
         Anchor::time(count, || {
             let fresh = Anchor::fresh(&rows);
-            Anchor::clock(|| fresh.iter().for_each(|r| drop(ws.evaluate_with_driver(r))))
+            Anchor::clock(|| {
+                fresh
+                    .iter()
+                    .for_each(|r| drop(ws.evaluate_with_driver(r, crate::support::Clock::now())))
+            })
         }),
     ));
     results.push((
         "compiled batch",
         Anchor::time(count, || {
             let fresh = Anchor::fresh(&rows);
-            Anchor::clock(|| drop(ws.evaluate_batch(&fresh)))
+            Anchor::clock(|| {
+                drop(ws.evaluate_batch_pinned(&fresh, &crate::support::Clock::options()))
+            })
         }),
     ));
     let built = Built::new(&values).expect("flat columns");
     let columns = built.columns();
     let flat = ws
-        .evaluate_columns(&path, &[], &columns)
+        .evaluate_columns_pinned(&path, &[], &columns, &crate::support::Clock::options())
         .expect("columnar flat");
     let flat_wrong = (0..count)
         .filter(|&r| {
@@ -1566,14 +1645,23 @@ fn policy_anchor_throughput() {
     results.push((
         "columnar flat",
         Anchor::time(count, || {
-            Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns)))
+            Anchor::clock(|| {
+                drop(ws.evaluate_columns_pinned(
+                    &path,
+                    &[],
+                    &columns,
+                    &crate::support::Clock::options(),
+                ))
+            })
         }),
     ));
     let built = Built::nested(&values).expect("nested columns");
     let fields = built.fields();
     let structs = built.structs(&fields);
     let columns = built.columns_with(&structs);
-    let output = ws.evaluate_columns(&path, &[], &columns).expect("columnar");
+    let output = ws
+        .evaluate_columns_pinned(&path, &[], &columns, &crate::support::Clock::options())
+        .expect("columnar");
     let wrong = (0..count)
         .filter(|&r| {
             output.errors[r].is_some()
@@ -1584,14 +1672,26 @@ fn policy_anchor_throughput() {
         let until = std::time::Instant::now()
             + std::time::Duration::from_secs(seconds.parse().unwrap_or(4));
         while std::time::Instant::now() < until {
-            drop(ws.evaluate_columns(&path, &[], &columns));
+            drop(ws.evaluate_columns_pinned(
+                &path,
+                &[],
+                &columns,
+                &crate::support::Clock::options(),
+            ));
         }
         return;
     }
     results.push((
         "columnar struct lists",
         Anchor::time(count, || {
-            Anchor::clock(|| drop(ws.evaluate_columns(&path, &[], &columns)))
+            Anchor::clock(|| {
+                drop(ws.evaluate_columns_pinned(
+                    &path,
+                    &[],
+                    &columns,
+                    &crate::support::Clock::options(),
+                ))
+            })
         }),
     ));
     if support::switches().census {

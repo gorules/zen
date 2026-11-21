@@ -332,9 +332,11 @@ impl Table {
     fn run(&self, input: Value) -> Seen {
         let decision = self.decision();
         let context = Variable::from(input.clone());
-        let single = Self::graph_result(Self::block(decision.evaluate(context.depth_clone(64))));
+        let single = Self::graph_result(Self::block(
+            decision.evaluate_with_opts(context.depth_clone(64), crate::support::Clock::options()),
+        ));
         let batch = Self::block(
-            decision.evaluate_batch(&[context.depth_clone(64)], EvaluationOptions::default()),
+            decision.evaluate_batch(&[context.depth_clone(64)], crate::support::Clock::options()),
         )
         .into_iter()
         .map(Self::graph_result)
@@ -345,7 +347,7 @@ impl Table {
             EvaluationOptions {
                 trace: zen_engine::trace::TraceFormat::Legacy,
                 max_depth: 10,
-                ..Default::default()
+                ..crate::support::Clock::options()
             },
         ));
         let graph_trace = match &traced {
@@ -371,9 +373,10 @@ impl Table {
         ];
         graph.push((
             "walker",
-            Self::graph_result(Self::block(
-                decision.interpreted().evaluate(context.depth_clone(64)),
-            )),
+            Self::graph_result(Self::block(decision.interpreted().evaluate_with_opts(
+                context.depth_clone(64),
+                crate::support::Clock::options(),
+            ))),
         ));
 
         let ws = self.workspace();
@@ -390,20 +393,39 @@ impl Table {
                 false => zen_engine::trace::TraceFormat::Off,
             },
         };
-        let (compiled, _) = Self::policy_result(ws.evaluate(&request(false)));
-        let (traced, policy_trace) = Self::policy_result(ws.evaluate(&request(true)));
-        let batch = Self::policy_result(ws.evaluate_batch(&[request(false)]).remove(0)).0;
+        let (compiled, _) = Self::policy_result(
+            ws.evaluate_pinned(&request(false), &crate::support::Clock::options()),
+        );
+        let (traced, policy_trace) = Self::policy_result(
+            ws.evaluate_pinned(&request(true), &crate::support::Clock::options()),
+        );
+        let batch = Self::policy_result(
+            ws.evaluate_batch_pinned(&[request(false)], &crate::support::Clock::options())
+                .remove(0),
+        )
+        .0;
         let mut policy = vec![("compiled", compiled), ("batch", batch), ("traced", traced)];
         policy.push((
             "driver",
-            Self::policy_result(ws.evaluate_with_driver(&request(false))).0,
+            Self::policy_result(
+                ws.evaluate_with_driver(&request(false), crate::support::Clock::now()),
+            )
+            .0,
         ));
         let rows = vec![policy_input.clone(); 2];
         let built = Built::new(&rows);
         let columns = built.as_ref().map(|built| built.columns());
         let columns = columns
             .as_ref()
-            .and_then(|columns| ws.evaluate_columns(&Arc::from("p"), &[], columns).ok())
+            .and_then(|columns| {
+                ws.evaluate_columns_pinned(
+                    &Arc::from("p"),
+                    &[],
+                    columns,
+                    &crate::support::Clock::options(),
+                )
+                .ok()
+            })
             .map(|mut output| {
                 let text = match output.errors[0].take().map(std::rc::Rc::try_unwrap) {
                     Some(Ok(zen_engine::EvaluationError::Policy(error))) => {

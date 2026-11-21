@@ -200,7 +200,7 @@ impl DecisionEngine {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace.is_on())
+                        .evaluate_entry(key_str, context, options.trace.is_on(), options.now)
                         .map(DecisionGraphResponse::from)
                         .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                     CompiledEntry::Graph(graph) => {
@@ -252,7 +252,12 @@ impl DecisionEngine {
                     CompiledEntry::Policy(artifact) => {
                         return DecisionGraphResponse::serialized(
                             artifact
-                                .evaluate_entry(key_str, context, options.trace.is_on())
+                                .evaluate_entry(
+                                    key_str,
+                                    context,
+                                    options.trace.is_on(),
+                                    options.now,
+                                )
                                 .map(DecisionGraphResponse::from)
                                 .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                         );

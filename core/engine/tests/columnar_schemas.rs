@@ -7,7 +7,7 @@ use std::sync::Arc;
 use support::columns::Built;
 use zen_engine::loader::MemoryLoader;
 use zen_engine::model::{DecisionContent, GraphContent};
-use zen_engine::{Decision, EvaluationOptions};
+use zen_engine::Decision;
 use zen_expression::Variable;
 
 struct Case;
@@ -52,11 +52,14 @@ impl Case {
     }
 
     async fn compare(decision: &Decision, rows: Vec<Value>) {
-        std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-03-20T10:15:30Z");
+        crate::support::Clock::set("2025-03-20T10:15:30Z");
         let mut expected = Vec::new();
         for row in &rows {
             let result = decision
-                .evaluate(Variable::from(row.clone()))
+                .evaluate_with_opts(
+                    Variable::from(row.clone()),
+                    crate::support::Clock::options(),
+                )
                 .await
                 .map(|r| r.result)
                 .map_err(|e| serde_json::to_string(&e).unwrap_or_default());
@@ -71,7 +74,7 @@ impl Case {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = decision
-                .evaluate_columns(&columns, EvaluationOptions::default())
+                .evaluate_columns(&columns, crate::support::Clock::options())
                 .await;
             representations += 1;
             assert_eq!(output.paths().hosted, 0, "rows left the columnar plan");

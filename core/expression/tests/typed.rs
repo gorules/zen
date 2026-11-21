@@ -3,7 +3,6 @@ mod conformance;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Column, Fusion, Values};
 use zen_expression::typed::{
     Batch, Class, Data, Hir, List, Lowering, Program, Resolve, Resolved, Slot,
@@ -343,7 +342,7 @@ impl Report {
         }
         let mut out = program.outputs();
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            program.run(&batch, &mut out, None, &EvaluationContext::default())
+            program.run(&batch, &mut out, None, &conformance::Spec::context())
         }));
         match ran {
             Ok(Ok(())) => {}

@@ -150,7 +150,7 @@ impl Caches {
         if let Some(entry) = self.entry(key) {
             return Ok(match entry {
                 Entry::Policy(artifact) => artifact
-                    .evaluate_entry(key, input, invocation.trace, &invocation.context)
+                    .evaluate_entry(key, input, invocation)
                     .map(Responses::policy)
                     .map_err(|e| Box::new(EvaluationError::Policy(e))),
                 Entry::Graph(graph) => {
@@ -282,7 +282,7 @@ impl Caches {
         };
 
         let result = artifact
-            .evaluate_entry(&entry_path, input, invocation.trace, &invocation.context)
+            .evaluate_entry(&entry_path, input, invocation)
             .map_err(|e| Box::new(EvaluationError::Policy(e)))?;
 
         Ok(Responses::policy(result))

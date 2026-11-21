@@ -57,6 +57,7 @@
 
 #![forbid(unsafe_code)]
 
+mod batch;
 pub mod context;
 mod isolate;
 
@@ -77,6 +78,7 @@ pub mod validate;
 pub mod variable;
 pub mod vm;
 
+pub use batch::{evaluate_expression_batch, BatchExpression};
 pub use dates::DateValue;
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,

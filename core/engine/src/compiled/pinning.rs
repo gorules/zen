@@ -182,12 +182,33 @@ impl JsSlot {
         }
     }
 
+    fn modelled(ms: f64) -> Option<chrono::NaiveDateTime> {
+        use chrono::Datelike;
+        const CYCLE: f64 = 146_097.0 * 86_400_000.0;
+        const SPAN: f64 = 250_000.0 * 365.2425 * 86_400_000.0;
+        let cycles = match ms.abs() > SPAN {
+            true => ((ms.abs() - SPAN) / CYCLE).ceil() * ms.signum(),
+            false => 0.0,
+        };
+        let at = DateTime::from_timestamp_millis((ms - cycles * CYCLE) as i64)?.naive_utc();
+        if at.year() <= 2099 {
+            return Some(at);
+        }
+        let year = chrono::NaiveDate::from_yo_opt(at.year(), 1)?;
+        let twin = (2072..=2099).find(|candidate| {
+            chrono::NaiveDate::from_yo_opt(*candidate, 1).is_some_and(|first| {
+                first.leap_year() == year.leap_year() && first.weekday() == year.weekday()
+            })
+        })?;
+        Some(chrono::NaiveDate::from_yo_opt(twin, at.ordinal())?.and_time(at.time()))
+    }
+
     fn offset(&self, ms: f64, name: Option<String>) -> Option<f64> {
         let zone = self.zone(name)?;
         if !ms.is_finite() {
             return None;
         }
-        let at = DateTime::from_timestamp_millis(ms as i64)?.naive_utc();
+        let at = Self::modelled(ms)?;
         let seconds = zone.offset_from_utc_datetime(&at).fix().local_minus_utc();
         Some(seconds as f64 / 60.0)
     }
@@ -197,7 +218,7 @@ impl JsSlot {
         if !local.is_finite() {
             return None;
         }
-        let naive = DateTime::from_timestamp_millis(local as i64)?.naive_utc();
+        let naive = Self::modelled(local)?;
         let offset = match zone.offset_from_local_datetime(&naive) {
             LocalResult::Single(offset) => offset.fix(),
             LocalResult::Ambiguous(earlier, _) => earlier.fix(),
@@ -206,8 +227,7 @@ impl JsSlot {
                 .earliest()?
                 .fix(),
         };
-        let utc = naive - Duration::seconds(offset.local_minus_utc() as i64);
-        Some(utc.and_utc().timestamp_millis() as f64)
+        Some(local - offset.local_minus_utc() as f64 * 1000.0)
     }
 
     pub(crate) fn install(&self, ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {

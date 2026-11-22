@@ -411,3 +411,37 @@ fn a_graph_date_input_is_read_in_the_evaluation_zone() {
         }
     }
 }
+
+#[test]
+fn script_dates_agree_far_from_today() {
+    let bodies = [
+        "({ v: new Date(2100, 6, 1).getTimezoneOffset(), w: new Date(2100, 0, 1).getTimezoneOffset() })",
+        "({ v: new Date(2250, 6, 1, 12).getTime(), w: new Date(2399, 11, 31, 23, 59).getHours() })",
+        "({ v: new Date(-62183203200000).toString().split(' ')[3] })",
+        "({ v: new Date(-62183203200000).toLocaleString().split(',')[0] })",
+        "({ v: String(new Date(8.6e15)), w: new Date(-8.6e15).getFullYear() })",
+        "({ v: new Date(['2024-01-01']).getTime(), w: new Date([5]).getTime() })",
+        "({ v: new Date({ valueOf: () => 86400000 }).getTime(), w: new Date({ toString: () => '2024-03-01T00:00:00Z' }).getTime() })",
+    ];
+    for body in bodies {
+        let source = format!("export const handler = async (input) => {body};");
+        let graph = graph(
+            json!({"id": "node", "name": "node", "type": "functionNode", "content": {"source": source}}),
+        );
+        let want = outcomes(EngineVersion::V1, Path::Repeated, &graph, &json!({})).remove(0);
+        assert!(want.get("error").is_none(), "{body} {want}");
+        for path in [Path::Repeated, Path::Compiled, Path::Batch] {
+            for got in outcomes(EngineVersion::V2, path, &graph, &json!({})) {
+                assert_eq!(got, want, "{body} {path:?}");
+            }
+        }
+    }
+    let source = "export const handler = async (input) => ({ v: new Date(2020n).getTime() });";
+    let graph = graph(
+        json!({"id": "node", "name": "node", "type": "functionNode", "content": {"source": source}}),
+    );
+    for version in [EngineVersion::V1, EngineVersion::V2] {
+        let got = outcomes(version, Path::Repeated, &graph, &json!({})).remove(0);
+        assert!(got.get("error").is_some(), "{version:?} {got}");
+    }
+}

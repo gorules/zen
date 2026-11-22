@@ -97,10 +97,26 @@
       call(N.getMinutes, d), call(N.getSeconds, d), call(N.getMilliseconds, d),
     ]);
   };
+  const toPrimitive = (value) => {
+    if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return value;
+    const exotic = value[Symbol.toPrimitive];
+    if (typeof exotic === 'function') {
+      const result = exotic.call(value, 'default');
+      if ((typeof result !== 'object' && typeof result !== 'function') || result === null) return result;
+      throw new TypeError('Cannot convert object to primitive value');
+    }
+    for (const name of ['valueOf', 'toString']) {
+      const method = value[name];
+      if (typeof method !== 'function') continue;
+      const result = method.call(value);
+      if ((typeof result !== 'object' && typeof result !== 'function') || result === null) return result;
+    }
+    throw new TypeError('Cannot convert object to primitive value');
+  };
   const valueOf = (value) => {
     if (value instanceof Native) return time(value);
-    const primitive = typeof value === 'object' && value !== null ? value.valueOf() : value;
-    return typeof primitive === 'string' ? parse(primitive) : Number(primitive);
+    const primitive = toPrimitive(value);
+    return typeof primitive === 'string' ? parse(primitive) : +primitive;
   };
 
   function PinnedDate(...args) {
@@ -134,7 +150,7 @@
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const pad = (n, width = 2) => String(n).padStart(width, '0');
-  const year = (y) => (y < 0 ? '-' + pad(-y, 6) : pad(y, 4));
+  const year = (y) => (y < 0 ? '-' + pad(-y, 4) : pad(y, 4));
   const gmt = (o) => {
     const a = Math.abs(Math.round(o));
     return 'GMT' + (o < 0 ? '-' : '+') + pad(Math.floor(a / 60)) + pad(a % 60);
@@ -166,7 +182,7 @@
   const localized = (t, zone, kind) => {
     if (Number.isNaN(t)) return 'Invalid Date';
     const f = fields(t, zone);
-    const date = `${pad(f.mo + 1)}/${pad(f.d)}/${pad(f.y, 4)}`;
+    const date = `${pad(f.mo + 1)}/${pad(f.d)}/${year(f.y)}`;
     const clock = `${pad(f.h % 12 || 12)}:${pad(f.mi)}:${pad(f.s)} ${f.h < 12 ? 'AM' : 'PM'}`;
     if (kind === 'date') return date;
     if (kind === 'time') return clock;

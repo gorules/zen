@@ -369,7 +369,11 @@ impl CompiledGraph {
     ) -> (Vec<Option<Variable>>, Vec<NodeColumn<'a>>) {
         match (
             step.nodes,
-            columnar && step.statics.is_some() && state.nesting.parents.is_none(),
+            columnar
+                && !step.dynamic
+                && !step.root
+                && step.statics.is_some()
+                && state.nesting.parents.is_none(),
         ) {
             (false, _) => (Vec::new(), Vec::new()),
             (true, true) => (Vec::new(), self.node_columns(step, state, visible, rows)),
@@ -391,10 +395,20 @@ impl CompiledGraph {
         if leaves.is_empty() {
             return false;
         }
+        let rebuilt = |key: &str| {
+            rebase.is_some_and(|base| {
+                key == base
+                    || zen_types::path::DotPath::under(key, base)
+                    || zen_types::path::DotPath::under(base, key)
+            })
+        };
         (step.root && rebase.is_none())
             || step.dynamic
             || leaves.iter().any(|(k, _)| {
-                k.as_ref() == "$" || k.as_ref() == "$nodes" || k.starts_with("$nodes.")
+                k.as_ref() == "$"
+                    || k.as_ref() == "$nodes"
+                    || k.starts_with("$nodes.")
+                    || rebuilt(k)
             })
     }
 

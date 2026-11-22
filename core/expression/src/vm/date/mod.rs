@@ -95,6 +95,11 @@ impl VmDate {
             .map(|date_time| Self(Some(date_time), Some(Rc::from(text)), OnceCell::new()))
     }
 
+    pub fn from_text_in(text: &str, tz: Tz) -> Option<Self> {
+        helper::parse_text_in(text, tz)
+            .map(|date_time| Self(Some(date_time), Some(Rc::from(text)), OnceCell::new()))
+    }
+
     pub fn coerce(value: &Variable) -> Option<Self> {
         match value {
             Variable::Dynamic(d) => d.as_date().cloned(),
@@ -349,7 +354,7 @@ mod helper {
         })
     }
 
-    fn parse_text_in(value: &str, tz: Tz) -> Option<DateTime<Tz>> {
+    pub(crate) fn parse_text_in(value: &str, tz: Tz) -> Option<DateTime<Tz>> {
         if let Ok(date_time) = DateTime::parse_from_rfc3339(value) {
             return Some(date_time.with_timezone(&tz));
         }

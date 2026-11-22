@@ -16,7 +16,7 @@ impl PolicyPlan {
         context: &zen_expression::context::EvaluationContext,
     ) -> Result<EvaluationResult, EvaluationError> {
         let start = Instant::now();
-        let (store, order_to_run) = artifact.prepare(req)?;
+        let (store, order_to_run) = artifact.prepare(req, context.timezone())?;
         let mut host = Host::new(
             artifact,
             &store,

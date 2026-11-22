@@ -21,7 +21,11 @@ impl NodeHandler for InputNodeHandler {
             ctx.validate(json_schema, &ctx.input)?;
         }
 
-        let output = dates::DeclaredDates::prepare(&ctx.input, ctx.node.schema.as_deref());
+        let output = dates::DeclaredDates::prepare(
+            &ctx.input,
+            ctx.node.schema.as_deref(),
+            ctx.extensions.context.timezone(),
+        );
         ctx.success(output.unwrap_or_else(|| ctx.input.clone()))
     }
 }

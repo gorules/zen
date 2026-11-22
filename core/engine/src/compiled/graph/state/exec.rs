@@ -142,7 +142,8 @@ impl CompiledGraph {
                     .materialized()
                     .iter()
                     .map(|value| {
-                        DeclaredDates::prepare(value, None).unwrap_or_else(|| value.clone())
+                        DeclaredDates::prepare(value, None, zen_expression::context::Timezone::UTC)
+                            .unwrap_or_else(|| value.clone())
                     })
                     .collect();
                 (Rc::new(Data::plain(rows.clone(), values)), Vec::new())
@@ -298,8 +299,12 @@ impl CompiledGraph {
             if let Some((validator, schema)) = &validator {
                 if validator.is_valid(VariableNode::new(value, &Guards::default())) {
                     values.push(match step.kind {
-                        Kind::Input => DeclaredDates::prepare(value, Some(schema))
-                            .unwrap_or_else(|| value.clone()),
+                        Kind::Input => DeclaredDates::prepare(
+                            value,
+                            Some(schema),
+                            extensions.context.timezone(),
+                        )
+                        .unwrap_or_else(|| value.clone()),
                         _ => value.clone(),
                     });
                     continue;

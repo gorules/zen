@@ -390,13 +390,15 @@ impl PolicyPlan {
         let stores: Vec<Option<Variable>> = requests
             .iter()
             .enumerate()
-            .map(|(row, request)| match artifact.prepare(request) {
-                Ok((store, _)) => Some(store),
-                Err(error) => {
-                    failures[row] = Some(error);
-                    None
-                }
-            })
+            .map(
+                |(row, request)| match artifact.prepare(request, context.timezone()) {
+                    Ok((store, _)) => Some(store),
+                    Err(error) => {
+                        failures[row] = Some(error);
+                        None
+                    }
+                },
+            )
             .collect();
         let mut state = Rows {
             context: context.clone(),

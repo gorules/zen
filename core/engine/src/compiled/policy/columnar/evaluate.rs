@@ -223,7 +223,7 @@ impl PolicyPlan {
         }
         let dated = match shared || self.dated_tables(artifact) {
             true => vec![false; rows],
-            false => sheet.dates(&artifact.input_schema),
+            false => sheet.dates(&artifact.input_schema, context.timezone()),
         };
         let mut fallback = vec![false; rows];
         let mut erred = false;
@@ -242,11 +242,16 @@ impl PolicyPlan {
                 continue;
             }
             let req = request(row);
-            if !dated[row] && artifact.input_schema.convert_dates(&req.input).is_some() {
+            if !dated[row]
+                && artifact
+                    .input_schema
+                    .convert_dates(&req.input, context.timezone())
+                    .is_some()
+            {
                 fallback[row] = true;
                 continue;
             }
-            match artifact.prepare(&req) {
+            match artifact.prepare(&req, context.timezone()) {
                 Err(error) => {
                     errors[row] = Some(error);
                     erred = true;

@@ -146,26 +146,36 @@ impl InputSchema {
         }
     }
 
-    pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
+    pub(crate) fn convert_dates(
+        &self,
+        input: &Variable,
+        tz: zen_expression::context::Timezone,
+    ) -> Option<Variable> {
         DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
-                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0))
+                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0, tz))
             } else if self.roots.contains(key) {
-                self.convert_entity(value, key, 0)
+                self.convert_entity(value, key, 0, tz)
             } else {
-                self.convert_property(value, self.globals.get(key)?, 0)
+                self.convert_property(value, self.globals.get(key)?, 0, tz)
             }
         })
     }
 
-    fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
+    fn convert_entity(
+        &self,
+        value: &Variable,
+        entity: &str,
+        depth: usize,
+        tz: zen_expression::context::Timezone,
+    ) -> Option<Variable> {
         if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(entity) {
             return None;
         }
         let model = self.entities.get(entity)?;
         DeclaredDates::rewrite_fields(value, |key, child| {
             let property = model.properties.iter().find(|p| *p.name == *key)?;
-            self.convert_property(child, property, depth + 1)
+            self.convert_property(child, property, depth + 1, tz)
         })
     }
 
@@ -174,14 +184,15 @@ impl InputSchema {
         value: &Variable,
         property: &Property,
         depth: usize,
+        tz: zen_expression::context::Timezone,
     ) -> Option<Variable> {
         let convert_one = |item: &Variable| match &property.kind {
             PropertyTypeIr::Date => match item {
-                Variable::String(text) => zen_expression::DateValue::from_text(text),
+                Variable::String(text) => zen_expression::DateValue::from_text_in(text, tz),
                 _ => None,
             },
             PropertyTypeIr::Relationship { target } if self.entities.contains_key(target) => {
-                self.convert_entity(item, target, depth)
+                self.convert_entity(item, target, depth, tz)
             }
             _ => None,
         };
@@ -241,13 +252,20 @@ impl InputSchema {
         dated.then_some(at)
     }
 
-    pub(crate) fn convert_at(&self, at: &DatesAt, value: &Variable) -> Option<Variable> {
+    pub(crate) fn convert_at(
+        &self,
+        at: &DatesAt,
+        value: &Variable,
+        tz: zen_expression::context::Timezone,
+    ) -> Option<Variable> {
         match at {
-            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth),
-            DatesAt::Items(name, depth) => {
-                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, name, *depth))
+            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth, tz),
+            DatesAt::Items(name, depth) => DeclaredDates::rewrite_items(value, |item| {
+                self.convert_entity(item, name, *depth, tz)
+            }),
+            DatesAt::Property(property, depth) => {
+                self.convert_property(value, property, *depth, tz)
             }
-            DatesAt::Property(property, depth) => self.convert_property(value, property, *depth),
         }
     }
 }

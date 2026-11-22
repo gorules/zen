@@ -294,3 +294,120 @@ fn a_table_column_can_test_the_value_of_the_column_before_it() {
         json!({"v": "other"}),
     );
 }
+
+#[test]
+fn a_policy_date_input_is_read_in_the_evaluation_zone() {
+    let policy: zen_engine::policy::PolicyDocument = serde_json::from_value(json!({
+        "blocks": [
+            {"id": "dm", "type": "dataModel", "props": {"data": {"name": "c", "properties": [
+                {"id": "p1", "name": "d", "type": "date", "array": false, "optional": false},
+                {"id": "p2", "name": "s", "type": "string", "array": false, "optional": false}
+            ]}}, "children": []},
+            {"id": "e1", "type": "expression", "props": {"data": {
+                "key": "c.typed", "value": "c.d == d('2025-01-01')"
+            }}},
+            {"id": "e2", "type": "expression", "props": {"data": {
+                "key": "c.text", "value": "d(c.s) == d('2025-01-01')"
+            }}},
+            {"id": "e3", "type": "expression", "props": {"data": {
+                "key": "c.shown", "value": "d(c.d).format('%Y-%m-%d %H:%M %z')"
+            }}}
+        ]
+    }))
+    .unwrap();
+    let mut workspace = zen_engine::Workspace::new().with_version(EngineVersion::V2);
+    workspace.set_policy("policy", policy);
+    let request = zen_engine::policy::EvaluateRequest {
+        policy_path: Arc::from("policy"),
+        input: Variable::from(json!({"c": {"d": "2025-01-01", "s": "2025-01-01"}})),
+        goals: Vec::new(),
+        trace: zen_engine::trace::TraceFormat::Off,
+    };
+    for zone in [
+        "Europe/Berlin",
+        "America/St_Johns",
+        "Pacific/Kiritimati",
+        "UTC",
+    ] {
+        let options = EvaluationOptions {
+            now: zen_engine::context::parse_instant("2025-08-19T16:55:02.078Z"),
+            timezone: zen_engine::context::parse_timezone(zone),
+            ..Default::default()
+        };
+        let single = workspace.evaluate_pinned(&request, &options).unwrap();
+        let batch = workspace
+            .evaluate_batch_pinned(&[request.clone(), request.clone()], &options)
+            .remove(1)
+            .unwrap();
+        for output in [single.output.to_value(), batch.output.to_value()] {
+            assert_eq!(output["c"]["typed"], json!(true), "{zone} {output}");
+            assert_eq!(output["c"]["text"], json!(true), "{zone} {output}");
+            assert!(
+                output["c"]["shown"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("2025-01-01 00:00"),
+                "{zone} {output}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_graph_date_input_is_read_in_the_evaluation_zone() {
+    let schema =
+        json!({"type": "object", "properties": {"x": {"type": "string", "format": "date"}}})
+            .to_string();
+    let graph = json!({
+        "nodes": [
+            {"id": "in", "name": "in", "type": "inputNode", "content": {"schema": schema}},
+            {"id": "node", "name": "node", "type": "expressionNode", "content": {"expressions": [
+                {"id": "a", "key": "typed", "value": "x == d('2025-01-01')"},
+                {"id": "b", "key": "shown", "value": "d(x).format('%Y-%m-%d %H:%M')"}
+            ]}},
+            {"id": "out", "name": "out", "type": "outputNode"}
+        ],
+        "edges": [
+            {"id": "e1", "sourceId": "in", "targetId": "node", "type": "edge"},
+            {"id": "e2", "sourceId": "node", "targetId": "out", "type": "edge"}
+        ]
+    });
+    let content: DecisionContent = serde_json::from_value(graph).unwrap();
+    let mut decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(Arc::new(content))
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    for zone in [
+        "Europe/Berlin",
+        "America/St_Johns",
+        "Pacific/Kiritimati",
+        "UTC",
+    ] {
+        let options = EvaluationOptions {
+            now: zen_engine::context::parse_instant("2025-08-19T16:55:02.078Z"),
+            timezone: zen_engine::context::parse_timezone(zone),
+            ..Default::default()
+        };
+        let input = || Variable::from(json!({"x": "2025-01-01"}));
+        let mut outputs = Vec::new();
+        for _ in 0..3 {
+            outputs.push(runtime.block_on(decision.evaluate_with_opts(input(), options)));
+        }
+        outputs.extend(runtime.block_on(decision.evaluate_batch(&[input(), input()], options)));
+        decision.compile();
+        outputs.push(runtime.block_on(decision.evaluate_with_opts(input(), options)));
+        for (at, output) in outputs.into_iter().enumerate() {
+            let output = output.unwrap().result.to_value();
+            assert_eq!(output["typed"], json!(true), "{zone} call {at} {output}");
+            assert_eq!(
+                output["shown"],
+                json!("2025-01-01 00:00"),
+                "{zone} call {at} {output}"
+            );
+        }
+    }
+}

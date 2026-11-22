@@ -36,9 +36,28 @@ ZenLoaderConfig: TypeAlias = Union[StaticLoaderConfig, FilesystemLoaderConfig, Z
 ZenLoaderCallback: TypeAlias = Callable[[str], Union[str, dict, ZenDecisionContent, Awaitable[Union[str, dict, ZenDecisionContent]]]]
 
 
+class ZenHttpHandlerRequest(TypedDict):
+    method: str
+    url: str
+    body: Any
+    headers: dict[str, str]
+    params: dict[str, str]
+    auth: Any
+
+
+class ZenHttpHandlerResponse(TypedDict):
+    status: int
+    headers: Any
+    data: Any
+
+
+ZenHttpHandlerCallback: TypeAlias = Callable[[ZenHttpHandlerRequest], Union[ZenHttpHandlerResponse, Awaitable[ZenHttpHandlerResponse]]]
+
+
 class ZenEngineOptions(TypedDict, total=False):
     loader: Union[ZenLoaderCallback, ZenLoaderConfig]
     customHandler: Callable
+    httpHandler: ZenHttpHandlerCallback
 
 
 class EvaluateBatchRequest(TypedDict):

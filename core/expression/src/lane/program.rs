@@ -368,6 +368,7 @@ pub enum Op {
     DollarInsert {
         key: Arc<str>,
         value: Reg,
+        copy: bool,
     },
     Fold(Box<FoldOp>),
     Switch(Box<SwitchOp>),

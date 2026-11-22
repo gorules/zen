@@ -340,6 +340,7 @@ impl<'a> LaneCompiler<'a> {
                 compiler.emit(Op::DollarInsert {
                     key: Arc::from(*key),
                     value: out,
+                    copy: Self::reads_built(root),
                 });
                 if let Some(shared) = compiler.shared.as_mut() {
                     shared.retain(|(k, _)| k != "env:$" && !k.starts_with("path:$"));
@@ -502,6 +503,21 @@ impl<'a> LaneCompiler<'a> {
             reg = dst;
         }
         Some(Ok(reg))
+    }
+
+    pub(crate) fn reads_built(node: &Node) -> bool {
+        let found = std::cell::Cell::new(false);
+        node.walk(|node| {
+            let reads = match node {
+                Node::Identifier(name) => name.starts_with('$'),
+                Node::Root => true,
+                _ => false,
+            };
+            if reads {
+                found.set(true);
+            }
+        });
+        found.get()
     }
 
     #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]

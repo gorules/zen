@@ -8,6 +8,15 @@ edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 homepage = "https://gorules.io"
 
+[features]
+default = ["zip-loader", "http-auth"]
+# `LoaderConfig::Zip`: decisions loaded from a zip archive (pulls in the `zip` crate).
+zip-loader = ["dep:zip"]
+# IAM signing (AWS, Azure, GCP) of HTTP calls made from function nodes (pulls in `reqsign`).
+http-auth = ["dep:reqsign", "dep:sha2"]
+bindgen = ["rquickjs/bindgen"]
+arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]
+
 [lib]
 doctest = false
 
@@ -34,7 +43,7 @@ nohash-hasher = { workspace = true }
 downcast-rs = { version = "2.0", features = ["std", "sync"] }
 arc-swap = "1"
 flate2 = { version = "1", features = ["rust_backend"] }
-zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"], optional = true }
 swc_ts_fast_strip = "53.0.0"
 swc_common = "23"
 swc_ecma_parser = "41"
@@ -53,8 +62,8 @@ mimalloc = "0.1.52"
 async-trait = { version = "0.1" }
 http = { version = "1.3" }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-reqsign = { version = "0.20", features = ["aws", "azure", "google", "default-context"] }
-sha2 = { version = "0.10" }
+reqsign = { version = "0.20", features = ["aws", "azure", "google", "default-context"], optional = true }
+sha2 = { version = "0.10", optional = true }
 jsonschema = { version = "0.49" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
@@ -64,8 +73,3 @@ rquickjs = { version = "0.10", features = ["macro", "loader", "rust-alloc", "fut
 [[bench]]
 harness = false
 name = "engine"
-
-[features]
-default = []
-bindgen = ["rquickjs/bindgen"]
-arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]

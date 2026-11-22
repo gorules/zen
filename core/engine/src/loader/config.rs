@@ -20,6 +20,7 @@ pub enum LoaderConfig {
     Filesystem {
         path: String,
     },
+    #[cfg(feature = "zip-loader")]
     Zip {
         bytes: Vec<u8>,
     },
@@ -40,10 +41,12 @@ impl LoaderConfig {
                     root: path,
                 })))
             }
+            #[cfg(feature = "zip-loader")]
             LoaderConfig::Zip { bytes } => Self::loader_from_zip(&bytes),
         }
     }
 
+    #[cfg(feature = "zip-loader")]
     fn loader_from_zip(bytes: &[u8]) -> anyhow::Result<DynamicLoader> {
         use std::io::Read;
 
@@ -97,6 +100,7 @@ mod tests {
         assert_eq!(path, "p");
     }
 
+    #[cfg(feature = "zip-loader")]
     #[tokio::test]
     async fn zip_config_decompresses_and_serves_decisions() {
         use std::io::Write;
@@ -121,6 +125,7 @@ mod tests {
         assert!(loader.load("missing.json").await.is_err());
     }
 
+    #[cfg(feature = "zip-loader")]
     #[test]
     fn zip_config_rejects_cloaked_entry_names() {
         use std::io::Write;

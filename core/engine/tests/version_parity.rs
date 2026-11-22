@@ -150,20 +150,12 @@ fn a_date_matches_every_text_cell_naming_it() {
             json!({"out": 0}),
         );
         same_on_every_path(
-            &table(
-                "first",
-                "d(x)",
-                &["'a'", "'2024-01'", "'2024-01-01'"],
-            ),
+            &table("first", "d(x)", &["'a'", "'2024-01'", "'2024-01-01'"]),
             &input,
             json!({"out": 1}),
         );
         same_on_every_path(
-            &table(
-                "collect",
-                "d(x)",
-                &["'2024-01-01'", "'2024-01'", ""],
-            ),
+            &table("collect", "d(x)", &["'2024-01-01'", "'2024-01'", ""]),
             &input,
             json!([{"out": 0}, {"out": 1}, {"out": 2}]),
         );
@@ -173,4 +165,132 @@ fn a_date_matches_every_text_cell_naming_it() {
             json!({"out": 0}),
         );
     }
+}
+
+fn chained(nodes: Vec<Value>) -> Value {
+    let mut all = vec![json!({"id": "in", "name": "in", "type": "inputNode"})];
+    all.extend(nodes);
+    all.push(json!({"id": "out", "name": "out", "type": "outputNode"}));
+    let ids: Vec<String> = all
+        .iter()
+        .map(|n| n["id"].as_str().unwrap().to_string())
+        .collect();
+    let edges: Vec<Value> = ids
+        .windows(2)
+        .map(|w| json!({"id": format!("{}-{}", w[0], w[1]), "sourceId": w[0], "targetId": w[1], "type": "edge"}))
+        .collect();
+    json!({"nodes": all, "edges": edges})
+}
+
+fn batch_rows_match_single_rows(graph: &Value, rows: &[Value]) {
+    let content: DecisionContent = serde_json::from_value(graph.clone()).unwrap();
+    let decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(Arc::new(content))
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let inputs: Vec<Variable> = rows.iter().cloned().map(Variable::from).collect();
+    let batch = runtime.block_on(decision.evaluate_batch(&inputs, EvaluationOptions::default()));
+    for (at, (row, got)) in rows.iter().zip(batch).enumerate() {
+        let got = got
+            .map(|response| response.result.to_value())
+            .unwrap_or_else(|error| json!({"error": error.to_string()}));
+        let want = outcomes(EngineVersion::V1, Path::Repeated, graph, row).remove(0);
+        assert_eq!(got, want, "row {at}");
+    }
+}
+
+#[test]
+fn a_batch_row_reads_earlier_nodes_beside_its_own_fields() {
+    batch_rows_match_single_rows(
+        &chained(vec![
+            json!({"id": "calc", "name": "calc", "type": "expressionNode", "content": {
+                "expressions": [
+                    {"id": "a", "key": "q", "value": "$"},
+                    {"id": "b", "key": "n", "value": "$nodes.in"},
+                    {"id": "c", "key": "m", "value": "$nodes.in.x + 1"}
+                ]
+            }}),
+        ]),
+        &[json!({"x": 1}), json!({"x": 2})],
+    );
+}
+
+#[test]
+fn a_batch_row_sees_a_field_another_node_replaced() {
+    let graph = |read: &str| {
+        chained(vec![
+            json!({"id": "first", "name": "first", "type": "expressionNode", "content": {
+                "expressions": [{"id": "a", "key": "obj", "value": "{q: 1}"}],
+                "passThrough": true
+            }}),
+            json!({"id": "second", "name": "second", "type": "expressionNode", "content": {
+                "expressions": [{"id": "b", "key": "x", "value": read}],
+                "inputField": "obj"
+            }}),
+        ])
+    };
+    let rows = [json!({"obj": {"p": 1}}), json!({"obj": "s"}), json!({})];
+    batch_rows_match_single_rows(&graph("zz ?? 1"), &rows);
+    batch_rows_match_single_rows(&graph("p ?? 9"), &rows);
+    batch_rows_match_single_rows(&graph("q"), &rows);
+}
+
+fn wide_table(policy: &str, inputs: Value, rules: Vec<Value>) -> Value {
+    graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": policy,
+            "inputs": inputs,
+            "outputs": [{"id": "o0", "field": "v"}],
+            "rules": rules
+        }}),
+    )
+}
+
+#[test]
+fn a_table_cell_reads_the_last_tested_value_however_many_rules_there_are() {
+    for padding in [0, 3, 7, 20] {
+        let mut rules = vec![json!({"_id": "r0", "i0": "", "o0": "$"})];
+        for at in 0..padding {
+            rules.push(
+                json!({"_id": format!("p{at}"), "i0": format!("\"q{at}\""), "o0": at.to_string()}),
+            );
+        }
+        same_on_every_path(
+            &wide_table("first", json!([{"id": "i0", "field": "s"}]), rules.clone()),
+            &json!({"s": "x"}),
+            json!({}),
+        );
+        rules.rotate_left(1);
+        same_on_every_path(
+            &wide_table("first", json!([{"id": "i0", "field": "s"}]), rules),
+            &json!({"s": "x"}),
+            match padding {
+                0 => json!({}),
+                _ => json!({"v": "x"}),
+            },
+        );
+    }
+}
+
+#[test]
+fn a_table_column_can_test_the_value_of_the_column_before_it() {
+    let rules = vec![
+        json!({"_id": "a", "i0": "> 1", "i1": "> 10", "o0": "'big'"}),
+        json!({"_id": "b", "i0": "", "i1": "", "o0": "'other'"}),
+    ];
+    let inputs = json!([{"id": "i0", "field": "x"}, {"id": "i1", "field": "$"}]);
+    same_on_every_path(
+        &wide_table("first", inputs.clone(), rules.clone()),
+        &json!({"x": 20}),
+        json!({"v": "big"}),
+    );
+    same_on_every_path(
+        &wide_table("first", inputs, rules),
+        &json!({"x": 5}),
+        json!({"v": "other"}),
+    );
 }

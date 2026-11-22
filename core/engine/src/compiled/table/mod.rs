@@ -233,6 +233,9 @@ impl Table {
             };
             match field {
                 Some(field) => {
+                    if !strict && SourceInfo::reads_dollar(field) {
+                        return Err("table field reads `$`".into());
+                    }
                     if strict
                         && cells
                             .iter()

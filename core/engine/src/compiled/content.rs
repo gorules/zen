@@ -85,8 +85,7 @@ impl Content {
             .iter()
             .filter_map(|node| match &node.kind {
                 DecisionNodeKind::DecisionTableNode { content } => {
-                    TableIndex::build(&content.inputs, &content.rules)
-                        .map(|index| (node.id.clone(), index))
+                    TableIndex::graph(content).map(|index| (node.id.clone(), index))
                 }
                 _ => None,
             })

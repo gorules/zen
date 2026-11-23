@@ -1318,3 +1318,55 @@ fn a_table_reading_the_whole_root_sees_the_tested_value_under_its_key() {
     );
     same_on_every_path(&cell, &json!({"a": 1}), json!({"out": "three"}));
 }
+
+#[test]
+fn a_value_read_from_an_earlier_node_merges_like_a_copy() {
+    let graph = chained(vec![
+        json!({"id": "n2", "name": "n2", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "a", "value": "{b: {res: null}}"}
+        ]}}),
+        json!({"id": "n3", "name": "n3", "type": "expressionNode", "content": {
+            "passThrough": true,
+            "expressions": [{"id": "b", "key": "a", "value": "$nodes.n2.a"}]
+        }}),
+    ]);
+    same_on_every_path(&graph, &json!({}), json!({"a": {"b": {}}}));
+    batch_rows_match_single_rows(&graph, &[json!({}), json!({"x": 1})]);
+}
+
+#[test]
+fn a_pass_through_writing_a_value_back_keeps_or_drops_nulls_like_version_1() {
+    let expression = |id: &str, pass: bool, key: &str, value: &str| {
+        json!({"id": id, "name": id, "type": "expressionNode", "content": {
+            "passThrough": pass,
+            "expressions": [{"id": format!("{id}e"), "key": key, "value": value}]
+        }})
+    };
+    let cases = [
+        chained(vec![
+            expression("n1", false, "x", "{k: a}"),
+            expression("n2", true, "x", "x"),
+        ]),
+        chained(vec![
+            expression("n1", false, "x", "{k: a}"),
+            expression("n2", true, "x", "$nodes.n1.x"),
+        ]),
+        chained(vec![expression("n1", true, "a", "$nodes.in.a")]),
+        chained(vec![expression("n1", true, "obj", "obj")]),
+    ];
+    let rows = [
+        json!({}),
+        json!({"a": {"p": null, "q": 1}, "obj": {"x": {"y": null}, "k": null, "v": 1}}),
+    ];
+    for (at, graph) in cases.iter().enumerate() {
+        for row in &rows {
+            let want = outcomes(EngineVersion::V1, Path::Repeated, graph, row).remove(0);
+            for path in [Path::Repeated, Path::Compiled, Path::Batch] {
+                for got in outcomes(EngineVersion::V2, path, graph, row) {
+                    assert_eq!(got, want, "case {at} {path:?} {row}");
+                }
+            }
+        }
+        batch_rows_match_single_rows(graph, &rows);
+    }
+}

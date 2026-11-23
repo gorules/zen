@@ -298,3 +298,45 @@ fn column_traces_come_in_the_requested_format() {
         }
     }
 }
+
+fn chain(nodes: Vec<Value>) -> Value {
+    let mut all = vec![json!({"id": "in", "name": "in", "type": "inputNode"})];
+    all.extend(nodes);
+    all.push(json!({"id": "out", "name": "out", "type": "outputNode"}));
+    let ids: Vec<String> = all
+        .iter()
+        .map(|node| node["id"].as_str().unwrap().to_string())
+        .collect();
+    let edges: Vec<Value> = ids
+        .windows(2)
+        .map(|pair| json!({"id": format!("{}-{}", pair[0], pair[1]), "sourceId": pair[0], "targetId": pair[1], "type": "edge"}))
+        .collect();
+    json!({"nodes": all, "edges": edges})
+}
+
+#[test]
+fn columns_merge_a_value_written_back_like_version_1() {
+    let expression = |id: &str, pass: bool, key: &str, value: &str| {
+        json!({"id": id, "name": id, "type": "expressionNode", "content": {
+            "passThrough": pass,
+            "expressions": [{"id": format!("{id}e"), "key": key, "value": value}]
+        }})
+    };
+    let rows = vec![json!({"n": 1}), json!({"n": 2, "a": 5})];
+    for graph in [
+        chain(vec![
+            expression("n1", false, "x", "{k: a, n: n}"),
+            expression("n2", true, "x", "x"),
+        ]),
+        chain(vec![
+            expression("n1", false, "x", "{k: a, n: n}"),
+            expression("n2", true, "x", "$nodes.n1.x"),
+        ]),
+        chain(vec![
+            expression("n1", false, "a", "{b: {res: null, n: n}}"),
+            expression("n2", true, "a", "$nodes.n1.a"),
+        ]),
+    ] {
+        columns_match_version_one(graph, rows.clone());
+    }
+}

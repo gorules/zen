@@ -413,7 +413,15 @@ impl CompiledGraph {
                 (Some(rebase), None, true) if !overlapping => {
                     crate::compiled::census::Census::mark("layered");
                     Self::bound(lane, step, data, nodes, extra, rebase, |bound| {
-                        Self::layered(runner, body, transform.pass_through, data, bound, None)
+                        Self::layered(
+                            runner,
+                            body,
+                            transform.pass_through,
+                            data,
+                            bound,
+                            None,
+                            rebase.is_none(),
+                        )
                     })
                 }
                 (Some(rebase), Some(path), true) if keyed && expression && !overlapping => {
@@ -426,6 +434,7 @@ impl CompiledGraph {
                             data,
                             bound,
                             Some(path),
+                            false,
                         )
                     })
                 }

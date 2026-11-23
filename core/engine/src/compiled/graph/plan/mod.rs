@@ -526,7 +526,7 @@ impl<'g> Builder<'g> {
                 obj: None,
                 fields: Vec::new(),
             }),
-            Resolved::Object(mut node) if node.leaf.is_none() => {
+            Resolved::Object(mut node) if node.leaf.is_none() && !source.contains('$') => {
                 let obj = node.obj.unwrap_or(M::None);
                 if obj != M::All {
                     let null = match self

@@ -156,6 +156,7 @@ impl CompiledGraph {
         input: &Data<'a>,
         bound: &Bound,
         prefix: Option<&Arc<str>>,
+        direct: bool,
     ) -> (Data<'a>, Vec<(usize, String)>) {
         let rows = input.rows.clone();
         let count = rows.len();
@@ -186,6 +187,11 @@ impl CompiledGraph {
                         .map(|key| Arc::from(format!("{prefix}.{key}")))
                         .collect(),
                 };
+                for (out, (_, source)) in outs.iter_mut().zip(entries.iter()) {
+                    if source.contains('$') {
+                        out.detach();
+                    }
+                }
                 let leaves: Vec<Leaf> = outs
                     .iter_mut()
                     .map(|out| Leaf::typed(Array::from_output(out)))
@@ -195,6 +201,27 @@ impl CompiledGraph {
                         probe.record_results(keys, &leaves);
                     }
                 }
+                let kept: Vec<bool> = entries
+                    .iter()
+                    .map(|(key, source)| !(pass_through && direct && source.trim() == key.as_ref()))
+                    .collect();
+                let (keys, leaves) = match kept.iter().all(|keep| *keep) {
+                    true => (keys, leaves),
+                    false => {
+                        let mut keep = kept.iter();
+                        let keys: Arc<[Arc<str>]> = keys
+                            .iter()
+                            .filter(|_| keep.next().copied().unwrap_or(true))
+                            .cloned()
+                            .collect();
+                        let mut keep = kept.iter();
+                        let leaves = leaves
+                            .into_iter()
+                            .filter(|_| keep.next().copied().unwrap_or(true))
+                            .collect();
+                        (keys, leaves)
+                    }
+                };
                 let layer = Layer::new(keys, leaves, None);
                 let data = match pass_through {
                     true => input.layered(layer),

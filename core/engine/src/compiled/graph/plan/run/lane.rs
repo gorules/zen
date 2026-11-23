@@ -150,6 +150,11 @@ impl<'a> Run<'_, 'a> {
                 .flat_map(|(at, id)| stages[*id as usize].iter().map(move |&stage| (at, stage)))
                 .collect();
         }
+        for (out, (_, source)) in outs.iter_mut().zip(entries.into_iter().flatten()) {
+            if source.contains('$') {
+                out.detach();
+            }
+        }
         for (slot, out) in op.outs.iter().zip(outs.iter_mut()) {
             let array = Array::from_output(out);
             let leaf = match (uniform, &keyed) {

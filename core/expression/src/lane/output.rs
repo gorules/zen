@@ -321,6 +321,17 @@ impl Default for Output {
 }
 
 impl Output {
+    pub fn detach(&mut self) {
+        let container =
+            |value: &Variable| matches!(value, Variable::Object(_) | Variable::Array(_));
+        for value in self.values.iter_mut().filter(|value| container(value)) {
+            *value = value.deep_clone();
+        }
+        for (_, value) in self.extra.iter_mut().filter(|(_, value)| container(value)) {
+            *value = value.deep_clone();
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

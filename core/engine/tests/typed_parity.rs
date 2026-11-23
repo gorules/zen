@@ -230,3 +230,71 @@ fn policy_columns_keep_the_error_of_a_tested_value() {
         }
     }
 }
+
+#[test]
+fn column_traces_come_in_the_requested_format() {
+    let table = graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "a"}],
+            "outputs": [{"id": "o0", "field": "out"}],
+            "rules": [
+                {"_id": "r0", "i0": "> 1", "o0": "'big'"},
+                {"_id": "r1", "i0": "", "o0": "'small'"}
+            ]
+        }}),
+    );
+    let content: Arc<DecisionContent> = Arc::new(serde_json::from_value(table).unwrap());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(content)
+        .unwrap();
+    let rows = vec![json!({"a": 1}), json!({"a": 2})];
+    let built = Built::new(&rows).unwrap();
+    let columns = built.columns();
+    let timeless = |mut value: Value| {
+        fn strip(value: &mut Value) {
+            match value {
+                Value::Object(map) => {
+                    map.remove("performance");
+                    map.values_mut().for_each(strip);
+                }
+                Value::Array(items) => items.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        strip(&mut value);
+        value
+    };
+    for format in [
+        zen_engine::trace::TraceFormat::Legacy,
+        zen_engine::trace::TraceFormat::V1,
+    ] {
+        let options = EvaluationOptions {
+            trace: format,
+            ..Default::default()
+        };
+        let output = runtime.block_on(decision.evaluate_columns(&columns, options));
+        let mut all = String::new();
+        let ends = output.traces().unwrap().write_all(&mut all);
+        for (at, row) in rows.iter().enumerate() {
+            let single = runtime
+                .block_on(decision.evaluate_with_opts(Variable::from(row.clone()), options))
+                .unwrap();
+            let want = serde_json::to_value(&single).unwrap()["trace"].clone();
+            let got: Value = serde_json::from_str(&output.trace_json(at).unwrap()).unwrap();
+            let start = at.checked_sub(1).map_or(0, |before| ends[before] + 1);
+            let line: Value = serde_json::from_str(&all[start..ends[at]]).unwrap();
+            let legacy = format == zen_engine::trace::TraceFormat::Legacy;
+            assert_eq!(got.get("version").is_none(), legacy, "{format:?} row {at}");
+            assert_eq!(timeless(line), timeless(got.clone()), "{format:?} row {at}");
+            if legacy {
+                assert_eq!(timeless(got), timeless(want), "{format:?} row {at}");
+            }
+        }
+    }
+}

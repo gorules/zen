@@ -461,7 +461,21 @@ impl CompiledGraph {
                 .enumerate()
                 .map(|(row, v)| with_nodes(Scope::new(v.clone()), row))
                 .collect();
-            return f(&Bound::plain(scopes, context).probed(probe));
+            let mut bound = Bound::plain(scopes, context).probed(probe);
+            if !extra.is_empty() {
+                for (path, leaf) in extra {
+                    bound.columns = bound.columns.column(path.as_ref(), leaf.column());
+                }
+                let names: Vec<Arc<str>> = extra.iter().map(|(p, _)| p.clone()).collect();
+                bound.bind =
+                    Box::new(
+                        move |key: &str| match names.iter().position(|p| p.as_ref() == key) {
+                            Some(at) => Binding::Column(at),
+                            None => Binding::Row,
+                        },
+                    );
+            }
+            return f(&bound);
         }
         let blank = nodes.iter().all(Option::is_none)
             && matches!(&data.shape, data::Shape::Patched { base: None, .. });

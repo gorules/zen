@@ -489,3 +489,118 @@ fn a_script_error_names_its_node_on_every_traced_batch_row() {
         }
     }
 }
+
+#[test]
+fn a_loop_entry_reading_earlier_entries_in_a_closure_keeps_every_item() {
+    let graph = graph(json!({
+        "id": "node", "name": "node", "type": "expressionNode",
+        "content": {
+            "inputField": "items",
+            "executionMode": "loop",
+            "expressions": [
+                {"id": "a", "key": "s", "value": "k"},
+                {"id": "b", "key": "o", "value": "some([1], $.s == 'a')"}
+            ]
+        }
+    }));
+    same_on_every_path(
+        &graph,
+        &json!({"items": [{"k": "a"}, {"k": "b"}]}),
+        json!([{"s": "a", "o": true}, {"s": "b", "o": false}]),
+    );
+}
+
+#[test]
+fn tracing_keeps_a_table_field_that_reads_the_previous_cell() {
+    let graph = graph(json!({
+        "id": "node", "name": "node", "type": "decisionTableNode",
+        "content": {
+            "hitPolicy": "collect",
+            "inputs": [{"id": "i0", "field": "p"}, {"id": "i1", "field": "$ ?? 0"}],
+            "outputs": [{"id": "o0", "field": "o"}],
+            "rules": [
+                {"_id": "r0", "i1": "", "o0": "0"},
+                {"_id": "r1", "i0": "> 0", "i1": "", "o0": "1"},
+                {"_id": "r2", "i0": "> 0", "i1": "!= null", "o0": "$"}
+            ]
+        }
+    }));
+    let content: DecisionContent = serde_json::from_value(graph).unwrap();
+    let content = Arc::new(content);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let want = json!([{"o": 0}, {"o": 1}, {"o": 2}]);
+    for version in [EngineVersion::V1, EngineVersion::V2] {
+        let decision = DecisionEngine::default()
+            .with_version(version)
+            .create_decision(content.clone())
+            .unwrap();
+        for trace in [
+            zen_engine::trace::TraceFormat::Off,
+            zen_engine::trace::TraceFormat::Legacy,
+            zen_engine::trace::TraceFormat::V1,
+        ] {
+            let options = EvaluationOptions {
+                trace,
+                ..Default::default()
+            };
+            for call in 0..3 {
+                let got = runtime
+                    .block_on(decision.evaluate_with_opts(Variable::from(json!({"p": 2})), options))
+                    .unwrap()
+                    .result
+                    .to_value();
+                assert_eq!(got, want, "{version:?} {trace:?} call {call}");
+            }
+            let rows = vec![Variable::from(json!({"p": 2})); 2];
+            for (at, row) in runtime
+                .block_on(decision.evaluate_batch(&rows, options))
+                .into_iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    row.unwrap().result.to_value(),
+                    want,
+                    "{version:?} {trace:?} batch row {at}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_batch_row_reads_node_values_beside_an_input_field_built_upstream() {
+    let graph = chained(vec![
+        json!({"id": "n3", "name": "n3", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "obj.k", "value": "1"}
+        ]}}),
+        json!({"id": "n4", "name": "n4", "type": "expressionNode", "content": {
+            "inputField": "obj",
+            "expressions": [
+                {"id": "b", "key": "out", "value": "type($nodes.n3)"},
+                {"id": "c", "key": "k", "value": "$nodes.n3.obj.k"}
+            ]
+        }}),
+    ]);
+    batch_rows_match_single_rows(&graph, &[json!({}), json!({"x": 1})]);
+}
+
+#[test]
+fn a_batch_row_reads_node_values_after_a_table_writing_the_root() {
+    let graph = chained(vec![
+        json!({"id": "n0", "name": "n0", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "outputPath": "$",
+            "inputs": [],
+            "outputs": [{"id": "o", "field": "y"}],
+            "rules": [{"_id": "r0", "o": "1"}]
+        }}),
+        json!({"id": "n1", "name": "n1", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "got", "value": "$nodes.in"},
+            {"id": "b", "key": "prev", "value": "$nodes.n0"}
+        ]}}),
+    ]);
+    batch_rows_match_single_rows(&graph, &[json!({"a": 1}), json!({"a": 2})]);
+}

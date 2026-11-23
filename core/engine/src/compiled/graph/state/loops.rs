@@ -327,6 +327,13 @@ impl CompiledGraph {
             return None;
         }
         let programs: Vec<&LaneProgram> = match body {
+            Body::Expression { entries, .. }
+                if entries
+                    .iter()
+                    .any(|(_, source)| zen_expression::lane::SourceInfo::reads_dollar(source)) =>
+            {
+                return None
+            }
             Body::Expression { program, .. } => vec![program],
             Body::Table(table) => table.programs(),
         };

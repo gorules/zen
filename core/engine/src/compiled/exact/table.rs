@@ -95,6 +95,16 @@ impl<'t, 's> RowTable<'t, 's> {
         }
     }
 
+    fn peek(&mut self, col: usize) -> Option<Variable> {
+        if let Some(value) = &self.refs[col] {
+            return Some(value.shallow_clone());
+        }
+        let field = self.field(col)?;
+        self.session
+            .locate(Located::field(self.owner, &self.inputs[col].id));
+        self.session.run_standard(field).ok()
+    }
+
     fn bind(&mut self, col: usize) -> Result<bool, ExecutionError> {
         let Some(value) = self.reference(col)? else {
             return Ok(false);
@@ -280,7 +290,11 @@ impl RowTable<'_, '_> {
             let (Some(_), Some(field)) = (rule.get(&input.id), &input.field) else {
                 continue;
             };
-            if let Ok(Some(reference)) = self.reference(col) {
+            let reference = match rule.get(&input.id).is_some_and(|cell| cell.is_empty()) {
+                true => self.peek(col),
+                false => self.reference(col).ok().flatten(),
+            };
+            if let Some(reference) = reference {
                 refs.push((field.clone(), reference));
             }
         }

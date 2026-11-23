@@ -168,3 +168,65 @@ fn a_table_cell_fails_with_its_input_field() {
     );
     columns_match_version_one(table, vec![json!({"s": null}), json!({"s": "A"})]);
 }
+
+#[test]
+fn policy_columns_keep_the_error_of_a_tested_value() {
+    let policy: zen_engine::policy::PolicyDocument = serde_json::from_value(json!({
+        "blocks": [
+            {"id": "dm", "type": "dataModel", "props": {"data": {"name": "c", "properties": [
+                {"id": "p1", "name": "n", "type": "number", "array": false, "optional": true},
+                {"id": "p2", "name": "s", "type": "string", "array": false, "optional": true},
+                {"id": "p3", "name": "list", "type": "string", "array": true, "optional": true}
+            ]}}, "children": []},
+            {"id": "e1", "type": "expression", "props": {"data": {
+                "key": "c.a", "value": "string(c.n + 1) in (c.list ?? [])"
+            }}},
+            {"id": "e2", "type": "expression", "props": {"data": {
+                "key": "c.b", "value": "string(upper(c.s)) in (c.list ?? [])"
+            }}}
+        ]
+    }))
+    .unwrap();
+    let rows = vec![
+        json!({"c": {"n": 1, "s": "2", "list": ["2"]}}),
+        json!({"c": {"n": null, "s": "a", "list": ["a"]}}),
+        json!({"c": {"n": null, "s": null, "list": null}}),
+        json!({"c": {"n": null, "s": null, "list": []}}),
+    ];
+    let path: Arc<str> = Arc::from("policy");
+    let options = EvaluationOptions::default();
+    let workspace = |version| {
+        let mut workspace = zen_engine::Workspace::new().with_version(version);
+        workspace.set_policy("policy", policy.clone());
+        workspace
+    };
+    let old = workspace(EngineVersion::V1);
+    let new = workspace(EngineVersion::V2);
+    let built = Built::lists(&rows).unwrap();
+    let fields = built.fields();
+    let structs = built.structs(&fields);
+    let columns = built.columns_with(&structs);
+    let output = new
+        .evaluate_columns_pinned(&path, &[], &columns, &options)
+        .unwrap();
+    for (at, row) in rows.iter().enumerate() {
+        let request = zen_engine::policy::EvaluateRequest {
+            policy_path: path.clone(),
+            input: Variable::from(row.clone()),
+            goals: Vec::new(),
+            trace: zen_engine::trace::TraceFormat::Off,
+        };
+        let want = old
+            .evaluate_pinned(&request, &options)
+            .map(|result| result.output.to_value()["c"].clone());
+        match (&want, &output.errors[at]) {
+            (Err(_), Some(_)) => {}
+            (Ok(want), None) => {
+                let got = output.row(at).to_value()["c"].clone();
+                assert_eq!(got["a"], want["a"], "row {at}");
+                assert_eq!(got["b"], want["b"], "row {at}");
+            }
+            (want, got) => panic!("row {at}: version 1 {want:?}, columns {got:?}"),
+        }
+    }
+}

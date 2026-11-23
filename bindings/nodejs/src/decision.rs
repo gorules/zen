@@ -31,6 +31,7 @@ impl ZenDecision {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<NodeEvalResponse> {
         let decision = self.0.clone();
+        let kind = crate::engine::JsTraceFormat::kind(&opts);
         let options: zen_engine::EvaluationOptions = opts.unwrap_or_default().try_into()?;
         let result = spawn_worker(move || async move {
             let context = zen_engine::Variable::try_from_value(context).map_err(
@@ -39,8 +40,8 @@ impl ZenDecision {
             decision
                 .evaluate_with_opts(context, options)
                 .await
-                .map(NodeEvalResponse::build)
-                .map_err(|e| serde_json::to_value(&*e).unwrap_or_default())
+                .map(|response| NodeEvalResponse::build(response, kind))
+                .map_err(|e| crate::engine::JsTraceFormat::failure(&e, kind))
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?

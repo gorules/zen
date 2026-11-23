@@ -25,7 +25,9 @@ use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::model::DecisionContent;
 use zen_engine::trace::TraceFormat;
-use zen_engine::{DecisionEngine, EvaluationOptions, EvaluationSerializedOptions};
+use zen_engine::{
+    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
+};
 
 #[napi]
 pub struct ZenEngine {
@@ -36,8 +38,8 @@ pub struct ZenEngine {
     http_handler_tsfn: Option<HttpHandlerTsfn>,
 }
 
-#[derive(Debug, Default)]
-pub struct JsTraceFormat(pub TraceFormat);
+#[derive(Debug, Default, Clone, Copy)]
+pub struct JsTraceFormat(pub TraceFormat, pub EvaluationTraceKind);
 
 impl FromNapiValue for JsTraceFormat {
     unsafe fn from_napi_value(env: napi_env, napi_val: napi_value) -> napi::Result<Self> {
@@ -45,24 +47,74 @@ impl FromNapiValue for JsTraceFormat {
 
         match js_value.get_type()? {
             ValueType::Undefined | ValueType::Null => Ok(JsTraceFormat::default()),
-            ValueType::Boolean => Ok(JsTraceFormat(TraceFormat::from(js_value.coerce_to_bool()?))),
+            ValueType::Boolean => Ok(Self::switched(js_value.coerce_to_bool()?)),
             ValueType::String => {
                 let utf8 = js_value.coerce_to_string()?.into_utf8()?;
-                let format =
-                    TraceFormat::from_str(utf8.as_str()?).context("invalid trace format")?;
-                Ok(JsTraceFormat(format))
+                let text = utf8.as_str()?;
+                if let Ok(format) = TraceFormat::from_str(text) {
+                    return Ok(match format {
+                        TraceFormat::Off => Self::switched(false),
+                        format => JsTraceFormat(format, EvaluationTraceKind::Default),
+                    });
+                }
+                let kind = EvaluationTraceKind::from_str(text).context("invalid trace format")?;
+                Ok(match kind {
+                    EvaluationTraceKind::None => Self::switched(false),
+                    EvaluationTraceKind::Default => Self::switched(true),
+                    kind => JsTraceFormat(TraceFormat::Legacy, kind),
+                })
             }
             _ => Err(anyhow!("Invalid trace setting").into()),
         }
     }
 }
 
+impl JsTraceFormat {
+    fn switched(on: bool) -> Self {
+        match on {
+            true => JsTraceFormat(TraceFormat::from(true), EvaluationTraceKind::Default),
+            false => JsTraceFormat(TraceFormat::Off, EvaluationTraceKind::None),
+        }
+    }
+
+    pub(crate) fn kind(options: &Option<ZenEvaluateOptions>) -> EvaluationTraceKind {
+        options
+            .as_ref()
+            .and_then(|options| options.trace)
+            .map(|trace| trace.1)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn failure(
+        error: &zen_engine::EvaluationError,
+        kind: EvaluationTraceKind,
+    ) -> serde_json::Value {
+        match kind {
+            EvaluationTraceKind::None | EvaluationTraceKind::Default => {
+                serde_json::to_value(error).unwrap_or_default()
+            }
+            kind => error
+                .serialize_with_mode(serde_json::value::Serializer, kind)
+                .unwrap_or_default(),
+        }
+    }
+}
+
 impl ToNapiValue for JsTraceFormat {
     unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
-        match val.0 {
-            TraceFormat::Off => ToNapiValue::to_napi_value(env, false),
-            TraceFormat::V1 => ToNapiValue::to_napi_value(env, true),
-            TraceFormat::Legacy => ToNapiValue::to_napi_value(env, "legacy"),
+        match val {
+            JsTraceFormat(TraceFormat::Off, _) => ToNapiValue::to_napi_value(env, false),
+            JsTraceFormat(
+                _,
+                kind @ (EvaluationTraceKind::String
+                | EvaluationTraceKind::Reference
+                | EvaluationTraceKind::ReferenceString),
+            ) => {
+                let text: &'static str = kind.into();
+                ToNapiValue::to_napi_value(env, text)
+            }
+            JsTraceFormat(TraceFormat::V1, _) => ToNapiValue::to_napi_value(env, true),
+            JsTraceFormat(TraceFormat::Legacy, _) => ToNapiValue::to_napi_value(env, "legacy"),
         }
     }
 }
@@ -71,7 +123,7 @@ impl ToNapiValue for JsTraceFormat {
 #[napi(object)]
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
-    #[napi(ts_type = "boolean | 'v1' | 'legacy'")]
+    #[napi(ts_type = "boolean | 'v1' | 'legacy' | 'string' | 'reference' | 'referenceString'")]
     pub trace: Option<JsTraceFormat>,
     #[napi(ts_type = "string | number")]
     pub now: Option<Either<String, f64>>,
@@ -299,6 +351,7 @@ impl ZenEngine {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<NodeEvalResponse> {
         let graph = self.graph.clone();
+        let kind = JsTraceFormat::kind(&opts);
         let options: EvaluationOptions = opts.unwrap_or_default().try_into()?;
         let result = spawn_worker(move || async move {
             let context = zen_engine::Variable::try_from_value(context).map_err(
@@ -307,8 +360,8 @@ impl ZenEngine {
             graph
                 .evaluate_with_opts(key, context, options)
                 .await
-                .map(NodeEvalResponse::build)
-                .map_err(|e| serde_json::to_value(&*e).unwrap_or_default())
+                .map(|response| NodeEvalResponse::build(response, kind))
+                .map_err(|e| JsTraceFormat::failure(&e, kind))
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
@@ -379,6 +432,7 @@ impl ZenEngine {
         requests: Vec<EvaluateBatchRequest>,
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Vec<EvaluateBatchResult>> {
+        let kind = JsTraceFormat::kind(&opts);
         let options: EvaluationSerializedOptions = opts.unwrap_or_default().try_into()?;
 
         let mut handles = Vec::with_capacity(requests.len());
@@ -394,8 +448,8 @@ impl ZenEngine {
                 engine
                     .evaluate_with_opts(key, context, eval_opts)
                     .await
-                    .map(NodeEvalResponse::build)
-                    .map_err(|e| serde_json::to_value(&*e).unwrap_or_default())
+                    .map(|response| NodeEvalResponse::build(response, kind))
+                    .map_err(|e| JsTraceFormat::failure(&e, kind))
             }));
         }
 

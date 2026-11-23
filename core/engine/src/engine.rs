@@ -77,6 +77,39 @@ impl Default for EvaluationOptions {
 
 pub type EvaluationSerializedOptions = EvaluationOptions;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "camelCase")]
+pub enum EvaluationTraceKind {
+    #[default]
+    None,
+    Default,
+    String,
+    Reference,
+    ReferenceString,
+}
+
+impl EvaluationTraceKind {
+    pub fn serialize_trace(&self, trace: &Variable) -> Value {
+        match self {
+            EvaluationTraceKind::None => Value::Null,
+            EvaluationTraceKind::Default => serde_json::to_value(trace).unwrap_or_default(),
+            EvaluationTraceKind::String => {
+                Value::String(serde_json::to_string(trace).unwrap_or_default())
+            }
+            EvaluationTraceKind::Reference => {
+                serde_json::to_value(trace.serialize_ref()).unwrap_or_default()
+            }
+            EvaluationTraceKind::ReferenceString => {
+                Value::String(serde_json::to_string(&trace.serialize_ref()).unwrap_or_default())
+            }
+        }
+    }
+
+    pub fn text(&self) -> bool {
+        matches!(self, Self::String | Self::ReferenceString)
+    }
+}
+
 impl EvaluationOptions {
     pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
         zen_expression::context::Pinned {

@@ -5,7 +5,7 @@ use std::ptr;
 use napi::bindgen_prelude::ToNapiValue;
 use napi::sys;
 use napi::sys::{napi_env, napi_value};
-use zen_engine::{DecisionGraphResponse, EvaluationTrace};
+use zen_engine::{DecisionGraphResponse, EvaluationTrace, EvaluationTraceKind};
 use zen_expression::variable::{RcCell, ToVariable};
 use zen_expression::Variable;
 
@@ -82,6 +82,7 @@ impl PortableArena {
 pub enum TraceField {
     None,
     Arena(u32),
+    Text(String),
 }
 
 pub struct NodeEvalResponse {
@@ -92,7 +93,7 @@ pub struct NodeEvalResponse {
 }
 
 impl NodeEvalResponse {
-    pub fn build(response: DecisionGraphResponse) -> Self {
+    pub fn build(response: DecisionGraphResponse, kind: EvaluationTraceKind) -> Self {
         let mut arena = PortableArena::new();
         let mut memo = HashMap::new();
 
@@ -101,12 +102,31 @@ impl NodeEvalResponse {
         let trace = match response.trace {
             None => TraceField::None,
             Some(EvaluationTrace::Graph(graph)) => {
-                TraceField::Arena(arena.add(&graph.to_variable(), &mut memo))
+                let variable = graph.to_variable();
+                match kind {
+                    EvaluationTraceKind::None | EvaluationTraceKind::Default => {
+                        TraceField::Arena(arena.add(&variable, &mut memo))
+                    }
+                    EvaluationTraceKind::Reference => {
+                        let value =
+                            serde_json::to_value(variable.serialize_ref()).unwrap_or_default();
+                        TraceField::Arena(arena.add(&Variable::from(value), &mut memo))
+                    }
+                    EvaluationTraceKind::String => {
+                        TraceField::Text(serde_json::to_string(&variable).unwrap_or_default())
+                    }
+                    EvaluationTraceKind::ReferenceString => TraceField::Text(
+                        serde_json::to_string(&variable.serialize_ref()).unwrap_or_default(),
+                    ),
+                }
             }
-            Some(EvaluationTrace::Policy(policy)) => {
-                let value = serde_json::to_value(&policy).unwrap_or_default();
-                TraceField::Arena(arena.add(&Variable::from(value), &mut memo))
-            }
+            Some(EvaluationTrace::Policy(policy)) => match kind.text() {
+                true => TraceField::Text(serde_json::to_string(&policy).unwrap_or_default()),
+                false => {
+                    let value = serde_json::to_value(&policy).unwrap_or_default();
+                    TraceField::Arena(arena.add(&Variable::from(value), &mut memo))
+                }
+            },
             Some(EvaluationTrace::V1(document)) => {
                 TraceField::Arena(arena.add(&document.to_variable(), &mut memo))
             }
@@ -228,6 +248,7 @@ impl ToNapiValue for NodeEvalResponse {
         let trace = match &val.trace {
             TraceField::None => None,
             TraceField::Arena(root) => Some(materializer.value(*root)?),
+            TraceField::Text(text) => Some(materializer.string(text)),
         };
 
         if let Some(trace) = trace {

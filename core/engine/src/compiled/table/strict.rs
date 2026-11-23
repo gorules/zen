@@ -149,7 +149,7 @@ impl Table {
                 }
             }
         }
-        cells.indexed_column(&column, count, bits, context.timezone());
+        cells.indexed_column(&column, count, bits, context);
         let columns = Columns::new(count);
         let env = CellEnv {
             context,

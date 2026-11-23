@@ -766,10 +766,10 @@ impl Date {
         Variable::Dynamic(Rc::new(crate::vm::VmDate::from(self.0)))
     }
 
-    pub(crate) fn coerce(v: &Variable, tz: Tz) -> Option<Date> {
+    pub(crate) fn coerce(v: &Variable, context: &EvaluationContext) -> Option<Date> {
         match v {
             Variable::Dynamic(d) => d.as_date(),
-            Variable::String(text) => Some(Self::from_text(text, tz)),
+            Variable::String(text) => Some(Self::from_text(text, context.timezone())),
             _ => None,
         }
     }
@@ -789,8 +789,8 @@ impl Date {
         (utc.is_valid() && utc == east).then_some(utc)
     }
 
-    pub(crate) fn matches(&self, other: &Variable, tz: Tz) -> bool {
-        self.0.is_some() && Self::coerce(other, tz).is_some_and(|other| other == *self)
+    pub(crate) fn matches(&self, other: &Variable, context: &EvaluationContext) -> bool {
+        self.0.is_some() && Self::coerce(other, context).is_some_and(|other| other == *self)
     }
 
     pub(crate) fn rendered(&self) -> Option<String> {

@@ -38,7 +38,6 @@ struct Run<'r, 'a> {
     failures: Vec<(usize, usize)>,
     shreds: Vec<(Leaf<'a>, Shredded<'a>)>,
     completed: Completed,
-    iteration: u8,
     parents: Option<Parents<'r>>,
     trace: Option<Box<PlanTrace<'a>>>,
 }
@@ -244,7 +243,7 @@ impl<'a> Run<'_, 'a> {
             self.capture(seg, positions);
         }
         match &seg.end {
-            SegEnd::Finish(_) if self.iteration > 0 => {}
+            SegEnd::Finish(_) if self.host.extensions.depth > 0 => {}
             SegEnd::Finish(refs) if matches!(refs.as_slice(), [(path, _)] if path.is_empty()) => {
                 let leaves = self.flattened(refs[0].1, positions);
                 self.store.groups.push(Group {

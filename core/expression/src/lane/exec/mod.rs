@@ -21,7 +21,6 @@ use crate::lane::program::{
 };
 use crate::lane::scaled::Scaled;
 use crate::variable::Variable;
-use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use zen_types::symbol::Symbol;
 
@@ -157,7 +156,13 @@ impl Executor {
     }
 
     #[inline]
-    fn equal_lane<M: LaneSet>(f: &Frame<M>, a: Reg, b: Reg, lane: usize, tz: Tz) -> Option<bool> {
+    fn equal_lane<M: LaneSet>(
+        f: &Frame<M>,
+        a: Reg,
+        b: Reg,
+        lane: usize,
+        context: &EvaluationContext,
+    ) -> Option<bool> {
         let typed = |reg: Reg, value: &Variable| match (f.kind(reg), value) {
             (Kind::List, _) => Some(false),
             (Kind::Str, Variable::String(s)) => Some(f.text_at(reg, lane) == s.as_str()),
@@ -173,7 +178,7 @@ impl Executor {
             (true, true) => Some(Ops::equal(
                 &f.regs[f.at(a, lane)],
                 &f.regs[f.at(b, lane)],
-                tz,
+                context,
             )),
             (false, true) => typed(a, &f.regs[f.at(b, lane)]),
             (true, false) => typed(b, &f.regs[f.at(a, lane)]),
@@ -390,7 +395,7 @@ impl Executor {
             }
             Op::Stage { index } => f.stage = *index,
             Op::Num { dst, op, a, b } => Self::num(*op, *dst, *a, *b, active, f),
-            Op::Cmp { dst, op, a, b } => Self::cmp(*op, *dst, *a, *b, active, f, ctx.tz()),
+            Op::Cmp { dst, op, a, b } => Self::cmp(*op, *dst, *a, *b, active, f, ctx.context),
             Op::Env { site, dst, .. } | Op::Path { site, dst, .. }
                 if ctx.column(*site).is_some() =>
             {
@@ -737,9 +742,9 @@ impl Executor {
                 }
                 if slow.any() {
                     let k = f.consts[*id as usize].clone();
-                    let tz = ctx.tz();
+                    let context = ctx.context;
                     for lane in Lanes::of(slow) {
-                        if f.with(*a, lane, |v| Ops::equal(v, &k, tz)) {
+                        if f.with(*a, lane, |v| Ops::equal(v, &k, context)) {
                             word.set(lane);
                         }
                     }
@@ -791,7 +796,7 @@ impl Executor {
                                 *right,
                             )
                         }) {
-                            Ok(range) => Ops::membership(x, range, ctx.tz()),
+                            Ok(range) => Ops::membership(x, range, ctx.context),
                             Err(e) => Err(e.clone()),
                         },
                     };
@@ -808,9 +813,10 @@ impl Executor {
                 let (done, mut word) = Self::any_number(*a, *id, active, f);
                 if let Variable::Array(list) = &f.consts[*id as usize] {
                     let list = list.borrow();
-                    let tz = ctx.tz();
+                    let context = ctx.context;
                     for lane in Lanes::of(active & !done) {
-                        let hit = f.with(*a, lane, |x| list.iter().any(|k| Ops::equal(x, k, tz)));
+                        let hit =
+                            f.with(*a, lane, |x| list.iter().any(|k| Ops::equal(x, k, context)));
                         word.put(lane, hit);
                     }
                 }
@@ -824,8 +830,8 @@ impl Executor {
                 f.boxed[d] &= !done;
                 for lane in Lanes::of(active & !done) {
                     let x = f.take(*a, lane);
-                    let r =
-                        Ops::membership(x, &f.consts[*id as usize], ctx.tz()).map(Variable::Bool);
+                    let r = Ops::membership(x, &f.consts[*id as usize], ctx.context)
+                        .map(Variable::Bool);
                     f.put(*dst, lane, r);
                 }
             }
@@ -850,7 +856,7 @@ impl Executor {
             } => {
                 for lane in Lanes::of(active) {
                     let (x, y) = (f.take(*a, lane), f.take(*b, lane));
-                    match Ops::compared(&x, &y, *c, ctx.tz()) {
+                    match Ops::compared(&x, &y, *c, ctx.context) {
                         Some(hit) => f.set(*dst, lane, Variable::Bool(hit)),
                         None => f.fault(lane, Fault::Unsupported("Compare")),
                     }
@@ -864,7 +870,7 @@ impl Executor {
             } => {
                 let (mut word, mut done) = (f.none(), f.none());
                 for lane in Lanes::of(active) {
-                    if let Some(hit) = Self::equal_lane(f, *a, *b, lane, ctx.tz()) {
+                    if let Some(hit) = Self::equal_lane(f, *a, *b, lane, ctx.context) {
                         word.put(lane, hit);
                         done.set(lane);
                     }
@@ -883,7 +889,11 @@ impl Executor {
                 }
                 for lane in Lanes::of(active & !done) {
                     let (x, y) = (f.take(*a, lane), f.take(*b, lane));
-                    f.put(*dst, lane, Ok(Variable::Bool(Ops::equal(&x, &y, ctx.tz()))));
+                    f.put(
+                        *dst,
+                        lane,
+                        Ok(Variable::Bool(Ops::equal(&x, &y, ctx.context))),
+                    );
                 }
             }
             Op::Binary { dst, op, a, b } => {
@@ -910,10 +920,10 @@ impl Executor {
                         Binary::Divide => Ops::divide(x, y),
                         Binary::Modulo => Ops::modulo(x, y),
                         Binary::Exponent => Ops::exponent(x, y),
-                        Binary::Equal => Ok(Variable::Bool(Ops::equal(&x, &y, ctx.tz()))),
-                        Binary::In => Ops::membership(x, &y, ctx.tz()).map(Variable::Bool),
+                        Binary::Equal => Ok(Variable::Bool(Ops::equal(&x, &y, ctx.context))),
+                        Binary::In => Ops::membership(x, &y, ctx.context).map(Variable::Bool),
                         Binary::Compare(c) => {
-                            Ops::compare(&x, &y, *c, ctx.tz()).map(Variable::Bool)
+                            Ops::compare(&x, &y, *c, ctx.context).map(Variable::Bool)
                         }
                     };
                     f.put(*dst, lane, r);

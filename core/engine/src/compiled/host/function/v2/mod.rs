@@ -45,7 +45,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .unwrap_or_else(|| strip::TypeStripper::strip(ctx.node.source.deref()));
         let module_name = function.suggest_module_name(ctx.id.deref(), source.as_ref());
 
-        let max_duration = Duration::from_millis(ctx.config.function_timeout_millis);
+        let max_duration = Duration::from_millis(ctx.extensions.settings.function_timeout_millis);
         let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
 
         function
@@ -98,8 +98,8 @@ impl FunctionV2NodeHandler {
         async_with!(function.context() => |ctx| {
             let config = Object::new(ctx.clone()).catch(&ctx)?;
 
-            config.prop("iteration", node_ctx.iteration).catch(&ctx)?;
-            config.prop("maxDepth", node_ctx.config.max_depth).catch(&ctx)?;
+            config.prop("iteration", node_ctx.extensions.depth).catch(&ctx)?;
+            config.prop("maxDepth", node_ctx.extensions.settings.max_depth).catch(&ctx)?;
             config.prop("trace", node_ctx.config.trace).catch(&ctx)?;
 
             ctx.globals().set("config", config).catch(&ctx)?;
@@ -125,7 +125,6 @@ impl FunctionV2NodeHandler {
         content: &FunctionContent,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
-        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let source = extensions
@@ -134,16 +133,12 @@ impl FunctionV2NodeHandler {
             .and_then(|stripped| stripped.get(content.source.as_ref()).cloned())
             .unwrap_or_else(|| strip::TypeStripper::strip(content.source.deref()));
         if rows.len() < 2 || Purity::module(source.as_ref()) {
-            return Self::run(id, &source, extensions, config, iteration, rows).await;
+            return Self::run(id, &source, extensions, config, rows).await;
         }
         let mut results = Vec::with_capacity(rows.len());
         for (at, row) in rows.into_iter().enumerate() {
-            let fresh = NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                context: extensions.context.at(at),
-                ..extensions.clone()
-            };
-            results.extend(Self::run(id, &source, &fresh, config, iteration, vec![row]).await);
+            let fresh = extensions.row(at);
+            results.extend(Self::run(id, &source, &fresh, config, vec![row]).await);
         }
         results
     }
@@ -153,7 +148,6 @@ impl FunctionV2NodeHandler {
         source: &Arc<str>,
         extensions: &NodeHandlerExtensions,
         config: &NodeContextConfig,
-        iteration: u8,
         rows: Vec<(Variable, Option<Variable>)>,
     ) -> Vec<Result<Variable, NodeError>> {
         let failed = |source: Box<dyn std::error::Error>| NodeError::new(id.clone(), source);
@@ -178,7 +172,7 @@ impl FunctionV2NodeHandler {
         };
         let base = Instant::now();
         let started = Arc::new(AtomicU64::new(0));
-        let limit = Duration::from_millis(config.function_timeout_millis);
+        let limit = Duration::from_millis(extensions.settings.function_timeout_millis);
         let watched = started.clone();
         function
             .runtime()
@@ -192,7 +186,11 @@ impl FunctionV2NodeHandler {
         let results = function
             .call_rows(
                 &module_name,
-                (iteration, config.max_depth, config.trace),
+                (
+                    extensions.depth,
+                    extensions.settings.max_depth,
+                    config.trace,
+                ),
                 rows,
                 &tick,
                 &extensions.context.nested(Located::function(id)),

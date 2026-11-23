@@ -244,14 +244,7 @@ impl<'a> Run<'_, 'a> {
                             .extensions
                             .scoped(self.host.extensions.context.rows(&at));
                         let results = Box::pin(CompiledGraph::batch(
-                            step,
-                            content,
-                            &graph,
-                            &inputs,
-                            &nodes,
-                            &scoped,
-                            self.host.max_depth,
-                            self.iteration,
+                            step, content, &graph, &inputs, &nodes, &scoped,
                         ))
                         .await;
                         {
@@ -289,8 +282,6 @@ impl<'a> Run<'_, 'a> {
                             &inputs,
                             &nodes,
                             &scoped,
-                            self.host.max_depth,
-                            self.iteration,
                             self.store.rows > 1,
                         ))
                         .await
@@ -327,8 +318,7 @@ impl<'a> Run<'_, 'a> {
                 let context = self.host.extensions.context.rows(&at);
                 let (output, failures) = graph.rowwise(
                     &mut self.runner,
-                    &context,
-                    probe.as_ref(),
+                    crate::compiled::graph::state::Lane::new(&context, probe.as_ref()),
                     step,
                     data,
                     &nodes,

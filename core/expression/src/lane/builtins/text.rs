@@ -191,7 +191,6 @@ impl Text {
     }
 
     fn contains_array(ctx: &RowContext, args: &[Arg]) -> Outcome {
-        let tz = ctx.timezone();
         Apply::two(args, |a: Array, b: Arg| {
             Ok(a.any(|x| match (x, b) {
                 (Arg::Num(x), Arg::Num(y)) => x == y,
@@ -199,8 +198,8 @@ impl Text {
                 (Arg::Bool(x), Arg::Bool(y)) => x == y,
                 (Arg::Null, Arg::Null) => true,
                 (x, y) => match (x.date(), y.date()) {
-                    (Some(d), _) => d.is_valid() && y.coerce_date(tz) == Some(d),
-                    (None, Some(d)) => d.is_valid() && x.coerce_date(tz) == Some(d),
+                    (Some(d), _) => d.is_valid() && y.coerce_date(ctx) == Some(d),
+                    (None, Some(d)) => d.is_valid() && x.coerce_date(ctx) == Some(d),
                     (None, None) => false,
                 },
             }))

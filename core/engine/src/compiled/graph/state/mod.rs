@@ -17,10 +17,9 @@ use crate::compiled::leaf::{Array, Leaf};
 use crate::compiled::trace::batch::Traces;
 use crate::compiled::trace::record::Probe;
 use crate::decision_graph::cleaner::VariableCleaner;
-use crate::{EvaluationError, ZEN_CONFIG};
+use crate::EvaluationError;
 use petgraph::prelude::NodeIndex;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Binding, Columns};
@@ -32,7 +31,25 @@ pub(super) type NodeColumn<'a> = (Arc<str>, Leaf<'a>);
 pub(in crate::compiled::graph) struct Host<'r> {
     pub(in crate::compiled::graph) content: &'r Arc<Content>,
     pub(in crate::compiled::graph) extensions: &'r NodeHandlerExtensions,
-    pub(in crate::compiled::graph) max_depth: u8,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::compiled::graph) struct Lane<'r> {
+    pub(in crate::compiled::graph) context: &'r EvaluationContext,
+    pub(in crate::compiled::graph) probe: Option<&'r Rc<Probe>>,
+}
+
+impl<'r> Lane<'r> {
+    pub(in crate::compiled::graph) fn new(
+        context: &'r EvaluationContext,
+        probe: Option<&'r Rc<Probe>>,
+    ) -> Self {
+        Self { context, probe }
+    }
+
+    pub(in crate::compiled::graph) fn with(self, context: &'r EvaluationContext) -> Self {
+        Self { context, ..self }
+    }
 }
 
 pub(crate) struct State<'a> {
@@ -48,7 +65,6 @@ pub(crate) struct State<'a> {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Nesting<'a> {
     pub(in crate::compiled::graph) parents: Option<&'a [Option<Variable>]>,
-    pub(in crate::compiled::graph) iteration: u8,
     pub(in crate::compiled::graph) completed: Option<&'a Completed>,
     pub(in crate::compiled::graph) traced: bool,
 }
@@ -235,10 +251,9 @@ impl CompiledGraph {
         let Host {
             content,
             extensions,
-            max_depth,
         } = host;
         let count = inputs.len();
-        if nesting.iteration == 0 && nesting.parents.is_none() {
+        if extensions.depth == 0 && nesting.parents.is_none() {
             crate::compiled::trace::count_run();
         }
         let mut state = State {
@@ -246,13 +261,13 @@ impl CompiledGraph {
             nodes: vec![Vec::new(); self.steps.len()],
             errors: RowErrors::new(count),
             results: vec![None; count],
-            with_nodes: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
+            with_nodes: extensions.settings.nodes_in_context,
             nesting,
             traces: nesting
                 .traced
                 .then(|| Traces::new(self.template().clone(), self.steps.len(), count)),
         };
-        if nesting.iteration >= max_depth {
+        if extensions.depth >= extensions.settings.max_depth {
             state
                 .errors
                 .fill(|| Box::new(EvaluationError::DepthLimitExceeded));
@@ -272,10 +287,8 @@ impl CompiledGraph {
                 {
                     Some(step) => self.execute_now(step, event, &rows, &mut state),
                     None => {
-                        self.execute(
-                            event, &rows, inputs, &mut state, content, extensions, max_depth,
-                        )
-                        .await
+                        self.execute(event, &rows, inputs, &mut state, content, extensions)
+                            .await
                     }
                 }
             }
@@ -395,10 +408,8 @@ impl CompiledGraph {
         out
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn bound<'a, R>(
-        context: &EvaluationContext,
-        probe: Option<&Rc<Probe>>,
+        lane: Lane<'_>,
         step: &Step,
         data: &Data<'a>,
         nodes: &[Option<Variable>],
@@ -406,6 +417,7 @@ impl CompiledGraph {
         rebase: Option<&str>,
         f: impl FnOnce(&Bound) -> R,
     ) -> R {
+        let Lane { context, probe } = lane;
         let context = context.picked(data.rows.clone());
         let with_nodes = |scope: Scope, row: usize| match nodes.get(row).cloned().flatten() {
             None => scope,
@@ -516,8 +528,7 @@ impl CompiledGraph {
         let (nodes, extra) = self.node_inputs(step, state, visible, rows, true);
         let hits: Vec<Hit> = Self::RUNNER.with_borrow_mut(|runner| {
             Self::bound(
-                &state.context,
-                None,
+                Lane::new(&state.context, None),
                 step,
                 &data,
                 &nodes,

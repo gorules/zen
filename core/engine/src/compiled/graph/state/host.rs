@@ -285,16 +285,11 @@ impl CompiledGraph {
         input: Variable,
         nodes: Option<Variable>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
-        iteration: u8,
         batched: bool,
     ) -> Result<Variable, NodeError> {
         let node = &step.node;
         let extensions = match &node.kind {
-            DecisionNodeKind::DecisionNode { .. } if batched => NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                ..extensions.clone()
-            },
+            DecisionNodeKind::DecisionNode { .. } if batched => extensions.isolated(),
             _ => extensions.clone(),
         };
         let base = NodeContextBase {
@@ -303,10 +298,8 @@ impl CompiledGraph {
             input,
             nodes,
             extensions,
-            iteration,
             trace: None,
             config: NodeContextConfig {
-                max_depth,
                 trace: false,
                 ..Default::default()
             },
@@ -344,8 +337,6 @@ impl CompiledGraph {
                     node: &node.id,
                     key: &content.key,
                     extensions: &base.extensions,
-                    max_depth: base.config.max_depth,
-                    iteration: base.iteration,
                 };
                 let row = Row {
                     id: &node.id,
@@ -460,7 +451,6 @@ impl CompiledGraph {
             input,
             nodes,
             extensions: extensions.clone(),
-            iteration: 0,
             trace: None,
             config: NodeContextConfig::default(),
         };

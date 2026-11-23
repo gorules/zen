@@ -1,4 +1,5 @@
 use crate::compiler::{Compare, FetchFastTarget};
+use crate::context::EvaluationContext;
 use crate::lane::builtins::{Arg, Builtins, Out, RowContext, Text};
 use crate::lane::date::{Date, DynamicVariableExt};
 use crate::lane::interval::{Interval, IntervalData};
@@ -8,7 +9,6 @@ use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::VMError;
 use crate::vm::VMError::*;
-use chrono_tz::Tz;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
@@ -108,7 +108,7 @@ impl Ops {
         }
     }
 
-    pub(crate) fn equal(a: &Variable, b: &Variable, tz: Tz) -> bool {
+    pub(crate) fn equal(a: &Variable, b: &Variable, context: &EvaluationContext) -> bool {
         match (a, b) {
             (Number(a), Number(b)) => Self::same_number(a, b),
             (Bool(a), Bool(b)) => a == b,
@@ -119,7 +119,7 @@ impl Ops {
                 a.is_some() && b.is_some() && a == b
             }
             (Dynamic(a), b @ String(_)) | (b @ String(_), Dynamic(a)) => {
-                a.as_date().is_some_and(|a| a.matches(b, tz))
+                a.as_date().is_some_and(|a| a.matches(b, context))
             }
             _ => false,
         }
@@ -132,7 +132,11 @@ impl Ops {
         }
     }
 
-    pub(crate) fn membership(a: Variable, b: &Variable, tz: Tz) -> VMResult<bool> {
+    pub(crate) fn membership(
+        a: Variable,
+        b: &Variable,
+        context: &EvaluationContext,
+    ) -> VMResult<bool> {
         let a = match b {
             Object(_) => Date::textual(a),
             _ => a,
@@ -163,13 +167,13 @@ impl Ops {
                 let Some(a) = a.as_date() else {
                     return Err(Self::unsupported("In"));
                 };
-                Ok(arr.borrow().iter().any(|b| a.matches(b, tz)))
+                Ok(arr.borrow().iter().any(|b| a.matches(b, context)))
             }
             (String(a), Array(b)) => {
                 let text = String(a.clone());
                 Ok(b.borrow().iter().any(|b| match b {
                     String(b) => &a == b,
-                    Dynamic(d) => d.as_date().is_some_and(|d| d.matches(&text, tz)),
+                    Dynamic(d) => d.as_date().is_some_and(|d| d.matches(&text, context)),
                     _ => false,
                 }))
             }
@@ -217,11 +221,11 @@ impl Ops {
         a: &Variable,
         b: &Variable,
         comparison: Compare,
-        tz: Tz,
+        context: &EvaluationContext,
     ) -> Option<bool> {
         match (a, b) {
             (Number(a), Number(b)) => Some(Self::ordered_number(a, b, comparison)),
-            (Dynamic(_), _) | (_, Dynamic(_)) => Self::compare(a, b, comparison, tz).ok(),
+            (Dynamic(_), _) | (_, Dynamic(_)) => Self::compare(a, b, comparison, context).ok(),
             _ => None,
         }
     }
@@ -230,7 +234,7 @@ impl Ops {
         a: &Variable,
         b: &Variable,
         comparison: Compare,
-        tz: Tz,
+        context: &EvaluationContext,
     ) -> VMResult<bool> {
         match (a, b) {
             (Number(a), Number(b)) => Ok(Self::ordered_number(a, b, comparison)),
@@ -241,8 +245,8 @@ impl Ops {
             (Dynamic(_), String(_)) | (String(_), Dynamic(_)) => {
                 let valid = |date: &Date| date.is_valid();
                 match (
-                    Date::coerce(a, tz).filter(valid),
-                    Date::coerce(b, tz).filter(valid),
+                    Date::coerce(a, context).filter(valid),
+                    Date::coerce(b, context).filter(valid),
                 ) {
                     (Some(a), Some(b)) => Ok(Self::ordered(&a, &b, comparison)),
                     _ => Err(Self::unsupported("Compare")),

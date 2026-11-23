@@ -50,7 +50,9 @@ impl<'a> Run<'_, 'a> {
             .cloned()
             .unwrap_or_else(|| (0..self.store.rows).collect());
         let count = at.len();
-        let produced = match self.iteration.saturating_add(1) >= self.host.max_depth {
+        let produced = match self.host.extensions.depth.saturating_add(1)
+            >= self.host.extensions.settings.max_depth
+        {
             true => Produced {
                 leaves: Vec::new(),
                 failed: (0..count)
@@ -166,8 +168,6 @@ impl<'a> Run<'_, 'a> {
             node: id,
             key: &content.key,
             extensions: self.host.extensions,
-            max_depth: self.host.max_depth,
-            iteration: self.iteration,
         };
         let extensions = NodeHandlerExtensions {
             function_runtime: Default::default(),
@@ -213,14 +213,12 @@ impl<'a> Run<'_, 'a> {
             host: Host {
                 content: &op.content,
                 extensions: &extensions,
-                max_depth: self.host.max_depth,
             },
             store,
             settled: true,
             failures: Vec::new(),
             shreds: Vec::new(),
             completed: Completed::default(),
-            iteration: self.iteration + 1,
             parents: Some(&parents),
             trace: None,
         };
@@ -292,8 +290,6 @@ impl<'a> Run<'_, 'a> {
             &inputs,
             &nodes,
             &scoped,
-            self.host.max_depth,
-            self.iteration,
         ))
         .await;
         let mut failed = Vec::new();

@@ -9,7 +9,6 @@ use crate::variable::Variable;
 use crate::IsolateError;
 use ahash::HashMap;
 use bumpalo::Bump;
-use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 
@@ -273,7 +272,13 @@ impl CellSet {
         }
     }
 
-    fn numbers(&self, column: &Column, rows: usize, out: &mut [u64], tz: Tz) -> bool {
+    fn numbers(
+        &self,
+        column: &Column,
+        rows: usize,
+        out: &mut [u64],
+        context: &EvaluationContext,
+    ) -> bool {
         let words = self.words;
         let parts = |row: usize| -> Option<(i64, u8)> {
             match column.values {
@@ -325,7 +330,7 @@ impl CellSet {
                     .iter_mut()
                     .zip(self.always.iter().zip(region))
                     .for_each(|(b, (a, r))| *b = a | r),
-                None => self.row_bits(column, row, (true, false, false), bits, tz),
+                None => self.row_bits(column, row, (true, false, false), bits, context),
             }
         }
         true
@@ -566,7 +571,7 @@ impl CellSet {
         out: &mut Vec<u64>,
     ) {
         let words = self.words;
-        self.indexed(values, out, env.context.timezone());
+        self.indexed(values, out, env.context);
         if self.others.is_empty() {
             return;
         }
@@ -619,7 +624,7 @@ impl CellSet {
         }
     }
 
-    fn dated(&self, value: &Variable, bits: &mut [u64], tz: Tz) {
+    fn dated(&self, value: &Variable, bits: &mut [u64], context: &EvaluationContext) {
         let Variable::Dynamic(dynamic) = value else {
             return;
         };
@@ -632,7 +637,7 @@ impl CellSet {
         };
         for (key, matched) in keys {
             let text = Variable::String(String::from_utf8_lossy(key).as_ref().into());
-            if date.matches(&text, tz) {
+            if date.matches(&text, context) {
                 Bits::or(bits, matched);
             }
         }
@@ -649,7 +654,13 @@ impl CellSet {
         self.regions.get(self.region_at(n))
     }
 
-    pub fn indexed_column(&self, column: &Column, rows: usize, out: &mut Vec<u64>, tz: Tz) {
+    pub fn indexed_column(
+        &self,
+        column: &Column,
+        rows: usize,
+        out: &mut Vec<u64>,
+        context: &EvaluationContext,
+    ) {
         let words = self.words;
         out.clear();
         out.resize(rows * words, 0);
@@ -658,7 +669,7 @@ impl CellSet {
         let boolean = matches!(column.values, Values::Bool { .. });
         if column.is_empty() && rows > 0 {
             let (first, rest) = out.split_at_mut(words);
-            self.row_bits(column, 0, (numeric, text, boolean), first, tz);
+            self.row_bits(column, 0, (numeric, text, boolean), first, context);
             rest.chunks_exact_mut(words)
                 .for_each(|chunk| chunk.copy_from_slice(first));
             return;
@@ -668,20 +679,20 @@ impl CellSet {
             let size = dictionary.len();
             if keys.len() >= rows && size <= rows.saturating_mul(2) + 64 {
                 let mut table = Vec::new();
-                self.indexed_column(&dictionary, size, &mut table, tz);
+                self.indexed_column(&dictionary, size, &mut table, context);
                 for (row, bits) in out.chunks_exact_mut(words).enumerate() {
                     let code = usize::try_from(keys[row]).ok().filter(|&c| c < size);
                     match (column.valid(row), code) {
                         (true, Some(code)) => {
                             bits.copy_from_slice(&table[code * words..(code + 1) * words])
                         }
-                        _ => self.row_bits(column, row, (numeric, text, boolean), bits, tz),
+                        _ => self.row_bits(column, row, (numeric, text, boolean), bits, context),
                     }
                 }
                 return;
             }
         }
-        if numeric && self.numbers(column, rows, out, tz) {
+        if numeric && self.numbers(column, rows, out, context) {
             return;
         }
         if words == 1 && self.indexed_word(column, rows, out) {
@@ -693,7 +704,7 @@ impl CellSet {
                 row,
                 (numeric, text, boolean),
                 &mut out[row * words..(row + 1) * words],
-                tz,
+                context,
             );
         }
     }
@@ -748,7 +759,7 @@ impl CellSet {
         row: usize,
         (numeric, text, boolean): (bool, bool, bool),
         bits: &mut [u64],
-        tz: Tz,
+        context: &EvaluationContext,
     ) {
         bits.copy_from_slice(&self.always);
         if !column.valid(row) {
@@ -791,7 +802,7 @@ impl CellSet {
                 if let Some(matched) = self.matched(&value) {
                     Bits::or(bits, matched);
                 }
-                self.dated(&value, bits, tz);
+                self.dated(&value, bits, context);
                 if let Variable::Number(n) = &value {
                     if let Some(region) = self.region(n) {
                         Bits::or(bits, region);
@@ -846,7 +857,7 @@ impl CellSet {
         })
     }
 
-    fn piece_of(&self, pieces: &Pieces, value: &Variable, tz: Tz) -> u32 {
+    fn piece_of(&self, pieces: &Pieces, value: &Variable, context: &EvaluationContext) -> u32 {
         match value {
             Variable::Null => pieces.null,
             Variable::Bool(b) => pieces.truth[usize::from(*b)],
@@ -859,7 +870,7 @@ impl CellSet {
                     .find(|(_, _, key, _)| {
                         date.matches(
                             &Variable::String(String::from_utf8_lossy(key).as_ref().into()),
-                            tz,
+                            context,
                         )
                     })
                     .map_or(pieces.other, |(_, _, _, piece)| *piece),
@@ -910,7 +921,14 @@ impl CellSet {
         }
     }
 
-    pub fn classify(&self, pieces: &Pieces, column: &Column, rows: usize, out: &mut [u32], tz: Tz) {
+    pub fn classify(
+        &self,
+        pieces: &Pieces,
+        column: &Column,
+        rows: usize,
+        out: &mut [u32],
+        context: &EvaluationContext,
+    ) {
         let out = &mut out[..rows];
         if column.is_empty() {
             out.fill(pieces.null);
@@ -979,7 +997,7 @@ impl CellSet {
                 let dictionary = values.column();
                 let size = dictionary.len();
                 let mut coded = vec![0u32; size];
-                self.classify(pieces, &dictionary, size, &mut coded, tz);
+                self.classify(pieces, &dictionary, size, &mut coded, context);
                 for (row, piece) in out.iter_mut().enumerate() {
                     let code = keys
                         .get(row)
@@ -993,7 +1011,7 @@ impl CellSet {
             }
             _ => {
                 for (row, piece) in out.iter_mut().enumerate() {
-                    *piece = self.piece_of(pieces, &column.variable(row), tz);
+                    *piece = self.piece_of(pieces, &column.variable(row), context);
                 }
             }
         }
@@ -1004,9 +1022,9 @@ impl CellSet {
         column: &Column,
         rows: usize,
         out: &mut Vec<u64>,
-        tz: Tz,
+        context: &EvaluationContext,
     ) {
-        self.indexed_column(column, rows, out, tz);
+        self.indexed_column(column, rows, out, context);
         for row in 0..rows {
             Bits::or(
                 &mut out[row * self.words..(row + 1) * self.words],
@@ -1038,8 +1056,13 @@ impl CellSet {
         self.owners.get(rule).copied().flatten()
     }
 
-    pub fn evaluate_indexed(&self, values: &[Variable], out: &mut Vec<u64>, tz: Tz) {
-        self.indexed(values, out, tz);
+    pub fn evaluate_indexed(
+        &self,
+        values: &[Variable],
+        out: &mut Vec<u64>,
+        context: &EvaluationContext,
+    ) {
+        self.indexed(values, out, context);
         for row in 0..values.len() {
             Bits::or(
                 &mut out[row * self.words..(row + 1) * self.words],
@@ -1059,7 +1082,12 @@ impl CellSet {
         scope
     }
 
-    fn indexed(&self, values: &[Variable], out: &mut Vec<u64>, tz: Tz) {
-        self.indexed_column(&Column::new(Values::Any(values)), values.len(), out, tz);
+    fn indexed(&self, values: &[Variable], out: &mut Vec<u64>, context: &EvaluationContext) {
+        self.indexed_column(
+            &Column::new(Values::Any(values)),
+            values.len(),
+            out,
+            context,
+        );
     }
 }

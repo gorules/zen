@@ -19,6 +19,45 @@ pub(crate) fn batch(options: &EvaluationOptions) -> EvaluationContext {
     EvaluationContext::batch(options.pinned())
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct Invocation {
+    pub(crate) trace: crate::compiled::trace::TraceFormat,
+    pub(crate) settings: crate::compiled::host::Settings,
+    pub(crate) context: EvaluationContext,
+}
+
+impl Invocation {
+    fn new(options: &EvaluationOptions, context: EvaluationContext) -> Self {
+        Self {
+            trace: options.trace,
+            settings: crate::compiled::host::Settings::of(options),
+            context,
+        }
+    }
+
+    pub(crate) fn single(options: &EvaluationOptions) -> Self {
+        Self::new(options, single(options))
+    }
+
+    pub(crate) fn batch(options: &EvaluationOptions) -> Self {
+        Self::new(options, batch(options))
+    }
+
+    pub(crate) fn at(&self, row: usize) -> Self {
+        Self {
+            context: self.context.at(row),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn untraced(&self) -> Self {
+        Self {
+            trace: crate::compiled::trace::TraceFormat::Off,
+            ..self.clone()
+        }
+    }
+}
+
 pub(crate) fn evaluation(context: &EvaluationContext) -> crate::compiled::trace::Evaluation {
     crate::compiled::trace::Evaluation {
         evaluated_at: Some(context.evaluated_at()),

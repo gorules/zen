@@ -522,16 +522,15 @@ impl Artifact {
         &self,
         key: &str,
         input: Variable,
-        trace: crate::compiled::trace::TraceFormat,
-        context: &EvaluationContext,
+        invocation: &crate::compiled::pinning::Invocation,
     ) -> Result<EvaluationResult, EvaluationError> {
         let request = EvaluateRequest {
             policy_path: Arc::from(key),
             input,
             goals: Vec::new(),
-            trace,
+            trace: invocation.trace,
         };
-        self.evaluate(&request, false, context)
+        self.evaluate(&request, false, &invocation.context)
     }
 
     pub(crate) fn evaluate(

@@ -34,7 +34,6 @@ impl NodeHandler for FunctionNodeHandler {
                     nodes: ctx.nodes.clone(),
                     extensions: ctx.extensions.clone(),
                     trace: ctx.config.trace.then(|| Default::default()),
-                    iteration: ctx.iteration,
                     config: ctx.config,
                     node: source.clone(),
                 };
@@ -49,7 +48,6 @@ impl NodeHandler for FunctionNodeHandler {
                     nodes: ctx.nodes.clone(),
                     extensions: ctx.extensions.clone(),
                     trace: ctx.config.trace.then(|| Default::default()),
-                    iteration: ctx.iteration,
                     config: ctx.config,
                     node: content.clone(),
                 };

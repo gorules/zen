@@ -336,7 +336,6 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &Columns<'_>,
         trace: super::PlanTrace<'a>,
         output: &ColumnarOutput<'_>,
@@ -365,18 +364,11 @@ impl CompiledGraph {
             if !errored && !deferred.contains(&row) {
                 continue;
             }
-            extensions.context.restart(&[row]);
-            let fresh = NodeHandlerExtensions {
-                function_runtime: Default::default(),
-                context: extensions.context.at(row),
-                ..extensions.clone()
-            };
+            let fresh = extensions.rerun_row(row);
             let traced = crate::compiled::traced::Traced {
                 graph: self,
                 content,
                 extensions: &fresh,
-                max_depth,
-                iteration: 0,
                 parent: None,
             };
             let request = requests.get(row).unwrap_or(zen_expression::Variable::Null);
@@ -398,13 +390,11 @@ impl CompiledGraph {
 }
 
 impl Plan {
-    #[allow(clippy::too_many_arguments)]
     pub async fn evaluate<'a>(
         &self,
         graph: &CompiledGraph,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &'a Columns<'a>,
         admitted: Admitted<'a>,
         traced: Option<crate::compiled::trace::TraceFormat>,
@@ -479,14 +469,12 @@ impl Plan {
             host: Host {
                 content,
                 extensions,
-                max_depth,
             },
             store,
             settled: true,
             failures: Vec::new(),
             shreds: Vec::new(),
             completed: Completed::default(),
-            iteration: 0,
             parents: None,
             trace: traced.map(|_| {
                 let lazy = !overlapping && !hosted_rows;
@@ -523,9 +511,7 @@ impl Plan {
         let output = match (traced, trace) {
             (Some(format), Some(trace)) => {
                 let batch = graph
-                    .plan_traces(
-                        content, extensions, max_depth, columns, *trace, &output, &rows, format,
-                    )
+                    .plan_traces(content, extensions, columns, *trace, &output, &rows, format)
                     .await;
                 output.traced(batch)
             }

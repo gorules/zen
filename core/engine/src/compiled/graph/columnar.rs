@@ -319,25 +319,16 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &'a Columns<'a>,
         format: crate::compiled::trace::TraceFormat,
     ) -> Option<ColumnarOutput<'a>> {
-        if max_depth == 0 {
+        if extensions.settings.max_depth == 0 {
             return None;
         }
         let admitted = self.planned_input(content, extensions, columns).await?;
         match self
             .plan()
-            .evaluate(
-                self,
-                content,
-                extensions,
-                max_depth,
-                columns,
-                admitted,
-                Some(format),
-            )
+            .evaluate(self, content, extensions, columns, admitted, Some(format))
             .await
         {
             PlanOutcome::Skipped | PlanOutcome::Untraced => None,
@@ -350,11 +341,9 @@ impl CompiledGraph {
                 let inputs = Self::input_data(columns).materialized();
                 let inputs: Vec<Variable> = rows.iter().map(|&row| inputs[row].clone()).collect();
                 let completed = completed.subset(&rows);
-                extensions.context.restart(&rows);
-                let scoped = extensions.scoped(extensions.context.rows(&rows));
+                let scoped = extensions.rerun_rows(&rows);
                 let results =
-                    Box::pin(self.resumed(content, &scoped, max_depth, &inputs, Some(&completed)))
-                        .await;
+                    Box::pin(self.resumed(content, &scoped, &inputs, Some(&completed))).await;
                 Some(output.splice(&rows, results))
             }
         }
@@ -364,16 +353,13 @@ impl CompiledGraph {
         &self,
         content: &Arc<Content>,
         extensions: &NodeHandlerExtensions,
-        max_depth: u8,
         columns: &'a Columns<'a>,
     ) -> ColumnarOutput<'a> {
-        if max_depth > 0 {
+        if extensions.settings.max_depth > 0 {
             if let Some(admitted) = self.planned_input(content, extensions, columns).await {
                 match self
                     .plan()
-                    .evaluate(
-                        self, content, extensions, max_depth, columns, admitted, None,
-                    )
+                    .evaluate(self, content, extensions, columns, admitted, None)
                     .await
                 {
                     PlanOutcome::Skipped | PlanOutcome::Untraced => {}
@@ -387,22 +373,16 @@ impl CompiledGraph {
                         let inputs: Vec<Variable> =
                             rows.iter().map(|&row| inputs[row].clone()).collect();
                         let completed = completed.subset(&rows);
-                        extensions.context.restart(&rows);
-                        let scoped = extensions.scoped(extensions.context.rows(&rows));
-                        let results = Box::pin(self.resumed(
-                            content,
-                            &scoped,
-                            max_depth,
-                            &inputs,
-                            Some(&completed),
-                        ))
-                        .await;
+                        let scoped = extensions.rerun_rows(&rows);
+                        let results =
+                            Box::pin(self.resumed(content, &scoped, &inputs, Some(&completed)))
+                                .await;
                         return output.splice(&rows, results);
                     }
                 }
             }
         }
         let inputs = Self::input_data(columns).materialized();
-        ColumnarOutput::from_results(self.evaluate(content, extensions, max_depth, &inputs).await)
+        ColumnarOutput::from_results(self.evaluate(content, extensions, &inputs).await)
     }
 }

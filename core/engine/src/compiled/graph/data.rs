@@ -59,6 +59,7 @@ pub(crate) struct Layer<'a> {
     pub columns: Rc<[Leaf<'a>]>,
     pub present: Option<Rc<[Mask<'a>]>>,
     pub flat: bool,
+    origin: Rc<()>,
 }
 
 impl<'a> Layer<'a> {
@@ -88,6 +89,7 @@ impl<'a> Layer<'a> {
             columns: columns.into(),
             present: present.map(Rc::from),
             flat,
+            origin: Rc::new(()),
         }
     }
 
@@ -261,6 +263,7 @@ impl<'a> Layer<'a> {
                 .as_ref()
                 .map(|masks| masks.iter().map(|m| m.pick(positions)).collect()),
             flat: self.flat,
+            origin: self.origin.clone(),
         }
     }
 }
@@ -318,7 +321,8 @@ pub(crate) enum Read {
 pub(crate) struct Data<'a> {
     pub rows: Rc<[usize]>,
     pub shape: Shape<'a>,
-    whole: OnceCell<Col>,
+    whole: Rc<OnceCell<Col>>,
+    origin: Option<Rc<Data<'a>>>,
     tops: RefCell<Vec<(Arc<str>, Col)>>,
 }
 
@@ -327,7 +331,8 @@ impl<'a> Data<'a> {
         Data {
             rows,
             shape: Shape::Plain(values),
-            whole: OnceCell::new(),
+            whole: Rc::default(),
+            origin: None,
             tops: RefCell::new(Vec::new()),
         }
     }
@@ -336,13 +341,25 @@ impl<'a> Data<'a> {
         Data {
             rows,
             shape,
-            whole: OnceCell::new(),
+            whole: Rc::default(),
+            origin: None,
             tops: RefCell::new(Vec::new()),
         }
     }
 
     pub fn copied(&self) -> Data<'a> {
-        Data::with_shape(self.rows.clone(), self.shape.clone())
+        Data {
+            whole: self.whole.clone(),
+            origin: self.origin.clone(),
+            ..Data::with_shape(self.rows.clone(), self.shape.clone())
+        }
+    }
+
+    pub fn detached(&self) -> Data<'a> {
+        Data {
+            origin: self.origin.clone(),
+            ..Data::with_shape(self.rows.clone(), self.shape.clone())
+        }
     }
 
     pub fn single(&self) -> bool {
@@ -365,7 +382,11 @@ impl<'a> Data<'a> {
     pub fn gather(pieces: &[Rc<Data<'a>>], rows: &Rc<[usize]>) -> Data<'a> {
         if let [single] = pieces {
             if Rc::ptr_eq(&single.rows, rows) || single.rows == *rows {
-                return Data::with_shape(rows.clone(), single.shape.clone());
+                return Data {
+                    whole: single.whole.clone(),
+                    origin: single.origin.clone(),
+                    ..Data::with_shape(rows.clone(), single.shape.clone())
+                };
             }
         }
         let span = pieces
@@ -679,7 +700,18 @@ impl<'a> Data<'a> {
 
     pub fn materialized(&self) -> Col {
         self.whole
-            .get_or_init(|| (0..self.len()).map(|r| self.materialize_row(r)).collect())
+            .get_or_init(|| match &self.origin {
+                Some(origin) => {
+                    let before = origin.materialized();
+                    (0..self.len())
+                        .map(|row| match origin.nulled(row) {
+                            true => self.materialize_row(row),
+                            false => before[row].clone(),
+                        })
+                        .collect()
+                }
+                None => (0..self.len()).map(|r| self.materialize_row(r)).collect(),
+            })
             .clone()
     }
 
@@ -753,16 +785,19 @@ impl<'a> Data<'a> {
                         leaves,
                         presence,
                         ..
-                    } => Data::with_shape(
-                        rows.clone(),
-                        Shape::Patched {
+                    } => {
+                        let shape = Shape::Patched {
                             base: base.clone(),
                             layers: layers.clone(),
                             leaves: leaves.clone(),
                             nulls: None,
                             presence: presence.clone(),
-                        },
-                    ),
+                        };
+                        Data {
+                            origin: Some(Rc::new(single)),
+                            ..Data::with_shape(rows.clone(), shape)
+                        }
+                    }
                 }
             }
             _ if parents.iter().all(Data::patchable) && !Self::aliased(&parents) => {
@@ -799,7 +834,15 @@ impl<'a> Data<'a> {
         let ((base, layers), (other_base, other_layers)) = (self.lineage(), other.lineage());
         let based = match (base, other_base) {
             (None, None) => true,
-            (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+            (Some(a), Some(b)) => {
+                Rc::ptr_eq(a, b)
+                    || a.len() == b.len()
+                        && a.iter().zip(b.iter()).all(|pair| match pair {
+                            (Variable::Object(a), Variable::Object(b)) => Rc::ptr_eq(a, b),
+                            (Variable::Array(a), Variable::Array(b)) => Rc::ptr_eq(a, b),
+                            _ => false,
+                        })
+            }
             _ => false,
         };
         if !based {
@@ -808,7 +851,7 @@ impl<'a> Data<'a> {
         let depth = layers
             .iter()
             .zip(other_layers)
-            .take_while(|(a, b)| Rc::ptr_eq(&a.columns, &b.columns))
+            .take_while(|(a, b)| Rc::ptr_eq(&a.origin, &b.origin))
             .count();
         (base.is_some() || depth > 0).then_some(depth)
     }

@@ -306,7 +306,8 @@ impl CompiledGraph {
                         .iter()
                         .filter_map(|nid| {
                             let pieces = state.nodes.get(nid.index())?;
-                            (!pieces.is_empty()).then(|| Data::gather(pieces, &rows).materialized())
+                            (!pieces.is_empty())
+                                .then(|| Data::gather(pieces, &rows).detached().materialized())
                         })
                         .collect();
                     for (i, &row) in rows.iter().enumerate() {

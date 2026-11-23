@@ -932,3 +932,46 @@ fn a_batch_row_keeps_an_input_null_that_an_unchanged_pass_through_shares() {
         batch_rows_match_single_rows(&graph, &[json!({"y": null}), json!({})]);
     }
 }
+
+#[test]
+fn a_batch_row_keeps_a_nested_null_from_a_table_shared_with_a_pass_through_branch() {
+    let graph = joined(
+        vec![
+            json!({"id": "t0", "name": "t0", "type": "decisionTableNode", "content": {
+                "hitPolicy": "first",
+                "inputs": [{"id": "i0", "name": "I0"}, {"id": "i1", "field": "r"}],
+                "outputs": [{"id": "o0", "field": "o.p"}, {"id": "o1", "field": "o.q.z"}],
+                "rules": [
+                    {"_id": "r0", "i0": "", "i1": "'a', 'b'", "o0": "{a: 1}", "o1": "{a: 1}"},
+                    {"_id": "r1", "i0": "", "i1": "x > 1", "o0": "{a: 1}", "o1": "a.b"},
+                    {"_id": "r2", "i0": "'a'", "i1": "", "o0": "[1, 2]", "o1": "1"}
+                ]
+            }}),
+            json!({"id": "t1", "name": "t1", "type": "decisionTableNode", "content": {
+                "hitPolicy": "first",
+                "passThrough": true,
+                "inputs": [{"id": "i0", "name": "I0"}, {"id": "i1", "field": "v.w"}],
+                "outputs": [{"id": "o0", "field": "m"}],
+                "rules": [
+                    {"_id": "r0", "i0": "null", "i1": "< 3", "o0": "{a: 1}"},
+                    {"_id": "r1", "i0": "true", "i1": "[1..5]", "o0": "(x ?? 0) + 1"},
+                    {"_id": "r2", "i0": "null", "o0": "a.b"},
+                    {"_id": "r3", "i0": "< 3", "i1": "'a'", "o0": "x"},
+                    {"_id": "r4", "i0": "", "i1": "\"b\"", "o0": "{a: 1}"},
+                    {"_id": "r5", "i0": "true", "i1": "$ > 2", "o0": "null"},
+                    {"_id": "r6", "i0": "x > 1", "i1": ">= 0", "o0": "null"},
+                    {"_id": "r7", "i0": "", "i1": "\"b\"", "o0": "'s'"}
+                ]
+            }}),
+        ],
+        &[("in", "t0"), ("t0", "t1"), ("t0", "out"), ("t1", "out")],
+    );
+    batch_rows_match_single_rows(
+        &graph,
+        &[
+            json!({"x": 9}),
+            json!({"x": 3, "a": {"b": 66}}),
+            json!({"x": 2, "a": {"b": 1}}),
+        ],
+    );
+}

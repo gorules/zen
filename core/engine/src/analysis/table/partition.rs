@@ -4,7 +4,7 @@ use std::rc::Rc;
 use ahash::HashMap;
 use rust_decimal::Decimal;
 
-use super::value_set::{Bound, Interval, NumberSet, StringSet, ValueSet};
+use super::value_set::{Bound, Interval, NumberSet, StringSet, Strings, ValueSet};
 
 pub(super) struct Points(Vec<Decimal>);
 
@@ -93,7 +93,44 @@ pub(super) struct Partition {
     other: Option<usize>,
 }
 
+pub(super) struct Layout {
+    pub(super) atoms: usize,
+    pub(super) strings: usize,
+    pub(super) rest: Option<usize>,
+    pub(super) numbers: std::ops::Range<usize>,
+    pub(super) piece_of: Vec<u32>,
+    pub(super) last_piece: u32,
+}
+
 impl Partition {
+    pub(super) fn layout(&self) -> Layout {
+        let piece_of: Vec<u32> = self
+            .pieces
+            .iter()
+            .enumerate()
+            .filter(|(_, atom)| atom.is_some())
+            .map(|(piece, _)| piece as u32)
+            .collect();
+        let strings = self.strings.len();
+        let start = strings + usize::from(self.string_rest.is_some());
+        Layout {
+            atoms: self.atoms.len(),
+            strings,
+            rest: self.string_rest,
+            numbers: start..start + piece_of.len(),
+            piece_of,
+            last_piece: self.pieces.len().saturating_sub(1) as u32,
+        }
+    }
+
+    pub(super) fn atoms(&self) -> &[ValueSet] {
+        &self.atoms
+    }
+
+    pub(super) fn into_atoms(self) -> Vec<ValueSet> {
+        self.atoms
+    }
+
     pub(super) fn touches(&self, sets: &[ValueSet]) -> usize {
         let mut present = Vec::with_capacity(self.pieces.len() + 1);
         present.push(0usize);
@@ -179,7 +216,7 @@ impl Partition {
             }
         }
         for key in keys {
-            let single = StringSet::Finite(BTreeSet::from([key.clone()]));
+            let single = StringSet::Finite(Strings::one(key.clone()));
             if !region.strings.intersect(&single).is_empty() {
                 partition.strings.insert(key, partition.atoms.len());
                 partition.atoms.push(ValueSet {
@@ -231,7 +268,7 @@ impl Partition {
         partition
     }
 
-    fn touching(&self, set: &ValueSet) -> Vec<usize> {
+    pub(super) fn touching(&self, set: &ValueSet) -> Vec<usize> {
         let mut out = Vec::new();
         match &set.strings {
             StringSet::Finite(keys) => out.extend(keys.iter().filter_map(|k| self.strings.get(k))),
@@ -239,7 +276,7 @@ impl Partition {
                 out.extend(
                     self.strings
                         .iter()
-                        .filter(|(k, _)| !excluded.contains(*k))
+                        .filter(|(k, _)| !excluded.contains(k))
                         .map(|(_, &a)| a),
                 );
                 out.extend(self.string_rest);
@@ -264,7 +301,7 @@ impl Partition {
         out
     }
 
-    fn union<'a>(atoms: impl Iterator<Item = &'a ValueSet>) -> ValueSet {
+    pub(super) fn union<'a>(atoms: impl Iterator<Item = &'a ValueSet>) -> ValueSet {
         let mut strings: BTreeSet<Rc<str>> = BTreeSet::new();
         let mut rest: Option<StringSet> = None;
         let mut intervals: Vec<Interval> = Vec::new();
@@ -280,8 +317,8 @@ impl Partition {
             out.other |= atom.other;
         }
         out.strings = match rest {
-            Some(rest) => rest.union(&StringSet::Finite(strings)),
-            None => StringSet::Finite(strings),
+            Some(rest) => rest.union(&StringSet::Finite(strings.into())),
+            None => StringSet::Finite(strings.into()),
         };
         out.numbers = NumberSet::from_intervals(intervals);
         out

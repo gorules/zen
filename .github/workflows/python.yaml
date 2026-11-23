@@ -62,6 +62,7 @@ jobs:
           args: ${{ matrix.args }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           sccache: 'true'
+          rust-toolchain: 1.99.0
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

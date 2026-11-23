@@ -27,7 +27,7 @@ fn canonical(v: Value) -> Value {
             let mut out = serde_json::Map::new();
             for (k, x) in entries {
                 let x = match k.as_str() {
-                    "performance" | "duration" | "msSinceRun" => Value::Null,
+                    "performance" | "duration" | "msSinceRun" | "engineVersion" => Value::Null,
                     _ => canonical(x),
                 };
                 out.insert(k, x);
@@ -374,7 +374,7 @@ fn golden() -> HashMap<Key, std::sync::Arc<Value>> {
         let kind = v["kind"].as_str().unwrap().to_string();
         let suite = v["suite"].as_str().unwrap().to_string();
         let case = v["case"].as_u64().unwrap() as usize;
-        let outcome = std::sync::Arc::new(v["outcome"].clone());
+        let outcome = std::sync::Arc::new(canonical(v["outcome"].clone()));
         for variant in v["variants"].as_array().unwrap() {
             out.insert(
                 (

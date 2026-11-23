@@ -11,10 +11,14 @@ ifeq ($(UNAME_S),Darwin)
   endif
 else
   LIB_NAME := libzen_uniffi.so
+  LINUX_PREFIX := $(if $(shell ldd --version 2>&1 | grep -i musl),linux-musl,linux)
+  ifeq ($(LINUX_PREFIX),linux-musl)
+    export RUSTFLAGS += -C target-feature=-crt-static
+  endif
   ifeq ($(UNAME_M),aarch64)
-    PLATFORM_DIR := linux-aarch64
+    PLATFORM_DIR := $(LINUX_PREFIX)-aarch64
   else
-    PLATFORM_DIR := linux-x86-64
+    PLATFORM_DIR := $(LINUX_PREFIX)-x86-64
   endif
 endif
 

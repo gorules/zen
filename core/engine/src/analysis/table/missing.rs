@@ -2,29 +2,28 @@ use std::sync::Arc;
 
 use std::rc::Rc;
 
-use ahash::HashMap;
-use serde_json::{Map, Value};
+use ahash::{HashMap, RandomState};
 use zen_expression::intellisense::values::cell::FieldPath;
 use zen_expression::intellisense::{IntelliSense, ReadDependency};
 
 use super::cell::CellConstraint;
+use super::gaps::{Bits, Dense, Gaps, Space};
+use super::intern::Interner;
 use super::partition::Partition;
-use super::print::{CellText, DateDay};
 use super::value_set::{NumberSet, StringSet, ValueKind, ValueSet};
-use super::verify::{Finding, GapCase, Region, VerifyTable, MAX_FRAGMENTS};
+use super::verify::{Finding, GapAxis, GapTable, GapValues, VerifyTable};
 
 const GAP_BUDGET: usize = 10_000_000;
-const DIRECT_ROWS: usize = 8;
 
-struct Dimension {
-    columns: Vec<usize>,
-    domain: ValueSet,
-    path: Option<Arc<str>>,
-    label: Arc<str>,
-    prefer: Option<ValueKind>,
-    dated: bool,
-    integer: bool,
-    input: bool,
+pub(super) struct Dimension {
+    pub(super) columns: Vec<usize>,
+    pub(super) domain: ValueSet,
+    pub(super) path: Option<Arc<str>>,
+    pub(super) label: Arc<str>,
+    pub(super) prefer: Option<ValueKind>,
+    pub(super) dated: bool,
+    pub(super) integer: bool,
+    pub(super) input: bool,
 }
 
 struct Field {
@@ -64,6 +63,127 @@ impl Field {
     }
 }
 
+pub(super) enum Pool {
+    Patterns {
+        patterns: Interner<u64>,
+        unions: HashMap<(u32, u32), u32>,
+        joined: Vec<u64>,
+    },
+    Sets {
+        sets: Vec<ValueSet>,
+        index: HashMap<(u64, u32), u32>,
+        unions: HashMap<(u32, u32), u32>,
+    },
+}
+
+impl Pool {
+    pub(super) fn sets(sets: Vec<ValueSet>, index: HashMap<(u64, u32), u32>) -> Self {
+        Pool::Sets {
+            sets,
+            index,
+            unions: HashMap::default(),
+        }
+    }
+
+    fn patterns(patterns: Interner<u64>) -> Self {
+        Pool::Patterns {
+            patterns,
+            unions: HashMap::default(),
+            joined: Vec::new(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Pool::Patterns { patterns, .. } => patterns.len(),
+            Pool::Sets { sets, .. } => sets.len(),
+        }
+    }
+
+    fn is_empty(&self, value: u32) -> bool {
+        match self {
+            Pool::Patterns { .. } => false,
+            Pool::Sets { sets, .. } => sets[value as usize].is_empty(),
+        }
+    }
+
+    pub(super) fn intern(
+        sets: &mut Vec<ValueSet>,
+        index: &mut HashMap<(u64, u32), u32>,
+        set: ValueSet,
+    ) -> u32 {
+        let hash = RandomState::with_seeds(11, 13, 17, 19).hash_one(&set);
+        let mut probe = 0u32;
+        loop {
+            match index.get(&(hash, probe)) {
+                Some(&id) if sets[id as usize] == set => return id,
+                Some(_) => probe += 1,
+                None => {
+                    let id = sets.len() as u32;
+                    index.insert((hash, probe), id);
+                    sets.push(set);
+                    return id;
+                }
+            }
+        }
+    }
+
+    fn union(&mut self, a: u32, b: u32) -> u32 {
+        match self {
+            Pool::Patterns {
+                patterns,
+                unions,
+                joined,
+            } => {
+                if let Some(&id) = unions.get(&(a, b)) {
+                    return id;
+                }
+                joined.clear();
+                joined.extend(
+                    patterns
+                        .get(a)
+                        .iter()
+                        .zip(patterns.get(b))
+                        .map(|(left, right)| left | right),
+                );
+                let id = patterns.intern(joined);
+                unions.insert((a, b), id);
+                id
+            }
+            Pool::Sets {
+                sets,
+                index,
+                unions,
+            } => {
+                if let Some(&id) = unions.get(&(a, b)) {
+                    return id;
+                }
+                let joined = sets[a as usize].union(&sets[b as usize]);
+                let id = Self::intern(sets, index, joined);
+                unions.insert((a, b), id);
+                id
+            }
+        }
+    }
+
+    fn keep(self, used: &[u32]) -> GapValues {
+        match self {
+            Pool::Patterns { patterns, .. } => GapValues::Patterns {
+                words: patterns.stride(),
+                data: used
+                    .iter()
+                    .flat_map(|&value| patterns.get(value).iter().copied())
+                    .collect(),
+            },
+            Pool::Sets { mut sets, .. } => GapValues::Sets(
+                used.iter()
+                    .map(|&value| std::mem::take(&mut sets[value as usize]))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 impl VerifyTable<'_> {
     pub(super) fn missing(
         &self,
@@ -78,60 +198,226 @@ impl VerifyTable<'_> {
         if dims.is_empty() || dims.iter().any(|d| d.domain.is_empty()) {
             return Some(None);
         }
-        let cuts: Vec<Region> = cells
+        match self.missing_dense(dims, cells, satisfiable) {
+            Err(dims) => self.missing_sets(dims, cells, satisfiable),
+            Ok(found) => {
+                #[cfg(test)]
+                {
+                    let cases = |found: &Option<Option<Finding>>| match found {
+                        Some(Some(Finding::MissingCases { cases, total })) => {
+                            Some(Some((cases.cases().collect::<Vec<_>>(), *total)))
+                        }
+                        Some(_) => Some(None),
+                        None => None,
+                    };
+                    let expected =
+                        self.missing_sets(self.dimensions(is, cells), cells, satisfiable);
+                    assert_eq!(
+                        cases(&found),
+                        cases(&expected),
+                        "gap analysis diverged between the dense and set-based paths"
+                    );
+                }
+                found
+            }
+        }
+    }
+
+    fn gap_axis(&self, dim: Dimension, atoms: Vec<ValueSet>, values: GapValues) -> GapAxis {
+        let first = dim.columns.first().map(|&first| &self.inputs[first]);
+        GapAxis {
+            label: dim.label,
+            column: first.map(|input| input.id.clone()),
+            subject: first
+                .and_then(|input| input.subject.as_ref())
+                .map(|subject| subject.join(".")),
+            path: dim.path,
+            input: dim.input,
+            dated: dim.dated,
+            prefer: dim.prefer,
+            domain: dim.domain,
+            atoms,
+            values,
+        }
+    }
+
+    fn missing_dense(
+        &self,
+        dims: Vec<Dimension>,
+        cells: &[Vec<CellConstraint>],
+        satisfiable: &[bool],
+    ) -> Result<Option<Option<Finding>>, Vec<Dimension>> {
+        let rows: Vec<&Vec<CellConstraint>> = cells
             .iter()
             .zip(satisfiable)
             .filter(|(_, satisfiable)| **satisfiable)
-            .map(|(row_cells, _)| {
-                dims.iter()
-                    .map(|d| {
-                        d.columns
-                            .iter()
-                            .fold(ValueSet::all(), |acc, &col| match &row_cells[col] {
+            .map(|(row_cells, _)| row_cells)
+            .collect();
+
+        let atoms = dims.iter().map(|dim| {
+            let mentioned = rows.iter().flat_map(|row_cells| {
+                dim.columns.iter().filter_map(|&col| match &row_cells[col] {
+                    CellConstraint::Known(set) => Some(set),
+                    _ => None,
+                })
+            });
+            Dense::atoms(mentioned.chain(std::iter::once(&dim.domain)))
+        });
+        if !Dense::fits(rows.len(), atoms) {
+            return Err(dims);
+        }
+
+        let mut cut_of_row: Vec<Vec<u32>> = Vec::with_capacity(dims.len());
+        let mut cut_sets: Vec<Vec<ValueSet>> = Vec::with_capacity(dims.len());
+        for dim in &dims {
+            let mut index: HashMap<ValueSet, u32> = HashMap::default();
+            let mut distinct: Vec<ValueSet> = Vec::new();
+            let of_row: Vec<u32> = rows
+                .iter()
+                .map(|row_cells| {
+                    let cut =
+                        dim.columns.iter().fold(ValueSet::all(), |acc, &col| {
+                            match &row_cells[col] {
                                 CellConstraint::Known(set) => acc.intersect(set),
                                 _ => acc,
-                            })
-                    })
-                    .collect()
-            })
-            .collect();
-        let mut gaps = Gaps {
-            cuts: &cuts,
-            work: GAP_BUDGET,
-            out: Vec::new(),
-        };
-        gaps.uncovered(
-            dims.iter().map(|d| d.domain.clone()).collect(),
-            (0..cuts.len()).collect(),
-        )?;
-        let remaining: Vec<Region> = gaps
-            .out
-            .into_iter()
-            .filter_map(|mut fragment| {
-                for (dim, set) in dims.iter().zip(fragment.iter_mut()) {
-                    if dim.integer {
-                        set.numbers = set.numbers.integral();
+                            }
+                        });
+                    match index.get(&cut) {
+                        Some(&id) => id,
+                        None => {
+                            let id = distinct.len() as u32;
+                            index.insert(cut.clone(), id);
+                            distinct.push(cut);
+                            id
+                        }
                     }
-                }
-                fragment
-                    .iter()
-                    .all(|set| !set.is_empty())
-                    .then_some(fragment)
-            })
-            .collect();
-        if remaining.is_empty() {
-            return Some(None);
+                })
+                .collect();
+            distinct.push(dim.domain.clone());
+            cut_of_row.push(of_row);
+            cut_sets.push(distinct);
         }
-        let remaining = Self::merge(remaining);
-        let total = remaining.len();
-        let cases = remaining
-            .iter()
-            .map(|fragment| self.case(&dims, fragment))
-            .collect();
-        Some(Some(Finding::MissingCases { cases, total }))
+        let mut partitions: Vec<Partition> = Vec::with_capacity(dims.len());
+        let mut cut_atoms: Vec<Vec<Vec<usize>>> = Vec::with_capacity(dims.len());
+        for (dim, sets) in dims.iter().zip(&cut_sets) {
+            let partition = Partition::new(&dim.domain, sets);
+            cut_atoms.push(
+                sets[..sets.len() - 1]
+                    .iter()
+                    .map(|cut| partition.touching(cut))
+                    .collect(),
+            );
+            partitions.push(partition);
+        }
+        drop(cut_sets);
+
+        let space = Space::new(partitions.iter().map(Partition::layout).collect());
+        let stride = space.stride();
+        let mut cuts = vec![0u64; rows.len() * stride];
+        for ((axis, of_row), atoms) in space.axes().iter().zip(&cut_of_row).zip(&cut_atoms) {
+            for (row, &id) in of_row.iter().enumerate() {
+                let start = row * stride;
+                let words = &mut cuts[start..start + stride][axis.range()];
+                atoms[id as usize]
+                    .iter()
+                    .for_each(|&atom| Bits::set(words, atom));
+            }
+        }
+        drop(cut_of_row);
+        drop(cut_atoms);
+
+        let Some(found) = Gaps::new(&space, &cuts, GAP_BUDGET).run(rows.len()) else {
+            return Ok(None);
+        };
+        drop(cuts);
+
+        let width = dims.len();
+        let mut pools: Vec<Pool> = Vec::with_capacity(width);
+        let mut value_of: Vec<Option<Vec<u32>>> = Vec::with_capacity(width);
+        for ((dim, partition), patterns) in dims.iter().zip(&partitions).zip(found.patterns) {
+            if !dim.integer {
+                pools.push(Pool::patterns(patterns));
+                value_of.push(None);
+                continue;
+            }
+            let mut sets: Vec<ValueSet> = Vec::new();
+            let mut index: HashMap<(u64, u32), u32> = HashMap::default();
+            let atoms = partition.atoms();
+            let values = (0..patterns.len() as u32)
+                .map(|pattern| {
+                    let mut set = Partition::union(
+                        Bits::ones(patterns.get(pattern)).map(|atom| &atoms[atom]),
+                    );
+                    set.numbers = set.numbers.integral();
+                    Pool::intern(&mut sets, &mut index, set)
+                })
+                .collect();
+            pools.push(Pool::sets(sets, index));
+            value_of.push(Some(values));
+        }
+
+        let mut remaining: Vec<u32> = Vec::with_capacity(found.fragments.len());
+        for fragment in found.fragments.chunks_exact(width) {
+            let start = remaining.len();
+            remaining.extend(fragment.iter().zip(&value_of).map(
+                |(&pattern, values)| match values {
+                    Some(values) => values[pattern as usize],
+                    None => pattern,
+                },
+            ));
+            let empty = remaining[start..]
+                .iter()
+                .zip(&pools)
+                .any(|(&value, pool)| pool.is_empty(value));
+            if empty {
+                remaining.truncate(start);
+            }
+        }
+        drop(found.fragments);
+        drop(value_of);
+        if remaining.is_empty() {
+            return Ok(Some(None));
+        }
+
+        let atoms = partitions.into_iter().map(Partition::into_atoms).collect();
+        Ok(Some(Some(
+            self.missing_cases_of(dims, atoms, pools, remaining),
+        )))
     }
 
-    fn dimensions(&self, is: &mut IntelliSense, cells: &[Vec<CellConstraint>]) -> Vec<Dimension> {
+    pub(super) fn missing_cases_of(
+        &self,
+        dims: Vec<Dimension>,
+        atoms: Vec<Vec<ValueSet>>,
+        mut pools: Vec<Pool>,
+        remaining: Vec<u32>,
+    ) -> Finding {
+        let width = dims.len();
+        let mut rows = Self::merge(remaining, &mut pools);
+        let total = rows.len() / width;
+        let mut axes: Vec<GapAxis> = Vec::with_capacity(width);
+        for (index, ((dim, atoms), pool)) in dims.into_iter().zip(atoms).zip(pools).enumerate() {
+            let mut renamed = vec![u32::MAX; pool.len()];
+            let mut used: Vec<u32> = Vec::new();
+            for row in rows.chunks_exact_mut(width) {
+                let value = row[index] as usize;
+                if renamed[value] == u32::MAX {
+                    renamed[value] = used.len() as u32;
+                    used.push(value as u32);
+                }
+                row[index] = renamed[value];
+            }
+            axes.push(self.gap_axis(dim, atoms, pool.keep(&used)));
+        }
+        let cases = Rc::new(GapTable { axes, rows });
+        Finding::MissingCases { cases, total }
+    }
+
+    pub(super) fn dimensions(
+        &self,
+        is: &mut IntelliSense,
+        cells: &[Vec<CellConstraint>],
+    ) -> Vec<Dimension> {
         let fields: Vec<Option<Field>> = self
             .inputs
             .iter()
@@ -214,30 +500,28 @@ impl VerifyTable<'_> {
         (!domain.is_empty()).then_some(domain)
     }
 
-    fn merge(mut fragments: Vec<Region>) -> Vec<Region> {
-        let dims = fragments.first().map_or(0, Vec::len);
+    fn merge(mut fragments: Vec<u32>, pools: &mut [Pool]) -> Vec<u32> {
+        let width = pools.len();
+        let mut keys: Interner<u32> = Interner::new(width - 1);
+        let mut key: Vec<u32> = Vec::with_capacity(width);
         loop {
             let mut changed = false;
-            for dim in (0..dims).rev() {
-                let mut buckets: HashMap<Vec<ValueSet>, usize> = HashMap::default();
-                let mut merged: Vec<Region> = Vec::with_capacity(fragments.len());
-                for fragment in fragments.drain(..) {
-                    let key: Vec<ValueSet> = fragment
-                        .iter()
-                        .enumerate()
-                        .filter(|(idx, _)| *idx != dim)
-                        .map(|(_, set)| set.clone())
-                        .collect();
-                    match buckets.get(&key) {
-                        Some(&idx) => {
-                            merged[idx][dim] = merged[idx][dim].union(&fragment[dim]);
-                            changed = true;
-                        }
-                        None => {
-                            buckets.insert(key, merged.len());
-                            merged.push(fragment);
-                        }
+            for dim in (0..width).rev() {
+                keys.reset(width - 1);
+                let mut merged: Vec<u32> = Vec::with_capacity(fragments.len());
+                for fragment in fragments.chunks_exact(width) {
+                    key.clear();
+                    key.extend_from_slice(&fragment[..dim]);
+                    key.extend_from_slice(&fragment[dim + 1..]);
+                    let known = keys.len() as u32;
+                    let slot = keys.intern(&key) as usize;
+                    if slot as u32 == known {
+                        merged.extend_from_slice(fragment);
+                        continue;
                     }
+                    let at = slot * width + dim;
+                    merged[at] = pools[dim].union(merged[at], fragment[dim]);
+                    changed = true;
                 }
                 fragments = merged;
             }
@@ -245,201 +529,5 @@ impl VerifyTable<'_> {
                 return fragments;
             }
         }
-    }
-
-    fn case(&self, dims: &[Dimension], fragment: &Region) -> GapCase {
-        let mut parts = Vec::new();
-        let mut cells = Some(Vec::new());
-        let mut example = Some(Map::new());
-        for (dim, set) in dims.iter().zip(fragment) {
-            match CellText::of(set, &dim.domain, dim.dated) {
-                Some(text) if text.is_empty() => continue,
-                Some(text) => {
-                    if !dim.input {
-                        example = None;
-                    }
-                    if let (Some(list), Some(&first)) = (cells.as_mut(), dim.columns.first()) {
-                        match self.cell_text(first, set, &dim.domain, dim.dated) {
-                            Some(cell) => list.push((self.inputs[first].id.clone(), cell)),
-                            None => cells = None,
-                        }
-                    }
-                    parts.push((dim.label.clone(), text));
-                }
-                None => {
-                    cells = None;
-                    parts.push((dim.label.clone(), "…".to_string()));
-                }
-            }
-            let value = match dim.dated {
-                true => DateDay::example(set),
-                false => set.example(dim.prefer),
-            };
-            match (&dim.path, value, example.as_mut()) {
-                (Some(path), Some(value), Some(root)) => Self::insert(root, path, value),
-                _ => example = None,
-            }
-        }
-        GapCase {
-            parts,
-            cells,
-            example: example.filter(|root| !root.is_empty()).map(Value::Object),
-        }
-    }
-}
-
-type Atoms = Vec<(ValueSet, Vec<usize>)>;
-
-struct Split {
-    dim: usize,
-    score: usize,
-    groups: Atoms,
-    of_row: Vec<usize>,
-    distinct: usize,
-}
-
-struct Gaps<'c> {
-    cuts: &'c [Region],
-    work: usize,
-    out: Vec<Region>,
-}
-
-impl Gaps<'_> {
-    fn spend(&mut self, amount: usize) -> Option<()> {
-        self.work = self.work.checked_sub(amount.max(1))?;
-        Some(())
-    }
-
-    fn uncovered(&mut self, region: Region, rows: Vec<usize>) -> Option<()> {
-        self.spend(rows.len() * region.len())?;
-        let rows: Vec<usize> = rows
-            .into_iter()
-            .filter(|&row| {
-                self.cuts[row]
-                    .iter()
-                    .zip(&region)
-                    .all(|(cut, set)| cut.intersects(set))
-            })
-            .collect();
-        if rows.is_empty() {
-            self.out.push(region);
-            return Some(());
-        }
-        let covered = rows.iter().any(|&row| {
-            region
-                .iter()
-                .zip(&self.cuts[row])
-                .all(|(set, cut)| set.is_subset(cut))
-        });
-        if covered {
-            return Some(());
-        }
-        if rows.len() > DIRECT_ROWS {
-            if let Some((dim, atoms)) = self.split(&region, &rows) {
-                for (atom, atom_rows) in atoms {
-                    let mut piece = region.clone();
-                    piece[dim] = atom;
-                    self.uncovered(piece, atom_rows)?;
-                }
-                return Some(());
-            }
-        }
-        self.subtract_all(region, &rows)
-    }
-
-    fn subtract_all(&mut self, region: Region, rows: &[usize]) -> Option<()> {
-        let mut remaining = vec![region];
-        let cuts = self.cuts;
-        for &row in rows {
-            let cut: Vec<&ValueSet> = cuts[row].iter().collect();
-            let mut next = Vec::with_capacity(remaining.len());
-            for fragment in remaining {
-                self.spend(fragment.len())?;
-                match VerifyTable::subtract(&fragment, &cut) {
-                    Some(pieces) => next.extend(pieces),
-                    None => next.push(fragment),
-                }
-            }
-            if next.len() > MAX_FRAGMENTS {
-                return None;
-            }
-            remaining = next;
-            if remaining.is_empty() {
-                return Some(());
-            }
-        }
-        self.out.extend(remaining);
-        Some(())
-    }
-
-    fn split(&mut self, region: &Region, rows: &[usize]) -> Option<(usize, Atoms)> {
-        let mut best: Option<Split> = None;
-        for (dim, bounds) in region.iter().enumerate() {
-            let mut sets: Vec<ValueSet> = Vec::new();
-            let mut index: HashMap<ValueSet, usize> = HashMap::default();
-            let mut of_row: Vec<usize> = Vec::with_capacity(rows.len());
-            for &row in rows {
-                let set = self.cuts[row][dim].intersect(bounds);
-                let next = sets.len();
-                let slot = *index.entry(set.clone()).or_insert(next);
-                if slot == next {
-                    sets.push(set);
-                }
-                of_row.push(slot);
-            }
-            if sets.iter().all(|set| set == bounds) {
-                continue;
-            }
-            let partition = Partition::new(bounds, &sets);
-            if partition.touches(&sets) > self.work {
-                return None;
-            }
-            let groups = partition.groups(&sets);
-            if groups.len() < 2 {
-                continue;
-            }
-            let mut count = vec![0usize; sets.len()];
-            for &slot in &of_row {
-                count[slot] += 1;
-            }
-            let score: usize = groups
-                .iter()
-                .map(|(_, ids)| ids.iter().map(|&id| count[id]).sum::<usize>())
-                .sum();
-            self.spend(score + groups.len())?;
-            if best.as_ref().is_none_or(|split| score < split.score) {
-                best = Some(Split {
-                    dim,
-                    score,
-                    groups,
-                    of_row,
-                    distinct: sets.len(),
-                });
-            }
-        }
-        let Split {
-            dim,
-            groups,
-            of_row,
-            distinct,
-            ..
-        } = best?;
-        let split = groups
-            .into_iter()
-            .map(|(atom, ids)| {
-                let mut touching = vec![false; distinct];
-                for id in ids {
-                    touching[id] = true;
-                }
-                let atom_rows = rows
-                    .iter()
-                    .zip(&of_row)
-                    .filter(|(_, slot)| touching[**slot])
-                    .map(|(&row, _)| row)
-                    .collect();
-                (atom, atom_rows)
-            })
-            .collect();
-        Some((dim, split))
     }
 }

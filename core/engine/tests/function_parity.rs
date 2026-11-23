@@ -68,6 +68,21 @@ const SNIPPETS: &[&str] = &[
     "typeof Math.random()",
     "Math.random() >= 0 && Math.random() < 1",
     "typeof Date.now()",
+    "[typeof Date.call(Date), typeof Date.call(Array, 2020, 1), typeof Reflect.apply(Date, Array, [])]",
+    "Object.getPrototypeOf(Date) === Function.prototype",
+    "(() => { new Date(0); return [Object.getPrototypeOf(Date.prototype.getHours) === Function.prototype, Object.getPrototypeOf(Date.now) === Function.prototype, Object.getPrototypeOf(Math.random) === Function.prototype, Date.prototype.getHours instanceof Function]; })()",
+    "[Date.prototype.constructor === Date, globalThis.Date === Date, Date.prototype instanceof Date]",
+    "(() => { const d = Object.getOwnPropertyDescriptor(Date, 'length'); const n = Object.getOwnPropertyDescriptor(Date, 'name'); return [d.value, d.writable, d.enumerable, d.configurable, n.value, n.writable, n.enumerable, n.configurable]; })()",
+    "(() => { class A extends Date { constructor() { super(2020, 1, 3); } } const a = new A(); return [a instanceof A, a instanceof Date, a.getMonth(), a.getDate(), Object.getPrototypeOf(a) === A.prototype]; })()",
+    "(() => { const B = Date.bind(null, 2020, 1); const b = new B(); return [b instanceof Date, b.getMonth(), typeof B()]; })()",
+    "Reflect.construct(Date, [2020, 1, 3], Object).constructor === Object",
+    "[new Date(new Date(5)).getTime(), new Date(2020, 1, 3).getDate(), new Date(0).setTime(7)]",
+    "[Function.prototype.toString.call(Date.now), String(Date.prototype.getHours), String(Date.prototype.setFullYear), Date.prototype.toLocaleString.length]",
+    "(() => { try { Date.prototype.getHours.call(Object.create(Date.prototype)); return 'ok'; } catch (e) { return [e.constructor.name, e.message]; } })()",
+    "(() => { try { Date.prototype.setHours.call(1, 2); return 'ok'; } catch (e) { return [e.constructor.name, e.message]; } })()",
+    "(() => { try { new Date(Symbol()); return 'ok'; } catch (e) { return e.constructor.name; } })()",
+    "(() => { const seen = []; new Date(0).setHours({ valueOf() { seen.push('h'); return 1; } }, { valueOf() { seen.push('m'); return 2; } }); return seen; })()",
+    "new Date(2020, 0, 1, 12).getDay() + new Date(2020, 0, 1, 12).getYear()",
 ];
 
 #[derive(Clone, Copy, Debug)]

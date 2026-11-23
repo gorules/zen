@@ -1,10 +1,7 @@
+mod calendar;
+mod date;
+
 use crate::engine::EvaluationOptions;
-use chrono::{DateTime, Duration, LocalResult, Offset, TimeZone};
-use rquickjs::loader::bundle::{Bundle, ScaBundleData};
-use rquickjs::loader::Loader;
-use rquickjs::prelude::Func;
-use rquickjs::promise::PromiseState;
-use rquickjs::{Module, WriteOptions};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -131,9 +128,6 @@ impl Located {
     }
 }
 
-const PIN_ENTRY: (&str, &str) = ("zen:pinning", include_str!("pinning.entry.js"));
-const PIN_DATE: (&str, &str) = ("zen:pinning/date", include_str!("pinning.js"));
-
 fn canonical_zone(name: &str) -> Option<Timezone> {
     static ZONES: OnceLock<HashMap<String, Timezone>> = OnceLock::new();
     parse_timezone(name).or_else(|| {
@@ -197,143 +191,7 @@ impl JsSlot {
         }
     }
 
-    fn zone(&self, name: Option<String>) -> Option<Timezone> {
-        match name {
-            Some(name) => canonical_zone(&name),
-            None => Some(self.timezone()),
-        }
-    }
-
-    fn modelled(ms: f64) -> Option<chrono::NaiveDateTime> {
-        use chrono::Datelike;
-        const CYCLE: f64 = 146_097.0 * 86_400_000.0;
-        const SPAN: f64 = 250_000.0 * 365.2425 * 86_400_000.0;
-        let cycles = match ms.abs() > SPAN {
-            true => ((ms.abs() - SPAN) / CYCLE).ceil() * ms.signum(),
-            false => 0.0,
-        };
-        let at = DateTime::from_timestamp_millis((ms - cycles * CYCLE) as i64)?.naive_utc();
-        if at.year() <= 2099 {
-            return Some(at);
-        }
-        let year = chrono::NaiveDate::from_yo_opt(at.year(), 1)?;
-        let twin = (2072..=2099).find(|candidate| {
-            chrono::NaiveDate::from_yo_opt(*candidate, 1).is_some_and(|first| {
-                first.leap_year() == year.leap_year() && first.weekday() == year.weekday()
-            })
-        })?;
-        Some(chrono::NaiveDate::from_yo_opt(twin, at.ordinal())?.and_time(at.time()))
-    }
-
-    fn offset(&self, ms: f64, name: Option<String>) -> Option<f64> {
-        let zone = self.zone(name)?;
-        if !ms.is_finite() {
-            return None;
-        }
-        let at = Self::modelled(ms)?;
-        let seconds = zone.offset_from_utc_datetime(&at).fix().local_minus_utc();
-        Some(seconds as f64 / 60.0)
-    }
-
-    fn utc(&self, local: f64, name: Option<String>) -> Option<f64> {
-        let zone = self.zone(name)?;
-        if !local.is_finite() {
-            return None;
-        }
-        let naive = Self::modelled(local)?;
-        let offset = match zone.offset_from_local_datetime(&naive) {
-            LocalResult::Single(offset) => offset.fix(),
-            LocalResult::Ambiguous(earlier, _) => earlier.fix(),
-            LocalResult::None => zone
-                .offset_from_local_datetime(&(naive - Duration::hours(3)))
-                .earliest()?
-                .fix(),
-        };
-        Some(local - offset.local_minus_utc() as f64 * 1000.0)
-    }
-
-    fn bundle() -> Option<Bundle<ScaBundleData<&'static [u8]>>> {
-        static CODE: OnceLock<Option<[Vec<u8>; 2]>> = OnceLock::new();
-        static BUNDLE: OnceLock<Option<[(&'static str, &'static [u8]); 2]>> = OnceLock::new();
-        BUNDLE
-            .get_or_init(|| {
-                let code = CODE.get_or_init(|| {
-                    let runtime = rquickjs::Runtime::new().ok()?;
-                    let context = rquickjs::Context::full(&runtime).ok()?;
-                    context.with(|ctx| {
-                        let compile = |name: &str, source: &str| {
-                            Module::declare(ctx.clone(), name, source)
-                                .and_then(|module| {
-                                    module.write(WriteOptions {
-                                        strip_source: true,
-                                        ..Default::default()
-                                    })
-                                })
-                                .ok()
-                        };
-                        Some([
-                            compile(PIN_ENTRY.0, PIN_ENTRY.1)?,
-                            compile(PIN_DATE.0, PIN_DATE.1)?,
-                        ])
-                    })
-                });
-                code.as_ref().map(|[entry, date]| {
-                    [
-                        (PIN_ENTRY.0, entry.as_slice()),
-                        (PIN_DATE.0, date.as_slice()),
-                    ]
-                })
-            })
-            .as_ref()
-            .map(|entries| Bundle(entries.as_slice()))
-    }
-
-    fn evaluate<'js>(
-        ctx: &rquickjs::Ctx<'js>,
-        (name, source): (&str, &str),
-    ) -> rquickjs::Result<rquickjs::Function<'js>> {
-        let declared = match Self::bundle() {
-            Some(mut bundle) => bundle.load(ctx, name)?,
-            None => Module::declare(ctx.clone(), name, source)?,
-        };
-        let (module, promise) = declared.eval()?;
-        if promise.state() != PromiseState::Resolved {
-            return Err(rquickjs::Error::new_loading(name));
-        }
-        module.get("default")
-    }
-
-    pub(crate) fn install<'js>(&self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<()> {
-        let entry = Self::evaluate(ctx, PIN_ENTRY)?;
-        let (now, random, slot) = (self.clone(), self.clone(), self.clone());
-        entry.call((
-            Func::from(move || now.now()),
-            Func::from(move || random.random()),
-            Func::from(
-                move |ctx: rquickjs::Ctx<'js>,
-                      native: rquickjs::Value<'js>,
-                      pinned: rquickjs::Value<'js>| {
-                    slot.load(&ctx, native, pinned)
-                },
-            ),
-        ))
-    }
-
-    fn load<'js>(
-        &self,
-        ctx: &rquickjs::Ctx<'js>,
-        native: rquickjs::Value<'js>,
-        pinned: rquickjs::Value<'js>,
-    ) -> rquickjs::Result<rquickjs::Value<'js>> {
-        let date = Self::evaluate(ctx, PIN_DATE)?;
-        let (now, offset, utc) = (self.clone(), self.clone(), self.clone());
-        date.call((
-            native,
-            pinned,
-            Func::from(move || now.now()),
-            Func::from(move |ms: f64, zone: Option<String>| offset.offset(ms, zone)),
-            Func::from(move |local: f64, zone: Option<String>| utc.utc(local, zone)),
-            Func::from(|name: String| canonical_zone(&name).map(|zone| zone.name().to_string())),
-        ))
+    pub(crate) fn install(&self, ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
+        date::install(ctx, self)
     }
 }

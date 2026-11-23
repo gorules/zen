@@ -373,8 +373,7 @@ fn digits(s: &str) -> usize {
 }
 
 pub(super) fn iso_date(text: &str) -> bool {
-    let body = text.trim_matches(is_space);
-    let body = body.strip_prefix(['+', '-']).unwrap_or(body);
+    let body = text.strip_prefix(['+', '-']).unwrap_or(text);
     let year = digits(body);
     if !(4..=6).contains(&year) {
         return false;
@@ -519,9 +518,10 @@ mod tests {
 
     #[test]
     fn zone_patterns_follow_the_script_expressions() {
-        assert!(iso_date(" 2026-01-15 "));
+        assert!(iso_date("2026-01-15"));
+        assert!(!iso_date(" 2026-01-15 "));
         assert!(iso_date("+002026-01"));
-        assert!(iso_date("\u{a0}2026\u{feff}"));
+        assert!(!iso_date("\u{a0}2026\u{feff}"));
         assert!(!iso_date("2026-01-15T10:00"));
         assert!(!iso_date("1234567"));
         assert!(!iso_date("2026-1"));

@@ -288,9 +288,30 @@ impl<'js> Scope<'_, 'js> {
         if t.is_nan() || !reinterpret {
             return Ok(t);
         }
-        let date: Value<'js> = self.natives.native.construct((t,))?;
-        let machine: f64 = self.natives.machine_offset.call((This(date),))?;
-        let local = decompose(t as i64 + (-machine as i64) * 60000);
+        let machine = |at: f64| -> Result<f64> {
+            let date: Value<'js> = self.natives.native.construct((at,))?;
+            self.natives.machine_offset.call((This(date),))
+        };
+        let here = machine(t)?;
+        let span = 36.0 * 3_600_000.0;
+        let steady = machine(t - span)? == here && machine(t + span)? == here;
+        let mut local = decompose(t as i64 + (-here as i64) * 60000);
+        if !steady {
+            if let Ok(text) = source.to_string() {
+                let digit = text.ends_with(|c: char| c.is_ascii_digit());
+                let spelled = [(digit, format!("{text}Z")), (true, format!("{text} UTC"))];
+                for (_, candidate) in spelled.iter().filter(|(usable, _)| *usable) {
+                    let universal: f64 = self.natives.parse.call((
+                        This(self.natives.native.clone()),
+                        rquickjs::String::from_str(self.ctx.clone(), candidate)?,
+                    ))?;
+                    if !universal.is_nan() {
+                        local = decompose(universal as i64);
+                        break;
+                    }
+                }
+            }
+        }
         Ok(from_local(
             [
                 local[0], local[1], local[2], local[4], local[5], local[6], local[7],

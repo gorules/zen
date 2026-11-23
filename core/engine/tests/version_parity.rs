@@ -1431,3 +1431,56 @@ fn a_table_output_reads_the_value_its_rule_tested_last() {
         }
     }
 }
+
+#[test]
+fn responses_serialise_their_trace_in_every_released_mode() {
+    use std::str::FromStr;
+    use zen_engine::EvaluationTraceKind;
+    let graph = table("first", "a", &["> 0"]);
+    let content: DecisionContent = serde_json::from_value(graph).unwrap();
+    let content = Arc::new(content);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    for version in [EngineVersion::V1, EngineVersion::V2] {
+        let decision = DecisionEngine::default()
+            .with_version(version)
+            .create_decision(content.clone())
+            .unwrap();
+        let options = EvaluationOptions {
+            trace: zen_engine::trace::TraceFormat::Legacy,
+            ..Default::default()
+        };
+        let response = runtime
+            .block_on(decision.evaluate_with_opts(Variable::from(json!({"a": 1})), options))
+            .unwrap();
+        let shown = |mode: &str| {
+            let kind = EvaluationTraceKind::from_str(mode).unwrap();
+            response
+                .serialize_with_mode(serde_json::value::Serializer, kind)
+                .unwrap()
+        };
+        let plain = shown("default");
+        assert!(plain["trace"].is_object(), "{version:?}");
+        assert_eq!(
+            plain,
+            serde_json::to_value(&response).unwrap(),
+            "{version:?}"
+        );
+        assert!(shown("none")["trace"].is_null(), "{version:?}");
+        let text: Value = serde_json::from_str(shown("string")["trace"].as_str().unwrap()).unwrap();
+        assert_eq!(text, plain["trace"], "{version:?}");
+        let reference = shown("reference");
+        assert!(reference["trace"].get("$refs").is_some(), "{version:?}");
+        let restored =
+            Variable::deserialize_ref(serde_json::from_value(reference["trace"].clone()).unwrap())
+                .unwrap();
+        assert_eq!(restored.to_value(), plain["trace"], "{version:?}");
+        let both = Variable::deserialize_ref(
+            serde_json::from_str(shown("referenceString")["trace"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(both.to_value(), plain["trace"], "{version:?}");
+    }
+}

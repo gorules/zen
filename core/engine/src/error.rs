@@ -77,7 +77,22 @@ pub enum EvaluationError {
 }
 
 impl EvaluationError {
-    fn serialize_map<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize_with_mode<S>(
+        &self,
+        serializer: S,
+        mode: crate::EvaluationTraceKind,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.serialize_traced(serializer, Some(mode))
+    }
+
+    fn serialize_traced<S>(
+        &self,
+        serializer: S,
+        mode: Option<crate::EvaluationTraceKind>,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -97,7 +112,10 @@ impl EvaluationError {
                 map.serialize_entry("nodeId", &node_id)?;
 
                 if let Some(trace) = &trace {
-                    map.serialize_entry("trace", trace)?;
+                    match mode {
+                        Some(mode) => map.serialize_entry("trace", &mode.serialize_trace(trace))?,
+                        None => map.serialize_entry("trace", trace)?,
+                    }
                 }
             }
             EvaluationError::LoaderError(err) => {
@@ -141,7 +159,7 @@ impl Serialize for EvaluationError {
     where
         S: Serializer,
     {
-        self.serialize_map(serializer)
+        self.serialize_traced(serializer, None)
     }
 }
 

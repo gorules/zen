@@ -961,6 +961,34 @@ impl EvaluationTrace {
 }
 
 impl DecisionGraphResponse {
+    pub fn serialize_with_mode<S>(
+        &self,
+        serializer: S,
+        mode: crate::EvaluationTraceKind,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        use zen_expression::variable::ToVariable;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("performance", &self.performance)?;
+        map.serialize_entry("result", &self.result)?;
+        match &self.trace {
+            None => {}
+            Some(EvaluationTrace::Graph(graph)) => {
+                map.serialize_entry("trace", &mode.serialize_trace(&graph.to_variable()))?;
+            }
+            Some(other) => match mode.text() {
+                true => {
+                    map.serialize_entry("trace", &serde_json::to_string(other).unwrap_or_default())?
+                }
+                false => map.serialize_entry("trace", other)?,
+            },
+        }
+        map.end()
+    }
+
     pub(crate) fn serialized(
         response: Result<Self, Box<EvaluationError>>,
     ) -> Result<serde_json::Value, serde_json::Value> {

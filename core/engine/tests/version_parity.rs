@@ -250,6 +250,17 @@ fn wide_table(policy: &str, inputs: Value, rules: Vec<Value>) -> Value {
     )
 }
 
+fn same_as_version_1_without_compile(graph: &Value, input: &Value, want: Value) {
+    for path in [Path::Repeated, Path::Compiled, Path::Batch] {
+        for got in outcomes(EngineVersion::V2, path, graph, input) {
+            assert_eq!(got, want, "V2 {path:?}");
+        }
+    }
+    for got in outcomes(EngineVersion::V1, Path::Repeated, graph, input) {
+        assert_eq!(got, want, "V1 without compile");
+    }
+}
+
 #[test]
 fn a_table_cell_reads_the_last_tested_value_however_many_rules_there_are() {
     for padding in [0, 3, 7, 20] {
@@ -259,13 +270,13 @@ fn a_table_cell_reads_the_last_tested_value_however_many_rules_there_are() {
                 json!({"_id": format!("p{at}"), "i0": format!("\"q{at}\""), "o0": at.to_string()}),
             );
         }
-        same_on_every_path(
+        same_as_version_1_without_compile(
             &wide_table("first", json!([{"id": "i0", "field": "s"}]), rules.clone()),
             &json!({"s": "x"}),
             json!({}),
         );
         rules.rotate_left(1);
-        same_on_every_path(
+        same_as_version_1_without_compile(
             &wide_table("first", json!([{"id": "i0", "field": "s"}]), rules),
             &json!({"s": "x"}),
             match padding {
@@ -273,6 +284,24 @@ fn a_table_cell_reads_the_last_tested_value_however_many_rules_there_are() {
                 _ => json!({"v": "x"}),
             },
         );
+    }
+}
+
+#[test]
+fn version_1_keeps_its_released_table_results_after_compile() {
+    let mut rules = vec![json!({"_id": "r0", "i0": "", "o0": "$"})];
+    for at in 1..8 {
+        rules.push(
+            json!({"_id": format!("r{at}"), "i0": format!("'k{at}'"), "o0": format!("'{at}'")}),
+        );
+    }
+    let graph = wide_table("first", json!([{"id": "i0", "field": "s"}]), rules);
+    let input = json!({"s": "x"});
+    for got in outcomes(EngineVersion::V1, Path::Repeated, &graph, &input) {
+        assert_eq!(got, json!({}));
+    }
+    for got in outcomes(EngineVersion::V1, Path::Compiled, &graph, &input) {
+        assert_eq!(got, json!({"v": "x"}));
     }
 }
 

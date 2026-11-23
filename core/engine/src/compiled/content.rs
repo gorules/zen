@@ -31,8 +31,10 @@ impl DerefMut for Content {
 
 impl Content {
     pub(crate) fn of(graph: &GraphContent) -> Self {
+        let mut graph = graph.clone();
+        graph.dt_indexes = None;
         Self {
-            graph: graph.clone(),
+            graph,
             compiled_plan: None,
             schema_failures: None,
         }

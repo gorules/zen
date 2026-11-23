@@ -212,7 +212,8 @@ impl GraphContent {
             .iter()
             .filter_map(|node| match &node.kind {
                 DecisionNodeKind::DecisionTableNode { content } => {
-                    TableIndex::graph(content).map(|index| (node.id.clone(), index))
+                    TableIndex::build(&content.inputs, &content.rules)
+                        .map(|index| (node.id.clone(), index))
                 }
                 _ => None,
             })

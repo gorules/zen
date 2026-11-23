@@ -799,14 +799,22 @@ impl<'a> TraceBatch<'a> {
     }
 
     pub fn json(&self, row: usize) -> Option<String> {
-        self.document(row).map(|doc| doc.json().to_string())
+        match self.format {
+            TraceFormat::Legacy => serde_json::to_string(&self.trace(row)?).ok(),
+            _ => self.document(row).map(|doc| doc.json().to_string()),
+        }
     }
 
     pub fn write_all(&self, out: &mut String) -> Vec<usize> {
         let mut ends = Vec::with_capacity(self.len());
         let start = out.len();
         for row in 0..self.len() {
-            if !self.columnar(row, out) {
+            if self.format == TraceFormat::Legacy {
+                match self.json(row) {
+                    Some(text) => out.push_str(&text),
+                    None => out.push_str("null"),
+                }
+            } else if !self.columnar(row, out) {
                 match self.written(row) {
                     Some(doc) => out.push_str(doc.json()),
                     None => out.push_str("null"),

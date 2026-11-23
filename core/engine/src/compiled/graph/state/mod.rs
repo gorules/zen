@@ -182,12 +182,16 @@ impl CompiledGraph {
     }
 
     fn input_of<'a>(state: &State<'a>, parents: &[NodeIndex], rows: &Rc<[usize]>) -> Data<'a> {
-        let gathered: Vec<Data<'a>> = parents
+        let mut held: Vec<&[Rc<Data<'a>>]> = parents
             .iter()
-            .filter_map(|p| {
-                let pieces = state.nodes.get(p.index())?;
-                (!pieces.is_empty()).then(|| Data::gather(pieces, rows))
-            })
+            .filter_map(|p| state.nodes.get(p.index()))
+            .filter(|pieces| !pieces.is_empty())
+            .map(Vec::as_slice)
+            .collect();
+        held.dedup_by(|a, b| std::ptr::eq(*a, *b));
+        let gathered: Vec<Data<'a>> = held
+            .into_iter()
+            .map(|pieces| Data::gather(pieces, rows))
             .collect();
         Data::merged(rows, gathered)
     }
@@ -302,7 +306,8 @@ impl CompiledGraph {
                         .iter()
                         .filter_map(|nid| {
                             let pieces = state.nodes.get(nid.index())?;
-                            (!pieces.is_empty()).then(|| Data::gather(pieces, &rows).materialized())
+                            (!pieces.is_empty())
+                                .then(|| Data::gather(pieces, &rows).detached().materialized())
                         })
                         .collect();
                     for (i, &row) in rows.iter().enumerate() {
@@ -369,7 +374,11 @@ impl CompiledGraph {
     ) -> (Vec<Option<Variable>>, Vec<NodeColumn<'a>>) {
         match (
             step.nodes,
-            columnar && step.statics.is_some() && state.nesting.parents.is_none(),
+            columnar
+                && !step.dynamic
+                && !step.root
+                && step.statics.is_some()
+                && state.nesting.parents.is_none(),
         ) {
             (false, _) => (Vec::new(), Vec::new()),
             (true, true) => (Vec::new(), self.node_columns(step, state, visible, rows)),
@@ -391,10 +400,20 @@ impl CompiledGraph {
         if leaves.is_empty() {
             return false;
         }
+        let rebuilt = |key: &str| {
+            rebase.is_some_and(|base| {
+                key == base
+                    || zen_types::path::DotPath::under(key, base)
+                    || zen_types::path::DotPath::under(base, key)
+            })
+        };
         (step.root && rebase.is_none())
             || step.dynamic
             || leaves.iter().any(|(k, _)| {
-                k.as_ref() == "$" || k.as_ref() == "$nodes" || k.starts_with("$nodes.")
+                k.as_ref() == "$"
+                    || k.as_ref() == "$nodes"
+                    || k.starts_with("$nodes.")
+                    || rebuilt(k)
             })
     }
 
@@ -447,7 +466,21 @@ impl CompiledGraph {
                 .enumerate()
                 .map(|(row, v)| with_nodes(Scope::new(v.clone()), row))
                 .collect();
-            return f(&Bound::plain(scopes, context).probed(probe));
+            let mut bound = Bound::plain(scopes, context).probed(probe);
+            if !extra.is_empty() {
+                for (path, leaf) in extra {
+                    bound.columns = bound.columns.column(path.as_ref(), leaf.column());
+                }
+                let names: Vec<Arc<str>> = extra.iter().map(|(p, _)| p.clone()).collect();
+                bound.bind =
+                    Box::new(
+                        move |key: &str| match names.iter().position(|p| p.as_ref() == key) {
+                            Some(at) => Binding::Column(at),
+                            None => Binding::Row,
+                        },
+                    );
+            }
+            return f(&bound);
         }
         let blank = nodes.iter().all(Option::is_none)
             && matches!(&data.shape, data::Shape::Patched { base: None, .. });

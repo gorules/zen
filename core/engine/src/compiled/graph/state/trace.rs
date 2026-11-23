@@ -145,6 +145,10 @@ impl CompiledGraph {
             .as_deref()
             .is_none_or(crate::compiled::trace::plain_path);
         scoped
+            && content
+                .rules
+                .iter()
+                .all(|rule| !rule.contains_key("_description"))
             && content.inputs.iter().all(|input| match &input.field {
                 None => true,
                 Some(field) if field.is_empty() => true,
@@ -248,13 +252,18 @@ impl CompiledGraph {
         parents: &[NodeIndex],
         rows: &Rc<[usize]>,
     ) -> Vec<Variable> {
-        let columns: Vec<crate::compiled::graph::data::Col> = parents
+        let mut held: Vec<&[Rc<Data<'_>>]> = parents
             .iter()
-            .filter_map(|p| {
-                let pieces = state.nodes.get(p.index())?;
-                (!pieces.is_empty()).then(|| Data::gather(pieces, rows).materialized())
-            })
+            .filter_map(|p| state.nodes.get(p.index()))
+            .filter(|pieces| !pieces.is_empty())
+            .map(Vec::as_slice)
             .collect();
+        held.dedup_by(|a, b| std::ptr::eq(*a, *b));
+        let gathered: Vec<Data<'_>> = held
+            .into_iter()
+            .map(|pieces| Data::gather(pieces, rows))
+            .collect();
+        let columns = Data::shared(&gathered);
         (0..rows.len())
             .map(|row| {
                 crate::compiled::host::graph::walker::GraphWalker::merge_values(
@@ -337,8 +346,20 @@ impl CompiledGraph {
                             content.source.as_ref(),
                         )
                     });
-                crate::compiled::host::function::purity::Purity::module(&source)
-                    .then(Runtime::default)
+                match crate::compiled::host::function::purity::Purity::module(&source) {
+                    true => {
+                        let runtime = Runtime::default();
+                        let shared = NodeHandlerExtensions {
+                            function_runtime: runtime.clone(),
+                            ..extensions.clone()
+                        };
+                        if let Ok(function) = shared.function_runtime().await {
+                            let _ = function.reuse_module(&step.node.id, &source).await;
+                        }
+                        Some(runtime)
+                    }
+                    false => None,
+                }
             }
             _ => None,
         };

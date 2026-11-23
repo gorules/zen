@@ -142,7 +142,8 @@ impl CompiledGraph {
                     .materialized()
                     .iter()
                     .map(|value| {
-                        DeclaredDates::prepare(value, None).unwrap_or_else(|| value.clone())
+                        DeclaredDates::prepare(value, None, zen_expression::context::Timezone::UTC)
+                            .unwrap_or_else(|| value.clone())
                     })
                     .collect();
                 (Rc::new(Data::plain(rows.clone(), values)), Vec::new())
@@ -298,8 +299,12 @@ impl CompiledGraph {
             if let Some((validator, schema)) = &validator {
                 if validator.is_valid(VariableNode::new(value, &Guards::default())) {
                     values.push(match step.kind {
-                        Kind::Input => DeclaredDates::prepare(value, Some(schema))
-                            .unwrap_or_else(|| value.clone()),
+                        Kind::Input => DeclaredDates::prepare(
+                            value,
+                            Some(schema),
+                            extensions.context.timezone(),
+                        )
+                        .unwrap_or_else(|| value.clone()),
                         _ => value.clone(),
                     });
                     continue;
@@ -408,7 +413,15 @@ impl CompiledGraph {
                 (Some(rebase), None, true) if !overlapping => {
                     crate::compiled::census::Census::mark("layered");
                     Self::bound(lane, step, data, nodes, extra, rebase, |bound| {
-                        Self::layered(runner, body, transform.pass_through, data, bound, None)
+                        Self::layered(
+                            runner,
+                            body,
+                            transform.pass_through,
+                            data,
+                            bound,
+                            None,
+                            rebase.is_none(),
+                        )
                     })
                 }
                 (Some(rebase), Some(path), true) if keyed && expression && !overlapping => {
@@ -421,6 +434,7 @@ impl CompiledGraph {
                             data,
                             bound,
                             Some(path),
+                            false,
                         )
                     })
                 }

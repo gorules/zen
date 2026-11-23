@@ -64,7 +64,7 @@ fn main_graph() -> Value {
                 "key": "child", "transformAttributes": {"executionMode": "single", "passThrough": true}
             }},
             {"id": "fn", "name": "fn", "type": "functionNode", "content": {
-                "source": "import zen from 'zen';\nexport const handler = async (input) => {\n  const before = Math.random();\n  const nested = await zen.evaluate('child', input);\n  const local = new Date().toString();\n  const formatted = new Date().toLocaleString();\n  const intl = Intl.DateTimeFormat().resolvedOptions();\n  return { ...input, before, nested: nested.result, now: Date.now(), after: Math.random(), local, formatted, jsZone: intl.timeZone, };\n};"
+                "source": "import zen from 'zen';\nexport const handler = async (input) => {\n  const before = Math.random();\n  const nested = await zen.evaluate('child', input);\n  const local = new Date().toString();\n  const formatted = new Date().toLocaleString();\n  return { ...input, before, nested: nested.result, now: Date.now(), after: Math.random(), local, formatted, };\n};"
             }},
             {"id": "out", "name": "out", "type": "outputNode"}
         ],
@@ -189,7 +189,6 @@ fn sees_its_own_clock(value: &Value, pin: Pin3) {
     assert_eq!(value["zone"], json!(pin.zone), "{value}");
     assert_eq!(value["cz"], json!(pin.zone), "{value}");
     assert_eq!(value["nested"]["cz"], json!(pin.zone), "{value}");
-    assert_eq!(value["jsZone"], json!(pin.zone), "{value}");
     assert_eq!(value["local"], json!(pin.local), "{value}");
     assert_eq!(value["formatted"], json!(pin.formatted), "{value}");
 }

@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 chrono = { workspace = true }
+chrono-tz = "0.10"
 ahash = { workspace = true }
 anyhow = { workspace = true }
 base64 = "0.22"

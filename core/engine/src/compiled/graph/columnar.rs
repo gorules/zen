@@ -245,12 +245,16 @@ impl CompiledGraph {
                 })
                 .collect(),
             dated: validator
-                .map(|(_, schema)| Self::dated(&schema, columns))
+                .map(|(_, schema)| Self::dated(&schema, columns, extensions.context.timezone()))
                 .unwrap_or_default(),
         })
     }
 
-    fn dated<'a>(schema: &serde_json::Value, columns: &Columns<'_>) -> Vec<(usize, Leaf<'a>)> {
+    fn dated<'a>(
+        schema: &serde_json::Value,
+        columns: &Columns<'_>,
+        tz: zen_expression::context::Timezone,
+    ) -> Vec<(usize, Leaf<'a>)> {
         if !DeclaredDates::mentions(schema) {
             return Vec::new();
         }
@@ -264,7 +268,7 @@ impl CompiledGraph {
                 let values: Rc<[Variable]> = (0..columns.rows)
                     .map(|row| {
                         let value = column.variable(row);
-                        DeclaredDates::prepare(&value, Some(schema)).unwrap_or(value)
+                        DeclaredDates::prepare(&value, Some(schema), tz).unwrap_or(value)
                     })
                     .collect();
                 Some((index, Leaf::Any(values)))

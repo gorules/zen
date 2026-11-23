@@ -220,7 +220,8 @@ impl Normalizer {
                 (0..rows)
                     .map(|row| {
                         let value = column.variable(row);
-                        DeclaredDates::prepare(&value, None).unwrap_or(value)
+                        DeclaredDates::prepare(&value, None, zen_expression::context::Timezone::UTC)
+                            .unwrap_or(value)
                     })
                     .collect(),
             ),

@@ -6065,6 +6065,7 @@ dependencies = [
  "async-trait",
  "base64",
  "chrono",
+ "chrono-tz",
  "criterion",
  "ctor",
  "downcast-rs",

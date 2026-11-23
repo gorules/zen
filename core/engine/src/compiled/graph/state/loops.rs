@@ -327,6 +327,13 @@ impl CompiledGraph {
             return None;
         }
         let programs: Vec<&LaneProgram> = match body {
+            Body::Expression { entries, .. }
+                if entries
+                    .iter()
+                    .any(|(_, source)| zen_expression::lane::SourceInfo::reads_dollar(source)) =>
+            {
+                return None
+            }
             Body::Expression { program, .. } => vec![program],
             Body::Table(table) => table.programs(),
         };
@@ -357,7 +364,7 @@ impl CompiledGraph {
         data: &Data<'a>,
     ) -> (Data<'a>, Vec<(usize, String)>) {
         Self::bound(lane, step, data, &[], &[], None, |bound| {
-            Self::layered(runner, body, false, data, bound, None)
+            Self::layered(runner, body, false, data, bound, None, false)
         })
     }
 
@@ -422,7 +429,11 @@ impl CompiledGraph {
                     out[row] = match result {
                         Some(Ok(values)) => {
                             let object = Variable::empty_object();
-                            for ((key, _), value) in entries.iter().zip(values) {
+                            for ((key, source), value) in entries.iter().zip(values) {
+                                let value = match source.contains('$') {
+                                    true => value.deep_clone(),
+                                    false => value,
+                                };
                                 if let Some(values) =
                                     results.as_mut().and_then(|results| results.get_mut(row))
                                 {

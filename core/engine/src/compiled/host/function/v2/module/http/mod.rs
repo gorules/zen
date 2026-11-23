@@ -21,6 +21,7 @@ async fn execute_http<'js>(
     data: Option<serde_json::Value>,
     request: Option<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
+    let _waiting = crate::compiled::host::function::v2::function::Waiting::enter();
     let mut request = request.unwrap_or_default();
     if let Some(data) = data {
         request.data = Some(data);

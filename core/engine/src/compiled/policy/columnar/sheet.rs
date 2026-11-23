@@ -83,7 +83,11 @@ impl<'a> Sheet<'a> {
         })
     }
 
-    pub(super) fn dates(&mut self, schema: &InputSchema) -> Vec<bool> {
+    pub(super) fn dates(
+        &mut self,
+        schema: &InputSchema,
+        tz: zen_expression::context::Timezone,
+    ) -> Vec<bool> {
         let rows = self.rows;
         let mut dated = vec![false; rows];
         if !schema.has_dates() {
@@ -94,7 +98,7 @@ impl<'a> Sheet<'a> {
                 continue;
             };
             if let Some(leaf) =
-                Self::converted(schema, &at, &entry.leaf, rows, |row| dated[row] = true)
+                Self::converted(schema, &at, &entry.leaf, rows, tz, |row| dated[row] = true)
             {
                 entry.leaf = leaf;
             }
@@ -116,9 +120,11 @@ impl<'a> Sheet<'a> {
                 let Some(at) = schema.dates_at(&format!("{}.{}", entity.path, field.name)) else {
                     continue;
                 };
-                if let Some(leaf) = Self::converted(schema, &at, &field.leaf, children, |child| {
-                    dated[owner[child]] = true
-                }) {
+                if let Some(leaf) =
+                    Self::converted(schema, &at, &field.leaf, children, tz, |child| {
+                        dated[owner[child]] = true
+                    })
+                {
                     field.leaf = leaf;
                 }
             }
@@ -131,13 +137,14 @@ impl<'a> Sheet<'a> {
         at: &DatesAt,
         leaf: &Leaf<'a>,
         len: usize,
+        tz: zen_expression::context::Timezone,
         mut mark: impl FnMut(usize),
     ) -> Option<Leaf<'a>> {
         let mut changed = false;
         let values: Vec<Variable> = (0..len)
             .map(|at_row| {
                 let value = leaf.get(at_row);
-                match schema.convert_at(at, &value) {
+                match schema.convert_at(at, &value, tz) {
                     Some(next) => {
                         changed = true;
                         mark(at_row);

@@ -123,6 +123,12 @@ impl Session {
         self.scope.set_local(name, value);
     }
 
+    pub fn dollar_cycles(&self, path: &str, value: &Variable) -> bool {
+        self.scope
+            .local(&Variable::dollar_key())
+            .is_some_and(|dollar| dollar.dot_insert_cycles(path, value))
+    }
+
     pub fn insert_dollar(&mut self, path: &str, value: Variable) {
         let dollar = match self.scope.local(&Variable::dollar_key()) {
             Some(existing @ Variable::Object(_)) => existing.shallow_clone(),

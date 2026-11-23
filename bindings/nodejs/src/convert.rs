@@ -5,7 +5,6 @@ use std::ptr;
 use napi::bindgen_prelude::ToNapiValue;
 use napi::sys;
 use napi::sys::{napi_env, napi_value};
-use serde_json::Value;
 use zen_engine::{DecisionGraphResponse, EvaluationTrace};
 use zen_expression::variable::{RcCell, ToVariable};
 use zen_expression::Variable;
@@ -17,7 +16,6 @@ enum PNode {
     Str(Box<str>),
     Arr(Vec<u32>),
     Obj(Vec<(Box<str>, u32)>),
-    Json(Value),
 }
 
 pub struct PortableArena {
@@ -68,7 +66,7 @@ impl PortableArena {
 
                 PNode::Obj(entries)
             }
-            Variable::Dynamic(d) => PNode::Json(d.to_value()),
+            Variable::Dynamic(d) => return self.add(&Variable::from(d.to_value()), memo),
         };
 
         let id = self.nodes.len() as u32;
@@ -84,7 +82,6 @@ impl PortableArena {
 pub enum TraceField {
     None,
     Arena(u32),
-    Json(Value),
 }
 
 pub struct NodeEvalResponse {
@@ -107,7 +104,8 @@ impl NodeEvalResponse {
                 TraceField::Arena(arena.add(&graph.to_variable(), &mut memo))
             }
             Some(EvaluationTrace::Policy(policy)) => {
-                TraceField::Json(serde_json::to_value(&policy).unwrap_or_default())
+                let value = serde_json::to_value(&policy).unwrap_or_default();
+                TraceField::Arena(arena.add(&Variable::from(value), &mut memo))
             }
             Some(EvaluationTrace::V1(document)) => {
                 TraceField::Arena(arena.add(&document.to_variable(), &mut memo))
@@ -203,7 +201,6 @@ impl<'a> Materializer<'a> {
 
                 Ok(obj)
             }
-            PNode::Json(value) => ToNapiValue::to_napi_value(self.env, value.clone()),
         }
     }
 }
@@ -231,7 +228,6 @@ impl ToNapiValue for NodeEvalResponse {
         let trace = match &val.trace {
             TraceField::None => None,
             TraceField::Arena(root) => Some(materializer.value(*root)?),
-            TraceField::Json(value) => Some(ToNapiValue::to_napi_value(env, value.clone())?),
         };
 
         if let Some(trace) = trace {
@@ -240,5 +236,21 @@ impl ToNapiValue for NodeEvalResponse {
         }
 
         Ok(obj)
+    }
+}
+
+pub struct JsonValue(pub serde_json::Value);
+
+impl ToNapiValue for JsonValue {
+    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
+        let mut arena = PortableArena::new();
+        let root = arena.add(&Variable::from(val.0), &mut HashMap::new());
+        let mut materializer = Materializer {
+            env,
+            nodes: &arena.nodes,
+            cache: vec![ptr::null_mut(); arena.nodes.len()],
+            keys: HashMap::new(),
+        };
+        materializer.value(root)
     }
 }

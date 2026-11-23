@@ -9,6 +9,7 @@ use crate::variable::Variable;
 use crate::IsolateError;
 use ahash::HashMap;
 use bumpalo::Bump;
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 
@@ -812,8 +813,30 @@ impl CellSet {
         }
     }
 
+    fn dates_overlap(&self) -> bool {
+        use crate::lane::date::Date;
+        let readings: Vec<(Date, Date)> = self
+            .strs
+            .iter()
+            .filter_map(|(key, _)| {
+                let text = String::from_utf8_lossy(key);
+                let here = Date::from_text(&text, Tz::UTC);
+                let there = Date::from_text(&text, Tz::Etc__GMTMinus14);
+                (here.is_valid() || there.is_valid()).then_some((here, there))
+            })
+            .collect();
+        readings.iter().enumerate().any(|(at, (here, there))| {
+            readings[at + 1..].iter().any(|(other, elsewhere)| {
+                match (here != there, other != elsewhere) {
+                    (true, true) | (false, false) => here == other,
+                    _ => true,
+                }
+            })
+        })
+    }
+
     pub fn pieces(&self, empty: &[u64]) -> Option<Pieces> {
-        if !self.others.is_empty() || self.strs.len() > 64 {
+        if !self.others.is_empty() || self.strs.len() > 64 || self.dates_overlap() {
             return None;
         }
         let mut bits: Vec<Vec<u64>> = Vec::new();

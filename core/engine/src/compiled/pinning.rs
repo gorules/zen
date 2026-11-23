@@ -1,8 +1,11 @@
+mod calendar;
+mod date;
+
 use crate::engine::EvaluationOptions;
-use chrono::{DateTime, Duration, LocalResult, Offset, TimeZone};
-use rquickjs::prelude::Func;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use zen_expression::context::{
     location, parse_timezone, system_now, system_timezone, EvaluationContext, Site, Timezone,
 };
@@ -125,7 +128,20 @@ impl Located {
     }
 }
 
-const PIN_JS: &str = include_str!("pinning.js");
+fn canonical_zone(name: &str) -> Option<Timezone> {
+    static ZONES: OnceLock<HashMap<String, Timezone>> = OnceLock::new();
+    parse_timezone(name).or_else(|| {
+        ZONES
+            .get_or_init(|| {
+                chrono_tz::TZ_VARIANTS
+                    .iter()
+                    .map(|zone| (zone.name().to_ascii_lowercase(), *zone))
+                    .collect()
+            })
+            .get(&name.to_ascii_lowercase())
+            .copied()
+    })
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct JsSlot(Rc<RefCell<Option<EvaluationContext>>>);
@@ -175,69 +191,7 @@ impl JsSlot {
         }
     }
 
-    fn zone(&self, name: Option<String>) -> Option<Timezone> {
-        match name {
-            Some(name) => parse_timezone(&name),
-            None => Some(self.timezone()),
-        }
-    }
-
-    fn offset(&self, ms: f64, name: Option<String>) -> Option<f64> {
-        let zone = self.zone(name)?;
-        if !ms.is_finite() {
-            return None;
-        }
-        let at = DateTime::from_timestamp_millis(ms as i64)?.naive_utc();
-        let seconds = zone.offset_from_utc_datetime(&at).fix().local_minus_utc();
-        Some(seconds as f64 / 60.0)
-    }
-
-    fn utc(&self, local: f64, name: Option<String>) -> Option<f64> {
-        let zone = self.zone(name)?;
-        if !local.is_finite() {
-            return None;
-        }
-        let naive = DateTime::from_timestamp_millis(local as i64)?.naive_utc();
-        let offset = match zone.offset_from_local_datetime(&naive) {
-            LocalResult::Single(offset) => offset.fix(),
-            LocalResult::Ambiguous(earlier, _) => earlier.fix(),
-            LocalResult::None => zone
-                .offset_from_local_datetime(&(naive - Duration::hours(3)))
-                .earliest()?
-                .fix(),
-        };
-        let utc = naive - Duration::seconds(offset.local_minus_utc() as i64);
-        Some(utc.and_utc().timestamp_millis() as f64)
-    }
-
     pub(crate) fn install(&self, ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
-        let globals = ctx.globals();
-        if globals.get::<_, bool>("__zenPinned").unwrap_or(false) {
-            return Ok(());
-        }
-        let slot = self.clone();
-        globals.set("__zenNow", Func::from(move || slot.now()))?;
-        let slot = self.clone();
-        globals.set("__zenRandom", Func::from(move || slot.random()))?;
-        let slot = self.clone();
-        globals.set(
-            "__zenOffset",
-            Func::from(move |ms: f64, zone: Option<String>| slot.offset(ms, zone)),
-        )?;
-        let slot = self.clone();
-        globals.set(
-            "__zenUtc",
-            Func::from(move |local: f64, zone: Option<String>| slot.utc(local, zone)),
-        )?;
-        let slot = self.clone();
-        globals.set(
-            "__zenZone",
-            Func::from(move || slot.timezone().name().to_string()),
-        )?;
-        globals.set(
-            "__zenCanonicalZone",
-            Func::from(|name: String| parse_timezone(&name).map(|zone| zone.name().to_string())),
-        )?;
-        ctx.eval::<(), _>(PIN_JS)
+        date::install(ctx, self)
     }
 }

@@ -400,6 +400,30 @@ impl Lowering {
         }
     }
 
+    fn cell(&mut self, cell: &str, target: Ctx, r: &mut dyn Resolve) -> Lowered {
+        let test = self.parse(cell, true, target, r)?;
+        match target.dollar {
+            Some(dollar) if !self.settled(dollar) && !self.reaches(test, dollar) => Err(
+                Unsupported::new("table cell ignores a fallible input field"),
+            ),
+            _ => Ok(test),
+        }
+    }
+
+    fn reaches(&self, from: NodeId, to: NodeId) -> bool {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![from];
+        while let Some(id) = stack.pop() {
+            if id == to {
+                return true;
+            }
+            if !std::mem::replace(&mut seen[id as usize], true) {
+                stack.extend(self.nodes[id as usize].op.inputs());
+            }
+        }
+        false
+    }
+
     fn tabled(&mut self, spec: &TableSpec, r: &mut dyn Resolve) -> Result<(), Unsupported> {
         if spec.rules.is_empty() || spec.outputs.is_empty() {
             return Err(Unsupported::new("empty table"));
@@ -421,11 +445,11 @@ impl Lowering {
                     spec.inputs.get(at).and_then(Option::as_deref),
                     targets.get(at).copied().flatten(),
                 ) {
-                    (Some(_), Some(target)) => self.parse(cell, true, target, r)?,
+                    (Some(_), Some(target)) => self.cell(cell, target, r)?,
                     (Some(field), None) => {
                         let target = self.target(field, ctx, r)?;
                         targets[at] = Some(target);
-                        self.parse(cell, true, target, r)?
+                        self.cell(cell, target, r)?
                     }
                     (None, _) => self.parse(cell, false, ctx, r)?,
                 };
@@ -1386,8 +1410,24 @@ impl Lowering {
         }
     }
 
+    fn settled(&self, id: NodeId) -> bool {
+        match &self.nodes[id as usize].op {
+            Op::Column(_) | Op::Field(..) | Op::Const(_) => true,
+            Op::Parent(inner) => self.settled(*inner),
+            _ => self
+                .names
+                .iter()
+                .any(|(_, named)| *named == Named::Node(id)),
+        }
+    }
+
     fn mismatch(&mut self, op: Cmp, a: NodeId, b: NodeId) -> Lowered {
         if !(self.ty(a).nullable && self.ty(b).nullable) {
+            if !(self.settled(a) && self.settled(b)) {
+                return Err(Unsupported::new(
+                    "mismatched comparison of a fallible operand",
+                ));
+            }
             return Ok(self.konst(Lit::Bool(op == Cmp::Ne)));
         }
         let null = self.konst(Lit::Null);
@@ -2344,6 +2384,15 @@ impl Lowering {
 
     fn member(&mut self, x: NodeId, seq: Seq) -> Lowered {
         let seq = Self::pure(seq)?;
+        if self
+            .schema
+            .within(self.nodes[x as usize].scope, Scope::Elem(seq.list))
+        {
+            return Err(Unsupported::new("membership in the enclosing list"));
+        }
+        if !self.settled(x) {
+            return Err(Unsupported::new("membership of a fallible value"));
+        }
         let item = self.item(seq)?;
         let test = self.belongs(x, item)?;
         let test = self.lifted(test, seq.list)?;
@@ -2767,6 +2816,7 @@ impl Lowering {
         };
         let first = self.dated(low, lo, a)?;
         let second = self.dated(high, a, hi)?;
-        self.logic(true, first, second)
+        let both = self.compare(Cmp::Eq, first, second)?;
+        self.logic(true, both, first)
     }
 }

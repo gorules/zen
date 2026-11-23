@@ -37,6 +37,8 @@ impl RuntimeListener for HttpListener {
                             rquickjs_conv::from_value::<HttpHandlerRequest>(request_obj);
 
                         async move {
+                            let _waiting =
+                                crate::compiled::host::function::v2::function::Waiting::enter();
                             let request = request_result?;
                             let response = http_handler.handle(request).await.or_throw(&ctx)?;
                             let response_object = rquickjs_conv::to_value(ctx.clone(), response)?;

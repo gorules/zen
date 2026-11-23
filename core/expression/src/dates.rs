@@ -9,6 +9,10 @@ impl DateValue {
         VmDate::from_text(text).map(|date| Variable::Dynamic(Rc::new(date)))
     }
 
+    pub fn from_text_in(text: &str, tz: crate::context::Timezone) -> Option<Variable> {
+        VmDate::from_text_in(text, tz).map(|date| Variable::Dynamic(Rc::new(date)))
+    }
+
     pub fn is_text(text: &str) -> bool {
         VmDate::parses(text)
     }

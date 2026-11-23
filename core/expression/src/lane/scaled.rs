@@ -28,7 +28,13 @@ impl Scaled {
 
     #[inline]
     pub(crate) fn decimal(m: i64, s: u8) -> Decimal {
-        Decimal::new(m, s as u32)
+        Decimal::try_new(m, s as u32).unwrap_or_else(|_| {
+            let shift = u32::from(s).saturating_sub(Decimal::MAX_SCALE);
+            Decimal::new(
+                10i64.checked_pow(shift).map_or(0, |p| m / p),
+                Decimal::MAX_SCALE,
+            )
+        })
     }
 
     #[inline]

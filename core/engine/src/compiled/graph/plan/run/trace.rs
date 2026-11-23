@@ -92,9 +92,15 @@ impl<'a> PlanTrace<'a> {
     }
 
     fn input(&self, parents: &[NodeIndex], rows: &Rc<[usize]>) -> Rc<Data<'a>> {
-        let mut gathered: Vec<Rc<Data<'a>>> = parents
+        let mut held: Vec<Slot> = parents
             .iter()
-            .filter_map(|parent| self.piece(parent.index() as Slot, rows))
+            .map(|parent| parent.index() as Slot)
+            .filter(|slot| matches!(self.values.get(*slot as usize), Some(Some(_))))
+            .collect();
+        held.dedup();
+        let mut gathered: Vec<Rc<Data<'a>>> = held
+            .into_iter()
+            .filter_map(|slot| self.piece(slot, rows))
             .collect();
         if let [single] = gathered.as_slice() {
             if single.single() {

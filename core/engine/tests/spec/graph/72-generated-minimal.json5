@@ -175,8 +175,8 @@
 // --- B. A null written at a nested path, when the node's output fans out ----------------------
 // The walker keeps a null written under a dotted key or an outputPath (`{g: {a: null}}`), while a
 // top-level null key is dropped. When the writing node feeds both the output node and another
-// node whose result is merged at the same join, batch mode drops the nested null (`{g: {}}`).
-// Single and columnar mode agree with the walker.
+// node whose result is merged at the same join, the walker still keeps the nested null, because
+// both joined values share that object.
 
 {
   name: "B: passThrough dotted null, fanned out to the output and through a second passThrough node",
@@ -188,9 +188,9 @@
     edges: ["input -> e1", "e1 -> e2", "e1 -> output", "e2 -> output"],
   },
   cases: [
-    {input: {n: 2.5, score: null}, output: {g: {a: null}, n: 2.5, z: 1}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {n: 2.5, score: null}, output: {g: {a: null}, n: 2.5, z: 1}},
     {input: {n: 2.5, score: 1}, output: {g: {a: 1}, n: 2.5, score: 1, z: 1}},
-    {input: {n: 2}, output: {g: {a: null}, n: 2, z: 1}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {n: 2}, output: {g: {a: null}, n: 2, z: 1}},
     {input: {score: "s"}, output: {g: {a: "s"}, score: "s", z: 1}},
   ],
 }
@@ -220,9 +220,9 @@
     edges: ["input -> e1", "e1 -> e2", "e2 -> output", "e1 -> output"],
   },
   cases: [
-    {input: {}, output: {j: 0, lines: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {j: 0, lines: {k: null}}},
     {input: {n: 1}, output: {j: 0, lines: {k: 1}}},
-    {input: {n: null}, output: {j: 0, lines: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {n: null}, output: {j: 0, lines: {k: null}}},
     {input: {n: "x"}, output: {j: 0, lines: {k: "x"}}},
   ],
 }
@@ -237,10 +237,10 @@
     edges: ["input -> e1", "e1 -> output", "e1 -> t", "t -> output"],
   },
   cases: [
-    {input: {}, output: {done: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {done: true, res: {k: null}}},
     {input: {active: true}, output: {done: true, res: {k: true}}},
     {input: {tier: "gold"}, output: {done: true, res: {k: "gold"}}},
-    {input: {active: null, tier: null}, output: {done: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {active: null, tier: null}, output: {done: true, res: {k: null}}},
   ],
 }
 
@@ -257,9 +257,9 @@
     edges: ["input -> t1", "t1 -> t2", "t2 -> output", "input -> e", "e -> output"],
   },
   cases: [
-    {input: {}, output: {a: "mid", o: {p: null}, s: 0}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {score: 3}, output: {a: "mid", o: {p: null}, s: 3}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {score: null}, output: {a: "mid", o: {p: null}, s: 0}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {a: "mid", o: {p: null}, s: 0}},
+    {input: {score: 3}, output: {a: "mid", o: {p: null}, s: 3}},
+    {input: {score: null}, output: {a: "mid", o: {p: null}, s: 0}},
   ],
 }
 
@@ -274,9 +274,9 @@
     edges: ["input -> t1", "t1 -> e2", "e2 -> output", "t1 -> t3", "t3 -> output"],
   },
   cases: [
-    {input: {}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {missing: 1}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {missing: null}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {ok: true, res: {k: null}}},
+    {input: {missing: 1}, output: {ok: true, res: {k: null}}},
+    {input: {missing: null}, output: {ok: true, res: {k: null}}},
   ],
 }
 

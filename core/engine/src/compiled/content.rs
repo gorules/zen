@@ -31,8 +31,10 @@ impl DerefMut for Content {
 
 impl Content {
     pub(crate) fn of(graph: &GraphContent) -> Self {
+        let mut graph = graph.clone();
+        graph.dt_indexes = None;
         Self {
-            graph: graph.clone(),
+            graph,
             compiled_plan: None,
             schema_failures: None,
         }
@@ -85,8 +87,7 @@ impl Content {
             .iter()
             .filter_map(|node| match &node.kind {
                 DecisionNodeKind::DecisionTableNode { content } => {
-                    TableIndex::build(&content.inputs, &content.rules)
-                        .map(|index| (node.id.clone(), index))
+                    TableIndex::graph(content).map(|index| (node.id.clone(), index))
                 }
                 _ => None,
             })

@@ -23,6 +23,24 @@ pub(crate) struct ColumnIndex {
 }
 
 impl TableIndex {
+    pub(crate) fn graph(content: &zen_types::decision::DecisionTableContent) -> Option<TableIndex> {
+        let reads = |source: &Arc<str>| source.contains('$');
+        let bound = |id: &Arc<str>| {
+            content
+                .rules
+                .iter()
+                .any(|rule| rule.get(id).is_some_and(reads))
+        };
+        let leaks = content.inputs.iter().any(|input| match &input.field {
+            Some(field) => reads(field),
+            None => bound(&input.id),
+        }) || content.outputs.iter().any(|output| bound(&output.id));
+        match leaks {
+            true => None,
+            false => Self::build(&content.inputs, &content.rules),
+        }
+    }
+
     pub(crate) fn build(
         inputs: &[DecisionTableInputField],
         rules: &[HashMap<Arc<str>, Arc<str>>],

@@ -709,6 +709,15 @@ impl<'h> Build<'h> {
             let skip = !set.is_empty() && cost >= self.passes.skip_min;
             plans.push((g, r, set, skip));
         }
+        for i in 0..plans.len() {
+            if plans
+                .iter()
+                .enumerate()
+                .any(|(j, p)| j != i && p.1 == plans[i].1)
+            {
+                plans[i].3 = false;
+            }
+        }
         for (_, _, set, skip) in &plans {
             if !*skip {
                 continue;

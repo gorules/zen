@@ -284,7 +284,7 @@ impl CompiledGraph {
                     .skip(i + 1)
                     .any(|(b, _)| DotPath::overlaps(a, b))
             });
-        let walked = overlapping && entries.iter().any(|(_, source)| source.contains('$'));
+        let dollar = overlapping && entries.iter().any(|(_, source)| source.contains('$'));
         let mut expanded: Vec<(Arc<str>, Arc<str>, Arc<str>)> = Vec::with_capacity(entries.len());
         for (key, source) in entries.iter() {
             let read = format!("$.{}", key.split('.').next().unwrap_or_default());
@@ -307,6 +307,7 @@ impl CompiledGraph {
             .collect();
         let program =
             LaneProgram::compile_many_located(&refs, true, &labels).map_err(|e| e.to_string())?;
+        let walked = dollar || (overlapping && Self::writes_through_alias(&entries, &program));
         let empty: Box<[bool]> = expanded
             .iter()
             .map(|(_, _, fragment)| fragment.trim() == "{}")
@@ -332,6 +333,33 @@ impl CompiledGraph {
                 overlapping,
                 walked,
             },
+        })
+    }
+
+    fn writes_through_alias(entries: &[(Arc<str>, Arc<str>)], program: &LaneProgram) -> bool {
+        let p = program.program();
+        let regs: &[_] = match p.outputs.is_empty() {
+            true => std::slice::from_ref(&p.out),
+            false => &p.outputs,
+        };
+        entries.iter().enumerate().any(|(i, (key, source))| {
+            let under = entries
+                .iter()
+                .take(i)
+                .any(|(earlier, _)| DotPath::under(key, earlier));
+            let typed = regs
+                .get(i)
+                .and_then(|reg| p.kinds.get(*reg as usize))
+                .is_some_and(|kind| {
+                    matches!(
+                        kind,
+                        zen_expression::lane::Kind::Num
+                            | zen_expression::lane::Kind::Bool
+                            | zen_expression::lane::Kind::Str
+                            | zen_expression::lane::Kind::Date
+                    )
+                });
+            under && !typed && !SourceInfo::scalar(source)
         })
     }
 

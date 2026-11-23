@@ -14,6 +14,10 @@ impl Failure {
         format!(r#"{}: "{source}""#, Self::EXPRESSION)
     }
 
+    pub fn cyclic(key: &str) -> String {
+        format!("cyclic value at {key}")
+    }
+
     pub fn input(error: impl std::fmt::Display) -> String {
         format!("{}: {error}", Self::EXPRESSION)
     }

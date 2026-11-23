@@ -56,10 +56,14 @@ impl DeclaredDates {
             && variants.iter().any(|v| !is_null(v) && Self::declared(v))
     }
 
-    pub(crate) fn prepare(value: &Variable, schema: Option<&Value>) -> Option<Variable> {
+    pub(crate) fn prepare(
+        value: &Variable,
+        schema: Option<&Value>,
+        tz: zen_expression::context::Timezone,
+    ) -> Option<Variable> {
         if schema.is_some_and(Self::declared) {
             return match value {
-                Variable::String(text) => DateValue::from_text(text),
+                Variable::String(text) => DateValue::from_text_in(text, tz),
                 _ => None,
             };
         }
@@ -71,12 +75,12 @@ impl DeclaredDates {
                     .and_then(|o| Self::structure(o, "properties"))
                     .and_then(Value::as_object);
                 Self::rewrite_fields(value, |key, child| {
-                    Self::prepare(child, properties.and_then(|p| p.get(key)))
+                    Self::prepare(child, properties.and_then(|p| p.get(key)), tz)
                 })
             }
             Variable::Array(_) => {
                 let items = object.and_then(|o| Self::structure(o, "items"));
-                Self::rewrite_items(value, |item| Self::prepare(item, items))
+                Self::rewrite_items(value, |item| Self::prepare(item, items, tz))
             }
             _ => None,
         }

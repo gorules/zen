@@ -185,7 +185,7 @@ pub struct ZenEngineOptions {
         Option<Function<'static, ZenHttpHandlerRequest, Promise<ZenHttpHandlerResponse>>>,
 
     #[napi(ts_type = "1 | 2")]
-    pub version: Option<u32>,
+    pub version: Option<f64>,
 }
 
 #[napi]
@@ -260,9 +260,11 @@ impl ZenEngine {
 
         let mut decision_engine = DecisionEngine::new(loader, Arc::new(custom_node));
         if let Some(version) = opts.version {
-            decision_engine = decision_engine.with_version(
-                zen_engine::EngineVersion::try_from(version).map_err(|e| anyhow!(e))?,
-            );
+            let whole = (version.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(&version))
+                .then_some(version as u32)
+                .ok_or_else(|| anyhow!("unknown engine version {version}, expected 1 or 2"))?;
+            decision_engine = decision_engine
+                .with_version(zen_engine::EngineVersion::try_from(whole).map_err(|e| anyhow!(e))?);
         }
         if let Some(h) = opts.http_handler {
             let http_tsfn = h

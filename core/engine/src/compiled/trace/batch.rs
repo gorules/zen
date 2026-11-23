@@ -359,9 +359,13 @@ impl<'a> Traces<'a> {
                     .iter()
                     .filter_map(|p| outputs.get(*p as usize)?.as_ref()),
             );
-            let value = match &event.output {
-                Some(value) => value.row(position),
-                None => merged.clone(),
+            let value = match (&event.output, &event.encoding) {
+                (Some(Value::Data(data)), Encoding::Touched(Some(input))) => data
+                    .extends(input)
+                    .and_then(|layer| Data::apply(layer, position, &merged))
+                    .unwrap_or_else(|| data.materialize_row(position)),
+                (Some(value), _) => value.row(position),
+                (None, _) => merged.clone(),
             };
             let input = match event.input {
                 true => merged,

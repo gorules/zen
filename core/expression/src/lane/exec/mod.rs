@@ -1215,10 +1215,18 @@ impl Executor {
                     }
                 }
             }
-            Op::DollarInsert { key, value } => {
+            Op::DollarInsert { key, value, copy } => {
                 for lane in Lanes::of(active) {
                     let row = f.rows[lane];
                     let v = f.value(*value, lane);
+                    let v = match copy {
+                        true => {
+                            let copied = v.deep_clone();
+                            f.set(*value, lane, copied.clone());
+                            copied
+                        }
+                        false => v,
+                    };
                     let Some(root) = ctx.roots.get_mut(row) else {
                         continue;
                     };

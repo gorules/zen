@@ -280,6 +280,65 @@ impl Variable {
         object.insert_str(last_part, variable)
     }
 
+    pub fn dot_insert_cycles(&self, key: &str, variable: &Variable) -> bool {
+        if !matches!(variable, Variable::Object(_) | Variable::Array(_)) {
+            return false;
+        }
+        let Variable::Object(root) = self else {
+            return false;
+        };
+        let mut ancestors: Vec<*const ()> = vec![Rc::as_ptr(root) as *const ()];
+        let mut parts = key.split('.');
+        parts.next_back();
+        let mut head = root.clone();
+        for part in parts {
+            let next = match head.borrow().get_str(part) {
+                Some(Variable::Object(next)) => next.clone(),
+                _ => break,
+            };
+            ancestors.push(Rc::as_ptr(&next) as *const ());
+            head = next;
+        }
+        drop(head);
+        variable.reaches_any(&ancestors)
+    }
+
+    pub fn reaches_any(&self, targets: &[*const ()]) -> bool {
+        let mut seen: std::collections::HashSet<*const ()> = Default::default();
+        let mut pending: Vec<Variable> = vec![self.shallow_clone()];
+        while let Some(current) = pending.pop() {
+            let pointer = match &current {
+                Variable::Object(object) => Rc::as_ptr(object) as *const (),
+                Variable::Array(array) => Rc::as_ptr(array) as *const (),
+                _ => continue,
+            };
+            if targets.contains(&pointer) {
+                return true;
+            }
+            if !seen.insert(pointer) {
+                continue;
+            }
+            match &current {
+                Variable::Object(object) => pending.extend(
+                    object
+                        .borrow()
+                        .values()
+                        .filter(|value| matches!(value, Variable::Object(_) | Variable::Array(_)))
+                        .map(Variable::shallow_clone),
+                ),
+                Variable::Array(array) => pending.extend(
+                    array
+                        .borrow()
+                        .iter()
+                        .filter(|value| matches!(value, Variable::Object(_) | Variable::Array(_)))
+                        .map(Variable::shallow_clone),
+                ),
+                _ => {}
+            }
+        }
+        false
+    }
+
     pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
         let last_part = key.split('.').last()?;
         let (new_var, head_opt) = self.dot_head_detach(key);

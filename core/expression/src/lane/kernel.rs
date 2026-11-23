@@ -424,7 +424,11 @@ impl Members {
 enum Mode {
     Plain,
     Owned,
-    Dynamic { keys: Box<[Box<str>]>, rewind: bool },
+    Dynamic {
+        keys: Box<[Box<str>]>,
+        copies: Box<[bool]>,
+        rewind: bool,
+    },
 }
 
 pub(crate) struct Kernel {
@@ -527,6 +531,10 @@ impl Kernel {
         let mode = match (dynamic, assigns) {
             (true, rewind) => Mode::Dynamic {
                 keys: roots.iter().map(|(k, _)| Box::from(*k)).collect(),
+                copies: roots
+                    .iter()
+                    .map(|(_, n)| LaneCompiler::reads_built(n))
+                    .collect(),
                 rewind,
             },
             (false, true) => Mode::Owned,
@@ -637,6 +645,12 @@ impl Kernel {
                 element: None,
                 up: None,
             })?;
+            let value = match &self.mode {
+                Mode::Dynamic { copies, .. } if copies.get(index).copied().unwrap_or(false) => {
+                    value.deep_clone()
+                }
+                _ => value,
+            };
             if let (Mode::Dynamic { keys, .. }, Some(current), Some(roots)) =
                 (&self.mode, &current, &roots)
             {

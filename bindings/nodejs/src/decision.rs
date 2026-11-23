@@ -1,3 +1,4 @@
+use crate::convert::NodeEvalResponse;
 use crate::engine::ZenEvaluateOptions;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
@@ -28,14 +29,18 @@ impl ZenDecision {
         &self,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<NodeEvalResponse> {
         let decision = self.0.clone();
         let options: zen_engine::EvaluationOptions = opts.unwrap_or_default().try_into()?;
         let result = spawn_worker(move || async move {
             let context = zen_engine::Variable::try_from_value(context).map_err(
                 |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
             )?;
-            decision.evaluate_serialized(context, options).await
+            decision
+                .evaluate_with_opts(context, options)
+                .await
+                .map(NodeEvalResponse::build)
+                .map_err(|e| serde_json::to_value(&*e).unwrap_or_default())
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
@@ -51,7 +56,7 @@ impl ZenDecision {
         &self,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> SafeResult<Value> {
+    ) -> SafeResult<NodeEvalResponse> {
         self.evaluate(context, opts).await.into()
     }
 

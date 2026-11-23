@@ -128,6 +128,8 @@ impl RuntimeListener for ZenListener {
                             let context = slot.current().unwrap_or_default();
 
                             async move {
+                                let _waiting =
+                                    crate::compiled::host::function::v2::function::Waiting::enter();
                                 let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
 
                                 let iteration: u8 = config.get("iteration").or_throw(&ctx)?;

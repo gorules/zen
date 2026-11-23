@@ -233,6 +233,18 @@ impl Table {
             };
             match field {
                 Some(field) => {
+                    if !strict && SourceInfo::reads_dollar(field) {
+                        return Err("table field reads `$`".into());
+                    }
+                    if !strict
+                        && (SourceInfo::reads_whole_root(field, false)
+                            || cells
+                                .iter()
+                                .flatten()
+                                .any(|cell| SourceInfo::reads_whole_root(cell, true)))
+                    {
+                        return Err("table reads the whole root".into());
+                    }
                     if strict
                         && cells
                             .iter()
@@ -279,6 +291,9 @@ impl Table {
                         };
                         if SourceInfo::reads_dollar(cell) {
                             return Err("table cell without a field reads `$`".into());
+                        }
+                        if SourceInfo::reads_whole_root(cell, false) {
+                            return Err("table reads the whole root".into());
                         }
                         match distinct.iter_mut().find(|(s, _, _)| s.as_ref() == *cell) {
                             Some((_, _, bits)) => bit(bits, rule),
@@ -362,20 +377,90 @@ impl Table {
             }
         }
         let mut outputs = Vec::with_capacity(rules);
+        let usable = |field: &str| {
+            !field.trim().is_empty()
+                && !SourceInfo::draws(field)
+                && !SourceInfo::reads_dollar(field)
+        };
+        let plain = |field: &str| {
+            crate::compiled::trace::plain_path(field)
+                && LaneProgram::standard(field).is_ok_and(|program| program.path() == Some(field))
+        };
+        let probed: Vec<(Vec<&str>, bool)> = ir
+            .rules
+            .iter()
+            .map(|rule| {
+                let filled = ir
+                    .inputs
+                    .iter()
+                    .filter(|input| ir.cell(rule, input.id).is_some());
+                let fields: Vec<&str> = filled.clone().filter_map(|input| input.field).collect();
+                let bare = filled.clone().any(|input| input.field.is_none());
+                (fields, bare)
+            })
+            .collect();
+        let tested: Vec<Vec<Option<String>>> = ir
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(at, rule)| {
+                let value: Option<&str> = match ir.profile.strict() {
+                    true => None,
+                    false => match probed[at].0.last() {
+                        Some(field) => Some(*field).filter(|field| usable(field)),
+                        None => match probed[..at]
+                            .iter()
+                            .rev()
+                            .find(|(fields, _)| !fields.is_empty())
+                        {
+                            Some((fields, false)) if fields.len() == 1 => {
+                                Some(fields[0]).filter(|field| usable(field) && plain(field))
+                            }
+                            Some(_) => None,
+                            None => Some("null"),
+                        },
+                    },
+                };
+                ir.outputs
+                    .iter()
+                    .map(|output| {
+                        let cell = ir.cell(rule, output.id)?;
+                        match SourceInfo::reads_dollar(cell) {
+                            true => SourceInfo::with_dollar(cell, value?),
+                            false => None,
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
         let mut memo = OutputCells::default();
-        for rule in ir.rules.iter() {
+        for (rule, tested) in ir.rules.iter().zip(tested.iter()) {
             let mut paths = Vec::new();
             let mut full: Vec<(String, &str)> = Vec::new();
             let mut collect: Vec<(String, &str)> = Vec::new();
-            for (column, output) in ir.outputs.iter().enumerate() {
-                if output.path.is_empty() {
-                    continue;
-                }
-                let Some(cell) = ir.cell(rule, output.id) else {
-                    continue;
-                };
+            let written: Vec<(usize, &profile::OutputIr, &str)> = ir
+                .outputs
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| !output.path.is_empty())
+                .filter_map(|(column, output)| {
+                    ir.cell(rule, output.id).map(|cell| (column, output, cell))
+                })
+                .collect();
+            for (at, &(column, output, cell)) in written.iter().enumerate() {
+                let cell = tested[column].as_deref().unwrap_or(cell);
                 if SourceInfo::reads_dollar(cell) {
                     return Err("table output cell reads `$`".into());
+                }
+                if SourceInfo::reads_whole_root(cell, false) {
+                    return Err("table reads the whole root".into());
+                }
+                let shadowed = !output.collect
+                    && written[at + 1..].iter().any(|(_, later, _)| {
+                        !later.collect && zen_types::path::DotPath::within(output.path, later.path)
+                    });
+                if shadowed {
+                    continue;
                 }
                 let key = format!("o{}", full.len());
                 full.push((key, cell));

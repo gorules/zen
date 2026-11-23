@@ -59,6 +59,7 @@ pub(crate) struct Layer<'a> {
     pub columns: Rc<[Leaf<'a>]>,
     pub present: Option<Rc<[Mask<'a>]>>,
     pub flat: bool,
+    origin: Rc<()>,
 }
 
 impl<'a> Layer<'a> {
@@ -88,6 +89,7 @@ impl<'a> Layer<'a> {
             columns: columns.into(),
             present: present.map(Rc::from),
             flat,
+            origin: Rc::new(()),
         }
     }
 
@@ -261,6 +263,7 @@ impl<'a> Layer<'a> {
                 .as_ref()
                 .map(|masks| masks.iter().map(|m| m.pick(positions)).collect()),
             flat: self.flat,
+            origin: self.origin.clone(),
         }
     }
 }
@@ -318,7 +321,8 @@ pub(crate) enum Read {
 pub(crate) struct Data<'a> {
     pub rows: Rc<[usize]>,
     pub shape: Shape<'a>,
-    whole: OnceCell<Col>,
+    whole: Rc<OnceCell<Col>>,
+    origin: Option<Rc<Data<'a>>>,
     tops: RefCell<Vec<(Arc<str>, Col)>>,
 }
 
@@ -327,7 +331,8 @@ impl<'a> Data<'a> {
         Data {
             rows,
             shape: Shape::Plain(values),
-            whole: OnceCell::new(),
+            whole: Rc::default(),
+            origin: None,
             tops: RefCell::new(Vec::new()),
         }
     }
@@ -336,13 +341,25 @@ impl<'a> Data<'a> {
         Data {
             rows,
             shape,
-            whole: OnceCell::new(),
+            whole: Rc::default(),
+            origin: None,
             tops: RefCell::new(Vec::new()),
         }
     }
 
     pub fn copied(&self) -> Data<'a> {
-        Data::with_shape(self.rows.clone(), self.shape.clone())
+        Data {
+            whole: self.whole.clone(),
+            origin: self.origin.clone(),
+            ..Data::with_shape(self.rows.clone(), self.shape.clone())
+        }
+    }
+
+    pub fn detached(&self) -> Data<'a> {
+        Data {
+            origin: self.origin.clone(),
+            ..Data::with_shape(self.rows.clone(), self.shape.clone())
+        }
     }
 
     pub fn single(&self) -> bool {
@@ -365,7 +382,11 @@ impl<'a> Data<'a> {
     pub fn gather(pieces: &[Rc<Data<'a>>], rows: &Rc<[usize]>) -> Data<'a> {
         if let [single] = pieces {
             if Rc::ptr_eq(&single.rows, rows) || single.rows == *rows {
-                return Data::with_shape(rows.clone(), single.shape.clone());
+                return Data {
+                    whole: single.whole.clone(),
+                    origin: single.origin.clone(),
+                    ..Data::with_shape(rows.clone(), single.shape.clone())
+                };
             }
         }
         let span = pieces
@@ -583,12 +604,10 @@ impl<'a> Data<'a> {
     }
 
     pub fn apply(layer: &Layer<'a>, row: usize, before: &Variable) -> Option<Variable> {
-        let Variable::Object(map) = before else {
+        let Variable::Object(_) = before else {
             return None;
         };
-        let mut current = map.borrow().clone();
-        layer.apply(row, &mut current);
-        Some(Variable::from_object(current))
+        Some(before.clone().merge_clone(&layer.object(row)))
     }
 
     pub fn partial(&self, path: &str) -> Leaf<'a> {
@@ -681,7 +700,18 @@ impl<'a> Data<'a> {
 
     pub fn materialized(&self) -> Col {
         self.whole
-            .get_or_init(|| (0..self.len()).map(|r| self.materialize_row(r)).collect())
+            .get_or_init(|| match &self.origin {
+                Some(origin) => {
+                    let before = origin.materialized();
+                    (0..self.len())
+                        .map(|row| match origin.nulled(row) {
+                            true => self.materialize_row(row),
+                            false => before[row].clone(),
+                        })
+                        .collect()
+                }
+                None => (0..self.len()).map(|r| self.materialize_row(r)).collect(),
+            })
             .clone()
     }
 
@@ -755,19 +785,22 @@ impl<'a> Data<'a> {
                         leaves,
                         presence,
                         ..
-                    } => Data::with_shape(
-                        rows.clone(),
-                        Shape::Patched {
+                    } => {
+                        let shape = Shape::Patched {
                             base: base.clone(),
                             layers: layers.clone(),
                             leaves: leaves.clone(),
                             nulls: None,
                             presence: presence.clone(),
-                        },
-                    ),
+                        };
+                        Data {
+                            origin: Some(Rc::new(single)),
+                            ..Data::with_shape(rows.clone(), shape)
+                        }
+                    }
                 }
             }
-            _ if parents.iter().all(Data::patchable) => {
+            _ if parents.iter().all(Data::patchable) && !Self::aliased(&parents) => {
                 let mut parents = parents.into_iter();
                 let mut head = match parents.next() {
                     Some(first) => Data::merged(rows, vec![first]),
@@ -781,13 +814,143 @@ impl<'a> Data<'a> {
                 head
             }
             _ => {
-                let materialized: Vec<Col> = parents.iter().map(Data::materialized).collect();
+                let materialized = Self::shared(&parents);
                 let values: Col = (0..rows.len())
                     .map(|row| GraphWalker::merge_values(materialized.iter().map(|m| &m[row])))
                     .collect();
                 Data::plain(rows.clone(), values)
             }
         }
+    }
+
+    fn lineage(&self) -> (Option<&Col>, &[Layer<'a>]) {
+        match &self.shape {
+            Shape::Plain(values) => (Some(values), &[]),
+            Shape::Patched { base, layers, .. } => (base.as_ref(), layers),
+        }
+    }
+
+    fn common(&self, other: &Data<'a>) -> Option<usize> {
+        let ((base, layers), (other_base, other_layers)) = (self.lineage(), other.lineage());
+        let based = match (base, other_base) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                Rc::ptr_eq(a, b)
+                    || a.len() == b.len()
+                        && a.iter().zip(b.iter()).all(|pair| match pair {
+                            (Variable::Object(a), Variable::Object(b)) => Rc::ptr_eq(a, b),
+                            (Variable::Array(a), Variable::Array(b)) => Rc::ptr_eq(a, b),
+                            _ => false,
+                        })
+            }
+            _ => false,
+        };
+        if !based {
+            return None;
+        }
+        let depth = layers
+            .iter()
+            .zip(other_layers)
+            .take_while(|(a, b)| Rc::ptr_eq(&a.origin, &b.origin))
+            .count();
+        (base.is_some() || depth > 0).then_some(depth)
+    }
+
+    fn nullable(&self) -> bool {
+        let Shape::Patched {
+            leaves,
+            presence: Some(presence),
+            ..
+        } = &self.shape
+        else {
+            return true;
+        };
+        let rows = self.len();
+        leaves
+            .iter()
+            .zip(presence.iter())
+            .any(|((_, leaf), present)| {
+                leaf.objects()
+                    || !matches!(present, Presence::Valued)
+                        && present
+                            .mask(leaf, rows)
+                            .iter()
+                            .zip(leaf.valued(rows).iter())
+                            .any(|(p, v)| p & !v != 0)
+            })
+    }
+
+    fn aliased(parents: &[Data<'a>]) -> bool {
+        parents.iter().enumerate().skip(1).any(|(at, parent)| {
+            parents[..at]
+                .iter()
+                .any(|earlier| parent.common(earlier).is_some())
+                && parent.nullable()
+        })
+    }
+
+    pub fn shared(parents: &[Data<'a>]) -> Vec<Col> {
+        let count = parents.first().map_or(0, Data::len);
+        let mut chains: Vec<Option<Vec<Col>>> = Vec::with_capacity(parents.len());
+        let mut out = Vec::with_capacity(parents.len());
+        for (at, parent) in parents.iter().enumerate() {
+            let mut best: Option<(usize, usize)> = None;
+            for (other, earlier) in parents[..at].iter().enumerate() {
+                if let Some(depth) = parent.common(earlier) {
+                    if best.is_none_or(|(found, _)| depth > found) {
+                        best = Some((depth, other));
+                    }
+                }
+            }
+            let later = parents[at + 1..]
+                .iter()
+                .any(|next| next.common(parent).is_some());
+            if best.is_none() && !later {
+                out.push(parent.materialized());
+                chains.push(None);
+                continue;
+            }
+            let (base, layers) = parent.lineage();
+            let mut chain: Vec<Col> = Vec::with_capacity(layers.len() + 1);
+            match best.and_then(|(depth, other)| Some((depth, chains[other].as_ref()?))) {
+                Some((depth, from)) => chain.extend(from[..=depth].iter().cloned()),
+                None => chain.push(match base {
+                    Some(base) => base.clone(),
+                    None => (0..count).map(|_| Variable::Null).collect(),
+                }),
+            }
+            for layer in &layers[chain.len() - 1..] {
+                let Some(before) = chain.last() else {
+                    break;
+                };
+                let next: Col = (0..count)
+                    .map(|row| match &before[row] {
+                        value @ Variable::Object(_) => {
+                            value.clone().merge_clone(&layer.object(row))
+                        }
+                        _ => layer.object(row),
+                    })
+                    .collect();
+                chain.push(next);
+            }
+            let last = chain
+                .last()
+                .cloned()
+                .unwrap_or_else(|| parent.materialized());
+            out.push(match &parent.shape {
+                Shape::Patched {
+                    nulls: Some(nulls), ..
+                } => (0..count)
+                    .map(|row| match Bits::get(nulls, row) {
+                        true => Variable::Null,
+                        false => last[row].clone(),
+                    })
+                    .collect(),
+                _ => last,
+            });
+            chains.push(Some(chain));
+        }
+        out
     }
 
     pub fn empty(rows: &Rc<[usize]>) -> Data<'a> {
@@ -923,7 +1086,25 @@ impl<'a> Data<'a> {
                 true => column.valued(count),
                 false => Vec::new(),
             };
-            let removed = base.is_none() && layer.present.is_none() && Bits::none(&valued);
+            let kept = match (&presence, path.rsplit_once('.')) {
+                (Some(_), Some((parent, _))) => {
+                    let mut open = Bits::of(count, |row| {
+                        layer.has(index, row) && !Bits::get(&valued, row)
+                    });
+                    if !Bits::none(&open) {
+                        let objects = self.objects_at(parent);
+                        open.iter_mut()
+                            .zip(objects.iter())
+                            .for_each(|(o, b)| *o &= !b);
+                    }
+                    open
+                }
+                _ => Vec::new(),
+            };
+            let removed = base.is_none()
+                && layer.present.is_none()
+                && Bits::none(&valued)
+                && Bits::none(&kept);
             if removed {
                 let keep: Vec<bool> = next
                     .iter()
@@ -993,8 +1174,14 @@ impl<'a> Data<'a> {
             };
             let existing = next.iter().position(|(leaf, _)| leaf == path);
             if let Some(tracked) = presence.as_mut() {
+                let kept_at = |at: usize| kept.get(at).copied().unwrap_or(0);
                 let present = match &layer.present {
-                    None => Presence::Valued,
+                    None if Bits::none(&kept) => Presence::Valued,
+                    None => {
+                        let mut bits = resolved.valued(count);
+                        Bits::or(&mut bits, &kept);
+                        Presence::Mask(Mask::Bits(bits.into()))
+                    }
                     Some(masks) => {
                         let has = masks[index].dense(count);
                         let before = existing.map(|i| tracked[i].mask(&next[i].1, count));
@@ -1003,9 +1190,15 @@ impl<'a> Data<'a> {
                                 .iter()
                                 .zip(valued.iter())
                                 .zip(before.iter())
-                                .map(|((h, v), b)| (h & v) | (!h & b))
+                                .enumerate()
+                                .map(|(at, ((h, v), b))| (h & (v | kept_at(at))) | (!h & b))
                                 .collect(),
-                            None => has.iter().zip(valued.iter()).map(|(h, v)| h & v).collect(),
+                            None => has
+                                .iter()
+                                .zip(valued.iter())
+                                .enumerate()
+                                .map(|(at, (h, v))| h & (v | kept_at(at)))
+                                .collect(),
                         }))
                     }
                 };
@@ -1031,6 +1224,33 @@ impl<'a> Data<'a> {
                 presence: presence.map(Rc::from),
             },
         )
+    }
+
+    fn objects_at(&self, path: &str) -> Vec<u64> {
+        let count = self.len();
+        if let Shape::Patched {
+            base: None,
+            leaves,
+            presence,
+            ..
+        } = &self.shape
+        {
+            match Self::read(leaves, path) {
+                Read::Base => return vec![0; count.div_ceil(64)],
+                Read::Leaf(index) => {
+                    let leaf = &leaves[index].1;
+                    return Bits::of(count, |row| {
+                        presence
+                            .as_ref()
+                            .is_none_or(|presence| presence[index].at(leaf, row))
+                            && matches!(leaf.shared(row), Variable::Object(_))
+                    });
+                }
+                Read::Whole => {}
+            }
+        }
+        let column = self.subtree(path);
+        Bits::of(count, |row| matches!(column[row], Variable::Object(_)))
     }
 
     pub fn presence_bits(&self, index: usize) -> Option<Vec<u64>> {

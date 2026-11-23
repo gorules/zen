@@ -640,10 +640,11 @@ impl Artifact {
     pub(crate) fn prepare(
         &self,
         req: &EvaluateRequest,
+        tz: zen_expression::context::Timezone,
     ) -> Result<(Variable, Vec<PropertyPath>), EvaluationError> {
         let input = self
             .input_schema
-            .convert_dates(&req.input)
+            .convert_dates(&req.input, tz)
             .unwrap_or_else(|| req.input.clone());
         self.validate_request(req, &input)?;
 

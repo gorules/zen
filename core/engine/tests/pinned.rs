@@ -128,7 +128,7 @@ fn real_clock(millis: &Value) -> bool {
 fn zoned_function() -> Decision {
     graph(json!({
         "id": "calc", "name": "calc", "type": "functionNode",
-        "content": {"source": "export const handler = async (input) => { const d = new Date(Date.UTC(2026, 0, 15, 12, 34, 56)); const o = Intl.DateTimeFormat().resolvedOptions(); return { text: d.toString(), hours: d.getHours(), offset: d.getTimezoneOffset(), date: d.toDateString(), time: d.toTimeString(), local: d.toLocaleString(), localDate: d.toLocaleDateString(), localTime: d.toLocaleTimeString(), utc: d.toLocaleString(undefined, { timeZone: 'UTC' }), tagged: d.toLocaleDateString('de-DE'), zone: o.timeZone, midnight: new Date(2026, 0, 15).getTime(), parsed: new Date('2026-01-15T10:00:00').getTime(), iso: new Date('2026-01-15').getTime(), set: (() => { const x = new Date(Date.UTC(2026, 0, 15, 12)); x.setHours(0, 0, 0, 0); return x.toISOString(); })(), now: new Date().toString(), call: Date(), r: Math.random() }; }"}
+        "content": {"source": "export const handler = async (input) => { const d = new Date(Date.UTC(2026, 0, 15, 12, 34, 56)); return { text: d.toString(), hours: d.getHours(), offset: d.getTimezoneOffset(), date: d.toDateString(), time: d.toTimeString(), local: d.toLocaleString(), localDate: d.toLocaleDateString(), localTime: d.toLocaleTimeString(), utc: d.toLocaleString(undefined, { timeZone: 'UTC' }), tagged: d.toLocaleDateString('de-DE'), intl: typeof Intl, lower: d.toLocaleString(undefined, { timeZone: 'utc' }), unknown: d.toLocaleTimeString(undefined, { timeZone: 'Mars/Base' }), midnight: new Date(2026, 0, 15).getTime(), parsed: new Date('2026-01-15T10:00:00').getTime(), iso: new Date('2026-01-15').getTime(), set: (() => { const x = new Date(Date.UTC(2026, 0, 15, 12)); x.setHours(0, 0, 0, 0); return x.toISOString(); })(), now: new Date().toString(), call: Date(), r: Math.random() }; }"}
     }))
 }
 
@@ -165,8 +165,11 @@ fn function_nodes_read_the_zone_of_the_context() {
     assert_eq!(tokyo["localDate"], json!("01/15/2026"));
     assert_eq!(tokyo["localTime"], json!("09:34:56 PM"));
     assert_eq!(tokyo["utc"], json!("01/15/2026, 12:34:56 PM"));
-    assert_eq!(berlin["zone"], json!("Europe/Berlin"));
-    assert_eq!(tokyo["zone"], json!("Asia/Tokyo"));
+    assert_eq!(berlin["intl"], json!("undefined"));
+    assert_eq!(berlin["lower"], berlin["utc"]);
+    assert_eq!(tokyo["lower"], tokyo["utc"]);
+    assert_eq!(berlin["unknown"], berlin["localTime"]);
+    assert_eq!(tokyo["unknown"], tokyo["localTime"]);
     assert_eq!(berlin["midnight"], json!(1_768_431_600_000i64));
     assert_eq!(tokyo["midnight"], json!(1_768_402_800_000i64));
     assert_eq!(berlin["parsed"], json!(1_768_467_600_000i64));
@@ -187,7 +190,7 @@ fn function_nodes_read_the_zone_of_the_context() {
 fn v1_function_nodes_read_the_zone_of_the_context() {
     let d = graph(json!({
         "id": "calc", "name": "calc", "type": "functionNode",
-        "content": "const handler = (input) => ({ text: new Date(Date.UTC(2026, 0, 15, 12)).toString(), local: new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(), zone: Intl.DateTimeFormat().resolvedOptions().timeZone })"
+        "content": "const handler = (input) => ({ text: new Date(Date.UTC(2026, 0, 15, 12)).toString(), local: new Date(Date.UTC(2026, 0, 15, 12)).toLocaleDateString(), offset: new Date(Date.UTC(2026, 0, 15, 12)).getTimezoneOffset() })"
     }));
     let (berlin, _) = evaluated(&d, 1, zoned("Europe/Berlin"));
     let (york, _) = evaluated(&d, 1, zoned("America/New_York"));
@@ -195,7 +198,7 @@ fn v1_function_nodes_read_the_zone_of_the_context() {
     assert_eq!(york["text"], json!("Thu Jan 15 2026 07:00:00 GMT-0500"));
     assert_eq!(berlin["local"], json!("01/15/2026"));
     assert_eq!(york["local"], json!("01/15/2026"));
-    assert_eq!(york["zone"], json!("America/New_York"));
+    assert_eq!(york["offset"], json!(300));
 }
 
 #[test]
@@ -226,10 +229,13 @@ fn the_interpreted_engine_pins_only_the_expression_clock() {
             assert_ne!((&a["r"], &a["q"]), (&pinned["r"], &pinned["q"]));
         }
     }
-    let r = block(zone.evaluate_with_opts(input(1), zoned("Asia/Tokyo")));
-    assert!(
-        r.is_err(),
-        "the interpreted host has no Intl and no zone shim"
+    let r = block(zone.evaluate_with_opts(input(1), zoned("Asia/Tokyo"))).unwrap();
+    let r = serde_json::to_value(&r.result).unwrap();
+    assert_eq!(r["intl"], json!("undefined"), "{r}");
+    assert_ne!(
+        r["now"],
+        json!("Wed Nov 04 2026 18:30:00 GMT+0900"),
+        "the interpreted host has no zone shim"
     );
     let engine = policy_engine().interpreted();
     let run = |o: EvaluationOptions| {

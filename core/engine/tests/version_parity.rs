@@ -975,3 +975,259 @@ fn a_batch_row_keeps_a_nested_null_from_a_table_shared_with_a_pass_through_branc
         ],
     );
 }
+
+fn engine_with(version: EngineVersion, children: &[(&str, Value)]) -> DecisionEngine {
+    let memory = zen_engine::loader::MemoryLoader::default();
+    for (key, child) in children {
+        let content: DecisionContent = serde_json::from_value(child.clone()).unwrap();
+        memory.add(*key, content);
+    }
+    DecisionEngine::default()
+        .with_loader(Arc::new(memory))
+        .with_version(version)
+}
+
+fn cyclic_rows_fail_alone_on_version_2(graph: &Value, good: &Value, bad: &Value, at: &str) {
+    cyclic_rows_fail_alone_with_children(graph, &[], good, bad, at);
+}
+
+fn cyclic_rows_fail_alone_with_children(
+    graph: &Value,
+    children: &[(&str, Value)],
+    good: &Value,
+    bad: &Value,
+    at: &str,
+) {
+    let content: Arc<DecisionContent> = Arc::new(serde_json::from_value(graph.clone()).unwrap());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let shown =
+        |row: Result<zen_engine::DecisionGraphResponse, Box<zen_engine::EvaluationError>>| {
+            row.map(|response| response.result.to_value())
+                .unwrap_or_else(
+                    |error| json!({"error": serde_json::to_value(&error).unwrap().to_string()}),
+                )
+        };
+    let want = shown(
+        runtime.block_on(
+            engine_with(EngineVersion::V1, children)
+                .create_decision(content.clone())
+                .unwrap()
+                .evaluate(Variable::from(good.clone())),
+        ),
+    );
+    assert!(want.get("error").is_none(), "{want}");
+    let failed = |got: &Value, what: &str| {
+        let message = got.get("error").and_then(Value::as_str).unwrap_or_default();
+        assert!(
+            message.contains("cyclic value at") && message.contains(at),
+            "{what}: {got}"
+        );
+    };
+    for trace in [
+        zen_engine::trace::TraceFormat::Off,
+        zen_engine::trace::TraceFormat::Legacy,
+        zen_engine::trace::TraceFormat::V1,
+    ] {
+        let options = EvaluationOptions {
+            trace,
+            ..Default::default()
+        };
+        let mut decision = engine_with(EngineVersion::V2, children)
+            .create_decision(content.clone())
+            .unwrap();
+        for compiled in [false, true] {
+            if compiled {
+                decision.compile();
+            }
+            for call in 0..3 {
+                let one = |input: &Value| {
+                    shown(runtime.block_on(
+                        decision.evaluate_with_opts(Variable::from(input.clone()), options),
+                    ))
+                };
+                failed(
+                    &one(bad),
+                    &format!("{trace:?} compiled {compiled} call {call}"),
+                );
+                assert_eq!(one(good), want, "{trace:?} compiled {compiled} call {call}");
+            }
+            for rows in [
+                vec![bad.clone()],
+                vec![good.clone(), bad.clone(), good.clone(), bad.clone()],
+            ] {
+                let inputs: Vec<Variable> = rows.iter().cloned().map(Variable::from).collect();
+                let batch = runtime.block_on(decision.evaluate_batch(&inputs, options));
+                assert_eq!(batch.len(), rows.len());
+                for (row, (input, got)) in rows.iter().zip(batch).enumerate() {
+                    let got = shown(got);
+                    let what = format!(
+                        "{trace:?} compiled {compiled} batch of {} row {row}",
+                        rows.len()
+                    );
+                    match input == bad {
+                        true => failed(&got, &what),
+                        false => assert_eq!(got, want, "{what}"),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn cyclic_columns_fail_alone_on_version_2(graph: &Value, flags: &[i64], at: &str) {
+    use zen_engine::columns::{Column, Columns, Values};
+    let content: Arc<DecisionContent> = Arc::new(serde_json::from_value(graph.clone()).unwrap());
+    let decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(content)
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ks = vec![1i64; flags.len()];
+    let columns = Columns::new(flags.len())
+        .column("x", Column::new(Values::I64(flags)))
+        .column("obj.k", Column::new(Values::I64(&ks)));
+    for trace in [
+        zen_engine::trace::TraceFormat::Off,
+        zen_engine::trace::TraceFormat::V1,
+    ] {
+        let options = EvaluationOptions {
+            trace,
+            ..Default::default()
+        };
+        let output = runtime.block_on(decision.evaluate_columns(&columns, options));
+        for (row, flag) in flags.iter().enumerate() {
+            let error = output.errors[row].as_ref().map(|error| error.to_string());
+            match flag {
+                1 => assert!(
+                    error
+                        .as_deref()
+                        .is_some_and(|e| e.contains("cyclic value at") && e.contains(at)),
+                    "{trace:?} row {row}: {error:?}"
+                ),
+                _ => assert!(error.is_none(), "{trace:?} row {row}: {error:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn version_2_rejects_an_entry_that_writes_an_object_into_its_own_alias() {
+    let graph = expressions(&[("a", "obj"), ("a.c", "x == 1 ? obj : 0")]);
+    let good = json!({"x": 0, "obj": {"k": 1}});
+    let bad = json!({"x": 1, "obj": {"k": 1}});
+    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.c");
+    cyclic_columns_fail_alone_on_version_2(&graph, &[0, 1, 0, 1], "a.c");
+}
+
+#[test]
+fn version_2_rejects_an_entry_that_writes_an_input_object_into_itself() {
+    let graph = expressions(&[("a", "a"), ("a.c", "x == 1 ? a : 0")]);
+    let good = json!({"x": 0, "a": {"k": 1}});
+    let bad = json!({"x": 1, "a": {"k": 1}});
+    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.c");
+}
+
+#[test]
+fn version_2_rejects_an_alias_write_deep_inside_the_aliased_object() {
+    let graph = expressions(&[("a", "obj"), ("a.k.z", "x == 1 ? [obj] : 0")]);
+    let good = json!({"x": 0, "obj": {"k": {"q": 1}}});
+    let bad = json!({"x": 1, "obj": {"k": {"q": 1}}});
+    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.k.z");
+}
+
+#[test]
+fn version_2_rejects_an_alias_write_under_an_output_path() {
+    for pass_through in [false, true] {
+        let graph = chained(vec![json!({
+            "id": "node", "name": "node", "type": "expressionNode",
+            "content": {
+                "outputPath": "res",
+                "passThrough": pass_through,
+                "expressions": [
+                    {"id": "a", "key": "a", "value": "obj"},
+                    {"id": "b", "key": "a.c", "value": "x == 1 ? obj : 0"}
+                ]
+            }
+        })]);
+        let good = json!({"x": 0, "obj": {"k": 1}});
+        let bad = json!({"x": 1, "obj": {"k": 1}});
+        cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.c");
+    }
+}
+
+#[test]
+fn version_2_rejects_an_alias_write_inside_a_loop_item() {
+    let graph = graph(json!({
+        "id": "node", "name": "node", "type": "expressionNode",
+        "content": {
+            "inputField": "items",
+            "executionMode": "loop",
+            "expressions": [
+                {"id": "a", "key": "a", "value": "o"},
+                {"id": "b", "key": "a.c", "value": "x == 1 ? o : 0"}
+            ]
+        }
+    }));
+    let good = json!({"items": [{"x": 0, "o": {"k": 1}}, {"x": 0, "o": {"k": 2}}]});
+    let bad = json!({"items": [{"x": 0, "o": {"k": 1}}, {"x": 1, "o": {"k": 2}}]});
+    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.c");
+}
+
+#[test]
+fn version_2_rejects_an_alias_write_through_a_value_read_from_an_earlier_node() {
+    let graph = chained(vec![
+        json!({"id": "first", "name": "first", "type": "expressionNode", "content": {
+            "expressions": [{"id": "a", "key": "a", "value": "obj"}, {"id": "b", "key": "x", "value": "x"}]
+        }}),
+        json!({"id": "second", "name": "second", "type": "expressionNode", "content": {
+            "expressions": [
+                {"id": "c", "key": "a", "value": "a"},
+                {"id": "d", "key": "a.c", "value": "x == 1 ? a : 0"}
+            ]
+        }}),
+        json!({"id": "third", "name": "third", "type": "expressionNode", "content": {
+            "passThrough": true,
+            "expressions": [{"id": "e", "key": "seen", "value": "$nodes.second.a.k"}]
+        }}),
+    ]);
+    let good = json!({"x": 0, "obj": {"k": 1}});
+    let bad = json!({"x": 1, "obj": {"k": 1}});
+    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "a.c");
+}
+
+#[test]
+fn version_2_rejects_an_alias_write_inside_a_sub_decision() {
+    let child = expressions(&[("a", "obj"), ("a.c", "x == 1 ? obj : 0")]);
+    let graph = chained(vec![json!({
+        "id": "sub", "name": "sub", "type": "decisionNode",
+        "content": {"key": "child.json"}
+    })]);
+    let good = json!({"x": 0, "obj": {"k": 1}});
+    let bad = json!({"x": 1, "obj": {"k": 1}});
+    cyclic_rows_fail_alone_with_children(&graph, &[("child.json", child)], &good, &bad, "a.c");
+}
+
+#[test]
+fn version_2_keeps_alias_writes_that_cannot_cycle() {
+    same_on_every_path(
+        &expressions(&[
+            ("a", "obj"),
+            ("a.c", "obj.k"),
+            ("a.d", "[1, 2]"),
+            ("b", "obj"),
+        ]),
+        &json!({"obj": {"k": 1}}),
+        json!({"a": {"k": 1, "c": 1, "d": [1, 2]}, "b": {"k": 1, "c": 1, "d": [1, 2]}}),
+    );
+    same_on_every_path(
+        &expressions(&[("a", "obj"), ("a.c", "other"), ("a.e", "1")]),
+        &json!({"obj": {"k": 1}, "other": {"j": [0]}}),
+        json!({"a": {"k": 1, "c": {"j": [0]}, "e": 1}}),
+    );
+}

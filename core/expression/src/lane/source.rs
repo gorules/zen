@@ -1,5 +1,5 @@
 use crate::functions::{FunctionKind, InternalFunction};
-use crate::lexer::Lexer;
+use crate::lexer::{Lexer, LogicalOperator, Operator};
 use crate::parser::{Node, Parser};
 use bumpalo::Bump;
 use std::cell::Cell;
@@ -38,6 +38,53 @@ impl SourceInfo {
             }
         });
         found.get()
+    }
+
+    pub fn scalar(source: &str) -> bool {
+        if source.trim().is_empty() {
+            return true;
+        }
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let Ok(tokens) = lexer.tokenize(&bump, source) else {
+            return false;
+        };
+        let Ok(parser) = Parser::try_new(&tokens, &bump) else {
+            return false;
+        };
+        let parsed = parser.standard().parse();
+        if parsed.error().is_err() {
+            return false;
+        }
+        Self::scalar_node(parsed.root)
+    }
+
+    fn scalar_node(node: &Node) -> bool {
+        match node {
+            Node::Null
+            | Node::Bool(_)
+            | Node::Number(_)
+            | Node::String(_)
+            | Node::TemplateString(_)
+            | Node::Interval { .. }
+            | Node::Unary { .. } => true,
+            Node::Parenthesized(inner) => Self::scalar_node(inner),
+            Node::Conditional {
+                on_true, on_false, ..
+            } => Self::scalar_node(on_true) && Self::scalar_node(on_false),
+            Node::Binary {
+                left,
+                operator,
+                right,
+            } => match operator {
+                Operator::Arithmetic(_) | Operator::Comparison(_) => true,
+                Operator::Logical(
+                    LogicalOperator::And | LogicalOperator::Or | LogicalOperator::NullishCoalescing,
+                ) => Self::scalar_node(left) && Self::scalar_node(right),
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     pub fn draws(source: &str) -> bool {

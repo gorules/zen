@@ -1168,10 +1168,11 @@ fn restored_document(doc: &Value, input: &zen_engine::Variable) -> Option<Value>
     Some(unperformed(untimed(serde_json::to_value(&back).ok()?)))
 }
 
-const COLUMNAR_INTERMEDIATE: [&str; 3] = [
+const COLUMNAR_INTERMEDIATE: [&str; 4] = [
     "graph/71-generated-b.json5#gb018: 6 nodes, loop table, loop expr, loop expr, expr, loop expr, expr",
     "graph/71-generated-b.json5#gb008: 7 nodes, table*, switch*, switch, switch*, expr, expr, table",
     "graph/64-expression-optimizations.json5#alias: a copy taken before the original field is rewritten keeps the old value",
+    "graph/49-rows-nested-shapes.json5#expression keys writing a parent and a child path, values varying per row",
 ];
 
 fn columnar_rows() {

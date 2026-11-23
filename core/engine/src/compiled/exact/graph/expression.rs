@@ -36,6 +36,15 @@ impl Row<'_> {
                 results.push((expression.key.clone(), value.clone()));
             }
 
+            if result.dot_insert_cycles(&expression.key, &value)
+                || session.dollar_cycles(&expression.key, &value)
+            {
+                if let Some(results) = results {
+                    self.record(|recorder| recorder.expression(results));
+                }
+                return Err(self.error(crate::compiled::exact::Failure::cyclic(&expression.key)));
+            }
+
             session.insert_dollar(&expression.key, value.clone());
 
             result.dot_insert(&expression.key, value);

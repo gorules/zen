@@ -182,12 +182,16 @@ impl CompiledGraph {
     }
 
     fn input_of<'a>(state: &State<'a>, parents: &[NodeIndex], rows: &Rc<[usize]>) -> Data<'a> {
-        let gathered: Vec<Data<'a>> = parents
+        let mut held: Vec<&[Rc<Data<'a>>]> = parents
             .iter()
-            .filter_map(|p| {
-                let pieces = state.nodes.get(p.index())?;
-                (!pieces.is_empty()).then(|| Data::gather(pieces, rows))
-            })
+            .filter_map(|p| state.nodes.get(p.index()))
+            .filter(|pieces| !pieces.is_empty())
+            .map(Vec::as_slice)
+            .collect();
+        held.dedup_by(|a, b| std::ptr::eq(*a, *b));
+        let gathered: Vec<Data<'a>> = held
+            .into_iter()
+            .map(|pieces| Data::gather(pieces, rows))
             .collect();
         Data::merged(rows, gathered)
     }

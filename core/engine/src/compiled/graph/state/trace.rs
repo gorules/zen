@@ -252,12 +252,16 @@ impl CompiledGraph {
         parents: &[NodeIndex],
         rows: &Rc<[usize]>,
     ) -> Vec<Variable> {
-        let columns: Vec<crate::compiled::graph::data::Col> = parents
+        let mut held: Vec<&[Rc<Data<'_>>]> = parents
             .iter()
-            .filter_map(|p| {
-                let pieces = state.nodes.get(p.index())?;
-                (!pieces.is_empty()).then(|| Data::gather(pieces, rows).materialized())
-            })
+            .filter_map(|p| state.nodes.get(p.index()))
+            .filter(|pieces| !pieces.is_empty())
+            .map(Vec::as_slice)
+            .collect();
+        held.dedup_by(|a, b| std::ptr::eq(*a, *b));
+        let columns: Vec<crate::compiled::graph::data::Col> = held
+            .into_iter()
+            .map(|pieces| Data::gather(pieces, rows).materialized())
             .collect();
         (0..rows.len())
             .map(|row| {

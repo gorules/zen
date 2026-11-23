@@ -772,3 +772,56 @@ fn a_batch_row_keeps_a_null_written_through_an_output_path_under_a_scalar() {
     ]);
     batch_rows_match_single_rows(&graph, &[json!({}), json!({})]);
 }
+
+#[test]
+fn a_batch_row_keeps_a_null_under_a_scalar_through_duplicate_edges() {
+    let graph = json!({
+        "nodes": [
+            {"id": "in", "name": "in", "type": "inputNode"},
+            {"id": "n0", "name": "n0", "type": "expressionNode", "content": {"expressions": [
+                {"id": "a", "key": "res", "value": "1"}
+            ]}},
+            {"id": "n1", "name": "n1", "type": "expressionNode", "content": {
+                "passThrough": true,
+                "expressions": [{"id": "b", "key": "res.k", "value": "null"}]
+            }},
+            {"id": "out", "name": "out", "type": "outputNode"}
+        ],
+        "edges": [
+            {"id": "e1", "sourceId": "in", "targetId": "n0", "type": "edge"},
+            {"id": "e2", "sourceId": "n0", "targetId": "n1", "type": "edge"},
+            {"id": "e3", "sourceId": "n1", "targetId": "out", "type": "edge"},
+            {"id": "e4", "sourceId": "n1", "targetId": "out", "type": "edge"}
+        ]
+    });
+    batch_rows_match_single_rows(&graph, &[json!({}), json!({})]);
+}
+
+#[test]
+fn a_batch_row_drops_a_key_nulled_by_a_switch_reaching_the_output_twice() {
+    let graph = json!({
+        "nodes": [
+            {"id": "in", "name": "in", "type": "inputNode"},
+            {"id": "n0", "name": "n0", "type": "expressionNode", "content": {
+                "passThrough": true,
+                "expressions": [{"id": "a", "key": "q", "value": "1"}]
+            }},
+            {"id": "n2", "name": "n2", "type": "expressionNode", "content": {"expressions": [
+                {"id": "b", "key": "flag", "value": "null"}
+            ]}},
+            {"id": "n3", "name": "n3", "type": "switchNode", "content": {
+                "hitPolicy": "collect",
+                "statements": [{"id": "s0", "condition": ""}, {"id": "s1", "condition": ""}]
+            }},
+            {"id": "out", "name": "out", "type": "outputNode"}
+        ],
+        "edges": [
+            {"id": "e0", "sourceId": "in", "targetId": "n0", "type": "edge"},
+            {"id": "e1", "sourceId": "in", "targetId": "n2", "type": "edge"},
+            {"id": "e2", "sourceId": "n2", "targetId": "n3", "type": "edge"},
+            {"id": "e3", "sourceId": "n3", "targetId": "out", "type": "edge", "sourceHandle": "s0"},
+            {"id": "e4", "sourceId": "n3", "targetId": "out", "type": "edge", "sourceHandle": "s1"}
+        ]
+    });
+    batch_rows_match_single_rows(&graph, &[json!({"flag": true}), json!({"flag": false})]);
+}

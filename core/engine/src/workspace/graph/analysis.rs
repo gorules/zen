@@ -15,7 +15,7 @@ use zen_expression::intellisense::ArmTest;
 
 use crate::analysis::nullable::{NullableOperand, OnError};
 use crate::analysis::table::{
-    Bound, HitMode, Interval, NumberSet, PathConstraints, TableColumn, VerifyTable,
+    Bound, HitMode, Interval, NumberSet, PathConstraints, TableColumn, VerifyInput, VerifyOutput,
 };
 use crate::model::GraphContent;
 use crate::policy::blocks::{
@@ -64,8 +64,19 @@ impl GraphNodeAnalysis {
 }
 
 #[derive(Debug)]
+pub(crate) struct GraphTableCheck {
+    pub(crate) at: usize,
+    pub(crate) node: Arc<str>,
+    pub(crate) mode: HitMode,
+    pub(crate) inputs: Vec<VerifyInput>,
+    pub(crate) outputs: Vec<VerifyOutput>,
+    pub(crate) fallible: Vec<bool>,
+}
+
+#[derive(Debug)]
 pub struct GraphAnalysis {
     pub diagnostics: Vec<Diagnostic>,
+    pub(crate) table_checks: Vec<GraphTableCheck>,
     pub signature: GraphSignature,
     pub nodes: HashMap<Arc<str>, GraphNodeAnalysis>,
     pub inferred_inputs: Vec<Arc<str>>,
@@ -103,6 +114,7 @@ pub(crate) struct GraphAnalyzer<'a> {
     path: Arc<str>,
     content: &'a GraphContent,
     diagnostics: Vec<Diagnostic>,
+    table_checks: Vec<GraphTableCheck>,
     validate: bool,
     unchecked: bool,
     nodes_scope: VariableType,
@@ -158,6 +170,7 @@ impl<'a> GraphAnalyzer<'a> {
             path,
             content,
             diagnostics: Vec::new(),
+            table_checks: Vec::new(),
             validate: false,
             unchecked: false,
             nodes_scope: VariableType::Any,
@@ -234,6 +247,7 @@ impl<'a> GraphAnalyzer<'a> {
         let input = self.graph_input_signature();
         GraphAnalysis {
             diagnostics: self.diagnostics,
+            table_checks: self.table_checks,
             signature: GraphSignature { input, output },
             nodes,
             inferred_inputs,
@@ -1573,7 +1587,9 @@ impl<'a> GraphAnalyzer<'a> {
                 .collect(),
             DecisionTableHitPolicy::Collect => Vec::new(),
         };
-        let table = VerifyTable {
+        let check = GraphTableCheck {
+            at: self.diagnostics.len(),
+            node: node.id.clone(),
             mode: match content.hit_policy {
                 DecisionTableHitPolicy::First => HitMode::RowFirst,
                 DecisionTableHitPolicy::Collect => HitMode::Collect,
@@ -1621,20 +1637,9 @@ impl<'a> GraphAnalyzer<'a> {
                     })
                 })
                 .collect(),
-            rules: &content.rules,
             fallible,
         };
-        let diagnostics = table.diagnostics(
-            &mut intellisense.borrow_mut(),
-            |row| Self::row_key(&content.rules[row], row),
-            |expression_id| match expression_id {
-                Some(id) => {
-                    DiagnosticLocation::expression(self.path.clone(), node.id.clone(), id, None)
-                }
-                None => DiagnosticLocation::block(self.path.clone(), node.id.clone()),
-            },
-        );
-        self.diagnostics.extend(diagnostics);
+        self.table_checks.push(check);
     }
 
     fn declared_output_type(

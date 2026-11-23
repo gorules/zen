@@ -2,15 +2,29 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use napi::anyhow::anyhow;
-use napi::bindgen_prelude::{FnArgs, FunctionRef};
+use napi::bindgen_prelude::{Either3, FnArgs, FunctionRef, Object, Uint8Array};
 use napi::Env;
 use napi_derive::napi;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use zen_engine::policy::PolicyDocument;
 use zen_engine::workspace;
 
 type ResolverRef = FunctionRef<FnArgs<(String, Value)>, Option<String>>;
+
+type JsonInput<'env> = Either3<Uint8Array, String, Object<'env>>;
+
+fn parse_json_input<T: DeserializeOwned>(env: &Env, input: JsonInput) -> Result<T, String> {
+    match input {
+        Either3::A(bytes) => serde_json::from_slice(bytes.as_ref()).map_err(|e| e.to_string()),
+        Either3::B(text) => serde_json::from_str(&text).map_err(|e| e.to_string()),
+        Either3::C(object) => {
+            let value: Value = env.from_js_value(object).map_err(|e| e.to_string())?;
+            serde_json::from_value(value).map_err(|e| e.to_string())
+        }
+    }
+}
 
 #[napi(object)]
 pub struct PolicyChanges {
@@ -594,16 +608,26 @@ impl Workspace {
     }
 
     #[napi]
-    pub fn set_document(&mut self, path: String, document: Value) -> napi::Result<()> {
+    pub fn set_document(
+        &mut self,
+        env: Env,
+        path: String,
+        #[napi(ts_arg_type = "Uint8Array | string | object")] document: JsonInput,
+    ) -> napi::Result<()> {
         let doc: zen_engine::model::DecisionContent =
-            serde_json::from_value(document).map_err(|e| anyhow!("Invalid document: {e}"))?;
+            parse_json_input(&env, document).map_err(|e| anyhow!("Invalid document: {e}"))?;
         self.inner.set_document(path, doc);
         Ok(())
     }
 
     #[napi]
-    pub fn set_policy(&mut self, path: String, document: Value) -> napi::Result<()> {
-        let doc: PolicyDocument = serde_json::from_value(document)
+    pub fn set_policy(
+        &mut self,
+        env: Env,
+        path: String,
+        #[napi(ts_arg_type = "Uint8Array | string | object")] document: JsonInput,
+    ) -> napi::Result<()> {
+        let doc: PolicyDocument = parse_json_input(&env, document)
             .map_err(|e| anyhow!("Invalid policy document: {e}"))?;
         self.inner.set_policy(path, doc);
         Ok(())
@@ -985,9 +1009,14 @@ impl Workspace {
     }
 
     #[napi(ts_return_type = "PolicyTrace")]
-    pub fn enhance_graph_trace(&self, path: String, trace: Value) -> napi::Result<Value> {
+    pub fn enhance_graph_trace(
+        &self,
+        env: Env,
+        path: String,
+        #[napi(ts_arg_type = "Uint8Array | string | object")] trace: JsonInput,
+    ) -> napi::Result<Value> {
         let trace_map: workspace::GraphTraceMap =
-            serde_json::from_value(trace).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            parse_json_input(&env, trace).map_err(napi::Error::from_reason)?;
         let result = self
             .inner
             .enhance_graph_trace(&Arc::from(path.as_str()), &trace_map)

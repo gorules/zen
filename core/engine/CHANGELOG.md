@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.1.8](https://github.com/gorules/zen/compare/zen-engine-v2.1.7...zen-engine-v2.1.8) (2026-11-19)
+
+
+### Bug Fixes
+
+* table analysis memory ([#570](https://github.com/gorules/zen/issues/570)) ([1944ebe](https://github.com/gorules/zen/commit/1944ebe01feb2b11b5197c7b16f4ae1e9d26ccf3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.1.7 to 2.1.8
+    * zen-expression bumped from 2.1.7 to 2.1.8
+    * zen-tmpl bumped from 2.1.7 to 2.1.8
+
+## [2.1.7](https://github.com/gorules/zen/compare/zen-engine-v2.1.6...zen-engine-v2.1.7) (2026-11-09)
+
+
+### Bug Fixes
+
+* **engine:** upgrade zip to version 9 and reject cloaked archives ([#556](https://github.com/gorules/zen/issues/556)) ([99c3511](https://github.com/gorules/zen/commit/99c3511a21e56f893fa59ddff163d211c66a1227))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.1.6 to 2.1.7
+    * zen-expression bumped from 2.1.6 to 2.1.7
+    * zen-tmpl bumped from 2.1.6 to 2.1.7
+
 ## [2.1.6](https://github.com/gorules/zen/compare/zen-engine-v2.1.5...zen-engine-v2.1.6) (2026-10-21)
 
 

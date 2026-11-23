@@ -71,7 +71,7 @@ jobs:
           ref: ${{ steps.release.outputs.pr-branch }}
           token: ${{ secrets.PAT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
         if: steps.release.outputs.pr-branch
 
       - name: Update Cargo.lock on release PR

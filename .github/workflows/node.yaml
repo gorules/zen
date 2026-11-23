@@ -31,7 +31,6 @@ jobs:
         settings:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-            toolchain: '1.99'
             build: |
               yarn build -- --target x86_64-pc-windows-msvc -- --locked
 
@@ -123,9 +122,9 @@ jobs:
           cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
       - name: Install
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
-          toolchain: ${{ matrix.settings.toolchain || 'stable' }}
+          toolchain: 1.99.0
           targets: ${{ matrix.settings.target }}
 
       - name: Rust cache + sccache (+ zig for linux legs)
@@ -160,6 +159,14 @@ jobs:
         with:
           name: typings
           path: bindings/nodejs/index.d.ts
+          if-no-files-found: error
+
+      - name: Upload JS binding
+        if: ${{ matrix.settings.target == 'wasm32-wasip1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-binding
+          path: bindings/nodejs/index.js
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
@@ -255,6 +262,12 @@ jobs:
           name: typings
           path: bindings/nodejs
 
+      - name: Download JS binding
+        uses: actions/download-artifact@v4
+        with:
+          name: js-binding
+          path: bindings/nodejs
+
       - name: Test bindings (native)
         if: ${{ !matrix.settings.image }}
         run: |
@@ -308,6 +321,12 @@ jobs:
           name: typings
           path: bindings/nodejs
 
+      - name: Download JS binding
+        uses: actions/download-artifact@v4
+        with:
+          name: js-binding
+          path: bindings/nodejs
+
       - name: Test bindings (wasm)
         run: yarn test:wasm
 
@@ -352,6 +371,12 @@ jobs:
           name: typings
           path: bindings/nodejs
 
+      - name: Download JS binding
+        uses: actions/download-artifact@v4
+        with:
+          name: js-binding
+          path: bindings/nodejs
+
       - name: List all artifacts
         run: ls -la ../../artifacts
 
@@ -367,6 +392,17 @@ jobs:
 
       - name: List folder
         run: ls ./
+        shell: bash
+
+      - name: Verify JS binding version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          stale=$(grep -o "bindingPackageVersion !== '[^']*'" index.js | grep -v "'$version'" || true)
+          if [ -n "$stale" ] || ! grep -q "bindingPackageVersion !== '$version'" index.js; then
+            echo "index.js does not check for version $version:"
+            echo "$stale" | sort | uniq -c
+            exit 1
+          fi
         shell: bash
 
       - name: Lerna publish

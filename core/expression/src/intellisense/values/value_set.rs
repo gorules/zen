@@ -5,6 +5,8 @@ use std::rc::Rc;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+pub use super::strings::Strings;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bound {
     Unbounded,
@@ -307,19 +309,19 @@ impl NumberSet {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum StringSet {
-    Finite(BTreeSet<Rc<str>>),
-    CoFinite(BTreeSet<Rc<str>>),
+    Finite(Strings),
+    CoFinite(Strings),
 }
 
 impl Default for StringSet {
     fn default() -> Self {
-        StringSet::Finite(BTreeSet::new())
+        StringSet::Finite(Strings::new())
     }
 }
 
 impl StringSet {
     pub fn all() -> Self {
-        StringSet::CoFinite(BTreeSet::new())
+        StringSet::CoFinite(Strings::new())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -339,31 +341,23 @@ impl StringSet {
 
     pub fn union(&self, other: &Self) -> Self {
         match (self, other) {
-            (StringSet::Finite(a), StringSet::Finite(b)) => {
-                StringSet::Finite(a.union(b).cloned().collect())
-            }
+            (StringSet::Finite(a), StringSet::Finite(b)) => StringSet::Finite(a.union(b)),
             (StringSet::CoFinite(a), StringSet::CoFinite(b)) => {
-                StringSet::CoFinite(a.intersection(b).cloned().collect())
+                StringSet::CoFinite(a.intersection(b))
             }
             (StringSet::Finite(f), StringSet::CoFinite(c))
             | (StringSet::CoFinite(c), StringSet::Finite(f)) => {
-                StringSet::CoFinite(c.difference(f).cloned().collect())
+                StringSet::CoFinite(c.difference(f))
             }
         }
     }
 
     pub fn intersect(&self, other: &Self) -> Self {
         match (self, other) {
-            (StringSet::Finite(a), StringSet::Finite(b)) => {
-                StringSet::Finite(a.intersection(b).cloned().collect())
-            }
-            (StringSet::CoFinite(a), StringSet::CoFinite(b)) => {
-                StringSet::CoFinite(a.union(b).cloned().collect())
-            }
+            (StringSet::Finite(a), StringSet::Finite(b)) => StringSet::Finite(a.intersection(b)),
+            (StringSet::CoFinite(a), StringSet::CoFinite(b)) => StringSet::CoFinite(a.union(b)),
             (StringSet::Finite(f), StringSet::CoFinite(c))
-            | (StringSet::CoFinite(c), StringSet::Finite(f)) => {
-                StringSet::Finite(f.difference(c).cloned().collect())
-            }
+            | (StringSet::CoFinite(c), StringSet::Finite(f)) => StringSet::Finite(f.difference(c)),
         }
     }
 
@@ -456,7 +450,7 @@ impl ValueSet {
 
     pub fn string(s: &str) -> Self {
         Self {
-            strings: StringSet::Finite(BTreeSet::from([Rc::from(s)])),
+            strings: StringSet::Finite(Strings::one(Rc::from(s))),
             ..Self::empty()
         }
     }
@@ -531,8 +525,8 @@ impl ValueSet {
         }
         out.numbers = NumberSet::from_intervals(intervals);
         out.strings = match cofinite {
-            Some(acc) => acc.union(&StringSet::Finite(finite)),
-            None => StringSet::Finite(finite),
+            Some(acc) => acc.union(&StringSet::Finite(finite.into())),
+            None => StringSet::Finite(finite.into()),
         };
         out
     }
@@ -693,7 +687,7 @@ mod tests {
         let pair = ValueSet::strings([Rc::from("gold"), Rc::from("silver")]);
         assert_eq!(
             pair.difference(&gold).strings,
-            StringSet::Finite(BTreeSet::from([Rc::from("silver")]))
+            StringSet::Finite(Strings::one(Rc::from("silver")))
         );
     }
 

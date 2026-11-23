@@ -48,7 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update stable
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: rust-test-${{ matrix.os }}-${{ matrix.features.key }}
@@ -65,7 +67,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update stable
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+          rustup default 1.99.0
       - run: cargo fmt --all -- --check
 
   release:
@@ -80,7 +84,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install Rust
-        run: rustup update stable
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
 
       - name: Login to Crates.IO
         run: cargo login ${{ secrets.CRATES_TOKEN }}

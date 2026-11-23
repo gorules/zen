@@ -1231,15 +1231,3 @@ fn version_2_keeps_alias_writes_that_cannot_cycle() {
         json!({"a": {"k": 1, "c": {"j": [0]}, "e": 1}}),
     );
 }
-
-#[test]
-#[ignore = "the version 2 JS runtime converts a cyclic result without a guard and never returns"]
-fn version_2_rejects_a_script_returning_a_cyclic_object() {
-    let graph = graph(json!({
-        "id": "node", "name": "node", "type": "functionNode",
-        "content": {"source": "export const handler = async (input) => { if (input.x !== 1) return input; const o = {}; o.self = o; return o; };"}
-    }));
-    let good = json!({"x": 0});
-    let bad = json!({"x": 1});
-    cyclic_rows_fail_alone_on_version_2(&graph, &good, &bad, "self");
-}

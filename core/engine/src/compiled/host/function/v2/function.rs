@@ -1,9 +1,14 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::future::{poll_fn, Future};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::pin::{pin, Pin};
 use std::sync::Arc;
+use std::task::Poll;
+use std::time::{Duration, Instant};
 
+use crate::compiled::host::function::sleep::sleep;
 use crate::compiled::host::function::v2::error::{FunctionError, FunctionResult, ResultExt};
 use crate::compiled::host::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use crate::compiled::host::function::v2::module::console::{Console, Log};
@@ -12,7 +17,10 @@ use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::compiled::pinning::JsSlot;
 use rquickjs::prelude::Func;
 use rquickjs::promise::MaybePromise;
-use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module, Object};
+use rquickjs::{
+    async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, IntoJs, Module, Object,
+    Persistent, Type, Value,
+};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 use zen_expression::context::EvaluationContext;
@@ -24,6 +32,7 @@ pub struct FunctionConfig {
 }
 
 pub struct Function {
+    nodes: RefCell<Option<Persistent<rquickjs::Function<'static>>>>,
     rt: Arc<AsyncRuntime>,
     ctx: AsyncContext,
     listeners: Vec<Box<dyn RuntimeListener>>,
@@ -49,6 +58,7 @@ impl Function {
 
         let ctx = AsyncContext::full(&rt).await?;
         let this = Self {
+            nodes: RefCell::new(None),
             rt,
             ctx,
             module_loader,
@@ -162,18 +172,20 @@ impl Function {
     pub(crate) async fn call_handler(
         &self,
         name: &str,
-        data: JsValueWithNodes,
+        data: Variable,
         context: &EvaluationContext,
+        deadline: Instant,
     ) -> FunctionResult<HandlerResponse> {
         let _entered = self.slot.enter(context.clone());
         let k: FunctionResult<HandlerResponse> = async_with!(&self.ctx => |ctx| {
             self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
 
-            let m: rquickjs::Object = Module::import(&ctx, name).catch(&ctx)?.into_future().await.catch(&ctx)?;
+            let m: rquickjs::Object = bounded(&ctx, Module::import(&ctx, name).catch(&ctx)?.into_future(), deadline).await?;
             let handler: rquickjs::Function = m.get("handler").catch(&ctx)?;
 
+            let data = self.with_nodes(&ctx, data).catch(&ctx)?;
             let handler_promise: MaybePromise = handler.call((data, 5)).catch(&ctx)?;
-            let handler_result = handler_promise.into_future::<JsValue>().await.catch(&ctx)?;
+            let handler_result: JsValue = bounded(&ctx, handler_promise.into_future(), deadline).await?;
 
             let console = Console::from_context(&ctx).or_throw(&ctx)?;
             let logs = console.logs.into_inner();
@@ -190,6 +202,7 @@ impl Function {
         name: &str,
         config: (u8, u8, bool),
         rows: Vec<(Variable, Option<Variable>)>,
+        limit: Duration,
         tick: &dyn Fn(),
         context: &EvaluationContext,
     ) -> Vec<FunctionResult<Variable>> {
@@ -206,19 +219,22 @@ impl Function {
             ctx.globals()
                 .set("__getNodesData", Func::from(move || JsValue(shared.borrow().clone())))
                 .catch(&ctx)?;
-            let m: rquickjs::Object = Module::import(&ctx, name).catch(&ctx)?.into_future().await.catch(&ctx)?;
+            let deadline = Instant::now() + limit;
+            let m: rquickjs::Object = bounded(&ctx, Module::import(&ctx, name).catch(&ctx)?.into_future(), deadline).await?;
             let handler: rquickjs::Function = m.get("handler").catch(&ctx)?;
             let mut results = Vec::with_capacity(count);
             self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
             for (input, nodes) in rows {
                 tick();
+                let deadline = Instant::now() + limit;
                 *current.borrow_mut() = nodes.unwrap_or_default();
                 let result: FunctionResult<Variable> = async {
                     if config.2 {
                         self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
                     }
-                    let promise: MaybePromise = handler.call((JsValueWithNodes(JsValue(input)), 5)).catch(&ctx)?;
-                    let value = promise.into_future::<JsValue>().await.catch(&ctx)?;
+                    let input = self.with_nodes(&ctx, input).catch(&ctx)?;
+                    let promise: MaybePromise = handler.call((input, 5)).catch(&ctx)?;
+                    let value: JsValue = bounded(&ctx, promise.into_future(), deadline).await?;
                     Ok(value.0)
                 }
                 .await;
@@ -238,6 +254,23 @@ impl Function {
         }
     }
 
+    fn with_nodes<'js>(&self, ctx: &Ctx<'js>, input: Variable) -> rquickjs::Result<Value<'js>> {
+        let value = JsValue(input).into_js(ctx)?;
+        if !value.is_object() {
+            return Ok(value);
+        }
+        let saved = self.nodes.borrow().clone();
+        let factory = match saved {
+            Some(saved) => saved.restore(ctx)?,
+            None => {
+                let factory = JsValueWithNodes::factory(ctx)?;
+                *self.nodes.borrow_mut() = Some(Persistent::save(ctx, factory.clone()));
+                factory
+            }
+        };
+        JsValueWithNodes::attach(value, &factory)
+    }
+
     pub(crate) async fn extract_logs(&self) -> Vec<Log> {
         let logs: Option<Vec<Log>> = async_with!(&self.ctx => |ctx| {
             let console = Console::from_context(&ctx).ok()?;
@@ -253,6 +286,82 @@ impl Function {
 pub struct HandlerResponse {
     pub logs: Vec<Log>,
     pub data: Variable,
+}
+
+async fn bounded<'js, T>(
+    ctx: &Ctx<'js>,
+    future: impl Future<Output = rquickjs::Result<T>>,
+    deadline: Instant,
+) -> FunctionResult<T> {
+    let mut future = pin!(future);
+    let mut timer: Option<Pin<Box<dyn Future<Output = ()>>>> = None;
+    let settled = poll_fn(|cx| loop {
+        if let Poll::Ready(result) = future.as_mut().poll(cx) {
+            return Poll::Ready(Ok(result));
+        }
+        let Some(timer) = timer.as_mut() else {
+            if ctx.execute_pending_job() {
+                let thrown = ctx.catch();
+                if !matches!(
+                    thrown.type_of(),
+                    Type::Uninitialized | Type::Null | Type::Undefined
+                ) {
+                    return Poll::Ready(Err(Some(thrown)));
+                }
+                continue;
+            }
+            if Waiting::any() {
+                return Poll::Pending;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            timer = Some(Box::pin(sleep(remaining)));
+            continue;
+        };
+        if Waiting::any() {
+            return Poll::Pending;
+        }
+        return match timer.as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(Err(None)),
+            Poll::Pending => Poll::Pending,
+        };
+    })
+    .await;
+    let caught = match settled {
+        Ok(result) => result.catch(ctx).map_err(FunctionError::from),
+        Err(Some(thrown)) => Err::<T, _>(ctx.throw(thrown))
+            .catch(ctx)
+            .map_err(FunctionError::from),
+        Err(None) => Err(FunctionError::Caught(TIMED_OUT.to_string())),
+    };
+    match caught {
+        Err(_) if Instant::now() >= deadline => Err(FunctionError::Caught(TIMED_OUT.to_string())),
+        other => other,
+    }
+}
+
+const TIMED_OUT: &str = "Error: interrupted";
+
+thread_local! {
+    static WAITING: Cell<usize> = const { Cell::new(0) };
+}
+
+pub(crate) struct Waiting;
+
+impl Waiting {
+    pub(crate) fn enter() -> Self {
+        WAITING.set(WAITING.get() + 1);
+        Waiting
+    }
+
+    fn any() -> bool {
+        WAITING.get() > 0
+    }
+}
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        WAITING.set(WAITING.get().saturating_sub(1));
+    }
 }
 
 fn create_content_hash(content: &str) -> u64 {

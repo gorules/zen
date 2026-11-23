@@ -1,7 +1,7 @@
 use crate::compiled::host::function::v2::error::ResultExt;
 use crate::decision_graph::cleaner::ZEN_RESERVED_PROPERTIES;
 use nohash_hasher::BuildNoHashHasher;
-use rquickjs::{Ctx, FromJs, IntoJs, Type, Value as QValue};
+use rquickjs::{Ctx, Exception, FromJs, IntoJs, Type, Value as QValue};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -13,8 +13,35 @@ use zen_types::rccell::RcCell;
 pub(crate) struct JsValue(pub(crate) Variable);
 
 impl<'js> FromJs<'js> for JsValue {
-    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn from_js(ctx: &Ctx<'js>, v: QValue<'js>) -> rquickjs::Result<Self> {
+        Self::convert(ctx, v, &mut Vec::new())
+    }
+}
+
+impl JsValue {
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn convert<'js>(
+        ctx: &Ctx<'js>,
+        v: QValue<'js>,
+        ancestors: &mut Vec<QValue<'js>>,
+    ) -> rquickjs::Result<Self> {
+        if !v.is_object() {
+            return Self::convert_value(ctx, v, ancestors);
+        }
+        if ancestors.contains(&v) {
+            return Err(Exception::throw_type(ctx, "cyclic value"));
+        }
+        ancestors.push(v.clone());
+        let converted = Self::convert_value(ctx, v, ancestors);
+        ancestors.pop();
+        converted
+    }
+
+    fn convert_value<'js>(
+        ctx: &Ctx<'js>,
+        v: QValue<'js>,
+        ancestors: &mut Vec<QValue<'js>>,
+    ) -> rquickjs::Result<Self> {
         let computed_value = match v.type_of() {
             Type::Uninitialized | Type::Undefined | Type::Null => Variable::Null,
             Type::Bool => {
@@ -50,7 +77,7 @@ impl<'js> FromJs<'js> for JsValue {
 
                 let mut js_arr = Vec::with_capacity(arr.len());
                 for x in arr.into_iter() {
-                    js_arr.push(JsValue::from_js(ctx, x?)?.0)
+                    js_arr.push(Self::convert(ctx, x?, ancestors)?.0)
                 }
 
                 Variable::from_array(js_arr)
@@ -69,7 +96,7 @@ impl<'js> FromJs<'js> for JsValue {
 
                     js_object.insert(
                         zen_types::symbol::Symbol::from(k.as_str()),
-                        JsValue::from_js(ctx, v)?.0,
+                        Self::convert(ctx, v, ancestors)?.0,
                     );
                 }
 
@@ -92,8 +119,8 @@ impl<'js> FromJs<'js> for JsValue {
             Type::Unknown => json!("[Unknown]").into(),
             Type::Promise => {
                 let promise = v.into_promise().or_throw(ctx)?;
-                let val: JsValue = promise.finish()?;
-                val.0
+                let val: QValue = promise.finish()?;
+                Self::convert(ctx, val, ancestors)?.0
             }
         };
 
@@ -117,25 +144,27 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
             return Ok(base_js);
         }
 
-        let obj = base_js.into_object().or_throw(ctx)?;
-        let globals = ctx.globals();
-        let factory: rquickjs::Function<'js> =
-            match globals.get::<_, Option<rquickjs::Function<'js>>>("__zenNodesProxy")? {
-                Some(factory) => factory,
-                None => {
-                    let factory: rquickjs::Function<'js> = ctx.eval(Self::FACTORY)?;
-                    globals.set("__zenNodesProxy", factory.clone())?;
-                    factory
-                }
-            };
-        let nodes_proxy: QValue<'js> = factory.call(())?;
-
-        obj.set("$nodes", nodes_proxy)?;
-        Ok(obj.into_value())
+        Self::attach(base_js, &Self::factory(ctx)?)
     }
 }
 
 impl JsValueWithNodes {
+    pub(crate) fn factory<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<rquickjs::Function<'js>> {
+        ctx.eval(Self::FACTORY)
+    }
+
+    pub(crate) fn attach<'js>(
+        value: QValue<'js>,
+        factory: &rquickjs::Function<'js>,
+    ) -> rquickjs::Result<QValue<'js>> {
+        let Some(obj) = value.as_object() else {
+            return Ok(value);
+        };
+        let nodes_proxy: QValue<'js> = factory.call(())?;
+        obj.set("$nodes", nodes_proxy)?;
+        Ok(value)
+    }
+
     const FACTORY: &'static str = r#"
             () => {
               const _data = { loaded: false, inner: null };

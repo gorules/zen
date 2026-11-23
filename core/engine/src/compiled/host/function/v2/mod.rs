@@ -8,7 +8,7 @@ use crate::compiled::host::function::purity::Purity;
 use crate::compiled::host::function::v2::error::{FunctionError, FunctionResult};
 use crate::compiled::host::function::v2::function::Function;
 use crate::compiled::host::function::v2::module::console::Log;
-use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
+use crate::compiled::host::function::v2::serde::JsValue;
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextConfig, NodeError, NodeHandlerExtensions};
 use crate::compiled::pinning::Located;
@@ -78,8 +78,9 @@ impl NodeHandler for FunctionV2NodeHandler {
         let response_result = function
             .call_handler(
                 &module_name,
-                JsValueWithNodes(JsValue(ctx.input.clone())),
+                ctx.input.clone(),
                 &ctx.extensions.context.nested(Located::function(&ctx.id)),
+                start + max_duration,
             )
             .await;
 
@@ -197,6 +198,7 @@ impl FunctionV2NodeHandler {
                     config.trace,
                 ),
                 rows,
+                limit,
                 &tick,
                 &extensions.context.nested(Located::function(id)),
             )

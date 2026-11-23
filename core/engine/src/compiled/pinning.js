@@ -1,13 +1,5 @@
-(() => {
-  if (globalThis.__zenPinned) return;
-  const Native = Date;
+export default (Native, PinnedDate, now, offsetAt, utcAt, canonicalZone) => {
   const proto = Native.prototype;
-  const now = globalThis.__zenNow;
-  const random = globalThis.__zenRandom;
-  const offsetAt = globalThis.__zenOffset;
-  const utcAt = globalThis.__zenUtc;
-  const zoneOf = globalThis.__zenZone;
-  const canonicalZone = globalThis.__zenCanonicalZone;
   const N = {};
   for (const name of [
     'getTime', 'setTime', 'getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCDay',
@@ -17,8 +9,6 @@
   ]) N[name] = proto[name];
   const call = (f, self, ...args) => f.apply(self, args);
   const time = (d) => call(N.getTime, d);
-  const define = (target, name, value) =>
-    Object.defineProperty(target, name, { value, writable: true, configurable: true, enumerable: false });
 
   const offset = (t, zone) => {
     const o = offsetAt(t, zone);
@@ -48,42 +38,25 @@
     return utc === undefined ? NaN : utc;
   };
 
-  const getters = { getFullYear: 'y', getMonth: 'mo', getDate: 'd', getDay: 'wd', getHours: 'h', getMinutes: 'mi', getSeconds: 's', getMilliseconds: 'ms' };
-  for (const [name, key] of Object.entries(getters)) {
-    define(proto, name, function () {
-      const t = time(this);
-      return Number.isNaN(t) ? NaN : fields(t)[key];
-    });
-  }
-  define(proto, 'getTimezoneOffset', function () {
-    const t = time(this);
-    return Number.isNaN(t) ? NaN : -offset(t);
-  });
-  if (proto.getYear) {
-    define(proto, 'getYear', function () {
-      const y = this.getFullYear();
-      return Number.isNaN(y) ? NaN : y - 1900;
-    });
-  }
-  const setters = [['setFullYear', 0, 3], ['setMonth', 1, 2], ['setDate', 2, 1], ['setHours', 3, 4], ['setMinutes', 4, 3], ['setSeconds', 5, 2], ['setMilliseconds', 6, 1]];
-  for (const [name, at, count] of setters) {
-    define(proto, name, function (...args) {
-      const t = time(this);
-      let parts;
-      if (Number.isNaN(t)) {
-        if (name !== 'setFullYear') return NaN;
-        parts = [1970, 0, 1, 0, 0, 0, 0];
-      } else {
-        const f = fields(t);
-        parts = [f.y, f.mo, f.d, f.h, f.mi, f.s, f.ms];
-      }
-      const given = args.length === 0 ? [NaN] : args.slice(0, count).map(Number);
-      given.forEach((value, i) => { parts[at + i] = value; });
-      const next = fromLocal(parts.map(Math.trunc));
-      call(N.setTime, this, next);
-      return time(this);
-    });
-  }
+  const field = (date, key) => {
+    const t = time(date);
+    return Number.isNaN(t) ? NaN : fields(t)[key];
+  };
+  const set = (date, at, count, args) => {
+    const t = time(date);
+    let parts;
+    if (Number.isNaN(t)) {
+      if (at !== 0) return NaN;
+      parts = [1970, 0, 1, 0, 0, 0, 0];
+    } else {
+      const f = fields(t);
+      parts = [f.y, f.mo, f.d, f.h, f.mi, f.s, f.ms];
+    }
+    const given = args.length === 0 ? [NaN] : Array.prototype.slice.call(args, 0, count).map(Number);
+    given.forEach((value, i) => { parts[at + i] = value; });
+    call(N.setTime, date, fromLocal(parts.map(Math.trunc)));
+    return time(date);
+  };
 
   const isoDate = /^\s*[+-]?\d{4,6}(?:-\d\d(?:-\d\d)?)?\s*$/;
   const zoned = /(?:\d[Zz]\s*$|[+-]\d\d:?\d\d\s*(?:\(.*\))?\s*$|\b(?:GMT|UTC|UT)\b)/;
@@ -119,15 +92,15 @@
     return typeof primitive === 'string' ? parse(primitive) : +primitive;
   };
 
-  function PinnedDate(...args) {
-    if (!new.target) return new PinnedDate(now()).toString();
+  const construct = (target, args) => {
+    if (!target) return new PinnedDate(now()).toString();
     let t;
     if (args.length === 0) {
       t = now();
     } else if (args.length === 1) {
       t = valueOf(args[0]);
     } else {
-      const parts = args.slice(0, 7).map(Number);
+      const parts = Array.prototype.slice.call(args, 0, 7).map(Number);
       while (parts.length < 7) parts.push(parts.length === 2 ? 1 : 0);
       let y = parts[0];
       if (Number.isFinite(y)) {
@@ -137,15 +110,8 @@
       parts[0] = y;
       t = fromLocal(parts.map((p) => (Number.isFinite(p) ? Math.trunc(p) : p)));
     }
-    return Reflect.construct(Native, [t], new.target);
-  }
-  PinnedDate.prototype = proto;
-  PinnedDate.now = () => now();
-  PinnedDate.parse = (text) => parse(text);
-  PinnedDate.UTC = Native.UTC;
-  define(proto, 'constructor', PinnedDate);
-  globalThis.Date = PinnedDate;
-  Math.random = () => random();
+    return Reflect.construct(Native, [t], target);
+  };
 
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -157,27 +123,11 @@
   };
   const datePart = (f) => `${DAYS[f.wd]} ${MONTHS[f.mo]} ${pad(f.d)} ${year(f.y)}`;
   const timePart = (f) => `${pad(f.h)}:${pad(f.mi)}:${pad(f.s)} ${gmt(f.o)}`;
-  define(proto, 'toString', function () {
-    const t = time(this);
-    if (Number.isNaN(t)) return 'Invalid Date';
-    const f = fields(t);
-    return `${datePart(f)} ${timePart(f)}`;
-  });
-  define(proto, 'toDateString', function () {
-    const t = time(this);
-    return Number.isNaN(t) ? 'Invalid Date' : datePart(fields(t));
-  });
-  define(proto, 'toTimeString', function () {
-    const t = time(this);
-    return Number.isNaN(t) ? 'Invalid Date' : timePart(fields(t));
-  });
-
   const resolveZone = (options) => {
     const zone = options && options.timeZone;
     if (zone === undefined) return undefined;
     const canonical = canonicalZone(String(zone));
-    if (canonical === undefined || canonical === null) throw new RangeError('Invalid time zone specified: ' + zone);
-    return canonical;
+    return canonical == null ? undefined : canonical;
   };
   const localized = (t, zone, kind) => {
     if (Number.isNaN(t)) return 'Invalid Date';
@@ -188,28 +138,50 @@
     if (kind === 'time') return clock;
     return `${date}, ${clock}`;
   };
-  for (const [name, kind] of [['toLocaleString', 'both'], ['toLocaleDateString', 'date'], ['toLocaleTimeString', 'time']]) {
-    define(proto, name, function (locales, options) {
-      return localized(time(this), resolveZone(options), kind);
-    });
+  const methods = {
+    getFullYear() { return field(this, 'y'); },
+    getMonth() { return field(this, 'mo'); },
+    getDate() { return field(this, 'd'); },
+    getDay() { return field(this, 'wd'); },
+    getHours() { return field(this, 'h'); },
+    getMinutes() { return field(this, 'mi'); },
+    getSeconds() { return field(this, 's'); },
+    getMilliseconds() { return field(this, 'ms'); },
+    getTimezoneOffset() {
+      const t = time(this);
+      return Number.isNaN(t) ? NaN : -offset(t);
+    },
+    getYear() {
+      const y = this.getFullYear();
+      return Number.isNaN(y) ? NaN : y - 1900;
+    },
+    setFullYear(year, month, date) { return set(this, 0, 3, arguments); },
+    setMonth(month, date) { return set(this, 1, 2, arguments); },
+    setDate(date) { return set(this, 2, 1, arguments); },
+    setHours(hours, minutes, seconds, ms) { return set(this, 3, 4, arguments); },
+    setMinutes(minutes, seconds, ms) { return set(this, 4, 3, arguments); },
+    setSeconds(seconds, ms) { return set(this, 5, 2, arguments); },
+    setMilliseconds(ms) { return set(this, 6, 1, arguments); },
+    toString() {
+      const t = time(this);
+      if (Number.isNaN(t)) return 'Invalid Date';
+      const f = fields(t);
+      return `${datePart(f)} ${timePart(f)}`;
+    },
+    toDateString() {
+      const t = time(this);
+      return Number.isNaN(t) ? 'Invalid Date' : datePart(fields(t));
+    },
+    toTimeString() {
+      const t = time(this);
+      return Number.isNaN(t) ? 'Invalid Date' : timePart(fields(t));
+    },
+    toLocaleString() { return localized(time(this), resolveZone(arguments[1]), 'both'); },
+    toLocaleDateString() { return localized(time(this), resolveZone(arguments[1]), 'date'); },
+    toLocaleTimeString() { return localized(time(this), resolveZone(arguments[1]), 'time'); },
+  };
+  for (const name of Object.keys(methods)) {
+    if (name in proto) proto[name] = methods[name];
   }
-
-  if (typeof globalThis.Intl === 'undefined') {
-    function DateTimeFormat(locales, options) {
-      if (!new.target) return new DateTimeFormat(locales, options);
-      define(this, '__zone', resolveZone(options));
-    }
-    define(DateTimeFormat.prototype, 'resolvedOptions', function () {
-      return {
-        locale: 'en-US',
-        calendar: 'gregory',
-        numberingSystem: 'latn',
-        timeZone: this.__zone === undefined ? zoneOf() : this.__zone,
-      };
-    });
-    const Intl = {};
-    define(Intl, 'DateTimeFormat', DateTimeFormat);
-    define(globalThis, 'Intl', Intl);
-  }
-  globalThis.__zenPinned = true;
-})();
+  return { construct, parse };
+};

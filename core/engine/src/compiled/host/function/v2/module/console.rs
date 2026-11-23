@@ -100,6 +100,7 @@ impl Console {
     }
 
     pub async fn sleep(&self, duration_ms: u64) -> rquickjs::Result<()> {
+        let _waiting = crate::compiled::host::function::v2::function::Waiting::enter();
         crate::compiled::host::function::sleep::sleep(Duration::from_millis(duration_ms)).await;
         Ok(())
     }

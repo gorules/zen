@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::compiled::host::definition::NodeHandler;
 use crate::compiled::host::function::purity::Purity;
-use crate::compiled::host::function::v1::runtime::create_runtime;
+use crate::compiled::host::function::v1::runtime::{acquire_runtime, release_runtime};
 use crate::compiled::host::function::v1::script::{Script, Session};
 use crate::compiled::host::result::NodeResult;
 use crate::compiled::host::{NodeContext, NodeContextBase, NodeContextExt, NodeError};
@@ -28,7 +28,8 @@ impl NodeHandler for FunctionV1NodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let start = Instant::now();
-        let runtime = create_runtime().node_context_message(&ctx, "Failed to create JS Runtime")?;
+        let runtime =
+            acquire_runtime().node_context_message(&ctx, "Failed to create JS Runtime")?;
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
 
         runtime.set_interrupt_handler(Some(interrupt_handler));
@@ -41,8 +42,12 @@ impl NodeHandler for FunctionV1NodeHandler {
                 &ctx.extensions.context.nested(Located::function(&ctx.id)),
             )
             .await;
+        drop(script);
 
         runtime.set_interrupt_handler(None);
+        if result_response.is_ok() {
+            release_runtime(runtime);
+        }
 
         let response = result_response.node_context(&ctx)?;
         ctx.trace(|t| {

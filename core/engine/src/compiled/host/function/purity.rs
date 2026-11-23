@@ -1461,7 +1461,6 @@ impl Walk {
 #[cfg(test)]
 mod tests {
     use super::Purity;
-    use crate::compiled::host::function::v2::serde::{JsValue, JsValueWithNodes};
     use crate::compiled::host::NodeHandlerExtensions;
     use zen_expression::Variable;
 
@@ -1583,8 +1582,9 @@ mod tests {
         let response = function
             .call_handler(
                 &name,
-                JsValueWithNodes(JsValue(Variable::Null)),
+                Variable::Null,
                 &zen_expression::context::EvaluationContext::default(),
+                std::time::Instant::now() + std::time::Duration::from_secs(5),
             )
             .await
             .expect("names");

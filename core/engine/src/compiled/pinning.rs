@@ -1,8 +1,14 @@
 use crate::engine::EvaluationOptions;
 use chrono::{DateTime, Duration, LocalResult, Offset, TimeZone};
+use rquickjs::loader::bundle::{Bundle, ScaBundleData};
+use rquickjs::loader::Loader;
 use rquickjs::prelude::Func;
+use rquickjs::promise::PromiseState;
+use rquickjs::{Module, WriteOptions};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use zen_expression::context::{
     location, parse_timezone, system_now, system_timezone, EvaluationContext, Site, Timezone,
 };
@@ -125,7 +131,23 @@ impl Located {
     }
 }
 
-const PIN_JS: &str = include_str!("pinning.js");
+const PIN_ENTRY: (&str, &str) = ("zen:pinning", include_str!("pinning.entry.js"));
+const PIN_DATE: (&str, &str) = ("zen:pinning/date", include_str!("pinning.js"));
+
+fn canonical_zone(name: &str) -> Option<Timezone> {
+    static ZONES: OnceLock<HashMap<String, Timezone>> = OnceLock::new();
+    parse_timezone(name).or_else(|| {
+        ZONES
+            .get_or_init(|| {
+                chrono_tz::TZ_VARIANTS
+                    .iter()
+                    .map(|zone| (zone.name().to_ascii_lowercase(), *zone))
+                    .collect()
+            })
+            .get(&name.to_ascii_lowercase())
+            .copied()
+    })
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct JsSlot(Rc<RefCell<Option<EvaluationContext>>>);
@@ -177,7 +199,7 @@ impl JsSlot {
 
     fn zone(&self, name: Option<String>) -> Option<Timezone> {
         match name {
-            Some(name) => parse_timezone(&name),
+            Some(name) => canonical_zone(&name),
             None => Some(self.timezone()),
         }
     }
@@ -230,34 +252,88 @@ impl JsSlot {
         Some(local - offset.local_minus_utc() as f64 * 1000.0)
     }
 
-    pub(crate) fn install(&self, ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
-        let globals = ctx.globals();
-        if globals.get::<_, bool>("__zenPinned").unwrap_or(false) {
-            return Ok(());
+    fn bundle() -> Option<Bundle<ScaBundleData<&'static [u8]>>> {
+        static CODE: OnceLock<Option<[Vec<u8>; 2]>> = OnceLock::new();
+        static BUNDLE: OnceLock<Option<[(&'static str, &'static [u8]); 2]>> = OnceLock::new();
+        BUNDLE
+            .get_or_init(|| {
+                let code = CODE.get_or_init(|| {
+                    let runtime = rquickjs::Runtime::new().ok()?;
+                    let context = rquickjs::Context::full(&runtime).ok()?;
+                    context.with(|ctx| {
+                        let compile = |name: &str, source: &str| {
+                            Module::declare(ctx.clone(), name, source)
+                                .and_then(|module| {
+                                    module.write(WriteOptions {
+                                        strip_source: true,
+                                        ..Default::default()
+                                    })
+                                })
+                                .ok()
+                        };
+                        Some([
+                            compile(PIN_ENTRY.0, PIN_ENTRY.1)?,
+                            compile(PIN_DATE.0, PIN_DATE.1)?,
+                        ])
+                    })
+                });
+                code.as_ref().map(|[entry, date]| {
+                    [
+                        (PIN_ENTRY.0, entry.as_slice()),
+                        (PIN_DATE.0, date.as_slice()),
+                    ]
+                })
+            })
+            .as_ref()
+            .map(|entries| Bundle(entries.as_slice()))
+    }
+
+    fn evaluate<'js>(
+        ctx: &rquickjs::Ctx<'js>,
+        (name, source): (&str, &str),
+    ) -> rquickjs::Result<rquickjs::Function<'js>> {
+        let declared = match Self::bundle() {
+            Some(mut bundle) => bundle.load(ctx, name)?,
+            None => Module::declare(ctx.clone(), name, source)?,
+        };
+        let (module, promise) = declared.eval()?;
+        if promise.state() != PromiseState::Resolved {
+            return Err(rquickjs::Error::new_loading(name));
         }
-        let slot = self.clone();
-        globals.set("__zenNow", Func::from(move || slot.now()))?;
-        let slot = self.clone();
-        globals.set("__zenRandom", Func::from(move || slot.random()))?;
-        let slot = self.clone();
-        globals.set(
-            "__zenOffset",
-            Func::from(move |ms: f64, zone: Option<String>| slot.offset(ms, zone)),
-        )?;
-        let slot = self.clone();
-        globals.set(
-            "__zenUtc",
-            Func::from(move |local: f64, zone: Option<String>| slot.utc(local, zone)),
-        )?;
-        let slot = self.clone();
-        globals.set(
-            "__zenZone",
-            Func::from(move || slot.timezone().name().to_string()),
-        )?;
-        globals.set(
-            "__zenCanonicalZone",
-            Func::from(|name: String| parse_timezone(&name).map(|zone| zone.name().to_string())),
-        )?;
-        ctx.eval::<(), _>(PIN_JS)
+        module.get("default")
+    }
+
+    pub(crate) fn install<'js>(&self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<()> {
+        let entry = Self::evaluate(ctx, PIN_ENTRY)?;
+        let (now, random, slot) = (self.clone(), self.clone(), self.clone());
+        entry.call((
+            Func::from(move || now.now()),
+            Func::from(move || random.random()),
+            Func::from(
+                move |ctx: rquickjs::Ctx<'js>,
+                      native: rquickjs::Value<'js>,
+                      pinned: rquickjs::Value<'js>| {
+                    slot.load(&ctx, native, pinned)
+                },
+            ),
+        ))
+    }
+
+    fn load<'js>(
+        &self,
+        ctx: &rquickjs::Ctx<'js>,
+        native: rquickjs::Value<'js>,
+        pinned: rquickjs::Value<'js>,
+    ) -> rquickjs::Result<rquickjs::Value<'js>> {
+        let date = Self::evaluate(ctx, PIN_DATE)?;
+        let (now, offset, utc) = (self.clone(), self.clone(), self.clone());
+        date.call((
+            native,
+            pinned,
+            Func::from(move || now.now()),
+            Func::from(move |ms: f64, zone: Option<String>| offset.offset(ms, zone)),
+            Func::from(move |local: f64, zone: Option<String>| utc.utc(local, zone)),
+            Func::from(|name: String| canonical_zone(&name).map(|zone| zone.name().to_string())),
+        ))
     }
 }

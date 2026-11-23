@@ -712,7 +712,7 @@ impl Table {
                         });
                     }
                     if let (Some(truths), Some(view), true) = (&fused, direct, self.fuses(index)) {
-                        cells.indexed_column(&view, rows, &mut bits, bound.context.timezone());
+                        cells.indexed_column(&view, rows, &mut bits, &bound.context);
                         for other in 0..cells.others() {
                             let (Some((_, rules)), Some(truth)) = (
                                 cells.other(other),
@@ -746,21 +746,13 @@ impl Table {
                     ) {
                         _ if peeled => {}
                         (_, false, Some(column), _) => {
-                            cells.indexed_column(&column, rows, &mut bits, bound.context.timezone())
+                            cells.indexed_column(&column, rows, &mut bits, &bound.context)
                         }
-                        (true, true, Some(column), _) => cells.evaluate_indexed_column(
-                            &column,
-                            rows,
-                            &mut bits,
-                            bound.context.timezone(),
-                        ),
+                        (true, true, Some(column), _) => {
+                            cells.evaluate_indexed_column(&column, rows, &mut bits, &bound.context)
+                        }
                         (false, true, Some(column), Some(reference)) => {
-                            cells.indexed_column(
-                                &column,
-                                rows,
-                                &mut bits,
-                                bound.context.timezone(),
-                            );
+                            cells.indexed_column(&column, rows, &mut bits, &bound.context);
                             for other in 0..cells.others() {
                                 let Some((_, rules)) = cells.other(other) else {
                                     continue;

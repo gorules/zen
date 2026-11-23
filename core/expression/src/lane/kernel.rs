@@ -100,11 +100,6 @@ impl<'a> Cx<'a> {
     }
 
     #[inline]
-    fn tz(&self) -> chrono_tz::Tz {
-        self.env.context.timezone()
-    }
-
-    #[inline]
     fn context(&self) -> &'a EvaluationContext {
         self.env.context
     }
@@ -1798,7 +1793,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 let y = y.val();
                 x.view(move |s, a| {
                     let b = y(s)?;
-                    Some(Ops::equal(a, &b, s.tz()))
+                    Some(Ops::equal(a, &b, s.context()))
                 })
             }
         };
@@ -1828,7 +1823,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                     Some(match v {
                         Variable::String(s) => s.as_str() == t.as_ref(),
                         Variable::Dynamic(_) => {
-                            Ops::equal(v, &Variable::String(Symbol::from(t.as_ref())), cx.tz())
+                            Ops::equal(v, &Variable::String(Symbol::from(t.as_ref())), cx.context())
                         }
                         _ => false,
                     })
@@ -1845,7 +1840,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
                 }
             }
             Const::Null => x.view(|_, v| Some(matches!(v, Variable::Null))),
-            _ => x.view(move |s, v| Some(Ops::equal(v, &c.variable(), s.tz()))),
+            _ => x.view(move |s, v| Some(Ops::equal(v, &c.variable(), s.context()))),
         }
     }
 
@@ -1879,17 +1874,17 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         let f: BoolFn = match (a, b) {
             (x, Code::Const(Const::Number(k))) => x.view(move |s, v| match v {
                 Variable::Number(n) => Some(Ops::ordered_number(n, &k, order)),
-                other => Ops::compare(other, &Variable::Number(k), order, s.tz()).ok(),
+                other => Ops::compare(other, &Variable::Number(k), order, s.context()).ok(),
             }),
             (Code::Const(Const::Number(k)), y) => y.view(move |s, v| match v {
                 Variable::Number(n) => Some(Ops::ordered_number(&k, n, order)),
-                other => Ops::compare(&Variable::Number(k), other, order, s.tz()).ok(),
+                other => Ops::compare(&Variable::Number(k), other, order, s.context()).ok(),
             }),
             (x, y) => {
                 let y = y.val();
                 x.view(move |s, a| {
                     let b = y(s)?;
-                    Ops::compare(a, &b, order, s.tz()).ok()
+                    Ops::compare(a, &b, order, s.context()).ok()
                 })
             }
         };
@@ -1962,7 +1957,7 @@ impl<'h, 'a> KernelBuilder<'h, 'a> {
         let (a, b) = (self.node(left)?, self.node(right)?.val());
         let test = a.view(move |s, x| {
             let y = b(s)?;
-            Ops::membership(x.clone(), &y, s.tz()).ok()
+            Ops::membership(x.clone(), &y, s.context()).ok()
         });
         Some(Self::negated(test, not))
     }

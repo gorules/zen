@@ -1,3 +1,4 @@
+use crate::context::EvaluationContext;
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::program::{Binding, Kind};
 use crate::lane::Bits;
@@ -106,8 +107,8 @@ impl<'a> Dictionary<'a> {
         self.column().variable(row)
     }
 
-    pub fn equals(self, row: usize, k: &Variable, tz: chrono_tz::Tz) -> bool {
-        self.column().equals(row, k, tz)
+    pub fn equals(self, row: usize, k: &Variable, context: &EvaluationContext) -> bool {
+        self.column().equals(row, k, context)
     }
 }
 
@@ -381,7 +382,7 @@ impl<'a> Column<'a> {
         }
     }
 
-    pub fn equals(&self, row: usize, k: &Variable, tz: chrono_tz::Tz) -> bool {
+    pub fn equals(&self, row: usize, k: &Variable, context: &EvaluationContext) -> bool {
         if !self.valid(row) {
             return matches!(k, Variable::Null);
         }
@@ -406,10 +407,10 @@ impl<'a> Column<'a> {
             ) => self.bytes(row) == Some(s.as_bytes()),
             (Values::Any(v), k) => v
                 .get(row)
-                .is_some_and(|v| crate::lane::ops::Ops::equal(v, k, tz)),
+                .is_some_and(|v| crate::lane::ops::Ops::equal(v, k, context)),
             (Values::Dict { values, .. }, k) => self
                 .code(row)
-                .is_some_and(|code| values.equals(code, k, tz)),
+                .is_some_and(|code| values.equals(code, k, context)),
             (Values::List { .. }, _) => false,
             _ => false,
         }

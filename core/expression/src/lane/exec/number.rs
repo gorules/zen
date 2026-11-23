@@ -2,6 +2,7 @@ use super::frame::Fault;
 use super::frame::{Buffers, Frame};
 use super::Executor;
 use crate::compiler::Compare;
+use crate::context::EvaluationContext;
 use crate::functions::{FunctionKind, InternalFunction};
 use crate::lane::builtins::{Arg, Builtins, Out, RowContext};
 use crate::lane::columns::{Column, Values};
@@ -11,7 +12,6 @@ use crate::lane::program::{Input, Kind, NumCmp, NumOp, Operand, Reg};
 use crate::lane::scaled::{Kernel, Scaled};
 use crate::lexer::Bracket;
 use crate::variable::Variable;
-use chrono_tz::Tz;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
@@ -693,7 +693,7 @@ impl Executor {
         b: Operand,
         active: M,
         f: &mut Frame<M>,
-        tz: Tz,
+        context: &EvaluationContext,
     ) {
         let slow = active & (f.operand_boxed(a) | f.operand_boxed(b));
         let fast = active & !slow;
@@ -714,11 +714,11 @@ impl Executor {
         for lane in Lanes::of(slow) {
             let (x, y) = (f.operand_value(a, lane), f.operand_value(b, lane));
             match op {
-                NumCmp::Order(c) => match Ops::compared(&x, &y, c, tz) {
+                NumCmp::Order(c) => match Ops::compared(&x, &y, c, context) {
                     Some(hit) => f.set(dst, lane, Variable::Bool(hit)),
                     None => f.fault(lane, Fault::Unsupported("Compare")),
                 },
-                NumCmp::Equal => f.set(dst, lane, Variable::Bool(Ops::equal(&x, &y, tz))),
+                NumCmp::Equal => f.set(dst, lane, Variable::Bool(Ops::equal(&x, &y, context))),
             }
         }
     }

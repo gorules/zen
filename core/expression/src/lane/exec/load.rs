@@ -660,7 +660,7 @@ impl Executor {
         ctx: &mut Context,
     ) {
         let k = f.consts[*id as usize].clone();
-        let tz = ctx.tz();
+        let context = ctx.context;
         let d = *dst as usize;
         let mut word = f.none();
         match ctx.column(*site) {
@@ -669,7 +669,8 @@ impl Executor {
                 let mut matched = [0u64; 4];
                 if let Values::Dict { values, .. } = column.values {
                     for code in 0..values.len() {
-                        matched[code / 64] |= (values.equals(code, &k, tz) as u64) << (code % 64);
+                        matched[code / 64] |=
+                            (values.equals(code, &k, context) as u64) << (code % 64);
                     }
                 }
                 let null = matches!(k, Variable::Null);
@@ -727,7 +728,7 @@ impl Executor {
                     _ => {
                         for lane in Lanes::of(active) {
                             let row = ctx.base + f.rows[lane] as usize;
-                            word.put(lane, column.equals(row, &k, tz));
+                            word.put(lane, column.equals(row, &k, context));
                         }
                     }
                 }
@@ -744,19 +745,19 @@ impl Executor {
                     let env = ctx.envs.get(row);
                     let hit = match load {
                         Load::Env(key) => Self::lookup(key, *site, row, f, ctx, |_, r| {
-                            r.map(|v| Ops::equal(v, &k, tz))
+                            r.map(|v| Ops::equal(v, &k, context))
                         }),
                         Load::Path(path) => match Self::simple(path) && env.locals().is_empty() {
                             true => Ok(Self::path_with(
                                 env.base(),
                                 &path[1..],
                                 &mut f.hints[slot..],
-                                |v| Ops::equal(v, &k, tz),
+                                |v| Ops::equal(v, &k, context),
                             )),
                             false => Ok(Ops::equal(
                                 &Ops::fetch_fast(path, ctx.roots.get(row), env),
                                 &k,
-                                tz,
+                                context,
                             )),
                         },
                     };
@@ -811,7 +812,7 @@ impl Executor {
                         Some(None) => Ok(Variable::Null),
                         None => Self::row_value(load, *site, lane, f, ctx),
                     };
-                    haystack.and_then(|h| Ops::membership(f.take(*a, lane), &h, ctx.tz()))
+                    haystack.and_then(|h| Ops::membership(f.take(*a, lane), &h, ctx.context))
                 }
             };
             f.put(*dst, lane, result.map(Variable::Bool));

@@ -160,9 +160,17 @@ impl Isolate {
         Ok(Expression::new_standard(Arc::from(bytecode)))
     }
 
+    fn pinned(now: Option<crate::context::Instant>) -> crate::context::EvaluationContext {
+        crate::context::EvaluationContext::new(crate::context::Pinned {
+            now,
+            ..Default::default()
+        })
+    }
+
     pub fn run_standard(&mut self, source: &str) -> Result<Variable, IsolateError> {
         if let Some(lane) = &mut self.lane {
-            return lane.run(source, ExpressionKind::Standard, &self.scope, self.now);
+            let context = Self::pinned(self.now);
+            return lane.run(source, ExpressionKind::Standard, &self.scope, &context);
         }
 
         let cached = self
@@ -195,8 +203,9 @@ impl Isolate {
 
     pub fn run_unary(&mut self, source: &str) -> Result<bool, IsolateError> {
         if let Some(lane) = &mut self.lane {
+            let context = Self::pinned(self.now);
             return lane
-                .run(source, ExpressionKind::Unary, &self.scope, self.now)?
+                .run(source, ExpressionKind::Unary, &self.scope, &context)?
                 .as_bool()
                 .ok_or(IsolateError::ValueCastError);
         }

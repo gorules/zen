@@ -3,7 +3,6 @@ use crate::lane::builtins::RowContext;
 use crate::lane::columns::{Column, Columns, Values};
 use crate::lane::program::{Binding, Program, Reg};
 use crate::scope::Scope;
-use chrono_tz::Tz;
 
 pub enum Envs<'a> {
     Shared(&'a [Scope]),
@@ -91,11 +90,6 @@ impl<'a> Context<'a> {
     #[inline]
     pub(crate) fn here(&self) -> RowContext<'a> {
         RowContext::new(self.context, self.first)
-    }
-
-    #[inline]
-    pub(crate) fn tz(&self) -> Tz {
-        self.context.timezone()
     }
 
     pub(super) fn view(&self, program: u64, reg: Reg) -> Option<Column<'a>> {

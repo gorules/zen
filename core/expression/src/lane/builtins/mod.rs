@@ -15,7 +15,6 @@ use crate::lane::columns::{Column, Values};
 use crate::lane::date::Date;
 use crate::lane::date::DynamicVariableExt;
 use crate::variable::Variable;
-use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use std::borrow::Cow;
 use zen_types::rccell::RcCell;
@@ -70,9 +69,9 @@ impl<'a> Arg<'a> {
         }
     }
 
-    pub(crate) fn coerce_date(&self, tz: Tz) -> Option<Date> {
+    pub(crate) fn coerce_date(&self, ctx: &RowContext) -> Option<Date> {
         match self {
-            Arg::Str(s) => Some(Date::from_text(s, tz)),
+            Arg::Str(s) => Some(Date::from_text(s, ctx.timezone())),
             other => other.date(),
         }
     }

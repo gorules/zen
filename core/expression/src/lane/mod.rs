@@ -1455,7 +1455,7 @@ impl Backend {
         source: &str,
         kind: ExpressionKind,
         scope: &Scope,
-        now: Option<crate::context::Instant>,
+        context: &EvaluationContext,
     ) -> Result<Variable, IsolateError> {
         let programs = match kind {
             ExpressionKind::Standard => &mut self.standard,
@@ -1467,11 +1467,7 @@ impl Backend {
         }
         let program = &programs[source];
         let mut runner = Self::RUNNER.take();
-        let context = EvaluationContext::new(crate::context::Pinned {
-            now,
-            ..Default::default()
-        });
-        let result = runner.evaluate_one(program, &context, scope);
+        let result = runner.evaluate_one(program, context, scope);
         Self::RUNNER.set(runner);
         result
     }

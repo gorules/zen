@@ -583,12 +583,10 @@ impl<'a> Data<'a> {
     }
 
     pub fn apply(layer: &Layer<'a>, row: usize, before: &Variable) -> Option<Variable> {
-        let Variable::Object(map) = before else {
+        let Variable::Object(_) = before else {
             return None;
         };
-        let mut current = map.borrow().clone();
-        layer.apply(row, &mut current);
-        Some(Variable::from_object(current))
+        Some(before.clone().merge_clone(&layer.object(row)))
     }
 
     pub fn partial(&self, path: &str) -> Leaf<'a> {
@@ -767,7 +765,7 @@ impl<'a> Data<'a> {
                     ),
                 }
             }
-            _ if parents.iter().all(Data::patchable) => {
+            _ if parents.iter().all(Data::patchable) && !Self::aliased(&parents) => {
                 let mut parents = parents.into_iter();
                 let mut head = match parents.next() {
                     Some(first) => Data::merged(rows, vec![first]),
@@ -781,13 +779,135 @@ impl<'a> Data<'a> {
                 head
             }
             _ => {
-                let materialized: Vec<Col> = parents.iter().map(Data::materialized).collect();
+                let materialized = Self::shared(&parents);
                 let values: Col = (0..rows.len())
                     .map(|row| GraphWalker::merge_values(materialized.iter().map(|m| &m[row])))
                     .collect();
                 Data::plain(rows.clone(), values)
             }
         }
+    }
+
+    fn lineage(&self) -> (Option<&Col>, &[Layer<'a>]) {
+        match &self.shape {
+            Shape::Plain(values) => (Some(values), &[]),
+            Shape::Patched { base, layers, .. } => (base.as_ref(), layers),
+        }
+    }
+
+    fn common(&self, other: &Data<'a>) -> Option<usize> {
+        let ((base, layers), (other_base, other_layers)) = (self.lineage(), other.lineage());
+        let based = match (base, other_base) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+            _ => false,
+        };
+        if !based {
+            return None;
+        }
+        let depth = layers
+            .iter()
+            .zip(other_layers)
+            .take_while(|(a, b)| Rc::ptr_eq(&a.columns, &b.columns))
+            .count();
+        (base.is_some() || depth > 0).then_some(depth)
+    }
+
+    fn nullable(&self) -> bool {
+        let Shape::Patched {
+            leaves,
+            presence: Some(presence),
+            ..
+        } = &self.shape
+        else {
+            return true;
+        };
+        let rows = self.len();
+        leaves
+            .iter()
+            .zip(presence.iter())
+            .any(|((_, leaf), present)| {
+                leaf.objects()
+                    || !matches!(present, Presence::Valued)
+                        && present
+                            .mask(leaf, rows)
+                            .iter()
+                            .zip(leaf.valued(rows).iter())
+                            .any(|(p, v)| p & !v != 0)
+            })
+    }
+
+    fn aliased(parents: &[Data<'a>]) -> bool {
+        parents.iter().enumerate().skip(1).any(|(at, parent)| {
+            parents[..at]
+                .iter()
+                .any(|earlier| parent.common(earlier).is_some())
+                && parent.nullable()
+        })
+    }
+
+    pub fn shared(parents: &[Data<'a>]) -> Vec<Col> {
+        let count = parents.first().map_or(0, Data::len);
+        let mut chains: Vec<Option<Vec<Col>>> = Vec::with_capacity(parents.len());
+        let mut out = Vec::with_capacity(parents.len());
+        for (at, parent) in parents.iter().enumerate() {
+            let mut best: Option<(usize, usize)> = None;
+            for (other, earlier) in parents[..at].iter().enumerate() {
+                if let Some(depth) = parent.common(earlier) {
+                    if best.is_none_or(|(found, _)| depth > found) {
+                        best = Some((depth, other));
+                    }
+                }
+            }
+            let later = parents[at + 1..]
+                .iter()
+                .any(|next| next.common(parent).is_some());
+            if best.is_none() && !later {
+                out.push(parent.materialized());
+                chains.push(None);
+                continue;
+            }
+            let (base, layers) = parent.lineage();
+            let mut chain: Vec<Col> = Vec::with_capacity(layers.len() + 1);
+            match best.and_then(|(depth, other)| Some((depth, chains[other].as_ref()?))) {
+                Some((depth, from)) => chain.extend(from[..=depth].iter().cloned()),
+                None => chain.push(match base {
+                    Some(base) => base.clone(),
+                    None => (0..count).map(|_| Variable::Null).collect(),
+                }),
+            }
+            for layer in &layers[chain.len() - 1..] {
+                let Some(before) = chain.last() else {
+                    break;
+                };
+                let next: Col = (0..count)
+                    .map(|row| match &before[row] {
+                        value @ Variable::Object(_) => {
+                            value.clone().merge_clone(&layer.object(row))
+                        }
+                        _ => layer.object(row),
+                    })
+                    .collect();
+                chain.push(next);
+            }
+            let last = chain
+                .last()
+                .cloned()
+                .unwrap_or_else(|| parent.materialized());
+            out.push(match &parent.shape {
+                Shape::Patched {
+                    nulls: Some(nulls), ..
+                } => (0..count)
+                    .map(|row| match Bits::get(nulls, row) {
+                        true => Variable::Null,
+                        false => last[row].clone(),
+                    })
+                    .collect(),
+                _ => last,
+            });
+            chains.push(Some(chain));
+        }
+        out
     }
 
     pub fn empty(rows: &Rc<[usize]>) -> Data<'a> {

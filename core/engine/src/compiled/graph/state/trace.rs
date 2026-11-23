@@ -259,10 +259,11 @@ impl CompiledGraph {
             .map(Vec::as_slice)
             .collect();
         held.dedup_by(|a, b| std::ptr::eq(*a, *b));
-        let columns: Vec<crate::compiled::graph::data::Col> = held
+        let gathered: Vec<Data<'_>> = held
             .into_iter()
-            .map(|pieces| Data::gather(pieces, rows).materialized())
+            .map(|pieces| Data::gather(pieces, rows))
             .collect();
+        let columns = Data::shared(&gathered);
         (0..rows.len())
             .map(|row| {
                 crate::compiled::host::graph::walker::GraphWalker::merge_values(

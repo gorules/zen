@@ -845,3 +845,90 @@ fn a_batch_row_lets_a_later_table_output_replace_an_earlier_one_under_it() {
         batch_rows_match_single_rows(&graph, &[json!({}), json!({"x": 3})]);
     }
 }
+
+fn joined(nodes: Vec<Value>, edges: &[(&str, &str)]) -> Value {
+    let mut all = vec![json!({"id": "in", "name": "in", "type": "inputNode"})];
+    all.extend(nodes);
+    all.push(json!({"id": "out", "name": "out", "type": "outputNode"}));
+    let edges: Vec<Value> = edges
+        .iter()
+        .enumerate()
+        .map(|(i, (from, to))| json!({"id": format!("e{i}"), "sourceId": from, "targetId": to, "type": "edge"}))
+        .collect();
+    json!({"nodes": all, "edges": edges})
+}
+
+#[test]
+fn a_batch_row_keeps_a_nested_null_shared_by_two_branches_of_one_node() {
+    for pass in [true, false] {
+        let graph = joined(
+            vec![
+                json!({"id": "e1", "name": "e1", "type": "expressionNode", "content": {
+                    "passThrough": pass,
+                    "expressions": [{"id": "a", "key": "g.a", "value": "score"}, {"id": "b", "key": "q", "value": "score"}]
+                }}),
+                json!({"id": "e2", "name": "e2", "type": "expressionNode", "content": {
+                    "passThrough": true,
+                    "expressions": [{"id": "c", "key": "z", "value": "1"}]
+                }}),
+                json!({"id": "e3", "name": "e3", "type": "expressionNode", "content": {
+                    "passThrough": true,
+                    "expressions": [{"id": "d", "key": "w", "value": "2"}]
+                }}),
+            ],
+            &[
+                ("in", "e1"),
+                ("e1", "e2"),
+                ("e1", "e3"),
+                ("e2", "out"),
+                ("e3", "out"),
+            ],
+        );
+        batch_rows_match_single_rows(
+            &graph,
+            &[
+                json!({"score": null}),
+                json!({"score": 1}),
+                json!({}),
+                json!({"g": {"b": null}, "score": null}),
+            ],
+        );
+    }
+}
+
+#[test]
+fn a_batch_row_keeps_a_nested_null_when_a_node_meets_its_own_descendant() {
+    let graph = joined(
+        vec![
+            json!({"id": "e1", "name": "e1", "type": "expressionNode", "content": {
+                "outputPath": "lines",
+                "expressions": [{"id": "a", "key": "k", "value": "n"}]
+            }}),
+            json!({"id": "e2", "name": "e2", "type": "expressionNode", "content": {
+                "passThrough": true,
+                "expressions": [{"id": "b", "key": "j", "value": "lines.other ?? 0"}]
+            }}),
+        ],
+        &[("in", "e1"), ("e1", "e2"), ("e2", "out"), ("e1", "out")],
+    );
+    batch_rows_match_single_rows(&graph, &[json!({}), json!({"n": 1}), json!({"n": null})]);
+}
+
+#[test]
+fn a_batch_row_keeps_an_input_null_that_an_unchanged_pass_through_shares() {
+    for value in ["null", "1"] {
+        let graph = joined(
+            vec![
+                json!({"id": "n0", "name": "n0", "type": "expressionNode", "content": {
+                    "passThrough": true,
+                    "expressions": [{"id": "a", "key": "c", "value": value}]
+                }}),
+                json!({"id": "n1", "name": "n1", "type": "functionNode", "content": {
+                    "source": "export const handler = async (input) => ({ keys: Object.keys(input || {}) });"
+                }}),
+            ],
+            &[("in", "n0"), ("in", "n1"), ("n0", "n1"), ("n1", "out")],
+        );
+        batch_rows_match_single_rows(&graph, &[json!({"y": null}), json!({})]);
+    }
+}

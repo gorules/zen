@@ -1260,3 +1260,61 @@ fn version_2_keeps_alias_writes_that_cannot_cycle() {
         json!({"a": {"k": 1, "c": {"j": [0]}, "e": 1}}),
     );
 }
+
+#[test]
+fn a_table_reading_the_whole_root_sees_the_tested_value_under_its_key() {
+    let one = |policy: &str, output: &str| {
+        graph(
+            json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+                "hitPolicy": policy,
+                "inputs": [{"id": "i0", "field": "a"}, {"id": "i1", "field": "b"}],
+                "outputs": [{"id": "o0", "field": "out"}],
+                "rules": [
+                    {"_id": "r0", "i0": "> 5", "i1": "", "o0": "'big'"},
+                    {"_id": "r1", "i0": "> 0", "i1": "", "o0": output},
+                    {"_id": "r2", "i0": "", "i1": "", "o0": output}
+                ]
+            }}),
+        )
+    };
+    let input = json!({"a": 1, "b": "x"});
+    same_on_every_path(
+        &one("first", "$root"),
+        &input,
+        json!({"out": {"$": 1, "a": 1, "b": "x"}}),
+    );
+    same_on_every_path(
+        &one("first", "keys($root)"),
+        &input,
+        json!({"out": ["a", "b", "$nodes", "$"]}),
+    );
+    same_on_every_path(&one("first", "$root.b"), &input, json!({"out": "x"}));
+    same_on_every_path(
+        &one("collect", "$root"),
+        &input,
+        json!([{"out": {"$": 1, "a": 1, "b": "x"}}, {"out": {"$": 1, "a": 1, "b": "x"}}]),
+    );
+    let mut wide = vec![json!({"_id": "w0", "i0": "> 0", "o0": "$root"})];
+    for at in 0..9 {
+        wide.push(
+            json!({"_id": format!("p{at}"), "i0": format!("{}", 100 + at), "o0": at.to_string()}),
+        );
+    }
+    same_on_every_path(
+        &wide_table("first", json!([{"id": "i0", "field": "a"}]), wide),
+        &json!({"a": 1}),
+        json!({"v": {"$": 1, "a": 1}}),
+    );
+    let cell = graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "a"}],
+            "outputs": [{"id": "o0", "field": "out"}],
+            "rules": [
+                {"_id": "r0", "i0": "len(keys($root)) == 3", "o0": "'three'"},
+                {"_id": "r1", "i0": "", "o0": "'other'"}
+            ]
+        }}),
+    );
+    same_on_every_path(&cell, &json!({"a": 1}), json!({"out": "three"}));
+}

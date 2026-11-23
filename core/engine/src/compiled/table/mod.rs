@@ -236,6 +236,15 @@ impl Table {
                     if !strict && SourceInfo::reads_dollar(field) {
                         return Err("table field reads `$`".into());
                     }
+                    if !strict
+                        && (SourceInfo::reads_whole_root(field, false)
+                            || cells
+                                .iter()
+                                .flatten()
+                                .any(|cell| SourceInfo::reads_whole_root(cell, true)))
+                    {
+                        return Err("table reads the whole root".into());
+                    }
                     if strict
                         && cells
                             .iter()
@@ -282,6 +291,9 @@ impl Table {
                         };
                         if SourceInfo::reads_dollar(cell) {
                             return Err("table cell without a field reads `$`".into());
+                        }
+                        if SourceInfo::reads_whole_root(cell, false) {
+                            return Err("table reads the whole root".into());
                         }
                         match distinct.iter_mut().find(|(s, _, _)| s.as_ref() == *cell) {
                             Some((_, _, bits)) => bit(bits, rule),
@@ -382,6 +394,9 @@ impl Table {
             for (at, &(column, output, cell)) in written.iter().enumerate() {
                 if SourceInfo::reads_dollar(cell) {
                     return Err("table output cell reads `$`".into());
+                }
+                if SourceInfo::reads_whole_root(cell, false) {
+                    return Err("table reads the whole root".into());
                 }
                 let shadowed = !output.collect
                     && written[at + 1..].iter().any(|(_, later, _)| {

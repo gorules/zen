@@ -40,6 +40,39 @@ impl SourceInfo {
         found.get()
     }
 
+    pub fn reads_whole_root(source: &str, unary: bool) -> bool {
+        if source.trim().is_empty() {
+            return false;
+        }
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let Ok(tokens) = lexer.tokenize(&bump, source) else {
+            return true;
+        };
+        let Ok(parser) = Parser::try_new(&tokens, &bump) else {
+            return true;
+        };
+        let parsed = match unary {
+            true => parser.unary().parse(),
+            false => parser.standard().parse(),
+        };
+        if parsed.error().is_err() {
+            return true;
+        }
+        let roots = Cell::new(0usize);
+        let fields = Cell::new(0usize);
+        let (roots_ref, fields_ref) = (&roots, &fields);
+        parsed.root.walk(move |node| match node {
+            Node::Root => roots_ref.set(roots_ref.get() + 1),
+            Node::Member {
+                node: Node::Root,
+                property: Node::String(key),
+            } if *key != "$" => fields_ref.set(fields_ref.get() + 1),
+            _ => {}
+        });
+        roots.get() != fields.get()
+    }
+
     pub fn scalar(source: &str) -> bool {
         if source.trim().is_empty() {
             return true;

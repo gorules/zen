@@ -145,6 +145,10 @@ impl CompiledGraph {
             .as_deref()
             .is_none_or(crate::compiled::trace::plain_path);
         scoped
+            && content
+                .rules
+                .iter()
+                .all(|rule| !rule.contains_key("_description"))
             && content.inputs.iter().all(|input| match &input.field {
                 None => true,
                 Some(field) if field.is_empty() => true,

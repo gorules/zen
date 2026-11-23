@@ -604,3 +604,54 @@ fn a_batch_row_reads_node_values_after_a_table_writing_the_root() {
     ]);
     batch_rows_match_single_rows(&graph, &[json!({"a": 1}), json!({"a": 2})]);
 }
+
+#[test]
+fn a_batch_trace_keeps_the_references_of_a_described_rule() {
+    let graph = graph(json!({
+        "id": "node", "name": "node", "type": "decisionTableNode",
+        "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "a"}, {"id": "i1", "field": "c"}],
+            "outputs": [{"id": "o0", "field": "o"}],
+            "rules": [{"_id": "r0", "_description": "x", "i0": "> 0", "i1": ">= 85", "o0": "1"}]
+        }
+    }));
+    let content: DecisionContent = serde_json::from_value(graph).unwrap();
+    let decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(Arc::new(content))
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let request = Variable::from(json!({"a": 1, "c": 92.3}));
+    let options = EvaluationOptions {
+        trace: zen_engine::trace::TraceFormat::V1,
+        ..Default::default()
+    };
+    let references = |response: zen_engine::DecisionGraphResponse| {
+        let document = serde_json::to_value(&response).unwrap()["trace"].to_string();
+        let restored = zen_engine::trace::restore(zen_engine::trace::RestoreArgs {
+            trace: zen_engine::trace::Input::Json(&document),
+            request: zen_engine::trace::Input::Variable(&request),
+            documents: None,
+        })
+        .unwrap();
+        serde_json::to_value(&restored).unwrap()["node"]["traceData"]["reference_map"].clone()
+    };
+    let single = references(
+        runtime
+            .block_on(decision.evaluate_with_opts(request.clone(), options))
+            .unwrap(),
+    );
+    assert_eq!(single, json!({"a": 1, "c": 92.3}));
+    let rows = vec![request.clone(), request.clone()];
+    for (at, row) in runtime
+        .block_on(decision.evaluate_batch(&rows, options))
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(references(row.unwrap()), single, "batch row {at}");
+    }
+}

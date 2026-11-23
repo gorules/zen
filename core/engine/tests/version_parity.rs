@@ -1370,3 +1370,64 @@ fn a_pass_through_writing_a_value_back_keeps_or_drops_nulls_like_version_1() {
         batch_rows_match_single_rows(graph, &rows);
     }
 }
+
+#[test]
+fn a_table_output_reads_the_value_its_rule_tested_last() {
+    let table = |policy: &str, rules: Value| {
+        graph(
+            json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+                "hitPolicy": policy,
+                "inputs": [
+                    {"id": "i0", "field": "tier"},
+                    {"id": "i1", "field": "amount * 2"},
+                    {"id": "i2", "field": "obj"}
+                ],
+                "outputs": [{"id": "o0", "field": "v"}, {"id": "o1", "field": "w"}],
+                "rules": rules
+            }}),
+        )
+    };
+    let rules = json!([
+        {"_id": "r0", "i0": "'gold'", "i1": "> 100", "i2": "", "o0": "$ + 1", "o1": "'a'"},
+        {"_id": "r1", "i0": "'gold'", "i1": "", "i2": "", "o0": "upper($)", "o1": "$ == 'gold'"},
+        {"_id": "r2", "i0": "", "i1": "> 10", "i2": "$.k > 0", "o0": "$.k * 10", "o1": "sum(map([1, 2], # + $.k))"},
+        {"_id": "r3", "i0": "'silver'", "i1": "", "i2": "", "o0": "len($)", "o1": "'$ stays text'"},
+        {"_id": "r4", "i0": "", "i1": "", "i2": "", "o0": "$", "o1": "'none'"}
+    ]);
+    let inputs = [
+        json!({"tier": "gold", "amount": 80, "obj": {"k": 2}}),
+        json!({"tier": "gold", "amount": 3, "obj": {"k": 2}}),
+        json!({"tier": "bronze", "amount": 30, "obj": {"k": 3}}),
+        json!({"tier": "silver", "amount": 1, "obj": {"k": 0}}),
+        json!({"tier": "bronze", "amount": 1, "obj": {"k": 0}}),
+        json!({"tier": null, "amount": null, "obj": null}),
+    ];
+    let mut tested = rules.clone();
+    tested.as_array_mut().unwrap().pop();
+    let unknown = json!([
+        {"_id": "r0", "i0": "'gold'", "i1": "> 100", "i2": "", "o0": "1", "o1": "'a'"},
+        {"_id": "r1", "i0": "", "i1": "", "i2": "", "o0": "$", "o1": "'left over'"}
+    ]);
+    for policy in ["first", "collect"] {
+        for (rules, planned) in [
+            (rules.clone(), true),
+            (tested.clone(), true),
+            (unknown.clone(), false),
+        ] {
+            let graph = table(policy, rules);
+            for input in &inputs {
+                let want = outcomes(EngineVersion::V1, Path::Repeated, &graph, input).remove(0);
+                same_as_version_1_without_compile(&graph, input, want);
+            }
+            batch_rows_match_single_rows(&graph, &inputs);
+            let content: DecisionContent = serde_json::from_value(graph).unwrap();
+            let mut decision = DecisionEngine::default()
+                .with_version(EngineVersion::V2)
+                .create_decision(Arc::new(content))
+                .unwrap();
+            decision.compile();
+            let degraded = zen_engine::diagnostics::degraded(&decision).unwrap_or_default();
+            assert_eq!(degraded.is_empty(), planned, "{policy} {degraded:?}");
+        }
+    }
+}

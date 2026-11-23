@@ -1,5 +1,5 @@
 use crate::functions::{FunctionKind, InternalFunction};
-use crate::lexer::{Lexer, LogicalOperator, Operator};
+use crate::lexer::{Identifier, Lexer, LogicalOperator, Operator, TokenKind};
 use crate::parser::{Node, Parser};
 use bumpalo::Bump;
 use std::cell::Cell;
@@ -71,6 +71,27 @@ impl SourceInfo {
             _ => {}
         });
         roots.get() != fields.get()
+    }
+
+    pub fn with_dollar(source: &str, value: &str) -> Option<String> {
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize(&bump, source).ok()?;
+        let mut out = String::with_capacity(source.len() + value.len() + 2);
+        let mut at = 0usize;
+        for token in tokens.iter() {
+            if token.kind != TokenKind::Identifier(Identifier::ContextReference) {
+                continue;
+            }
+            let (start, end) = (token.span.0 as usize, token.span.1 as usize);
+            out.push_str(source.get(at..start)?);
+            out.push('(');
+            out.push_str(value);
+            out.push(')');
+            at = end;
+        }
+        out.push_str(source.get(at..)?);
+        Some(out)
     }
 
     pub fn scalar(source: &str) -> bool {

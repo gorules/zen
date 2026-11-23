@@ -337,8 +337,20 @@ impl CompiledGraph {
                             content.source.as_ref(),
                         )
                     });
-                crate::compiled::host::function::purity::Purity::module(&source)
-                    .then(Runtime::default)
+                match crate::compiled::host::function::purity::Purity::module(&source) {
+                    true => {
+                        let runtime = Runtime::default();
+                        let shared = NodeHandlerExtensions {
+                            function_runtime: runtime.clone(),
+                            ..extensions.clone()
+                        };
+                        if let Ok(function) = shared.function_runtime().await {
+                            let _ = function.reuse_module(&step.node.id, &source).await;
+                        }
+                        Some(runtime)
+                    }
+                    false => None,
+                }
             }
             _ => None,
         };

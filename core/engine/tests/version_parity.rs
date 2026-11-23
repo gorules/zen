@@ -445,3 +445,47 @@ fn script_dates_agree_far_from_today() {
         assert!(got.get("error").is_some(), "{version:?} {got}");
     }
 }
+
+#[test]
+fn a_script_error_names_its_node_on_every_traced_batch_row() {
+    let graph = graph(json!({
+        "id": "node", "name": "node", "type": "functionNode",
+        "content": {"source": "export const handler = async (input) => { throw new Error('boom'); }"}
+    }));
+    let content: DecisionContent = serde_json::from_value(graph).unwrap();
+    let decision = DecisionEngine::default()
+        .with_version(EngineVersion::V2)
+        .create_decision(Arc::new(content))
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let inputs: Vec<Variable> = (1..=3).map(|x| Variable::from(json!({"x": x}))).collect();
+    let shown = |error: Box<zen_engine::EvaluationError>| serde_json::to_value(&error).unwrap();
+    let single = shown(
+        runtime
+            .block_on(decision.evaluate(inputs[0].clone()))
+            .unwrap_err(),
+    );
+    assert!(single.to_string().contains("node:node:"), "{single}");
+    for trace in [
+        zen_engine::trace::TraceFormat::Legacy,
+        zen_engine::trace::TraceFormat::V1,
+    ] {
+        let options = EvaluationOptions {
+            trace,
+            ..Default::default()
+        };
+        let rows = runtime.block_on(decision.evaluate_batch(&inputs, options));
+        for (at, row) in rows.into_iter().enumerate() {
+            let got = shown(row.unwrap_err());
+            let message = |value: &Value| value["source"].to_string();
+            assert!(
+                got.to_string().contains("node:node:"),
+                "{trace:?} row {at}: {got}"
+            );
+            assert_eq!(message(&got), message(&single), "{trace:?} row {at}");
+        }
+    }
+}

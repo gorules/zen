@@ -29,6 +29,7 @@ pub struct Function {
     listeners: Vec<Box<dyn RuntimeListener>>,
     module_loader: ModuleLoader,
     declared: RefCell<HashMap<String, u64>>,
+    reused: RefCell<HashMap<String, (u64, String)>>,
     slot: JsSlot,
 }
 
@@ -53,6 +54,7 @@ impl Function {
             module_loader,
             listeners: config.listeners.unwrap_or_default(),
             declared: RefCell::new(HashMap::new()),
+            reused: RefCell::new(HashMap::new()),
             slot: config.slot,
         };
 
@@ -117,6 +119,23 @@ impl Function {
 
         self.module_loader.add_module(name.to_string());
         Ok(())
+    }
+
+    pub(crate) async fn reuse_module(&self, name: &str, source: &str) -> FunctionResult {
+        let module_name = self.shared_module(name, source).await?;
+        self.reused
+            .borrow_mut()
+            .insert(name.to_string(), (create_content_hash(source), module_name));
+        Ok(())
+    }
+
+    pub(crate) fn reused_module(&self, name: &str, source: &str) -> Option<String> {
+        let content_hash = create_content_hash(source);
+        self.reused
+            .borrow()
+            .get(name)
+            .filter(|(hash, _)| *hash == content_hash)
+            .map(|(_, module_name)| module_name.clone())
     }
 
     pub(crate) async fn shared_module(&self, name: &str, source: &str) -> FunctionResult<String> {

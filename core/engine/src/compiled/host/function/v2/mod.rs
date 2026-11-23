@@ -43,7 +43,10 @@ impl NodeHandler for FunctionV2NodeHandler {
             .as_ref()
             .and_then(|stripped| stripped.get(ctx.node.source.as_ref()).cloned())
             .unwrap_or_else(|| strip::TypeStripper::strip(ctx.node.source.deref()));
-        let module_name = function.suggest_module_name(ctx.id.deref(), source.as_ref());
+        let declared = function.reused_module(ctx.id.deref(), source.as_ref());
+        let module_name = declared
+            .clone()
+            .unwrap_or_else(|| function.suggest_module_name(ctx.id.deref(), source.as_ref()));
 
         let max_duration = Duration::from_millis(ctx.extensions.settings.function_timeout_millis);
         let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
@@ -64,11 +67,13 @@ impl NodeHandler for FunctionV2NodeHandler {
             .function_context(&function_context)
             .await?;
 
-        function
-            .register_module(&module_name, source.as_ref())
-            .await
-            .function_context(&function_context)
-            .await?;
+        if declared.is_none() {
+            function
+                .register_module(&module_name, source.as_ref())
+                .await
+                .function_context(&function_context)
+                .await?;
+        }
 
         let response_result = function
             .call_handler(

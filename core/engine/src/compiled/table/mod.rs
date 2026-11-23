@@ -370,15 +370,25 @@ impl Table {
             let mut paths = Vec::new();
             let mut full: Vec<(String, &str)> = Vec::new();
             let mut collect: Vec<(String, &str)> = Vec::new();
-            for (column, output) in ir.outputs.iter().enumerate() {
-                if output.path.is_empty() {
-                    continue;
-                }
-                let Some(cell) = ir.cell(rule, output.id) else {
-                    continue;
-                };
+            let written: Vec<(usize, &profile::OutputIr, &str)> = ir
+                .outputs
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| !output.path.is_empty())
+                .filter_map(|(column, output)| {
+                    ir.cell(rule, output.id).map(|cell| (column, output, cell))
+                })
+                .collect();
+            for (at, &(column, output, cell)) in written.iter().enumerate() {
                 if SourceInfo::reads_dollar(cell) {
                     return Err("table output cell reads `$`".into());
+                }
+                let shadowed = !output.collect
+                    && written[at + 1..].iter().any(|(_, later, _)| {
+                        !later.collect && zen_types::path::DotPath::within(output.path, later.path)
+                    });
+                if shadowed {
+                    continue;
                 }
                 let key = format!("o{}", full.len());
                 full.push((key, cell));

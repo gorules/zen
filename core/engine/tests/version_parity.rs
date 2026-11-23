@@ -825,3 +825,23 @@ fn a_batch_row_drops_a_key_nulled_by_a_switch_reaching_the_output_twice() {
     });
     batch_rows_match_single_rows(&graph, &[json!({"flag": true}), json!({"flag": false})]);
 }
+
+#[test]
+fn a_batch_row_lets_a_later_table_output_replace_an_earlier_one_under_it() {
+    for policy in ["first", "collect"] {
+        let graph = chained(vec![
+            json!({"id": "n0", "name": "n0", "type": "decisionTableNode", "content": {
+                "hitPolicy": policy,
+                "inputs": [{"id": "i0", "field": "x"}],
+                "outputs": [
+                    {"id": "o0", "field": "res"},
+                    {"id": "o1", "field": "res.k"},
+                    {"id": "o2", "field": "res"},
+                    {"id": "o3", "field": "res.j"}
+                ],
+                "rules": [{"_id": "r0", "i0": "", "o0": "0", "o1": "1", "o2": "{p: 2}", "o3": "x"}]
+            }}),
+        ]);
+        batch_rows_match_single_rows(&graph, &[json!({}), json!({"x": 3})]);
+    }
+}

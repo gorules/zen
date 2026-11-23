@@ -923,7 +923,25 @@ impl<'a> Data<'a> {
                 true => column.valued(count),
                 false => Vec::new(),
             };
-            let removed = base.is_none() && layer.present.is_none() && Bits::none(&valued);
+            let kept = match (&presence, path.rsplit_once('.')) {
+                (Some(_), Some((parent, _))) => {
+                    let mut open = Bits::of(count, |row| {
+                        layer.has(index, row) && !Bits::get(&valued, row)
+                    });
+                    if !Bits::none(&open) {
+                        let objects = self.objects_at(parent);
+                        open.iter_mut()
+                            .zip(objects.iter())
+                            .for_each(|(o, b)| *o &= !b);
+                    }
+                    open
+                }
+                _ => Vec::new(),
+            };
+            let removed = base.is_none()
+                && layer.present.is_none()
+                && Bits::none(&valued)
+                && Bits::none(&kept);
             if removed {
                 let keep: Vec<bool> = next
                     .iter()
@@ -993,8 +1011,14 @@ impl<'a> Data<'a> {
             };
             let existing = next.iter().position(|(leaf, _)| leaf == path);
             if let Some(tracked) = presence.as_mut() {
+                let kept_at = |at: usize| kept.get(at).copied().unwrap_or(0);
                 let present = match &layer.present {
-                    None => Presence::Valued,
+                    None if Bits::none(&kept) => Presence::Valued,
+                    None => {
+                        let mut bits = resolved.valued(count);
+                        Bits::or(&mut bits, &kept);
+                        Presence::Mask(Mask::Bits(bits.into()))
+                    }
                     Some(masks) => {
                         let has = masks[index].dense(count);
                         let before = existing.map(|i| tracked[i].mask(&next[i].1, count));
@@ -1003,9 +1027,15 @@ impl<'a> Data<'a> {
                                 .iter()
                                 .zip(valued.iter())
                                 .zip(before.iter())
-                                .map(|((h, v), b)| (h & v) | (!h & b))
+                                .enumerate()
+                                .map(|(at, ((h, v), b))| (h & (v | kept_at(at))) | (!h & b))
                                 .collect(),
-                            None => has.iter().zip(valued.iter()).map(|(h, v)| h & v).collect(),
+                            None => has
+                                .iter()
+                                .zip(valued.iter())
+                                .enumerate()
+                                .map(|(at, (h, v))| h & (v | kept_at(at)))
+                                .collect(),
                         }))
                     }
                 };
@@ -1031,6 +1061,33 @@ impl<'a> Data<'a> {
                 presence: presence.map(Rc::from),
             },
         )
+    }
+
+    fn objects_at(&self, path: &str) -> Vec<u64> {
+        let count = self.len();
+        if let Shape::Patched {
+            base: None,
+            leaves,
+            presence,
+            ..
+        } = &self.shape
+        {
+            match Self::read(leaves, path) {
+                Read::Base => return vec![0; count.div_ceil(64)],
+                Read::Leaf(index) => {
+                    let leaf = &leaves[index].1;
+                    return Bits::of(count, |row| {
+                        presence
+                            .as_ref()
+                            .is_none_or(|presence| presence[index].at(leaf, row))
+                            && matches!(leaf.shared(row), Variable::Object(_))
+                    });
+                }
+                Read::Whole => {}
+            }
+        }
+        let column = self.subtree(path);
+        Bits::of(count, |row| matches!(column[row], Variable::Object(_)))
     }
 
     pub fn presence_bits(&self, index: usize) -> Option<Vec<u64>> {

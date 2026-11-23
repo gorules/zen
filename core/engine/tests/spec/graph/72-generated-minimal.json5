@@ -257,9 +257,9 @@
     edges: ["input -> t1", "t1 -> t2", "t2 -> output", "input -> e", "e -> output"],
   },
   cases: [
-    {input: {}, output: {a: "mid", o: {p: null}, s: 0}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {score: 3}, output: {a: "mid", o: {p: null}, s: 3}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {score: null}, output: {a: "mid", o: {p: null}, s: 0}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {a: "mid", o: {p: null}, s: 0}},
+    {input: {score: 3}, output: {a: "mid", o: {p: null}, s: 3}},
+    {input: {score: null}, output: {a: "mid", o: {p: null}, s: 0}},
   ],
 }
 
@@ -274,9 +274,9 @@
     edges: ["input -> t1", "t1 -> e2", "e2 -> output", "t1 -> t3", "t3 -> output"],
   },
   cases: [
-    {input: {}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {missing: 1}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
-    {input: {missing: null}, output: {ok: true, res: {k: null}}, engines: {modes: ["batch"], intended: false, why: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"}},
+    {input: {}, output: {ok: true, res: {k: null}}},
+    {input: {missing: 1}, output: {ok: true, res: {k: null}}},
+    {input: {missing: null}, output: {ok: true, res: {k: null}}},
   ],
 }
 

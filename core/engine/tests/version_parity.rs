@@ -706,3 +706,69 @@ fn a_batch_row_keeps_nested_nulls_through_duplicate_edges() {
     });
     batch_rows_match_single_rows(&graph, &[json!({}), json!({})]);
 }
+
+fn mixed_rows() -> Vec<Value> {
+    vec![
+        json!({"a": {"z": 1, "k": 3}}),
+        json!({"a": 5}),
+        json!({}),
+        json!({"a": null}),
+        json!({"a": {"k": {"m": 1}}}),
+        json!({"a": [1]}),
+    ]
+}
+
+#[test]
+fn a_batch_row_keeps_a_null_only_where_its_parent_is_not_an_object() {
+    let graph = chained(vec![
+        json!({"id": "n0", "name": "n0", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "obj", "value": "a"}
+        ]}}),
+        json!({"id": "n1", "name": "n1", "type": "expressionNode", "content": {
+            "passThrough": true,
+            "expressions": [{"id": "b", "key": "obj.k", "value": "null"}]
+        }}),
+        json!({"id": "n2", "name": "n2", "type": "expressionNode", "content": {"expressions": [
+            {"id": "c", "key": "r", "value": "obj"},
+            {"id": "d", "key": "t", "value": "type(obj)"},
+            {"id": "e", "key": "u", "value": "obj.k"}
+        ]}}),
+    ]);
+    batch_rows_match_single_rows(&graph, &mixed_rows());
+}
+
+#[test]
+fn a_batch_row_keeps_a_deep_null_under_a_missing_branch() {
+    let graph = chained(vec![
+        json!({"id": "n0", "name": "n0", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "x", "value": "a"}
+        ]}}),
+        json!({"id": "n1", "name": "n1", "type": "expressionNode", "content": {
+            "passThrough": true,
+            "expressions": [{"id": "b", "key": "x.k.z", "value": "null"}]
+        }}),
+        json!({"id": "n2", "name": "n2", "type": "expressionNode", "content": {"expressions": [
+            {"id": "c", "key": "r", "value": "x"},
+            {"id": "d", "key": "t", "value": "type(x.k)"}
+        ]}}),
+    ]);
+    batch_rows_match_single_rows(&graph, &mixed_rows());
+}
+
+#[test]
+fn a_batch_row_keeps_a_null_written_through_an_output_path_under_a_scalar() {
+    let graph = chained(vec![
+        json!({"id": "n0", "name": "n0", "type": "expressionNode", "content": {"expressions": [
+            {"id": "a", "key": "res", "value": "1"}
+        ]}}),
+        json!({"id": "n1", "name": "n1", "type": "expressionNode", "content": {
+            "passThrough": true,
+            "outputPath": "res.k",
+            "expressions": [{"id": "b", "key": "obj", "value": "null"}]
+        }}),
+        json!({"id": "n2", "name": "n2", "type": "expressionNode", "content": {"expressions": [
+            {"id": "c", "key": "items", "value": "res"}
+        ]}}),
+    ]);
+    batch_rows_match_single_rows(&graph, &[json!({}), json!({})]);
+}

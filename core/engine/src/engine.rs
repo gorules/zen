@@ -185,6 +185,7 @@ impl DecisionEngine {
         let set = CompiledSet::build_sync(&self.loader, &keys);
         if self.engine.compiled() {
             self.caches.compile(&self.loader, &keys);
+            self.caches.prepare(&self.parts(), &keys);
         }
 
         let failures = set.failures().to_vec();

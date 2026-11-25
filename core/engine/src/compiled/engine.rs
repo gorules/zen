@@ -83,6 +83,14 @@ impl Caches {
         self.compiled.store(Some(Arc::new(Compiled { entries })));
     }
 
+    pub(crate) fn prepare(&self, parts: &Parts, keys: &[Arc<str>]) {
+        for key in keys {
+            if let Some(Entry::Graph(graph)) = self.entry(key) {
+                self.decision(parts, key, &graph).compile();
+            }
+        }
+    }
+
     fn entry(&self, key: &str) -> Option<Entry> {
         self.compiled
             .load_full()

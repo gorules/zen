@@ -6,7 +6,7 @@ use crate::compiled::core::retry::Take;
 use crate::compiled::core::switch::{Density, Path};
 use crate::compiled::graph::plan::typed::{Deferred, Grouping, Piece, Target, TypedOp};
 use crate::compiled::graph::plan::view::{SlotId, M};
-use crate::compiled::graph::plan::{Op, SegPlan, TableOp};
+use crate::compiled::graph::plan::{Op, SegPlan, TableMode, TableOp};
 use crate::compiled::graph::{Body, Kind};
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::shred::{Normalizer, Seen};
@@ -220,12 +220,14 @@ impl<'a> Run<'_, 'a> {
             }
             let mut leaves: Vec<(SlotId, Leaf<'a>)> = Vec::with_capacity(targets.len());
             let mut masks: Vec<(M, Rc<[u64]>)> = Vec::new();
+            let mut hits: Vec<u64> = Vec::new();
+            let mut cells: Vec<(usize, usize, Leaf<'a>)> = Vec::new();
             for target in targets {
                 let Some(slot) = out.slot_mut(at) else {
                     return;
                 };
                 at += 1;
-                let listed = slot.offsets.is_some();
+                let listed = slot.offsets.is_some() || slot.values.is_some();
                 if let (Some(select), false) = (&select, listed) {
                     slot.valid.resize(select.len(), 0);
                     slot.valid
@@ -247,6 +249,22 @@ impl<'a> Run<'_, 'a> {
                         self.choice(table, slot, &mut leaves, &mut masks)
                     }
                     (Target::Choice, _) => {}
+                    (Target::Matched(rule), Op::Table(table)) => {
+                        self.matched(table, slot, *rule, &mut hits)
+                    }
+                    (Target::Matched(_), _) => {}
+                    (Target::Cell(rule, at), Op::Table(_)) => {
+                        cells.push((*rule, *at, op.exports.leaf(slot, &mut dicts)))
+                    }
+                    (Target::Cell(..), _) => {}
+                }
+            }
+            if let (Op::Table(table), false) = (unit, hits.is_empty()) {
+                let hint = self.collected(table, &hits, &cells, &mut leaves, &mut masks);
+                if let (Some((slot, codes, size)), None, None, false) =
+                    (hint, ids, positions, faulted)
+                {
+                    self.store.hints.push((slot, codes.into(), size));
                 }
             }
             for (id, leaf) in leaves {
@@ -342,6 +360,61 @@ impl<'a> Run<'_, 'a> {
             }
         }
         masks.push((op.matched, matched));
+    }
+
+    fn matched(&self, op: &TableOp, slot: &Slot, rule: usize, hits: &mut Vec<u64>) {
+        let Some(table) = self.decision(op) else {
+            return;
+        };
+        let words = table.words();
+        let count = slot.len;
+        hits.resize(count * words, 0);
+        let Slotted::Bool(bits) = &slot.data else {
+            return;
+        };
+        let (word, bit) = (rule / 64, 1u64 << (rule % 64));
+        for row in 0..count {
+            if slot.is_valid(row) && Bits::get(bits, row) {
+                hits[row * words + word] |= bit;
+            }
+        }
+    }
+
+    fn collected(
+        &self,
+        op: &TableOp,
+        hits: &[u64],
+        cells: &[(usize, usize, Leaf<'a>)],
+        leaves: &mut Vec<(SlotId, Leaf<'a>)>,
+        masks: &mut Vec<(M, Rc<[u64]>)>,
+    ) -> Option<(SlotId, Vec<i32>, usize)> {
+        let table = self.decision(op)?;
+        let rows = hits.len() / table.words().max(1);
+        if op.mode == TableMode::Rows && table.computes() {
+            let slot = *op.outs.first()?;
+            leaves.push((slot, table.computed(hits, rows, cells)?));
+            return None;
+        }
+        if op.mode == TableMode::Rows {
+            let slot = *op.outs.first()?;
+            let (leaf, codes, size) = table.assembled(hits, rows)?;
+            leaves.push((slot, leaf));
+            return Some((slot, codes, size));
+        }
+        let collected = table.first_collected(hits, rows)?;
+        for ((id, leaf), (m, mask)) in op
+            .outs
+            .iter()
+            .zip(collected.columns)
+            .zip(op.present.iter().zip(collected.present))
+        {
+            leaves.push((*id, leaf));
+            masks.push((*m, mask.dense(rows)));
+        }
+        let mut matched: Vec<u64> = collected.unmatched.iter().map(|w| !w).collect();
+        Bits::trim(&mut matched, rows);
+        masks.push((op.matched, matched.into()));
+        None
     }
 
     fn widen(

@@ -77,6 +77,7 @@ impl Anchor {
                 ],
                 hit: Hit::Strict,
                 selector: false,
+                collect: false,
             }),
             Self::out("customer.net", "customer.total - customer.fees - customer.discount"),
             Unit::Fused(vec![
@@ -361,6 +362,7 @@ fn strict_rules_lower_to_firstmatch() {
         ],
         hit: Hit::Strict,
         selector: false,
+        collect: false,
     };
     lowering.table(&table, &mut probe).expect("rules");
     let hir = lowering.finish();
@@ -414,6 +416,89 @@ fn unsupported_shapes() {
         Probe::unit(&mut lowering, &mut probe, "c.q", "c.o").is_err(),
         "read of a partially written value"
     );
+}
+
+#[test]
+fn fallible_operands_lower_with_a_check() {
+    for source in [
+        "(c.n + 1) in c.xs",
+        "(c.n + 1) not in c.xs",
+        "contains(c.xs, abs(c.n))",
+        "contains([], c.n + 1)",
+        "upper(c.t) in c.ts",
+        "true != c.n + 1",
+        "'a' == c.n + 1",
+        "d('2024-01-15') == c.n + 1",
+        "c.n <= c.m != c.f",
+    ] {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        Probe::unit(&mut lowering, &mut probe, "c.o", source)
+            .unwrap_or_else(|e| panic!("{source}: {e}"));
+        let hir = lowering.finish();
+        assert!(
+            hir.nodes.iter().any(|n| matches!(n.op, Op::Checked(_))),
+            "{source}\n{hir}"
+        );
+        Program::new(hir.clone()).unwrap_or_else(|e| panic!("{source}: {e}\n{hir}"));
+    }
+    for source in ["c.n in c.xs", "true != c.n", "c.t in c.ts"] {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        Probe::unit(&mut lowering, &mut probe, "c.o", source)
+            .unwrap_or_else(|e| panic!("{source}: {e}"));
+        let hir = lowering.finish();
+        assert!(
+            !hir.nodes.iter().any(|n| matches!(n.op, Op::Checked(_))),
+            "{source}\n{hir}"
+        );
+    }
+    for source in ["filter(c.xs, # * 2 in c.xs)", "some(c.ts, # + 'x' in c.ts)"] {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        assert!(
+            Probe::unit(&mut lowering, &mut probe, "c.o", source).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn a_cell_on_a_computed_field_checks_the_field() {
+    let rule = |cell: &str| TableRule {
+        cells: vec![Some(cell.to_string())],
+        values: vec![Some("1".to_string())],
+    };
+    for (field, cell, checked) in [
+        ("lower(c.t)", "1 < 2", true),
+        ("abs(c.n)", "c.m > 1", true),
+        ("c.n + 1", "c.m > 1 or $ > 2", true),
+        ("c.n + 1", "> 2", false),
+        ("c.n + 1", "[1, 2]", false),
+        ("c.n", "1 < 2", false),
+    ] {
+        for hit in [Hit::Strict, Hit::Lenient] {
+            let mut lowering = Lowering::new(None);
+            let mut probe = Probe::new();
+            let table = TableSpec {
+                inputs: vec![Some(field.to_string())],
+                outputs: vec!["c.r".to_string()],
+                rules: vec![rule(cell), rule("")],
+                hit,
+                selector: false,
+                collect: false,
+            };
+            lowering
+                .table(&table, &mut probe)
+                .unwrap_or_else(|e| panic!("{field} {cell}: {e}"));
+            let hir = lowering.finish();
+            assert_eq!(
+                hir.nodes.iter().any(|n| matches!(n.op, Op::Checked(_))),
+                checked,
+                "{field} {cell} {hit:?}\n{hir}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -564,6 +649,7 @@ fn date_shapes() {
         "c.b ? d(c.t) : null",
         "year(c.t) + date(c.n)",
         "dateString(d(c.t))",
+        "d(c.t) in [d(c.u)]",
     ];
     for source in supported {
         let mut lowering = Lowering::new(None);
@@ -585,7 +671,6 @@ fn date_shapes() {
         ("date plus number", "d(c.t) + 1"),
         ("text interval", "c.t in [d('2024-01-01')..d('2024-12-31')]"),
         ("mixed branches", "c.b ? d(c.t) : c.t"),
-        ("non-literal set item", "d(c.t) in [d(c.u)]"),
     ];
     for (what, source) in unsupported {
         let mut lowering = Lowering::new(None);

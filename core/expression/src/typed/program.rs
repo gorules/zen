@@ -3,7 +3,7 @@ use crate::lane::date::Date;
 use crate::typed::batch::{Batch, Feeds, Origin};
 use crate::typed::build::{Build, Built, Passes, Stage};
 use crate::typed::exec::{Buf, Exec, Reg, Stack};
-use crate::typed::hir::{Clock, DictId, Hir, Lit, NodeId, Op, Unsupported};
+use crate::typed::hir::{Clock, DictId, Fold, Hir, Lit, NodeId, Op, Unsupported};
 use crate::typed::ins::{BufDef, Rep, R};
 use crate::typed::kernel::K;
 use crate::typed::output::Outputs;
@@ -24,6 +24,7 @@ pub(crate) struct Plan {
 
 pub struct Program {
     hir: Hir,
+    exec: Option<Hir>,
     passes: Passes,
     classes: Vec<(Origin, DictId)>,
     class_of: HashMap<NodeId, u16>,
@@ -88,7 +89,9 @@ impl Program {
     }
 
     pub(crate) fn with(hir: Hir, passes: Passes) -> Result<Self, Unsupported> {
-        Outputs::new(&hir)?;
+        let exec = hir.composed().then(|| hir.expanded());
+        let run = exec.as_ref().unwrap_or(&hir);
+        Outputs::new(run)?;
         let mut classes: Vec<(Origin, DictId)> = Vec::new();
         let mut class_of = HashMap::new();
         for (i, node) in hir.nodes.iter().enumerate() {
@@ -120,7 +123,7 @@ impl Program {
                 .map(|l| l.fields.len())
                 .sum::<usize>();
         let generic = Arc::new(Plan::new(Build::plan(
-            &hir,
+            run,
             &vec![None; width],
             &class_of,
             passes,
@@ -131,6 +134,7 @@ impl Program {
             .any(|node| matches!(node.op, Op::Clock(Clock::Now, _)));
         Ok(Self {
             hir,
+            exec,
             passes,
             classes,
             class_of,
@@ -144,8 +148,14 @@ impl Program {
         &self.hir
     }
 
+    fn executed(&self) -> &Hir {
+        self.exec.as_ref().unwrap_or(&self.hir)
+    }
+
     pub fn outputs(&self) -> Outputs {
-        Outputs::new(&self.hir).unwrap_or_else(|_| Outputs::empty())
+        Outputs::new(self.executed())
+            .map(|out| out.within(self.hir.outputs.len()))
+            .unwrap_or_else(|_| Outputs::empty())
     }
 
     pub fn run(
@@ -159,8 +169,9 @@ impl Program {
         if self.clock {
             feeds.now = Date::now(context);
         }
-        if out.slots().len() != self.hir.outputs.len() {
-            *out = Outputs::new(&self.hir)?;
+        let run = self.executed();
+        if out.slots().len() != self.hir.outputs.len() || out.total() != run.outputs.len() {
+            *out = Outputs::new(run)?.within(self.hir.outputs.len());
         }
         out.reset(feeds.rows, |scope| feeds.len(scope));
         Machine::with(|machine| {
@@ -169,7 +180,10 @@ impl Program {
             machine.exec(&plan, &feeds, out, select);
         });
         feeds.prefaults(out, select);
-        out.collect(&self.hir, &feeds, select);
+        out.collect(run, &feeds, select);
+        if self.exec.is_some() {
+            out.compose(&self.hir);
+        }
         Ok(())
     }
 
@@ -194,7 +208,7 @@ impl Program {
         if plans.len() >= Self::PLANS {
             return self.generic.clone();
         }
-        match Build::plan(&self.hir, sig, &self.class_of, self.passes) {
+        match Build::plan(self.executed(), sig, &self.class_of, self.passes) {
             Ok(built) => {
                 let plan = Arc::new(Plan::new(built));
                 plans.push((sig.to_vec(), plan.clone()));
@@ -277,7 +291,7 @@ impl Machine {
         for (buf, def) in bufs.iter_mut().zip(&plan.defs) {
             let len = feeds.len(def.scope);
             buf.sized(len);
-            if let Some((list, _, _, empty)) = def.fold {
+            if let Some((list, fold, _, empty)) = def.fold {
                 buf.mant.fill(0);
                 buf.scale.fill(0);
                 buf.codes.fill(0);
@@ -292,6 +306,14 @@ impl Machine {
                 {
                     for (f, n) in buf.fault.iter_mut().zip(null) {
                         *f |= n;
+                    }
+                }
+                if let (Fold::Missing, Some(null)) = (
+                    fold,
+                    feeds.lists.get(list as usize).and_then(|l| l.null.as_ref()),
+                ) {
+                    for (b, n) in buf.bits.iter_mut().zip(null) {
+                        *b = *n;
                     }
                 }
             }

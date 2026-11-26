@@ -197,6 +197,9 @@ impl Buf {
                 Fold::Any if seen == 0 => Bits::set(&mut self.bits, r, false),
                 Fold::All | Fold::None if seen == 0 => Bits::set(&mut self.bits, r, true),
                 Fold::One => Bits::set(&mut self.bits, r, self.mant[r] == 1),
+                Fold::At(at) if i64::from(seen) <= i64::from(at) => {
+                    Bits::set(&mut self.valid, r, false)
+                }
                 Fold::Min | Fold::Max if seen == 0 => Bits::set(&mut self.fault, r, true),
                 Fold::Avg if seen == 0 => Bits::set(&mut self.fault, r, true),
                 Fold::Avg => match self
@@ -1129,6 +1132,7 @@ impl<'e, 'x> Exec<'e, 'x> {
             | Ins::Text { .. }
             | Ins::Matches { .. }
             | Ins::Map { .. }
+            | Ins::Part { .. }
             | Ins::Concat { .. }
             | Ins::Str { .. }
             | Ins::Decode { .. }
@@ -1195,6 +1199,14 @@ impl<'e, 'x> Exec<'e, 'x> {
                 self.strict1(d, a);
                 for w in 0..words {
                     d.bits[w] = !a.bits[w];
+                }
+            }),
+            Ins::Checked { dst, a } => Self::def(regs, *dst, |d, regs| {
+                let a = &regs[*a as usize];
+                for w in 0..words {
+                    d.bits[w] = u64::MAX;
+                    d.valid[w] = u64::MAX;
+                    d.fault[w] = a.fault[w];
                 }
             }),
             Ins::And { dst, a, b } => Self::def(regs, *dst, |d, regs| {
@@ -1597,7 +1609,7 @@ impl<'e, 'x> Exec<'e, 'x> {
             Ins::Keep { slot, src } => {
                 let r = &regs[*src as usize];
                 let w0 = start / 64;
-                if let Some(s) = out.slot_mut(*slot as usize) {
+                if let Some(s) = out.any_mut(*slot as usize) {
                     for w in 0..words {
                         if let Some(k) = s.keep.get_mut(w0 + w) {
                             *k = r.bits[w] & r.valid[w] & !r.fault[w] & self.tail(w);
@@ -1760,7 +1772,7 @@ impl<'e, 'x> Exec<'e, 'x> {
         let Some(l) = self.feeds.lists.get(list as usize) else {
             return;
         };
-        if self.n == 0 {
+        if self.n == 0 || fold == Fold::Missing {
             return;
         }
         let (s0, s1) = (self.start, self.start + self.n);
@@ -1885,6 +1897,38 @@ impl<'e, 'x> Exec<'e, 'x> {
                 Bits::set(&mut b.fault, r, true);
                 return;
             };
+            if let Fold::At(at) = fold {
+                let seen = b.codes[r];
+                b.codes[r] = seen.saturating_add(1);
+                if i64::from(seen) != i64::from(at) {
+                    continue;
+                }
+                if v.bad(i) {
+                    Bits::set(&mut b.fault, r, true);
+                    return;
+                }
+                if !Bits::get(&v.valid, i) {
+                    Bits::set(&mut b.valid, r, false);
+                    continue;
+                }
+                match vr {
+                    Rep::Fix(_) | Rep::Dyn => b.keep(vr, r, v.num(vr, i)),
+                    Rep::Bool => Bits::set(&mut b.bits, r, Bits::get(&v.bits, i)),
+                    Rep::Date => {
+                        b.stamps();
+                        if let Some(slot) = b.dates.get_mut(r) {
+                            *slot = v.date(i);
+                        }
+                    }
+                    Rep::Text => b.spill(r, v.str(i)),
+                    Rep::Null => Bits::set(&mut b.valid, r, false),
+                    Rep::Code => {
+                        Bits::set(&mut b.fault, r, true);
+                        return;
+                    }
+                }
+                continue;
+            }
             if matches!(fold, Fold::Any | Fold::All | Fold::None) && b.codes[r] != 0 {
                 match filter {
                     Some(_) => continue,

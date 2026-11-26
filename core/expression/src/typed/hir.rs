@@ -1,9 +1,10 @@
-use crate::functions::{DateMethod, DeprecatedFunction};
+use crate::functions::{DateMethod, DeprecatedFunction, InternalFunction};
 use crate::lane::date::Date;
 use crate::typed::num::Dec;
 use chrono::{DateTime, SecondsFormat};
 use chrono_tz::Tz;
 use std::fmt;
+use std::sync::Arc;
 
 pub type NodeId = u32;
 pub type DictId = u16;
@@ -51,6 +52,7 @@ pub enum Host {
     Construct,
     Method(DateMethod),
     Legacy(DeprecatedFunction),
+    Internal(InternalFunction),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,6 +95,8 @@ pub enum Fold {
     Min,
     Max,
     Avg,
+    At(u32),
+    Missing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -112,6 +116,7 @@ pub enum Func {
     Trim,
     Contains,
     Matches,
+    Part(u16),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -130,6 +135,7 @@ pub enum Op {
     Const(Lit),
     Neg(NodeId),
     Not(NodeId),
+    Checked(NodeId),
     Arith(Arith, NodeId, NodeId),
     Cmp(Cmp, NodeId, NodeId),
     And(NodeId, NodeId),
@@ -174,6 +180,20 @@ pub struct Collect {
     pub empty: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Shape {
+    Part(u16),
+    List(Vec<Item>),
+    Object(Vec<(Arc<str>, Shape)>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Item {
+    pub keep: Option<u16>,
+    pub shape: Shape,
+    pub splice: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Output {
     pub name: String,
@@ -181,6 +201,7 @@ pub struct Output {
     pub scope: Scope,
     pub ty: Ty,
     pub collect: Option<Collect>,
+    pub shape: Option<Arc<Shape>>,
 }
 
 #[derive(Clone, Debug)]
@@ -221,6 +242,7 @@ pub struct Hir {
     pub schema: Schema,
     pub nodes: Vec<Node>,
     pub outputs: Vec<Output>,
+    pub parts: Vec<Output>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -353,6 +375,7 @@ impl Op {
             Op::Parent(a)
             | Op::Neg(a)
             | Op::Not(a)
+            | Op::Checked(a)
             | Op::InSet(a, _)
             | Op::InRange(a, _)
             | Op::Classify(a, _)
@@ -379,6 +402,7 @@ impl Op {
             Op::Parent(a) => Op::Parent(f(*a)),
             Op::Neg(a) => Op::Neg(f(*a)),
             Op::Not(a) => Op::Not(f(*a)),
+            Op::Checked(a) => Op::Checked(f(*a)),
             Op::Classify(a, d) => Op::Classify(f(*a), *d),
             Op::Str(a) => Op::Str(f(*a)),
             Op::Decode(a) => Op::Decode(f(*a)),
@@ -434,6 +458,7 @@ impl Func {
                 | Func::Trim
                 | Func::Contains
                 | Func::Matches
+                | Func::Part(_)
         )
     }
 
@@ -481,6 +506,67 @@ impl Hir {
 
     pub fn output(&self, name: &str) -> Option<usize> {
         self.outputs.iter().position(|o| o.name == name)
+    }
+
+    pub fn composed(&self) -> bool {
+        self.outputs.iter().any(|o| o.shape.is_some())
+    }
+
+    pub(crate) fn expanded(&self) -> Hir {
+        let mut outputs = self.outputs.clone();
+        outputs.extend(self.parts.iter().cloned());
+        Hir {
+            schema: self.schema.clone(),
+            nodes: self.nodes.clone(),
+            outputs,
+            parts: Vec::new(),
+        }
+    }
+}
+
+impl Shape {
+    pub fn parts(&self, out: &mut Vec<u16>) {
+        match self {
+            Shape::Part(p) => out.push(*p),
+            Shape::List(items) => {
+                for item in items {
+                    out.extend(item.keep);
+                    item.shape.parts(out);
+                }
+            }
+            Shape::Object(members) => {
+                for (_, member) in members {
+                    member.parts(out);
+                }
+            }
+        }
+    }
+
+    fn render(&self) -> String {
+        match self {
+            Shape::Part(p) => format!("part {p}"),
+            Shape::List(items) => format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(|item| format!(
+                        "{}{}{}",
+                        item.keep.map_or(String::new(), |k| format!("if part {k} ")),
+                        if item.splice { "..." } else { "" },
+                        item.shape.render()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Shape::Object(members) => format!(
+                "{{{}}}",
+                members
+                    .iter()
+                    .map(|(key, member)| format!("{key}: {}", member.render()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 
@@ -559,6 +645,7 @@ impl Hir {
             Op::Const(l) => format!("const {l}"),
             Op::Neg(a) => format!("neg %{a}"),
             Op::Not(a) => format!("not %{a}"),
+            Op::Checked(a) => format!("checked %{a}"),
             Op::Classify(a, d) => format!("classify %{a} dict {d}"),
             Op::Str(a) => format!("string %{a}"),
             Op::Decode(a) => format!("decode %{a}"),
@@ -641,6 +728,10 @@ impl fmt::Display for Hir {
             )?;
         }
         for (i, o) in self.outputs.iter().enumerate() {
+            if let Some(shape) = &o.shape {
+                writeln!(f, "out {i} {:?} = {}", o.name, shape.render())?;
+                continue;
+            }
             match o.collect {
                 Some(c) => writeln!(
                     f,
@@ -658,6 +749,21 @@ impl fmt::Display for Hir {
                     "out {i} {:?} = %{} : {} @{}",
                     o.name, o.node, o.ty, o.scope
                 )?,
+            }
+        }
+        for (i, o) in self.parts.iter().enumerate() {
+            match o.collect {
+                Some(c) => writeln!(
+                    f,
+                    "part {i} = collect list {} keep {}{} %{} : {} @{}",
+                    c.list,
+                    c.keep.map_or("-".to_string(), |k| format!("%{k}")),
+                    if c.empty { " empty" } else { "" },
+                    o.node,
+                    o.ty,
+                    o.scope
+                )?,
+                None => writeln!(f, "part {i} = %{} : {} @{}", o.node, o.ty, o.scope)?,
             }
         }
         Ok(())

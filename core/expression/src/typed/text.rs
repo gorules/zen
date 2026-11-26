@@ -246,6 +246,33 @@ impl<'e, 'x> Exec<'e, 'x> {
                     .into_iter()
                     .for_each(|i| Bits::set(&mut d.fault, i, true));
             }),
+            Ins::Part { dst, a, b, at } => Self::def(regs, *dst, |d, regs| {
+                let (x, y) = (self.view(a, regs), self.view(b, regs));
+                self.faults(d, &[x, y]);
+                d.texts(n);
+                let skip = d.fault;
+                let mut broken = Vec::new();
+                let mut missing = Vec::new();
+                self.each(act, &skip, |i| {
+                    let text = x.get(start, i).map(std::str::from_utf8);
+                    let sep = y.get(start, i).map(std::str::from_utf8);
+                    match (text, sep) {
+                        (Some(Ok(text)), Some(Ok(sep))) => {
+                            match text.split(sep).nth(usize::from(*at)) {
+                                Some(part) => d.push(i, part.as_bytes()),
+                                None => missing.push(i),
+                            }
+                        }
+                        _ => broken.push(i),
+                    }
+                });
+                broken
+                    .into_iter()
+                    .for_each(|i| Bits::set(&mut d.fault, i, true));
+                missing
+                    .into_iter()
+                    .for_each(|i| Bits::set(&mut d.valid, i, false));
+            }),
             Ins::Concat { dst, parts } => Self::def(regs, *dst, |d, regs| {
                 let views: Vec<TV> = parts.iter().map(|p| self.view(p, regs)).collect();
                 self.faults(d, &views);

@@ -155,6 +155,22 @@ impl SourceInfo {
             && (Self::scan(source, false, test) || Self::scan(source, true, test))
     }
 
+    pub fn parses(source: &str, unary: bool) -> bool {
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let Ok(tokens) = lexer.tokenize(&bump, source) else {
+            return false;
+        };
+        let Ok(parser) = Parser::try_new(&tokens, &bump) else {
+            return false;
+        };
+        let parsed = match unary {
+            true => parser.unary().parse(),
+            false => parser.standard().parse(),
+        };
+        parsed.error().is_ok()
+    }
+
     pub fn reads_dollar(source: &str) -> bool {
         Self::any(source, |node| matches!(node, Node::Identifier("$")))
     }

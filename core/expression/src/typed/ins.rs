@@ -197,6 +197,10 @@ pub(crate) enum Ins {
         dst: R,
         a: R,
     },
+    Checked {
+        dst: R,
+        a: R,
+    },
     And {
         dst: R,
         a: R,
@@ -262,6 +266,12 @@ pub(crate) enum Ins {
         func: Func,
         dst: R,
         a: Arg,
+    },
+    Part {
+        dst: R,
+        a: Arg,
+        b: Arg,
+        at: u16,
     },
     Str {
         dst: R,
@@ -445,7 +455,7 @@ impl Ins {
                 }
                 f(dst, true);
             }
-            Ins::EqText { dst, a, b, .. } => {
+            Ins::EqText { dst, a, b, .. } | Ins::Part { dst, a, b, .. } => {
                 a.visit(f);
                 b.visit(f);
                 f(dst, true);
@@ -495,7 +505,8 @@ impl Ins {
             | Ins::InRangeFix { dst, a, .. }
             | Ins::InRangeGen { dst, a, .. }
             | Ins::Decode { dst, a, .. }
-            | Ins::Not { dst, a } => {
+            | Ins::Not { dst, a }
+            | Ins::Checked { dst, a } => {
                 f(a, false);
                 f(dst, true);
             }

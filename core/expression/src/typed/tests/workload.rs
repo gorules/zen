@@ -99,6 +99,7 @@ impl Block {
                         .collect(),
                     hit,
                     selector: false,
+                    collect: false,
                 };
                 lowering.table(&spec, resolve)
             }
@@ -270,7 +271,7 @@ impl Workload {
         "Europe/Berlin",
     ];
 
-    const W11_KEYS: [(&'static str, &'static str); 41] = [
+    const W11_KEYS: [(&'static str, &'static str); 47] = [
         ("s_amt", "string(u.amt)"),
         ("s_qty", "string(u.qty)"),
         ("s_flag", "string(u.flag)"),
@@ -315,6 +316,12 @@ impl Workload {
         ("mixlit", "u.amt == 'x' or $.lbl == 3"),
         ("snull", "string(u.tier) == 'null'"),
         ("negz", "string(-u.qty) + string(-u.amt)"),
+        ("n_tier", "number(u.tier)"),
+        ("n_flag", "number(u.flag) + number(u.qty)"),
+        ("n_str", "number($.s_amt) * 2"),
+        ("t_tier", "type(u.tier)"),
+        ("t_amt", "type(u.amt / u.qty)"),
+        ("t_mix", "type($.mix) + type(u.flag)"),
     ];
 
     const W12_KEYS: [(&'static str, &'static str); 6] = [

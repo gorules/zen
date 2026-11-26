@@ -297,6 +297,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                     }
                 }
             }
+            Op::Checked(a) => self.eval(*a).map(|_| V::Bool(true)),
             Op::And(a, b) => match self.eval(*a)? {
                 V::Bool(false) => Ok(V::Bool(false)),
                 V::Bool(true) => self.eval(*b),
@@ -333,6 +334,16 @@ impl<'a, 'x> Interp<'a, 'x> {
                 value,
                 empty,
             } => {
+                if *fold == Fold::Missing {
+                    let l = &self.feeds.lists[*list as usize];
+                    let owner = self.owner(*list);
+                    if l.faulted.as_ref().is_some_and(|f| Bits::get(f, owner)) {
+                        return Err(Fault);
+                    }
+                    return Ok(V::Bool(
+                        l.null.as_ref().is_some_and(|null| Bits::get(null, owner)),
+                    ));
+                }
                 let range = self.range(*list, *empty)?;
                 let saved = self.elem[*list as usize];
                 let mut kept = Vec::new();
@@ -350,6 +361,20 @@ impl<'a, 'x> Interp<'a, 'x> {
                         }
                     }
                     kept.push(e);
+                }
+                if let Fold::At(at) = fold {
+                    let picked = kept.get(*at as usize).copied();
+                    let out = match (picked, value) {
+                        (Some(e), Some(v)) => {
+                            self.enter(*list, e);
+                            self.eval(*v)
+                        }
+                        (None, Some(_)) => Ok(V::Null),
+                        _ => Err(Fault),
+                    };
+                    self.enter(*list, saved);
+                    result?;
+                    return out;
                 }
                 let mut values = Vec::new();
                 let mut dates = Vec::new();
@@ -416,6 +441,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                             .checked_div(Decimal::from(values.len()))
                             .ok_or(Fault)?,
                     ),
+                    Fold::At(_) | Fold::Missing => return Err(Fault),
                 })
             }
             Op::FirstMatch { conds, strict } => {
@@ -468,6 +494,13 @@ impl<'a, 'x> Interp<'a, 'x> {
                         Ok(V::Text(Cow::Owned(text(a)?.trim().as_bytes().to_vec())))
                     }
                     (Func::Len, [V::Text(a)]) => Ok(V::Num(Decimal::from(a.len()))),
+                    (Func::Part(at), [V::Text(a), V::Text(b)]) => {
+                        let (a, b) = (text(a)?, text(b)?);
+                        Ok(match a.split(b.as_str()).nth(usize::from(*at)) {
+                            Some(part) => V::Text(Cow::Owned(part.as_bytes().to_vec())),
+                            None => V::Null,
+                        })
+                    }
                     (Func::Min | Func::Max, items) if node.ty.kind == Kind::Date => {
                         let dates = items
                             .iter()

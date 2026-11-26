@@ -289,10 +289,11 @@ impl Table {
                         let Some(cell) = cell else {
                             continue;
                         };
-                        if SourceInfo::reads_dollar(cell) {
+                        let parses = SourceInfo::parses(cell, false);
+                        if SourceInfo::reads_dollar(cell) && parses {
                             return Err("table cell without a field reads `$`".into());
                         }
-                        if SourceInfo::reads_whole_root(cell, false) {
+                        if SourceInfo::reads_whole_root(cell, false) && parses {
                             return Err("table reads the whole root".into());
                         }
                         match distinct.iter_mut().find(|(s, _, _)| s.as_ref() == *cell) {
@@ -434,6 +435,7 @@ impl Table {
             })
             .collect();
         let mut memo = OutputCells::default();
+        let mut texts: Vec<Vec<String>> = Vec::with_capacity(ir.rules.len());
         for (rule, tested) in ir.rules.iter().zip(tested.iter()) {
             let mut paths = Vec::new();
             let mut full: Vec<(String, &str)> = Vec::new();
@@ -469,6 +471,7 @@ impl Table {
                 }
                 paths.push((Arc::from(output.path), output.collect, column));
             }
+            texts.push(full.iter().map(|(_, cell)| cell.to_string()).collect());
             let literals = full
                 .iter()
                 .map(|(_, cell)| memo.cell(cell).0.clone())
@@ -554,7 +557,12 @@ impl Table {
             .rules
             .iter()
             .all(|rule| rule.values().all(|cell| !clocked(cell.as_ref())));
-        self.spec = ir.spec();
+        self.spec = ir.spec().or_else(|| ir.collected());
+        if let (Some(spec), Hit::Collect, false) = (&mut self.spec, hit, literal) {
+            for (rule, cells) in spec.rules.iter_mut().zip(texts) {
+                rule.values = cells.into_iter().map(Some).collect();
+            }
+        }
         self.positions = positions;
         self.dispatch = Dispatch::build(&self.columns, rules, self.words);
         self.literal = literal;

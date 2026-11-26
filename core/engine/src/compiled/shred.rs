@@ -335,6 +335,30 @@ impl Normalizer {
                 }
             }
             Values::List { .. } => Seen::List,
+            Values::Any(values) => Self::coded_lists(&column, values, rows),
+            _ => Seen::Mixed,
+        }
+    }
+
+    fn coded_lists(column: &zen_expression::lane::Column, values: &[Variable], rows: usize) -> Seen {
+        let Values::Dict { keys, .. } = column.values else {
+            return Seen::Mixed;
+        };
+        let (mut arrays, mut other) = (0usize, 0usize);
+        for row in (0..rows).filter(|row| column.valid(*row)) {
+            let value = keys
+                .get(row)
+                .and_then(|key| usize::try_from(*key).ok())
+                .and_then(|key| values.get(key));
+            match value {
+                Some(Variable::Array(_)) => arrays += 1,
+                Some(Variable::Null) | None => {}
+                Some(_) => other += 1,
+            }
+        }
+        match (arrays, other) {
+            (0, 0) => Seen::Null,
+            (_, 0) => Seen::List,
             _ => Seen::Mixed,
         }
     }
@@ -1421,7 +1445,11 @@ impl<'a> Listing<'a> {
         let validity = Bits::validity(column.validity, owners).map(Rc::from);
         let Values::List { offsets, child } = column.values else {
             return match column.values {
-                Values::Any(_) => Self::shredded(column, owners),
+                Values::Any(_)
+                | Values::Dict {
+                    values: Dictionary::Any(_),
+                    ..
+                } => Self::shredded(column, owners),
                 _ => None,
             };
         };
@@ -1503,6 +1531,19 @@ impl<'a> Listing<'a> {
                 .range(row)
                 .and_then(|(a, b)| items.get(a..b))
                 .map(|slice| Some(std::borrow::Cow::Borrowed(slice))),
+            Values::Dict {
+                keys,
+                values: Dictionary::Any(values),
+            } => match usize::try_from(*keys.get(row)?) {
+                Err(_) => Some(None),
+                Ok(key) => match values.get(key)? {
+                    Variable::Null => Some(None),
+                    Variable::Array(items) => {
+                        Some(Some(std::borrow::Cow::Owned(items.borrow().clone())))
+                    }
+                    _ => None,
+                },
+            },
             _ => None,
         }
     }

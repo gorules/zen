@@ -16,6 +16,8 @@ use zen_expression::typed::{Class, Lowering, Program as Typed, Resolve, Resolved
 pub(crate) enum Target {
     Slot(SlotId),
     Choice,
+    Matched(usize),
+    Cell(usize, usize),
 }
 
 pub(crate) type Fields = Vec<(Arc<str>, Class)>;
@@ -146,32 +148,25 @@ impl Resolve for Probe<'_> {
             Some(Shape::Bool) => Class::Bool,
             Some(Shape::Text) => Class::Text,
             Some(Shape::Null) => return Resolved::Absent,
-            Some(shape @ (Shape::Dyn | Shape::Unknown))
-                if shape == Shape::Dyn
-                    || slot.is_some_and(|info| matches!(info.source, Source::Input(_))) =>
-            {
-                match self.observed(read.slot, shape) {
-                    Some(Seen::Num) => Class::Num,
-                    Some(Seen::Bool) => Class::Bool,
-                    Some(Seen::Text) => Class::Text,
-                    Some(Seen::Null) => return Resolved::Absent,
-                    Some(Seen::List) => return self.listed(read),
-                    Some(Seen::Mixed) => {
-                        Census::note("mixed: ");
-                        return Resolved::Unsupported;
-                    }
-                    None => {
-                        self.deferred = true;
-                        return Resolved::Unsupported;
-                    }
+            Some(shape @ (Shape::Dyn | Shape::Unknown)) => match self.observed(read.slot, shape) {
+                Some(Seen::Num) => Class::Num,
+                Some(Seen::Bool) => Class::Bool,
+                Some(Seen::Text) => Class::Text,
+                Some(Seen::Null) => return Resolved::Absent,
+                Some(Seen::List) => return self.listed(read),
+                Some(Seen::Mixed) => {
+                    Census::note("mixed: ");
+                    return Resolved::Unsupported;
                 }
-            }
+                None => {
+                    self.deferred = true;
+                    return Resolved::Unsupported;
+                }
+            },
             Some(Shape::List) => {
                 return match self.listing {
                     Some(_) => match self.listed(read) {
-                        Resolved::KeyedList(key, fields)
-                            if fields.iter().all(|(name, _)| name.is_empty()) =>
-                        {
+                        Resolved::KeyedList(key, fields) => {
                             self.novel = true;
                             Resolved::KeyedList(key, fields)
                         }
@@ -459,15 +454,10 @@ impl Grouping<'_> {
             for slot in reads {
                 let dynamic = matches!(
                     self.slots.get(slot as usize),
-                    Some(
-                        SlotInfo {
-                            shape: Shape::Dyn,
-                            ..
-                        } | SlotInfo {
-                            shape: Shape::Unknown,
-                            source: Source::Input(_)
-                        }
-                    )
+                    Some(SlotInfo {
+                        shape: Shape::Dyn | Shape::Unknown,
+                        ..
+                    })
                 );
                 if dynamic && !produced.contains(&slot) && !keys.contains(&slot) {
                     keys.push(slot);
@@ -485,10 +475,14 @@ impl Grouping<'_> {
                     && !lane.sources.is_empty()
                     && lane.sources.len() == lane.outs.len()
             }
-            Op::Table(table) => {
-                table.mode == TableMode::First
-                    && self.tabled(table).is_some_and(|t| t.spec.is_some())
-            }
+            Op::Table(table) => match table.mode {
+                TableMode::First => self.tabled(table).is_some_and(|t| t.spec.is_some()),
+                TableMode::Rows | TableMode::Collected => self.tabled(table).is_some_and(|t| {
+                    (t.assembles(table.mode == TableMode::Collected)
+                        || (table.mode == TableMode::Rows && t.computes()))
+                        && t.spec.as_ref().is_some_and(|spec| spec.collect)
+                }),
+            },
             _ => false,
         }
     }
@@ -589,7 +583,7 @@ impl Grouping<'_> {
                     return Step::Stop;
                 };
                 probe.reads = table.reads.clone();
-                match Self::blank(found, spec) {
+                match Self::blank(found, spec).filter(|_| !spec.collect) {
                     Some((blank, columns)) => {
                         probe.novel = true;
                         blanked = columns;
@@ -618,6 +612,28 @@ impl Grouping<'_> {
                 lane.outs
                     .iter()
                     .map(|slot| Some(Target::Slot(*slot)))
+                    .collect()
+            }
+            Op::Table(table) if table.mode != TableMode::First => {
+                probe.produced.extend(table.present.iter().copied());
+                probe.produced.push(table.matched);
+                let found = self.tabled(table);
+                let rules = found.map_or(0, Table::rules);
+                let cells: Vec<Option<Target>> = found
+                    .and_then(|t| t.spec.as_ref())
+                    .map(|spec| {
+                        spec.rules
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(rule, r)| {
+                                (0..r.values.len()).map(move |at| Some(Target::Cell(rule, at)))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (0..rules)
+                    .map(|rule| Some(Target::Matched(rule)))
+                    .chain(cells)
                     .collect()
             }
             Op::Table(table) => {

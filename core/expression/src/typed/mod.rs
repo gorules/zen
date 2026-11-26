@@ -17,7 +17,7 @@ mod text;
 pub use batch::{Batch, List};
 pub use hir::{
     Arith, Clock, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, FieldId, Fold, Func, Hir, Host,
-    Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Stamp, Ty,
+    Item, Kind, ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Shape, Stamp, Ty,
     Unsupported,
 };
 pub use lower::{Class, Hit, Lowering, Resolve, Resolved, TableRule, TableSpec};

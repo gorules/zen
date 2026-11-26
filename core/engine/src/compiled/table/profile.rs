@@ -179,6 +179,17 @@ impl<'t> TableIr<'t> {
         if self.collect || self.written().any(|o| o.collect) {
             return None;
         }
+        self.specified(false)
+    }
+
+    pub fn collected(&self) -> Option<TableSpec> {
+        if !(self.collect || self.written().any(|o| o.collect)) || self.profile.strict() {
+            return None;
+        }
+        self.specified(true)
+    }
+
+    fn specified(&self, collect: bool) -> Option<TableSpec> {
         let strict = self.profile.strict();
         let mut paths: Vec<&str> = Vec::new();
         for output in self.written() {
@@ -224,6 +235,7 @@ impl<'t> TableIr<'t> {
                     .map(|input| self.cell(rule, input.id).map(str::to_string))
                     .collect(),
                 values: match strict {
+                    _ if collect => Vec::new(),
                     true => self
                         .written()
                         .map(|o| self.cell(rule, o.id).map(str::to_string))
@@ -246,13 +258,17 @@ impl<'t> TableIr<'t> {
                 .iter()
                 .map(|input| input.field.map(str::to_string))
                 .collect(),
-            outputs: paths.iter().map(|path| path.to_string()).collect(),
+            outputs: match collect {
+                true => Vec::new(),
+                false => paths.iter().map(|path| path.to_string()).collect(),
+            },
             rules,
             hit: match strict {
                 true => Typed::Strict,
                 false => Typed::Lenient,
             },
-            selector: !strict,
+            selector: !strict && !collect,
+            collect,
         })
     }
 }

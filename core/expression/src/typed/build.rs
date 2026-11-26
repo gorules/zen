@@ -232,9 +232,10 @@ impl<'h> Build<'h> {
             Op::Clock(Clock::Matches, _) => Rep::Bool,
             Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict, _) => Rep::Date,
             Op::Host(..) => Rep::of_kind(node.ty.kind, None),
-            Op::Call(Func::Upper | Func::Lower | Func::Trim, _) => Rep::Text,
+            Op::Call(Func::Upper | Func::Lower | Func::Trim | Func::Part(_), _) => Rep::Text,
             Op::Call(Func::Contains | Func::Matches, _) => Rep::Bool,
             Op::Not(_)
+            | Op::Checked(_)
             | Op::Cmp(..)
             | Op::And(..)
             | Op::Or(..)
@@ -259,7 +260,19 @@ impl<'h> Build<'h> {
                 _ => Rep::Dyn,
             },
             Op::Fold {
-                fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg,
+                fold: Fold::Missing,
+                ..
+            } => Rep::Bool,
+            Op::Fold {
+                fold: Fold::At(_),
+                value: Some(v),
+                ..
+            } => match r(v) {
+                Rep::Code => return Err(Unsupported::new("typed: element of coded values")),
+                rep => rep,
+            },
+            Op::Fold {
+                fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg | Fold::At(_),
                 value: None,
                 ..
             } => return Err(Unsupported::new("typed: fold without value")),
@@ -1301,6 +1314,12 @@ impl<'h> Build<'h> {
                 self.emit(Ins::Not { dst: d, a: va });
                 d
             }
+            Op::Checked(a) => {
+                let va = self.val(*a)?;
+                let d = self.fresh()?;
+                self.emit(Ins::Checked { dst: d, a: va });
+                d
+            }
             Op::Arith(op, a, b) => self.arith(*op, *a, *b, rep)?,
             Op::Cmp(op, a, b) => self.cmp(*op, *a, *b)?,
             Op::And(a, b) | Op::Or(a, b) => {
@@ -1533,6 +1552,12 @@ impl<'h> Build<'h> {
                             pattern,
                         }
                     }
+                    Func::Part(at) => Ins::Part {
+                        dst: self.fresh()?,
+                        a,
+                        b: self.arg(*args.get(1).ok_or_else(|| Unsupported::new("typed: call"))?)?,
+                        at: *at,
+                    },
                     f if f.mapping() => Ins::Map {
                         func: *f,
                         dst: self.fresh()?,

@@ -21,6 +21,7 @@ impl Host {
         match self {
             Host::Construct => Builtins::of(&FunctionKind::Internal(InternalFunction::Date)),
             Host::Legacy(function) => Builtins::of(&FunctionKind::Deprecated(function)),
+            Host::Internal(function) => Builtins::of(&FunctionKind::Internal(function)),
             Host::Method(method) => Some(Builtins::method(&MethodKind::DateMethod(method))),
         }
     }

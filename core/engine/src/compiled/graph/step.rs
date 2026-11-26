@@ -374,6 +374,7 @@ impl CompiledGraph {
                 if let Some(cell) = rule.get(&input.id) {
                     match input.field.is_some() {
                         true => cells.push(cell.clone()),
+                        false if !cell.trim().is_empty() && !SourceInfo::parses(cell, false) => {}
                         false => sources.push(cell.clone()),
                     }
                 }

@@ -297,7 +297,10 @@ mod helper {
         match IsoDate::parse(str) {
             Some(naive) if IsoDate::utc(str) => Some(tz.from_utc_datetime(&naive)),
             Some(naive) => resolve_local(naive, tz),
-            None => parse_slow(str, tz),
+            None => match IsoDate::zoneless(str) {
+                Some(naive) => resolve_local(naive, tz),
+                None => parse_slow(str, tz),
+            },
         }
     }
 
@@ -871,10 +874,12 @@ mod format_tests {
 #[cfg(test)]
 mod parse_tests {
     use super::helper::{parse_slow, parse_text};
+    use crate::lane::date::helpers::IsoDate;
     use chrono_tz::Tz;
 
     #[test]
     fn iso_fast_path_agrees_with_text_parsing() {
+        let mut stamped = 0usize;
         let mut state = 0x853C49E6748FEA9Bu64;
         let mut next = |n: u64| {
             state ^= state << 13;
@@ -903,7 +908,157 @@ mod parse_tests {
             };
             let tz = zones[next(zones.len() as u64) as usize];
             assert_eq!(parse_text(&text, tz), parse_slow(&text, tz), "{text} {tz}");
+            let digits = 1 + next(11) as usize;
+            let fraction: String = (0..digits)
+                .map(|_| char::from(b'0' + next(10) as u8))
+                .collect();
+            let fraction = match next(3) {
+                0 => String::new(),
+                1 => ".".to_string(),
+                _ => format!(".{fraction}"),
+            };
+            let sign = if next(2) == 0 { '+' } else { '-' };
+            let zone = match next(9) {
+                0 => String::new(),
+                1 => "Z".to_string(),
+                2 => "z".to_string(),
+                3 => format!("{sign}{:02}:{:02}", next(26), next(62)),
+                4 => format!("{sign}{:02}{:02}", next(24), next(60)),
+                5 => format!("{sign}{:02}", next(24)),
+                6 => format!("{sign}{:02}:{:02}", next(15), 15 * next(4)),
+                7 => "+00:00".to_string(),
+                _ => "-00:00".to_string(),
+            };
+            let year = match next(40) {
+                0 => 0,
+                1 => 9999,
+                _ => year,
+            };
+            let separator = match next(12) {
+                0 => "t",
+                1 => " ",
+                _ => "T",
+            };
+            let text = format!(
+                "{year:04}-{month:02}-{day:02}{separator}{h:02}:{m:02}:{sec:02}{fraction}{zone}"
+            );
+            assert_eq!(parse_text(&text, tz), parse_slow(&text, tz), "{text} {tz}");
+            stamped += usize::from(IsoDate::zoneless(&text).is_some());
         }
+        assert!(stamped > 2_000, "{stamped}");
+    }
+}
+
+#[cfg(test)]
+mod frozen_tests {
+    use super::Date;
+    use crate::vm::date::VmDate;
+    use chrono_tz::Tz;
+
+    fn texts() -> Vec<String> {
+        let mut state = 0xA409_3822_299F_31D0u64;
+        let mut next = |n: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % n
+        };
+        let mut out: Vec<String> = [
+            "",
+            " ",
+            "now",
+            "2024",
+            "2024-02",
+            "2024-02-30",
+            "2024-02-29",
+            "2023-02-29",
+            "20240229",
+            "2024/02/29",
+            "2024/02/29 10:11",
+            "2024/02/29 10:11:12.5",
+            "20240229T101112",
+            "20240229T1011",
+            "2024-03-31T02:30:00",
+            "2024-03-31 02:30:00",
+            "2024-10-27 02:30:00",
+            "2024-03-10 02:30:00",
+            "2024-02-29T10:11:12.123456789Z",
+            "2024-02-29T10:11:12+0530",
+            "2024-02-29T10:11:12+05",
+            "2024-02-29T10:11:12-05:30",
+            "2024-02-29T10:11Z",
+            "2024-02-29t10:11:12z",
+            "2024-02-29T24:00:00Z",
+            "2024-02-29T23:59:60Z",
+            "0000-01-01",
+            "9999-12-31",
+            "9999-12-31T23:59:59Z",
+            "10000-01-01",
+            "-0001-01-01",
+            "2024-1-5",
+            "2024-01-05 ",
+            " 2024-01-05",
+            "2024-01-05T",
+            "2024-01-05x",
+            "Europe/Berlin",
+            "12:30:00",
+            "١٢٣٤-٠١-٠١",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        for _ in 0..120_000 {
+            let year = 1880 + next(300);
+            let (month, day) = (next(14), next(33));
+            let (h, m, sec) = (next(26), next(62), next(62));
+            let milli = next(1000);
+            out.push(match next(14) {
+                0 => format!("{year:04}-{month:02}-{day:02}"),
+                1 => format!("{year:04}-{month:02}-{day:02} {h:02}:{m:02}:{sec:02}"),
+                2 => format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}Z"),
+                3 => format!("{year:04}-03-{:02} 02:{m:02}:00", 25 + next(7)),
+                4 => format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}+02:00"),
+                5 => format!("{year:04}-{month:02}-{day:02} {h:02}:{m:02}"),
+                6 => format!("{year:04}-{month}-{day}"),
+                7 => format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}"),
+                8 => format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}.{milli:03}Z"),
+                9 => format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}.{milli:03}"),
+                10 => format!("{year:04}{month:02}{day:02}"),
+                11 => format!("{year:04}/{month:02}/{day:02}"),
+                12 => format!(
+                    "{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{sec:02}.{milli:03}{:03}-0{}:30",
+                    next(1000),
+                    next(10)
+                ),
+                _ => format!("{year:04}-{month:02}"),
+            });
+        }
+        out
+    }
+
+    #[test]
+    fn column_parsing_agrees_with_the_row_engine() {
+        let zones = [
+            Tz::UTC,
+            Tz::Europe__Berlin,
+            Tz::America__New_York,
+            Tz::Asia__Kolkata,
+            Tz::Pacific__Apia,
+            Tz::Etc__GMTMinus14,
+        ];
+        let mut valid = 0usize;
+        for (at, text) in texts().iter().enumerate() {
+            let tz = zones[at % zones.len()];
+            let frozen = VmDate::from_text_in(text, tz).and_then(|date| date.0);
+            assert_eq!(Date::from_text(text, tz).0, frozen, "{text} {tz}");
+            assert_eq!(
+                crate::DateValue::reads(text),
+                crate::DateValue::is_text(text),
+                "{text}"
+            );
+            valid += usize::from(frozen.is_some());
+        }
+        assert!(valid > 40_000, "{valid}");
     }
 }
 

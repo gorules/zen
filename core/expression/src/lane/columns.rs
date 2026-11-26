@@ -1,12 +1,10 @@
 use crate::context::EvaluationContext;
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::program::{Binding, Kind};
-use crate::lane::foreign::{Decimal128, Temporal};
+use crate::lane::foreign::{Decimal128, Float, Float64, Temporal};
 use crate::lane::Bits;
 use crate::variable::Variable;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use std::str::FromStr;
 use zen_types::path::DotPath;
 
 #[derive(Debug, Clone, Copy)]
@@ -50,6 +48,7 @@ pub enum Values<'a> {
     Any(&'a [Variable]),
     Decimal128(&'a Decimal128<'a>),
     Temporal(&'a Temporal<'a>),
+    Float64(&'a Float64<'a>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -140,18 +139,22 @@ impl<'a> Column<'a> {
         match self.values {
             Values::Decimal128(decimals) => decimals.column(self.validity),
             Values::Temporal(temporal) => temporal.column(self.validity),
+            Values::Float64(floats) => floats.column(self.validity),
             _ => *self,
         }
     }
 
     #[inline]
     fn foreign(&self) -> bool {
-        matches!(self.values, Values::Decimal128(_) | Values::Temporal(_))
+        matches!(
+            self.values,
+            Values::Decimal128(_) | Values::Temporal(_) | Values::Float64(_)
+        )
     }
 
     pub fn kind(&self) -> Kind {
         match self.values {
-            Values::Decimal128(_) => Kind::Num,
+            Values::Decimal128(_) | Values::Float64(_) => Kind::Num,
             Values::Temporal(_) => Kind::Str,
             Values::Dec(_) | Values::Scaled { .. } | Values::I64(_) | Values::F64(_) => Kind::Num,
             Values::Bool { .. } => Kind::Bool,
@@ -242,6 +245,7 @@ impl<'a> Column<'a> {
             Values::Any(v) => v.len(),
             Values::Decimal128(decimals) => decimals.len(),
             Values::Temporal(temporal) => temporal.len(),
+            Values::Float64(floats) => floats.len(),
         }
     }
 
@@ -283,18 +287,7 @@ impl<'a> Column<'a> {
     }
 
     fn float(f: f64) -> Option<Decimal> {
-        if !f.is_finite() {
-            return None;
-        }
-        let mut buffer = [0u8; 512];
-        let mut cursor = std::io::Cursor::new(&mut buffer[..]);
-        let written = std::io::Write::write_fmt(&mut cursor, format_args!("{f}")).is_ok();
-        let len = cursor.position() as usize;
-        written
-            .then(|| std::str::from_utf8(&buffer[..len]).ok())
-            .flatten()
-            .and_then(|text| Decimal::from_str(text).ok())
-            .or_else(|| Decimal::from_f64(f))
+        Float::decimal(f)
     }
 
     #[inline]
@@ -500,6 +493,7 @@ impl<'a> Column<'a> {
             Values::Struct { fields, .. } => {
                 let mut map = zen_types::variable::VariableMap::with_capacity(fields.len());
                 for (name, column) in fields {
+                    let column = column.resolved();
                     let value = column.variable(row);
                     if !matches!(value, Variable::Null) || column.valid(row) {
                         map.insert(zen_types::symbol::Symbol::from(*name), value);
@@ -533,6 +527,25 @@ impl<'a> Columns<'a> {
         self
     }
 
+    pub fn deferred(mut self, path: &'a str, column: Column<'a>) -> Self {
+        self.columns.push((path, column));
+        self
+    }
+
+    pub fn resolved(&self) -> Option<Columns<'a>> {
+        self.columns
+            .iter()
+            .any(|(_, column)| column.foreign())
+            .then(|| Columns {
+                rows: self.rows,
+                columns: self
+                    .columns
+                    .iter()
+                    .map(|(path, column)| (*path, column.resolved()))
+                    .collect(),
+            })
+    }
+
     pub fn find(&self, path: &str) -> Option<usize> {
         self.columns.iter().rposition(|(p, _)| *p == path)
     }
@@ -556,6 +569,7 @@ impl<'a> Columns<'a> {
             if !wanted {
                 continue;
             }
+            let column = column.resolved();
             let nested = matches!(column.values, Values::Any(_))
                 && self
                     .columns
@@ -575,6 +589,7 @@ impl<'a> Columns<'a> {
     pub fn row(&self, row: usize) -> Variable {
         let object = Variable::empty_object();
         for (path, column) in &self.columns {
+            let column = column.resolved();
             let value = match column.values {
                 Values::Any(_) => column.variable(row).depth_clone(usize::MAX),
                 _ => column.variable(row),

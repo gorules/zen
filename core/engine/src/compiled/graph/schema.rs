@@ -725,7 +725,7 @@ impl ObjectSchema {
                 .borrowed(row)
                 .is_some_and(|value| !Self::holds_null(value)),
             Values::Struct { .. } => false,
-            Values::Decimal128(_) | Values::Temporal(_) => {
+            Values::Decimal128(_) | Values::Temporal(_) | Values::Float64(_) => {
                 Self::spotless(&column.resolved(), row)
             }
         }

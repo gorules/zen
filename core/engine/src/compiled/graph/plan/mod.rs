@@ -1669,7 +1669,8 @@ impl Plan {
                 _ => Shape::Dyn,
             },
             Values::List { .. } | Values::Struct { .. } | Values::Any(_) => Shape::Dyn,
-            Values::Decimal128(_) | Values::Temporal(_) => Self::tag(&column.resolved()),
+            Values::Decimal128(_) | Values::Float64(_) => Shape::Num,
+            Values::Temporal(_) => Shape::Text,
         }
     }
 

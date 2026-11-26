@@ -255,7 +255,12 @@ impl<'a> Store<'a> {
         let at = match seg.masks.exprs[id as usize] {
             Expr::Validity(slot) => match seg.slots[slot as usize].source {
                 Source::Input(index) => {
-                    match self.input.columns.get(index).and_then(|(_, c)| c.validity) {
+                    match self
+                        .input
+                        .columns
+                        .get(index)
+                        .and_then(|(_, c)| c.resolved().validity)
+                    {
                         Some((bits, offset)) => self.push(&Bits::window(bits, offset, self.rows)),
                         None => Self::ONES,
                     }

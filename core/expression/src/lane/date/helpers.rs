@@ -80,6 +80,37 @@ impl IsoDate {
         };
         date.and_hms_opt(time.0, time.1, time.2)
     }
+
+    pub(crate) fn zoneless(s: &str) -> Option<NaiveDateTime> {
+        let b = s.as_bytes();
+        if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' {
+            return None;
+        }
+        if b[13] != b':' || b[16] != b':' {
+            return None;
+        }
+        let date = NaiveDate::from_ymd_opt(
+            Self::digits(&b[0..4])? as i32,
+            Self::digits(&b[5..7])?,
+            Self::digits(&b[8..10])?,
+        )?;
+        let (h, m, sec) = (
+            Self::digits(&b[11..13])?,
+            Self::digits(&b[14..16])?,
+            Self::digits(&b[17..19])?,
+        );
+        if h > 23 || m > 59 || sec > 59 {
+            return None;
+        }
+        let nanos = match &b[19..] {
+            [] => 0,
+            [b'.', tail @ ..] if (1..=9).contains(&tail.len()) => {
+                Self::digits(tail)? * 10u32.pow(9 - tail.len() as u32)
+            }
+            _ => return None,
+        };
+        date.and_hms_nano_opt(h, m, sec, nanos)
+    }
 }
 
 pub(crate) fn date_time(str: &str, context: &EvaluationContext) -> VMResult<NaiveDateTime> {

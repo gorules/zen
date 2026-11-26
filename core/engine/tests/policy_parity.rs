@@ -282,6 +282,226 @@ fn declared_date_inputs_with_offsets_empty_text_and_nulls_match_version_one() {
 }
 
 #[test]
+fn declared_dates_in_every_spelling_match_version_one() {
+    let starts = [
+        json!("2024"),
+        json!("2024-02"),
+        json!("2024-02-29"),
+        json!("2023-02-29"),
+        json!("20240229"),
+        json!("2024/02/29"),
+        json!("2024/02/29 10:11"),
+        json!("2024/02/29 10:11:12.5"),
+        json!("20240229T101112"),
+        json!("20240229T1011"),
+        json!("2024-03-31T02:30:00"),
+        json!("2024-03-31 02:30:00"),
+        json!("2024-10-27 02:30:00"),
+        json!("2024-02-29T10:11:12.123456789Z"),
+        json!("2024-02-29T10:11:12+0530"),
+        json!("2024-02-29T10:11:12+05"),
+        json!("2024-02-29T10:11Z"),
+        json!("2024-02-29t10:11:12z"),
+        json!("2024-02-29T24:00:00Z"),
+        json!("0000-01-01"),
+        json!("9999-12-31T23:59:59Z"),
+        json!("10000-01-01"),
+        json!("2024-1-5"),
+        json!("2024-01-05 "),
+        json!("2024-01-05x"),
+        json!("Europe/Berlin"),
+        json!("now"),
+        json!("2024-06-01"),
+        json!("2024-06-01T00:00:00Z"),
+    ];
+    for start in &starts {
+        let one = std::slice::from_ref(start);
+        columns_match_version_one(&[(PATH, DATE_READS)], date_rows(12, one));
+    }
+    columns_match_version_one(&[(PATH, DATE_READS)], date_rows(174, &starts));
+}
+
+#[test]
+fn more_distinct_declared_dates_than_are_remembered_match_version_one() {
+    let rows: Vec<Value> = (0..9_000usize)
+        .map(|i| {
+            let at = |n: usize| {
+                let seconds = 1_700_000_000 + (n as i64) * 7_919;
+                let day = seconds.div_euclid(86_400);
+                let rest = seconds.rem_euclid(86_400);
+                format!(
+                    "2024-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                    1 + day % 12,
+                    1 + day % 28,
+                    rest / 3_600,
+                    rest / 60 % 60,
+                    rest % 60
+                )
+            };
+            let events: Vec<Value> = (0..i % 3)
+                .map(|j| json!({"at": at(i * 3 + j + 50_000), "amount": j * 10}))
+                .collect();
+            json!({"contract": {
+                "start": at(i),
+                "end": at(i + 20_000),
+                "value": 100 * (i % 17),
+                "kind": (["lease", "service", "rental"])[i % 3],
+                "events": events,
+            }})
+        })
+        .collect();
+    let policies = [(PATH, DATE_READS)];
+    let old = workspace(&policies, EngineVersion::V1);
+    let new = workspace(&policies, EngineVersion::V2);
+    let paths = columns_match(&old, &new, &rows);
+    assert!(paths.hosted == 0, "{paths:?}");
+}
+
+const DATED_LISTS: &str = r#"{
+  models: {
+    contract: {start: "date", events: "event[]"},
+    event: {at: "date?", amount: "number", notes: "note[]"},
+    note: {on: "date", text: "string"},
+  },
+  blocks: [
+    {expression: "contract.recent", value: "count(contract.events, #.at != null and #.at > d('2024-06-01'))"},
+    {expression: "contract.sameYear", value: "len(filter(contract.events, #.at != null and #.at.year() == contract.start.year()))"},
+    {expression: "contract.months", value: "map(filter(contract.events, #.at != null), #.at.month())"},
+    {expression: "contract.total", value: "sum(map(contract.events, #.amount))"},
+    {expression: "event.fresh", value: "count(event.notes, d('2025-01-01').diff(#.on, 'month') < 6)"},
+    {expression: "event.noted", value: "some(event.notes, #.on > d('2024-09-01') and #.text == 'late')"},
+    {expression: "contract.fresh", value: "sum(map(contract.events, #.fresh))"},
+  ],
+}"#;
+
+const DATED_LISTS_SHOWN: &str = r#"{
+  models: {
+    contract: {start: "date", events: "event[]"},
+    event: {at: "date?", amount: "number", notes: "note[]"},
+    note: {on: "date", text: "string"},
+  },
+  blocks: [
+    {expression: "contract.recent", value: "count(contract.events, #.at != null and #.at > d('2024-06-01'))"},
+    {expression: "contract.dates", value: "map(contract.events, #.at)"},
+    {expression: "contract.late", value: "filter(contract.events, #.at != null and #.at > d('2024-06-01'))"},
+    {expression: "contract.firstAt", value: "len(contract.events) > 0 ? contract.events[0].at : null"},
+    {expression: "contract.shown", value: "map(filter(contract.events, #.at != null), string(#.at))"},
+    {expression: "event.fresh", value: "count(event.notes, d('2025-01-01').diff(#.on, 'month') < 6)"},
+    {expression: "event.dates", value: "map(event.notes, #.on)"},
+    {expression: "event.last", value: "max(map(event.notes, #.on))"},
+  ],
+}"#;
+
+const DATE_ARRAYS: &str = r#"{
+  models: {customer: {logins: "date[]", joined: "date"}},
+  blocks: [
+    {expression: "customer.thisYear", value: "filter(customer.logins, #.year() == 2025)"},
+    {expression: "customer.first", value: "len(customer.logins) > 0 ? customer.logins[0] : null"},
+    {expression: "customer.since", value: "count(customer.logins, # > customer.joined)"},
+    {expression: "customer.years", value: "map(customer.logins, #.year())"},
+  ],
+}"#;
+
+#[test]
+fn arrays_of_declared_dates_match_version_one() {
+    let spellings = [
+        "2025-01-02",
+        "2024-05-05",
+        "2025/03/01",
+        "2025-03-20T10:15:30Z",
+        "2023",
+    ];
+    let rows: Vec<Value> = (0..60)
+        .map(|i| {
+            let logins: Vec<Value> = (0..i % 5)
+                .map(|j| json!(spellings[(i + j) % spellings.len()]))
+                .collect();
+            json!({"customer": {"logins": logins, "joined": format!("2024-{:02}-15", 1 + i % 12)}})
+        })
+        .collect();
+    columns_match_version_one(&[(PATH, DATE_ARRAYS)], rows);
+}
+
+fn dated_list_rows(count: usize, spellings: &[Value]) -> Vec<Value> {
+    let pick = |n: usize| spellings[n % spellings.len()].clone();
+    (0..count)
+        .map(|i| {
+            let events: Vec<Value> = (0..i % 4)
+                .map(|j| {
+                    let notes: Vec<Value> = (0..(i + j) % 3)
+                        .map(|k| {
+                            let on = pick(i * 5 + j * 3 + k);
+                            let on = match on.is_null() {
+                                true => json!("2024-11-30"),
+                                false => on,
+                            };
+                            json!({"on": on, "text": (["late", "early"])[(i + k) % 2]})
+                        })
+                        .collect();
+                    let mut event = json!({"amount": 10 * j + i % 7, "notes": notes});
+                    let at = pick(i * 7 + j);
+                    if !at.is_null() {
+                        event["at"] = at;
+                    }
+                    event
+                })
+                .collect();
+            json!({"contract": {
+                "start": format!("2024-{:02}-{:02}", 1 + i % 12, 1 + i % 28),
+                "events": events,
+            }})
+        })
+        .collect()
+}
+
+#[test]
+fn declared_dates_inside_lists_run_typed() {
+    let spellings: Vec<Value> = (0..37)
+        .map(|i| {
+            json!(format!(
+                "202{}-{:02}-{:02}",
+                3 + i % 3,
+                1 + i % 12,
+                1 + i % 28
+            ))
+        })
+        .collect();
+    let paths = columns_match_version_one(&[(PATH, DATED_LISTS)], dated_list_rows(120, &spellings));
+    assert!(
+        paths.typed >= 7 && paths.laned == 0 && paths.hosted == 0,
+        "expected typed list dates, got {paths:?}"
+    );
+}
+
+#[test]
+fn declared_dates_inside_lists_in_every_spelling_match_version_one() {
+    let spellings = [
+        json!("2024-02-29"),
+        Value::Null,
+        json!("2025-03-20T10:15:30Z"),
+        json!("2025-03-20T23:30:00+05:00"),
+        json!("2024-12-31T23:59:59-08:00"),
+        json!("2024-03-31 02:30"),
+        json!("2024-07-04T12:00:00.250Z"),
+        json!("2024"),
+        json!("2024-06"),
+        json!("20240229"),
+        json!("2024/06/02"),
+        json!("2024-06-01"),
+        json!("2024-06-01T00:00:00Z"),
+        json!("2024-09-01"),
+    ];
+    for policy in [DATED_LISTS, DATED_LISTS_SHOWN] {
+        columns_match_version_one(&[(PATH, policy)], dated_list_rows(140, &spellings));
+        for odd in [json!(""), json!("soon"), json!("2023-02-29"), json!(7)] {
+            let mut mixed = spellings.to_vec();
+            mixed.insert(3, odd);
+            columns_match_version_one(&[(PATH, policy)], dated_list_rows(90, &mixed));
+        }
+    }
+}
+
+#[test]
 fn declared_dates_shown_as_text_keep_their_source_text() {
     let policy = r#"{
       models: {contract: {start: "date", kind: "string"}},

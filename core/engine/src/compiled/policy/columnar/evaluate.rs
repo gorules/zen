@@ -254,6 +254,8 @@ impl PolicyPlan {
         columns: &'a Columns<'a>,
         context: &EvaluationContext,
     ) -> ColumnarOutput<'a> {
+        let resolved = columns.resolved();
+        let columns = resolved.as_ref().unwrap_or(columns);
         let rows = columns.rows;
         let request = |row: usize| EvaluateRequest {
             policy_path: policy_path.clone(),

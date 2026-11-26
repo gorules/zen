@@ -1,6 +1,6 @@
 use crate::compiled::core::list::Frame;
 use crate::compiled::host::input::dates::DeclaredDates;
-use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Records, Store};
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dict, Leaf, Records, Store};
 use crate::compiled::output::OutputColumn;
 use std::cell::Ref;
 use std::rc::Rc;
@@ -54,6 +54,7 @@ pub(crate) struct Listing<'a> {
     pub frame: Frame,
     pub hosted: Option<Rc<[u64]>>,
     pub fields: Vec<(Arc<str>, Leaf<'a>)>,
+    pub dated: Vec<(Arc<str>, Leaf<'a>)>,
 }
 
 pub(crate) struct Shred {
@@ -378,7 +379,7 @@ impl Normalizer {
         let Leaf::Input(input) = leaf else {
             return None;
         };
-        let column = input.column;
+        let column = input.column.resolved();
         let valid = || Bits::validity(column.validity, rows);
         match column.values {
             Values::Dec(values) => Some((
@@ -1381,6 +1382,7 @@ impl<'a> Listing<'a> {
                                 },
                                 hosted: None,
                                 fields,
+                                dated: Vec::new(),
                             })
                         }
                         Values::Any(_) | Values::List { .. } | Values::Dict { .. } => None,
@@ -1394,6 +1396,7 @@ impl<'a> Listing<'a> {
                                 },
                                 hosted: None,
                                 fields: vec![(Arc::from(""), Normalizer::lean(*item, len))],
+                                dated: Vec::new(),
                             })
                         }
                     },
@@ -1407,6 +1410,7 @@ impl<'a> Listing<'a> {
                             },
                             hosted: None,
                             fields: vec![(Arc::from(""), Normalizer::lean(scalar.column(), len))],
+                            dated: Vec::new(),
                         })
                     }
                 }
@@ -1418,7 +1422,7 @@ impl<'a> Listing<'a> {
 
     pub fn leaf(leaf: &Leaf<'a>, owners: usize) -> Option<Listing<'a>> {
         match leaf {
-            Leaf::Input(input) => Listing::of(input.column, owners),
+            Leaf::Input(input) => Listing::of(input.column.resolved(), owners),
             other => match other
                 .records()
                 .and_then(|records| Self::recorded(&records, owners))
@@ -1453,6 +1457,7 @@ impl<'a> Listing<'a> {
             },
             hosted: None,
             fields,
+            dated: Vec::new(),
         })
     }
 
@@ -1490,6 +1495,7 @@ impl<'a> Listing<'a> {
             },
             hosted: None,
             fields: vec![(Arc::from(""), Leaf::typed(Array::parts(store, None, len)))],
+            dated: Vec::new(),
         })
     }
 
@@ -1506,13 +1512,44 @@ impl<'a> Listing<'a> {
         names
             .iter()
             .map(|def| {
-                self.fields
+                self.dated
                     .iter()
-                    .rev()
+                    .chain(self.fields.iter().rev())
                     .find(|(name, _)| name.as_ref() == def.path)
                     .map(|(_, leaf)| leaf.column())
             })
             .collect()
+    }
+
+    fn sources(leaf: &Leaf<'a>, children: usize) -> Option<Leaf<'a>> {
+        let column = leaf.column();
+        let Values::Any(values) = column.values else {
+            return None;
+        };
+        let values = values.get(..children)?;
+        let live =
+            |at: usize, value: &Variable| column.valid(at) && !matches!(value, Variable::Null);
+        let mut texts = values
+            .iter()
+            .enumerate()
+            .filter(|(at, value)| live(*at, value))
+            .map(|(_, value)| zen_expression::DateValue::source(value));
+        texts.next()??;
+        if texts.any(|text| text.is_none()) {
+            return None;
+        }
+        let mut builder = ColumnBuilder::with_capacity(children);
+        for (at, value) in values.iter().enumerate() {
+            match live(at, value) {
+                true => builder.push_text(zen_expression::DateValue::source(value)?),
+                false => builder.push_null(),
+            }
+        }
+        Some(Leaf::typed(builder.finish()))
+    }
+
+    pub fn dates(&self) -> Vec<Arc<str>> {
+        self.dated.iter().map(|(name, _)| name.clone()).collect()
     }
 
     pub fn classes(&self) -> Vec<(Arc<str>, Class)> {
@@ -1668,14 +1705,22 @@ impl<'a> Listing<'a> {
             Rc::from(bits)
         });
         let shred = builder.finish();
+        let children = shred.frame.children;
+        let fields: Vec<(Arc<str>, Leaf<'a>)> = shred
+            .fields
+            .into_iter()
+            .map(|(name, array)| (name, Leaf::typed(array)))
+            .collect();
+        let dated = fields
+            .iter()
+            .filter(|(name, _)| !name.is_empty())
+            .filter_map(|(name, leaf)| Some((name.clone(), Self::sources(leaf, children)?)))
+            .collect();
         Some(Listing {
             frame: shred.frame,
             hosted,
-            fields: shred
-                .fields
-                .into_iter()
-                .map(|(name, array)| (name, Leaf::typed(array)))
-                .collect(),
+            fields,
+            dated,
         })
     }
 }

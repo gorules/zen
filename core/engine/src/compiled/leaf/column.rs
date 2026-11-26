@@ -24,15 +24,19 @@ impl<'a> Leaf<'a> {
     pub fn items(&self) -> Option<Items<'a>> {
         match self {
             Leaf::Records(records) => Some(Items::Records(records.clone())),
-            Leaf::Input(input) => Self::struct_list(input.column).then(|| Items::Input {
-                column: input.column,
-                mask: None,
-            }),
+            Leaf::Input(input) => {
+                Self::struct_list(input.column.resolved()).then(|| Items::Input {
+                    column: input.column.resolved(),
+                    mask: None,
+                })
+            }
             Leaf::Masked(masked) => match &masked.inner {
-                Leaf::Input(input) if Self::struct_list(input.column) => Some(Items::Input {
-                    column: input.column,
-                    mask: Some(masked.bits().clone()),
-                }),
+                Leaf::Input(input) if Self::struct_list(input.column.resolved()) => {
+                    Some(Items::Input {
+                        column: input.column.resolved(),
+                        mask: Some(masked.bits().clone()),
+                    })
+                }
                 Leaf::Records(records) => {
                     let valid: Vec<u64> = records
                         .valid
@@ -128,7 +132,7 @@ impl<'a> Leaf<'a> {
 
     fn all_valid(&self) -> bool {
         match self {
-            Leaf::Input(input) => input.column.validity.is_none(),
+            Leaf::Input(input) => input.column.resolved().validity.is_none(),
             Leaf::Typed(typed) => typed.valid.is_none(),
             Leaf::Any(_) => true,
             _ => false,
@@ -400,7 +404,7 @@ impl<'a> Leaf<'a> {
                 Store::Coded { dict, .. } => matches!(&**dict, Dict::Any(values) if plain(values)),
                 _ => false,
             },
-            Leaf::Input(input) => match input.column.values {
+            Leaf::Input(input) => match input.column.resolved().values {
                 Values::Any(values)
                 | Values::Dict {
                     values: Dictionary::Any(values),
@@ -431,7 +435,7 @@ impl<'a> Leaf<'a> {
             Leaf::Scattered(scattered) => scattered.inner.scalar(),
             Leaf::Picked(picked) => picked.source.scalar(),
             Leaf::Stitched(stitched) => stitched.sources.iter().all(Leaf::scalar),
-            Leaf::Input(input) => match input.column.values {
+            Leaf::Input(input) => match input.column.resolved().values {
                 Values::Dict { values, .. } => {
                     !matches!(values, Dictionary::Any(_) | Dictionary::Column(_))
                 }
@@ -446,7 +450,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Any(values) => Leaf::Any(positions.iter().map(|&i| values[i].clone()).collect()),
             Leaf::Typed(typed) => Leaf::typed(typed.pick(positions)),
-            Leaf::Input(input) => Leaf::typed(Array::gather(&input.column, positions)),
+            Leaf::Input(input) => Leaf::typed(Array::gather(&input.column.resolved(), positions)),
             Leaf::Masked(_) | Leaf::Scattered(_) => {
                 Leaf::typed(Array::gather(&self.column(), positions))
             }
@@ -688,7 +692,7 @@ impl<'a> Leaf<'a> {
 
     pub fn column(&self) -> Column<'_> {
         match self {
-            Leaf::Input(input) => input.column,
+            Leaf::Input(input) => input.column.resolved(),
             Leaf::Scattered(scattered) => scattered
                 .dense
                 .get_or_init(|| Self::spread(scattered))
@@ -728,7 +732,7 @@ impl<'a> Leaf<'a> {
 
     pub fn valid_at(&self, row: usize) -> bool {
         match self {
-            Leaf::Input(input) => input.column.valid(row),
+            Leaf::Input(input) => input.column.resolved().valid(row),
             Leaf::Masked(masked) => Bits::get(masked.bits(), row),
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
@@ -741,7 +745,7 @@ impl<'a> Leaf<'a> {
 
     pub fn validity(&self, rows: usize) -> Vec<u64> {
         match self {
-            Leaf::Input(input) => Bits::present(input.column.validity, rows),
+            Leaf::Input(input) => Bits::present(input.column.resolved().validity, rows),
             Leaf::Typed(typed) => match &typed.valid {
                 Some(bits) => Bits::window(bits, 0, rows),
                 None => Bits::ones(rows),
@@ -765,7 +769,7 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Input(input) if input.rows == rows => input
                 .valued
-                .get_or_init(|| Self::column_valued(input.column, rows))
+                .get_or_init(|| Self::column_valued(input.column.resolved(), rows))
                 .clone(),
             Leaf::Any(values) => Bits::of(rows, |row| {
                 values

@@ -41,7 +41,13 @@ pub enum Resolved {
     Dated,
     Keyed(Class, Arc<str>),
     Output(usize),
-    List { fields: Vec<(Arc<str>, Class)> },
+    List {
+        fields: Vec<(Arc<str>, Class)>,
+    },
+    DatedList {
+        fields: Vec<(Arc<str>, Class)>,
+        dated: Vec<Arc<str>>,
+    },
     KeyedList(Arc<str>, Vec<(Arc<str>, Class)>),
     Absent,
     Unsupported,
@@ -1333,7 +1339,7 @@ impl Lowering {
                 Ok(self.konst(Lit::Null))
             }
             Resolved::Keyed(class, key) => self.keyed(class, &key),
-            Resolved::List { .. } | Resolved::KeyedList(..) => {
+            Resolved::List { .. } | Resolved::DatedList { .. } | Resolved::KeyedList(..) => {
                 Err(Unsupported::new(format!("list {path} used as a value")))
             }
             Resolved::Output(_) | Resolved::Unsupported => {
@@ -2617,7 +2623,12 @@ impl Lowering {
                 if let Some(list) = self.schema.list(&key) {
                     return Ok(Self::plain(list));
                 }
-                Ok(Self::plain(self.declare(key.to_string(), fields, None)?))
+                Ok(Self::plain(self.declare(
+                    key.to_string(),
+                    fields,
+                    Vec::new(),
+                    None,
+                )?))
             }
             Resolved::Output(at) => self.produced(at, path),
             _ => Err(Unsupported::new(format!("{path} is not a list"))),
@@ -2654,9 +2665,18 @@ impl Lowering {
             return Err(Unsupported::new(format!("{path} is not a list")));
         }
         match r.path(path) {
-            Resolved::List { fields } => {
-                Ok(Self::plain(self.declare(path.to_string(), fields, None)?))
-            }
+            Resolved::List { fields } => Ok(Self::plain(self.declare(
+                path.to_string(),
+                fields,
+                Vec::new(),
+                None,
+            )?)),
+            Resolved::DatedList { fields, dated } => Ok(Self::plain(self.declare(
+                path.to_string(),
+                fields,
+                dated,
+                None,
+            )?)),
             _ => Err(Unsupported::new(format!("{path} is not a list"))),
         }
     }
@@ -2679,7 +2699,12 @@ impl Lowering {
         let mut chain = self.schema.chain(parent);
         chain.push(field);
         match r.nested(&chain) {
-            Resolved::List { fields } => self.declare(field.to_string(), fields, Some(parent)),
+            Resolved::List { fields } => {
+                self.declare(field.to_string(), fields, Vec::new(), Some(parent))
+            }
+            Resolved::DatedList { fields, dated } => {
+                self.declare(field.to_string(), fields, dated, Some(parent))
+            }
             _ => Err(Unsupported::new(format!("nested list {field}"))),
         }
     }
@@ -2688,17 +2713,22 @@ impl Lowering {
         &mut self,
         path: String,
         fields: Vec<(Arc<str>, Class)>,
+        dated: Vec<Arc<str>>,
         parent: Option<ListId>,
     ) -> Result<ListId, Unsupported> {
         let l = ListId::try_from(self.schema.lists.len())
             .map_err(|_| Unsupported::new("too many lists"))?;
+        let texts = dated.iter().map(|name| (name.clone(), Class::Text));
         let fields = fields
             .into_iter()
+            .chain(texts)
             .map(|(name, class)| ColumnDef {
                 path: name.to_string(),
                 ty: class.ty(),
             })
             .collect();
+        self.dated
+            .extend(dated.iter().map(|name| (Some(l), name.to_string())));
         self.schema.lists.push(ListDef {
             path,
             alias: None,

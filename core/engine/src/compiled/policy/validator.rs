@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
@@ -151,13 +152,17 @@ impl InputSchema {
         input: &Variable,
         tz: zen_expression::context::Timezone,
     ) -> Option<Variable> {
+        self.convert_input(input, &DateTexts::plain(tz))
+    }
+
+    fn convert_input(&self, input: &Variable, texts: &DateTexts) -> Option<Variable> {
         DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
-                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0, tz))
+                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0, texts))
             } else if self.roots.contains(key) {
-                self.convert_entity(value, key, 0, tz)
+                self.convert_entity(value, key, 0, texts)
             } else {
-                self.convert_property(value, self.globals.get(key)?, 0, tz)
+                self.convert_property(value, self.globals.get(key)?, 0, texts)
             }
         })
     }
@@ -167,7 +172,7 @@ impl InputSchema {
         value: &Variable,
         entity: &str,
         depth: usize,
-        tz: zen_expression::context::Timezone,
+        texts: &DateTexts,
     ) -> Option<Variable> {
         if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(entity) {
             return None;
@@ -175,7 +180,7 @@ impl InputSchema {
         let model = self.entities.get(entity)?;
         DeclaredDates::rewrite_fields(value, |key, child| {
             let property = model.properties.iter().find(|p| *p.name == *key)?;
-            self.convert_property(child, property, depth + 1, tz)
+            self.convert_property(child, property, depth + 1, texts)
         })
     }
 
@@ -184,15 +189,15 @@ impl InputSchema {
         value: &Variable,
         property: &Property,
         depth: usize,
-        tz: zen_expression::context::Timezone,
+        texts: &DateTexts,
     ) -> Option<Variable> {
         let convert_one = |item: &Variable| match &property.kind {
             PropertyTypeIr::Date => match item {
-                Variable::String(text) => zen_expression::DateValue::from_text_in(text, tz),
+                Variable::String(text) => texts.read(text),
                 _ => None,
             },
             PropertyTypeIr::Relationship { target } if self.entities.contains_key(target) => {
-                self.convert_entity(item, target, depth, tz)
+                self.convert_entity(item, target, depth, texts)
             }
             _ => None,
         };
@@ -264,17 +269,52 @@ impl InputSchema {
         &self,
         at: &DatesAt,
         value: &Variable,
-        tz: zen_expression::context::Timezone,
+        texts: &DateTexts,
     ) -> Option<Variable> {
         match at {
-            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth, tz),
+            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth, texts),
             DatesAt::Items(name, depth) => DeclaredDates::rewrite_items(value, |item| {
-                self.convert_entity(item, name, *depth, tz)
+                self.convert_entity(item, name, *depth, texts)
             }),
             DatesAt::Property(property, depth) => {
-                self.convert_property(value, property, *depth, tz)
+                self.convert_property(value, property, *depth, texts)
             }
         }
+    }
+}
+
+pub(crate) struct DateTexts {
+    tz: zen_expression::context::Timezone,
+    seen: Option<RefCell<HashMap<Box<str>, Option<Variable>>>>,
+}
+
+impl DateTexts {
+    const LIMIT: usize = 8192;
+
+    fn plain(tz: zen_expression::context::Timezone) -> Self {
+        Self { tz, seen: None }
+    }
+
+    pub(crate) fn remembered(tz: zen_expression::context::Timezone) -> Self {
+        Self {
+            tz,
+            seen: Some(RefCell::new(HashMap::new())),
+        }
+    }
+
+    pub(crate) fn read(&self, text: &str) -> Option<Variable> {
+        let Some(seen) = &self.seen else {
+            return zen_expression::DateValue::from_text_in(text, self.tz);
+        };
+        let mut seen = seen.borrow_mut();
+        if let Some(known) = seen.get(text) {
+            return known.clone();
+        }
+        let value = zen_expression::DateValue::from_text_in(text, self.tz);
+        if seen.len() < Self::LIMIT {
+            seen.insert(Box::from(text), value.clone());
+        }
+        value
     }
 }
 
@@ -572,10 +612,13 @@ impl Sureness<'_> {
                 _ => false,
             },
             PropertyTypeIr::Relationship { target } => self.objects(target, column, at),
+            PropertyTypeIr::Date if Self::string(column) => column
+                .text(at)
+                .is_none_or(|text| text.is_empty() || zen_expression::DateValue::reads(text)),
             PropertyTypeIr::Date => match column.variable(at) {
                 Variable::Null => true,
                 Variable::String(text) => {
-                    text.is_empty() || zen_expression::DateValue::is_text(&text)
+                    text.is_empty() || zen_expression::DateValue::reads(&text)
                 }
                 other => zen_expression::DateValue::is(&other),
             },

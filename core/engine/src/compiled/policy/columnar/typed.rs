@@ -533,7 +533,10 @@ impl<'s, 'a> Pass<'s, 'a> {
                         let owner = &self.sheet.entities[*owner];
                         Part::Entity(
                             owner.frame.clone(),
-                            fields.iter().map(|&f| owner.view(f)).collect(),
+                            fields
+                                .iter()
+                                .map(|&f| owner.raw_view(f).unwrap_or_else(|| owner.view(f)))
+                                .collect(),
                         )
                     }
                     Source::Listed(index) => {
@@ -592,13 +595,16 @@ impl<'s, 'a> Pass<'s, 'a> {
         match self.listing(format!("#{entry}"), true, || {
             Listing::leaf(leaf, self.sheet.rows)
         }) {
-            Some((at, listing)) => (
-                Resolved::List {
-                    fields: listing.classes(),
-                },
-                Source::Listed(at),
-            ),
+            Some((at, listing)) => (Self::described(&listing), Source::Listed(at)),
             None => (Resolved::Unsupported, Source::Absent),
+        }
+    }
+
+    fn described(listing: &Listing<'a>) -> Resolved {
+        let (fields, dated) = (listing.classes(), listing.dates());
+        match dated.is_empty() {
+            true => Resolved::List { fields },
+            false => Resolved::DatedList { fields, dated },
         }
     }
 
@@ -699,12 +705,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             (_, Ask::Nested) => {
                 let chain: Vec<&str> = key.split('\n').collect();
                 match self.nested_list(entity, rows, &chain) {
-                    Some((at, listing)) => (
-                        Resolved::List {
-                            fields: listing.classes(),
-                        },
-                        Source::Listed(at),
-                    ),
+                    Some((at, listing)) => (Self::described(&listing), Source::Listed(at)),
                     None => unsupported,
                 }
             }
@@ -737,14 +738,31 @@ impl<'s, 'a> Pass<'s, 'a> {
                     }
                     let mut fields = Vec::new();
                     let mut index = Vec::new();
+                    let mut dated = Vec::new();
+                    let mut raw = Vec::new();
                     for (f, field) in owner.fields.iter().enumerate() {
+                        if owner.field(&field.name) != Some(f) {
+                            continue;
+                        }
                         let class = Normalizer::class(&owner.view(f).column().values);
-                        if let (Some(class), true) = (class, owner.field(&field.name) == Some(f)) {
-                            fields.push((field.name.clone(), class));
-                            index.push(f);
+                        match (class, field.raw.is_some()) {
+                            (Some(class), false) => {
+                                fields.push((field.name.clone(), class));
+                                index.push(f);
+                            }
+                            (None, true) => {
+                                dated.push(field.name.clone());
+                                raw.push(f);
+                            }
+                            _ => {}
                         }
                     }
-                    return (Resolved::List { fields }, Source::List(at, index));
+                    index.extend(raw);
+                    let resolved = match dated.is_empty() {
+                        true => Resolved::List { fields },
+                        false => Resolved::DatedList { fields, dated },
+                    };
+                    return (resolved, Source::List(at, index));
                 }
                 if entities
                     .iter()

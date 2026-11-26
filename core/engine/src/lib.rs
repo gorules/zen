@@ -148,7 +148,7 @@ pub use compiled::diagnostics;
 
 pub mod columns {
     pub use zen_expression::lane::{
-        Column, Columns, Decimal128, Dictionary, Temporal, TimeUnit, Values,
+        Column, Columns, Decimal128, Dictionary, Float64, Temporal, TimeUnit, Values,
     };
 }
 

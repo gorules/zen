@@ -2,6 +2,7 @@ use crate::lane::columns::{Column, Values};
 use crate::lane::Bits;
 use chrono::{Offset, TimeZone};
 use chrono_tz::Tz;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::cell::OnceCell;
 use std::str::FromStr;
@@ -173,6 +174,162 @@ impl<'a> Decimal128<'a> {
             values: Owned::Dec(decimals),
             valid,
         }
+    }
+}
+
+/// Floating point column borrowed as Arrow `Float64` stores it. Each value reads as the
+/// decimal with the fewest digits that still identifies it, exactly like [`Values::F64`]
+/// and like the same number given as JSON; the conversion runs once per column.
+#[derive(Debug)]
+pub struct Float64<'a> {
+    values: &'a [f64],
+    resolved: OnceCell<Option<Resolved>>,
+}
+
+impl<'a> Float64<'a> {
+    pub fn new(values: &'a [f64]) -> Self {
+        Self {
+            values,
+            resolved: OnceCell::new(),
+        }
+    }
+
+    pub fn values(&self) -> &'a [f64] {
+        self.values
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub(crate) fn column(&'a self, validity: Validity<'a>) -> Column<'a> {
+        match self.resolved.get_or_init(|| self.resolve(validity)) {
+            Some(resolved) => resolved.column(validity),
+            None => Column {
+                values: Values::F64(self.values),
+                validity,
+            },
+        }
+    }
+
+    fn resolve(&self, validity: Validity) -> Option<Resolved> {
+        let len = self.values.len();
+        let mut mant = Vec::with_capacity(len);
+        let mut scale = Vec::with_capacity(len);
+        let mut hint = 2u8;
+        for (row, f) in self.values.iter().enumerate() {
+            match Float::guided(*f, &mut hint) {
+                Some((m, s)) => {
+                    mant.push(m);
+                    scale.push(s);
+                }
+                None if !Resolved::live(validity, row) => {
+                    mant.push(0);
+                    scale.push(0);
+                }
+                None => return self.wide(validity),
+            }
+        }
+        Some(Resolved {
+            values: Owned::Scaled { mant, scale },
+            valid: None,
+        })
+    }
+
+    fn wide(&self, validity: Validity) -> Option<Resolved> {
+        let decimals = self
+            .values
+            .iter()
+            .enumerate()
+            .map(|(row, f)| match Resolved::live(validity, row) {
+                true => Float::decimal(*f),
+                false => Some(Float::decimal(*f).unwrap_or(Decimal::ZERO)),
+            })
+            .collect::<Option<Vec<Decimal>>>()?;
+        Some(Resolved {
+            values: Owned::Dec(decimals),
+            valid: None,
+        })
+    }
+}
+
+pub(crate) struct Float;
+
+impl Float {
+    const LIMIT: f64 = 1e15;
+    const POWERS: [f64; 23] = [
+        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
+        1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+    ];
+
+    #[inline]
+    pub(crate) fn parts(f: f64) -> Option<(i64, u8)> {
+        let a = f.abs();
+        if !(a < Self::LIMIT) {
+            return None;
+        }
+        if a == a.trunc() {
+            return (a != 0.0 || f.is_sign_positive()).then_some((f as i64, 0));
+        }
+        let exponent = ((a.to_bits() >> 52) as i32) - 1023;
+        let digits = (exponent * 1233) >> 12;
+        let mut s = (14 - digits).clamp(1, 22) as usize;
+        if a * Self::POWERS[s] >= Self::LIMIT {
+            s -= 1;
+        }
+        let scaled = (a * Self::POWERS[s]).round();
+        if !(scaled < Self::LIMIT) || scaled / Self::POWERS[s] != a {
+            return None;
+        }
+        let mut m = scaled as i64;
+        for (step, by) in [(8usize, 100_000_000i64), (4, 10_000), (2, 100), (1, 10)] {
+            while s >= step && m % by == 0 {
+                m /= by;
+                s -= step;
+            }
+        }
+        Some((if f < 0.0 { -m } else { m }, s as u8))
+    }
+
+    #[inline]
+    fn guided(f: f64, hint: &mut u8) -> Option<(i64, u8)> {
+        let a = f.abs();
+        let power = Self::POWERS[usize::from(*hint)];
+        let scaled = (a * power).round();
+        if a != a.trunc() && scaled < Self::LIMIT && scaled / power == a {
+            let m = scaled as i64;
+            if m % 10 != 0 {
+                return Some((if f < 0.0 { -m } else { m }, *hint));
+            }
+        }
+        let parts = Self::parts(f)?;
+        if (1..=22).contains(&parts.1) {
+            *hint = parts.1;
+        }
+        Some(parts)
+    }
+
+    #[inline]
+    pub(crate) fn decimal(f: f64) -> Option<Decimal> {
+        match Self::parts(f) {
+            Some((m, s)) => Some(Decimal::new(m, u32::from(s))),
+            None => Self::printed(f),
+        }
+    }
+
+    fn printed(f: f64) -> Option<Decimal> {
+        if !f.is_finite() {
+            return None;
+        }
+        let mut buffer = [0u8; 512];
+        let mut cursor = std::io::Cursor::new(&mut buffer[..]);
+        let written = std::io::Write::write_fmt(&mut cursor, format_args!("{f}")).is_ok();
+        let len = cursor.position() as usize;
+        written
+            .then(|| std::str::from_utf8(&buffer[..len]).ok())
+            .flatten()
+            .and_then(|text| Decimal::from_str(text).ok())
+            .or_else(|| Decimal::from_f64(f))
     }
 }
 
@@ -458,5 +615,213 @@ impl Clock {
         }
         Self::time(out, value / per, value % per * (1_000_000_000 / per));
         true
+    }
+}
+
+#[cfg(test)]
+mod float_tests {
+    use super::{Float, Float64};
+    use crate::lane::columns::{Column, Values};
+    use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    fn reference(f: f64) -> Option<Decimal> {
+        f.is_finite()
+            .then(|| {
+                Decimal::from_str(&format!("{f}"))
+                    .ok()
+                    .or_else(|| Decimal::from_f64(f))
+            })
+            .flatten()
+    }
+
+    fn samples() -> Vec<f64> {
+        let mut out = vec![
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            0.1,
+            0.2,
+            0.1 + 0.2,
+            0.3,
+            1.0 / 3.0,
+            2.0 / 3.0,
+            0.5,
+            0.05,
+            1e-7,
+            1.5e-7,
+            123456.789,
+            1e15,
+            1e15 - 1.0,
+            1e15 - 0.125,
+            999_999_999_999_999.9,
+            99_999_999_999_999.98,
+            9_007_199_254_740_991.0,
+            9_007_199_254_740_992.0,
+            9_007_199_254_740_993.0,
+            1.7976931348623157e308,
+            2.2250738585072014e-308,
+            5e-324,
+            4.9406564584124654e-324,
+            7.922816251426434e28,
+            7.922816251426433e28,
+            7.9228162514264337593543950335e28,
+            1e28,
+            1e29,
+            1e-28,
+            1e-29,
+            1.2345678901234567e-12,
+            1.2345678901234567e-11,
+            12345678.901234567,
+            0.30000000000000004,
+            5.551115123125783e-17,
+            179.99999999999997,
+            8.41,
+            4.35,
+            1.005,
+            2.675,
+            1e21,
+            1e22,
+            1e23,
+            123e-20,
+            f64::MAX,
+            f64::MIN,
+            f64::MIN_POSITIVE,
+            f64::EPSILON,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for power in -30..=30 {
+            let p = 10f64.powi(power);
+            out.extend([p, p.next_up(), p.next_down(), -p, 3.0 * p, 7.0 * p]);
+        }
+        for power in 0..=60 {
+            let p = 2f64.powi(power);
+            out.extend([p, p - 1.0, p + 1.0, p + 0.5, 1.0 / p, -1.0 / p]);
+        }
+        let mut state = 0x243F_6A88_85A3_08D3u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for i in 0..600_000u64 {
+            let bits = next();
+            let digits = 1 + (next() % 17) as u32;
+            let mantissa = (next() % 10u64.pow(digits)) as f64;
+            let scale = (next() % 26) as i32;
+            let f = match i % 8 {
+                0 => f64::from_bits(bits),
+                1 => (bits % 10_000_000) as f64 / 100.0,
+                2 => (bits as i64 as f64) * 1e-30,
+                3 => f64::from_bits(bits % 0x0010_0000_0000_0000),
+                4 => mantissa / 10f64.powi(scale),
+                5 => -mantissa * 10f64.powi(-scale),
+                6 => (bits % 1_000_000_000) as f64 / 1e4 / 3.0,
+                _ => ((bits >> 11) as f64) * 2f64.powi((next() % 80) as i32 - 60),
+            };
+            out.push(f);
+            out.push(f.next_up());
+        }
+        out
+    }
+
+    #[test]
+    fn direct_conversion_matches_the_printed_number() {
+        let mut short = 0usize;
+        for f in samples() {
+            let got = Float::decimal(f);
+            assert_eq!(
+                got.map(|d| d.serialize()),
+                reference(f).map(|d| d.serialize()),
+                "{f:e}"
+            );
+            if let Some((m, s)) = Float::parts(f) {
+                short += 1;
+                let exact = Decimal::new(m, u32::from(s));
+                assert_eq!(
+                    Some(exact.serialize()),
+                    reference(f).map(|d| d.serialize()),
+                    "{f:e}"
+                );
+            }
+        }
+        assert!(short > 200_000, "{short}");
+    }
+
+    fn same(resolved: &Column, plain: &Column, rows: usize) {
+        for row in 0..rows {
+            assert_eq!(resolved.valid(row), plain.valid(row), "row {row}");
+            if plain.valid(row) {
+                assert_eq!(
+                    resolved.number(row).map(|d| d.serialize()),
+                    plain.number(row).map(|d| d.serialize()),
+                    "row {row}"
+                );
+            }
+            assert_eq!(
+                format!("{:?}", resolved.variable(row)),
+                format!("{:?}", plain.variable(row)),
+                "row {row}"
+            );
+        }
+    }
+
+    #[test]
+    fn float64_columns_read_like_f64_columns() {
+        let all = samples();
+        let finite: Vec<f64> = all
+            .iter()
+            .copied()
+            .filter(|f| Float::decimal(*f).is_some())
+            .collect();
+        let short: Vec<f64> = finite
+            .iter()
+            .copied()
+            .filter(|f| Float::parts(*f).is_some())
+            .collect();
+        let valid: Vec<u64> = (0..all.len().div_ceil(64))
+            .map(|w| 0xB7E1_5162_8AED_2A6Bu64.rotate_left(w as u32 % 64))
+            .collect();
+        for values in [&all, &finite, &short] {
+            let floats = Float64::new(values);
+            let resolved = Column::new(Values::Float64(&floats));
+            same(&resolved, &Column::new(Values::F64(values)), values.len());
+            same(
+                &resolved.resolved(),
+                &Column::new(Values::F64(values)),
+                values.len(),
+            );
+            let floats = Float64::new(values);
+            let masked = Column::with_validity(Values::Float64(&floats), &valid, 0);
+            same(
+                &masked,
+                &Column::with_validity(Values::F64(values), &valid, 0),
+                values.len(),
+            );
+        }
+        let floats = Float64::new(&short);
+        let column = Column::new(Values::Float64(&floats)).resolved();
+        assert!(matches!(column.values, Values::Scaled { .. }));
+        let floats = Float64::new(&finite);
+        let column = Column::new(Values::Float64(&floats)).resolved();
+        assert!(matches!(column.values, Values::Dec(_)));
+        let floats = Float64::new(&all);
+        let column = Column::new(Values::Float64(&floats)).resolved();
+        assert!(matches!(column.values, Values::F64(_)));
+        let hidden = [1.5, f64::NAN, 2.25, f64::INFINITY];
+        let bits = [0b0101u64];
+        let floats = Float64::new(&hidden);
+        let column = Column::with_validity(Values::Float64(&floats), &bits, 0).resolved();
+        assert!(matches!(column.values, Values::Scaled { .. }));
+        same(
+            &column,
+            &Column::with_validity(Values::F64(&hidden), &bits, 0),
+            4,
+        );
     }
 }

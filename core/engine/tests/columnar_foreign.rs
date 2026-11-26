@@ -3,7 +3,9 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::str::FromStr;
 use std::sync::Arc;
-use zen_engine::columns::{Column, Columns, Decimal128, Dictionary, Temporal, TimeUnit, Values};
+use zen_engine::columns::{
+    Column, Columns, Decimal128, Dictionary, Float64, Temporal, TimeUnit, Values,
+};
 use zen_engine::model::GraphContent;
 use zen_engine::{Decision, EngineVersion, EvaluationOptions, Variable};
 
@@ -624,4 +626,199 @@ fn decimal128_and_temporal_columns_evaluate_policies_like_text_and_single_rows()
         }
     }
     assert!(filled > ROWS / 2);
+}
+
+fn passing(pass_through: bool, expressions: &[(&str, &str)]) -> Decision {
+    let list: Vec<Value> = expressions
+        .iter()
+        .enumerate()
+        .map(|(i, (key, value))| json!({"id": format!("x{i}"), "key": key, "value": value}))
+        .collect();
+    let content: GraphContent = serde_json::from_value(json!({
+        "nodes": [
+            {"id": "in", "name": "in", "type": "inputNode"},
+            {"id": "expr", "name": "expr", "type": "expressionNode", "content": {"expressions": list, "passThrough": pass_through}},
+            {"id": "out", "name": "out", "type": "outputNode"}
+        ],
+        "edges": [
+            {"id": "e1", "sourceId": "in", "targetId": "expr", "type": "edge"},
+            {"id": "e2", "sourceId": "expr", "targetId": "out", "type": "edge"}
+        ]
+    }))
+    .unwrap();
+    Decision::from(Arc::new(content)).with_version(EngineVersion::V2)
+}
+
+#[test]
+fn unresolved_foreign_columns_evaluate_like_resolved_ones() {
+    const N: usize = 200;
+    let mut rng = Rng(0x1234_5678_9ABC_DEF1);
+    let days: Vec<i32> = (0..N)
+        .map(|i| match i % 9 {
+            0 => 3_000_000,
+            1 => -800_000,
+            _ => 15_000 + rng.below(8_000) as i32,
+        })
+        .collect();
+    let stamps: Vec<i64> = (0..N)
+        .map(|i| match i % 11 {
+            0 => i64::MAX / 2,
+            _ => 1_600_000_000_000 + rng.below(200_000_000_000) as i64,
+        })
+        .collect();
+    let amounts: Vec<i128> = (0..N)
+        .map(|i| match i % 7 {
+            0 => i128::MAX / 3,
+            _ => rng.below(1_000_000) as i128 - 500_000,
+        })
+        .collect();
+    let floats: Vec<f64> = (0..N)
+        .map(|i| match i % 13 {
+            0 => f64::NAN,
+            _ => rng.below(100_000) as f64 / 100.0,
+        })
+        .collect();
+    let mut valid = vec![0u64; N.div_ceil(64)];
+    (0..N)
+        .filter(|i| i % 5 != 2)
+        .for_each(|i| valid[i / 64] |= 1 << (i % 64));
+    let make = |builder: bool| {
+        let day = Temporal::date32(&days);
+        let at =
+            Temporal::timestamp(&stamps, TimeUnit::Millisecond, Some("Europe/Berlin")).unwrap();
+        let amount = Decimal128::new(&amounts, -3);
+        let ratio = Float64::new(&floats);
+        let list = [
+            ("day", Column::new(Values::Temporal(&day))),
+            (
+                "at",
+                Column::with_validity(Values::Temporal(&at), &valid, 0),
+            ),
+            (
+                "amount",
+                Column::with_validity(Values::Decimal128(&amount), &valid, 0),
+            ),
+            ("ratio", Column::new(Values::Float64(&ratio))),
+        ];
+        let columns = match builder {
+            true => list
+                .into_iter()
+                .fold(Columns::new(N), |columns, (path, column)| {
+                    columns.column(path, column)
+                }),
+            false => list
+                .into_iter()
+                .fold(Columns::new(N), |columns, (path, column)| {
+                    columns.deferred(path, column)
+                }),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let graphs = [
+            passing(
+                true,
+                &[
+                    ("year", "day == null ? 0 : d(day).year()"),
+                    ("seen", "at != null"),
+                ],
+            ),
+            passing(true, &[("fixed", "1 + 1")]),
+            passing(false, &[("fixed", "1 + 1")]),
+            passing(
+                false,
+                &[("hour", "at == null ? -1 : d(at).hour()"), ("day", "day")],
+            ),
+            passing(
+                false,
+                &[
+                    ("double", "amount == null ? 0 : amount * 2"),
+                    ("half", "ratio == null ? 0 : ratio / 2"),
+                ],
+            ),
+            passing(true, &[("text", "string(day) + ' ' + string(at)")]),
+        ];
+        let mut results = Vec::new();
+        for graph in &graphs {
+            let output = runtime.block_on(graph.evaluate_columns(&columns, options()));
+            results.push(
+                (0..N)
+                    .map(|row| match &output.errors[row] {
+                        Some(_) => json!({"error": true}),
+                        None => output.row(row).to_value(),
+                    })
+                    .collect::<Vec<Value>>(),
+            );
+        }
+        results.push((0..N).map(|row| columns.row(row).to_value()).collect());
+        results
+    };
+    let (resolved, unresolved) = (make(true), make(false));
+    for (graph, (want, got)) in resolved.iter().zip(&unresolved).enumerate() {
+        for row in 0..N {
+            assert_eq!(got[row], want[row], "graph {graph} row {row}");
+        }
+    }
+    let nulls = resolved[0]
+        .iter()
+        .filter(|row| row.get("day").is_none())
+        .count();
+    assert!(nulls > N / 9, "{nulls}");
+}
+
+#[test]
+fn unresolved_foreign_columns_evaluate_policies_like_resolved_ones() {
+    let data = Data::new();
+    let days: Vec<i32> = data
+        .day
+        .iter()
+        .enumerate()
+        .map(|(i, day)| if i % 17 == 3 { 3_000_000 } else { *day })
+        .collect();
+    let make = |builder: bool| {
+        let price = Decimal128::new(&data.price, 2);
+        let qty = Decimal128::new(&data.qty, 0);
+        let at = Temporal::timestamp(&data.at, TimeUnit::Millisecond, Some("UTC")).unwrap();
+        let day = Temporal::date32(&days);
+        let list = [
+            ("order.price", Column::new(Values::Decimal128(&price))),
+            ("order.qty", Column::new(Values::Decimal128(&qty))),
+            (
+                "order.placed",
+                Column::with_validity(Values::Temporal(&at), &data.valid, 0),
+            ),
+            ("order.day", Column::new(Values::Temporal(&day))),
+        ];
+        let columns = match builder {
+            true => list
+                .into_iter()
+                .fold(Columns::new(ROWS), |columns, (path, column)| {
+                    columns.column(path, column)
+                }),
+            false => Columns {
+                rows: ROWS,
+                columns: list.to_vec(),
+            },
+        };
+        let path: Arc<str> = Arc::from("policy");
+        let output = policy()
+            .evaluate_columns_pinned(&path, &[], &columns, &options())
+            .unwrap();
+        (0..ROWS)
+            .map(|row| match &output.errors[row] {
+                Some(_) => json!({"error": true}),
+                None => output.row(row).to_value(),
+            })
+            .collect::<Vec<Value>>()
+    };
+    let (resolved, unresolved) = (make(true), make(false));
+    let fine = resolved
+        .iter()
+        .filter(|row| row.get("error").is_none())
+        .count();
+    assert!(fine > ROWS / 2, "{fine}");
+    for row in 0..ROWS {
+        assert_eq!(unresolved[row], resolved[row], "row {row}");
+    }
 }

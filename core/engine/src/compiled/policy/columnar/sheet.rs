@@ -1,7 +1,7 @@
 use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
 use crate::compiled::output::OutputColumn;
 use crate::compiled::policy::entity::Entity;
-use crate::compiled::policy::validator::{DatesAt, InputSchema};
+use crate::compiled::policy::validator::{DateTexts, DatesAt, InputSchema};
 use crate::compiled::shred::{Normalizer, Shredder};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -95,13 +95,14 @@ impl<'a> Sheet<'a> {
         if !schema.has_dates() {
             return dated;
         }
+        let texts = DateTexts::remembered(tz);
         for entry in self.entries.iter_mut().filter(|entry| entry.input) {
             let Some(at) = schema.dates_at(&entry.path) else {
                 continue;
             };
-            if let Some(leaf) =
-                Self::converted(schema, &at, &entry.leaf, rows, tz, |row| dated[row] = true)
-            {
+            if let Some(leaf) = Self::converted(schema, &at, &entry.leaf, rows, &texts, |row| {
+                dated[row] = true
+            }) {
                 let raw = std::mem::replace(&mut entry.leaf, leaf);
                 entry.raw = Self::declared(&at, raw);
             }
@@ -124,7 +125,7 @@ impl<'a> Sheet<'a> {
                     continue;
                 };
                 if let Some(leaf) =
-                    Self::converted(schema, &at, &field.leaf, children, tz, |child| {
+                    Self::converted(schema, &at, &field.leaf, children, &texts, |child| {
                         dated[owner[child]] = true
                     })
                 {
@@ -155,14 +156,14 @@ impl<'a> Sheet<'a> {
         at: &DatesAt,
         leaf: &Leaf<'a>,
         len: usize,
-        tz: zen_expression::context::Timezone,
+        texts: &DateTexts,
         mut mark: impl FnMut(usize),
     ) -> Option<Leaf<'a>> {
         let mut changed = false;
         let values: Vec<Variable> = (0..len)
             .map(|at_row| {
                 let value = leaf.get(at_row);
-                match schema.convert_at(at, &value, tz) {
+                match schema.convert_at(at, &value, texts) {
                     Some(next) => {
                         changed = true;
                         mark(at_row);

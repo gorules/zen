@@ -68,7 +68,7 @@ impl<'c> OutputCells<'c> {
     }
 }
 
-pub(super) struct Built {
+pub(crate) struct Built {
     shape: Rc<zen_types::variable::Shape>,
     parts: Vec<Part>,
 }

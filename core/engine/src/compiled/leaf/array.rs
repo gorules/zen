@@ -19,6 +19,7 @@ pub(crate) enum Store {
         dict: Rc<Dict>,
     },
     Any(Vec<Variable>),
+    Dec(Vec<rust_decimal::Decimal>),
     List {
         offsets: Vec<i32>,
         child: Box<Store>,
@@ -27,14 +28,24 @@ pub(crate) enum Store {
 
 impl Store {
     pub fn unpacked(values: &[rust_decimal::Decimal]) -> Option<Store> {
-        let mut mant = Vec::with_capacity(values.len());
-        let mut scale = Vec::with_capacity(values.len());
-        for value in values {
-            let (m, s) = Scaled::parts(value)?;
-            mant.push(m);
-            scale.push(s);
+        let mut mant = vec![0i64; values.len()];
+        let mut scale = vec![0u8; values.len()];
+        let mut bad = false;
+        for ((value, m), s) in values.iter().zip(&mut mant).zip(&mut scale) {
+            let parts = value.unpack();
+            let wide = u64::from(parts.mid) << 32 | u64::from(parts.lo);
+            let fits = match parts.negative {
+                true => wide != 0 && wide <= 1u64 << 63,
+                false => wide <= i64::MAX as u64,
+            };
+            bad |= parts.hi != 0 || !fits || parts.scale > u32::from(u8::MAX);
+            *m = match parts.negative {
+                true => (wide as i64).wrapping_neg(),
+                false => wide as i64,
+            };
+            *s = parts.scale as u8;
         }
-        Some(Store::Scaled { mant, scale })
+        (!bad).then_some(Store::Scaled { mant, scale })
     }
 }
 
@@ -172,6 +183,7 @@ impl Array {
                 values: dict.dictionary(),
             },
             Store::Any(values) => Values::Any(values),
+            Store::Dec(values) => Values::Dec(values),
             Store::List { offsets, child } => Values::List {
                 offsets,
                 child: match child.as_ref() {
@@ -419,6 +431,10 @@ impl Array {
                 )
             }
             Store::Coded { codes, dict } => (dict.clone(), *codes.first()?),
+            Store::Dec(values) => (
+                Rc::new(Dict::Any(vec![Variable::Number(*values.first()?)])),
+                0,
+            ),
             Store::Any(values) => match values.first()? {
                 Variable::Array(items)
                     if items.borrow().iter().all(|item| {
@@ -472,6 +488,24 @@ impl Array {
         }
     }
 
+    pub fn expand_coded(&self, ids: &[u32], codes: &Rc<[i32]>) -> Array {
+        if self.valid.is_some() || codes.len() != ids.len() {
+            return self.expand(ids);
+        }
+        let dict = match &self.values {
+            Store::Scaled { mant, scale } => Dict::Scaled {
+                mant: mant.clone(),
+                scale: scale.clone(),
+            },
+            Store::Text { offsets, data } => Dict::Text {
+                offsets: offsets.clone(),
+                data: data.clone(),
+            },
+            _ => return self.expand(ids),
+        };
+        Array::coded(codes.clone(), Rc::new(dict))
+    }
+
     pub fn expand(&self, ids: &[u32]) -> Array {
         let code = |id: u32| match self.valid(id as usize) {
             true => id as i32,
@@ -497,15 +531,22 @@ impl Array {
                 data: data.clone(),
             },
             Store::Coded { codes, dict } => {
-                let codes = ids
-                    .iter()
-                    .map(|&id| match self.valid(id as usize) {
-                        true => codes.get(id as usize).copied().unwrap_or(-1),
+                let table: Vec<i32> = (0..self.rows)
+                    .map(|id| match self.valid(id) {
+                        true => codes.get(id).copied().unwrap_or(-1),
                         false => -1,
                     })
                     .collect();
+                let codes: Rc<[i32]> = match table.as_slice() {
+                    [only] => vec![*only; ids.len()].into(),
+                    _ => ids
+                        .iter()
+                        .map(|&id| table.get(id as usize).copied().unwrap_or(-1))
+                        .collect(),
+                };
                 return Array::coded(codes, dict.clone());
             }
+            Store::Dec(values) => Dict::Any(values.iter().map(|d| Variable::Number(*d)).collect()),
             Store::Any(values) if values.iter().all(shared) => Dict::Any(values.clone()),
             Store::Any(values) => {
                 let values = ids
@@ -519,12 +560,36 @@ impl Array {
                     .collect();
                 return Array::from_values(values);
             }
+            Store::List { .. } if ids.len() > self.rows => {
+                let column = self.column();
+                let values: Vec<Variable> = (0..self.rows)
+                    .map(|row| match self.valid(row) {
+                        true => column.variable(row),
+                        false => Variable::Null,
+                    })
+                    .collect();
+                match values.iter().all(shared) {
+                    true => Dict::Any(values),
+                    false => {
+                        let positions: Vec<usize> = ids.iter().map(|&id| id as usize).collect();
+                        return self.pick(&positions);
+                    }
+                }
+            }
             Store::Bool(_) | Store::List { .. } => {
                 let positions: Vec<usize> = ids.iter().map(|&id| id as usize).collect();
                 return self.pick(&positions);
             }
         };
-        Array::coded(ids.iter().map(|&id| code(id)).collect(), Rc::new(dict))
+        let table: Vec<i32> = (0..self.rows as u32).map(code).collect();
+        let codes: Rc<[i32]> = match table.as_slice() {
+            [only] => vec![*only; ids.len()].into(),
+            _ => ids
+                .iter()
+                .map(|&id| table.get(id as usize).copied().unwrap_or(-1))
+                .collect(),
+        };
+        Array::coded(codes, Rc::new(dict))
     }
 
     pub fn pick(&self, positions: &[usize]) -> Array {

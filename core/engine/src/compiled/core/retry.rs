@@ -69,9 +69,18 @@ impl Take {
         Bits::set(&mut self.bits, row, true);
     }
 
-    pub fn located(&self) -> Rc<[(usize, usize)]> {
+    pub fn located(&self, alias: Option<&[usize]>) -> Rc<[(usize, usize)]> {
         (0..self.rows)
-            .map(|row| (usize::from(Bits::get(&self.bits, row)), row))
+            .map(|row| match Bits::get(&self.bits, row) {
+                true => (
+                    1,
+                    alias
+                        .and_then(|alias| alias.get(row))
+                        .copied()
+                        .unwrap_or(row),
+                ),
+                false => (0, row),
+            })
             .collect()
     }
 }
@@ -91,8 +100,8 @@ mod tests {
         assert_eq!(rows, vec![1, 5, 66, 69]);
         assert!(!take.any());
         take.set(2);
-        assert_eq!(take.located()[2], (1, 2));
-        assert_eq!(take.located()[1], (0, 1));
+        assert_eq!(take.located(None)[2], (1, 2));
+        assert_eq!(take.located(None)[1], (0, 1));
     }
 
     #[test]

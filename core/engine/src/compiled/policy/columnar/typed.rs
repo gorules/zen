@@ -1,12 +1,12 @@
 use super::fuse::{Chain, Fusions, Sink, Span};
 use super::{Bind, Listed, Member, Pass, Sheet};
 use crate::compiled::census::Census;
-use crate::compiled::core::exec::{Choice, Dedup, Hint, ListPart, Select, TypedCall};
+use crate::compiled::core::exec::{Dedup, Hint, ListPart, Part as Key, Select, TypedCall};
 use crate::compiled::core::fuse::Fused;
 use crate::compiled::core::group::{Built, Prefix, Step};
 use crate::compiled::core::list::Frame;
 use crate::compiled::core::retry::Take;
-use crate::compiled::core::switch::{Cost, Density, Path, Route};
+use crate::compiled::core::switch::Density;
 use crate::compiled::core::variants::Variants;
 use crate::compiled::leaf::Leaf;
 use crate::compiled::lowered::Exports;
@@ -14,7 +14,6 @@ use crate::compiled::shred::{Listing, Normalizer};
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
 use zen_expression::lane::Values;
 use zen_expression::typed::{Lowering, Outputs, Program, Resolve, Resolved};
 
@@ -22,8 +21,8 @@ pub(crate) struct TypedGroup {
     program: Option<Program>,
     sinks: Vec<Sink>,
     pub(super) units: usize,
-    pub(super) cost: Cost,
-    dedup: Dedup,
+    effort: usize,
+    heavy: bool,
     probe: Box<[Probed]>,
     columns: Vec<usize>,
     lists: Vec<Option<usize>>,
@@ -171,8 +170,8 @@ impl TypedGroup {
             program: None,
             sinks: Vec::new(),
             units: 0,
-            cost: Cost::new(),
-            dedup: Dedup::new(),
+            effort: 0,
+            heavy: false,
             probe: record.into(),
             columns: Vec::new(),
             lists: Vec::new(),
@@ -227,12 +226,13 @@ impl TypedGroup {
             return Err(record);
         };
         let exports = Exports::of(hir);
+        let (effort, heavy) = (Dedup::effort(&program), Dedup::heavy(&program));
         Ok(Self {
             program: Some(program),
             sinks,
             units,
-            cost: Cost::new(),
-            dedup: Dedup::new(),
+            effort,
+            heavy,
             probe: record.into(),
             columns,
             lists,
@@ -292,8 +292,15 @@ impl Fusions {
 
 pub(super) enum Typed {
     Ran(usize, Vec<usize>),
-    Lane(Arc<TypedGroup>, Route),
+    Lane(usize),
     Skipped,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Rows {
+    Plain,
+    Keyed,
+    Distinct,
 }
 
 impl<'s, 'a> Pass<'s, 'a> {
@@ -343,23 +350,18 @@ impl<'s, 'a> Pass<'s, 'a> {
             },
             None => None,
         };
-        let path = group.cost.path();
-        if path.path == Path::Lane {
-            return Typed::Lane(group, path);
-        }
-        let (start, count, asked, whole) = (Instant::now(), rows.len(), rows, full);
         let select = (!full).then(|| Select::bits(total, rows));
-        let (out, choice) = match group.lists.is_empty() {
-            true => group.dedup.choose(
-                self,
-                count,
-                |pass| pass.execute(&group, program, &sources, entity, select.as_deref()),
-                |pass| pass.deduped(&group, program, &sources, asked, whole),
-            ),
-            false => (
-                self.execute(&group, program, &sources, entity, select.as_deref()),
-                Choice::default(),
-            ),
+        let out = match self.rows(&group, &sources, rows, full) {
+            Rows::Distinct if group.heavy => {
+                Census::reason(|| "distinct".into());
+                return Typed::Lane(group.units);
+            }
+            Rows::Keyed => self
+                .deduped(&group, program, &sources, rows, full)
+                .or_else(|| self.execute(&group, program, &sources, entity, select.as_deref())),
+            Rows::Plain | Rows::Distinct => {
+                self.execute(&group, program, &sources, entity, select.as_deref())
+            }
         };
         let Some(mut out) = out else {
             Census::reason(|| "execute".into());
@@ -374,12 +376,6 @@ impl<'s, 'a> Pass<'s, 'a> {
             false => kept.as_slice(),
         };
         if rows.is_empty() {
-            group
-                .dedup
-                .settle(&group.cost, path, choice, start.elapsed(), count);
-            group.dedup.probe(&group.cost, self, count, |pass| {
-                pass.deduped(&group, program, &sources, asked, whole)
-            });
             return Typed::Ran(group.units, faulted);
         }
         let full = rows.len() == total;
@@ -407,13 +403,54 @@ impl<'s, 'a> Pass<'s, 'a> {
                 self.sink(&group.sinks, leaves, Some((at, &kids)), rows);
             }
         }
-        group
-            .dedup
-            .settle(&group.cost, path, choice, start.elapsed(), count);
-        group.dedup.probe(&group.cost, self, count, |pass| {
-            pass.deduped(&group, program, &sources, asked, whole)
-        });
         Typed::Ran(group.units, faulted)
+    }
+
+    fn rows(&self, group: &TypedGroup, sources: &[Source], rows: &[usize], full: bool) -> Rows {
+        if !group.lists.is_empty() || rows.len() < Dedup::MIN {
+            return Rows::Plain;
+        }
+        let leaves: Option<Vec<Leaf<'a>>> = group
+            .columns
+            .iter()
+            .map(|&at| match sources.get(at)? {
+                Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
+                _ => None,
+            })
+            .collect();
+        let Some(leaves) = leaves else {
+            return Rows::Plain;
+        };
+        let columns: Vec<_> = leaves.iter().map(Leaf::column).collect();
+        let weight = columns.iter().map(Dedup::weight).sum::<usize>();
+        if !Dedup::worth(group.effort, group.heavy, weight) {
+            return Rows::Plain;
+        }
+        let mut keys: Vec<Key> = Vec::with_capacity(columns.len());
+        let mut plain = Vec::with_capacity(columns.len());
+        for column in &columns {
+            match column.values {
+                Values::Dict {
+                    keys: codes,
+                    values,
+                } => keys.push(Key::Codes(codes, values.len(), column.validity)),
+                Values::Bool { bits, offset } => {
+                    keys.push(Key::Bits(bits, offset, column.validity))
+                }
+                Values::Scaled { .. }
+                | Values::I64(_)
+                | Values::F64(_)
+                | Values::Dec(_)
+                | Values::Text { .. }
+                | Values::Utf8 { .. } => plain.push(*column),
+                _ => return Rows::Plain,
+            }
+        }
+        let positions = (!full).then_some(rows);
+        match Dedup::sampled(&keys, &plain, positions, self.sheet.rows) {
+            true => Rows::Keyed,
+            false => Rows::Distinct,
+        }
     }
 
     fn deduped(

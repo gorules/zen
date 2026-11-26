@@ -1786,3 +1786,51 @@ fn policy_anchor_throughput() {
         "struct-list columnar output differs from the driver"
     );
 }
+
+#[test]
+fn policy_columns_take_the_same_paths_on_every_call() {
+    let distinct: Vec<Value> = Anchor::rows(1024, 3)
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut row)| {
+            row["customer"]["income"] = json!(1000 + i);
+            row["customer"]["age"] = json!(16 + i % 70);
+            row
+        })
+        .collect();
+    let cases: Vec<(String, Vec<Value>)> = vec![
+        (Anchor::POLICY.to_string(), Anchor::rows(1024, 7)),
+        (Anchor::POLICY.to_string(), distinct),
+        (Anchor::fallback_policy(), Anchor::rows(1024, 5)),
+        (Anchor::fused_policy(), Anchor::rows(1024, 6)),
+        (Anchor::members_policy(), Anchor::rows(512, 9)),
+    ];
+    let path: Arc<str> = Arc::from(Anchor::PATH);
+    for (at, (policy, rows)) in cases.iter().enumerate() {
+        let built = Built::new(rows).expect("flat columns");
+        let columns = built.columns();
+        let paths = |ws: &PolicyWorkspace| {
+            ws.evaluate_columns(&path, &[], &columns)
+                .expect("columnar policy")
+                .paths()
+        };
+        let ws = Anchor::workspace_with(policy);
+        let first = paths(&ws);
+        if Anchor::typed() {
+            assert!(first.typed > 0, "case {at}: {first:?}");
+        }
+        for call in 1..24 {
+            assert_eq!(paths(&ws), first, "case {at}: call {call}");
+        }
+        for round in 0..4 {
+            let fresh = Anchor::workspace_with(policy);
+            for call in 0..3 {
+                assert_eq!(
+                    paths(&fresh),
+                    first,
+                    "case {at}: fresh workspace {round}, call {call}"
+                );
+            }
+        }
+    }
+}

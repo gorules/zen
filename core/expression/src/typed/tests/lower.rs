@@ -453,13 +453,17 @@ fn fallible_operands_lower_with_a_check() {
             "{source}\n{hir}"
         );
     }
-    for source in ["filter(c.xs, # * 2 in c.xs)", "some(c.ts, # + 'x' in c.ts)"] {
+    for source in ["filter(c.xs, # * 2 in c.xs)", "some(c.ts, upper(#) in c.ts)"] {
         let mut lowering = Lowering::new(None);
         let mut probe = Probe::new();
+        Probe::unit(&mut lowering, &mut probe, "c.o", source)
+            .unwrap_or_else(|e| panic!("{source}: {e}"));
+        let hir = lowering.finish();
         assert!(
-            Probe::unit(&mut lowering, &mut probe, "c.o", source).is_err(),
-            "{source}"
+            hir.nodes.iter().any(|n| matches!(n.op, Op::InRow(..))),
+            "{source}\n{hir}"
         );
+        Program::new(hir.clone()).unwrap_or_else(|e| panic!("{source}: {e}\n{hir}"));
     }
 }
 
@@ -707,6 +711,50 @@ fn date_shapes() {
         assert!(
             matches!(hir.node(hir.outputs[zoned].node).op, Op::Host(..)),
             "{hir}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_key_is_not_a_path_segment() {
+    for (value, source) in [("c.t", "u['']"), ("c.n", "u['']"), ("c.t", "u[''] ?? 'x'")] {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        let unit = [
+            Fusion::Output {
+                key: "u".to_string(),
+                source: value.to_string(),
+            },
+            Fusion::Output {
+                key: "o".to_string(),
+                source: source.to_string(),
+            },
+        ];
+        if lowering.unit(&unit, &mut probe).is_err() {
+            continue;
+        }
+        let hir = lowering.finish();
+        let out = hir.node(hir.outputs[1].node);
+        assert!(!matches!(out.op, Op::Column(_)), "{source}\n{hir}");
+    }
+}
+
+#[test]
+fn bool_of_a_missing_element_keeps_the_errors_of_the_others() {
+    for source in [
+        "bool([c.n + 1, 2][5])",
+        "bool(map([c.n + 1, 2], # > 1)[9])",
+        "bool(({a: null, b: c.n + 1}).a)",
+    ] {
+        let mut lowering = Lowering::new(None);
+        let mut probe = Probe::new();
+        Probe::unit(&mut lowering, &mut probe, "c.o", source).expect(source);
+        let hir = lowering.finish();
+        let out = hir.node(hir.outputs[0].node);
+        assert!(!matches!(out.op, Op::Const(_)), "{source}\n{hir}");
+        assert!(
+            hir.schema.columns.iter().any(|c| c.path == "c.n"),
+            "{source}\n{hir}"
         );
     }
 }

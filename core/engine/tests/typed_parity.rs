@@ -44,25 +44,53 @@ fn columns_match_version_one(graph: Value, rows: Vec<Value>) -> Paths {
         .with_version(EngineVersion::V2)
         .create_decision(content)
         .unwrap();
-    let built = Built::lists(&rows).or_else(|| Built::new(&rows)).unwrap();
+    let wants: Vec<Result<Value, String>> = rows
+        .iter()
+        .map(|row| {
+            runtime
+                .block_on(old.evaluate(Variable::from(row.clone())))
+                .map(|response| Built::normalized(response.result.to_value()))
+                .map_err(|e| e.to_string())
+        })
+        .collect();
+    let repeated: Vec<Value> = rows
+        .iter()
+        .cycle()
+        .take((rows.len() * 8).max(32))
+        .cloned()
+        .collect();
+    let paths = columns_match(&runtime, &new, &rows, &wants);
+    columns_match(&runtime, &new, &repeated, &wants);
+    paths
+}
+
+fn columns_match(
+    runtime: &tokio::runtime::Runtime,
+    new: &zen_engine::Decision,
+    rows: &[Value],
+    wants: &[Result<Value, String>],
+) -> Paths {
+    let built = Built::lists(rows).or_else(|| Built::new(rows)).unwrap();
     let fields = built.fields();
     let structs = built.structs(&fields);
     let columns = built.columns_with(&structs);
     let output = runtime.block_on(new.evaluate_columns(&columns, EvaluationOptions::default()));
-    for (at, row) in rows.iter().enumerate() {
-        let want = runtime
-            .block_on(old.evaluate(Variable::from(row.clone())))
-            .map(|response| Built::normalized(response.result.to_value()));
-        match (&want, &output.errors[at]) {
+    for at in 0..rows.len() {
+        let want = &wants[at % wants.len()];
+        match (want, &output.errors[at]) {
             (Err(_), Some(_)) => {}
             (Ok(want), None) => {
                 assert_eq!(
                     &Built::normalized(output.row(at).to_value()),
                     want,
-                    "row {at}"
+                    "row {at} of {}",
+                    rows.len()
                 )
             }
-            (want, got) => panic!("row {at}: version 1 {want:?}, columns {got:?}"),
+            (want, got) => panic!(
+                "row {at} of {}: version 1 {want:?}, columns {got:?}",
+                rows.len()
+            ),
         }
     }
     output.paths()
@@ -1588,4 +1616,629 @@ fn lists_written_by_a_table_feed_flatten_typed() {
     ]);
     let paths = columns_keep_version_one(graph, rows, &["/all", "/count", "/first"]);
     assert!(paths.typed > 0 && paths.laned == 0, "{paths:?}");
+}
+
+fn sample_graph(name: &str, count: usize) -> (Arc<DecisionContent>, Vec<Value>) {
+    fn vary(value: &Value, i: usize) -> Value {
+        match value {
+            Value::Number(n) => match (n.as_i64(), n.as_f64()) {
+                (Some(x), _) => {
+                    Value::from(x + (i % 13) as i64 * x.signum() * (x.abs() / 10).max(1))
+                }
+                (_, Some(x)) => Value::from(x * (1.0 + (i % 13) as f64 / 20.0)),
+                _ => value.clone(),
+            },
+            Value::Object(map) => {
+                Value::Object(map.iter().map(|(k, v)| (k.clone(), vary(v, i))).collect())
+            }
+            Value::Array(items) => Value::Array(items.iter().map(|v| vary(v, i)).collect()),
+            other => other.clone(),
+        }
+    }
+    let path = format!(
+        "{}/../../test-data/graphs/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let tests: Vec<Value> = doc["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|test| test["input"].clone())
+        .collect();
+    let rows = (0..count)
+        .map(|i| vary(&tests[i % tests.len()], i / tests.len()))
+        .collect();
+    (Arc::new(serde_json::from_value(doc).unwrap()), rows)
+}
+
+#[test]
+fn the_same_columns_take_the_same_paths_on_every_call() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    for name in [
+        "application-risk-assessment",
+        "policy-eligibility-analyzer",
+        "booking-personalization-system",
+        "school-district-resource-allocation",
+        "loan-approval",
+        "customer-lifetime-value",
+        "order-consolidation-system",
+    ] {
+        let (content, rows) = sample_graph(name, 2000);
+        let built = Built::nested(&rows)
+            .or_else(|| Built::lists(&rows))
+            .or_else(|| Built::new(&rows))
+            .unwrap();
+        let fields = built.fields();
+        let structs = built.structs(&fields);
+        let columns = built.columns_with(&structs);
+        let fresh = || {
+            DecisionEngine::default()
+                .with_version(EngineVersion::V2)
+                .create_decision(content.clone())
+                .unwrap()
+        };
+        let decision = fresh();
+        let paths = |decision: &zen_engine::Decision| {
+            runtime
+                .block_on(decision.evaluate_columns(&columns, EvaluationOptions::default()))
+                .paths()
+        };
+        let first = paths(&decision);
+        assert!(first.typed > 0, "{name}: {first:?}");
+        for call in 1..24 {
+            assert_eq!(paths(&decision), first, "{name}: call {call}");
+        }
+        for round in 0..4 {
+            let other = fresh();
+            for call in 0..3 {
+                assert_eq!(
+                    paths(&other),
+                    first,
+                    "{name}: fresh decision {round}, call {call}"
+                );
+            }
+        }
+    }
+}
+
+fn bracket_rows() -> Vec<Value> {
+    vec![
+        json!({"s": "months", "n": 5, "flag": null, "z": 4}),
+        json!({"s": "", "n": -1.5, "flag": true, "z": null}),
+        json!({"s": null, "n": null, "flag": false, "z": 0}),
+    ]
+}
+
+#[test]
+fn an_empty_key_on_a_value_written_earlier_reads_null() {
+    for (value, key) in [
+        ("'months'", "''"),
+        ("s", "''"),
+        ("upper(s ?? 'x')", "''"),
+        ("n + 1", "''"),
+        ("flag == true", "''"),
+        ("date('2024-01-15')", "''"),
+        ("s", "'a'"),
+        ("s", "0"),
+        ("n * 2", "'a'"),
+    ] {
+        let graph = chain(vec![entries(
+            "e",
+            false,
+            &[
+                ("u", value),
+                ("o", &format!("u[{key}]")),
+                ("p", &format!("u[{key}] ?? 'fb'")),
+            ],
+        )]);
+        columns_match_version_one(graph, bracket_rows());
+        let graph = chain(vec![
+            entries("first", true, &[("u", value)]),
+            entries("second", false, &[("o", &format!("u[{key}]"))]),
+        ]);
+        columns_match_version_one(graph, bracket_rows());
+    }
+}
+
+#[test]
+fn an_index_past_the_end_fails_when_an_element_fails() {
+    for source in [
+        "bool(map([3 / 11.97, flag ? 1 : -615, z ?? 2], # > 1)[99])",
+        "bool([3 / 11.97, flag ? 1 : -615][5])",
+        "bool(filter([1, flag ? 1 : -615], # > 0)[5])",
+        "bool(map([1, 2], flag ? # : 0)[7])",
+        "bool([[1], [flag ? 1 : 2]][3])",
+        "bool([{a: 1}, {a: flag ? 1 : 2}][3])",
+        "bool({a: null, b: flag ? 1 : 2}.a)",
+        "bool({a: 1, b: flag ? 1 : 2}.c)",
+        "bool(flag ? null : null)",
+    ] {
+        columns_match_version_one(expression(source), bracket_rows());
+    }
+}
+
+fn text_rows(count: usize, distinct: bool) -> Vec<Value> {
+    let words = ["Sulfuric Acid", "Toxic gas", "", "flammable LIQUID", "rock"];
+    (0..count)
+        .map(|i| {
+            let word = words[i % words.len()];
+            let s = match (distinct, i % 7) {
+                (_, 3) => Value::Null,
+                (true, _) => Value::from(format!("{word} {i}")),
+                (false, _) => Value::from(word),
+            };
+            let t = match i % 5 {
+                0 => Value::from(format!("{:02}:{:02}", i % 24, i % 60)),
+                1 => Value::from("23:59"),
+                2 => Value::from("not a time"),
+                3 => Value::Null,
+                _ => Value::from(7),
+            };
+            json!({"s": s, "t": t, "w": words[(i / 2) % words.len()], "n": i % 4, "flag": i % 3 == 0})
+        })
+        .collect()
+}
+
+#[test]
+fn text_work_on_one_column_runs_once_per_distinct_value_like_version_1() {
+    for distinct in [false, true] {
+        for count in [40, 300] {
+            let rows = text_rows(count, distinct);
+            for source in [
+                "contains(lower(s), 'acid') or contains(lower(s), 'toxic')",
+                "upper(trim(s)) + '!'",
+                "len(s) > 4 and n > 1",
+                "startsWith(s, 'Tox') ? n : len(s)",
+                "flag ? lower(s) : upper(s)",
+                "time(t) > 3600",
+                "lower(s) == 'rock' or time(t) < 60",
+                "contains(lower(s), 'gas') and contains(upper(s), 'TOXIC')",
+                "contains(lower(s), 'a') and contains(lower(w), 'c')",
+                "lower(s) + '/' + upper(w)",
+                "len(w) > len(s ?? '')",
+            ] {
+                columns_match_version_one(expression(source), rows.clone());
+            }
+        }
+    }
+}
+
+#[test]
+fn text_cells_on_one_column_run_once_per_distinct_value_like_version_1() {
+    let graph = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [{"id": "i0", "field": "lower(s)"}, {"id": "i1", "field": "n"}, {"id": "i2", "field": "t"}],
+        "outputs": [{"id": "o0", "field": "out"}, {"id": "o1", "field": "label"}],
+        "rules": [
+            {"_id": "r0", "i0": "some(['acid', 'base'], contains($, #))", "i1": "> 1", "i2": "", "o0": "'r0'", "o1": "upper(s)"},
+            {"_id": "r1", "i0": "contains($, 'toxic')", "i1": "", "i2": "time($) > 600", "o0": "'r1'", "o1": "lower(s) + '?'"},
+            {"_id": "r2", "i0": "startsWith($, 'flam')", "i1": "", "i2": "", "o0": "'r2'", "o1": "'x'"},
+            {"_id": "r3", "i0": "", "i1": "", "i2": "", "o0": "'r3'", "o1": "trim(s)"}
+        ]
+    }}));
+    for distinct in [false, true] {
+        for count in [40, 300] {
+            columns_match_version_one(graph.clone(), text_rows(count, distinct));
+        }
+    }
+}
+
+#[test]
+fn wide_decimals_written_by_one_node_are_read_typed_by_the_next() {
+    let rows: Vec<Value> = (0..120)
+        .map(|i| match i % 9 {
+            4 => json!({"d": null, "m": 6000 + i}),
+            7 => json!({"d": 1800 + i, "m": 0}),
+            _ => json!({"d": 1800 + i, "m": 6000 + 3 * i}),
+        })
+        .collect();
+    let graph = chain(vec![
+        entries("first", true, &[("r", "(d / m) * 100"), ("q", "d / 7")]),
+        entries(
+            "second",
+            false,
+            &[
+                ("rate", "5.5 + ((100 - r) * 0.05)"),
+                ("big", "r > 30"),
+                ("sum", "r + q"),
+                ("same", "r"),
+            ],
+        ),
+    ]);
+    let paths = columns_match_version_one(graph, rows);
+    assert!(paths.typed >= 2, "{paths:?}");
+}
+
+#[test]
+fn failing_rows_of_a_deduplicated_unit_fail_like_version_1() {
+    let rows: Vec<Value> = (0..96)
+        .map(|i| match i % 4 {
+            0 => json!({"s": "a", "n": 1, "d": 1801, "m": 6003}),
+            1 => json!({"s": "b", "n": null, "d": 1, "m": 3}),
+            2 => json!({"s": null, "n": 2, "d": 2, "m": 0}),
+            _ => json!({"s": "c", "n": "x", "d": 7, "m": 9}),
+        })
+        .collect();
+    for source in [
+        "upper(s) + string(n + 1)",
+        "[upper(s), lower(s)]",
+        "{k: upper(s), v: n * 2}",
+        "upper(s) + string(d / m * 100)",
+    ] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+    let graph = chain(vec![
+        entries("first", true, &[("t", "upper(s) + '!'"), ("r", "(d / m) * 100")]),
+        entries(
+            "second",
+            false,
+            &[("u", "lower(t) + string(n + 1)"), ("w", "r * n"), ("z", "t + string(r)")],
+        ),
+    ]);
+    columns_match_version_one(graph, rows);
+}
+
+#[test]
+fn a_date_list_with_an_item_that_fails_fails_even_when_an_earlier_item_matches() {
+    let rows = vec![
+        json!({"ds": "2023-01-31"}),
+        json!({"ds": "2024-02-29"}),
+        json!({"ds": null}),
+    ];
+    for source in [
+        "d(ds) in [d('2023-01-31'), d('2025-03-30 02:30', '+05:30')]",
+        "d(ds) not in [d('2023-01-31'), d('2025-03-30 02:30', '+05:30')]",
+        "d(ds) in [d('2023-01-31'), d('2025-03-30 02:30', 'Mars/Base')]",
+        "d(ds) in [d('2025-03-30 02:30', '+05:30'), d('2023-01-31')]",
+    ] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+    let table = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [{"id": "i0", "field": "d(ds)"}],
+        "outputs": [{"id": "o0", "field": "out"}],
+        "rules": [
+            {"_id": "r0", "i0": "[d('2023-01-31'), d('2023-01-31'), d('2025-03-30 02:30', '+05:30')]", "o0": "'r0'"},
+            {"_id": "r1", "i0": "", "o0": "'r1'"}
+        ]
+    }}));
+    columns_match_version_one(table, rows);
+}
+
+fn scaled_numbers() -> Vec<Value> {
+    [
+        json!(2.5),
+        json!(-2.5),
+        json!(-0.5),
+        json!(0.5),
+        json!(-0.04),
+        json!(7),
+        json!(-7),
+        json!(0),
+        json!(1.005),
+        json!(-1.005),
+        json!(123456.789123),
+        json!(-0.000001),
+        json!(9.99),
+        json!(1.25),
+        json!(-1.25),
+        json!(null),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(at, x)| json!({"x": x, "k": at % 3 + 1}))
+    .collect()
+}
+
+#[test]
+fn rounding_functions_over_mixed_scales_run_typed() {
+    for source in [
+        "floor(x)",
+        "ceil(x)",
+        "round(x)",
+        "round(x, 2)",
+        "round(x * k, 1)",
+        "trunc(x)",
+        "trunc(x, 2)",
+        "abs(x)",
+        "floor(x * k * 1.5)",
+        "ceil(x / 4)",
+    ] {
+        typed_like_version_one(expression(source), scaled_numbers());
+    }
+}
+
+#[test]
+fn any_all_and_none_over_lists_keep_version_1_errors() {
+    let rows = vec![
+        json!({"nums": [1, 2, 3], "n": 2}),
+        json!({"nums": [], "n": 2}),
+        json!({"nums": [5, null, 1], "n": 1}),
+        json!({"nums": [null, 1], "n": 1}),
+        json!({"nums": [1, null], "n": 1}),
+        json!({"nums": [4, 4, 4], "n": 4}),
+        json!({"nums": [0, 9], "n": null}),
+        json!({"nums": null, "n": 3}),
+    ];
+    for source in [
+        "some(nums, # > n)",
+        "all(nums, # > n)",
+        "none(nums, # > n)",
+        "some(nums, # == 1)",
+        "all(nums, # != 9)",
+        "contains(nums, n)",
+        "contains(nums ?? [], 4)",
+        "some(filter(nums, # > 0), # > n)",
+        "all(filter(nums, # != 4), # < 6)",
+    ] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+    let texts = vec![
+        json!({"tags": ["kidney_disease", "copd"]}),
+        json!({"tags": ["a"]}),
+        json!({"tags": []}),
+        json!({"tags": null}),
+        json!({"tags": ["copd", null]}),
+    ];
+    for source in [
+        "contains(tags ?? [], 'kidney_disease') or contains(tags ?? [], 'copd')",
+        "some(tags ?? [], # == 'a')",
+        "none(tags ?? [], # == 'copd')",
+    ] {
+        columns_match_version_one(expression(source), texts.clone());
+    }
+}
+
+#[test]
+fn a_batch_where_most_rows_fail_matches_version_1() {
+    let rows: Vec<Value> = (0..4800)
+        .map(|at| match at % 10 {
+            0 => json!({"n": at, "m": at % 7, "s": format!("k{at}")}),
+            _ => json!({"n": null, "m": at % 7, "s": format!("k{at}")}),
+        })
+        .collect();
+    columns_match_version_one(expression("n * 2 + m"), rows.clone());
+    columns_match_version_one(
+        expression("len(s) > 2 ? n / (m + 1) : m"),
+        rows.clone(),
+    );
+    let table = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [{"id": "i0", "field": "s"}],
+        "outputs": [{"id": "o0", "field": "out"}],
+        "rules": [
+            {"_id": "r0", "i0": "'k0'", "o0": "m + 1"},
+            {"_id": "r1", "i0": "'k10'", "o0": "n * 3"},
+            {"_id": "r2", "i0": "", "o0": "n * m"}
+        ]
+    }}));
+    columns_match_version_one(table, rows);
+}
+
+#[test]
+fn keys_with_constant_presence_group_rows_like_version_1() {
+    let rows: Vec<Value> = (0..600)
+        .map(|at| {
+            json!({
+                "a": (at % 3) as f64 * 1.5,
+                "b": (at % 5 != 0).then_some(at % 4),
+                "c": at % 2 == 0,
+                "t": (["x", "y", "z"])[at % 3],
+                "d": 10
+            })
+        })
+        .collect();
+    typed_like_version_one(
+        expression("(a * 2 + d) * (c ? 1.25 : 0.75) + (t == 'x' ? 1 : 2) + (b ?? 0)"),
+        rows,
+    );
+}
+
+#[test]
+fn legacy_dates_of_distinct_texts_run_typed() {
+    let rows: Vec<Value> = (0..40)
+        .map(|at| match at % 8 {
+            0 => json!({"t": format!("2025-03-{:02}T10:{:02}:00Z", at % 28 + 1, at % 60), "u": "2025-01-01"}),
+            1 => json!({"t": format!("2024-{:02}-{:02}", at % 12 + 1, at % 28 + 1), "u": "2025-01-01T00:00:00Z"}),
+            2 => json!({"t": "not a date", "u": "2025-01-01"}),
+            3 => json!({"t": null, "u": "2025-01-01"}),
+            4 => json!({"t": format!("2023-02-{:02} 08:30:00", at % 28 + 1), "u": "2024-12-31"}),
+            5 => json!({"t": "2025-13-40", "u": "2025-01-01"}),
+            6 => json!({"t": format!("2025-03-{:02}T10:00:00+02:00", at % 28 + 1), "u": "2025-06-01"}),
+            _ => json!({"t": "", "u": "2025-01-01"}),
+        })
+        .collect();
+    for source in [
+        "(date(t) - date(u)) / 3600",
+        "date(t) > date(u)",
+        "date(t)",
+    ] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+}
+
+#[test]
+fn trim_and_type_of_distinct_values_run_typed() {
+    let rows: Vec<Value> = (0..32)
+        .map(|at| match at % 8 {
+            0 => json!({"s": format!("  id{at}  "), "n": at}),
+            1 => json!({"s": format!("\tid{at}\n"), "n": null}),
+            2 => json!({"s": format!("\u{0B}id{at}\u{0C}\r"), "n": at as f64 / 4.0}),
+            3 => json!({"s": format!("\u{a0}id{at}\u{2003}"), "n": -at}),
+            4 => json!({"s": null, "n": 0}),
+            5 => json!({"s": "   ", "n": null}),
+            6 => json!({"s": "", "n": 1.5}),
+            _ => json!({"s": format!("x{at}"), "n": at}),
+        })
+        .collect();
+    for source in [
+        "len(trim(s ?? ''))",
+        "trim(s ?? '') == 'id8'",
+        "type(n) != 'number'",
+        "type(n) == 'null' ? 0 : n * 2",
+    ] {
+        typed_like_version_one(expression(source), rows.clone());
+    }
+    for source in ["type(n)", "type(s)", "trim(s ?? '') + '|'"] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+}
+
+#[test]
+fn comparisons_and_ranges_over_mixed_scales_run_typed() {
+    let values = [
+        json!(0.5),
+        json!(0.50),
+        json!(1),
+        json!(1.0),
+        json!(2.99999999999),
+        json!(3),
+        json!(3.000000000001),
+        json!(-1.25),
+        json!(-0.0001),
+        json!(1234567.123456),
+        json!(0.0000000000000000001),
+        json!(99999999999.5),
+        json!(null),
+    ];
+    let rows: Vec<Value> = values
+        .iter()
+        .enumerate()
+        .map(|(at, x)| json!({"x": x, "y": at as f64 * 0.75}))
+        .collect();
+    for source in [
+        "x < 3",
+        "x >= 3",
+        "x > 2.5",
+        "x <= 0.5",
+        "x == 1",
+        "x != 3",
+        "x in [1..3]",
+        "x in (1..3)",
+        "x in [0.5..3.000000000001)",
+        "x in (-1.25..0.5]",
+        "x not in [1..3]",
+        "y > 2.25 and x < 3",
+    ] {
+        typed_like_version_one(expression(source), rows.clone());
+    }
+}
+
+#[test]
+fn numbers_at_the_edges_of_a_mantissa_keep_version_1_results() {
+    let edges = [
+        "9223372036854775807",
+        "-9223372036854775808",
+        "9223372036854775808",
+        "-9223372036854775809",
+        "0",
+        "-0.0",
+        "0.0000000000000000000000000001",
+        "-1.5",
+        "79228162514264337593543950335",
+    ];
+    for at in 0..edges.len() {
+        let rows: Vec<Value> = edges
+            .iter()
+            .cycle()
+            .skip(at)
+            .take(edges.len())
+            .enumerate()
+            .map(|(k, x)| {
+                serde_json::from_str(&format!("{{\"x\": {x}, \"k\": {}}}", k % 3)).unwrap()
+            })
+            .collect();
+        for source in ["x > 0", "x == 0", "x + k", "x * 2 > 1", "x"] {
+            columns_match_version_one(expression(source), rows.clone());
+        }
+    }
+}
+
+fn dollar_table(rules: Value) -> Value {
+    graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [
+            {"id": "i0", "field": "level"},
+            {"id": "i1"},
+            {"id": "i2", "field": "$"}
+        ],
+        "outputs": [{"id": "o0", "field": "out"}],
+        "rules": rules
+    }}))
+}
+
+fn dollar_rows() -> Vec<Value> {
+    (0..24)
+        .map(|at| {
+            json!({
+                "level": ([json!("high"), json!("medium"), json!("low"), json!(null)])[at % 4].clone(),
+                "n": at % 7,
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn a_table_field_of_dollar_after_a_filled_column_runs_typed() {
+    let rules = json!([
+        {"_id": "r0", "i0": "\"high\"", "i1": "n > 3", "i2": "len(string(n)) > 0", "o0": "'a'"},
+        {"_id": "r1", "i0": "\"high\", \"medium\"", "i1": "", "i2": "$ == \"medium\"", "o0": "'b'"},
+        {"_id": "r2", "i0": "\"low\"", "i1": "", "i2": "", "o0": "'c'"},
+        {"_id": "r3", "i0": "", "i1": "", "i2": "", "o0": "'d'"}
+    ]);
+    typed_like_version_one(dollar_table(rules), dollar_rows());
+}
+
+#[test]
+fn a_table_field_of_dollar_without_a_filled_column_keeps_version_1_results() {
+    let rules = json!([
+        {"_id": "r0", "i0": "\"high\"", "i1": "n > 3", "i2": "", "o0": "'a'"},
+        {"_id": "r1", "i0": "", "i1": "n > 1", "i2": "$ == \"medium\"", "o0": "'b'"},
+        {"_id": "r2", "i0": "\"low\"", "i1": "", "i2": "$ == null", "o0": "'c'"},
+        {"_id": "r3", "i0": "", "i1": "", "i2": "", "o0": "'d'"}
+    ]);
+    columns_match_version_one(dollar_table(rules), dollar_rows());
+}
+
+#[test]
+fn membership_in_the_list_being_iterated_runs_typed() {
+    let numbers = vec![
+        json!({"nums": [1, 2, 4], "n": 1}),
+        json!({"nums": [3, 6, 1.5, 3.0], "n": 2}),
+        json!({"nums": [], "n": 3}),
+        json!({"nums": [null, 2, 1], "n": 4}),
+        json!({"nums": [0.5, 1, 1.00, 2.000], "n": 5}),
+        json!({"nums": [5], "n": 6}),
+        json!({"nums": [10, 20, 40, 80, 160], "n": 7}),
+    ];
+    for source in [
+        "filter(nums, # * 2 in nums)",
+        "filter(nums, # * 2 not in nums)",
+        "some(nums, # + 1 in nums)",
+        "count(nums, # + 1 in nums)",
+        "all(nums, # / 2 in nums)",
+        "map(nums, (# + n) in nums)",
+    ] {
+        typed_like_version_one(expression(source), numbers.clone());
+    }
+    let texts = vec![
+        json!({"strs": ["a", "A", "b"]}),
+        json!({"strs": ["B", "b"]}),
+        json!({"strs": []}),
+        json!({"strs": ["x", null]}),
+        json!({"strs": ["q"]}),
+    ];
+    for source in ["filter(strs, upper(#) in strs)", "some(strs, lower(#) not in strs)"] {
+        typed_like_version_one(expression(source), texts.clone());
+    }
+    let mixed = vec![
+        json!({"nums": [1, 2, 4]}),
+        json!({"nums": [1, "2", 4]}),
+        json!({"nums": null}),
+    ];
+    columns_match_version_one(expression("filter(nums, # * 2 in nums)"), mixed);
 }

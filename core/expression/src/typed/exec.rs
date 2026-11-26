@@ -101,6 +101,18 @@ impl V {
 }
 
 impl Range {
+    fn scaled(&self, s: u8) -> Option<(i64, i64)> {
+        let up = |d: Dec| d.upscale(s).map(|d| d.mant);
+        Some((up(self.lo)?, up(self.hi)?))
+    }
+
+    #[inline]
+    fn within(&self, m: i64, lo: i64, hi: i64) -> bool {
+        let above = m > lo || (self.lo_closed && m == lo);
+        let below = m < hi || (self.hi_closed && m == hi);
+        above && below
+    }
+
     #[inline]
     fn holds(&self, x: N) -> bool {
         let (lo, hi) = (x.compare(N::Dec(self.lo)), x.compare(N::Dec(self.hi)));
@@ -285,7 +297,7 @@ impl Reg {
     }
 
     #[inline]
-    fn put(&mut self, i: usize, d: Dec) {
+    pub(crate) fn put(&mut self, i: usize, d: Dec) {
         self.mant[i] = d.mant;
         self.scale[i] = d.scale;
     }
@@ -1005,7 +1017,29 @@ impl<'e, 'x> Exec<'e, 'x> {
                 match *ra {
                     Rep::Fix(s) if (fits >> s) & 1 != 0 => K::cmp_k(op, am, tab[s as usize], o),
                     Rep::Fix(s) => K::pack1(am, o, |m| slow(m, s)),
-                    _ => K::pack2(am, asc, o, slow),
+                    _ if tab.len() >= 32 || fits == 0 => K::pack2(am, asc, o, slow),
+                    _ => {
+                        let mut table = [0i64; 32];
+                        table[..tab.len()].copy_from_slice(tab);
+                        let mut odd = [0u64; Reg::WORDS];
+                        let t = &table;
+                        match op {
+                            Cmp::Eq | Cmp::Ne => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m == c),
+                            Cmp::Lt => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m < c),
+                            Cmp::Le => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m <= c),
+                            Cmp::Gt => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m > c),
+                            Cmp::Ge => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m >= c),
+                        }
+                        for (w, word) in odd.iter().enumerate().take(words) {
+                            Bits::each(*word & a.valid[w] & !a.wide[w], w * 64, |i| {
+                                let bit = 1u64 << (i % 64);
+                                match slow(am[i], asc[i]) {
+                                    true => o[i / 64] |= bit,
+                                    false => o[i / 64] &= !bit,
+                                }
+                            });
+                        }
+                    }
                 }
                 let ra = *ra;
                 self.patch(d, a, None, |i| K::ord(op, a.num(ra, i).compare(N::Dec(k))));
@@ -1151,6 +1185,102 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.valid[w] = u64::MAX;
                 }
             }),
+            Ins::InRow {
+                dst,
+                a,
+                ra,
+                list,
+                field,
+            } => Self::def(regs, *dst, |d, regs| {
+                let lists = self.feeds.lists.get(*list as usize);
+                let feed = self
+                    .feeds
+                    .fields
+                    .get(*list as usize)
+                    .and_then(|fields| fields.get(*field as usize));
+                let x = &regs[*a as usize];
+                for w in 0..words {
+                    d.valid[w] = u64::MAX;
+                    d.fault[w] = x.fault[w] & self.tail(w);
+                    d.bits[w] = 0;
+                }
+                let (Some(lists), Some(feed)) = (lists, feed) else {
+                    for w in 0..words {
+                        d.fault[w] = self.tail(w);
+                    }
+                    return;
+                };
+                let arg = crate::typed::ins::Arg::Reg(*a);
+                let text = (*ra == Rep::Text).then(|| self.view(&arg, regs));
+                let item = |j: usize| -> Option<V> {
+                    if feed.fault_word(j / 64) >> (j % 64) & 1 == 1 {
+                        return None;
+                    }
+                    if feed.valid_word(j, 1) & 1 == 0 {
+                        return Some(V::Null);
+                    }
+                    if let Some((bits, values)) = &feed.wide {
+                        if Bits::get(bits, j) {
+                            let at = values.binary_search_by_key(&j, |(row, _)| *row).ok()?;
+                            return Some(V::Big(values[at].1));
+                        }
+                    }
+                    match &feed.data {
+                        Data::Num { mant, scale } => {
+                            let s = match scale {
+                                Scales::Fixed(s) => *s,
+                                Scales::Each(each) => *each.get(j)?,
+                            };
+                            Some(V::Num(Dec::new(*mant.get(j)?, s)))
+                        }
+                        Data::Bool { bits, offset } => Some(V::Bool(Bits::get(bits, offset + j))),
+                        _ => None,
+                    }
+                };
+                for i in 0..n {
+                    if Bits::get(&d.fault, i) {
+                        continue;
+                    }
+                    let row = lists.parent[start + i] as usize;
+                    let (lo, hi) = (lists.offsets[row] as usize, lists.offsets[row + 1] as usize);
+                    let mut hit = false;
+                    let mut bad = false;
+                    for j in lo..hi {
+                        let same = match (&text, &feed.data) {
+                            (Some(view), Data::Text(items)) => {
+                                if feed.fault_word(j / 64) >> (j % 64) & 1 == 1 {
+                                    bad = true;
+                                    break;
+                                }
+                                let item = (feed.valid_word(j, 1) & 1 == 1)
+                                    .then(|| items.get(j))
+                                    .flatten();
+                                let mine = match x.ok(i) {
+                                    true => view.get(start, i),
+                                    false => None,
+                                };
+                                item == mine
+                            }
+                            (Some(_), _) => {
+                                bad = true;
+                                break;
+                            }
+                            (None, _) => match item(j) {
+                                Some(v) => x.v(*ra, i).same(v),
+                                None => {
+                                    bad = true;
+                                    break;
+                                }
+                            },
+                        };
+                        hit |= same;
+                    }
+                    match bad {
+                        true => Bits::set(&mut d.fault, i, true),
+                        false => Bits::set(&mut d.bits, i, hit),
+                    }
+                }
+            }),
             Ins::InGen { dst, a, ra, set } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 for w in 0..words {
@@ -1182,14 +1312,68 @@ impl<'e, 'x> Exec<'e, 'x> {
                 self.patch(d, a, None, |i| range.holds(a.num(Rep::Dyn, i)));
                 self.strict1(d, a);
             }),
+            Ins::InRangeGen { dst, a, ra, range }
+                if act.is_none() && matches!(ra, Rep::Dyn | Rep::Fix(_)) =>
+            {
+                Self::def(regs, *dst, |d, regs| {
+                    let a = &regs[*a as usize];
+                    self.strict1(d, a);
+                    let mut table = [(0i64, 0u64, 0u8); 32];
+                    for (s, entry) in table.iter_mut().enumerate().take(19) {
+                        if let Some((lo, hi)) = range.scaled(s as u8) {
+                            let lo = if range.lo_closed { Some(lo) } else { lo.checked_add(1) };
+                            let hi = if range.hi_closed { Some(hi) } else { hi.checked_sub(1) };
+                            *entry = match lo.zip(hi) {
+                                Some((l, h)) if h >= l => (l, h.wrapping_sub(l) as u64, 1),
+                                Some(_) => (0, 0, 2),
+                                None => (0, 0, 0),
+                            };
+                        }
+                    }
+                    let mut buf = [0u8; Reg::LANES];
+                    let asc = Self::scales(*ra, a, &mut buf, n);
+                    for w in 0..words {
+                        let (lo, hi) = (w * 64, (w * 64 + 64).min(n));
+                        let (mut hit, mut odd) = (0u64, 0u64);
+                        for i in lo..hi {
+                            let (base, span, kind) = table[usize::from(asc[i]).min(31)];
+                            let inside = (a.mant[i].wrapping_sub(base) as u64) <= span;
+                            hit |= u64::from(kind == 1 && inside) << (i - lo);
+                            odd |= u64::from(kind == 0) << (i - lo);
+                        }
+                        odd = (odd | a.wide[w]) & a.valid[w];
+                        Bits::each(odd, 0, |j| {
+                            let bit = 1u64 << j;
+                            match range.holds(a.num(*ra, lo + j)) {
+                                true => hit |= bit,
+                                false => hit &= !bit,
+                            }
+                        });
+                        d.bits[w] = hit & a.valid[w];
+                    }
+                })
+            }
             Ins::InRangeGen { dst, a, ra, range } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 self.strict1(d, a);
+                let mut bounds: [Option<Option<(i64, i64)>>; 19] = [None; 19];
+                let mut at = |s: u8| -> Option<(i64, i64)> {
+                    let slot = bounds.get_mut(usize::from(s))?;
+                    *slot.get_or_insert_with(|| range.scaled(s))
+                };
                 for w in 0..words {
                     let mut hit = 0u64;
                     for j in 0..(n - w * 64).min(64) {
                         let i = w * 64 + j;
-                        hit |= u64::from(range.holds(a.num(*ra, i))) << j;
+                        let fast = match a.wide(i) {
+                            true => None,
+                            false => at(ra.scale_at(a, i)),
+                        };
+                        let holds = match fast {
+                            Some((lo, hi)) => range.within(a.mant[i], lo, hi),
+                            None => range.holds(a.num(*ra, i)),
+                        };
+                        hit |= u64::from(holds) << j;
                     }
                     d.bits[w] = hit & a.valid[w];
                 }
@@ -1582,6 +1766,23 @@ impl<'e, 'x> Exec<'e, 'x> {
                             d.keep(rep, i, b);
                         }
                     }),
+                    (_, [(a, ra)])
+                        if act.is_none()
+                            && matches!(rep, Rep::Fix(_) | Rep::Dyn)
+                            && matches!(*ra, Rep::Fix(_) | Rep::Dyn)
+                            && !regs[*a as usize].widened(words) =>
+                    {
+                        let (a, ra) = (&regs[*a as usize], *ra);
+                        let mut buf = [0u8; Reg::LANES];
+                        let asc = Self::scales(ra, a, &mut buf, n);
+                        let mut slow = [0u64; Reg::WORDS];
+                        Self::rounded(func, rep, &a.mant[..n], asc, d, &mut slow);
+                        for w in 0..words {
+                            Bits::each(slow[w] & !skip[w] & self.tail(w), w * 64, |i| {
+                                d.keep(rep, i, a.num(ra, i).func(func))
+                            });
+                        }
+                    }
                     (_, [(a, ra)]) => {
                         let (a, ra) = (&regs[*a as usize], *ra);
                         self.each(act, &skip, |i| {
@@ -1780,6 +1981,9 @@ impl<'e, 'x> Exec<'e, 'x> {
         let filter = filter.map(|f| &regs[f as usize]);
         let value = value.map(|(v, rep)| (&regs[v as usize], rep));
         let words = self.words.min(Reg::WORDS);
+        if let (Fold::Any | Fold::All | Fold::None, Some((v, Rep::Bool))) = (fold, value) {
+            return self.decide(fold, b, l, filter, v);
+        }
         let wide = b.any || value.is_some_and(|(v, _)| v.widened(words));
         if wide || !matches!(fold, Fold::Sum | Fold::Count) {
             for r in r0..=r1 {
@@ -1988,6 +2192,186 @@ impl<'e, 'x> Exec<'e, 'x> {
                         return;
                     }
                 },
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn lanes(
+        am: &[i64],
+        asc: &[u8],
+        d: &mut Reg,
+        slow: &mut [u64; Reg::WORDS],
+        rep: Rep,
+        f: impl Fn(i64, u8) -> (i64, u8, bool),
+    ) {
+        let n = am.len();
+        let (dm, ds) = (&mut d.mant[..n], &mut d.scale[..n]);
+        let fixed = match rep {
+            Rep::Fix(s) => Some(s),
+            _ => None,
+        };
+        for (w, chunk) in slow.iter_mut().enumerate().take(n.div_ceil(64)) {
+            let lo = w * 64;
+            let hi = (lo + 64).min(n);
+            let mut bad = 0u64;
+            for i in lo..hi {
+                let (m, s, b) = f(am[i], asc[i]);
+                dm[i] = m;
+                ds[i] = s;
+                let b = b | fixed.is_some_and(|f| f != s);
+                bad |= u64::from(b) << (i - lo);
+            }
+            *chunk = bad;
+        }
+    }
+
+    fn rounded(func: Func, rep: Rep, am: &[i64], asc: &[u8], d: &mut Reg, slow: &mut [u64; Reg::WORDS]) {
+        const P: [i64; 19] = Dec::POW10;
+        let pow = |k: u8| P[usize::from(k.min(18))];
+        match func {
+            Func::Floor => Self::lanes(am, asc, d, slow, rep, |m, s| {
+                let f = pow(s);
+                let q = m / f;
+                let q = q - i64::from(m - q * f < 0);
+                (q, 0, s > 18 || (q == 0 && m < 0))
+            }),
+            Func::Ceil => Self::lanes(am, asc, d, slow, rep, |m, s| {
+                let f = pow(s);
+                let q = m / f;
+                let q = q + i64::from(m - q * f > 0);
+                (q, 0, s > 18 || (q == 0 && m < 0))
+            }),
+            Func::Round(p) => Self::lanes(am, asc, d, slow, rep, |m, s| {
+                if p >= s {
+                    return (m, s, false);
+                }
+                let k = s - p;
+                let f = pow(k);
+                let q = m / f;
+                let up = (m - q * f).unsigned_abs() >= (f as u64).div_ceil(2);
+                let q = q + i64::from(up) * if m < 0 { -1 } else { 1 };
+                (q, p, k > 18 || (q == 0 && m < 0))
+            }),
+            Func::Trunc(p) => Self::lanes(am, asc, d, slow, rep, |m, s| {
+                if p >= s {
+                    let k = p - s;
+                    let (r, o) = m.overflowing_mul(pow(k));
+                    return (r, p, o || k > 18 || (r == 0 && m < 0));
+                }
+                let k = s - p;
+                let q = m / pow(k);
+                (q, p, k > 18 || (q == 0 && m < 0))
+            }),
+            Func::Abs => Self::lanes(am, asc, d, slow, rep, |m, s| {
+                (m.wrapping_abs(), s, m == i64::MIN)
+            }),
+            _ => {
+                let n = am.len();
+                for (w, chunk) in slow.iter_mut().enumerate().take(n.div_ceil(64)) {
+                    *chunk = match n - w * 64 {
+                        left if left >= 64 => u64::MAX,
+                        left => (1u64 << left) - 1,
+                    };
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn scaled_k(
+        am: &[i64],
+        asc: &[u8],
+        table: &[i64; 32],
+        fits: u32,
+        out: &mut [u64],
+        odd: &mut [u64; Reg::WORDS],
+        f: impl Fn(i64, i64) -> bool,
+    ) {
+        for (w, (word, bad)) in out.iter_mut().zip(odd.iter_mut()).enumerate() {
+            let (lo, hi) = (w * 64, (w * 64 + 64).min(am.len()));
+            let (mut bits, mut slow) = (0u64, 0u64);
+            for i in lo..hi {
+                let s = usize::from(asc[i]).min(31);
+                bits |= u64::from(f(am[i], table[s])) << (i - lo);
+                slow |= u64::from((fits >> s) & 1 == 0) << (i - lo);
+            }
+            *word = bits;
+            *bad = slow;
+        }
+    }
+
+    fn decide(&self, fold: Fold, b: &mut Buf, l: &Lists, filter: Option<&Reg>, v: &Reg) {
+        let (n, s0) = (self.n, self.start);
+        let s1 = s0 + n;
+        let (r0, r1) = (l.parent[s0] as usize, l.parent[s1 - 1] as usize);
+        let words = self.words.min(Reg::WORDS);
+        let mut fb = [0u64; Reg::WORDS];
+        let mut vb = [0u64; Reg::WORDS];
+        let mut dec = [0u64; Reg::WORDS];
+        for w in 0..words {
+            let (live, bad) = match filter {
+                Some(f) => (
+                    f.bits[w] & f.valid[w] & !f.fault[w],
+                    !f.valid[w] | f.fault[w],
+                ),
+                None => (u64::MAX, 0),
+            };
+            let t = self.tail(w);
+            let live = live & t;
+            fb[w] = bad & t;
+            vb[w] = live & (!v.valid[w] | v.fault[w]);
+            let hit = match fold {
+                Fold::All => !v.bits[w],
+                _ => v.bits[w],
+            };
+            dec[w] = live & v.valid[w] & !v.fault[w] & hit;
+        }
+        let first = |m: &[u64; Reg::WORDS], lo: usize, hi: usize| -> Option<usize> {
+            let mut w = lo / 64;
+            while w * 64 < hi {
+                let mut word = m[w];
+                if w == lo / 64 {
+                    word &= u64::MAX << (lo % 64);
+                }
+                if hi < (w + 1) * 64 {
+                    word &= (1u64 << (hi % 64)) - 1;
+                }
+                if word != 0 {
+                    return Some(w * 64 + word.trailing_zeros() as usize);
+                }
+                w += 1;
+            }
+            None
+        };
+        let filtered = filter.is_some();
+        for r in r0..=r1 {
+            let lo = (l.offsets[r] as usize).max(s0) - s0;
+            let hi = (l.offsets[r + 1] as usize).min(s1) - s0;
+            if lo >= hi || Bits::get(&b.fault, r) {
+                continue;
+            }
+            let failed = match filtered {
+                true => first(&fb, lo, hi),
+                false => None,
+            };
+            if b.codes[r] != 0 {
+                if failed.is_some() {
+                    Bits::set(&mut b.fault, r, true);
+                }
+                continue;
+            }
+            let decided = first(&dec, lo, hi);
+            let broken = match (first(&vb, lo, hi), decided) {
+                (Some(x), Some(d)) => x < d,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if failed.is_some() || broken {
+                Bits::set(&mut b.fault, r, true);
+            } else if decided.is_some() {
+                b.codes[r] = 1;
+                Bits::set(&mut b.bits, r, fold == Fold::Any);
             }
         }
     }

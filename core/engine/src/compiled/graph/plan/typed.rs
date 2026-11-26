@@ -3,7 +3,6 @@ use super::{Builder, LaneOp, Op, Program, SlotInfo, Source, TableMode, TableOp};
 use crate::compiled::census::Census;
 use crate::compiled::core::exec::Dedup;
 use crate::compiled::core::group::{Attempt, Built, Prefix, Step};
-use crate::compiled::core::switch::Cost;
 use crate::compiled::core::variants::Variants;
 use crate::compiled::graph::{Body, CompiledGraph, Kind};
 use crate::compiled::lowered::Exports;
@@ -30,9 +29,9 @@ pub(crate) struct TypedOp {
     pub columns: Vec<Ref>,
     pub lists: Vec<(Ref, Vec<Arc<str>>)>,
     pub targets: Vec<Vec<Target>>,
-    pub cost: Cost,
-    pub dedup: Dedup,
     pub shared: Vec<bool>,
+    pub heavy: bool,
+    pub effort: usize,
 }
 
 pub(crate) enum Piece {
@@ -77,15 +76,22 @@ impl TypedOp {
         lists: Vec<(Ref, Vec<Arc<str>>)>,
         targets: Vec<Vec<Target>>,
     ) -> Self {
+        let hir = program.hir();
+        let composite = Dedup::heavy(&program)
+            || targets
+                .iter()
+                .flatten()
+                .any(|target| matches!(target, Target::Matched(_)));
+        let effort = Dedup::effort(&program);
         Self {
-            exports: Exports::of(program.hir()),
+            exports: Exports::of(hir),
             program,
             columns,
             lists,
             targets,
-            cost: Cost::new(),
-            dedup: Dedup::new(),
             shared: Vec::new(),
+            heavy: composite,
+            effort,
         }
     }
 }

@@ -85,17 +85,23 @@ impl<'t> TableIr<'t> {
     const FILLED: usize = 64;
 
     pub fn graph(content: &'t DecisionTableContent) -> Self {
+        let mut inputs: Vec<InputIr<'t>> = Vec::with_capacity(content.inputs.len());
+        for input in content.inputs.iter() {
+            let field = match input.field.as_deref() {
+                Some(field) if field.trim() == "$" => {
+                    Self::previous(content, &inputs, &input.id).or(Some(field))
+                }
+                field => field,
+            };
+            inputs.push(InputIr {
+                id: &input.id,
+                field,
+            });
+        }
         Self {
             profile: Profile::GRAPH,
             collect: matches!(content.hit_policy, DecisionTableHitPolicy::Collect),
-            inputs: content
-                .inputs
-                .iter()
-                .map(|input| InputIr {
-                    id: &input.id,
-                    field: input.field.as_deref(),
-                })
-                .collect(),
+            inputs,
             outputs: content
                 .outputs
                 .iter()
@@ -110,6 +116,27 @@ impl<'t> TableIr<'t> {
                 .collect(),
             rules: content.rules.iter().collect(),
         }
+    }
+
+    fn previous(
+        content: &'t DecisionTableContent,
+        before: &[InputIr<'t>],
+        id: &Arc<str>,
+    ) -> Option<&'t str> {
+        let earlier = before
+            .iter()
+            .rev()
+            .find(|input| input.field.is_some_and(|f| !f.trim().is_empty()))?;
+        let field = earlier.field?;
+        if field.trim() == "$" || field.contains("rand") {
+            return None;
+        }
+        let filled = |rule: &Rule, id: &Arc<str>| rule.get(id).is_some_and(|cell| !cell.is_empty());
+        content
+            .rules
+            .iter()
+            .all(|rule| !filled(rule, id) || filled(rule, earlier.id))
+            .then_some(field)
     }
 
     pub fn policy(ir: &'t DecisionTableIr) -> Self {

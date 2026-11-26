@@ -11,7 +11,7 @@ pub(crate) enum Dict {
 }
 
 impl Dict {
-    fn len(&self) -> Option<usize> {
+    pub(super) fn len(&self) -> Option<usize> {
         match self {
             Dict::Text { offsets, .. } => Some(offsets.len().saturating_sub(1)),
             Dict::Scaled { mant, .. } => Some(mant.len()),

@@ -1128,7 +1128,7 @@ impl Lowering {
             Ast::Member {
                 node,
                 property: Ast::String(segment),
-            } if !segment.contains('.') => {
+            } if !segment.is_empty() && !segment.contains('.') => {
                 let base = Self::segments(node, out)?;
                 out.push(segment);
                 Ok(base)
@@ -2041,7 +2041,10 @@ impl Lowering {
                     }
                     Ty {
                         kind: Kind::Null, ..
-                    } => Ok(self.konst(Lit::Bool(false))),
+                    } => {
+                        let no = self.konst(Lit::Bool(false));
+                        self.checked(a, no)
+                    }
                     ty => Err(Unsupported::new(format!("bool of {ty}"))),
                 }
             }
@@ -2650,12 +2653,34 @@ impl Lowering {
             .schema
             .within(self.nodes[x as usize].scope, Scope::Elem(seq.list))
         {
-            return Err(Unsupported::new("membership in the enclosing list"));
+            return self.in_row(x, seq);
         }
         let item = self.item(seq)?;
         let test = self.belongs(x, item)?;
         let test = self.lifted(test, seq.list)?;
         let found = self.fold(Fold::Any, seq, seq.keep, Some(test))?;
+        self.checked(x, found)
+    }
+
+    fn in_row(&mut self, x: NodeId, seq: Seq) -> Lowered {
+        let refused = || Unsupported::new("membership in the enclosing list");
+        if seq.keep.is_some()
+            || seq.value.is_some()
+            || self.nodes[x as usize].scope != Scope::Elem(seq.list)
+        {
+            return Err(refused());
+        }
+        let field = self.schema.field(seq.list, "").ok_or_else(refused)?;
+        let ty = self.schema.lists[seq.list as usize].fields[field as usize].ty;
+        match (self.kind(x), ty.kind) {
+            (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) | (Kind::Text, Kind::Text) => {}
+            _ => return Err(refused()),
+        }
+        let found = self.add(
+            Op::InRow(x, seq.list, field),
+            Ty::boolean(),
+            Scope::Elem(seq.list),
+        );
         self.checked(x, found)
     }
 
@@ -2864,10 +2889,30 @@ impl Lowering {
             Kind::Text | Kind::Code(_) => Some("string"),
             Kind::Date => Some("date"),
         };
+        let known = match kind {
+            Kind::Num(_) => Some("number"),
+            Kind::Bool => Some("bool"),
+            Kind::Text => Some("string"),
+            _ => None,
+        };
         let ty = match function {
-            InternalFunction::Type => match named {
-                Some(name) => return Ok(self.konst(Lit::Text(name.to_string()))),
-                None => Ty::new(Kind::Text, false),
+            InternalFunction::Type => match (named, known) {
+                (Some(name), _) => return Ok(self.konst(Lit::Text(name.to_string()))),
+                (None, Some(name)) if self.settled(a) => {
+                    let null = self.konst(Lit::Null);
+                    let missing = self.compare(Cmp::Eq, a, null)?;
+                    let (named, none) = (
+                        self.konst(Lit::Text(name.to_string())),
+                        self.konst(Lit::Text("null".to_string())),
+                    );
+                    let (scope, ids) = self.scoped(&[missing, none, named])?;
+                    return Ok(self.add(
+                        Op::If(ids[0], ids[1], ids[2]),
+                        Ty::new(Kind::Text, false),
+                        scope,
+                    ));
+                }
+                _ => Ty::new(Kind::Text, false),
             },
             _ => match (kind, nullable) {
                 (Kind::Num(_), false) => return Ok(a),
@@ -3073,9 +3118,12 @@ impl Lowering {
         }
         let scope = self.nodes[a as usize].scope;
         let mut hit = self.add(Op::InSet(a, set), Ty::boolean(), scope);
-        for id in zoned {
-            let one = self.belongs(a, id)?;
+        for id in &zoned {
+            let one = self.belongs(a, *id)?;
             hit = self.logic(false, hit, one)?;
+        }
+        for id in zoned {
+            hit = self.checked(id, hit)?;
         }
         Ok(hit)
     }

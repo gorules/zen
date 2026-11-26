@@ -143,6 +143,7 @@ pub enum Op {
     If(NodeId, NodeId, NodeId),
     Coalesce(NodeId, NodeId),
     InSet(NodeId, Vec<Lit>),
+    InRow(NodeId, ListId, u16),
     InRange(NodeId, Range),
     Fold {
         fold: Fold,
@@ -377,6 +378,7 @@ impl Op {
             | Op::Not(a)
             | Op::Checked(a)
             | Op::InSet(a, _)
+            | Op::InRow(a, ..)
             | Op::InRange(a, _)
             | Op::Classify(a, _)
             | Op::Str(a)
@@ -414,6 +416,7 @@ impl Op {
             Op::If(c, t, e) => Op::If(f(*c), f(*t), f(*e)),
             Op::Coalesce(a, b) => Op::Coalesce(f(*a), f(*b)),
             Op::InSet(a, set) => Op::InSet(f(*a), set.clone()),
+            Op::InRow(a, list, field) => Op::InRow(f(*a), *list, *field),
             Op::InRange(a, r) => Op::InRange(f(*a), *r),
             Op::Fold {
                 fold,
@@ -498,6 +501,47 @@ impl fmt::Display for Stamp {
 impl Hir {
     pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id as usize]
+    }
+
+    pub(crate) fn pruned(mut self) -> Hir {
+        let mut live = vec![false; self.nodes.len()];
+        for o in self.outputs.iter().chain(&self.parts) {
+            live[o.node as usize] = true;
+            if let Some(c) = o.collect {
+                live[c.item as usize] = true;
+                if let Some(k) = c.keep {
+                    live[k as usize] = true;
+                }
+            }
+        }
+        for id in (0..self.nodes.len()).rev() {
+            if live[id] {
+                for input in self.nodes[id].op.inputs() {
+                    live[input as usize] = true;
+                }
+            }
+        }
+        let mut remap = vec![0 as NodeId; self.nodes.len()];
+        let mut kept = Vec::with_capacity(self.nodes.len());
+        for (id, node) in std::mem::take(&mut self.nodes).into_iter().enumerate() {
+            if live[id] {
+                remap[id] = kept.len() as NodeId;
+                kept.push(Node {
+                    op: node.op.remap(|x| remap[x as usize]),
+                    ty: node.ty,
+                    scope: node.scope,
+                });
+            }
+        }
+        self.nodes = kept;
+        for o in self.outputs.iter_mut().chain(self.parts.iter_mut()) {
+            o.node = remap[o.node as usize];
+            if let Some(c) = &mut o.collect {
+                c.item = remap[c.item as usize];
+                c.keep = c.keep.map(|k| remap[k as usize]);
+            }
+        }
+        self
     }
 
     pub fn dict(&self, id: DictId) -> &Dict {
@@ -656,6 +700,7 @@ impl Hir {
             Op::Or(a, b) => format!("or %{a}, %{b}"),
             Op::If(c, t, e) => format!("if %{c} then %{t} else %{e}"),
             Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
+            Op::InRow(a, list, field) => format!("inrow %{a} list {list} field {field}"),
             Op::InSet(a, set) => format!(
                 "inset %{a} [{}]",
                 set.iter()

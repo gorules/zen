@@ -1,4 +1,5 @@
-use crate::functions::{DateMethod, FunctionKind, InternalFunction, MethodKind};
+use crate::functions::{DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind};
+use crate::lane::date::helpers::date_time;
 use crate::lane::builtins::{Arg as Given, Builtin, Builtins, Dates, Out, RowContext};
 use crate::lane::date::Date;
 use crate::lane::Bits;
@@ -176,6 +177,33 @@ impl<'e, 'x> Exec<'e, 'x> {
                     });
                     Self::broken(d, broken);
                     return;
+                }
+                let mut skip = skip;
+                if let (Host::Legacy(DeprecatedFunction::Date), [DV::Text(text)], Rep::Dyn | Rep::Fix(0)) =
+                    (host, views.as_slice(), *rep)
+                {
+                    let mut done = [0u64; Reg::WORDS];
+                    let mut last: Option<(&[u8], i64)> = None;
+                    self.each(act, &skip, |i| {
+                        let Some(bytes) = text.get(start, i) else {
+                            return;
+                        };
+                        let stamp = match last {
+                            Some((seen, stamp)) if seen == bytes => Some(stamp),
+                            _ => std::str::from_utf8(bytes)
+                                .ok()
+                                .and_then(|s| date_time(s, &self.feeds.context).ok())
+                                .map(|dt| dt.and_utc().timestamp()),
+                        };
+                        if let Some(stamp) = stamp {
+                            d.put(i, Dec::int(stamp));
+                            done[i / 64] |= 1u64 << (i % 64);
+                            last = Some((bytes, stamp));
+                        }
+                    });
+                    for (s, d) in skip.iter_mut().zip(done) {
+                        *s |= d;
+                    }
                 }
                 if let (Host::Method(method), true) = (host, *fixed) {
                     if let Some(broken) = self.quick(*method, &views, *rep, d, act) {

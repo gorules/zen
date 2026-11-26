@@ -2,9 +2,10 @@ use crate::context::EvaluationContext;
 use crate::lane::date::Date;
 use crate::typed::batch::{Batch, Feeds, Origin};
 use crate::typed::build::{Build, Built, Passes, Stage};
+use crate::typed::derive::Split;
 use crate::typed::exec::{Buf, Exec, Reg, Stack};
 use crate::typed::hir::{Clock, DictId, Fold, Hir, Lit, NodeId, Op, Unsupported};
-use crate::typed::ins::{BufDef, Rep, R};
+use crate::typed::ins::{BufDef, Ins, Rep, R};
 use crate::typed::kernel::K;
 use crate::typed::output::Outputs;
 use std::cell::RefCell;
@@ -31,6 +32,7 @@ pub struct Program {
     generic: Arc<Plan>,
     plans: RwLock<Vec<(Sig, Arc<Plan>)>>,
     clock: bool,
+    split: Option<Box<Split>>,
 }
 
 pub(crate) struct Machine {
@@ -79,6 +81,30 @@ impl Plan {
     pub(crate) fn instructions(&self) -> usize {
         self.stages.iter().map(|s| s.code.len()).sum()
     }
+
+    pub(crate) fn costly(&self) -> usize {
+        self.stages
+            .iter()
+            .flat_map(|stage| &stage.code)
+            .filter(|ins| {
+                matches!(
+                    ins,
+                    Ins::Num { .. }
+                        | Ins::DivPow { .. }
+                        | Ins::Text { .. }
+                        | Ins::Map { .. }
+                        | Ins::Part { .. }
+                        | Ins::Str { .. }
+                        | Ins::Concat { .. }
+                        | Ins::Matches { .. }
+                        | Ins::Math { .. }
+                        | Ins::Now { .. }
+                        | Ins::Host { .. }
+                        | Ins::Clock { .. }
+                )
+            })
+            .count()
+    }
 }
 
 impl Program {
@@ -89,6 +115,12 @@ impl Program {
     }
 
     pub(crate) fn with(hir: Hir, passes: Passes) -> Result<Self, Unsupported> {
+        let mut program = Self::plain(hir, passes)?;
+        program.split = Split::of(&program.hir, |hir| Self::plain(hir, passes).ok()).map(Box::new);
+        Ok(program)
+    }
+
+    fn plain(hir: Hir, passes: Passes) -> Result<Self, Unsupported> {
         let exec = hir.composed().then(|| hir.expanded());
         let run = exec.as_ref().unwrap_or(&hir);
         Outputs::new(run)?;
@@ -141,6 +173,7 @@ impl Program {
             generic,
             plans: RwLock::new(Vec::new()),
             clock,
+            split: None,
         })
     }
 
@@ -165,7 +198,24 @@ impl Program {
         select: Option<&[u64]>,
         context: &EvaluationContext,
     ) -> Result<(), Unsupported> {
-        let mut feeds = Feeds::new(&self.hir, &self.classes, batch, context)?;
+        if let Some(split) = &self.split {
+            if let Some(owned) = split.derive(batch, select, context) {
+                let main = &split.main;
+                let feeds = Feeds::derived(&main.hir, &main.classes, batch, &owned, context)?;
+                return main.execute(feeds, out, select, context);
+            }
+        }
+        let feeds = Feeds::new(&self.hir, &self.classes, batch, context)?;
+        self.execute(feeds, out, select, context)
+    }
+
+    fn execute(
+        &self,
+        mut feeds: Feeds,
+        out: &mut Outputs,
+        select: Option<&[u64]>,
+        context: &EvaluationContext,
+    ) -> Result<(), Unsupported> {
         if self.clock {
             feeds.now = Date::now(context);
         }
@@ -233,6 +283,10 @@ impl Program {
 
     pub fn instructions(&self) -> usize {
         self.generic.instructions()
+    }
+
+    pub fn costly(&self) -> usize {
+        self.generic.costly()
     }
 }
 

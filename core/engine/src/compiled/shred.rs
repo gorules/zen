@@ -423,7 +423,8 @@ impl Normalizer {
         let store = match seen {
             Seen::Num => {
                 let (mut mant, mut scale) = (vec![0i64; rows], vec![0u8; rows]);
-                for (row, value) in live {
+                let mut wide = false;
+                for (row, value) in live.clone() {
                     match value {
                         Variable::Number(n) => match Scaled::parts(n) {
                             Some((m, s)) => {
@@ -431,12 +432,26 @@ impl Normalizer {
                                 scale[row] = s;
                                 Bits::set(&mut valid, row, true);
                             }
-                            None => fault(row),
+                            None => {
+                                wide = true;
+                                Bits::set(&mut valid, row, true);
+                            }
                         },
                         _ => fault(row),
                     }
                 }
-                Store::Scaled { mant, scale }
+                match wide {
+                    false => Store::Scaled { mant, scale },
+                    true => {
+                        let mut decimals = vec![rust_decimal::Decimal::ZERO; rows];
+                        for (row, value) in live {
+                            if let Variable::Number(n) = value {
+                                decimals[row] = *n;
+                            }
+                        }
+                        Store::Dec(decimals)
+                    }
+                }
             }
             Seen::Bool => {
                 let mut bits = vec![0u64; rows.div_ceil(64)];

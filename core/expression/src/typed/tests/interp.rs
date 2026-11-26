@@ -323,6 +323,19 @@ impl<'a, 'x> Interp<'a, 'x> {
                     set.iter().any(|lit| Self::equal(&x, &Self::lit(lit))),
                 ))
             }
+            Op::InRow(a, list, field) => {
+                let x = self.eval(*a)?;
+                let feeds = self.feeds;
+                let l = &feeds.lists[*list as usize];
+                let row = l.parent[self.elem[*list as usize]] as usize;
+                let (lo, hi) = (l.offsets[row] as usize, l.offsets[row + 1] as usize);
+                let feed = &feeds.fields[*list as usize][*field as usize];
+                let mut hit = false;
+                for j in lo..hi {
+                    hit |= Self::equal(&x, &Self::read(feed, j)?);
+                }
+                Ok(V::Bool(hit))
+            }
             Op::InRange(a, r) => match self.eval(*a)? {
                 V::Num(x) => Ok(V::Bool(Self::within(x, r))),
                 _ => Err(Fault),

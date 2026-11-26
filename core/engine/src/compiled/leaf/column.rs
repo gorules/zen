@@ -54,6 +54,25 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn coded(&self) -> Option<(Rc<[i32]>, usize, Option<Rc<[u64]>>)> {
+        match self {
+            Leaf::Templated(templated) => Some((
+                templated.codes.clone(),
+                templated.templates.len(),
+                Some(templated.valid.as_slice().into()),
+            )),
+            Leaf::Typed(array) => match array.store() {
+                Store::Coded { codes, dict } => Some((
+                    codes.clone(),
+                    dict.len()?,
+                    array.validity_bits().map(Rc::from),
+                )),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn records(&self) -> Option<Rc<Records<'a>>> {
         match self {
             Leaf::Records(records) => Some(records.clone()),
@@ -404,7 +423,7 @@ impl<'a> Leaf<'a> {
     fn scalar(&self) -> bool {
         match self {
             Leaf::Typed(typed) => match &typed.values {
-                Store::Scaled { .. } | Store::Bool(_) | Store::Text { .. } => true,
+                Store::Scaled { .. } | Store::Bool(_) | Store::Text { .. } | Store::Dec(_) => true,
                 Store::Coded { dict, .. } => !matches!(**dict, Dict::Any(_)),
                 Store::Any(_) | Store::List { .. } => false,
             },
@@ -455,11 +474,22 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn expand_coded(&self, ids: &[u32], codes: &Rc<[i32]>) -> Leaf<'a> {
+        match self {
+            Leaf::Typed(typed) => Leaf::typed(typed.expand_coded(ids, codes)),
+            other => other.expand(ids),
+        }
+    }
+
     pub fn expand(&self, ids: &[u32]) -> Leaf<'a> {
         match self {
             Leaf::Typed(typed) => Leaf::typed(typed.expand(ids)),
             Leaf::Any(values) => Leaf::typed(Array::from_values(values.to_vec()).expand(ids)),
             Leaf::Templated(templated) => templated.mapped(ids.iter().map(|&id| id as usize)),
+            Leaf::Records(records) => {
+                let positions: Rc<[usize]> = ids.iter().map(|&id| id as usize).collect();
+                Leaf::Records(Rc::new(records.pick(&positions)))
+            }
             other => {
                 let column = other.column();
                 Leaf::typed(

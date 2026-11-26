@@ -430,14 +430,13 @@ impl<'s, 'a> Pass<'s, 'a> {
                                 at += consumed;
                                 continue;
                             }
-                            Typed::Lane(group, path) => {
+                            Typed::Lane(units) => {
                                 if let Some(from) = laning.take() {
                                     fusions
                                         .runs
                                         .ran(Chain::of(&blocks[from..], member), at - from);
                                 }
-                                let (start, count) = (Instant::now(), rows.len());
-                                for span in &item.units[at..at + group.units] {
+                                for span in &item.units[at..at + units] {
                                     for event in &events[span.start..span.start + span.len] {
                                         fresh(self, rows);
                                         if rows.is_empty() {
@@ -446,9 +445,8 @@ impl<'s, 'a> Pass<'s, 'a> {
                                         self.event(*event, rows);
                                     }
                                 }
-                                group.cost.record(path, start.elapsed(), count);
-                                self.counts.laned += group.units;
-                                at += group.units;
+                                self.counts.laned += units;
+                                at += units;
                                 continue;
                             }
                             Typed::Skipped => {}

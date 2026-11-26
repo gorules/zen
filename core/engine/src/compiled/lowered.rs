@@ -1,6 +1,6 @@
 use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Store};
 use std::rc::Rc;
-use zen_expression::typed::{Data, Hir, Outputs, Slot};
+use zen_expression::typed::{Data, Dec, Hir, Outputs, Slot};
 use zen_expression::Variable;
 
 pub(crate) struct Exports {
@@ -54,12 +54,20 @@ impl Exports {
         let len = slot.len;
         let dict = slot.dict();
         let array = match &slot.data {
-            Data::Num { .. } if !slot.wide.is_empty() => {
-                return Leaf::Any(
-                    (0..len)
-                        .map(|at| slot.decimal(at).map_or(Variable::Null, Variable::Number))
-                        .collect(),
-                );
+            Data::Num { mant, scale } if !slot.wide.is_empty() => {
+                let mut decimals = vec![rust_decimal::Decimal::ZERO; len];
+                for (at, decimal) in decimals.iter_mut().enumerate() {
+                    if slot.is_valid(at) {
+                        *decimal = Dec::new(mant[at], scale[at]).decimal();
+                    }
+                }
+                for (at, wide) in &slot.wide {
+                    if let Some(decimal) = decimals.get_mut(*at) {
+                        *decimal = *wide;
+                    }
+                }
+                let valid = Self::validity(std::mem::take(&mut slot.valid), len);
+                Array::parts(Store::Dec(decimals), valid, len)
             }
             Data::Num { .. } => match slot.take_num() {
                 Some((mut mant, mut scale, valid)) => {

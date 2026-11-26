@@ -240,6 +240,7 @@ impl<'h> Build<'h> {
             | Op::And(..)
             | Op::Or(..)
             | Op::InSet(..)
+            | Op::InRow(..)
             | Op::InRange(..) => Rep::Bool,
             Op::Arith(op, a, b) => match (op, r(a), r(b)) {
                 (Arith::Add | Arith::Sub, Rep::Fix(x), Rep::Fix(y)) if x == y => Rep::Fix(x),
@@ -1398,6 +1399,19 @@ impl<'h> Build<'h> {
                     b: vb,
                     rb,
                     rep,
+                });
+                d
+            }
+            Op::InRow(a, list, field) => {
+                let ra = rof(self, a);
+                let va = self.val(*a)?;
+                let d = self.fresh()?;
+                self.emit(Ins::InRow {
+                    dst: d,
+                    a: va,
+                    ra,
+                    list: *list,
+                    field: *field,
                 });
                 d
             }

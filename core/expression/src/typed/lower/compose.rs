@@ -473,7 +473,7 @@ impl Lowering {
                 Ast::Member {
                     node,
                     property: Ast::String(key),
-                } => {
+                } if !key.is_empty() && !key.contains('.') => {
                     path.push(key);
                     at = node;
                 }

@@ -1,6 +1,7 @@
 mod batch;
 mod build;
 mod date;
+mod derive;
 mod exec;
 mod hir;
 mod ins;

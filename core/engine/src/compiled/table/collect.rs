@@ -242,20 +242,66 @@ impl Table {
         for (rule, at, leaf) in cells {
             *grid.get_mut(*rule)?.get_mut(*at)? = Some(leaf);
         }
+        let builders: Vec<Option<Rc<super::cells::Built>>> = (0..self.outputs.len())
+            .map(|rule| self.builder(rule, None))
+            .collect();
+        let columns: Vec<Vec<Option<zen_expression::lane::Column>>> = grid
+            .iter()
+            .map(|cells| cells.iter().map(|leaf| leaf.map(Leaf::column)).collect())
+            .collect();
+        let mut coded: Vec<Vec<Vec<Option<Variable>>>> = columns
+            .iter()
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|column| match column.map(|c| c.values) {
+                        Some(zen_expression::lane::Values::Dict { values, .. }) => {
+                            vec![None; values.len()]
+                        }
+                        _ => Vec::new(),
+                    })
+                    .collect()
+            })
+            .collect();
         let mut values = Vec::with_capacity(rows);
+        let mut vals: Vec<Variable> = Vec::new();
         for row in 0..rows {
             let set = candidates.get(row * words..(row + 1) * words)?;
             let mut items = Vec::new();
             for rule in Bits::rows(set) {
                 let outputs = self.outputs.get(rule)?;
-                let vals: Vec<Variable> = grid[rule]
-                    .iter()
-                    .map(|leaf| leaf.map_or(Variable::Null, |leaf| leaf.get(row)))
-                    .collect();
+                vals.clear();
+                for (column, memo) in columns.get(rule)?.iter().zip(coded.get_mut(rule)?) {
+                    vals.push(match column {
+                        None => Variable::Null,
+                        Some(column) if !memo.is_empty() => {
+                            match column.code(row).filter(|_| column.valid(row)) {
+                                Some(code) => match memo.get(code)? {
+                                    Some(value) => value.clone(),
+                                    None => {
+                                        let value = column.variable(row);
+                                        if matches!(
+                                            value,
+                                            Variable::Null
+                                                | Variable::Bool(_)
+                                                | Variable::Number(_)
+                                                | Variable::String(_)
+                                        ) {
+                                            memo[code] = Some(value.clone());
+                                        }
+                                        value
+                                    }
+                                },
+                                None => column.variable(row),
+                            }
+                        }
+                        Some(column) => column.variable(row),
+                    });
+                }
                 if vals.len() != outputs.paths.len() {
                     return None;
                 }
-                items.push(self.built(self.builder(rule, None).as_ref(), rule, None, &vals));
+                items.push(self.built(builders[rule].as_ref(), rule, None, &vals));
             }
             values.push(Variable::from_array(items));
         }

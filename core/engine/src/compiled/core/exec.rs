@@ -1,12 +1,9 @@
 use super::list::Frame;
-use super::switch::{Cost, Route};
 use crate::compiled::leaf::{Bits, Leaf};
 use crate::compiled::shred::{Coder, Listing};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 use zen_expression::lane::{Column, Values};
-use zen_expression::typed::{Batch, Outputs, Program};
+use zen_expression::typed::{Batch, Kind, Outputs, Program};
 
 pub(crate) type Hint = Option<(Rc<[i32]>, usize)>;
 
@@ -24,31 +21,12 @@ pub(crate) struct TypedCall<'l, 'a> {
 
 pub(crate) struct Select;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-enum Rows {
-    #[default]
-    Plain,
-    Coded,
-    Warm,
-    Probe,
+pub(crate) enum Part<'p> {
+    Codes(&'p [i32], usize, Option<(&'p [u64], usize)>),
+    Bits(&'p [u64], usize, Option<(&'p [u64], usize)>),
 }
 
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Choice {
-    rows: Rows,
-    spent: Duration,
-}
-
-pub(crate) struct Dedup {
-    sparse: AtomicU32,
-    calls: AtomicU32,
-    plain: AtomicU64,
-    part: AtomicU64,
-    coded: AtomicU64,
-    trial: AtomicBool,
-    pending: AtomicBool,
-    clock: fn() -> Duration,
-}
+pub(crate) struct Dedup;
 
 impl TypedCall<'_, '_> {
     pub fn run(
@@ -89,151 +67,34 @@ impl Select {
 }
 
 impl Dedup {
-    const SPARSE: u32 = 16;
-    const LONG: usize = 24;
-    const PERIOD: u32 = 64;
-    const MIN: usize = 16;
-    const MARGIN: u64 = 4;
-    const FAILED: u64 = u64::MAX - 1;
+    pub(crate) const MIN: usize = 16;
+    const SAMPLE: usize = 1024;
+    pub(crate) const TEXT: usize = 2;
+    const EFFORT: usize = 4;
+    const COSTLY: usize = 2;
 
-    pub fn new() -> Self {
-        Self::with_clock(Self::monotonic)
+    pub(crate) fn effort(program: &Program) -> usize {
+        program.instructions() + Self::COSTLY * program.costly()
     }
 
-    fn monotonic() -> Duration {
-        static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-        START.get_or_init(Instant::now).elapsed()
+    pub(crate) fn heavy(program: &Program) -> bool {
+        program.hir().outputs.iter().any(|out| {
+            out.collect.is_some()
+                || out.shape.is_some()
+                || matches!(out.ty.kind, Kind::Text | Kind::Date)
+        })
     }
 
-    pub(crate) fn with_clock(clock: fn() -> Duration) -> Self {
-        Self {
-            clock,
-            sparse: AtomicU32::new(0),
-            calls: AtomicU32::new(0),
-            plain: AtomicU64::new(0),
-            part: AtomicU64::new(u64::MAX),
-            coded: AtomicU64::new(u64::MAX),
-            trial: AtomicBool::new(false),
-            pending: AtomicBool::new(false),
+    pub(crate) fn weight(column: &Column) -> usize {
+        match column.values {
+            Values::Dict { .. } | Values::Bool { .. } => 0,
+            Values::Text { .. } | Values::Utf8 { .. } => Self::TEXT,
+            _ => 1,
         }
     }
 
-    fn rows(&self) -> Rows {
-        let call = self.calls.fetch_add(1, Ordering::Relaxed);
-        let coded = self.coded.load(Ordering::Relaxed);
-        match call % Self::PERIOD {
-            0 if call == 0 => Rows::Warm,
-            1 if call > 1 || coded != Self::FAILED => Rows::Probe,
-            _ if coded < self.plain.load(Ordering::Relaxed) => Rows::Coded,
-            _ => Rows::Plain,
-        }
-    }
-
-    pub fn choose<C, T>(
-        &self,
-        cx: &mut C,
-        local: usize,
-        plain: impl FnOnce(&mut C) -> Option<T>,
-        coded: impl FnOnce(&mut C) -> Option<T>,
-    ) -> (Option<T>, Choice) {
-        let rows = match local >= Self::MIN {
-            true => self.rows(),
-            false => Rows::Plain,
-        };
-        let choice = |rows: Rows, spent: Duration| Choice { rows, spent };
-        match rows {
-            Rows::Plain => (plain(cx), Choice::default()),
-            Rows::Coded => match coded(cx) {
-                Some(out) => (Some(out), choice(Rows::Coded, Duration::ZERO)),
-                None => {
-                    self.coded.store(u64::MAX, Ordering::Relaxed);
-                    self.trial.store(false, Ordering::Relaxed);
-                    (plain(cx), Choice::default())
-                }
-            },
-            Rows::Warm => {
-                let out = plain(cx);
-                let begin = (self.clock)();
-                if out.is_some() && coded(cx).is_none() {
-                    self.coded.store(Self::FAILED, Ordering::Relaxed);
-                }
-                (
-                    out,
-                    choice(Rows::Warm, (self.clock)().saturating_sub(begin)),
-                )
-            }
-            Rows::Probe => {
-                let begin = (self.clock)();
-                let out = plain(cx);
-                if out.is_some() {
-                    let spent = (self.clock)().saturating_sub(begin);
-                    self.part.store(Self::per(spent, local), Ordering::Relaxed);
-                    self.pending.store(true, Ordering::Relaxed);
-                }
-                (out, choice(Rows::Probe, Duration::ZERO))
-            }
-        }
-    }
-
-    pub fn settle(
-        &self,
-        cost: &Cost,
-        path: Route,
-        choice: Choice,
-        elapsed: Duration,
-        local: usize,
-    ) {
-        let elapsed = elapsed.saturating_sub(choice.spent);
-        let per = Self::per(elapsed, local);
-        match choice.rows {
-            Rows::Probe => self.plain.store(per, Ordering::Relaxed),
-            Rows::Coded if self.trial.swap(false, Ordering::Relaxed) => {
-                self.coded.store(per, Ordering::Relaxed);
-                cost.typed(per.min(self.plain.load(Ordering::Relaxed)));
-                return;
-            }
-            Rows::Coded => {
-                self.coded.fetch_min(per, Ordering::Relaxed);
-            }
-            Rows::Plain | Rows::Warm => {}
-        }
-        cost.record(path, elapsed, local);
-    }
-
-    pub fn probe<C, T>(
-        &self,
-        cost: &Cost,
-        cx: &mut C,
-        local: usize,
-        coded: impl FnOnce(&mut C) -> Option<T>,
-    ) {
-        if !self.pending.swap(false, Ordering::Relaxed) {
-            return;
-        }
-        let begin = (self.clock)();
-        let tried = coded(cx).is_some();
-        let part = Self::per((self.clock)().saturating_sub(begin), local);
-        let saving = self.part.load(Ordering::Relaxed).saturating_sub(part);
-        match (
-            tried,
-            saving > 0 && saving.saturating_mul(Self::MARGIN) >= self.plain.load(Ordering::Relaxed),
-        ) {
-            (true, true) => {
-                self.coded.store(
-                    self.plain.load(Ordering::Relaxed).saturating_sub(saving),
-                    Ordering::Relaxed,
-                );
-                self.trial.store(true, Ordering::Relaxed);
-                cost.credit(saving);
-            }
-            (true, false) => self.coded.store(u64::MAX, Ordering::Relaxed),
-            (false, _) => self.coded.store(Self::FAILED, Ordering::Relaxed),
-        }
-    }
-
-    fn per(elapsed: Duration, rows: usize) -> u64 {
-        u64::try_from(elapsed.as_nanos().saturating_mul(1024) / rows.max(1) as u128)
-            .unwrap_or(Self::FAILED)
+    pub(crate) fn worth(effort: usize, heavy: bool, weight: usize) -> bool {
+        heavy || effort >= Self::EFFORT * weight
     }
 
     pub fn reps(
@@ -278,55 +139,6 @@ impl Dedup {
         }
     }
 
-    pub fn ready(&self) -> bool {
-        self.sparse.load(Ordering::Relaxed) == 0
-    }
-
-    pub fn eligible(&self, program: &Program, leaves: &[Leaf], hints: &[Hint]) -> bool {
-        let long = program.instructions() >= Self::LONG * leaves.len();
-        leaves.iter().zip(hints).all(|(leaf, hint)| {
-            hint.is_some()
-                || match leaf.column().values {
-                    Values::Dict { .. } | Values::Bool { .. } => true,
-                    Values::Scaled { .. }
-                    | Values::I64(_)
-                    | Values::Dec(_)
-                    | Values::Text { .. } => long,
-                    _ => false,
-                }
-        })
-    }
-
-    pub fn learn(
-        &self,
-        keyed: bool,
-        leaves: &[Leaf],
-        hints: &mut [Hint],
-        positions: Option<&Rc<[usize]>>,
-        rows: usize,
-    ) -> Option<(Vec<usize>, Vec<u32>)> {
-        if !keyed {
-            let _ = self
-                .sparse
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
-                    left.checked_sub(1)
-                });
-            return None;
-        }
-        for (leaf, hint) in leaves
-            .iter()
-            .zip(hints.iter_mut())
-            .filter(|(_, hint)| hint.is_none())
-        {
-            *hint = Self::numbered(&leaf.column(), rows);
-        }
-        let distinct = Self::distinct(leaves, hints, positions, rows);
-        if distinct.is_none() {
-            self.sparse.store(Self::SPARSE, Ordering::Relaxed);
-        }
-        distinct
-    }
-
     pub fn distinct(
         leaves: &[Leaf],
         hints: &[Hint],
@@ -361,94 +173,458 @@ impl Dedup {
                 None => leaf.column(),
             })
             .collect();
-        let mut strides = Vec::with_capacity(columns.len());
-        let mut size = 1u64;
+        let mut parts: Vec<Part> = Vec::with_capacity(columns.len());
         for (at, column) in columns.iter().enumerate() {
-            let width = match (column.values, hints.get(at).and_then(Option::as_ref)) {
-                (_, Some((_, size))) => *size as u64 + 1,
-                (Values::Dict { values, .. }, None) => values.len() as u64 + 1,
-                (Values::Bool { .. }, None) => 3,
+            let hint = hints.get(at).and_then(Option::as_ref);
+            parts.push(match (hint, column.values) {
+                (Some((codes, size)), _) => Part::Codes(codes, *size, column.validity),
+                (None, Values::Dict { keys, values }) => {
+                    Part::Codes(keys, values.len(), column.validity)
+                }
+                (None, Values::Bool { bits, offset }) => Part::Bits(bits, offset, column.validity),
                 _ => return None,
+            });
+        }
+        Self::groups(&parts, positions, rows)
+    }
+
+    pub fn groups(
+        parts: &[Part],
+        positions: Option<&Rc<[usize]>>,
+        rows: usize,
+    ) -> Option<(Vec<usize>, Vec<u32>)> {
+        let local = positions.map_or(rows, |p| p.len());
+        let full = |validity: Option<(&[u64], usize)>| {
+            validity.is_none_or(|(bits, offset)| {
+                positions.is_none() && Bits::range(bits, offset, offset + local, true)
+            })
+        };
+        let parts: Vec<Part> = parts
+            .iter()
+            .filter_map(|part| match *part {
+                Part::Bits(bits, offset, validity) if positions.is_none() && full(validity) => {
+                    let constant = Bits::range(bits, offset, offset + local, true)
+                        || Bits::range(bits, offset, offset + local, false);
+                    (!constant).then_some(Part::Bits(bits, offset, None))
+                }
+                Part::Codes(codes, size, validity) if full(validity) => {
+                    Some(Part::Codes(codes, size, None))
+                }
+                Part::Codes(codes, size, validity) => Some(Part::Codes(codes, size, validity)),
+                Part::Bits(bits, offset, validity) => Some(Part::Bits(bits, offset, validity)),
+            })
+            .collect();
+        let parts = parts.as_slice();
+        let mut strides = Vec::with_capacity(parts.len());
+        let mut size = 1u64;
+        for part in parts {
+            let width = match part {
+                Part::Codes(_, size, _) => *size as u64 + 1,
+                Part::Bits(..) => 3,
             };
             strides.push(size);
             size = size.checked_mul(width)?;
         }
         let mut keys = vec![0u64; local];
-        for (index, (column, stride)) in columns.iter().zip(&strides).enumerate() {
-            let hint = hints.get(index).and_then(Option::as_ref);
-            let code = |row: usize, code: i32| match column.valid(row) {
+        for (part, stride) in parts.iter().zip(&strides) {
+            let validity = match part {
+                Part::Codes(_, _, validity) | Part::Bits(_, _, validity) => *validity,
+            };
+            let valid =
+                |row: usize| validity.is_none_or(|(bits, offset)| Bits::get(bits, offset + row));
+            let code = |row: usize, code: i32| match valid(row) {
                 true => u64::try_from(code).map_or(0, |k| k + 1),
                 false => 0,
             };
-            let codes: Option<&[i32]> = match (hint, column.values) {
-                (Some((codes, _)), _) => Some(codes),
-                (None, Values::Dict { keys, .. }) => Some(keys),
-                _ => None,
-            };
-            match (codes, column.values) {
-                (Some(codes), _)
-                    if positions.is_none() && column.validity.is_none() && codes.len() >= local =>
+            match part {
+                Part::Codes(codes, ..)
+                    if positions.is_none() && validity.is_none() && codes.len() >= local =>
                 {
-                    for (key, &code) in keys.iter_mut().zip(codes) {
+                    for (key, &code) in keys.iter_mut().zip(codes.iter()) {
                         *key += (code.max(-1) + 1) as u64 * stride;
                     }
                 }
-                (Some(codes), _) if positions.is_none() && codes.len() >= local => {
-                    let valid = column.validity.map_or_else(
+                Part::Codes(codes, ..) if positions.is_none() && codes.len() >= local => {
+                    let valid = validity.map_or_else(
                         || Bits::ones(local),
                         |(bits, offset)| Bits::window(bits, offset, local),
                     );
-                    for ((at, key), &code) in keys.iter_mut().enumerate().zip(codes) {
+                    for ((at, key), &code) in keys.iter_mut().enumerate().zip(codes.iter()) {
                         let live = (valid[at >> 6] >> (at & 63)) & 1;
                         *key += (code.max(-1) + 1) as u64 * live * stride;
                     }
                 }
-                (Some(codes), _) => {
+                Part::Codes(codes, ..) => {
                     for (at, key) in keys.iter_mut().enumerate() {
                         let row = positions.map_or(at, |p| p[at]);
                         *key += code(row, codes.get(row).copied().unwrap_or(-1)) * stride;
                     }
                 }
-                (None, Values::Bool { bits, offset }) => {
+                Part::Bits(bits, offset, None) if positions.is_none() => {
+                    for (at, key) in keys.iter_mut().enumerate() {
+                        let row = offset + at;
+                        *key += (((bits[row >> 6] >> (row & 63)) & 1) + 1) * stride;
+                    }
+                }
+                Part::Bits(bits, offset, _) => {
                     for (at, key) in keys.iter_mut().enumerate() {
                         let row = positions.map_or(at, |p| p[at]);
                         *key += code(row, i32::from(Bits::get(bits, offset + row))) * stride;
                     }
                 }
-                _ => return None,
             }
         }
-        let dense = size <= 4096;
-        let slots = match dense {
-            true => size as usize,
-            false => (local / 2).next_power_of_two().max(16) * 2,
-        };
-        let mut table = vec![(u64::MAX, u32::MAX); slots];
-        let mask = slots - 1;
+        if size <= 4096 {
+            let mut table = vec![u32::MAX; size as usize];
+            let mut reps = Vec::new();
+            let mut ids = vec![0u32; local];
+            for ((at, &key), id) in keys.iter().enumerate().zip(ids.iter_mut()) {
+                let entry = table.get_mut(key as usize)?;
+                if *entry == u32::MAX {
+                    *entry = reps.len() as u32;
+                    reps.push(positions.map_or(at, |p| p[at]));
+                    if reps.len() * 4 > local {
+                        return None;
+                    }
+                }
+                *id = *entry;
+            }
+            return Some((reps, ids));
+        }
+        let slot =
+            |key: u64, mask: usize| (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32) as usize & mask;
+        let mut table = vec![(u64::MAX, u32::MAX); 64];
+        let mut mask = table.len() - 1;
         let mut reps = Vec::new();
         let mut ids = vec![0u32; local];
+        let mut last = (u64::MAX, u32::MAX);
         for ((at, &key), id) in keys.iter().enumerate().zip(ids.iter_mut()) {
-            let mut slot = match dense {
-                true => key as usize,
-                false => (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32) as usize & mask,
-            };
-            while !dense && table[slot].1 != u32::MAX && table[slot].0 != key {
-                slot = (slot + 1) & mask;
+            if last.1 != u32::MAX && last.0 == key {
+                *id = last.1;
+                continue;
             }
-            let entry = table.get_mut(slot)?;
-            if entry.1 == u32::MAX {
-                *entry = (key, reps.len() as u32);
+            let mut at_slot = slot(key, mask);
+            while table[at_slot].1 != u32::MAX && table[at_slot].0 != key {
+                at_slot = (at_slot + 1) & mask;
+            }
+            if table[at_slot].1 == u32::MAX {
+                table[at_slot] = (key, reps.len() as u32);
                 reps.push(positions.map_or(at, |p| p[at]));
                 if reps.len() * 4 > local {
                     return None;
                 }
+                if reps.len() * 2 > table.len() {
+                    let grown = table.len() * 2;
+                    let old = std::mem::replace(&mut table, vec![(u64::MAX, u32::MAX); grown]);
+                    mask = grown - 1;
+                    for entry in old.into_iter().filter(|entry| entry.1 != u32::MAX) {
+                        let mut into = slot(entry.0, mask);
+                        while table[into].1 != u32::MAX {
+                            into = (into + 1) & mask;
+                        }
+                        table[into] = entry;
+                    }
+                    at_slot = slot(key, mask);
+                    while table[at_slot].0 != key {
+                        at_slot = (at_slot + 1) & mask;
+                    }
+                }
             }
-            *id = entry.1;
+            last = table[at_slot];
+            *id = last.1;
         }
         Some((reps, ids))
     }
 
-    fn numbered(column: &Column, rows: usize) -> Option<(Rc<[i32]>, usize)> {
+    pub fn coded_rows(
+        parts: &[Part],
+        positions: Option<&[usize]>,
+        rows: usize,
+    ) -> Option<(Vec<usize>, Vec<u32>)> {
+        let local = positions.map_or(rows, <[usize]>::len);
+        if local < Self::MIN {
+            return None;
+        }
+        let positions: Option<Rc<[usize]>> = positions.map(Rc::from);
+        Self::groups(parts, positions.as_ref(), rows)
+    }
+
+    pub fn sampled(
+        keys: &[Part],
+        columns: &[Column],
+        positions: Option<&[usize]>,
+        rows: usize,
+    ) -> bool {
+        let local = positions.map_or(rows, <[usize]>::len);
+        let sample = local.min(Self::SAMPLE);
+        if sample == 0 {
+            return false;
+        }
+        let stride = local / sample;
+        let hash = |at: usize| {
+            let row = positions.map_or(at * stride, |p| p[at * stride]);
+            let mut hash = 0u64;
+            for part in keys {
+                let value = match part {
+                    Part::Codes(codes, _, validity) => {
+                        let valid =
+                            validity.is_none_or(|(bits, offset)| Bits::get(bits, offset + row));
+                        match (valid, codes.get(row)) {
+                            (true, Some(&code)) if code >= 0 => code as u64,
+                            _ => u64::MAX,
+                        }
+                    }
+                    Part::Bits(bits, offset, validity) => {
+                        let valid =
+                            validity.is_none_or(|(bits, offset)| Bits::get(bits, offset + row));
+                        match valid {
+                            true => u64::from(Bits::get(bits, offset + row)),
+                            false => u64::MAX,
+                        }
+                    }
+                };
+                hash = Self::fold(hash, value);
+            }
+            for column in columns {
+                let value = match column.values {
+                    Values::List { offsets, child } => {
+                        let child = child.column();
+                        match (column.valid(row), offsets.get(row), offsets.get(row + 1)) {
+                            (true, Some(&lo), Some(&hi)) => (lo.max(0) as usize
+                                ..hi.max(0) as usize)
+                                .fold((hi - lo) as u64, |hash, item| {
+                                    Self::fold(hash, Self::item(&child, item).unwrap_or(u64::MAX))
+                                }),
+                            _ => u64::MAX,
+                        }
+                    }
+                    _ => Self::item(column, row).unwrap_or(u64::MAX),
+                };
+                hash = Self::fold(hash, value);
+            }
+            hash
+        };
+        let head = sample / 4;
+        if head >= 64 {
+            let mut seen: Vec<u64> = (0..head).map(hash).collect();
+            seen.sort_unstable();
+            seen.dedup();
+            if seen.len() * 4 > head * 3 {
+                return false;
+            }
+        }
+        let mut hashes: Vec<u64> = (0..sample).map(hash).collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        hashes.len() * 4 <= sample
+    }
+
+    pub fn interned(column: &Column, rows: usize) -> Hint {
+        match column.values {
+            Values::Scaled { .. } | Values::I64(_) => Self::numbered(column, rows),
+            Values::F64(values) => {
+                let bits: Vec<i64> = values
+                    .get(..rows)?
+                    .iter()
+                    .map(|v| v.to_bits() as i64)
+                    .collect();
+                Self::numbered(&Column::new(Values::I64(&bits)), rows)
+            }
+            Values::Dec(values) => Self::decimals(values.get(..rows)?),
+            Values::Text { offsets, data } => Coder::keys(data.as_bytes(), offsets.get(..=rows)?),
+            Values::Utf8 { offsets, data } => Coder::keys(data, offsets.get(..=rows)?),
+            _ => None,
+        }
+    }
+
+    pub fn listed(column: &Column, rows: usize) -> Hint {
+        const SLOTS: usize = 256;
+        const LIMIT: usize = 128;
+        let Values::List { offsets, child } = column.values else {
+            return None;
+        };
+        let child = child.column();
+        if !Self::keyable(&child) {
+            return None;
+        }
+        let range = |row: usize| -> Option<(usize, usize)> {
+            match column.valid(row) {
+                true => Some((
+                    usize::try_from(*offsets.get(row)?).ok()?,
+                    usize::try_from(*offsets.get(row + 1)?).ok()?,
+                )),
+                false => None,
+            }
+        };
+        let mut table = [(0u64, u32::MAX, 0u8); SLOTS];
+        let mut count = 0usize;
+        let mut codes: Vec<i32> = Vec::with_capacity(rows);
+        for row in 0..rows {
+            let span = range(row);
+            let mut hash = 0xcbf2_9ce4_8422_2325u64;
+            match span {
+                None => hash = Self::fold(hash, u64::MAX),
+                Some((lo, hi)) => {
+                    hash = Self::fold(hash, (hi - lo) as u64);
+                    for at in lo..hi {
+                        hash = Self::fold(hash, Self::item(&child, at)?);
+                    }
+                }
+            }
+            let mut slot = (hash.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 56) as usize;
+            let code = loop {
+                let (seen, rep, code) = table[slot];
+                if rep == u32::MAX {
+                    if count >= LIMIT {
+                        return None;
+                    }
+                    table[slot] = (hash, row as u32, count as u8);
+                    count += 1;
+                    break i32::from(count as u8 - 1);
+                }
+                if seen == hash {
+                    let same = match (range(rep as usize), span) {
+                        (None, None) => true,
+                        (Some((a, b)), Some((c, d))) => {
+                            b - a == d - c && (0..b - a).all(|i| Self::same(&child, a + i, c + i))
+                        }
+                        _ => false,
+                    };
+                    if same {
+                        break i32::from(code);
+                    }
+                }
+                slot = (slot + 1) % SLOTS;
+            };
+            codes.push(code);
+        }
+        Some((codes.into(), count))
+    }
+
+    #[inline(always)]
+    fn fold(hash: u64, value: u64) -> u64 {
+        (hash.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95)
+    }
+
+    fn item(child: &Column, at: usize) -> Option<u64> {
+        if !child.valid(at) {
+            return Some(u64::MAX - 1);
+        }
+        Some(match child.values {
+            Values::Dec(values) => {
+                let raw = u128::from_le_bytes(values.get(at)?.serialize());
+                (raw as u64) ^ ((raw >> 64) as u64).rotate_left(17)
+            }
+            Values::Scaled { mant, scale } => {
+                (*mant.get(at)? as u64) ^ u64::from(*scale.get(at)?).rotate_left(56)
+            }
+            Values::I64(values) => *values.get(at)? as u64,
+            Values::F64(values) => values.get(at)?.to_bits(),
+            Values::Bool { bits, offset } => u64::from(Bits::get(bits, offset + at)),
+            Values::Text { .. } | Values::Utf8 { .. } => {
+                let bytes = child.text(at)?.as_bytes();
+                let mut chunks = bytes.chunks_exact(8);
+                let mut hash = bytes.len() as u64;
+                for chunk in chunks.by_ref() {
+                    hash = Self::fold(hash, u64::from_le_bytes(chunk.try_into().ok()?));
+                }
+                let tail = chunks
+                    .remainder()
+                    .iter()
+                    .enumerate()
+                    .fold(0u64, |word, (at, &byte)| word | u64::from(byte) << (8 * at));
+                Self::fold(hash, tail)
+            }
+            _ => return None,
+        })
+    }
+
+    fn keyable(child: &Column) -> bool {
+        matches!(
+            child.values,
+            Values::Dec(_)
+                | Values::Scaled { .. }
+                | Values::I64(_)
+                | Values::F64(_)
+                | Values::Bool { .. }
+                | Values::Text { .. }
+                | Values::Utf8 { .. }
+        )
+    }
+
+    pub fn list_weight(column: &Column, rows: usize, text: usize) -> Option<usize> {
+        let Values::List { offsets, child } = column.values else {
+            return None;
+        };
+        let child = child.column();
+        if !Self::keyable(&child) {
+            return None;
+        }
+        let first = usize::try_from(*offsets.first()?).ok()?;
+        let last = usize::try_from(*offsets.get(rows)?).ok()?;
+        let items = last.saturating_sub(first).div_ceil(rows.max(1));
+        let each = match child.values {
+            Values::Text { .. } | Values::Utf8 { .. } => text,
+            _ => 1,
+        };
+        Some(each * (items + 1))
+    }
+
+    fn same(child: &Column, a: usize, b: usize) -> bool {
+        let (va, vb) = (child.valid(a), child.valid(b));
+        if !va || !vb {
+            return va == vb;
+        }
+        match child.values {
+            Values::Dec(values) => values[a].serialize() == values[b].serialize(),
+            Values::Scaled { mant, scale } => mant[a] == mant[b] && scale[a] == scale[b],
+            Values::I64(values) => values[a] == values[b],
+            Values::F64(values) => values[a].to_bits() == values[b].to_bits(),
+            Values::Bool { bits, offset } => {
+                Bits::get(bits, offset + a) == Bits::get(bits, offset + b)
+            }
+            Values::Text { .. } | Values::Utf8 { .. } => child.text(a) == child.text(b),
+            _ => false,
+        }
+    }
+
+    fn decimals(values: &[rust_decimal::Decimal]) -> Hint {
+        const SLOTS: usize = 256;
+        const LIMIT: usize = 128;
+        let mut table = [(0u128, u8::MAX); SLOTS];
+        let mut count = 0usize;
+        let mut codes: Vec<i32> = Vec::with_capacity(values.len());
+        let mut last: Option<(u128, i32)> = None;
+        for value in values {
+            let raw = u128::from_le_bytes(value.serialize());
+            if let Some((_, code)) = last.filter(|(seen, _)| *seen == raw) {
+                codes.push(code);
+                continue;
+            }
+            let mut slot = (((raw as u64) ^ (raw >> 64) as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                >> 56) as usize;
+            let code = loop {
+                let entry = &mut table[slot];
+                if entry.1 == u8::MAX {
+                    if count >= LIMIT {
+                        return None;
+                    }
+                    *entry = (raw, count as u8);
+                    count += 1;
+                    break i32::from(entry.1);
+                }
+                if entry.0 == raw {
+                    break i32::from(entry.1);
+                }
+                slot = (slot + 1) % SLOTS;
+            };
+            last = Some((raw, code));
+            codes.push(code);
+        }
+        Some((codes.into(), count))
+    }
+
+    pub fn numbered(column: &Column, rows: usize) -> Option<(Rc<[i32]>, usize)> {
         const SLOTS: usize = 256;
         const LIMIT: usize = 128;
         let (mant, scale) = match column.values {
@@ -487,126 +663,5 @@ impl Dedup {
             codes.push(code);
         }
         Some((codes.into(), count))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Choice, Dedup};
-    use crate::compiled::core::switch::{Cost, Path, Route};
-    use std::cell::Cell;
-    use std::time::Duration;
-
-    thread_local! {
-        static NOW: Cell<Duration> = const { Cell::new(Duration::ZERO) };
-    }
-
-    fn dedup() -> Dedup {
-        Dedup::with_clock(|| NOW.get())
-    }
-
-    struct Spin;
-
-    impl Spin {
-        fn run(micros: u64) -> Option<u64> {
-            NOW.set(NOW.get() + Duration::from_micros(micros));
-            Some(micros)
-        }
-
-        fn call(dedup: &Dedup, cost: &Cost, plain: u64, coded: u64, merged: u64) -> Option<u64> {
-            let start = NOW.get();
-            let (out, choice): (Option<u64>, Choice) =
-                dedup.choose(&mut (), 1024, |_| Self::run(plain), |_| Self::run(coded));
-            Self::run(merged);
-            dedup.settle(
-                cost,
-                Route {
-                    path: Path::Typed,
-                    fresh: false,
-                },
-                choice,
-                NOW.get() - start,
-                1024,
-            );
-            dedup.probe(cost, &mut (), 1024, |_| Self::run(coded));
-            out
-        }
-    }
-
-    #[test]
-    fn a_clearly_cheaper_coded_run_is_tried_and_kept() {
-        let (dedup, cost) = (dedup(), Cost::new());
-        let runs: Vec<Option<u64>> = (0..6)
-            .map(|_| Spin::call(&dedup, &cost, 400, 50, 20))
-            .collect();
-        assert_eq!(&runs[..2], &[Some(400), Some(400)]);
-        assert!(runs[2..].iter().all(|run| *run == Some(50)));
-    }
-
-    #[test]
-    fn a_coded_trial_that_loses_reverts_to_plain() {
-        let (dedup, cost) = (dedup(), Cost::new());
-        let mut runs: Vec<Option<u64>> = (0..2)
-            .map(|_| Spin::call(&dedup, &cost, 400, 50, 20))
-            .collect();
-        let start = NOW.get();
-        let (out, choice) = dedup.choose(&mut (), 1024, |_| Spin::run(400), |_| Spin::run(50));
-        Spin::run(900);
-        dedup.settle(
-            &cost,
-            Route {
-                path: Path::Typed,
-                fresh: false,
-            },
-            choice,
-            NOW.get() - start,
-            1024,
-        );
-        runs.push(out);
-        runs.extend((0..3).map(|_| Spin::call(&dedup, &cost, 400, 50, 20)));
-        assert_eq!(runs[2], Some(50));
-        assert!(runs[3..].iter().all(|run| *run == Some(400)));
-    }
-
-    #[test]
-    fn a_marginal_saving_is_not_tried() {
-        let (dedup, cost) = (dedup(), Cost::new());
-        let runs: Vec<Option<u64>> = (0..6)
-            .map(|_| Spin::call(&dedup, &cost, 400, 360, 20))
-            .collect();
-        assert!(runs.iter().all(|run| *run == Some(400)));
-    }
-
-    #[test]
-    fn a_failed_warm_up_skips_the_probe() {
-        let (dedup, cost) = (dedup(), Cost::new());
-        let mut tried = 0;
-        for _ in 0..6 {
-            let (out, choice) = dedup.choose(
-                &mut tried,
-                1024,
-                |_| Some(1),
-                |tried| {
-                    *tried += 1;
-                    None::<u32>
-                },
-            );
-            assert_eq!(out, Some(1));
-            dedup.settle(
-                &cost,
-                Route {
-                    path: Path::Typed,
-                    fresh: false,
-                },
-                choice,
-                Duration::from_micros(10),
-                1024,
-            );
-            dedup.probe(&cost, &mut tried, 1024, |tried| {
-                *tried += 1;
-                None::<u32>
-            });
-        }
-        assert_eq!(tried, 1);
     }
 }

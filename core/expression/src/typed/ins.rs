@@ -179,6 +179,13 @@ pub(crate) enum Ins {
         ra: Rep,
         set: Vec<Lit>,
     },
+    InRow {
+        dst: R,
+        a: R,
+        ra: Rep,
+        list: u16,
+        field: u16,
+    },
     InRangeFix {
         dst: R,
         a: R,
@@ -502,6 +509,7 @@ impl Ins {
             | Ins::SelK { dst, c: a, .. }
             | Ins::InCode { dst, a, .. }
             | Ins::InGen { dst, a, .. }
+            | Ins::InRow { dst, a, .. }
             | Ins::InRangeFix { dst, a, .. }
             | Ins::InRangeGen { dst, a, .. }
             | Ins::Decode { dst, a, .. }

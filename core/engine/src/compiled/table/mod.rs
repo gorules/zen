@@ -94,7 +94,7 @@ impl Kind {
             Store::Scaled { .. } => Some(Kind::Num),
             Store::Text { .. } => Some(Kind::Text),
             Store::Bool(_) => Some(Kind::Bool),
-            Store::Coded { .. } | Store::List { .. } => Some(Kind::Any),
+            Store::Coded { .. } | Store::List { .. } | Store::Dec(_) => Some(Kind::Any),
             Store::Any(values) => values
                 .iter()
                 .any(|v| !matches!(v, Variable::Null))

@@ -193,6 +193,7 @@ pub(crate) struct PolicyPlan {
     root: Arc<Segment>,
     special: std::sync::RwLock<Specialized<(usize, u64), Arc<LaneProgram>>>,
     safe: std::sync::OnceLock<Vec<Iteration>>,
+    quiet: std::sync::OnceLock<Vec<bool>>,
     fusions: columnar::Fusions,
     programs: Arc<Programs>,
     rooted: Vec<Option<rooted::Rooted>>,
@@ -296,6 +297,7 @@ impl PolicyPlan {
             root,
             special: std::sync::RwLock::new(Specialized::new(Self::SPECIAL)),
             safe: std::sync::OnceLock::new(),
+            quiet: std::sync::OnceLock::new(),
             fusions: columnar::Fusions::default(),
             programs: artifact.programs(),
         }

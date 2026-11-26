@@ -185,6 +185,7 @@ pub(crate) enum Ins {
         ra: Rep,
         list: u16,
         field: u16,
+        of: Option<u16>,
     },
     InRangeFix {
         dst: R,

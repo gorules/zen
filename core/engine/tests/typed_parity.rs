@@ -2242,3 +2242,31 @@ fn membership_in_the_list_being_iterated_runs_typed() {
     ];
     columns_match_version_one(expression("filter(nums, # * 2 in nums)"), mixed);
 }
+
+#[test]
+fn membership_in_another_list_of_the_row_matches_version_one() {
+    let rows = vec![
+        json!({"a": ["x", "y", "z"], "b": ["y"], "n": [1, 2, 3], "m": [2, 5]}),
+        json!({"a": ["x"], "b": [], "n": [], "m": [1]}),
+        json!({"a": [], "b": ["x"], "n": [4], "m": []}),
+        json!({"a": ["q", null], "b": ["q", null], "n": [1, null], "m": [null]}),
+        json!({"a": ["p"], "b": null, "n": [7], "m": null}),
+        json!({"a": null, "b": ["p"], "n": null, "m": [7]}),
+        json!({"a": ["r", "s"], "b": ["s", "r"], "n": [8, 9], "m": [9, 8, 7]}),
+    ];
+    for source in [
+        "filter(a, not (# in b))",
+        "filter(a, # in b)",
+        "some(a, # in b)",
+        "count(n, # in m)",
+        "map(filter(n, # in m), # * 2)",
+        "all(a, # not in b)",
+    ] {
+        columns_match_version_one(expression(source), rows.clone());
+    }
+    let clean: Vec<Value> = rows.iter().filter(|row| !row.to_string().contains("null")).cloned().collect();
+    let paths = columns_match_version_one(expression("filter(a, not (# in b))"), clean.clone());
+    assert!(paths.typed > 0 && paths.laned == 0, "{paths:?}");
+    let paths = columns_match_version_one(expression("count(n, # in m)"), clean);
+    assert!(paths.typed > 0 && paths.laned == 0, "{paths:?}");
+}

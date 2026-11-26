@@ -442,6 +442,7 @@ impl PolicyPlan {
                 delegated: false,
                 counts: Paths::default(),
                 listed: RefCell::new(Vec::new()),
+                casts: RefCell::new(Vec::new()),
                 present: self.gates.iter().map(|_| OnceCell::new()).collect(),
                 owners: self.flats()
                     .map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path.clone()))

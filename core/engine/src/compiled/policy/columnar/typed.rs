@@ -1,4 +1,4 @@
-use super::fuse::{Chain, Fusions, Sink, Span};
+use super::fuse::{Chain, Fusions, Gather, Sink, Span};
 use super::{Bind, Listed, Member, Pass, Sheet};
 use crate::compiled::census::Census;
 use crate::compiled::core::exec::{Dedup, Hint, ListPart, Part as Key, Select, TypedCall};
@@ -11,6 +11,7 @@ use crate::compiled::core::variants::Variants;
 use crate::compiled::leaf::Leaf;
 use crate::compiled::lowered::Exports;
 use crate::compiled::shred::{Listing, Normalizer};
+use crate::compiled::table::TableIr;
 use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -52,6 +53,8 @@ enum Source<'a> {
     List(usize, Vec<usize>),
     Listed(usize),
     Spread(Rc<Spread<'a>>),
+    CastEntry(usize),
+    CastField(usize),
     Absent,
 }
 
@@ -129,14 +132,24 @@ impl TypedGroup {
                     return Step::Stop;
                 }
                 let lowered = match &pass.plan.rule(block).kind {
-                    BlockKind::DecisionTable(ir) => Fused::<Sink>::spec(ir).map(|spec| {
-                        let sunk: Vec<Sink> = spec
-                            .outputs
-                            .iter()
-                            .map(|key| Sink::Write(Arc::from(key.as_str())))
-                            .collect();
-                        (lowering.table(&spec, probe), sunk)
-                    }),
+                    BlockKind::DecisionTable(ir) => match Fused::<Sink>::spec(ir) {
+                        Some(spec) => {
+                            let sunk: Vec<Sink> = spec
+                                .outputs
+                                .iter()
+                                .map(|key| Sink::Write(Arc::from(key.as_str())))
+                                .collect();
+                            Some((lowering.table(&spec, probe), sunk))
+                        }
+                        None => pass.plan.flat(block).table.as_ref().and_then(|table| {
+                            let picked = table.picked();
+                            let spec = TableIr::policy(ir).gathered(|rule, column| {
+                                Gather::literal(picked, rule, column).is_none()
+                            })?;
+                            let sunk = vec![Sink::Gather(Gather::of(ir, table))];
+                            Some((lowering.table(&spec, probe), sunk))
+                        }),
+                    },
                     _ => Fused::<Sink>::entries(pass.plan, block, entity.is_some())
                         .map(|(entries, sunk)| (lowering.unit(&entries, probe), sunk)),
                 };
@@ -509,9 +522,12 @@ impl<'s, 'a> Pass<'s, 'a> {
     ) -> Option<Outputs> {
         let leaf = |at: usize| -> Option<Leaf<'a>> {
             match sources.get(at)? {
-                Source::Entry(_) | Source::Raw(_) => self.entry_leaf(sources.get(at)?),
+                Source::Entry(_) | Source::Raw(_) | Source::CastEntry(_) => {
+                    self.entry_leaf(sources.get(at)?)
+                }
                 Source::Field(field) => Some(self.sheet.entities[entity?].view(*field)),
                 Source::RawField(field) => self.sheet.entities[entity?].raw_view(*field),
+                Source::CastField(field) => Normalizer::cast(&self.sheet.entities[entity?].view(*field)),
                 Source::List(..) | Source::Listed(_) | Source::Spread(_) | Source::Absent => None,
             }
         };
@@ -623,17 +639,31 @@ impl<'s, 'a> Pass<'s, 'a> {
         match source {
             Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
             Source::Raw(entry) => self.sheet.entries[*entry].declared(),
+            Source::CastEntry(entry) => self.cast(*entry),
             _ => None,
         }
+    }
+
+    fn cast(&self, entry: usize) -> Option<Leaf<'a>> {
+        if let Some((_, leaf)) = self.casts.borrow().iter().find(|(at, _)| *at == entry) {
+            return leaf.clone();
+        }
+        let leaf = Normalizer::cast(&self.sheet.entries[entry].leaf);
+        self.casts.borrow_mut().push((entry, leaf.clone()));
+        leaf
     }
 
     fn bound(&self, entry: usize) -> (Resolved, Source<'a>) {
         if self.sheet.entries[entry].declared().is_some() {
             return (Resolved::Dated, Source::Raw(entry));
         }
-        match Normalizer::of(&self.sheet.entries[entry].leaf) {
+        let leaf = &self.sheet.entries[entry].leaf;
+        match Normalizer::of(leaf) {
             Some(class) => (Resolved::Column(class), Source::Entry(entry)),
-            None => self.listed_entry(entry),
+            None => match Normalizer::castable(leaf) {
+                Some(class) => (Resolved::Column(class), Source::CastEntry(entry)),
+                None => self.listed_entry(entry),
+            },
         }
     }
 
@@ -834,10 +864,6 @@ impl<'s, 'a> Pass<'s, 'a> {
         ask: Ask,
     ) -> (Resolved, Source<'a>) {
         let unsupported = (Resolved::Unsupported, Source::Absent);
-        let column = |leaf: &Leaf, source: Source<'a>| match Normalizer::of(leaf) {
-            Some(class) => (Resolved::Column(class), source),
-            None => (Resolved::Unsupported, Source::Absent),
-        };
         match (entity, ask) {
             (_, Ask::Nested) => {
                 let chain: Vec<&str> = key.split('\n').collect();
@@ -852,7 +878,16 @@ impl<'s, 'a> Pass<'s, 'a> {
                     Member::Field(field) if owner.fields[field].leaf.declared().is_some() => {
                         (Resolved::Dated, Source::RawField(field))
                     }
-                    Member::Field(field) => column(&owner.view(field), Source::Field(field)),
+                    Member::Field(field) => {
+                        let view = owner.view(field);
+                        match Normalizer::of(&view) {
+                            Some(class) => (Resolved::Column(class), Source::Field(field)),
+                            None => match Normalizer::castable(&view) {
+                                Some(class) => (Resolved::Column(class), Source::CastField(field)),
+                                None => unsupported,
+                            },
+                        }
+                    }
                     Member::Absent => (Resolved::Absent, Source::Absent),
                     _ => unsupported,
                 }

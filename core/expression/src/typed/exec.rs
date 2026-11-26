@@ -1191,8 +1191,10 @@ impl<'e, 'x> Exec<'e, 'x> {
                 ra,
                 list,
                 field,
+                of,
             } => Self::def(regs, *dst, |d, regs| {
                 let lists = self.feeds.lists.get(*list as usize);
+                let from = of.and_then(|of| self.feeds.lists.get(of as usize));
                 let feed = self
                     .feeds
                     .fields
@@ -1241,7 +1243,24 @@ impl<'e, 'x> Exec<'e, 'x> {
                     if Bits::get(&d.fault, i) {
                         continue;
                     }
-                    let row = lists.parent[start + i] as usize;
+                    let row = match (of, from) {
+                        (None, _) => lists.parent[start + i] as usize,
+                        (Some(_), Some(from)) => {
+                            let row = from.root[start + i] as usize;
+                            let gone = |bits: &Option<Vec<u64>>| {
+                                bits.as_ref().is_some_and(|bits| Bits::get(bits, row))
+                            };
+                            if gone(&lists.null) || gone(&lists.faulted) {
+                                Bits::set(&mut d.fault, i, true);
+                                continue;
+                            }
+                            row
+                        }
+                        (Some(_), None) => {
+                            Bits::set(&mut d.fault, i, true);
+                            continue;
+                        }
+                    };
                     let (lo, hi) = (lists.offsets[row] as usize, lists.offsets[row + 1] as usize);
                     let mut hit = false;
                     let mut bad = false;

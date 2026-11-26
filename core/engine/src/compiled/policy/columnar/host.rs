@@ -124,12 +124,19 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     pub(super) fn quiet(&self, block: usize) -> bool {
-        self.artifact
-            .read_plans
-            .get(&self.plan.blocks.refs[block])
-            .is_none_or(|plan| {
-                crate::compiled::policy::schedule::Blocks::idle(self.artifact, &plan.conditional)
-            })
+        let quiet = self.plan.quiet.get_or_init(|| {
+            self.plan
+                .blocks
+                .refs
+                .iter()
+                .map(|owner| {
+                    self.artifact.read_plans.get(owner).is_none_or(|plan| {
+                        crate::compiled::policy::schedule::Blocks::idle(self.artifact, owner, plan)
+                    })
+                })
+                .collect()
+        });
+        quiet.get(block).copied().unwrap_or(false)
     }
 
     pub(super) fn hosted(&self, block: usize, row: usize) -> bool {

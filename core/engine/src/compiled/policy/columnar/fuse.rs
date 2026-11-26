@@ -3,12 +3,14 @@ use super::{Pass, Sheet};
 use crate::compiled::census::Census;
 use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
-use crate::compiled::leaf::{Array, Bits, Leaf, Store};
+use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Literal, Store};
 use crate::compiled::lowered::Exports;
 use crate::compiled::policy::blocks::Operator;
 use crate::compiled::policy::schedule::{End, Event, Segment};
 use crate::compiled::policy::{Native, PolicyPlan};
-use crate::compiled::table::TableIr;
+use crate::compiled::shred::Normalizer;
+use crate::compiled::table::Picked;
+use crate::compiled::table::{Table, TableIr};
 use crate::policy::blocks::{AssertionIr, BlockKind, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -16,6 +18,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use zen_expression::lane::{Fusion, LaneProgram};
 use zen_expression::typed::TableSpec;
+use zen_expression::Variable;
 use zen_types::path::DotPath;
 
 type Groups = ahash::HashMap<Chain, Variants<Arc<TypedGroup>>>;
@@ -25,7 +28,7 @@ type Lanes = ahash::HashMap<Vec<usize>, Option<Arc<Fused<Sink>>>>;
 pub(crate) struct Fusions {
     groups: RwLock<Lanes>,
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
-    tables: RwLock<ahash::HashMap<usize, bool>>,
+    tables: RwLock<ahash::HashMap<usize, Option<bool>>>,
     runs: Runs<Chain>,
     pub(super) typed: RwLock<Groups>,
 }
@@ -67,6 +70,154 @@ struct Item {
 pub(super) enum Sink {
     Write(Arc<str>),
     Assert(Arc<AssertionIr>),
+    Gather(Gather),
+}
+
+pub(super) enum Cell {
+    Constant(Literal),
+    Computed,
+}
+
+pub(super) struct Gather {
+    fields: Vec<Arc<str>>,
+    scalars: Vec<bool>,
+    rules: Vec<Vec<(usize, Cell)>>,
+    computed: usize,
+}
+
+impl Gather {
+    pub fn of(ir: &DecisionTableIr, table: &Table) -> Self {
+        let profile = TableIr::policy(ir);
+        let picked = table.picked();
+        let mut fields: Vec<Arc<str>> = Vec::new();
+        let mut scalars: Vec<bool> = Vec::new();
+        let targets: Vec<usize> = profile
+            .written()
+            .map(|o| match fields.iter().position(|f| f.as_ref() == o.path) {
+                Some(at) => at,
+                None => {
+                    fields.push(Arc::from(o.path));
+                    scalars.push(!o.collect);
+                    fields.len() - 1
+                }
+            })
+            .collect();
+        let mut computed = 0;
+        let rules = profile
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(at, rule)| {
+                profile
+                    .written()
+                    .enumerate()
+                    .filter(|(_, o)| profile.cell(rule, o.id).is_some())
+                    .map(|(column, _)| {
+                        let constant = Self::literal(picked, at, column);
+                        let cell = match constant {
+                            Some(value) => Cell::Constant(value),
+                            None => {
+                                computed += 1;
+                                Cell::Computed
+                            }
+                        };
+                        (targets[column], cell)
+                    })
+                    .collect()
+            })
+            .collect();
+        Self {
+            fields,
+            scalars,
+            rules,
+            computed,
+        }
+    }
+
+    pub fn literal(picked: &[Picked], rule: usize, column: usize) -> Option<Literal> {
+        picked.get(column)?.constants.get(rule)?.clone()
+    }
+
+    fn leaves<'a>(&self, conds: &[Vec<u64>], values: &[Leaf<'a>], count: usize) -> Vec<Leaf<'a>> {
+        let mut masks = vec![0u64; count];
+        for (rule, bits) in conds.iter().enumerate() {
+            for row in Bits::rows(bits) {
+                if let Some(mask) = masks.get_mut(row) {
+                    *mask |= 1 << rule;
+                }
+            }
+        }
+        let gather = |mask: u64, row: usize| -> Vec<Vec<Variable>> {
+            let mut lists = vec![Vec::new(); self.fields.len()];
+            let mut next = 0;
+            for (rule, cells) in self.rules.iter().enumerate() {
+                let matched = mask & (1 << rule) != 0;
+                for (target, cell) in cells {
+                    let taken = matched && !(self.scalars[*target] && !lists[*target].is_empty());
+                    match cell {
+                        Cell::Constant(value) if taken => lists[*target].push(value.variable()),
+                        Cell::Constant(_) => {}
+                        Cell::Computed => {
+                            if taken {
+                                lists[*target].push(values.get(next).map_or(Variable::Null, |leaf| leaf.get(row)));
+                            }
+                            next += 1;
+                        }
+                    }
+                }
+            }
+            lists
+        };
+        let value = |scalar: bool, list: Vec<Variable>| match scalar {
+            true => list.into_iter().next().unwrap_or(Variable::Null),
+            false => Variable::from_array(list),
+        };
+        let typed = |column: Vec<Variable>| {
+            let leaf = Leaf::Any(column.into());
+            Normalizer::cast(&leaf).unwrap_or(leaf)
+        };
+        if self.computed > 0 {
+            let mut columns: Vec<Vec<Variable>> = vec![Vec::with_capacity(count); self.fields.len()];
+            for (row, mask) in masks.iter().enumerate() {
+                for ((column, list), scalar) in columns.iter_mut().zip(gather(*mask, row)).zip(&self.scalars) {
+                    column.push(value(*scalar, list));
+                }
+            }
+            return columns
+                .into_iter()
+                .zip(&self.scalars)
+                .map(|(column, scalar)| match scalar {
+                    true => typed(column),
+                    false => Leaf::Any(column.into()),
+                })
+                .collect();
+        }
+        let mut seen: ahash::HashMap<u64, i32> = ahash::HashMap::default();
+        let mut distinct: Vec<u64> = Vec::new();
+        let codes: Rc<[i32]> = masks
+            .iter()
+            .map(|mask| {
+                *seen.entry(*mask).or_insert_with(|| {
+                    distinct.push(*mask);
+                    distinct.len() as i32 - 1
+                })
+            })
+            .collect();
+        let mut dicts: Vec<Vec<Variable>> = vec![Vec::with_capacity(distinct.len()); self.fields.len()];
+        for mask in &distinct {
+            for ((dict, list), scalar) in dicts.iter_mut().zip(gather(*mask, 0)).zip(&self.scalars) {
+                dict.push(value(*scalar, list));
+            }
+        }
+        dicts
+            .into_iter()
+            .zip(&self.scalars)
+            .map(|(values, scalar)| match scalar {
+                true => typed(codes.iter().map(|&code| values[code as usize].clone()).collect()),
+                false => Leaf::typed(Array::coded(codes.clone(), Rc::new(Dict::Any(values)))),
+            })
+            .collect()
+    }
 }
 
 struct Unit<'p> {
@@ -76,7 +227,7 @@ struct Unit<'p> {
 }
 
 impl Fusions {
-    fn table(&self, block: usize, ir: &DecisionTableIr) -> bool {
+    fn table(&self, block: usize, ir: &DecisionTableIr) -> Option<bool> {
         if let Some(found) = self
             .tables
             .read()
@@ -85,11 +236,16 @@ impl Fusions {
         {
             return found;
         }
-        let typable = TableIr::policy(ir).typable();
+        let profile = TableIr::policy(ir);
+        let found = match (profile.typable(), profile.gathers()) {
+            (true, _) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+        };
         if let Ok(mut cache) = self.tables.write() {
-            cache.insert(block, typable);
+            cache.insert(block, found);
         }
-        typable
+        found
     }
 
     fn effects(&self, plan: &PolicyPlan, block: usize) -> Option<Arc<Effects>> {
@@ -725,13 +881,15 @@ impl<'s, 'a> Pass<'s, 'a> {
                     if !self.quiet(block) {
                         return Err("table cells read fields");
                     }
-                    if !plan.fusions.table(block, ir) {
-                        return Err("table not typable");
-                    }
+                    let readable = match plan.fusions.table(block, ir) {
+                        Some(false) if !Exports::enabled() => return Err("table not typable"),
+                        Some(readable) => readable,
+                        None => return Err("table not typable"),
+                    };
                     let writes: Vec<(Arc<str>, bool)> = table
                         .picked()
                         .iter()
-                        .map(|o| (o.field.clone(), true))
+                        .map(|o| (o.field.clone(), readable))
                         .collect();
                     (entity, table.programs(), writes)
                 }
@@ -827,7 +985,23 @@ impl<'s, 'a> Pass<'s, 'a> {
         let count = member.map_or(rows.len(), |(_, kids)| kids.len());
         let mut leaves = leaves.into_iter();
         for sink in sinks {
+            if let Sink::Gather(gather) = sink {
+                let conds: Vec<Vec<u64>> = leaves
+                    .by_ref()
+                    .take(gather.rules.len())
+                    .map(|leaf| leaf.truths(count))
+                    .collect();
+                let values: Vec<Leaf<'a>> = leaves.by_ref().take(gather.computed).collect();
+                for (key, leaf) in gather.fields.iter().zip(gather.leaves(&conds, &values, count)) {
+                    match member {
+                        None => self.write(key, leaf, rows),
+                        Some((at, kids)) => self.member_write(at, key, leaf, kids),
+                    }
+                }
+                continue;
+            }
             let leaf = match sink {
+                Sink::Gather(_) => continue,
                 Sink::Write(_) => leaves.next().unwrap_or_else(|| Leaf::nulls(count)),
                 Sink::Assert(ir) if member.is_none() && Self::conjunction(ir) => {
                     let mut bits = Bits::ones(count);
@@ -851,6 +1025,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             let key = match sink {
                 Sink::Write(key) => key,
                 Sink::Assert(ir) => &ir.output,
+                Sink::Gather(_) => continue,
             };
             match member {
                 None => self.write(key, leaf, rows),

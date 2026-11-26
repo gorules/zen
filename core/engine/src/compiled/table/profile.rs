@@ -205,6 +205,54 @@ impl<'t> TableIr<'t> {
             })
     }
 
+    pub fn gathers(&self) -> bool {
+        self.profile.strict()
+            && self.rules.len() <= Self::FILLED
+            && self.written().any(|o| o.collect)
+            && self.written().all(|o| {
+                self.written()
+                    .all(|other| other.path != o.path || other.collect == o.collect)
+            })
+            && self.inputs.iter().all(|input| {
+                input.field.is_some_and(|f| !f.trim().is_empty()) || !self.used(input.id)
+            })
+    }
+
+    pub fn gathered(&self, computed: impl Fn(usize, usize) -> bool) -> Option<TableSpec> {
+        if !self.gathers() {
+            return None;
+        }
+        let inputs: Vec<&InputIr> = self.inputs.iter().filter(|input| self.used(input.id)).collect();
+        let rules = self
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(at, rule)| TableRule {
+                cells: inputs
+                    .iter()
+                    .map(|input| self.cell(rule, input.id).map(str::to_string))
+                    .collect(),
+                values: self
+                    .written()
+                    .enumerate()
+                    .map(|(column, o)| {
+                        self.cell(rule, o.id)
+                            .filter(|_| computed(at, column))
+                            .map(str::to_string)
+                    })
+                    .collect(),
+            })
+            .collect();
+        Some(TableSpec {
+            inputs: inputs.iter().map(|input| input.field.map(str::to_string)).collect(),
+            outputs: Vec::new(),
+            rules,
+            hit: Typed::Strict,
+            selector: false,
+            collect: true,
+        })
+    }
+
     pub fn spec(&self) -> Option<TableSpec> {
         if self.collect || self.written().any(|o| o.collect) {
             return None;

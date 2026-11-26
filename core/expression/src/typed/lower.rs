@@ -604,10 +604,7 @@ impl Lowering {
                 self.output("", *cond, ctx.scope, true)?;
             }
             for (rule, cond) in spec.rules.iter().zip(&conds) {
-                for value in &rule.values {
-                    let source = value
-                        .as_deref()
-                        .ok_or_else(|| Unsupported::new("empty collect output cell"))?;
+                for source in rule.values.iter().flatten() {
                     let id = self.parse(source, false, ctx, r)?;
                     let null = self.konst(Lit::Null);
                     let (arms, ty) = self.unify(vec![id, null])?;
@@ -1611,8 +1608,10 @@ impl Lowering {
                 divisor.is_none_or(|d| d.is_zero() || Self::fractional(d)),
             ),
             Arith::Rem => Ty::new(Kind::Num(None), divisor.is_none_or(|d| d.is_zero())),
-            Arith::Pow if divisor.is_some_and(|d| d.scale == 0) => Ty::num(None),
-            Arith::Pow => return Err(Unsupported::new("exponent must be an integer literal")),
+            Arith::Pow if divisor.is_some_and(|d| !d.decimal().fract().is_zero()) => {
+                return Err(Unsupported::new("exponent must be an integer"))
+            }
+            Arith::Pow => Ty::num(None),
         };
         let (scope, ids) = self.scoped(&[a, b])?;
         Ok(self.add(Op::Arith(op, ids[0], ids[1]), ty, scope))
@@ -2803,11 +2802,39 @@ impl Lowering {
         {
             return self.in_row(x, seq);
         }
+        if let Some(found) = self.in_root(x, seq) {
+            return found;
+        }
         let item = self.item(seq)?;
         let test = self.belongs(x, item)?;
         let test = self.lifted(test, seq.list)?;
         let found = self.fold(Fold::Any, seq, seq.keep, Some(test))?;
         self.checked(x, found)
+    }
+
+    fn in_root(&mut self, x: NodeId, seq: Seq) -> Option<Lowered> {
+        let Scope::Elem(of) = self.nodes[x as usize].scope else {
+            return None;
+        };
+        if of == seq.list
+            || seq.keep.is_some()
+            || seq.value.is_some()
+            || self.schema.lists[seq.list as usize].parent.is_some()
+        {
+            return None;
+        }
+        let field = self.schema.field(seq.list, "")?;
+        let ty = self.schema.lists[seq.list as usize].fields[field as usize].ty;
+        match (self.kind(x), ty.kind) {
+            (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) | (Kind::Text, Kind::Text) => {}
+            _ => return None,
+        }
+        let found = self.add(
+            Op::InRow(x, seq.list, field, Some(of)),
+            Ty::boolean(),
+            Scope::Elem(of),
+        );
+        Some(self.checked(x, found))
     }
 
     fn in_row(&mut self, x: NodeId, seq: Seq) -> Lowered {
@@ -2825,7 +2852,7 @@ impl Lowering {
             _ => return Err(refused()),
         }
         let found = self.add(
-            Op::InRow(x, seq.list, field),
+            Op::InRow(x, seq.list, field, None),
             Ty::boolean(),
             Scope::Elem(seq.list),
         );

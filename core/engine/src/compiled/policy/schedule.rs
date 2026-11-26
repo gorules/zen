@@ -1,6 +1,6 @@
 use crate::compiled::core::segments::Children;
 use crate::compiled::policy::artifact::Artifact as EvalArtifact;
-use crate::policy::blocks::{Block, BlockKind, ConditionalReads};
+use crate::policy::blocks::{Block, BlockKind, BlockReadPlan, ConditionalReads};
 use crate::workspace::types::BlockRef;
 use ahash::{HashMap, HashSet};
 use std::sync::Arc;
@@ -60,19 +60,42 @@ impl Blocks {
         Self { refs, rules, index }
     }
 
-    pub(crate) fn idle(artifact: &EvalArtifact, reads: &ConditionalReads) -> bool {
-        let quiet = |paths: &[Arc<str>]| {
-            paths
-                .iter()
-                .all(|path| artifact.writers_of_longest_prefix(path).is_empty())
+    pub(crate) fn idle(artifact: &EvalArtifact, owner: &BlockRef, plan: &BlockReadPlan) -> bool {
+        let mut demanded: Option<Vec<&BlockRef>> = None;
+        let mut quiet = |paths: &[Arc<str>]| {
+            paths.iter().all(|path| {
+                let writers = artifact.writers_of_longest_prefix(path);
+                if writers.is_empty() {
+                    return true;
+                }
+                let before = demanded.get_or_insert_with(|| Self::demanded(artifact, plan));
+                !before.contains(&owner) && writers.iter().all(|writer| before.contains(&writer))
+            })
         };
-        match reads {
+        match &plan.conditional {
             ConditionalReads::None => true,
             ConditionalReads::Match(arms) => arms.iter().all(|arm| quiet(&arm.value_reads)),
             ConditionalReads::DecisionTable(cells) => {
                 cells.iter().all(|cell| quiet(&cell.cell_reads))
             }
         }
+    }
+
+    fn demanded<'a>(artifact: &'a EvalArtifact, plan: &'a BlockReadPlan) -> Vec<&'a BlockRef> {
+        let mut seen: Vec<&BlockRef> = Vec::new();
+        let mut paths: Vec<&Arc<str>> = plan.unconditional.iter().collect();
+        while let Some(path) = paths.pop() {
+            for writer in artifact.writers_of_longest_prefix(path) {
+                if seen.contains(&writer) {
+                    continue;
+                }
+                seen.push(writer);
+                if let Some(next) = artifact.read_plans.get(writer) {
+                    paths.extend(next.unconditional.iter());
+                }
+            }
+        }
+        seen
     }
 
     pub(crate) fn selects(rule: &Block) -> bool {
@@ -127,7 +150,7 @@ impl Sim<'_> {
         let rule = &self.blocks.rules[block];
         if Blocks::selects(rule) {
             self.events.push(Event::Select(block));
-            let conditional = plan.is_some_and(|p| !Blocks::idle(self.artifact, &p.conditional));
+            let conditional = plan.is_some_and(|p| !Blocks::idle(self.artifact, owner, p));
             if conditional {
                 let Some(demand) = self.script.get(self.used) else {
                     self.stopped = Some(block);

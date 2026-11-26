@@ -1402,7 +1402,7 @@ impl<'h> Build<'h> {
                 });
                 d
             }
-            Op::InRow(a, list, field) => {
+            Op::InRow(a, list, field, of) => {
                 let ra = rof(self, a);
                 let va = self.val(*a)?;
                 let d = self.fresh()?;
@@ -1412,6 +1412,7 @@ impl<'h> Build<'h> {
                     ra,
                     list: *list,
                     field: *field,
+                    of: *of,
                 });
                 d
             }

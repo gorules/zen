@@ -741,9 +741,13 @@ impl Sureness<'_> {
                 Self::boolean(column)
                     || matches!(column.variable(at), Variable::Bool(_) | Variable::Null)
             }
-            PropertyTypeIr::Enum(values) if Self::string(column) => column
-                .text(at)
-                .is_none_or(|text| values.iter().any(|v| v.as_ref() == text)),
+            PropertyTypeIr::Enum(values) if Self::string(column) => {
+                column.bytes(at).is_some_and(|bytes| {
+                    values.iter().any(|v| v.as_bytes() == bytes)
+                }) || column
+                    .text(at)
+                    .is_none_or(|text| values.iter().any(|v| v.as_ref() == text))
+            }
             PropertyTypeIr::Enum(values) => match column.variable(at) {
                 Variable::Null => true,
                 Variable::String(s) => values.iter().any(|v| v.as_ref() == s.as_str()),
@@ -783,6 +787,22 @@ impl Sureness<'_> {
     }
 
     fn loose_items(&self, prop: &Property, value: &Variable) -> bool {
+        let primitive = |item: &Variable| match (&prop.kind, item) {
+            (_, Variable::Null) => Some(true),
+            (PropertyTypeIr::String, item) => Some(matches!(item, Variable::String(_))),
+            (PropertyTypeIr::Number, item) => Some(matches!(item, Variable::Number(_))),
+            (PropertyTypeIr::Boolean, item) => Some(matches!(item, Variable::Bool(_))),
+            _ => None,
+        };
+        if let Variable::Array(items) = value {
+            if let Some(all) = items
+                .borrow()
+                .iter()
+                .try_fold(true, |all, item| primitive(item).map(|ok| all && ok))
+            {
+                return all;
+            }
+        }
         match value {
             Variable::Null => return true,
             Variable::Array(items)
@@ -791,6 +811,25 @@ impl Sureness<'_> {
                     .iter()
                     .all(|item| Self::shallow(item, MAX_RECURSION_DEPTH / 2)) => {}
             _ => return false,
+        }
+        if let Variable::Array(items) = value {
+            let mut known = Some(true);
+            for item in items.borrow().iter() {
+                if matches!(item, Variable::Null) {
+                    continue;
+                }
+                match self.fits(&prop.kind, item, 0) {
+                    Some(true) => {}
+                    Some(false) => return false,
+                    None => {
+                        known = None;
+                        break;
+                    }
+                }
+            }
+            if let Some(all) = known {
+                return all;
+            }
         }
         if matches!(prop.kind, PropertyTypeIr::Reference { .. }) {
             return false;
@@ -807,6 +846,80 @@ impl Sureness<'_> {
         };
         validator.validate_array_of_property(value, prop);
         validator.errors.is_empty()
+    }
+
+    fn date_fits(&self, text: &str) -> bool {
+        let mut seen = self.dates.borrow_mut();
+        if let Some(known) = seen.get(text) {
+            return *known;
+        }
+        let known = zen_expression::DateValue::is_text(text);
+        if seen.len() < InputValidator::REMEMBERED {
+            seen.insert(Box::from(text), known);
+        }
+        known
+    }
+
+    fn fits(&self, kind: &PropertyTypeIr, value: &Variable, depth: usize) -> Option<bool> {
+        let named = |known: &dyn Fn(&str) -> bool| value.as_rc_str().is_some_and(|text| known(&text));
+        Some(match kind {
+            PropertyTypeIr::String => matches!(value, Variable::String(_)),
+            PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
+            PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
+            PropertyTypeIr::Enum(values) => named(&|text| values.iter().any(|v| v.as_ref() == text)),
+            PropertyTypeIr::Date => match value {
+                Variable::String(text) => text.is_empty() || self.date_fits(text),
+                other => zen_expression::DateValue::is(other),
+            },
+            PropertyTypeIr::Reference { .. } => return None,
+            PropertyTypeIr::Relationship { target } => {
+                match (self.schema.entities.contains_key(target), self.schema.dictionaries.get(target)) {
+                    (false, Some(dict)) => named(&|text| dict.values().any(|v| v.as_ref() == text)),
+                    _ => self.entity_fits(target, value, depth)?,
+                }
+            }
+        })
+    }
+
+    fn entity_fits(&self, target: &str, value: &Variable, depth: usize) -> Option<bool> {
+        if depth >= MAX_RECURSION_DEPTH {
+            return Some(false);
+        }
+        let Some(object) = value.as_object() else {
+            return Some(false);
+        };
+        let Some(model) = self.schema.entities.get(target) else {
+            return Some(true);
+        };
+        for (key, value) in object.borrow().iter() {
+            if matches!(value, Variable::Null) {
+                continue;
+            }
+            let Some(prop) = model.properties.iter().find(|p| *p.name == *key.as_str()) else {
+                continue;
+            };
+            let fits = match (prop.array, value.as_array()) {
+                (false, _) => self.fits(&prop.kind, value, depth + 1)?,
+                (true, None) => false,
+                (true, Some(items)) => {
+                    let mut all = true;
+                    for item in items.borrow().iter() {
+                        if matches!(item, Variable::Null) {
+                            continue;
+                        }
+                        if !self.fits(&prop.kind, item, depth + 1)? {
+                            all = false;
+                            break;
+                        }
+                    }
+                    all
+                }
+            };
+            if !fits {
+                return Some(false);
+            }
+        }
+        Some(true)
     }
 
     fn shallow(value: &Variable, limit: usize) -> bool {
@@ -846,6 +959,9 @@ impl Sureness<'_> {
             Variable::Null => return true,
             Variable::Object(_) if nesting(value, 0) <= SHALLOW => {}
             _ => return false,
+        }
+        if let Some(fits) = self.entity_fits(target, value, 0) {
+            return fits;
         }
         let pools = RefPoolIndex::from_input(&Variable::Null, std::iter::empty());
         let mut validator = InputValidator {

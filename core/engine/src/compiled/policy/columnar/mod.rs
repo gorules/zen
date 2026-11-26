@@ -69,6 +69,7 @@ struct Pass<'s, 'a> {
     delegated: bool,
     counts: Paths,
     listed: RefCell<Vec<Listed<'a>>>,
+    casts: RefCell<Vec<(usize, Option<Leaf<'a>>)>>,
     present: Vec<OnceCell<Option<Rc<[bool]>>>>,
 }
 

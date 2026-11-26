@@ -46,6 +46,8 @@ fn policy() -> String {
         add(format!("c.a.startOf('{unit}').diff(c.b.endOf('{unit}'), 'minute')"));
         add(format!("c.a.add(3, '{unit}').diff(c.a.sub(1, '{unit}'), 'hour')"));
     }
+    add("d().add(-24, 'hour').diff(c.a, 'minute')".into());
+    add("c.a.add(1, 'day').diff(c.b, 'hour')".into());
     add("c.a.diff(c.b)".into());
     add("c.a.diff(c.n)".into());
     for method in ["isSame", "isBefore", "isAfter", "isSameOrBefore", "isSameOrAfter"] {
@@ -96,6 +98,7 @@ fn dates() -> Vec<&'static str> {
         "2025-03-19",
         "2025-03-20",
         "2025-03-20T10:15:30Z",
+        "2025-03-20T11:15:30+01:00",
         "2025-03-21T23:59:59",
         "2025-03-20T23:30:00-05:00",
         "2025-03-21T04:30:00+05:30",
@@ -121,7 +124,7 @@ fn rows() -> Vec<Value> {
         }
     }
     let distinct = rows.len();
-    (0..distinct * 24).map(|at| rows[at % distinct].clone()).collect()
+    (0..distinct * 24).map(|at| rows[(at / 3) % distinct].clone()).collect()
 }
 
 #[test]

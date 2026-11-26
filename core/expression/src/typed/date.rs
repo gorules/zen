@@ -389,8 +389,23 @@ impl<'e, 'x> Exec<'e, 'x> {
         match rep {
             Rep::Date => {
                 let shift = Dates::shift(&kind, &consts)?;
+                let mut last: Option<(Date, Date)> = None;
                 self.each(act, &skip, |i| match this.given(start, i) {
-                    Some(Given::Date(x)) => d.dates[i] = shift.apply(&x),
+                    Some(Given::Date(x)) => {
+                        d.dates[i] = match last {
+                            Some((seen, shifted))
+                                if seen == x
+                                    && seen.0.map(|at| at.timezone()) == x.0.map(|at| at.timezone()) =>
+                            {
+                                shifted
+                            }
+                            _ => {
+                                let shifted = shift.apply(&x);
+                                last = Some((x, shifted));
+                                shifted
+                            }
+                        }
+                    }
                     _ => broken.push(i),
                 });
             }

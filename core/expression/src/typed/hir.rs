@@ -144,7 +144,7 @@ pub enum Op {
     If(NodeId, NodeId, NodeId),
     Coalesce(NodeId, NodeId),
     InSet(NodeId, Vec<Lit>),
-    InRow(NodeId, ListId, u16),
+    InRow(NodeId, ListId, u16, Option<ListId>),
     InRange(NodeId, Range),
     Fold {
         fold: Fold,
@@ -393,7 +393,7 @@ impl Hir {
                 | Op::InRange(..)
                 | Op::Clock(Clock::Matches, _)
                 | Op::Host(Host::Method(_), _) => false,
-                Op::Checked(_) | Op::Clock(Clock::Strict, _) => true,
+                Op::Checked(_) | Op::Parent(_) | Op::Clock(Clock::Strict, _) => true,
                 Op::Coalesce(..) | Op::Pick(..) => true,
                 Op::If(c, ..) if !from(c) => true,
                 _ => return true,
@@ -456,7 +456,7 @@ impl Op {
             Op::If(c, t, e) => Op::If(f(*c), f(*t), f(*e)),
             Op::Coalesce(a, b) => Op::Coalesce(f(*a), f(*b)),
             Op::InSet(a, set) => Op::InSet(f(*a), set.clone()),
-            Op::InRow(a, list, field) => Op::InRow(f(*a), *list, *field),
+            Op::InRow(a, list, field, of) => Op::InRow(f(*a), *list, *field, *of),
             Op::InRange(a, r) => Op::InRange(f(*a), *r),
             Op::Fold {
                 fold,
@@ -745,7 +745,7 @@ impl Hir {
             Op::Or(a, b) => format!("or %{a}, %{b}"),
             Op::If(c, t, e) => format!("if %{c} then %{t} else %{e}"),
             Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
-            Op::InRow(a, list, field) => format!("inrow %{a} list {list} field {field}"),
+            Op::InRow(a, list, field, of) => format!("inrow %{a} list {list} field {field} of {of:?}"),
             Op::InSet(a, set) => format!(
                 "inset %{a} [{}]",
                 set.iter()

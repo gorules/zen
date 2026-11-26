@@ -1734,3 +1734,666 @@ fn lists_of_references_in_other_shapes_match_version_one() {
         .collect();
     columns_match_version_one(&[(PATH, single)], orders);
 }
+
+const DEMANDED_CELLS: &str = r#"{
+  models: {household: {income: "number", size: "number", assets: "number?", members: "member[]"}, member: {age: "number", earns: "number"}},
+  blocks: [
+    {expression: "household.need", value: "household.size * 400"},
+    {expression: "household.gap", value: "household.need - household.income"},
+    {expression: "household.spare", value: "household.income / (household.size - 3)"},
+    {expression: "member.share", value: "member.earns * 2"},
+    {table: "benefit", inputs: ["household.assets", "household.gap"], outputs: ["household.benefit", "household.tier"], rules: [
+      ["> 50000", "", "0", "'ineligible'"],
+      ["", "<= 0", "0", "'not-needed'"],
+      ["", "< 200", "200", "'minimum'"],
+      ["", "", "round(household.gap, 0)", "'top-up'"],
+    ]},
+    {table: "extra", inputs: ["household.gap"], outputs: ["household.extra"], rules: [
+      ["> 900", "household.spare"],
+      ["", "household.gap / 2"],
+    ]},
+    {match: "household.band", arms: [
+      ["household.gap > 500", "household.gap * 2"],
+      ["household.gap > 0", "household.need"],
+      ["", "0"],
+    ]},
+    {table: "memberBand", inputs: ["member.share", "member.age"], outputs: ["member.band"], rules: [
+      ["> 1000", "", "member.share - 1000"],
+      ["", "< 18", "0"],
+      ["", "", "member.share"],
+    ]},
+  ],
+}"#;
+
+fn demanded_rows() -> Vec<Value> {
+    (0..80)
+        .map(|i| {
+            let members: Vec<Value> = (0..i % 3).map(|j| json!({"age": 10 + (i * 7 + j * 11) % 60, "earns": (i * 97 + j * 31) % 900})).collect();
+            let mut household = json!({"income": (i * 131) % 2600, "size": 1 + i % 6, "members": members});
+            match i % 5 {
+                0 => {}
+                1 => household["assets"] = Value::Null,
+                _ => household["assets"] = json!((i * 1777) % 90000),
+            }
+            json!({"household": household})
+        })
+        .collect()
+}
+
+#[test]
+fn table_and_match_cells_reading_fields_the_block_already_read_run_typed() {
+    let policy = r#"{
+      models: {household: {income: "number", size: "number", assets: "number?"}},
+      blocks: [
+        {expression: "household.need", value: "household.size * 400"},
+        {expression: "household.gap", value: "household.need - household.income"},
+        {table: "benefit", inputs: ["household.assets", "household.gap"], outputs: ["household.benefit", "household.tier"], rules: [
+          ["> 50000", "", "0", "'ineligible'"],
+          ["", "<= 0", "0", "'not-needed'"],
+          ["", "< 200", "200", "'minimum'"],
+          ["", "", "round(household.gap, 0)", "'top-up'"],
+        ]},
+        {match: "household.band", arms: [
+          ["household.gap > 500", "household.gap * 2"],
+          ["", "0"],
+        ]},
+      ],
+    }"#;
+    let rows: Vec<Value> = demanded_rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut row)| {
+            let household = row["household"].as_object_mut().expect("household");
+            household.remove("members");
+            household.insert("assets".into(), json!((i * 1777) % 90000));
+            row
+        })
+        .collect();
+    typed_like_version_one(&[(PATH, policy)], rows);
+}
+
+#[test]
+fn cells_reading_already_demanded_and_other_computed_fields_match_version_one() {
+    let rows = demanded_rows();
+    columns_match_version_one(&[(PATH, DEMANDED_CELLS)], rows.clone());
+    each_goal(
+        DEMANDED_CELLS,
+        &rows,
+        &[&[], &["household.benefit"], &["household.extra"], &["household.band", "member.band"], &["household.tier"]],
+    );
+    let mut broken = rows;
+    broken[3]["household"]["income"] = Value::Null;
+    broken[4]["household"]["size"] = json!(3);
+    broken[9]["household"]["size"] = json!(3);
+    broken[7]["household"].as_object_mut().expect("household").remove("size");
+    columns_match_version_one(&[(PATH, DEMANDED_CELLS)], broken);
+}
+
+const GATHERED: &str = r#"{
+  models: {
+    account: {structuring: "boolean", volume: "number", corridors: "number?", kind: "string", items: "item[]"},
+    item: {price: "number", qty: "number", tag: "string?"},
+  },
+  blocks: [
+    {expression: "account.ratio", value: "account.volume / 100"},
+    {table: "alerts", hit: "collect", inputs: ["account.structuring", "account.ratio", "account.corridors"], outputs: ["account.alerts"], rules: [
+      ["true", "", "", "'structuring'"],
+      ["", "> 3", "", "'volume-spike'"],
+      ["", "", "> 0", "'high-risk-corridor'"],
+    ]},
+    {table: "notes", inputs: ["account.kind", "account.ratio"], outputs: ["account.notes[]", "account.codes[]"], rules: [
+      ["'retail'", "", "'retail'", "1"],
+      ["", "> 5", "account.ratio * 2", ""],
+      ["'retail', 'sme'", "< 2", "", "account.volume % 7"],
+      ["", "", "'seen'", "{code: 9}"],
+    ]},
+    {table: "both", inputs: ["account.kind"], outputs: ["account.marks[]", "account.marks[]"], rules: [
+      ["'sme'", "'a'", "'b'"],
+      ["", "", "'c'"],
+    ]},
+    {expression: "account.decision", value: "'structuring' in account.alerts ? 'file' : len(account.alerts) > 0 ? 'look' : 'none'"},
+    {expression: "item.total", value: "item.price * item.qty"},
+    {table: "flags", inputs: ["item.total", "item.tag"], outputs: ["item.flags[]"], rules: [
+      ["> 500", "", "'big'"],
+      ["", "'gift'", "'gift'"],
+      ["< 10", "", "'small'"],
+    ]},
+    {expression: "account.flagged", value: "count(account.items, len(#.flags) > 0)"},
+  ],
+}"#;
+
+fn gathered_rows() -> Vec<Value> {
+    let kinds = ["retail", "sme", "corp"];
+    (0..90)
+        .map(|i| {
+            let items: Vec<Value> = (0..i % 4)
+                .map(|j| {
+                    let mut item = json!({"price": (i * 13 + j * 29) % 300, "qty": 1 + (i + j) % 4});
+                    if (i + j) % 3 == 0 {
+                        item["tag"] = json!((["gift", "plain"])[(i + j) % 2]);
+                    }
+                    item
+                })
+                .collect();
+            let mut account = json!({"structuring": i % 7 == 0, "volume": (i * 53) % 900, "kind": kinds[i % 3], "items": items});
+            match i % 8 {
+                0 => {}
+                1 => account["corridors"] = Value::Null,
+                _ => account["corridors"] = json!(i % 3),
+            }
+            json!({"account": account})
+        })
+        .collect()
+}
+
+#[test]
+fn collect_tables_run_typed() {
+    let policy = r#"{
+      models: {account: {structuring: "boolean", volume: "number", corridors: "number"}},
+      blocks: [
+        {expression: "account.ratio", value: "account.volume / 100"},
+        {table: "alerts", hit: "collect", inputs: ["account.structuring", "account.ratio", "account.corridors"], outputs: ["account.alerts"], rules: [
+          ["true", "", "", "'structuring'"],
+          ["", "> 3", "", "'volume-spike'"],
+          ["", "", "> 0", "'high-risk-corridor'"],
+          ["false", "> 8", "", "account.ratio"],
+        ]},
+        {expression: "account.decision", value: "'structuring' in account.alerts ? 'file' : len(account.alerts) > 0 ? 'look' : 'none'"},
+      ],
+    }"#;
+    let rows: Vec<Value> = (0..90)
+        .map(|i| json!({"account": {"structuring": i % 7 == 0, "volume": (i * 53) % 900, "corridors": i % 3}}))
+        .collect();
+    typed_like_version_one(&[(PATH, policy)], rows);
+}
+
+#[test]
+fn collect_tables_with_several_outputs_members_and_failures_match_version_one() {
+    let rows = gathered_rows();
+    columns_match_version_one(&[(PATH, GATHERED)], rows.clone());
+    each_goal(
+        GATHERED,
+        &rows,
+        &[&[], &["account.alerts"], &["account.decision"], &["account.flagged"], &["account.notes", "account.marks"]],
+    );
+    let mut broken = rows;
+    broken[2]["account"]["volume"] = Value::Null;
+    broken[5]["account"]["kind"] = json!(4);
+    broken[9]["account"]["items"][0]["price"] = json!("x");
+    broken[11]["account"].as_object_mut().expect("account").remove("structuring");
+    broken[13]["account"]["corridors"] = json!("many");
+    columns_match_version_one(&[(PATH, GATHERED)], broken);
+}
+
+#[test]
+fn collect_cells_that_fail_only_on_unmatched_rules_match_version_one() {
+    let policy = r#"{
+      models: {order: {qty: "number", price: "number", code: "string?"}},
+      blocks: [
+        {table: "notes", hit: "collect", inputs: ["order.qty"], outputs: ["order.notes"], rules: [
+          ["> 0", "order.price / order.qty"],
+          ["0", "'empty'"],
+          ["< 0", "len(order.code)"],
+          ["", "order.qty"],
+        ]},
+      ],
+    }"#;
+    let rows: Vec<Value> = (0..64)
+        .map(|i| {
+            let mut order = json!({"qty": (i % 5) as i64 - 2, "price": 10 * i});
+            if i % 3 == 0 {
+                order["code"] = json!("abc");
+            }
+            json!({"order": order})
+        })
+        .collect();
+    columns_match_version_one(&[(PATH, policy)], rows);
+}
+
+const SPARSE_FIELDS: &str = r#"{
+  models: {
+    employer: {bonus: "number?", region: "string?", audited: "boolean?", employees: "employee[]"},
+    employee: {salary: "number", smoker: "boolean?", grade: "string?", extra: "number?"},
+  },
+  blocks: [
+    {expression: "employee.rate", value: "(employee.smoker ?? false) ? 1.5 : 1"},
+    {expression: "employee.label", value: "(employee.grade ?? 'none') + '-' + string(employee.salary)"},
+    {expression: "employee.pay", value: "employee.salary * employee.rate + (employee.extra ?? 0)"},
+    {expression: "employer.total", value: "sum(map(employer.employees, #.pay)) + (employer.bonus ?? 0)"},
+    {expression: "employer.where", value: "employer.region == null ? 'unknown' : employer.region"},
+    {expression: "employer.checked", value: "employer.audited == true"},
+  ],
+}"#;
+
+fn optional_rows() -> Vec<Value> {
+    (0..120)
+        .map(|i| {
+            let employees: Vec<Value> = (0..i % 4)
+                .map(|j| {
+                    let mut e = json!({"salary": 1000 + (i * 17 + j * 5) % 300});
+                    match (i + j) % 4 {
+                        0 => {}
+                        1 => e["smoker"] = Value::Null,
+                        2 => e["smoker"] = json!(true),
+                        _ => e["smoker"] = json!(false),
+                    }
+                    match (i + 2 * j) % 3 {
+                        0 => {}
+                        1 => e["grade"] = Value::Null,
+                        _ => e["grade"] = json!((["a", "b"])[j % 2]),
+                    }
+                    match (i + j) % 5 {
+                        0 => e["extra"] = Value::Null,
+                        1 | 2 => e["extra"] = json!((i * j) % 9),
+                        _ => {}
+                    }
+                    e
+                })
+                .collect();
+            let mut employer = json!({"employees": employees});
+            match i % 3 {
+                0 => {}
+                1 => {
+                    employer["bonus"] = Value::Null;
+                    employer["region"] = Value::Null;
+                    employer["audited"] = Value::Null;
+                }
+                _ => {
+                    employer["bonus"] = json!(i % 11);
+                    employer["region"] = json!((["north", "south"])[i % 2]);
+                    employer["audited"] = json!(i % 2 == 0);
+                }
+            }
+            json!({"employer": employer})
+        })
+        .collect()
+}
+
+#[test]
+fn optional_fields_given_as_null_or_left_out_run_typed() {
+    typed_like_version_one(&[(PATH, SPARSE_FIELDS)], optional_rows());
+}
+
+#[test]
+fn optional_fields_given_as_null_left_out_or_wrongly_typed_match_version_one() {
+    let mut rows = optional_rows();
+    rows[5]["employer"]["employees"][0]["smoker"] = json!("yes");
+    rows[6]["employer"]["bonus"] = json!("big");
+    rows[9]["employer"]["employees"][0]["extra"] = json!(true);
+    columns_match_version_one(&[(PATH, SPARSE_FIELDS)], rows.clone());
+    each_goal(SPARSE_FIELDS, &rows, &[&[], &["employee.rate"], &["employer.where"], &["employer.total"]]);
+}
+
+const TRANSITIVE_CELLS: &str = r#"{
+  models: {
+    invoice: {amount: "number", paid: "number", vip: "boolean", lines: "line[]"},
+    line: {qty: "number", price: "number"},
+  },
+  blocks: [
+    {expression: "invoice.outstanding", value: "invoice.amount - invoice.paid"},
+    {expression: "invoice.overdue", value: "invoice.outstanding > 100"},
+    {match: "invoice.stage", arms: [
+      ["invoice.outstanding <= 0", "'paid'"],
+      ["invoice.overdue and invoice.vip", "'soft'"],
+      ["invoice.overdue", "'hard'"],
+      ["", "'open'"],
+    ]},
+    {table: "fees", inputs: ["invoice.stage"], outputs: ["invoice.fee"], rules: [
+      ["'hard'", "round(invoice.outstanding * 0.1, 2)"],
+      ["'soft'", "invoice.outstanding / (invoice.paid - 50)"],
+      ["", "0"],
+    ]},
+    {assertion: "invoice.ok", conditions: ["invoice.fee < 1000", "invoice.outstanding < 5000"]},
+    {match: "invoice.payment", arms: [
+      ["invoice.ok", "invoice.fee + invoice.outstanding"],
+      ["", "0"],
+    ]},
+    {expression: "line.total", value: "line.qty * line.price"},
+    {expression: "line.big", value: "line.total > 50"},
+    {match: "line.charge", arms: [
+      ["line.big", "line.total * 0.9"],
+      ["", "line.total"],
+    ]},
+  ],
+}"#;
+
+fn transitive_rows() -> Vec<Value> {
+    (0..96)
+        .map(|i| {
+            let lines: Vec<Value> = (0..i % 3).map(|j| json!({"qty": 1 + (i + j) % 4, "price": (i * 7 + j * 13) % 40})).collect();
+            json!({"invoice": {"amount": (i * 97) % 3000, "paid": (i * 31) % 700, "vip": i % 5 == 0, "lines": lines}})
+        })
+        .collect()
+}
+
+#[test]
+fn cells_reading_fields_demanded_through_other_blocks_run_typed() {
+    let rows: Vec<Value> = transitive_rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut row)| {
+            row["invoice"]["paid"] = json!(100 + (i * 31) % 600);
+            row
+        })
+        .collect();
+    typed_like_version_one(&[(PATH, TRANSITIVE_CELLS)], rows);
+}
+
+#[test]
+fn cells_reading_fields_demanded_through_other_blocks_match_version_one() {
+    let rows = transitive_rows();
+    columns_match_version_one(&[(PATH, TRANSITIVE_CELLS)], rows.clone());
+    each_goal(
+        TRANSITIVE_CELLS,
+        &rows,
+        &[&[], &["invoice.fee"], &["invoice.payment"], &["line.charge"], &["invoice.stage", "invoice.ok"]],
+    );
+}
+
+const MIXED_GATHER: &str = r#"{
+  models: {customer: {age: "number", pep: "boolean", docs: "boolean", country: "string", score: "number?", accounts: "account[]"}, account: {balance: "number", kind: "string"}},
+  blocks: [
+    {match: "customer.risk", arms: [["customer.pep", "'high'"], ["customer.country in ['NO', 'SE']", "'low'"], ["", "'medium'"]]},
+    {table: "outcome", inputs: ["customer.docs", "customer.risk"], outputs: ["customer.outcome", "customer.reasons[]", "customer.level"], rules: [
+      ["false", "", "'reject'", "'identity'", ""],
+      ["", "'high'", "'refer'", "'pep'", "3"],
+      ["", "'medium'", "", "'review'", "customer.age / 10"],
+      ["", "", "'accept'", "", "1"],
+    ]},
+    {table: "points", inputs: ["customer.score"], outputs: ["customer.points[]", "customer.first"], rules: [
+      ["> 700", "customer.score - 700", "'top'"],
+      ["> 500", "10", ""],
+      ["", "0", "customer.score * 2"],
+    ]},
+    {table: "accountFlags", inputs: ["account.balance", "account.kind"], outputs: ["account.flags[]", "account.tier"], rules: [
+      ["< 0", "", "'overdrawn'", "'watch'"],
+      ["", "'savings'", "'saver'", ""],
+      ["> 10000", "", "'large'", "'gold'"],
+    ]},
+    {expression: "customer.summary", value: "customer.outcome + ':' + string(len(customer.reasons))"},
+    {expression: "account.label", value: "string(account.tier ?? 0) + '/' + string(account.balance)"},
+    {expression: "customer.levelText", value: "string(customer.level ?? 0)"},
+  ],
+}"#;
+
+fn mixed_rows() -> Vec<Value> {
+    (0..90)
+        .map(|i| {
+            let accounts: Vec<Value> = (0..i % 3)
+                .map(|j| json!({"balance": (i as i64 * 977 + j as i64 * 131) % 20000 - 3000, "kind": (["savings", "current"])[(i + j) % 2]}))
+                .collect();
+            let mut customer = json!({"age": 18 + i % 60, "pep": i % 9 == 0, "docs": i % 11 != 0, "country": (["NO", "DE", "SE", "FR"])[i % 4], "accounts": accounts});
+            if i % 6 != 0 {
+                customer["score"] = json!(300 + (i * 37) % 600);
+            }
+            json!({"customer": customer})
+        })
+        .collect()
+}
+
+#[test]
+fn collect_tables_with_first_hit_outputs_match_version_one() {
+    let rows = mixed_rows();
+    columns_match_version_one(&[(PATH, MIXED_GATHER)], rows.clone());
+    each_goal(
+        MIXED_GATHER,
+        &rows,
+        &[&[], &["customer.outcome"], &["customer.level", "account.tier"], &["customer.summary"], &["customer.first"], &["account.label", "customer.levelText"]],
+    );
+}
+
+#[test]
+fn collect_tables_with_first_hit_outputs_run_typed() {
+    let policy = r#"{
+      models: {customer: {pep: "boolean", docs: "boolean", country: "string"}},
+      blocks: [
+        {match: "customer.risk", arms: [["customer.pep", "'high'"], ["customer.country in ['NO', 'SE']", "'low'"], ["", "'medium'"]]},
+        {table: "outcome", inputs: ["customer.docs", "customer.risk"], outputs: ["customer.outcome", "customer.reasons[]"], rules: [
+          ["false", "", "'reject'", "'identity'"],
+          ["", "'high'", "'refer'", "'pep'"],
+          ["", "", "'accept'", ""],
+        ]},
+        {expression: "customer.summary", value: "customer.outcome + ':' + string(len(customer.reasons))"},
+      ],
+    }"#;
+    let rows: Vec<Value> = (0..90)
+        .map(|i| json!({"customer": {"pep": i % 9 == 0, "docs": i % 11 != 0, "country": (["NO", "DE", "SE", "FR"])[i % 4]}}))
+        .collect();
+    typed_like_version_one(&[(PATH, policy)], rows);
+}
+
+const POWERS: &str = r#"{
+  models: {loan: {amount: "number", rate: "number", years: "number", step: "number?"}},
+  blocks: [
+    {expression: "loan.factor", value: "(1 + loan.rate / 1200) ^ (-loan.years * 12)"},
+    {expression: "loan.payment", value: "round(loan.amount * (loan.rate / 1200) / (1 - loan.factor), 2)"},
+    {expression: "loan.grown", value: "loan.amount * 1.01 ^ loan.years"},
+    {expression: "loan.stepped", value: "2 ^ (loan.step ?? 3)"},
+  ],
+}"#;
+
+#[test]
+fn powers_with_computed_exponents_run_typed() {
+    let rows: Vec<Value> = (0..80)
+        .map(|i| json!({"loan": {"amount": 10000 + 997 * i, "rate": 1 + (i % 9), "years": 5 + (i % 26), "step": i % 7}}))
+        .collect();
+    typed_like_version_one(&[(PATH, POWERS)], rows);
+}
+
+#[test]
+fn powers_with_fractional_missing_or_huge_exponents_match_version_one() {
+    let rows: Vec<Value> = (0..80)
+        .map(|i| {
+            let mut loan = json!({"amount": 10000 + 997 * i, "rate": 1 + (i % 9), "years": 5 + (i % 26)});
+            match i % 6 {
+                0 => {}
+                1 => loan["step"] = Value::Null,
+                2 => loan["step"] = json!(0.5),
+                3 => loan["step"] = json!(-2),
+                4 => loan["step"] = json!(400),
+                _ => loan["step"] = json!(2.25),
+            }
+            if i % 13 == 0 {
+                loan["years"] = json!(2.5);
+            }
+            json!({"loan": loan})
+        })
+        .collect();
+    columns_match_version_one(&[(PATH, POWERS)], rows);
+}
+
+const VALIDATED: &str = r#"{
+  models: {trip: {kind: "string(leisure|business)", tags: "string[]", scores: "number[]", flags: "boolean[]", travellers: "traveller[]"}, traveller: {seat: "string(aisle|window)", meals: "string[]"}},
+  blocks: [
+    {expression: "trip.label", value: "trip.kind + ':' + string(len(trip.tags)) + ':' + string(sum(trip.scores))"},
+    {expression: "traveller.picky", value: "len(traveller.meals) > 1 or traveller.seat == 'window'"},
+    {expression: "trip.picky", value: "count(trip.travellers, #.picky)"},
+  ],
+}"#;
+
+#[test]
+fn enum_and_primitive_array_inputs_validate_like_version_one() {
+    let mut rows: Vec<Value> = (0..80)
+        .map(|i| {
+            let travellers: Vec<Value> = (0..i % 3)
+                .map(|j| json!({"seat": (["aisle", "window"])[(i + j) % 2], "meals": (0..(i + j) % 3).map(|k| format!("m{k}")).collect::<Vec<_>>()}))
+                .collect();
+            json!({"trip": {"kind": (["leisure", "business"])[i % 2], "tags": (0..i % 4).map(|k| format!("t{k}")).collect::<Vec<_>>(), "scores": (0..i % 3).map(|k| k * 2).collect::<Vec<_>>(), "flags": [i % 2 == 0], "travellers": travellers}})
+        })
+        .collect();
+    rows[3]["trip"]["kind"] = json!("Leisure");
+    rows[5]["trip"]["kind"] = json!("");
+    rows[7]["trip"]["tags"] = json!(["a", 1]);
+    rows[9]["trip"]["tags"] = json!(["a", null, "b"]);
+    rows[11]["trip"]["scores"] = json!([1, "2"]);
+    rows[13]["trip"]["flags"] = json!([true, null, 0]);
+    rows[15]["trip"]["scores"] = json!([null]);
+    rows[17]["trip"]["travellers"] = json!([{"seat": "middle", "meals": []}]);
+    rows[19]["trip"]["travellers"] = json!([{"seat": "aisle", "meals": ["x", false]}]);
+    rows[21]["trip"]["tags"] = json!("not a list");
+    columns_match_version_one(&[(PATH, VALIDATED)], rows);
+}
+
+const NESTED_VALIDATED: &str = r#"{
+  dictionaries: {plan: [["B", "Basic"], ["P", "Plus"]]},
+  models: {
+    employer: {employees: "employee[]"},
+    employee: {salary: "number", dependents: "dependent[]"},
+    dependent: {relation: "string(spouse|child)", dob: "date", plan: "plan?", notes: "string[]", pets: "pet[]"},
+    pet: {kind: "string", age: "number?"},
+  },
+  blocks: [
+    {expression: "employee.deps", value: "count(employee.dependents, #.relation == 'child' and d().diff(#.dob, 'year') < 26)"},
+    {expression: "employer.total", value: "sum(map(employer.employees, #.salary + #.deps * 10))"},
+  ],
+}"#;
+
+#[test]
+fn nested_member_objects_validate_like_version_one() {
+    let mut rows: Vec<Value> = (0..60)
+        .map(|i| {
+            let employees: Vec<Value> = (0..1 + i % 3)
+                .map(|j| {
+                    let dependents: Vec<Value> = (0..(i + j) % 3)
+                        .map(|k| json!({"relation": (["spouse", "child"])[(i + k) % 2], "dob": format!("20{:02}-0{}-1{}", (i + k) % 25, 1 + k % 9, k % 9), "notes": ["a"], "pets": [{"kind": "cat"}]}))
+                        .collect();
+                    json!({"salary": 1000 + i * 10 + j, "dependents": dependents})
+                })
+                .collect();
+            json!({"employer": {"employees": employees}})
+        })
+        .collect();
+    let deps = |rows: &mut Vec<Value>, at: usize| -> Value {
+        rows[at]["employer"]["employees"][0]["dependents"] = json!([{"relation": "child", "dob": "2010-01-01"}]);
+        rows[at]["employer"]["employees"][0]["dependents"][0].clone()
+    };
+    for (at, field, value) in [
+        (2, "relation", json!("cousin")),
+        (4, "dob", json!("2010-02-30")),
+        (6, "dob", json!(12)),
+        (8, "plan", json!("X")),
+        (10, "plan", json!("P")),
+        (12, "notes", json!(["x", 3])),
+        (14, "notes", json!("x")),
+        (16, "pets", json!([{"kind": 5}])),
+        (18, "pets", json!([{"kind": "dog", "age": "old"}])),
+        (20, "pets", json!([null, {"kind": "dog", "extra": [1, 2]}])),
+        (22, "dob", json!("")),
+        (24, "relation", Value::Null),
+    ] {
+        let mut dependent = deps(&mut rows, at);
+        dependent[field] = value;
+        rows[at]["employer"]["employees"][0]["dependents"][0] = dependent;
+    }
+    rows[26]["employer"]["employees"][0]["dependents"] = json!([5]);
+    rows[28]["employer"]["employees"][0]["dependents"] = json!([null]);
+    columns_match_version_one(&[(PATH, NESTED_VALIDATED)], rows);
+}
+
+const OTHER_LISTS: &str = r#"{
+  globals: {rules: {hazardous: "string[]"}},
+  models: {
+    claim: {kind: "string", received: "string[]", travellers: "traveller[]"},
+    traveller: {activities: "string[]", age: "number"},
+  },
+  blocks: [
+    {expression: "claim.required", value: "claim.kind == 'theft' ? ['police', 'invoice'] : claim.kind == 'water' ? ['photos'] : []"},
+    {expression: "claim.missing", value: "filter(claim.required, not (# in claim.received))"},
+    {expression: "claim.count", value: "len(claim.missing)"},
+    {expression: "traveller.hazard", value: "some(traveller.activities, # in hazardous)"},
+    {expression: "claim.hazards", value: "count(claim.travellers, #.hazard)"},
+  ],
+}"#;
+
+fn other_list_rows() -> Vec<Value> {
+    let kinds = ["theft", "water", "fire"];
+    let docs = ["police", "invoice", "photos", "estimate"];
+    let acts = ["ski", "dive", "walk", "read"];
+    (0..90)
+        .map(|i| {
+            let received: Vec<&str> = (0..i % 4).map(|k| docs[(i + k) % 4]).collect();
+            let travellers: Vec<Value> = (0..i % 3)
+                .map(|j| json!({"age": 20 + j, "activities": (0..(i + j) % 3).map(|k| acts[(i + j + k) % 4]).collect::<Vec<_>>()}))
+                .collect();
+            json!({"hazardous": ["ski", "dive"], "claim": {"kind": kinds[i % 3], "received": received, "travellers": travellers}})
+        })
+        .collect()
+}
+
+#[test]
+fn membership_in_another_list_runs_typed() {
+    let policy = r#"{
+      models: {claim: {required: "string[]", received: "string[]"}},
+      blocks: [
+        {expression: "claim.missing", value: "filter(claim.required, not (# in claim.received))"},
+        {expression: "claim.count", value: "count(claim.required, # in claim.received)"},
+      ],
+    }"#;
+    let docs = ["police", "invoice", "photos", "estimate"];
+    let rows: Vec<Value> = (0..80)
+        .map(|i| json!({"claim": {"required": (0..i % 3).map(|k| docs[(i + k) % 4]).collect::<Vec<_>>(), "received": (0..i % 4).map(|k| docs[(i * 3 + k) % 4]).collect::<Vec<_>>()}}))
+        .collect();
+    typed_like_version_one(&[(PATH, policy)], rows);
+}
+
+#[test]
+fn membership_in_another_list_or_a_global_list_matches_version_one() {
+    let mut rows = other_list_rows();
+    columns_match_version_one(&[(PATH, OTHER_LISTS)], rows.clone());
+    each_goal(OTHER_LISTS, &rows, &[&[], &["claim.missing"], &["traveller.hazard"], &["claim.count", "claim.hazards"]]);
+    rows[3]["claim"]["received"] = Value::Null;
+    rows[5]["hazardous"] = Value::Null;
+    rows[7]["claim"]["received"] = json!(["police", null]);
+    rows[9]["claim"]["received"] = json!([1, "police"]);
+    columns_match_version_one(&[(PATH, OTHER_LISTS)], rows);
+}
+
+const LIFTED_DATES: &str = r#"{
+  models: {
+    trip: {start: "date", end: "date?", travellers: "traveller[]"},
+    traveller: {dob: "date", since: "date?"},
+  },
+  blocks: [
+    {expression: "traveller.age", value: "trip.start.diff(traveller.dob, 'year')"},
+    {expression: "traveller.member", value: "traveller.since == null ? 0 : trip.start.diff(traveller.since, 'day')"},
+    {expression: "traveller.late", value: "trip.end != null and traveller.dob < trip.end"},
+    {expression: "trip.oldest", value: "max(map(trip.travellers, #.age))"},
+  ],
+}"#;
+
+#[test]
+fn member_blocks_reading_root_dates_run_typed() {
+    let rows: Vec<Value> = (0..80)
+        .map(|i| {
+            let travellers: Vec<Value> = (0..1 + i % 3)
+                .map(|j| json!({"dob": format!("19{:02}-0{}-1{}", 50 + (i + j) % 49, 1 + j % 9, i % 9), "since": format!("2020-0{}-01", 1 + (i + j) % 9)}))
+                .collect();
+            json!({"trip": {"start": format!("2025-0{}-1{}", 1 + i % 9, i % 10), "end": format!("2025-1{}-01", i % 3), "travellers": travellers}})
+        })
+        .collect();
+    typed_like_version_one(&[(PATH, LIFTED_DATES)], rows);
+}
+
+#[test]
+fn member_blocks_reading_root_dates_in_any_form_match_version_one() {
+    let starts = ["2025-03-20", "2025-03-20T23:30:00-05:00", "2024-02-29T12:00:00Z", "2025-01-01 10:00", "2025-13-01", ""];
+    let rows: Vec<Value> = (0..72)
+        .map(|i| {
+            let travellers: Vec<Value> = (0..i % 3)
+                .map(|j| {
+                    let mut t = json!({"dob": (["1990-05-05", "2000-02-29T08:00:00+05:30", "1985-12-31"])[(i + j) % 3]});
+                    if (i + j) % 4 == 0 {
+                        t["since"] = Value::Null;
+                    }
+                    t
+                })
+                .collect();
+            let mut trip = json!({"start": starts[i % starts.len()], "travellers": travellers});
+            if i % 5 != 0 {
+                trip["end"] = json!(starts[(i + 2) % starts.len()]);
+            }
+            json!({"trip": trip})
+        })
+        .collect();
+    columns_match_version_one(&[(PATH, LIFTED_DATES)], rows);
+}

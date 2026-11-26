@@ -323,11 +323,21 @@ impl<'a, 'x> Interp<'a, 'x> {
                     set.iter().any(|lit| Self::equal(&x, &Self::lit(lit))),
                 ))
             }
-            Op::InRow(a, list, field) => {
+            Op::InRow(a, list, field, of) => {
                 let x = self.eval(*a)?;
                 let feeds = self.feeds;
                 let l = &feeds.lists[*list as usize];
-                let row = l.parent[self.elem[*list as usize]] as usize;
+                let row = match of {
+                    None => l.parent[self.elem[*list as usize]] as usize,
+                    Some(of) => feeds.lists[*of as usize].root[self.elem[*of as usize]] as usize,
+                };
+                if of.is_some()
+                    && [&l.null, &l.faulted]
+                        .iter()
+                        .any(|bits| bits.as_ref().is_some_and(|bits| Bits::get(bits, row)))
+                {
+                    return Err(Fault);
+                }
                 let (lo, hi) = (l.offsets[row] as usize, l.offsets[row + 1] as usize);
                 let feed = &feeds.fields[*list as usize][*field as usize];
                 let mut hit = false;

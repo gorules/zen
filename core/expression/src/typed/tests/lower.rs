@@ -388,7 +388,6 @@ fn unsupported_shapes() {
         ("empty template", "``"),
         ("unsupported path", "c.weird + 1"),
         ("null arithmetic", "c.absent + 1"),
-        ("variable exponent", "c.n ^ c.n"),
         ("fractional exponent", "c.n ^ 0.5"),
         ("round to variable places", "round(c.n, c.n)"),
         ("bool of a number", "bool(c.n)"),

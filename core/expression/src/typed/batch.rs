@@ -295,6 +295,8 @@ impl<'x> Feed<'x> {
         base: usize,
         len: usize,
     ) -> Result<Self, Unsupported> {
+        let resolved = column.resolved();
+        let column = &resolved;
         let short = || Unsupported::new(format!("column {} is shorter than its rows", def.path));
         if column.len() < base + len {
             return Err(short());

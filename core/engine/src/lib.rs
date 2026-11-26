@@ -147,7 +147,9 @@ pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub use compiled::diagnostics;
 
 pub mod columns {
-    pub use zen_expression::lane::{Column, Columns, Dictionary, Values};
+    pub use zen_expression::lane::{
+        Column, Columns, Decimal128, Dictionary, Temporal, TimeUnit, Values,
+    };
 }
 
 pub use compiled::trace::api as trace;

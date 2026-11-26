@@ -6,6 +6,7 @@ mod compile;
 pub(crate) mod date;
 pub(crate) mod effect;
 mod exec;
+mod foreign;
 mod interval;
 mod kernel;
 mod key;
@@ -22,6 +23,7 @@ pub use bits::Bits;
 #[doc(hidden)]
 pub use cells::{CellEnv, CellSet, Pieces};
 pub use columns::{Column, Columns, Dictionary, Values};
+pub use foreign::{Decimal128, Temporal, TimeUnit};
 #[doc(hidden)]
 pub use compile::{Hints, LaneCompiler};
 #[doc(hidden)]

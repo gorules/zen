@@ -1,6 +1,7 @@
 use crate::context::EvaluationContext;
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::program::{Binding, Kind};
+use crate::lane::foreign::{Decimal128, Temporal};
 use crate::lane::Bits;
 use crate::variable::Variable;
 use rust_decimal::prelude::FromPrimitive;
@@ -47,6 +48,8 @@ pub enum Values<'a> {
         len: usize,
     },
     Any(&'a [Variable]),
+    Decimal128(&'a Decimal128<'a>),
+    Temporal(&'a Temporal<'a>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -133,8 +136,23 @@ impl<'a> Column<'a> {
         }
     }
 
+    pub fn resolved(&self) -> Column<'a> {
+        match self.values {
+            Values::Decimal128(decimals) => decimals.column(self.validity),
+            Values::Temporal(temporal) => temporal.column(self.validity),
+            _ => *self,
+        }
+    }
+
+    #[inline]
+    fn foreign(&self) -> bool {
+        matches!(self.values, Values::Decimal128(_) | Values::Temporal(_))
+    }
+
     pub fn kind(&self) -> Kind {
         match self.values {
+            Values::Decimal128(_) => Kind::Num,
+            Values::Temporal(_) => Kind::Str,
             Values::Dec(_) | Values::Scaled { .. } | Values::I64(_) | Values::F64(_) => Kind::Num,
             Values::Bool { .. } => Kind::Bool,
             Values::Utf8 { .. }
@@ -222,6 +240,8 @@ impl<'a> Column<'a> {
             Values::List { offsets, .. } => offsets.len().saturating_sub(1),
             Values::Struct { len, .. } => len,
             Values::Any(v) => v.len(),
+            Values::Decimal128(decimals) => decimals.len(),
+            Values::Temporal(temporal) => temporal.len(),
         }
     }
 
@@ -240,6 +260,9 @@ impl<'a> Column<'a> {
 
     #[inline]
     pub fn number(&self, row: usize) -> Option<Decimal> {
+        if self.foreign() {
+            return self.resolved().number(row);
+        }
         match self.values {
             Values::Dec(v) => v.get(row).copied(),
             Values::Scaled { mant, scale } => {
@@ -276,6 +299,9 @@ impl<'a> Column<'a> {
 
     #[inline]
     pub fn boolean(&self, row: usize) -> Option<bool> {
+        if self.foreign() {
+            return self.resolved().boolean(row);
+        }
         match self.values {
             Values::Bool { bits, offset } => Some(Bits::get(bits, offset + row)),
             Values::Dict { values, .. } => {
@@ -287,6 +313,9 @@ impl<'a> Column<'a> {
     }
 
     pub(crate) fn texts(&self, base: usize, n: usize) -> Option<Texts<'a>> {
+        if self.foreign() {
+            return self.resolved().texts(base, n);
+        }
         match self.values {
             Values::Utf8 { offsets, data } => {
                 let window = offsets.get(base..=base + n)?;
@@ -314,6 +343,9 @@ impl<'a> Column<'a> {
     }
 
     pub fn bytes(&self, row: usize) -> Option<&'a [u8]> {
+        if self.foreign() {
+            return self.resolved().bytes(row);
+        }
         match self.values {
             Values::Utf8 { offsets, data } => {
                 let (a, b) = (*offsets.get(row)? as usize, *offsets.get(row + 1)? as usize);
@@ -333,6 +365,9 @@ impl<'a> Column<'a> {
 
     #[inline]
     pub fn parts(&self, row: usize) -> Option<(i64, u8)> {
+        if self.foreign() {
+            return self.resolved().parts(row);
+        }
         match self.values {
             Values::Scaled { mant, scale } => Some((*mant.get(row)?, *scale.get(row)?)),
             Values::I64(v) => Some((*v.get(row)?, 0)),
@@ -349,6 +384,9 @@ impl<'a> Column<'a> {
     }
 
     pub fn scaled(&self, row: usize) -> Option<(i128, u32)> {
+        if self.foreign() {
+            return self.resolved().scaled(row);
+        }
         match self.values {
             Values::Scaled { mant, scale } => {
                 Some((*mant.get(row)? as i128, *scale.get(row)? as u32))
@@ -360,6 +398,9 @@ impl<'a> Column<'a> {
     }
 
     pub fn text(&self, row: usize) -> Option<&'a str> {
+        if self.foreign() {
+            return self.resolved().text(row);
+        }
         match self.values {
             Values::Utf8 { offsets, data } => {
                 let (a, b) = (*offsets.get(row)? as usize, *offsets.get(row + 1)? as usize);
@@ -383,6 +424,9 @@ impl<'a> Column<'a> {
     }
 
     pub fn equals(&self, row: usize, k: &Variable, context: &EvaluationContext) -> bool {
+        if self.foreign() {
+            return self.resolved().equals(row, k, context);
+        }
         if !self.valid(row) {
             return matches!(k, Variable::Null);
         }
@@ -431,6 +475,9 @@ impl<'a> Column<'a> {
     }
 
     pub fn variable(&self, row: usize) -> Variable {
+        if self.foreign() {
+            return self.resolved().variable(row);
+        }
         if !self.valid(row) {
             return Variable::Null;
         }
@@ -482,7 +529,7 @@ impl<'a> Columns<'a> {
     }
 
     pub fn column(mut self, path: &'a str, column: Column<'a>) -> Self {
-        self.columns.push((path, column));
+        self.columns.push((path, column.resolved()));
         self
     }
 

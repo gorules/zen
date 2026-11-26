@@ -182,6 +182,44 @@ impl InputSchema {
         self.roots.contains(name)
     }
 
+    pub(crate) fn single(&self, path: &str) -> bool {
+        let related = |property: &Property| match &property.kind {
+            PropertyTypeIr::Relationship { target }
+                if !property.array && self.entities.contains_key(target) =>
+            {
+                Some(target.clone())
+            }
+            _ => None,
+        };
+        let mut segments = path.split('.');
+        let Some(first) = segments.next() else {
+            return false;
+        };
+        let (mut entity, mut steps): (Arc<str>, usize) = if self.ref_targets.contains(first) {
+            return false;
+        } else if self.roots.contains(first) {
+            (Arc::from(first), 0)
+        } else {
+            match self.globals.get(first).and_then(related) {
+                Some(target) => (target, 1),
+                None => return false,
+            }
+        };
+        for segment in segments {
+            let Some(target) = self
+                .entities
+                .get(&entity)
+                .and_then(|model| model.properties.iter().find(|p| *p.name == *segment))
+                .and_then(related)
+            else {
+                return false;
+            };
+            entity = target;
+            steps += 1;
+        }
+        steps > 0
+    }
+
     pub(crate) fn has_dated(&self, entity: &str) -> bool {
         self.dated.contains(entity)
     }
@@ -1044,8 +1082,23 @@ impl Sureness<'_> {
             self.mark(column, |s, row| s.pool(&target, column, row));
             return Some(());
         }
-        if self.schema.roots.contains(*first) {
-            let mut entity: Arc<str> = Arc::from(*first);
+        let global = self.schema.globals.get(*first).cloned();
+        let start: Option<Arc<str>> = match (self.schema.roots.contains(*first), &global) {
+            (true, _) => Some(Arc::from(*first)),
+            (false, Some(prop)) if !rest.is_empty() => match (&prop.kind, prop.array) {
+                (PropertyTypeIr::Relationship { target }, false)
+                    if self.schema.entities.contains_key(target) =>
+                {
+                    Some(target.clone())
+                }
+                _ => {
+                    self.mark(column, |_, _| false);
+                    return Some(());
+                }
+            },
+            (false, _) => None,
+        };
+        if let Some(mut entity) = start {
             for (depth, segment) in rest.iter().enumerate() {
                 let model = self.schema.entities.get(&entity)?.clone();
                 let Some(prop) = model
@@ -1080,11 +1133,10 @@ impl Sureness<'_> {
             self.mark(column, |s, row| s.objects(&target, column, row));
             return Some(());
         }
-        if let Some(prop) = self.schema.globals.get(*first) {
-            match rest.is_empty() {
-                true if self.typed(prop, column) => {}
-                true => self.mark(column, |s, row| s.property(prop, column, row)),
-                false => self.mark(column, |_, _| false),
+        if let Some(prop) = global {
+            match self.typed(&prop, column) {
+                true => {}
+                false => self.mark(column, |s, row| s.property(&prop, column, row)),
             }
         }
         Some(())

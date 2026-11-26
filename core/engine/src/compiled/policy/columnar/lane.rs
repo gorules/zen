@@ -87,7 +87,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 })
                 .map(|(at, _)| at)
                 .collect();
-            stale.into_iter().for_each(|at| self.sheet.retire(at));
+            stale.into_iter().for_each(|at| self.retire(at));
         }
         let mut columns = Columns::new(self.sheet.rows);
         let mut used: Vec<Slot> = Vec::new();

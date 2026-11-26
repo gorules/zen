@@ -245,7 +245,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         if self.hosted(block, row) {
             return None;
         }
-        let table = self.plan.plans[block].table.as_ref()?;
+        let table = self.plan.flat(block).table.as_ref()?;
         let Chosen {
             firsts: chosen,
             matched,

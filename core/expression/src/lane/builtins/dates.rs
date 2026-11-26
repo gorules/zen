@@ -125,11 +125,69 @@ impl Dates {
         }
     }
 
-    fn other(ctx: &RowContext, args: &[Arg]) -> Result<Date, Fail> {
-        Ok(match Self::var(args, 1)? {
+    pub(crate) fn counterpart(arg: Arg, context: &crate::context::EvaluationContext) -> Date {
+        match arg {
             Arg::Date(d) => d,
-            Arg::Str(s) => Date::text(s, None, ctx.context()),
-            other => Date::new(other.variable(), None, ctx.context()),
+            Arg::Str(s) => Date::text(s, None, context),
+            other => Date::new(other.variable(), None, context),
+        }
+    }
+
+    fn other(ctx: &RowContext, args: &[Arg]) -> Result<Date, Fail> {
+        Ok(Self::counterpart(Self::var(args, 1)?, ctx.context()))
+    }
+
+    pub(crate) fn unit_of(text: &str) -> Option<DurationUnit> {
+        DurationUnit::parse(text)
+    }
+
+    pub(crate) fn zone_of(text: &str) -> Option<Tz> {
+        Tz::from_str(text).ok()
+    }
+
+    pub(crate) fn truth_of(
+        method: &MethodKind,
+        date: &Date,
+        context: &crate::context::EvaluationContext,
+    ) -> Option<Option<bool>> {
+        let MethodKind::DateMethod(method) = method;
+        if let DateMethod::IsValid = method {
+            return Some(Some(date.is_valid()));
+        }
+        let Some(dt) = date.0 else {
+            return matches!(
+                method,
+                DateMethod::IsYesterday
+                    | DateMethod::IsToday
+                    | DateMethod::IsTomorrow
+                    | DateMethod::IsLeapYear
+            )
+            .then_some(None);
+        };
+        let day = Some(DurationUnit::Day);
+        Some(Some(match method {
+            DateMethod::IsYesterday => date.is_same(&Date::yesterday(context), day),
+            DateMethod::IsToday => date.is_same(&Date::now(context), day),
+            DateMethod::IsTomorrow => date.is_same(&Date::tomorrow(context), day),
+            DateMethod::IsLeapYear => dt.date_naive().leap_year(),
+            _ => return None,
+        }))
+    }
+
+    pub(crate) fn ordered(
+        method: &MethodKind,
+        this: &Date,
+        other: &Date,
+        unit: Option<DurationUnit>,
+    ) -> Option<bool> {
+        let MethodKind::DateMethod(method) = method;
+        Some(match method {
+            DateMethod::IsSame => this.is_same(other, unit),
+            DateMethod::IsBefore => this.is_before(other, unit),
+            DateMethod::IsAfter => this.is_after(other, unit),
+            DateMethod::IsSameOrBefore => this.is_same_or_before(other, unit),
+            DateMethod::IsSameOrAfter => this.is_same_or_after(other, unit),
+            _ => return None,
         })
     }
 

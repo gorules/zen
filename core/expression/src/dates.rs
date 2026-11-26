@@ -18,7 +18,7 @@ impl DateValue {
     }
 
     pub fn reads(text: &str) -> bool {
-        crate::lane::date::Date::from_text(text, crate::context::system_timezone()).is_valid()
+        crate::lane::date::Date::remembered(text, crate::context::system_timezone()).is_valid()
     }
 
     pub fn source_text(value: &Variable) -> Option<Variable> {

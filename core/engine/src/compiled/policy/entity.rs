@@ -26,6 +26,7 @@ pub(super) struct Entity<'a> {
     pub fields: Vec<Field<'a>>,
     pub active: bool,
     pub hosted: Option<Rc<[usize]>>,
+    pub link: Option<(usize, Rc<[usize]>)>,
     cache: Option<Vec<Variable>>,
 }
 
@@ -141,8 +142,50 @@ impl<'a> Entity<'a> {
             fields,
             active: true,
             hosted: None,
+            link: None,
             cache: None,
         })
+    }
+
+    pub fn linked(
+        path: Arc<str>,
+        entry: usize,
+        frame: Frame,
+        fields: Vec<Field<'a>>,
+        link: Option<(usize, Rc<[usize]>)>,
+    ) -> Self {
+        Self {
+            name: Arc::from(""),
+            path,
+            owner: None,
+            entry,
+            frame,
+            fields,
+            active: true,
+            hosted: None,
+            link,
+            cache: None,
+        }
+    }
+
+    pub fn gathered(&self, index: &Rc<[usize]>) -> Vec<Field<'a>> {
+        self.fields
+            .iter()
+            .map(|field| Field {
+                name: field.name.clone(),
+                leaf: field.leaf.pick(index),
+                present: field
+                    .present
+                    .as_ref()
+                    .map(|bits| Rc::from(Bits::gather(bits, index))),
+                input: field.input,
+            })
+            .collect()
+    }
+
+    pub fn relinked(&mut self, fields: Vec<Field<'a>>) {
+        self.fields = fields;
+        self.cache = None;
     }
 
     pub fn shredded(
@@ -171,6 +214,7 @@ impl<'a> Entity<'a> {
             fields,
             active: true,
             hosted: Some(shred.hosted),
+            link: None,
             cache: None,
         }
     }

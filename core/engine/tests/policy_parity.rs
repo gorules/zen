@@ -1311,3 +1311,426 @@ fn a_list_whose_member_blocks_would_all_be_delegated_shares_rows() {
     let paths = columns_match_version_one(&[(PATH, policy)], rows);
     assert_eq!(paths.typed, 0, "{paths:?}");
 }
+
+const REPORTED: &str = r#"{
+  models: {customer: {tier: "string", limit: "number", report: "creditReport", contact: "contact?"}, creditReport: {score: "number", bankrupt: "boolean", opened: "date?"}, contact: {email: "string?", phone: "string?"}},
+  blocks: [
+    {match: "creditReport.grade", arms: [["creditReport.bankrupt", "'X'"], ["creditReport.score >= 700", "'A'"], ["creditReport.score >= customer.limit", "upper(customer.tier)"], ["", "'B'"]]},
+    {expression: "creditReport.double", value: "creditReport.score * 2 + customer.report.score"},
+    {assertion: "creditReport.ok", conditions: ["creditReport.double > 100", "not creditReport.bankrupt"]},
+    {table: "t", inputs: ["creditReport.score", "customer.tier"], outputs: ["creditReport.band", "creditReport.fee"], rules: [
+      ["> 700", "'gold'", "'top'", "creditReport.double / 10"],
+      ["> 100", "", "'mid'", "5"],
+      ["", "", "'low'", "customer.limit"],
+    ]},
+    {expression: "creditReport.age", value: "creditReport.opened != null ? year(creditReport.opened) : 0"},
+    {expression: "contact.reach", value: "contact.email ?? contact.phone ?? 'none'"},
+    {match: "contact.kind", arms: [["contact.email != null", "'mail'"], ["", "'other'"]]},
+    {match: "customer.decision", arms: [["customer.report.grade == 'A' and customer.report.ok", "'approve'"], ["customer.report.grade == 'X'", "'decline'"], ["customer.contact.reach == 'none'", "'call'"], ["", "'refer'"]]},
+    {expression: "customer.note", value: "`${customer.report.band}/${customer.contact.kind ?? '-'}`"},
+  ],
+}"#;
+
+fn reported_rows(report: impl Fn(usize) -> Option<Value>, contact: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+    let tiers = ["gold", "silver", "basic"];
+    (0..48)
+        .map(|i| {
+            let mut customer = json!({"tier": tiers[i % 3], "limit": ([650, 700, 20, 900])[i % 4]});
+            if let Some(report) = report(i) {
+                customer["report"] = report;
+            }
+            if let Some(contact) = contact(i) {
+                customer["contact"] = contact;
+            }
+            json!({"customer": customer})
+        })
+        .collect()
+}
+
+fn full_report(i: usize) -> Value {
+    json!({"score": ([800, 650, 10, 705, 30])[i % 5], "bankrupt": i % 7 == 0, "opened": (["2020-01-05", "2024-12-31", "1999-06-30"])[i % 3]})
+}
+
+fn full_contact(i: usize) -> Value {
+    match i % 3 {
+        0 => json!({"email": "a@b.c", "phone": "1"}),
+        1 => json!({"phone": "2"}),
+        _ => json!({"email": "x@y.z"}),
+    }
+}
+
+fn each_goal(policy: &str, rows: &[Value], goal_sets: &[&[&str]]) -> Vec<Paths> {
+    let policies = [(PATH, policy)];
+    let old = workspace(&policies, EngineVersion::V1);
+    let new = workspace(&policies, EngineVersion::V2);
+    let built = Built::nested(rows)
+        .or_else(|| Built::lists(rows))
+        .or_else(|| Built::new(rows))
+        .expect("columns");
+    assert_eq!(built.rows, rows.len(), "rows kept by the column builder");
+    let fields = built.fields();
+    let structs = built.structs(&fields);
+    let columns = built.columns_with(&structs);
+    goal_sets
+        .iter()
+        .map(|goals| {
+            let goals: Vec<Arc<str>> = goals.iter().map(|goal| Arc::from(*goal)).collect();
+            goals_match(&old, &new, &columns, &goals)
+        })
+        .collect()
+}
+
+const REPORTED_GOALS: [&[&str]; 8] = [
+    &[],
+    &["creditReport.grade"],
+    &["creditReport.fee"],
+    &["contact.reach"],
+    &["customer.decision"],
+    &["customer.note", "creditReport.ok"],
+    &["contact.kind", "creditReport.age"],
+    &["creditReport.band", "customer.decision", "contact.reach"],
+];
+
+#[test]
+fn blocks_on_single_relationships_run_typed_without_row_objects() {
+    let rows = reported_rows(|i| Some(full_report(i)), |i| Some(full_contact(i)));
+    let paths = columns_match_version_one(&[(PATH, REPORTED)], rows.clone());
+    assert!(paths.typed > 0 && paths.hosted == 0, "{paths:?}");
+    each_goal(REPORTED, &rows, &REPORTED_GOALS);
+    let plain = r#"{
+      models: {customer: {limit: "number", report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
+      blocks: [
+        {match: "creditReport.grade", arms: [["creditReport.bankrupt", "'X'"], ["creditReport.score >= customer.limit", "'A'"], ["", "'B'"]]},
+        {expression: "creditReport.double", value: "creditReport.score * 2"},
+        {table: "t", inputs: ["creditReport.score"], outputs: ["creditReport.band"], rules: [["> 700", "'top'"], ["", "'low'"]]},
+        {expression: "customer.sum", value: "customer.report.double + customer.limit"},
+      ],
+    }"#;
+    typed_like_version_one(&[(PATH, plain)], rows);
+}
+
+#[test]
+fn single_relationships_that_are_missing_null_or_empty_match_version_one_for_every_goal() {
+    let partial = |i: usize| match i % 6 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!({"score": 720})),
+        3 => Some(json!({"bankrupt": false})),
+        4 => Some(json!({"score": null, "bankrupt": null})),
+        _ => Some(full_report(i)),
+    };
+    let sparse = |i: usize| match i % 4 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!({"email": null, "phone": null})),
+        _ => Some(full_contact(i)),
+    };
+    let sets = [
+        reported_rows(|i| Some(full_report(i)), sparse),
+        reported_rows(|i| Some(full_report(i)), |_| None),
+        reported_rows(|i| Some(full_report(i)), |_| Some(Value::Null)),
+        reported_rows(partial, |i| Some(full_contact(i))),
+        reported_rows(partial, sparse),
+        reported_rows(|_| None, |_| None),
+        reported_rows(|i| (i % 2 == 0).then(|| full_report(i)), |i| (i % 3 == 0).then(|| full_contact(i))),
+    ];
+    for rows in &sets {
+        each_goal(REPORTED, rows, &REPORTED_GOALS);
+    }
+}
+
+#[test]
+fn single_relationships_holding_what_the_model_refuses_match_version_one() {
+    let mut rows = reported_rows(|i| Some(full_report(i)), |i| Some(full_contact(i)));
+    rows[1]["customer"]["report"]["score"] = json!("high");
+    rows[2]["customer"]["report"]["bankrupt"] = json!(3);
+    rows[5]["customer"]["report"]["opened"] = json!("not a date");
+    rows[7]["customer"]["contact"]["email"] = json!(false);
+    rows[9]["customer"]["limit"] = Value::Null;
+    rows[11]["customer"]["report"]["score"] = Value::Null;
+    rows[13]["customer"].as_object_mut().expect("customer").remove("tier");
+    each_goal(REPORTED, &rows, &REPORTED_GOALS);
+}
+
+#[test]
+fn a_relationship_given_under_its_entity_name_does_not_stand_in_for_the_related_object() {
+    let mut rows = reported_rows(|i| (i % 2 == 0).then(|| full_report(i)), |i| Some(full_contact(i)));
+    for (i, row) in rows.iter_mut().enumerate() {
+        if i % 4 == 1 {
+            row["creditReport"] = full_report(i);
+        }
+        if i % 8 == 3 {
+            row["contact"] = full_contact(i);
+        }
+    }
+    each_goal(REPORTED, &rows, &REPORTED_GOALS);
+}
+
+const CONFIGURED: &str = r#"{
+  globals: {env: {cfg: "config", cap: "number", perk: "extra?"}},
+  models: {config: {base: "number", mode: "string(lin|sq)"}, extra: {bonus: "number?"}, o: {items: "item[]"}, item: {v: "number"}},
+  blocks: [
+    {match: "config.factor", arms: [["config.mode == 'sq'", "config.base * config.base"], ["", "config.base"]]},
+    {expression: "config.double", value: "config.base * 2 + cap"},
+    {expression: "extra.total", value: "(extra.bonus ?? 1) + cfg.double"},
+    {match: "item.tier", arms: [["item.v > cfg.double", "'hi'"], ["item.v > (perk.total ?? 0)", "'mid'"], ["", "'lo'"]]},
+    {expression: "factor", value: "cfg.factor + 1 + (perk.total ?? 0)"},
+    {expression: "o.count", value: "len(filter(o.items, #.tier == 'hi'))"},
+  ],
+}"#;
+
+fn configured_rows(cfg: impl Fn(usize) -> Option<Value>, extra: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+    (0..40)
+        .map(|i| {
+            let items: Vec<Value> = (0..i % 4).map(|j| json!({"v": (i * 3 + j * 5) % 23})).collect();
+            let mut row = json!({"cap": i % 5, "o": {"items": items}});
+            if let Some(cfg) = cfg(i) {
+                row["cfg"] = cfg;
+            }
+            if let Some(extra) = extra(i) {
+                row["perk"] = extra;
+            }
+            row
+        })
+        .collect()
+}
+
+const CONFIGURED_GOALS: [&[&str]; 6] = [
+    &[],
+    &["config.factor"],
+    &["factor"],
+    &["item.tier"],
+    &["extra.total", "o.count"],
+    &["config.double"],
+];
+
+#[test]
+fn blocks_on_global_single_relationships_run_typed() {
+    let cfg = |i: usize| Some(json!({"base": (i % 7) as i64 - 2, "mode": (["lin", "sq"])[i % 2]}));
+    let rows = configured_rows(cfg, |i| Some(json!({"bonus": i % 3})));
+    typed_like_version_one(&[(PATH, CONFIGURED)], rows.clone());
+    each_goal(CONFIGURED, &rows, &CONFIGURED_GOALS);
+}
+
+#[test]
+fn global_single_relationships_that_are_missing_null_or_partial_match_version_one() {
+    let cfg = |i: usize| match i % 5 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!({"base": 3})),
+        3 => Some(json!({"mode": "sq"})),
+        _ => Some(json!({"base": (i % 7) as i64 - 2, "mode": (["lin", "sq"])[i % 2]})),
+    };
+    let full = |i: usize| Some(json!({"base": (i % 7) as i64 - 2, "mode": (["lin", "sq"])[i % 2]}));
+    let extra = |i: usize| match i % 4 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!({"bonus": null})),
+        _ => Some(json!({"bonus": i % 3})),
+    };
+    for rows in [configured_rows(cfg, extra), configured_rows(full, extra), configured_rows(cfg, |_| None), configured_rows(full, |_| None)] {
+        each_goal(CONFIGURED, &rows, &CONFIGURED_GOALS);
+    }
+}
+
+#[test]
+fn single_relationship_blocks_the_columns_cannot_alias_match_version_one() {
+    let owner = r#"{
+      models: {customer: {tier: "string", limit: "number", report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
+      blocks: [
+        {expression: "creditReport.over", value: "creditReport.score > creditReport.customer.limit"},
+        {expression: "creditReport.keys", value: "len(keys(creditReport))"},
+        {expression: "customer.flag", value: "customer.report.over and customer.report.keys > 1"},
+      ],
+    }"#;
+    let shadow = r#"{
+      models: {customer: {tier: "string", limit: "number", scores: "number[]", report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
+      blocks: [
+        {expression: "creditReport.above", value: "len(filter(customer.scores as creditReport, creditReport > 5)) + creditReport.score"},
+        {expression: "customer.flag", value: "customer.report.above > 3"},
+      ],
+    }"#;
+    let rows: Vec<Value> = reported_rows(|i| (i % 5 != 0).then(|| json!({"score": i % 9, "bankrupt": i % 2 == 0})), |_| None)
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut row)| {
+            row["customer"]["scores"] = json!([i % 4, 7, i % 11]);
+            row
+        })
+        .collect();
+    let table = r#"{
+      models: {customer: {tier: "string", limit: "number", report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
+      blocks: [
+        {table: "t", inputs: ["creditReport.score"], outputs: ["creditReport.band"], rules: [["> customer.limit", "'over'"], ["", "'under'"]]},
+        {expression: "creditReport.twice", value: "creditReport.score * 2"},
+        {expression: "customer.flag", value: "customer.report.band == 'over' and customer.report.twice > 4"},
+      ],
+    }"#;
+    columns_match_version_one(&[(PATH, owner)], rows.clone());
+    columns_match_version_one(&[(PATH, shadow)], rows.clone());
+    let paths = columns_match_version_one(&[(PATH, table)], rows);
+    assert!(paths.typed > 0, "{paths:?}");
+}
+
+const CARTED: &str = r#"{
+  globals: {env: {cap: "number"}},
+  models: {cart: {items: "&product[]", note: "string?"}, product: {id: "string", price: "number", kind: "string?"}},
+  blocks: [
+    {table: "dt", inputs: ["product.price"], outputs: ["product.band"], rules: [["> 3", "'hi'"], ["", "'lo'"]]},
+    {match: "product.capped", arms: [["product.price > cap", "cap"], ["", "product.price"]]},
+    {expression: "product.double", value: "product.price * 2"},
+    {expression: "cart.ids", value: "map(cart.items, #.id)"},
+    {expression: "cart.total", value: "sum(map(cart.items as c, c.price))"},
+    {expression: "cart.n", value: "len(cart.items)"},
+    {expression: "cart.as", value: "count(cart.items, #.kind == 'a')"},
+    {expression: "cart.doubled", value: "sum(map(cart.items, #.price * 2)) + cap"},
+  ],
+}"#;
+
+fn carted_rows(count: usize, items: impl Fn(usize) -> Option<Value>, pool: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+    (0..count)
+        .map(|i| {
+            let mut cart = json!({});
+            if i % 3 == 0 {
+                cart["note"] = json!("n");
+            }
+            if let Some(items) = items(i) {
+                cart["items"] = items;
+            }
+            let mut row = json!({"cap": (i % 4) + 1, "cart": cart});
+            if let Some(pool) = pool(i) {
+                row["product"] = pool;
+            }
+            row
+        })
+        .collect()
+}
+
+fn product_pool(i: usize) -> Value {
+    json!([
+        {"id": "p1", "price": 5 + (i % 3), "kind": "a"},
+        {"id": "p2", "price": 1},
+        {"id": "p3", "price": (i % 7) as f64 + 0.5, "kind": "b"},
+    ])
+}
+
+fn product_keys(i: usize) -> Value {
+    match i % 6 {
+        0 => json!([]),
+        1 => json!(["p1"]),
+        2 => json!(["p2", "p1", "p1"]),
+        3 => json!(["p3", "p2"]),
+        4 => json!(["p3"]),
+        _ => json!(["p1", "p2", "p3", "p2"]),
+    }
+}
+
+const CARTED_GOALS: [&[&str]; 6] = [
+    &[],
+    &["product.band"],
+    &["cart.ids"],
+    &["cart.total", "cart.as"],
+    &["product.capped", "cart.n"],
+    &["cart.doubled"],
+];
+
+#[test]
+fn lists_of_references_to_a_pool_with_member_blocks_run_by_columns() {
+    let rows = carted_rows(48, |i| Some(product_keys(i)), |i| Some(product_pool(i)));
+    let paths = columns_match_version_one(&[(PATH, CARTED)], rows.clone());
+    assert!(paths.typed > 0 && paths.hosted == 0, "{paths:?}");
+    each_goal(CARTED, &rows, &CARTED_GOALS);
+}
+
+#[test]
+fn lists_of_references_that_are_missing_null_unknown_or_repeated_match_version_one() {
+    let odd_keys = |i: usize| match i % 9 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!(["zz"])),
+        3 => Some(json!(["p1", "zz", "p2"])),
+        4 => Some(json!(["p1", null, "p2"])),
+        5 => Some(json!([3])),
+        6 => Some(json!(["p2", "p2", "p2", "p2"])),
+        _ => Some(product_keys(i)),
+    };
+    let odd_pool = |i: usize| match i % 8 {
+        0 => None,
+        1 => Some(Value::Null),
+        2 => Some(json!([])),
+        3 => Some(json!([{"id": "p1", "price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
+        4 => Some(json!([{"price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
+        5 => Some(json!([{"id": "p1"}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
+        _ => Some(product_pool(i)),
+    };
+    let sets = [
+        carted_rows(72, odd_keys, |i| Some(product_pool(i))),
+        carted_rows(72, |i| Some(product_keys(i)), odd_pool),
+        carted_rows(72, odd_keys, odd_pool),
+        carted_rows(24, |_| None, |_| None),
+        carted_rows(24, |_| Some(json!([])), |_| Some(json!([]))),
+        carted_rows(24, |i| Some(product_keys(i)), |_| None),
+    ];
+    for rows in &sets {
+        each_goal(CARTED, rows, &CARTED_GOALS);
+    }
+    let mut broken = carted_rows(48, |i| Some(product_keys(i)), |i| Some(product_pool(i)));
+    broken[3].as_object_mut().expect("row").remove("cap");
+    broken[5]["product"][0]["price"] = json!("dear");
+    broken[7]["product"][1] = Value::Null;
+    broken[9]["cap"] = Value::Null;
+    each_goal(CARTED, &broken, &CARTED_GOALS);
+}
+
+#[test]
+fn lists_of_references_in_other_shapes_match_version_one() {
+    let unblocked = r#"{
+      models: {cart: {items: "&product[]"}, product: {id: "string", price: "number", kind: "string?"}},
+      blocks: [
+        {expression: "cart.total", value: "sum(map(cart.items, #.price))"},
+        {expression: "cart.kinds", value: "map(cart.items, #.kind ?? '-')"},
+        {expression: "cart.first", value: "len(cart.items) > 0 ? cart.items[0].id : 'none'"},
+        {expression: "cart.pooled", value: "len(product)"},
+      ],
+    }"#;
+    let single = r#"{
+      models: {order: {zone: "&zone", lines: "line[]"}, line: {qty: "number"}, zone: {id: "string", shipping: "number"}},
+      blocks: [
+        {expression: "zone.fee", value: "zone.shipping * 2"},
+        {expression: "line.double", value: "line.qty * 2"},
+        {expression: "order.total", value: "order.zone.fee + sum(map(order.lines, #.double))"},
+      ],
+    }"#;
+    let computed = r#"{
+      models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+      blocks: [
+        {expression: "product.double", value: "product.price * 2"},
+        {match: "product.band", arms: [["product.price > 3", "'hi'"], ["", "'lo'"]]},
+        {expression: "cart.his", value: "count(cart.items, #.band == 'hi')"},
+        {expression: "cart.doubled", value: "sum(map(cart.items, #.double))"},
+      ],
+    }"#;
+    let whole = r#"{
+      models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+      blocks: [
+        {expression: "product.double", value: "product.price * 2"},
+        {expression: "cart.size", value: "len(keys(cart))"},
+        {expression: "cart.same", value: "map(cart.items, #.double == product[0].double)"},
+      ],
+    }"#;
+    let rows = carted_rows(48, |i| Some(product_keys(i)), |i| Some(product_pool(i)));
+    let paths = columns_match_version_one(&[(PATH, unblocked)], rows.clone());
+    assert_eq!(paths.hosted, 0, "{paths:?}");
+    columns_match_version_one(&[(PATH, whole)], rows.clone());
+    columns_match_version_one(&[(PATH, computed)], rows);
+    let orders: Vec<Value> = (0..40)
+        .map(|i| {
+            let lines: Vec<Value> = (0..i % 3).map(|j| json!({"qty": i + j})).collect();
+            json!({
+                "order": {"zone": (["eu", "us", "eu"])[i % 3], "lines": lines},
+                "zone": [{"id": "eu", "shipping": 4.5}, {"id": "us", "shipping": 12}],
+            })
+        })
+        .collect();
+    columns_match_version_one(&[(PATH, single)], orders);
+}

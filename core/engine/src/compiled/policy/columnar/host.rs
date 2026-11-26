@@ -39,10 +39,10 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn readback(&self, block: usize) -> Vec<Arc<str>> {
-        let rule = &self.plan.blocks.rules[block];
+        let rule = &self.plan.rule(block);
         let top =
             |path: &str| -> Arc<str> { Arc::from(path.split(['.', '[']).next().unwrap_or(path)) };
-        let mut paths: Vec<Arc<str>> = match &self.plan.plans[block].iteration {
+        let mut paths: Vec<Arc<str>> = match &self.plan.flat(block).iteration {
             Some((_, path, _)) => vec![top(path)],
             None => rule
                 .kind
@@ -85,7 +85,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             true => self.plan.commit(block, positions, &mut self.state),
         }
         if let Some(began) = began {
-            let why = self.plan.plans[block]
+            let why = self.plan.flat(block)
                 .refused()
                 .map_or_else(|| "native".to_string(), Refused::to_string);
             Census::record(

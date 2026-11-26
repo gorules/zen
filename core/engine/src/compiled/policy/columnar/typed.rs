@@ -128,7 +128,7 @@ impl TypedGroup {
                     Census::reason(|| "member reads its own list after a write".into());
                     return Step::Stop;
                 }
-                let lowered = match &pass.plan.blocks.rules[block].kind {
+                let lowered = match &pass.plan.rule(block).kind {
                     BlockKind::DecisionTable(ir) => Fused::<Sink>::spec(ir).map(|spec| {
                         let sunk: Vec<Sink> = spec
                             .outputs

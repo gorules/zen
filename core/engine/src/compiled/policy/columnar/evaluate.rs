@@ -35,7 +35,7 @@ impl PolicyPlan {
     fn safe(&self, artifact: &EvalArtifact) -> &[Iteration] {
         self.safe.get_or_init(|| {
             let mut found: Vec<Iteration> = Vec::new();
-            for (name, path, owner) in self.plans.iter().filter_map(|plan| plan.iteration.as_ref())
+            for (name, path, owner) in self.flats().filter_map(|plan| plan.iteration.as_ref())
             {
                 if !found.iter().any(|(_, p, _)| p == path) {
                     found.push((name.clone(), path.clone(), owner.clone()));
@@ -52,11 +52,7 @@ impl PolicyPlan {
         &self,
         artifact: &EvalArtifact,
         sheet: &Sheet<'a>,
-        referenced: bool,
     ) -> Vec<Entity<'a>> {
-        if referenced {
-            return Vec::new();
-        }
         self.safe(artifact)
             .iter()
             .filter_map(|(name, path, owner)| {
@@ -91,7 +87,7 @@ impl PolicyPlan {
     fn unentitied(&self, artifact: &EvalArtifact, sheet: &Sheet) {
         let safe = self.safe(artifact);
         let mut seen: Vec<&Arc<str>> = Vec::new();
-        for (name, path, _) in self.plans.iter().filter_map(|plan| plan.iteration.as_ref()) {
+        for (name, path, _) in self.flats().filter_map(|plan| plan.iteration.as_ref()) {
             if seen.contains(&path) || sheet.entities.iter().any(|e| e.path == *path) {
                 continue;
             }
@@ -127,18 +123,40 @@ impl PolicyPlan {
         }
     }
 
+    #[cold]
+    fn refusals(&self) {
+        for (block, plan) in self.flats().enumerate() {
+            if let (Some(why), None, None) = (plan.refused(), &plan.table, &plan.member) {
+                let table = match &self.rule(block).kind {
+                    crate::policy::blocks::BlockKind::DecisionTable(ir) => {
+                        crate::compiled::table::Table::compile(
+                            crate::compiled::table::TableIr::policy(ir),
+                        )
+                        .err()
+                    }
+                    _ => None,
+                };
+                Census::record(
+                    format!(
+                        "policy block refused | {} | {why} | {}",
+                        self.rule(block).id,
+                        table.unwrap_or_default()
+                    ),
+                    0,
+                    0,
+                );
+            }
+        }
+    }
+
     fn delegating(&self) -> bool {
         let refused =
             |plan: &&BlockPlan| plan.native().is_none() && plan.table.is_none() && plan.member.is_none();
-        let roots = self
-            .plans
-            .iter()
+        let roots = self.flats()
             .filter(refused)
             .filter(|plan| plan.iteration.is_none())
             .count();
-        let members = self
-            .plans
-            .iter()
+        let members = self.flats()
             .filter(refused)
             .filter_map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path))
             .map(|path| {
@@ -158,7 +176,7 @@ impl PolicyPlan {
 
     fn members_safe(&self, name: &str, path: &str) -> bool {
         let prefix = format!("{name}.");
-        self.plans.iter().enumerate().all(|(block, plan)| {
+        self.flats().enumerate().all(|(block, plan)| {
             let Some((_, own, _)) = &plan.iteration else {
                 return true;
             };
@@ -169,7 +187,7 @@ impl PolicyPlan {
                 return true;
             }
             if plan.member.is_none() && plan.table.is_none() {
-                return self.blocks.rules[block]
+                return self.rule(block)
                     .kind
                     .write_sites()
                     .iter()
@@ -207,9 +225,10 @@ impl PolicyPlan {
         })
     }
 
-    fn readers_safe(&self, artifact: &EvalArtifact, path: &str) -> bool {
-        self.blocks.rules.iter().enumerate().all(|(block, rule)| {
-            if self.plans[block]
+    pub(super) fn readers_safe(&self, artifact: &EvalArtifact, path: &str) -> bool {
+        (0..self.blocks.rules.len()).all(|block| {
+            let rule = self.rule(block);
+            if self.flat(block)
                 .iteration
                 .as_ref()
                 .is_some_and(|(_, own, _)| own.as_ref() == path)
@@ -236,10 +255,10 @@ impl PolicyPlan {
             reads.is_empty()
                 || matches!(
                     (
-                        self.plans[block].native(),
-                        self.plans[block].iterated,
-                        &self.plans[block].table,
-                        &self.plans[block].iteration
+                        self.flat(block).native(),
+                        self.flat(block).iterated,
+                        &self.flat(block).table,
+                        &self.flat(block).iteration
                     ),
                     (Some(_), false, _, None) | (None, _, Some(_), None)
                 )
@@ -270,10 +289,11 @@ impl PolicyPlan {
         };
         let mut errors: Vec<Option<EvaluationError>> = (0..rows).map(|_| None).collect();
         let stores: Vec<OnceCell<Variable>> = (0..rows).map(|_| OnceCell::new()).collect();
+        sheet.entities = self.entities(artifact, &sheet);
         let unresolved = self.references(artifact, &mut sheet, columns);
         let referenced = !artifact.reference_fields.is_empty() && unresolved.is_none();
-        sheet.entities = self.entities(artifact, &sheet, referenced);
         if referenced {
+            sheet.entities.clear();
             sheet.refs = artifact
                 .reference_fields
                 .iter()
@@ -282,12 +302,13 @@ impl PolicyPlan {
         }
         let shared = referenced
             || self.delegating()
-            || self.plans.iter().any(|plan| match &plan.iteration {
+            || self.flats().any(|plan| match &plan.iteration {
                 Some((_, path, _)) => !sheet.entities.iter().any(|e| e.path == *path),
                 None => false,
             });
         if shared && Census::on() {
             self.unentitied(artifact, &sheet);
+            self.refusals();
         }
         if shared {
             sheet.entities.clear();
@@ -421,9 +442,8 @@ impl PolicyPlan {
                 delegated: false,
                 counts: Paths::default(),
                 listed: RefCell::new(Vec::new()),
-                owners: self
-                    .plans
-                    .iter()
+                present: self.gates.iter().map(|_| OnceCell::new()).collect(),
+                owners: self.flats()
                     .map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path.clone()))
                     .collect(),
             };

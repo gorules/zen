@@ -282,6 +282,9 @@ impl<'s, 'a> Pass<'s, 'a> {
 
     pub(super) fn selection(&self, block: usize, row: usize) -> Option<Vec<u32>> {
         let code = |arm: Option<usize>| arm.map_or(0, |arm| arm as u32 + 1);
+        if self.absent(block, row) {
+            return Some(vec![0]);
+        }
         if let Some(at) = self.entity_of(block) {
             if let (Some(arms), Some(Native::Match { .. })) =
                 (self.members.get(block), Self::native(self.plan, block))
@@ -296,7 +299,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 return Some(key);
             }
         }
-        if let (Some(table), false) = (&self.plan.plans[block].table, self.hosted(block, row)) {
+        if let (Some(table), false) = (&self.plan.flat(block).table, self.hosted(block, row)) {
             if let Some(Chosen { firsts, matched }) = self.chosen.get(block) {
                 let outputs = table.picked().len().max(1);
                 let words = table.words();
@@ -326,7 +329,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         if self.state.picked(row, block).is_some() {
             return None;
         }
-        match self.plan.plans[block].native() {
+        match self.plan.flat(block).native() {
             Some(Native::Match { .. }) => Some(vec![3, code(self.arm(block, row))]),
             _ => None,
         }

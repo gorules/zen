@@ -243,6 +243,39 @@ impl<'a> Sheet<'a> {
             .is_none_or(|present| Bits::get(present, row))
     }
 
+    pub(super) fn relink(&mut self, pool: usize) {
+        for at in 0..self.entities.len() {
+            let Some(index) = self.entities[at]
+                .link
+                .as_ref()
+                .filter(|(source, _)| *source == pool)
+                .map(|(_, index)| index.clone())
+            else {
+                continue;
+            };
+            let fields = self.entities[pool].gathered(&index);
+            self.entities[at].relinked(fields);
+        }
+    }
+
+    pub(super) fn tied(&self, at: usize) -> bool {
+        self.entities.get(at).is_some_and(|entity| {
+            entity.active
+                && (entity.link.is_some()
+                    || self.entities.iter().any(|other| {
+                        other.active && other.link.as_ref().is_some_and(|(pool, _)| *pool == at)
+                    }))
+        })
+    }
+
+    pub(super) fn live(entry: &Entry) -> bool {
+        !entry.dead
+    }
+
+    pub(super) fn solid(entry: &Entry) -> bool {
+        entry.present.is_none()
+    }
+
     fn active(&self, index: usize) -> Option<&Entity<'a>> {
         self.entities
             .iter()

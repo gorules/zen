@@ -16,5 +16,5 @@ pub(crate) use json::Json;
 pub(crate) use literal::Literal;
 pub(crate) use mask::Mask;
 pub(crate) use records::{Field, Items, Records};
-pub(crate) use views::{Input, Masked, Picked, Scattered, Stitched, Templated};
+pub(crate) use views::{Dated, Dating, Input, Masked, Picked, Scattered, Stitched, Templated};
 pub(crate) use zen_expression::lane::Bits;

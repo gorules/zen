@@ -105,6 +105,7 @@ pub struct Lowering {
     novel: usize,
     lone: bool,
     dated: Vec<(Option<ListId>, String)>,
+    outer: bool,
 }
 
 #[derive(Clone)]
@@ -131,6 +132,8 @@ struct Ctx {
     dollar: Option<NodeId>,
     list: Option<Seq>,
     elem: Option<u32>,
+    home: Option<ListId>,
+    siblings: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +179,8 @@ impl TableRule {
 
 impl Lowering {
     const DEPTH: u32 = 3;
+    const CROSSED: &'static str = "scope: two different lists";
+    pub const OUTER: char = '^';
 
     pub fn new(member: Option<(&str, &str)>) -> Self {
         let mut schema = Schema::default();
@@ -206,6 +211,7 @@ impl Lowering {
             novel: 0,
             lone: false,
             dated: Vec::new(),
+            outer: false,
         }
     }
 
@@ -223,10 +229,22 @@ impl Lowering {
     ) -> Result<(), Unsupported> {
         let mark = self.mark();
         self.local = self.names.len();
-        let result = entries
+        let mut result = entries
             .iter()
             .try_for_each(|entry| self.entry(entry, resolve));
+        if self.crossed(&result) {
+            self.rollback(mark.clone());
+            self.outer = true;
+            result = entries
+                .iter()
+                .try_for_each(|entry| self.entry(entry, resolve));
+            self.outer = false;
+        }
         self.settle(mark, result, resolve)
+    }
+
+    fn crossed(&self, result: &Result<(), Unsupported>) -> bool {
+        self.member.is_some() && matches!(result, Err(error) if error.0 == Self::CROSSED)
     }
 
     pub fn table(
@@ -236,7 +254,13 @@ impl Lowering {
     ) -> Result<(), Unsupported> {
         let mark = self.mark();
         self.local = self.names.len();
-        let result = self.tabled(spec, resolve);
+        let mut result = self.tabled(spec, resolve);
+        if self.crossed(&result) {
+            self.rollback(mark.clone());
+            self.outer = true;
+            result = self.tabled(spec, resolve);
+            self.outer = false;
+        }
         self.settle(mark, result, resolve)
     }
 
@@ -385,6 +409,8 @@ impl Lowering {
                 dollar: None,
                 list: None,
                 elem: None,
+                home: self.member,
+                siblings: false,
             },
             None => Ctx {
                 scope: Scope::Row,
@@ -393,6 +419,8 @@ impl Lowering {
                 dollar: None,
                 list: None,
                 elem: None,
+                home: self.member,
+                siblings: false,
             },
         }
     }
@@ -1067,7 +1095,7 @@ impl Lowering {
             ) {
                 (true, _) => scope = node.scope,
                 (false, true) => {}
-                (false, false) => return Err(Unsupported::new("scope: two different lists")),
+                (false, false) => return Err(Unsupported::new(Self::CROSSED)),
             }
         }
         let mut lifted = Vec::with_capacity(ids.len());
@@ -1273,9 +1301,10 @@ impl Lowering {
                 }
                 if let Some(list) = self.member {
                     if self.schema.lists[list as usize].alias.as_deref() == Some(name) {
-                        return match rest.is_empty() {
-                            true => Err(Unsupported::new(format!("whole element {name}"))),
-                            false => self.field(list, &rest, Some(&path), r),
+                        return match (rest.is_empty(), ctx.siblings) {
+                            (true, _) => Err(Unsupported::new(format!("whole element {name}"))),
+                            (false, true) => Err(Unsupported::new(Self::CROSSED)),
+                            (false, false) => self.field(list, &rest, Some(&path), r),
                         };
                     }
                 }
@@ -1393,7 +1422,14 @@ impl Lowering {
             let read = self.add(Op::Field(list, f), ty, Scope::Elem(list));
             return Ok(self.declared(Some(list), name, read, Scope::Elem(list)));
         }
-        let Some(path) = member else {
+        let own = match (member, self.member == Some(list)) {
+            (None, true) => self.schema.lists[list as usize]
+                .alias
+                .as_ref()
+                .map(|alias| format!("{alias}.{name}")),
+            _ => None,
+        };
+        let Some(path) = member.or(own.as_deref()) else {
             return Err(Unsupported::new(format!("unknown field {name}")));
         };
         if self.absent.iter().any(|a| a == path) {
@@ -2479,6 +2515,8 @@ impl Lowering {
             dollar: ctx.dollar,
             list: ctx.list,
             elem: None,
+            home: ctx.home,
+            siblings: ctx.siblings || ctx.home == Some(seq.list),
         }
     }
 
@@ -2611,7 +2649,7 @@ impl Lowering {
                 };
                 match self.graph {
                     true => self.keyed_list(&path, r),
-                    false => self.root_list(name, &rest, &path, r),
+                    false => self.root_list(name, &rest, &path, ctx, r),
                 }
             }
         }
@@ -2640,10 +2678,18 @@ impl Lowering {
         name: &str,
         rest: &str,
         path: &str,
+        ctx: Ctx,
         r: &mut dyn Resolve,
     ) -> Result<Seq, Unsupported> {
         self.overlap(path)?;
+        let across = match ctx.scope {
+            Scope::Elem(list) if self.member == Some(list) && !ctx.siblings => Some(list),
+            _ => None,
+        };
         match self.named(path) {
+            Some(Named::Seq(_)) if self.outer && across.is_some() => {
+                return Err(Unsupported::new(format!("list {path} made in the same pass")))
+            }
             Some(Named::Seq(seq)) => return Ok(seq),
             Some(Named::Node(_) | Named::Val(_)) => {
                 return Err(Unsupported::new(format!("{path} is not a list")))
@@ -2652,11 +2698,16 @@ impl Lowering {
         }
         if let Some(member) = self.member {
             if self.schema.lists[member as usize].alias.as_deref() == Some(name) {
-                return match rest.is_empty() {
-                    true => Err(Unsupported::new(format!("whole element {name}"))),
-                    false => Ok(Self::plain(self.nested(member, rest, r)?)),
+                return match (rest.is_empty(), ctx.siblings) {
+                    (true, _) => Err(Unsupported::new(format!("whole element {name}"))),
+                    (false, true) => Err(Unsupported::new(Self::CROSSED)),
+                    (false, false) => Ok(Self::plain(self.nested(member, rest, r)?)),
                 };
             }
+        }
+        if let (true, Some(list)) = (self.outer, across) {
+            let outer = format!("{}{path}", Self::OUTER);
+            return Ok(Self::plain(self.nested(list, &outer, r)?));
         }
         if let Some(list) = self.schema.list(path) {
             return Ok(Self::plain(list));

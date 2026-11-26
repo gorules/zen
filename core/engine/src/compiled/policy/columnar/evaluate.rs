@@ -301,10 +301,10 @@ impl PolicyPlan {
             }
         }
         let converted = !shared;
-        let dated = match converted {
-            false => vec![false; rows],
-            true => sheet.dates(&artifact.input_schema, context.timezone()),
-        };
+        if converted {
+            sheet.dates(&artifact.input_schema, context.timezone());
+        }
+        let mut dated: Option<Vec<bool>> = None;
         let mut fallback = vec![false; rows];
         let mut erred = false;
         let sure = match shared {
@@ -354,6 +354,10 @@ impl PolicyPlan {
                 continue;
             }
             let req = request(row);
+            let dated = dated.get_or_insert_with(|| match converted {
+                true => sheet.dated(),
+                false => vec![false; rows],
+            });
             if !dated[row]
                 && artifact
                     .input_schema
@@ -490,6 +494,24 @@ impl PolicyPlan {
             Census::record("policy rows | objects after walk".into(), finished.len(), 0);
         }
         let requests: Vec<EvaluateRequest> = hosted.iter().map(|&row| request(row)).collect();
+        context.restart(&hosted);
+        let evaluated = self.evaluate(artifact, &requests, &context.rows(&hosted));
+        if owned.iter().all(Option::is_none) && evaluated.iter().all(Result::is_err) {
+            for (&row, result) in hosted.iter().zip(evaluated) {
+                if let Err(error) = result {
+                    errors[row] = Some(error);
+                }
+            }
+            return output(
+                rows,
+                sheet.output(&finished),
+                errors,
+                Paths {
+                    hosted: hosted.len(),
+                    ..counts
+                },
+            );
+        }
         let mut shredder = Shredder::new(rows);
         for &row in &finished {
             match owned.get(row) {
@@ -497,8 +519,6 @@ impl PolicyPlan {
                 _ => shredder.visit(&sheet.object(row), 0, row),
             }
         }
-        context.restart(&hosted);
-        let evaluated = self.evaluate(artifact, &requests, &context.rows(&hosted));
         for (&row, result) in hosted.iter().zip(evaluated) {
             match result {
                 Ok(result) => shredder.visit(&result.output, 0, row),

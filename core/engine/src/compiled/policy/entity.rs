@@ -15,7 +15,6 @@ pub(super) struct Field<'a> {
     pub leaf: Leaf<'a>,
     pub present: Option<Rc<[u64]>>,
     pub input: bool,
-    pub raw: Option<Leaf<'a>>,
 }
 
 pub(super) struct Entity<'a> {
@@ -52,7 +51,12 @@ impl<'a> Entity<'a> {
                 entity
                     .fields
                     .iter()
-                    .map(|field| (field.name.as_ref(), field.leaf.column()))
+                    .map(|field| match &field.leaf {
+                        Leaf::Dated(dated) if !dated.settled() => {
+                            (field.name.as_ref(), dated.raw().column())
+                        }
+                        leaf => (field.name.as_ref(), leaf.column()),
+                    })
                     .collect()
             })
             .collect();
@@ -120,7 +124,6 @@ impl<'a> Entity<'a> {
                 leaf: Normalizer::lean(*column, len),
                 present: None,
                 input: true,
-                raw: None,
             })
             .collect();
         let rows = offsets.len().saturating_sub(1);
@@ -157,7 +160,6 @@ impl<'a> Entity<'a> {
                 leaf: Leaf::typed(array),
                 present: None,
                 input: true,
-                raw: None,
             })
             .collect();
         Self {
@@ -219,7 +221,7 @@ impl<'a> Entity<'a> {
 
     pub fn raw_view(&self, field: usize) -> Option<Leaf<'a>> {
         let field = &self.fields[field];
-        let raw = field.raw.clone()?;
+        let raw = field.leaf.declared()?;
         Some(match &field.present {
             Some(bits) => Leaf::masked(raw, bits),
             None => raw,
@@ -341,7 +343,6 @@ impl<'a> Entity<'a> {
             leaf,
             present,
             input: false,
-            raw: None,
         };
         match (self.field(&fresh.name), full) {
             (None, _) => self.fields.push(fresh),
@@ -369,8 +370,7 @@ impl<'a> Entity<'a> {
                     leaf: Leaf::typed(builder.finish()),
                     present: Some(bits.into()),
                     input: false,
-                    raw: None,
-                };
+                    };
                 self.fields[at] = merged;
             }
         }

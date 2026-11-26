@@ -1,6 +1,6 @@
 use crate::compiled::core::list::Frame;
 use crate::compiled::host::input::dates::DeclaredDates;
-use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dict, Leaf, Records, Store};
+use crate::compiled::leaf::{Array, Bits, ColumnBuilder, Dated, Dict, Leaf, Records, Store};
 use crate::compiled::output::OutputColumn;
 use std::cell::Ref;
 use std::rc::Rc;
@@ -1423,6 +1423,10 @@ impl<'a> Listing<'a> {
     pub fn leaf(leaf: &Leaf<'a>, owners: usize) -> Option<Listing<'a>> {
         match leaf {
             Leaf::Input(input) => Listing::of(input.column.resolved(), owners),
+            Leaf::Dated(dated) => match Self::undated(dated, owners) {
+                Some(listing) => Some(listing),
+                None => Self::leaf(dated.dense(), owners),
+            },
             other => match other
                 .records()
                 .and_then(|records| Self::recorded(&records, owners))
@@ -1431,6 +1435,102 @@ impl<'a> Listing<'a> {
                 None => Self::copied(&other.column(), owners),
             },
         }
+    }
+
+    pub fn spread(&self, outer: &Frame, rows: usize) -> Option<Listing<'a>> {
+        const LIMIT: usize = 1 << 24;
+        let children = outer.children;
+        let mut offsets: Vec<i32> = Vec::with_capacity(children + 1);
+        offsets.push(0);
+        let mut valid = Bits::ones(children);
+        let mut nulls = false;
+        let mut hosted = self
+            .hosted
+            .as_ref()
+            .map(|_| vec![0u64; children.div_ceil(64)]);
+        let mut picks: Vec<usize> = Vec::new();
+        let mut next = 0usize;
+        for row in 0..rows {
+            let Some((start, end)) = outer.range(row) else {
+                continue;
+            };
+            if start != next {
+                return None;
+            }
+            let items = self.frame.range(row);
+            let odd = self
+                .hosted
+                .as_ref()
+                .is_some_and(|bits| Bits::get(bits, row));
+            for child in start..end {
+                match items {
+                    Some((from, to)) => picks.extend(from..to),
+                    None => {
+                        Bits::set(&mut valid, child, false);
+                        nulls = true;
+                    }
+                }
+                if let (true, Some(bits)) = (odd, hosted.as_mut()) {
+                    Bits::set(bits, child, true);
+                }
+                offsets.push(i32::try_from(picks.len()).ok()?);
+            }
+            if picks.len() > LIMIT {
+                return None;
+            }
+            next = end;
+        }
+        if next != children {
+            return None;
+        }
+        let total = picks.len();
+        let picks: Rc<[usize]> = picks.into();
+        let picked = |leaf: &Leaf<'a>| match leaf {
+            Leaf::Dated(dated) if !dated.settled() => {
+                Dated::leaf(dated.raw().pick(&picks), total, dated.dating().clone())
+            }
+            other => other.pick(&picks),
+        };
+        Some(Listing {
+            frame: Frame {
+                offsets: offsets.into(),
+                validity: nulls.then(|| valid.into()),
+                children: total,
+            },
+            hosted: hosted.map(Rc::from),
+            fields: self
+                .fields
+                .iter()
+                .map(|(name, leaf)| (name.clone(), picked(leaf)))
+                .collect(),
+            dated: self
+                .dated
+                .iter()
+                .map(|(name, leaf)| (name.clone(), leaf.pick(&picks)))
+                .collect(),
+        })
+    }
+
+    fn undated(dated: &Dated<'a>, owners: usize) -> Option<Listing<'a>> {
+        if dated.settled() || !dated.dating().listed() {
+            return None;
+        }
+        let mut listing = Self::leaf(dated.raw(), owners)?;
+        let children = listing.frame.children;
+        for (name, leaf) in listing.fields.iter_mut() {
+            let Some(dating) = name
+                .split('.')
+                .try_fold(dated.dating().clone(), |dating, segment| dating.field(segment))
+            else {
+                continue;
+            };
+            let wrapped = Dated::leaf(leaf.clone(), children, dating);
+            if let Some(raw) = wrapped.declared() {
+                listing.dated.push((name.clone(), raw));
+            }
+            *leaf = wrapped;
+        }
+        Some(listing)
     }
 
     fn recorded(records: &Records<'a>, owners: usize) -> Option<Listing<'a>> {
@@ -1555,9 +1655,7 @@ impl<'a> Listing<'a> {
     pub fn classes(&self) -> Vec<(Arc<str>, Class)> {
         self.fields
             .iter()
-            .filter_map(|(name, leaf)| {
-                Some((name.clone(), Normalizer::class(&leaf.column().values)?))
-            })
+            .filter_map(|(name, leaf)| Some((name.clone(), Normalizer::of(leaf)?)))
             .collect()
     }
 
@@ -1726,6 +1824,19 @@ impl<'a> Listing<'a> {
 }
 
 impl Normalizer {
+    pub(crate) fn of(leaf: &Leaf) -> Option<Class> {
+        match leaf {
+            Leaf::Dated(dated) if !dated.settled() => {
+                let class = Self::class(&dated.raw().column().values)?;
+                match dated.changed() {
+                    true => None,
+                    false => Some(class),
+                }
+            }
+            other => Self::class(&other.column().values),
+        }
+    }
+
     pub(crate) fn class(values: &Values) -> Option<Class> {
         match values {
             Values::Scaled { .. } | Values::I64(_) | Values::Dec(_) => Some(Class::Num),

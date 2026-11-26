@@ -44,14 +44,22 @@ struct Probed {
     answer: Resolved,
 }
 
-enum Source {
+enum Source<'a> {
     Entry(usize),
     Raw(usize),
     Field(usize),
     RawField(usize),
     List(usize, Vec<usize>),
     Listed(usize),
+    Spread(Rc<Spread<'a>>),
     Absent,
+}
+
+struct Spread<'a> {
+    key: String,
+    stable: bool,
+    base: Rc<Listing<'a>>,
+    frame: Frame,
 }
 
 enum Part<'a> {
@@ -116,6 +124,10 @@ impl TypedGroup {
             },
             |(lowering, probe, sinks), at| {
                 let block = units[at].block;
+                if at > 0 && entity.is_some_and(|entity| pass.siblings_read(entity, block)) {
+                    Census::reason(|| "member reads its own list after a write".into());
+                    return Step::Stop;
+                }
                 let lowered = match &pass.plan.blocks.rules[block].kind {
                     BlockKind::DecisionTable(ir) => Fused::<Sink>::spec(ir).map(|spec| {
                         let sunk: Vec<Sink> = spec
@@ -252,7 +264,12 @@ impl TypedGroup {
         })
     }
 
-    fn replay(&self, pass: &Pass, entity: Option<usize>, rows: &[usize]) -> Option<Vec<Source>> {
+    fn replay<'a>(
+        &self,
+        pass: &Pass<'_, 'a>,
+        entity: Option<usize>,
+        rows: &[usize],
+    ) -> Option<Vec<Source<'a>>> {
         self.probe
             .iter()
             .map(|probed| {
@@ -266,13 +283,13 @@ impl TypedGroup {
 impl Fusions {
     const VARIANTS: usize = 8;
 
-    fn group(
+    fn group<'a>(
         &self,
-        pass: &Pass,
+        pass: &Pass<'_, 'a>,
         units: &[Span],
         entity: Option<usize>,
         rows: &[usize],
-    ) -> Option<(Arc<TypedGroup>, Vec<Source>)> {
+    ) -> Option<(Arc<TypedGroup>, Vec<Source<'a>>)> {
         let key = Chain {
             blocks: units.iter().map(|span| span.block).collect(),
             member: entity.is_some(),
@@ -320,25 +337,6 @@ impl<'s, 'a> Pass<'s, 'a> {
         if Density::sparse(rows.len(), total) {
             Census::reason(|| "sparse".into());
             return Typed::Skipped;
-        }
-        if let Some(at) = entity {
-            let path = self.sheet.entities[at].path.clone();
-            let siblings = units.iter().any(|span| {
-                Pass::block(self.plan, span.block).is_some_and(|(programs, _)| {
-                    programs.iter().any(|program| {
-                        program
-                            .program()
-                            .site_keys
-                            .iter()
-                            .flatten()
-                            .any(|key| *key == *path)
-                    })
-                })
-            });
-            if siblings {
-                Census::reason(|| "member reads its own list".into());
-                return Typed::Skipped;
-            }
         }
         let plan = self.plan;
         self.listed.borrow_mut().retain(|listed| listed.stable);
@@ -416,7 +414,13 @@ impl<'s, 'a> Pass<'s, 'a> {
         Typed::Ran(group.units, faulted)
     }
 
-    fn rows(&self, group: &TypedGroup, sources: &[Source], rows: &[usize], full: bool) -> Rows {
+    fn rows(
+        &self,
+        group: &TypedGroup,
+        sources: &[Source<'a>],
+        rows: &[usize],
+        full: bool,
+    ) -> Rows {
         if !group.lists.is_empty() || rows.len() < Dedup::MIN {
             return Rows::Plain;
         }
@@ -464,7 +468,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         &self,
         group: &TypedGroup,
         program: &Program,
-        sources: &[Source],
+        sources: &[Source<'a>],
         rows: &[usize],
         full: bool,
     ) -> Option<Outputs> {
@@ -499,7 +503,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         &self,
         group: &TypedGroup,
         program: &Program,
-        sources: &[Source],
+        sources: &[Source<'a>],
         entity: Option<usize>,
         select: Option<&[u64]>,
     ) -> Option<Outputs> {
@@ -508,7 +512,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 Source::Entry(_) | Source::Raw(_) => self.entry_leaf(sources.get(at)?),
                 Source::Field(field) => Some(self.sheet.entities[entity?].view(*field)),
                 Source::RawField(field) => self.sheet.entities[entity?].raw_view(*field),
-                Source::List(..) | Source::Listed(_) | Source::Absent => None,
+                Source::List(..) | Source::Listed(_) | Source::Spread(_) | Source::Absent => None,
             }
         };
         let columns: Vec<Leaf<'a>> = group
@@ -541,6 +545,13 @@ impl<'s, 'a> Pass<'s, 'a> {
                     }
                     Source::Listed(index) => {
                         Part::Listed(self.listed.borrow().get(*index)?.listing.clone()?)
+                    }
+                    Source::Spread(spread) => {
+                        let (_, listing) =
+                            self.listing(spread.key.clone(), spread.stable, || {
+                                spread.base.spread(&spread.frame, self.sheet.rows)
+                            })?;
+                        Part::Listed(listing)
                     }
                     _ => return None,
                 },
@@ -590,7 +601,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         built.map(|listing| (listed.len() - 1, listing))
     }
 
-    fn listed_entry(&self, entry: usize) -> (Resolved, Source) {
+    fn listed_entry(&self, entry: usize) -> (Resolved, Source<'a>) {
         let leaf = &self.sheet.entries[entry].leaf;
         match self.listing(format!("#{entry}"), true, || {
             Listing::leaf(leaf, self.sheet.rows)
@@ -608,22 +619,129 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
     }
 
-    fn entry_leaf(&self, source: &Source) -> Option<Leaf<'a>> {
+    fn entry_leaf(&self, source: &Source<'a>) -> Option<Leaf<'a>> {
         match source {
             Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
-            Source::Raw(entry) => self.sheet.entries[*entry].raw.clone(),
+            Source::Raw(entry) => self.sheet.entries[*entry].declared(),
             _ => None,
         }
     }
 
-    fn bound(&self, entry: usize) -> (Resolved, Source) {
-        if self.sheet.entries[entry].raw.is_some() {
+    fn bound(&self, entry: usize) -> (Resolved, Source<'a>) {
+        if self.sheet.entries[entry].declared().is_some() {
             return (Resolved::Dated, Source::Raw(entry));
         }
-        match Normalizer::class(&self.sheet.entries[entry].leaf.column().values) {
+        match Normalizer::of(&self.sheet.entries[entry].leaf) {
             Some(class) => (Resolved::Column(class), Source::Entry(entry)),
             None => self.listed_entry(entry),
         }
+    }
+
+    fn siblings_read(&self, entity: usize, block: usize) -> bool {
+        let path = &self.sheet.entities[entity].path;
+        Pass::block(self.plan, block).is_some_and(|(programs, _)| {
+            programs.iter().any(|program| {
+                program
+                    .program()
+                    .site_keys
+                    .iter()
+                    .flatten()
+                    .any(|key| **key == **path)
+            })
+        })
+    }
+
+    fn own_list(&self, at: usize) -> Option<Listing<'a>> {
+        let owner = &self.sheet.entities[at];
+        if owner.cached() || !owner.flat() {
+            return None;
+        }
+        let mut fields = Vec::new();
+        let mut dated = Vec::new();
+        for (f, field) in owner.fields.iter().enumerate() {
+            if owner.field(&field.name) != Some(f) {
+                continue;
+            }
+            if let Some(raw) = owner.raw_view(f) {
+                dated.push((field.name.clone(), raw));
+            }
+            fields.push((field.name.clone(), owner.view(f)));
+        }
+        Some(Listing {
+            frame: owner.frame.clone(),
+            hosted: None,
+            fields,
+            dated,
+        })
+    }
+
+    fn outer_list(
+        &self,
+        entity: Option<usize>,
+        rows: &[usize],
+        root: &str,
+        path: &str,
+    ) -> Option<Spread<'a>> {
+        let entities = &self.sheet.entities;
+        let total = self.sheet.rows;
+        let listed = |path: &str| -> Option<(String, bool, Rc<Listing<'a>>)> {
+            let owner = match entity {
+                Some(at) => (entities[at].path.as_ref() == path).then_some(at),
+                None => entities
+                    .iter()
+                    .position(|e| e.active && e.path.as_ref() == path),
+            };
+            if let Some(at) = owner {
+                let key = format!("@{at}");
+                let (_, listing) = self.listing(key.clone(), false, || self.own_list(at))?;
+                return Some((key, false, listing));
+            }
+            let entry = match entity {
+                Some(at) => match self.site(at, Some(path), rows) {
+                    Member::Root(entry) => entry,
+                    _ => return None,
+                },
+                None => {
+                    if entities
+                        .iter()
+                        .any(|e| e.active && Sheet::related(path, &e.path).is_some())
+                    {
+                        return None;
+                    }
+                    match self.sheet.bind(path, rows, false) {
+                        Bind::Column(entry) => entry,
+                        _ => return None,
+                    }
+                }
+            };
+            let key = format!("#{entry}");
+            let (_, listing) = self.listing(key.clone(), true, || {
+                Listing::leaf(&self.sheet.entries[entry].leaf, total)
+            })?;
+            Some((key, true, listing))
+        };
+        let (above, steady, parent) = listed(root)?;
+        let (base, stable, listing) = listed(path)?;
+        let gathers = |leaf: &Leaf<'a>| match leaf {
+            Leaf::Dated(_) => true,
+            other => !matches!(other.column().values, Values::Dec(_)),
+        };
+        Some(Spread {
+            key: format!("^{above}:{base}"),
+            stable: steady && stable,
+            base: Rc::new(Listing {
+                frame: listing.frame.clone(),
+                hosted: listing.hosted.clone(),
+                fields: listing
+                    .fields
+                    .iter()
+                    .filter(|(_, leaf)| gathers(leaf))
+                    .cloned()
+                    .collect(),
+                dated: listing.dated.clone(),
+            }),
+            frame: parent.frame.clone(),
+        })
     }
 
     fn nested_list(
@@ -631,10 +749,29 @@ impl<'s, 'a> Pass<'s, 'a> {
         entity: Option<usize>,
         rows: &[usize],
         chain: &[&str],
-    ) -> Option<(usize, Rc<Listing<'a>>)> {
+    ) -> Option<(Rc<Listing<'a>>, Source<'a>)> {
         let (root, rest) = chain.split_first()?;
         let (first, rest) = rest.split_first()?;
         let entities = &self.sheet.entities;
+        if let Some(path) = first.strip_prefix(Lowering::OUTER) {
+            let spread = self.outer_list(entity, rows, root, path)?;
+            if rest.is_empty() {
+                return Some((spread.base.clone(), Source::Spread(Rc::new(spread))));
+            }
+            let (mut key, stable) = (spread.key.clone(), spread.stable);
+            let (mut at, mut current) = self.listing(key.clone(), stable, || {
+                spread.base.spread(&spread.frame, self.sheet.rows)
+            })?;
+            for field in rest {
+                key.push('\n');
+                key.push_str(field);
+                let parent = current.clone();
+                let (next, listing) = self.listing(key.clone(), stable, || parent.nested(field))?;
+                at = next;
+                current = listing;
+            }
+            return Some((current, Source::Listed(at)));
+        }
         let owner = match entity {
             Some(at) => (entities[at].path.as_ref() == *root).then_some(at),
             None => entities
@@ -686,7 +823,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             at = next;
             current = listing;
         }
-        Some((at, current))
+        Some((current, Source::Listed(at)))
     }
 
     fn locate(
@@ -695,9 +832,9 @@ impl<'s, 'a> Pass<'s, 'a> {
         rows: &[usize],
         key: &str,
         ask: Ask,
-    ) -> (Resolved, Source) {
+    ) -> (Resolved, Source<'a>) {
         let unsupported = (Resolved::Unsupported, Source::Absent);
-        let column = |leaf: &Leaf, source: Source| match Normalizer::class(&leaf.column().values) {
+        let column = |leaf: &Leaf, source: Source<'a>| match Normalizer::of(leaf) {
             Some(class) => (Resolved::Column(class), source),
             None => (Resolved::Unsupported, Source::Absent),
         };
@@ -705,14 +842,14 @@ impl<'s, 'a> Pass<'s, 'a> {
             (_, Ask::Nested) => {
                 let chain: Vec<&str> = key.split('\n').collect();
                 match self.nested_list(entity, rows, &chain) {
-                    Some((at, listing)) => (Self::described(&listing), Source::Listed(at)),
+                    Some((listing, source)) => (Self::described(&listing), source),
                     None => unsupported,
                 }
             }
             (Some(at), Ask::Alias) => {
                 let owner = &self.sheet.entities[at];
                 match self.site(at, Some(&format!("{}.{key}", owner.name)), rows) {
-                    Member::Field(field) if owner.fields[field].raw.is_some() => {
+                    Member::Field(field) if owner.fields[field].leaf.declared().is_some() => {
                         (Resolved::Dated, Source::RawField(field))
                     }
                     Member::Field(field) => column(&owner.view(field), Source::Field(field)),
@@ -744,8 +881,12 @@ impl<'s, 'a> Pass<'s, 'a> {
                         if owner.field(&field.name) != Some(f) {
                             continue;
                         }
-                        let class = Normalizer::class(&owner.view(f).column().values);
-                        match (class, field.raw.is_some()) {
+                        let declared = field.leaf.declared().is_some();
+                        let class = match declared {
+                            true => None,
+                            false => Normalizer::of(&owner.view(f)),
+                        };
+                        match (class, declared) {
                             (Some(class), false) => {
                                 fields.push((field.name.clone(), class));
                                 index.push(f);

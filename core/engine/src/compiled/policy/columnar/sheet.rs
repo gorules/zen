@@ -1,7 +1,7 @@
-use crate::compiled::leaf::{Bits, ColumnBuilder, Leaf};
+use crate::compiled::leaf::{Bits, ColumnBuilder, Dated, Leaf};
 use crate::compiled::output::OutputColumn;
 use crate::compiled::policy::entity::Entity;
-use crate::compiled::policy::validator::{DateTexts, DatesAt, InputSchema};
+use crate::compiled::policy::validator::{DateTexts, InputSchema};
 use crate::compiled::shred::{Normalizer, Shredder};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,7 +12,6 @@ use zen_types::path::DotPath;
 pub(super) struct Entry<'a> {
     pub(super) path: Arc<str>,
     pub(super) leaf: Leaf<'a>,
-    pub(super) raw: Option<Leaf<'a>>,
     present: Option<Rc<[u64]>>,
     pub(super) input: bool,
     dead: bool,
@@ -34,6 +33,12 @@ pub(super) struct Units {
     pub(super) member: Option<usize>,
     pub(super) units: Rc<[usize]>,
     pub(super) owners: Rc<[usize]>,
+}
+
+impl<'a> Entry<'a> {
+    pub(super) fn declared(&self) -> Option<Leaf<'a>> {
+        self.leaf.declared()
+    }
 }
 
 impl Units {
@@ -69,7 +74,6 @@ impl<'a> Sheet<'a> {
             entries.push(Entry {
                 path: Arc::from(*path),
                 leaf: Normalizer::lean(*column, rows),
-                raw: None,
                 present,
                 input: true,
                 dead: false,
@@ -85,108 +89,60 @@ impl<'a> Sheet<'a> {
         })
     }
 
-    pub(super) fn dates(
-        &mut self,
-        schema: &InputSchema,
-        tz: zen_expression::context::Timezone,
-    ) -> Vec<bool> {
-        let rows = self.rows;
-        let mut dated = vec![false; rows];
+    pub(super) fn dates(&mut self, schema: &InputSchema, tz: zen_expression::context::Timezone) {
         if !schema.has_dates() {
-            return dated;
+            return;
         }
-        let texts = DateTexts::remembered(tz);
-        for entry in self.entries.iter_mut().filter(|entry| entry.input) {
-            let Some(at) = schema.dates_at(&entry.path) else {
+        let texts = Rc::new(DateTexts::remembered(tz));
+        let owned: Vec<usize> = self
+            .entities
+            .iter()
+            .filter(|entity| entity.active)
+            .map(|entity| entity.entry)
+            .collect();
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            if !entry.input || owned.contains(&index) {
                 continue;
-            };
-            if let Some(leaf) = Self::converted(schema, &at, &entry.leaf, rows, &texts, |row| {
-                dated[row] = true
-            }) {
-                let raw = std::mem::replace(&mut entry.leaf, leaf);
-                entry.raw = Self::declared(&at, raw);
+            }
+            if let Some(at) = schema.dates_at(&entry.path) {
+                entry.leaf = Dated::leaf(entry.leaf.clone(), self.rows, schema.dating(at, &texts));
             }
         }
         for entity in self.entities.iter_mut() {
-            let offsets = entity.frame.offsets.clone();
             let children = entity.frame.children;
-            let mut owner = vec![0usize; children];
-            for row in 0..offsets.len().saturating_sub(1) {
-                let (start, end) = (
-                    offsets[row].max(0) as usize,
-                    offsets[row + 1].max(0) as usize,
-                );
-                for child in start..end.min(children) {
-                    owner[child] = row;
+            for field in entity.fields.iter_mut().filter(|field| field.input) {
+                if let Some(at) = schema.dates_at(&format!("{}.{}", entity.path, field.name)) {
+                    field.leaf = Dated::leaf(field.leaf.clone(), children, schema.dating(at, &texts));
                 }
             }
-            for field in entity.fields.iter_mut().filter(|field| field.input) {
-                let Some(at) = schema.dates_at(&format!("{}.{}", entity.path, field.name)) else {
+        }
+    }
+
+    pub(super) fn dated(&self) -> Vec<bool> {
+        let mut dated = vec![false; self.rows];
+        for entry in &self.entries {
+            if let Leaf::Dated(leaf) = &entry.leaf {
+                let marks = leaf.marks();
+                dated
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(row, dated)| *dated |= Bits::get(marks, row));
+            }
+        }
+        for entity in &self.entities {
+            for field in &entity.fields {
+                let Leaf::Dated(leaf) = &field.leaf else {
                     continue;
                 };
-                if let Some(leaf) =
-                    Self::converted(schema, &at, &field.leaf, children, &texts, |child| {
-                        dated[owner[child]] = true
-                    })
-                {
-                    let raw = std::mem::replace(&mut field.leaf, leaf);
-                    field.raw = Self::declared(&at, raw);
+                let marks = leaf.marks();
+                for (row, dated) in dated.iter_mut().enumerate() {
+                    if let Some((start, end)) = entity.frame.range(row) {
+                        *dated |= (start..end).any(|child| Bits::get(marks, child));
+                    }
                 }
             }
         }
         dated
-    }
-
-    fn declared(at: &DatesAt, raw: Leaf<'a>) -> Option<Leaf<'a>> {
-        let single = match at {
-            DatesAt::Property(property, _) => {
-                !property.array && matches!(property.kind, crate::policy::ir::PropertyTypeIr::Date)
-            }
-            _ => false,
-        };
-        let text = matches!(
-            Normalizer::class(&raw.column().values),
-            Some(zen_expression::typed::Class::Text)
-        );
-        (single && text).then_some(raw)
-    }
-
-    fn converted(
-        schema: &InputSchema,
-        at: &DatesAt,
-        leaf: &Leaf<'a>,
-        len: usize,
-        texts: &DateTexts,
-        mut mark: impl FnMut(usize),
-    ) -> Option<Leaf<'a>> {
-        let mut changed = false;
-        let values: Vec<Variable> = (0..len)
-            .map(|at_row| {
-                let value = leaf.get(at_row);
-                match schema.convert_at(at, &value, texts) {
-                    Some(next) => {
-                        changed = true;
-                        mark(at_row);
-                        next
-                    }
-                    None => value,
-                }
-            })
-            .collect();
-        if !changed {
-            return None;
-        }
-        let any = Leaf::Any(values.into());
-        let mut validity = leaf.validity(len);
-        Bits::trim(&mut validity, len);
-        let valid = validity
-            .iter()
-            .map(|w| w.count_ones() as usize)
-            .sum::<usize>();
-        match valid == len {
-            true => Some(any),
-            false => Some(Leaf::masked(any, &validity.into())),
-        }
     }
 
     pub(super) fn related(a: &str, b: &str) -> Option<std::cmp::Ordering> {
@@ -271,8 +227,7 @@ impl<'a> Sheet<'a> {
                 Entry {
                     path,
                     leaf,
-                    raw: None,
-                    present,
+                        present,
                     input: true,
                     dead: false,
                 },
@@ -398,7 +353,6 @@ impl<'a> Sheet<'a> {
             Entry {
                 path,
                 leaf,
-                raw: None,
                 present,
                 input: false,
                 dead: false,
@@ -426,7 +380,6 @@ impl<'a> Sheet<'a> {
             Entry {
                 path,
                 leaf: Leaf::Any(values.into()),
-                raw: None,
                 present: (!full).then(|| present.into()),
                 input: false,
                 dead: false,

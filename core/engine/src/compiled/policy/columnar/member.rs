@@ -567,6 +567,10 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn plain(leaf: &Leaf) -> bool {
+        let leaf = match leaf {
+            Leaf::Dated(dated) => dated.dense(),
+            other => other,
+        };
         matches!(
             leaf,
             Leaf::Input(_)

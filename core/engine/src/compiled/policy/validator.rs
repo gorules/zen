@@ -1,10 +1,12 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::Variable;
 
 use crate::compiled::host::input::dates::DeclaredDates;
+use crate::compiled::leaf::Dating;
 use crate::policy::ir::{DataModelIr, DictionaryIr, Property, PropertyTypeIr};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::MAX_RECURSION_DEPTH;
@@ -25,7 +27,7 @@ impl InputSchema {
             globals,
             roots,
             ref_targets,
-            dated,
+            dated: Arc::new(dated),
             dictionaries: db.unit(policy_path).dictionaries.clone(),
         }
     }
@@ -76,7 +78,7 @@ pub(crate) struct InputSchema {
     globals: HashMap<Arc<str>, Property>,
     roots: HashSet<Arc<str>>,
     ref_targets: HashSet<Arc<str>>,
-    dated: HashSet<Arc<str>>,
+    dated: Arc<HashSet<Arc<str>>>,
     dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
 }
 
@@ -90,6 +92,7 @@ impl InputSchema {
             errors: Vec::new(),
             depth: 0,
             path: Vec::new(),
+            dates: None,
         };
 
         let Some(input_obj) = input.as_object() else {
@@ -155,18 +158,75 @@ impl InputSchema {
         self.convert_input(input, &DateTexts::plain(tz))
     }
 
+    fn dates(&self) -> Dates<'_> {
+        Dates {
+            entities: &self.entities,
+            dated: &self.dated,
+        }
+    }
+
     fn convert_input(&self, input: &Variable, texts: &DateTexts) -> Option<Variable> {
+        let dates = self.dates();
         DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
-                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0, texts))
+                DeclaredDates::rewrite_items(value, |item| dates.convert_entity(item, key, 0, texts))
             } else if self.roots.contains(key) {
-                self.convert_entity(value, key, 0, texts)
+                dates.convert_entity(value, key, 0, texts)
             } else {
-                self.convert_property(value, self.globals.get(key)?, 0, texts)
+                dates.convert_property(value, self.globals.get(key)?, 0, texts)
             }
         })
     }
 
+    pub(crate) fn root(&self, name: &str) -> bool {
+        self.roots.contains(name)
+    }
+
+    pub(crate) fn has_dated(&self, entity: &str) -> bool {
+        self.dated.contains(entity)
+    }
+
+    pub(crate) fn has_dates(&self) -> bool {
+        !self.dated.is_empty()
+            || self
+                .globals
+                .values()
+                .any(|property| matches!(property.kind, PropertyTypeIr::Date))
+    }
+
+    pub(crate) fn dates_at(&self, path: &str) -> Option<DatesAt> {
+        let mut segments = path.split('.');
+        let first = segments.next()?;
+        let mut at = if self.ref_targets.contains(first) {
+            DatesAt::Items(Arc::from(first), 0)
+        } else if self.roots.contains(first) {
+            DatesAt::Entity(Arc::from(first), 0)
+        } else {
+            DatesAt::Property(self.globals.get(first)?.clone(), 0)
+        };
+        let dates = self.dates();
+        for segment in segments {
+            at = dates.step(&at, segment)?;
+        }
+        dates.holds(&at).then_some(at)
+    }
+
+    pub(crate) fn dating(&self, at: DatesAt, texts: &Rc<DateTexts>) -> Rc<dyn Dating> {
+        Rc::new(DatingAt {
+            entities: self.entities.clone(),
+            dated: self.dated.clone(),
+            at,
+            texts: texts.clone(),
+        })
+    }
+}
+
+struct Dates<'s> {
+    entities: &'s HashMap<Arc<str>, Arc<DataModelIr>>,
+    dated: &'s HashSet<Arc<str>>,
+}
+
+impl Dates<'_> {
     fn convert_entity(
         &self,
         value: &Variable,
@@ -207,50 +267,36 @@ impl InputSchema {
         }
     }
 
-    pub(crate) fn root(&self, name: &str) -> bool {
-        self.roots.contains(name)
-    }
-
-    pub(crate) fn has_dated(&self, entity: &str) -> bool {
-        self.dated.contains(entity)
-    }
-
-    pub(crate) fn has_dates(&self) -> bool {
-        !self.dated.is_empty()
-            || self
-                .globals
-                .values()
-                .any(|property| matches!(property.kind, PropertyTypeIr::Date))
-    }
-
-    pub(crate) fn dates_at(&self, path: &str) -> Option<DatesAt> {
-        let mut segments = path.split('.');
-        let first = segments.next()?;
-        let mut at = if self.ref_targets.contains(first) {
-            DatesAt::Items(Arc::from(first), 0)
-        } else if self.roots.contains(first) {
-            DatesAt::Entity(Arc::from(first), 0)
-        } else {
-            DatesAt::Property(self.globals.get(first)?.clone(), 0)
-        };
-        for segment in segments {
-            let (entity, depth) = match &at {
-                DatesAt::Entity(name, depth) | DatesAt::Items(name, depth) => {
-                    (name.clone(), *depth)
-                }
-                DatesAt::Property(property, depth) => match &property.kind {
-                    PropertyTypeIr::Relationship { target } => (target.clone(), *depth),
-                    _ => return None,
-                },
-            };
-            if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(&entity) {
-                return None;
+    fn convert_at(&self, at: &DatesAt, value: &Variable, texts: &DateTexts) -> Option<Variable> {
+        match at {
+            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth, texts),
+            DatesAt::Items(name, depth) => DeclaredDates::rewrite_items(value, |item| {
+                self.convert_entity(item, name, *depth, texts)
+            }),
+            DatesAt::Property(property, depth) => {
+                self.convert_property(value, property, *depth, texts)
             }
-            let model = self.entities.get(&entity)?;
-            let property = model.properties.iter().find(|p| *p.name == *segment)?;
-            at = DatesAt::Property(property.clone(), depth + 1);
         }
-        let dated = match &at {
+    }
+
+    fn step(&self, at: &DatesAt, segment: &str) -> Option<DatesAt> {
+        let (entity, depth) = match at {
+            DatesAt::Entity(name, depth) | DatesAt::Items(name, depth) => (name.clone(), *depth),
+            DatesAt::Property(property, depth) => match &property.kind {
+                PropertyTypeIr::Relationship { target } => (target.clone(), *depth),
+                _ => return None,
+            },
+        };
+        if depth >= MAX_RECURSION_DEPTH || !self.dated.contains(&entity) {
+            return None;
+        }
+        let model = self.entities.get(&entity)?;
+        let property = model.properties.iter().find(|p| *p.name == *segment)?;
+        Some(DatesAt::Property(property.clone(), depth + 1))
+    }
+
+    fn holds(&self, at: &DatesAt) -> bool {
+        match at {
             DatesAt::Entity(name, depth) | DatesAt::Items(name, depth) => {
                 *depth < MAX_RECURSION_DEPTH && self.dated.contains(name)
             }
@@ -261,25 +307,59 @@ impl InputSchema {
                 }
                 _ => false,
             },
-        };
-        dated.then_some(at)
+        }
+    }
+}
+
+struct DatingAt {
+    entities: Arc<HashMap<Arc<str>, Arc<DataModelIr>>>,
+    dated: Arc<HashSet<Arc<str>>>,
+    at: DatesAt,
+    texts: Rc<DateTexts>,
+}
+
+impl DatingAt {
+    fn dates(&self) -> Dates<'_> {
+        Dates {
+            entities: &self.entities,
+            dated: &self.dated,
+        }
+    }
+}
+
+impl Dating for DatingAt {
+    fn convert(&self, value: &Variable) -> Option<Variable> {
+        self.dates().convert_at(&self.at, value, &self.texts)
     }
 
-    pub(crate) fn convert_at(
-        &self,
-        at: &DatesAt,
-        value: &Variable,
-        texts: &DateTexts,
-    ) -> Option<Variable> {
-        match at {
-            DatesAt::Entity(name, depth) => self.convert_entity(value, name, *depth, texts),
-            DatesAt::Items(name, depth) => DeclaredDates::rewrite_items(value, |item| {
-                self.convert_entity(item, name, *depth, texts)
-            }),
-            DatesAt::Property(property, depth) => {
-                self.convert_property(value, property, *depth, texts)
+    fn single(&self) -> bool {
+        match &self.at {
+            DatesAt::Property(property, _) => {
+                !property.array && matches!(property.kind, PropertyTypeIr::Date)
             }
+            _ => false,
         }
+    }
+
+    fn listed(&self) -> bool {
+        match &self.at {
+            DatesAt::Items(..) => true,
+            DatesAt::Property(property, _) => {
+                property.array && matches!(property.kind, PropertyTypeIr::Relationship { .. })
+            }
+            DatesAt::Entity(..) => false,
+        }
+    }
+
+    fn field(&self, name: &str) -> Option<Rc<dyn Dating>> {
+        let dates = self.dates();
+        let at = dates.step(&self.at, name).filter(|at| dates.holds(at))?;
+        Some(Rc::new(DatingAt {
+            entities: self.entities.clone(),
+            dated: self.dated.clone(),
+            at,
+            texts: self.texts.clone(),
+        }))
     }
 }
 
@@ -337,9 +417,27 @@ struct InputValidator<'a> {
     errors: Vec<InputValidationError>,
     depth: usize,
     path: Vec<Segment>,
+    dates: Option<&'a RefCell<HashMap<Box<str>, bool>>>,
 }
 
 impl InputValidator<'_> {
+    const REMEMBERED: usize = 8192;
+
+    fn date(&self, text: &str) -> bool {
+        let Some(seen) = self.dates else {
+            return zen_expression::DateValue::is_text(text);
+        };
+        let mut seen = seen.borrow_mut();
+        if let Some(known) = seen.get(text) {
+            return *known;
+        }
+        let known = zen_expression::DateValue::is_text(text);
+        if seen.len() < Self::REMEMBERED {
+            seen.insert(Box::from(text), known);
+        }
+        known
+    }
+
     fn rendered(&self) -> String {
         let mut out = String::new();
         for (i, segment) in self.path.iter().enumerate() {
@@ -461,9 +559,7 @@ impl InputValidator<'_> {
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
             PropertyTypeIr::Date => match value {
-                Variable::String(text) => {
-                    text.is_empty() || zen_expression::DateValue::is_text(text)
-                }
+                Variable::String(text) => text.is_empty() || self.date(text),
                 other => zen_expression::DateValue::is(other),
             },
             PropertyTypeIr::Reference { target } => {
@@ -539,6 +635,7 @@ struct Sureness<'s> {
     rows: usize,
     sure: Vec<bool>,
     resolved: bool,
+    dates: RefCell<HashMap<Box<str>, bool>>,
 }
 
 impl Sureness<'_> {
@@ -606,6 +703,9 @@ impl Sureness<'_> {
                 Self::boolean(column)
                     || matches!(column.variable(at), Variable::Bool(_) | Variable::Null)
             }
+            PropertyTypeIr::Enum(values) if Self::string(column) => column
+                .text(at)
+                .is_none_or(|text| values.iter().any(|v| v.as_ref() == text)),
             PropertyTypeIr::Enum(values) => match column.variable(at) {
                 Variable::Null => true,
                 Variable::String(s) => values.iter().any(|v| v.as_ref() == s.as_str()),
@@ -665,6 +765,7 @@ impl Sureness<'_> {
             errors: Vec::new(),
             depth: 0,
             path: Vec::new(),
+            dates: Some(&self.dates),
         };
         validator.validate_array_of_property(value, prop);
         validator.errors.is_empty()
@@ -716,6 +817,7 @@ impl Sureness<'_> {
             errors: Vec::new(),
             depth: 0,
             path: Vec::new(),
+            dates: Some(&self.dates),
         };
         validator.validate_entity(value, target);
         validator.errors.is_empty()
@@ -757,6 +859,113 @@ impl Sureness<'_> {
                     other => other.column(),
                 };
                 (a..b).all(|item| self.scalar(&prop.kind, &child, item))
+            }
+        }
+    }
+
+    fn merged(into: &mut Option<Vec<bool>>, found: Option<Vec<bool>>) {
+        match (into.as_mut(), found) {
+            (_, None) => {}
+            (None, found) => *into = found,
+            (Some(bad), Some(found)) => bad
+                .iter_mut()
+                .zip(found)
+                .for_each(|(bad, found)| *bad |= found),
+        }
+    }
+
+    fn kept(bad: Vec<bool>) -> Option<Vec<bool>> {
+        bad.contains(&true).then_some(bad)
+    }
+
+    fn unsure(
+        &self,
+        kind: &PropertyTypeIr,
+        column: &zen_expression::lane::Column,
+        len: usize,
+    ) -> Option<Vec<bool>> {
+        use zen_expression::lane::Values;
+        if self.kinded(kind, column) {
+            return None;
+        }
+        match (kind, column.values) {
+            (PropertyTypeIr::Relationship { target }, Values::Struct { fields, .. })
+                if self.schema.entities.contains_key(target) =>
+            {
+                let model = self.schema.entities.get(target)?;
+                let mut bad: Option<Vec<bool>> = None;
+                for (name, field) in fields {
+                    if let Some(prop) = model.properties.iter().find(|p| p.name.as_ref() == *name)
+                    {
+                        Self::merged(&mut bad, self.doubts(prop, field, len));
+                    }
+                }
+                let mut bad = bad?;
+                if column.validity.is_some() {
+                    bad.iter_mut()
+                        .enumerate()
+                        .for_each(|(at, bad)| *bad &= column.valid(at));
+                }
+                Self::kept(bad)
+            }
+            (PropertyTypeIr::Reference { .. }, _) => {
+                Self::kept((0..len).map(|at| !self.scalar(kind, column, at)).collect())
+            }
+            (_, Values::Dict { keys, values }) => {
+                let coded = values.column();
+                let mut known: Vec<Option<bool>> = vec![None; coded.len()];
+                Self::kept(
+                    (0..len)
+                        .map(|at| {
+                            if !column.valid(at) {
+                                return false;
+                            }
+                            let code = keys.get(at).and_then(|key| usize::try_from(*key).ok());
+                            match code.and_then(|code| known.get_mut(code).map(|slot| (code, slot)))
+                            {
+                                Some((code, slot)) => {
+                                    *slot.get_or_insert_with(|| !self.scalar(kind, &coded, code))
+                                }
+                                None => !self.scalar(kind, column, at),
+                            }
+                        })
+                        .collect(),
+                )
+            }
+            _ => Self::kept((0..len).map(|at| !self.scalar(kind, column, at)).collect()),
+        }
+    }
+
+    fn doubts(
+        &self,
+        prop: &Property,
+        column: &zen_expression::lane::Column,
+        len: usize,
+    ) -> Option<Vec<bool>> {
+        use zen_expression::lane::{Dictionary, Values};
+        match (prop.array, column.values) {
+            (false, _) => self.unsure(&prop.kind, column, len),
+            (true, Values::List { child, .. }) => {
+                let child = match child {
+                    Dictionary::Column(child) => *child,
+                    other => other.column(),
+                };
+                let inner = self.unsure(&prop.kind, &child, child.len())?;
+                Self::kept(
+                    (0..len)
+                        .map(|at| {
+                            column.range(at).is_some_and(|(a, b)| {
+                                inner.get(a..b).map_or_else(
+                                    || (a..b).any(|item| !self.scalar(&prop.kind, &child, item)),
+                                    |items| items.contains(&true),
+                                )
+                            })
+                        })
+                        .collect(),
+                )
+            }
+            (true, _) => {
+                Self::kept((0..len).map(|at| !self.property(prop, column, at)).collect())
             }
         }
     }
@@ -847,8 +1056,11 @@ impl Sureness<'_> {
                     return Some(());
                 };
                 if depth + 1 == rest.len() {
-                    if !self.typed(prop, column) {
-                        self.mark(column, |s, row| s.property(prop, column, row));
+                    if let Some(bad) = self.doubts(prop, column, self.rows) {
+                        self.sure
+                            .iter_mut()
+                            .zip(bad)
+                            .for_each(|(sure, bad)| *sure &= !bad);
                     }
                     return Some(());
                 }
@@ -901,6 +1113,7 @@ impl InputSchema {
             rows: columns.rows,
             sure: vec![true; columns.rows],
             resolved,
+            dates: RefCell::new(HashMap::new()),
         };
         for (path, column) in &columns.columns {
             sureness.path(path, column)?;

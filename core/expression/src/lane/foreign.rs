@@ -823,5 +823,18 @@ mod float_tests {
             &Column::with_validity(Values::F64(&hidden), &bits, 0),
             4,
         );
+        for values in [&all, &finite, &short, &hidden.to_vec()] {
+            let floats = Float64::new(values);
+            let masked = Column::with_validity(Values::Float64(&floats), &valid, 0);
+            let early = masked.resolved_validity();
+            let settled = masked.resolved().validity;
+            assert_eq!(
+                early.map(|(b, o)| (b.as_ptr(), o)),
+                settled.map(|(b, o)| (b.as_ptr(), o))
+            );
+            let floats = Float64::new(values);
+            let plain = Column::new(Values::Float64(&floats));
+            assert!(plain.resolved_validity().is_none() && plain.resolved().validity.is_none());
+        }
     }
 }

@@ -145,6 +145,14 @@ impl<'a> Column<'a> {
     }
 
     #[inline]
+    pub fn resolved_validity(&self) -> Option<(&'a [u64], usize)> {
+        match self.values {
+            Values::Decimal128(_) | Values::Temporal(_) => self.resolved().validity,
+            _ => self.validity,
+        }
+    }
+
+    #[inline]
     fn foreign(&self) -> bool {
         matches!(
             self.values,

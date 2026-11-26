@@ -5,7 +5,7 @@ use crate::compiled::leaf::{Bits, Dict, Leaf, Records};
 use crate::compiled::shred::{Listing, Normalizer};
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::lane::{Column, Columns, Values};
+use zen_expression::lane::{Column, Columns, Dictionary, Values};
 use zen_expression::typed::Outputs;
 use zen_expression::Variable;
 use zen_types::symbol::Symbol;
@@ -18,6 +18,56 @@ pub(super) struct Shaped<'a> {
     obj: Option<Rc<[u64]>>,
     fields: Vec<(Symbol, Shaped<'a>)>,
     same: Vec<Option<usize>>,
+}
+
+struct Shared<'a> {
+    column: Column<'a>,
+    coded: Option<Vec<Variable>>,
+}
+
+impl<'a> Shared<'a> {
+    fn new(column: Column<'a>, rows: usize) -> Self {
+        let coded = match column.values {
+            Values::Dict { values, .. } if Self::textual(values) && values.len() <= rows => Some(
+                (0..values.len())
+                    .map(|code| values.variable(code))
+                    .collect(),
+            ),
+            _ => None,
+        };
+        Self { column, coded }
+    }
+
+    fn textual(values: Dictionary) -> bool {
+        match values {
+            Dictionary::Text { .. } => true,
+            Dictionary::Column(column) => matches!(
+                column.values,
+                Values::Text { .. } | Values::Utf8 { .. } | Values::LargeUtf8 { .. }
+            ),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    fn variable(&self, row: usize) -> Variable {
+        match &self.coded {
+            None => self.column.variable(row),
+            Some(coded) => self.coded(coded, row),
+        }
+    }
+
+    #[inline(never)]
+    fn coded(&self, coded: &[Variable], row: usize) -> Variable {
+        if !self.column.valid(row) {
+            return Variable::Null;
+        }
+        self.column
+            .code(row)
+            .and_then(|code| coded.get(code))
+            .cloned()
+            .unwrap_or(Variable::Null)
+    }
 }
 
 pub(super) type Entries<'g> = Option<&'g [(Arc<str>, Arc<str>)]>;
@@ -259,7 +309,7 @@ impl<'a> Store<'a> {
                         .input
                         .columns
                         .get(index)
-                        .and_then(|(_, c)| c.resolved().validity)
+                        .and_then(|(_, c)| c.resolved_validity())
                     {
                         Some((bits, offset)) => self.push(&Bits::window(bits, offset, self.rows)),
                         None => Self::ONES,
@@ -435,7 +485,7 @@ impl<'a> Store<'a> {
         let leaf = shape
             .leaf
             .as_ref()
-            .map(|(leaf, present)| (leaf.column(), present));
+            .map(|(leaf, present)| (Shared::new(leaf.column(), rows), present));
         (0..rows)
             .map(|row| {
                 if let Some((column, present)) = &leaf {

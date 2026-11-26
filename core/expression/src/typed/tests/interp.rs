@@ -457,10 +457,16 @@ impl<'a, 'x> Interp<'a, 'x> {
                     Fold::At(_) | Fold::Missing => return Err(Fault),
                 })
             }
-            Op::FirstMatch { conds, strict } => {
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => {
                 for (i, c) in conds.iter().enumerate() {
+                    let sighted = !blind.get(i).copied().unwrap_or(false);
                     match (self.eval(*c), strict) {
-                        (Ok(V::Bool(true)), _) => return Ok(V::Num(Decimal::from(i))),
+                        (Ok(V::Bool(true)), _) if sighted => return Ok(V::Num(Decimal::from(i))),
+                        (Ok(V::Bool(true)), _) => {}
                         (Ok(V::Bool(false)), _) | (Ok(_), false) | (Err(_), false) => {}
                         (Ok(_), true) | (Err(_), true) => return Err(Fault),
                     }

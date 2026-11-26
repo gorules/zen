@@ -266,6 +266,19 @@ impl<'e, 'x> Exec<'e, 'x> {
                             _ => broken.push(i),
                         });
                     }
+                    (Clock::Declared, [text]) => {
+                        d.stamps();
+                        self.each(act, &skip, |i| match text.given(start, i) {
+                            Some(Given::Null) => Bits::set(&mut d.valid, i, false),
+                            Some(Given::Str(t)) => {
+                                match crate::vm::date::VmDate::from_text_in(t, tz) {
+                                    Some(date) => d.dates[i] = Date(date.0),
+                                    None => broken.push(i),
+                                }
+                            }
+                            _ => broken.push(i),
+                        });
+                    }
                     (Clock::Strict, [date]) => {
                         d.stamps();
                         self.each(act, &skip, |i| match date.given(start, i) {

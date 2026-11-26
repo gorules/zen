@@ -230,7 +230,7 @@ impl<'h> Build<'h> {
             Op::Classify(..) => Rep::Code,
             Op::Str(_) | Op::Decode(_) | Op::Concat(_) | Op::Clock(Clock::Text, _) => Rep::Text,
             Op::Clock(Clock::Matches, _) => Rep::Bool,
-            Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict, _) => Rep::Date,
+            Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict | Clock::Declared, _) => Rep::Date,
             Op::Host(..) => Rep::of_kind(node.ty.kind, None),
             Op::Call(Func::Upper | Func::Lower | Func::Trim | Func::Part(_), _) => Rep::Text,
             Op::Call(Func::Contains | Func::Matches, _) => Rep::Bool,
@@ -1488,7 +1488,15 @@ impl<'h> Build<'h> {
                 }
                 d
             }
-            Op::FirstMatch { conds, strict } => match self.lookup(conds, *strict) {
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => match blind
+                .contains(&true)
+                .then_some(None)
+                .unwrap_or_else(|| self.lookup(conds, *strict))
+            {
                 Some(tab) => self.looked(tab)?,
                 None => {
                     let mut vs = Vec::with_capacity(conds.len());
@@ -1502,6 +1510,7 @@ impl<'h> Build<'h> {
                         conds: vs,
                         sel,
                         strict: *strict,
+                        blind: blind.clone(),
                     });
                     d
                 }

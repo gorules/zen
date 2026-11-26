@@ -56,6 +56,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             return;
         }
         if units.member.is_some() {
+            Pass::dropped("member table cell hosted", hosted.len());
             hosted.into_iter().for_each(|row| self.fall(row));
             return;
         }

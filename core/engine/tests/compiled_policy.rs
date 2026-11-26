@@ -1804,6 +1804,31 @@ fn policy_columns_take_the_same_paths_on_every_call() {
         (Anchor::fallback_policy(), Anchor::rows(1024, 5)),
         (Anchor::fused_policy(), Anchor::rows(1024, 6)),
         (Anchor::members_policy(), Anchor::rows(512, 9)),
+        (
+            r#"{
+  models: {contract: {start: "date", value: "number", kind: "string"}},
+  blocks: [
+    {expression: "contract.year", value: "contract.start.year()"},
+    {expression: "contract.early", value: "contract.start < d('2024-06-01')"},
+    {match: "contract.fee", arms: [["contract.kind == 'lease'", "contract.value / 10"], ["", "contract.value / 20"]]},
+    {table: "t", inputs: ["contract.kind", "contract.value"], outputs: ["contract.band", "contract.note"], rules: [
+      ["'lease'", "> 500", "'big'", ""],
+      ["", "> 100", "", "'mid'"],
+      ["", "", "'small'", "'other'"],
+    ]},
+  ],
+}"#
+            .to_string(),
+            (0..1024)
+                .map(|i| {
+                    json!({"contract": {
+                        "start": format!("2024-{:02}-{:02}", 1 + i % 12, 1 + i % 28),
+                        "value": 37 * (i % 41),
+                        "kind": (["lease", "rent", "sale"])[i % 3],
+                    }})
+                })
+                .collect(),
+        ),
     ];
     let path: Arc<str> = Arc::from(Anchor::PATH);
     for (at, (policy, rows)) in cases.iter().enumerate() {

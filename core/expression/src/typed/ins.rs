@@ -240,6 +240,7 @@ pub(crate) enum Ins {
         conds: Vec<R>,
         sel: bool,
         strict: bool,
+        blind: Vec<bool>,
     },
     Lookup {
         dst: R,

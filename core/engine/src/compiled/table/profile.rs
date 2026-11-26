@@ -188,15 +188,18 @@ impl<'t> TableIr<'t> {
     }
 
     pub fn filled(&self) -> bool {
+        self.typable()
+            && self.written().all(|o| {
+                self.rules
+                    .iter()
+                    .all(|rule| self.cell(rule, o.id).is_some())
+            })
+    }
+
+    pub fn typable(&self) -> bool {
         self.rules.len() <= Self::FILLED
             && self.written().next().is_some()
-            && self.written().all(|o| {
-                !o.collect
-                    && self
-                        .rules
-                        .iter()
-                        .all(|rule| self.cell(rule, o.id).is_some())
-            })
+            && self.written().all(|o| !o.collect)
             && self.inputs.iter().all(|input| {
                 input.field.is_some_and(|f| !f.trim().is_empty()) || !self.used(input.id)
             })
@@ -230,7 +233,7 @@ impl<'t> TableIr<'t> {
             .filter(|input| !strict || self.used(input.id))
             .collect();
         match strict {
-            true if !self.filled() => return None,
+            true if !self.typable() => return None,
             true => {}
             false => {
                 let nested = paths

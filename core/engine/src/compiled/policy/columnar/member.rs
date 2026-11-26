@@ -315,6 +315,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         if !failed.contains(&true) {
             return;
         }
+        Pass::dropped("member lane failed", failed.iter().filter(|&&f| f).count());
         for (&row, &f) in parents.iter().zip(failed) {
             if f {
                 self.fall(row);

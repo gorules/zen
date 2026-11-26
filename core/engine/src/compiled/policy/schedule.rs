@@ -60,6 +60,21 @@ impl Blocks {
         Self { refs, rules, index }
     }
 
+    pub(crate) fn idle(artifact: &EvalArtifact, reads: &ConditionalReads) -> bool {
+        let quiet = |paths: &[Arc<str>]| {
+            paths
+                .iter()
+                .all(|path| artifact.writers_of_longest_prefix(path).is_empty())
+        };
+        match reads {
+            ConditionalReads::None => true,
+            ConditionalReads::Match(arms) => arms.iter().all(|arm| quiet(&arm.value_reads)),
+            ConditionalReads::DecisionTable(cells) => {
+                cells.iter().all(|cell| quiet(&cell.cell_reads))
+            }
+        }
+    }
+
     pub(crate) fn selects(rule: &Block) -> bool {
         matches!(rule.kind, BlockKind::Match(_) | BlockKind::DecisionTable(_))
     }
@@ -112,8 +127,7 @@ impl Sim<'_> {
         let rule = &self.blocks.rules[block];
         if Blocks::selects(rule) {
             self.events.push(Event::Select(block));
-            let conditional =
-                plan.is_some_and(|p| !matches!(p.conditional, ConditionalReads::None));
+            let conditional = plan.is_some_and(|p| !Blocks::idle(self.artifact, &p.conditional));
             if conditional {
                 let Some(demand) = self.script.get(self.used) else {
                     self.stopped = Some(block);

@@ -1600,6 +1600,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 conds,
                 sel,
                 strict,
+                blind,
             } => Self::def(regs, *dst, |d, regs| {
                 let k = conds.len();
                 if d.masks.len() < (k + 1) * Reg::WORDS {
@@ -1613,8 +1614,12 @@ impl<'e, 'x> Exec<'e, 'x> {
                 for (ci, c) in conds.iter().enumerate() {
                     let c = &regs[*c as usize];
                     let m = &mut d.masks[ci * Reg::WORDS..ci * Reg::WORDS + words];
+                    let sighted = !blind.get(ci).copied().unwrap_or(false);
                     for w in 0..words {
-                        let hit = c.bits[w] & c.valid[w] & !c.fault[w] & rem[w];
+                        let hit = match sighted {
+                            true => c.bits[w] & c.valid[w] & !c.fault[w] & rem[w],
+                            false => 0,
+                        };
                         m[w] = hit;
                         let fail = match strict {
                             true => (!c.valid[w] | c.fault[w]) & rem[w],

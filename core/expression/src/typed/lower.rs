@@ -38,6 +38,7 @@ pub enum Class {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolved {
     Column(Class),
+    Dated,
     Keyed(Class, Arc<str>),
     Output(usize),
     List { fields: Vec<(Arc<str>, Class)> },
@@ -97,6 +98,7 @@ pub struct Lowering {
     local: usize,
     novel: usize,
     lone: bool,
+    dated: Vec<(Option<ListId>, String)>,
 }
 
 #[derive(Clone)]
@@ -197,6 +199,7 @@ impl Lowering {
             local: 0,
             novel: 0,
             lone: false,
+            dated: Vec::new(),
         }
     }
 
@@ -583,14 +586,42 @@ impl Lowering {
         }
         let sel = self.add(
             Op::FirstMatch {
-                conds,
+                conds: conds.clone(),
                 strict: spec.hit == Hit::Strict,
+                blind: Vec::new(),
             },
             Ty::num(Some(0)),
             scope,
         );
+        let unfilled = spec.hit == Hit::Strict
+            && !spec.selector
+            && spec
+                .rules
+                .iter()
+                .any(|rule| (0..spec.outputs.len()).any(|at| rule.value(at).is_none()));
         let mut picks = Vec::with_capacity(spec.outputs.len());
         for at in 0..spec.outputs.len() {
+            let blind: Vec<bool> = match unfilled {
+                true => spec.rules.iter().map(|rule| rule.value(at).is_none()).collect(),
+                false => Vec::new(),
+            };
+            let (sel, total) = match unfilled {
+                false => (sel, total),
+                true => (
+                    self.add(
+                        Op::FirstMatch {
+                            conds: conds.clone(),
+                            strict: true,
+                            blind: blind.clone(),
+                        },
+                        Ty::num(Some(0)),
+                        scope,
+                    ),
+                    conds.iter().zip(&blind).any(|(c, blind)| {
+                        !blind && self.nodes[*c as usize].op == Op::Const(Lit::Bool(true))
+                    }),
+                ),
+            };
             let mut arms = Vec::with_capacity(spec.rules.len());
             for (rule, dead) in spec.rules.iter().zip(&dead) {
                 arms.push(match rule.value(at) {
@@ -1267,7 +1298,8 @@ impl Lowering {
         }
         if let Some(c) = self.schema.column(path) {
             let ty = self.schema.columns[c as usize].ty;
-            return Ok(self.add(Op::Column(c), ty, Scope::Row));
+            let read = self.add(Op::Column(c), ty, Scope::Row);
+            return Ok(self.declared(None, path, read, Scope::Row));
         }
         if self.absent.iter().any(|a| a == path) {
             return Ok(self.konst(Lit::Null));
@@ -1285,6 +1317,17 @@ impl Lowering {
                 });
                 Ok(self.add(Op::Column(c), class.ty(), Scope::Row))
             }
+            Resolved::Dated => {
+                let c = u16::try_from(self.schema.columns.len())
+                    .map_err(|_| Unsupported::new("too many columns"))?;
+                self.schema.columns.push(ColumnDef {
+                    path: path.to_string(),
+                    ty: Class::Text.ty(),
+                });
+                let text = self.add(Op::Column(c), Class::Text.ty(), Scope::Row);
+                self.dated.push((None, path.to_string()));
+                Ok(self.declared(None, path, text, Scope::Row))
+            }
             Resolved::Absent => {
                 self.absent.push(path.to_string());
                 Ok(self.konst(Lit::Null))
@@ -1296,6 +1339,17 @@ impl Lowering {
             Resolved::Output(_) | Resolved::Unsupported => {
                 Err(Unsupported::new(format!("path {path}")))
             }
+        }
+    }
+
+    fn declared(&mut self, list: Option<ListId>, path: &str, read: NodeId, scope: Scope) -> NodeId {
+        match self.dated.iter().any(|(l, p)| *l == list && p == path) {
+            true => self.add(
+                Op::Clock(Clock::Declared, vec![read]),
+                Ty::new(Kind::Date, true),
+                scope,
+            ),
+            false => read,
         }
     }
 
@@ -1330,7 +1384,8 @@ impl Lowering {
     ) -> Lowered {
         if let Some(f) = self.schema.field(list, name) {
             let ty = self.schema.lists[list as usize].fields[f as usize].ty;
-            return Ok(self.add(Op::Field(list, f), ty, Scope::Elem(list)));
+            let read = self.add(Op::Field(list, f), ty, Scope::Elem(list));
+            return Ok(self.declared(Some(list), name, read, Scope::Elem(list)));
         }
         let Some(path) = member else {
             return Err(Unsupported::new(format!("unknown field {name}")));
@@ -1348,6 +1403,18 @@ impl Lowering {
                     ty: class.ty(),
                 });
                 Ok(self.add(Op::Field(list, f), class.ty(), Scope::Elem(list)))
+            }
+            Resolved::Dated => {
+                let fields = &mut self.schema.lists[list as usize].fields;
+                let f =
+                    u16::try_from(fields.len()).map_err(|_| Unsupported::new("too many fields"))?;
+                fields.push(ColumnDef {
+                    path: name.to_string(),
+                    ty: Class::Text.ty(),
+                });
+                let text = self.add(Op::Field(list, f), Class::Text.ty(), Scope::Elem(list));
+                self.dated.push((Some(list), name.to_string()));
+                Ok(self.declared(Some(list), name, text, Scope::Elem(list)))
             }
             Resolved::Absent => {
                 self.absent.push(path.to_string());

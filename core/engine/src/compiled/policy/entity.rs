@@ -15,6 +15,7 @@ pub(super) struct Field<'a> {
     pub leaf: Leaf<'a>,
     pub present: Option<Rc<[u64]>>,
     pub input: bool,
+    pub raw: Option<Leaf<'a>>,
 }
 
 pub(super) struct Entity<'a> {
@@ -35,13 +36,15 @@ impl<'a> Entity<'a> {
         columns: &Columns,
         entities: &[Entity],
         goals: &[Arc<str>],
+        converted: bool,
+        resolved: bool,
     ) -> Option<Vec<bool>> {
         let shredded: Vec<&Entity> = entities
             .iter()
             .filter(|entity| entity.hosted.is_some())
             .collect();
         if shredded.is_empty() {
-            return artifact.sure(columns, goals);
+            return artifact.sure(columns, goals, converted, resolved);
         }
         let parts: Vec<Vec<(&str, Column)>> = shredded
             .iter()
@@ -87,7 +90,7 @@ impl<'a> Entity<'a> {
                 .map_or(*column, |(_, list)| *list);
             replaced = replaced.column(path, column);
         }
-        artifact.sure(&replaced, goals)
+        artifact.sure(&replaced, goals, converted, resolved)
     }
 
     pub fn new(
@@ -117,6 +120,7 @@ impl<'a> Entity<'a> {
                 leaf: Normalizer::lean(*column, len),
                 present: None,
                 input: true,
+                raw: None,
             })
             .collect();
         let rows = offsets.len().saturating_sub(1);
@@ -153,6 +157,7 @@ impl<'a> Entity<'a> {
                 leaf: Leaf::typed(array),
                 present: None,
                 input: true,
+                raw: None,
             })
             .collect();
         Self {
@@ -210,6 +215,15 @@ impl<'a> Entity<'a> {
             Some(bits) => Leaf::masked(field.leaf.clone(), bits),
             None => field.leaf.clone(),
         }
+    }
+
+    pub fn raw_view(&self, field: usize) -> Option<Leaf<'a>> {
+        let field = &self.fields[field];
+        let raw = field.raw.clone()?;
+        Some(match &field.present {
+            Some(bits) => Leaf::masked(raw, bits),
+            None => raw,
+        })
     }
 
     fn object(&self, child: usize) -> Variable {
@@ -327,6 +341,7 @@ impl<'a> Entity<'a> {
             leaf,
             present,
             input: false,
+            raw: None,
         };
         match (self.field(&fresh.name), full) {
             (None, _) => self.fields.push(fresh),
@@ -354,6 +369,7 @@ impl<'a> Entity<'a> {
                     leaf: Leaf::typed(builder.finish()),
                     present: Some(bits.into()),
                     input: false,
+                    raw: None,
                 };
                 self.fields[at] = merged;
             }

@@ -96,8 +96,11 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         let mut done: Vec<usize> = Vec::with_capacity(positions.len());
         for &row in positions {
-            match self.state.failures[row].is_some() {
-                true => self.fall(row),
+            match self.state.failures[row].take().is_some() {
+                true => {
+                    Pass::dropped("delegate failed", 1);
+                    self.fall(row)
+                }
                 false => done.push(row),
             }
         }
@@ -121,21 +124,12 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     pub(super) fn quiet(&self, block: usize) -> bool {
-        use crate::policy::blocks::ConditionalReads;
-        match self
-            .artifact
+        self.artifact
             .read_plans
             .get(&self.plan.blocks.refs[block])
-            .map(|plan| &plan.conditional)
-        {
-            None | Some(ConditionalReads::None) => true,
-            Some(ConditionalReads::Match(arms)) => {
-                arms.iter().all(|arm| arm.value_reads.is_empty())
-            }
-            Some(ConditionalReads::DecisionTable(cells)) => {
-                cells.iter().all(|cell| cell.cell_reads.is_empty())
-            }
-        }
+            .is_none_or(|plan| {
+                crate::compiled::policy::schedule::Blocks::idle(self.artifact, &plan.conditional)
+            })
     }
 
     pub(super) fn hosted(&self, block: usize, row: usize) -> bool {

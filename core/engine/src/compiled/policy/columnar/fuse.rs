@@ -84,11 +84,11 @@ impl Fusions {
         {
             return found;
         }
-        let fusable = Fused::<Sink>::fusable(ir);
+        let typable = TableIr::policy(ir).typable();
         if let Ok(mut cache) = self.tables.write() {
-            cache.insert(block, fusable);
+            cache.insert(block, typable);
         }
-        fusable
+        typable
     }
 
     fn effects(&self, plan: &PolicyPlan, block: usize) -> Option<Arc<Effects>> {
@@ -555,7 +555,7 @@ impl<'s, 'a> Pass<'s, 'a> {
     fn regroup(&self, item: &Item, rows: &[usize]) -> Option<Option<usize>> {
         let mut entity = None;
         for span in &item.units {
-            let unit = self.unit(span.block, span.len, rows)?;
+            let unit = self.refused(span.block, span.len, rows).ok()?;
             if entity.is_some_and(|e| e != unit.entity) {
                 return None;
             }
@@ -655,42 +655,66 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn unit(&self, block: usize, len: usize, rows: &[usize]) -> Option<Unit<'s>> {
+        match self.refused(block, len, rows) {
+            Ok(unit) => Some(unit),
+            Err(why) => {
+                if Census::on() {
+                    Census::record(format!("policy unit refused | {why}"), rows.len(), 0);
+                }
+                None
+            }
+        }
+    }
+
+    fn refused(&self, block: usize, len: usize, rows: &[usize]) -> Result<Unit<'s>, &'static str> {
         let plan = self.plan;
         if self.shared {
-            return None;
+            return Err("shared rows");
         }
         let (entity, programs, writes) =
             match (&plan.plans[block].table, &plan.blocks.rules[block].kind) {
                 (Some(table), BlockKind::DecisionTable(ir)) => {
                     let entity = match self.owners[block] {
                         Some(_) if Exports::enabled() => {
-                            let at = self.entity_of(block)?;
-                            self.supported(at, block, rows).then_some(Some(at))?
+                            let at = self.entity_of(block).ok_or("member table without entity")?;
+                            self.supported(at, block, rows)
+                                .then_some(Some(at))
+                                .ok_or("member table unsupported")?
                         }
-                        Some(_) => return None,
+                        Some(_) => return Err("member table untyped"),
                         None => None,
                     };
-                    let ready = len == 2 && self.quiet(block) && plan.fusions.table(block, ir);
+                    if len != 2 {
+                        return Err("table split select");
+                    }
+                    if !self.quiet(block) {
+                        return Err("table cells read fields");
+                    }
+                    if !plan.fusions.table(block, ir) {
+                        return Err("table not typable");
+                    }
                     let writes: Vec<(Arc<str>, bool)> = table
                         .picked()
                         .iter()
                         .map(|o| (o.field.clone(), true))
                         .collect();
-                    ready.then_some((entity, table.programs(), writes))?
+                    (entity, table.programs(), writes)
                 }
-                (Some(_), _) => return None,
+                (Some(_), _) => return Err("table plan on other block"),
                 (None, _) => {
                     let entity = match self.owners[block] {
                         Some(_) => {
-                            let at = self.entity_of(block)?;
-                            self.supported(at, block, rows).then_some(Some(at))?
+                            let at = self.entity_of(block).ok_or("member block without entity")?;
+                            self.supported(at, block, rows)
+                                .then_some(Some(at))
+                                .ok_or("member block unsupported")?
                         }
                         None => None,
                     };
                     let native = match entity {
-                        Some(_) => Pass::native(plan, block)?,
-                        None if plan.plans[block].iterated => return None,
-                        None => plan.plans[block].native()?,
+                        Some(_) => Pass::native(plan, block).ok_or("member block not native")?,
+                        None if plan.plans[block].iterated => return Err("iterated block"),
+                        None => plan.plans[block].native().ok_or("block not native")?,
                     };
                     match (native, len) {
                         (Native::Expression { key, program }, 1) => {
@@ -699,12 +723,13 @@ impl<'s, 'a> Pass<'s, 'a> {
                         (Native::Match { ir, .. }, 2) if self.quiet(block) => {
                             (entity, Pass::programs(native), vec![(ir.key.clone(), true)])
                         }
+                        (Native::Match { .. }, 2) => return Err("match arm values read fields"),
                         (Native::Assertion { ir, conditions }, 1) => (
                             entity,
                             conditions.iter().collect(),
                             vec![(ir.output.clone(), false)],
                         ),
-                        _ => return None,
+                        _ => return Err("split select and commit"),
                     }
                 }
             };
@@ -712,6 +737,9 @@ impl<'s, 'a> Pass<'s, 'a> {
             let p = program.program();
             !(p.writes_env || p.chain || p.opaque() || p.rows)
         });
+        if !plain {
+            return Err("program needs row scope");
+        }
         let clear = entity.is_some()
             || writes.iter().all(|(key, _)| {
                 !self
@@ -720,11 +748,14 @@ impl<'s, 'a> Pass<'s, 'a> {
                     .iter()
                     .any(|e| e.active && Sheet::related(key, &e.path).is_some())
             });
-        (plain && clear).then_some(Unit {
-            entity,
-            programs,
-            writes,
-        })
+        match clear {
+            true => Ok(Unit {
+                entity,
+                programs,
+                writes,
+            }),
+            false => Err("writes into a list entity"),
+        }
     }
 
     fn conjunction(ir: &AssertionIr) -> bool {

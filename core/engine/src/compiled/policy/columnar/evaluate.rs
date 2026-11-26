@@ -1,9 +1,10 @@
 use super::output::{from_results, output};
 use super::{ByBlock, Fallback, Pass, Sheet};
+use crate::compiled::census::Census;
 use crate::compiled::diagnostics::Paths;
 use crate::compiled::policy::artifact::{Artifact as EvalArtifact, Iteration};
 use crate::compiled::policy::entity::Entity;
-use crate::compiled::policy::{PolicyPlan, Rows};
+use crate::compiled::policy::{BlockPlan, PolicyPlan, Rows};
 use crate::compiled::shred::{Shred, Shredder};
 use crate::compiled::ColumnarOutput;
 use crate::workspace::{EvaluateRequest, EvaluationError};
@@ -12,9 +13,11 @@ use std::sync::Arc;
 use zen_expression::context::EvaluationContext;
 use zen_expression::lane::{Columns, Kind as LaneKind, LaneProgram};
 use zen_expression::Variable;
-use zen_types::path::DotPath;
 
 impl PolicyPlan {
+    const DELEGATED_ROOTS: usize = 2;
+    const DELEGATED_MEMBERS: usize = 3;
+
     pub(super) fn scalar(program: &LaneProgram) -> bool {
         let p = program.program();
         let regs = match p.outputs.is_empty() {
@@ -45,8 +48,13 @@ impl PolicyPlan {
         })
     }
 
-    fn entities<'a>(&self, artifact: &EvalArtifact, sheet: &Sheet<'a>) -> Vec<Entity<'a>> {
-        if !artifact.reference_fields.is_empty() {
+    fn entities<'a>(
+        &self,
+        artifact: &EvalArtifact,
+        sheet: &Sheet<'a>,
+        referenced: bool,
+    ) -> Vec<Entity<'a>> {
+        if referenced {
             return Vec::new();
         }
         self.safe(artifact)
@@ -79,28 +87,73 @@ impl PolicyPlan {
             .collect()
     }
 
-    fn dated_tables(&self, artifact: &EvalArtifact) -> bool {
-        *self.dated_tables.get_or_init(|| {
-            let schema = &artifact.input_schema;
-            schema.has_dates()
-                && self.plans.iter().any(|plan| {
-                    let Some(table) = &plan.table else {
-                        return false;
-                    };
-                    let alias = plan.iteration.as_ref().map(|(name, path, _)| (name, path));
-                    table.fields().any(|field| {
-                        field.program().site_keys.iter().flatten().any(|key| {
-                            let key = match alias.and_then(|(name, path)| {
-                                DotPath::tail(key, name).map(|rest| format!("{path}.{rest}"))
-                            }) {
-                                Some(mapped) => mapped,
-                                None => key.clone(),
-                            };
-                            schema.dates_at(&key).is_some()
-                        })
+    #[cold]
+    fn unentitied(&self, artifact: &EvalArtifact, sheet: &Sheet) {
+        let safe = self.safe(artifact);
+        let mut seen: Vec<&Arc<str>> = Vec::new();
+        for (name, path, _) in self.plans.iter().filter_map(|plan| plan.iteration.as_ref()) {
+            if seen.contains(&path) || sheet.entities.iter().any(|e| e.path == *path) {
+                continue;
+            }
+            seen.push(path);
+            let why = if !artifact.reference_fields.is_empty() {
+                "reference fields"
+            } else if !safe.iter().any(|(_, p, _)| p == path) {
+                match (
+                    self.members_safe(name, path),
+                    self.readers_safe(artifact, path),
+                ) {
+                    (false, _) => "members not safe",
+                    (_, false) => "readers not safe",
+                    _ => "?",
+                }
+            } else {
+                match sheet
+                    .entries
+                    .iter()
+                    .position(|e| e.input && e.path == *path)
+                {
+                    None if sheet.entries.iter().any(|e| {
+                        Sheet::related(&e.path, path) == Some(std::cmp::Ordering::Greater)
+                    }) =>
+                    {
+                        "path is an object of columns"
+                    }
+                    None => "no input column",
+                    Some(_) => "nested columns or unshreddable list",
+                }
+            };
+            Census::record(format!("policy no entity | {why}"), 0, 0);
+        }
+    }
+
+    fn delegating(&self) -> bool {
+        let refused =
+            |plan: &&BlockPlan| plan.native().is_none() && plan.table.is_none() && plan.member.is_none();
+        let roots = self
+            .plans
+            .iter()
+            .filter(refused)
+            .filter(|plan| plan.iteration.is_none())
+            .count();
+        let members = self
+            .plans
+            .iter()
+            .filter(refused)
+            .filter_map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path))
+            .map(|path| {
+                self.plans
+                    .iter()
+                    .filter(|plan| {
+                        plan.iteration
+                            .as_ref()
+                            .is_some_and(|(_, own, _)| own == path)
                     })
-                })
-        })
+                    .count()
+            })
+            .max()
+            .unwrap_or(0);
+        roots >= Self::DELEGATED_ROOTS || members >= Self::DELEGATED_MEMBERS
     }
 
     fn members_safe(&self, name: &str, path: &str) -> bool {
@@ -116,7 +169,15 @@ impl PolicyPlan {
                 return true;
             }
             if plan.member.is_none() && plan.table.is_none() {
-                return false;
+                return self.blocks.rules[block]
+                    .kind
+                    .write_sites()
+                    .iter()
+                    .all(|site| {
+                        site.path
+                            .strip_prefix(prefix.as_str())
+                            .is_some_and(|f| !f.is_empty())
+                    });
             }
             let Some((programs, keys)) = Pass::block(self, block) else {
                 return false;
@@ -207,29 +268,61 @@ impl PolicyPlan {
         };
         let mut errors: Vec<Option<EvaluationError>> = (0..rows).map(|_| None).collect();
         let stores: Vec<OnceCell<Variable>> = (0..rows).map(|_| OnceCell::new()).collect();
-        sheet.entities = self.entities(artifact, &sheet);
-        sheet.refs = artifact
-            .reference_fields
-            .iter()
-            .map(|field| field.path.clone())
-            .collect();
-        let shared = !artifact.reference_fields.is_empty()
+        let unresolved = self.references(artifact, &mut sheet, columns);
+        let referenced = !artifact.reference_fields.is_empty() && unresolved.is_none();
+        sheet.entities = self.entities(artifact, &sheet, referenced);
+        if referenced {
+            sheet.refs = artifact
+                .reference_fields
+                .iter()
+                .map(|field| field.path.clone())
+                .collect();
+        }
+        let shared = referenced
+            || self.delegating()
             || self.plans.iter().any(|plan| match &plan.iteration {
                 Some((_, path, _)) => !sheet.entities.iter().any(|e| e.path == *path),
-                None => plan.native().is_none() && plan.table.is_none(),
+                None => false,
             });
+        if shared && Census::on() {
+            self.unentitied(artifact, &sheet);
+        }
         if shared {
             sheet.entities.clear();
+            if Census::on() {
+                let why = match (referenced, self.delegating()) {
+                    (true, _) => "reference fields",
+                    (false, true) => "refused blocks",
+                    (false, false) => "iteration without entity",
+                };
+                Census::record(format!("policy rows | shared | {why}"), rows, 0);
+            }
         }
-        let dated = match shared || self.dated_tables(artifact) {
-            true => vec![false; rows],
-            false => sheet.dates(&artifact.input_schema, context.timezone()),
+        let converted = !shared;
+        let dated = match converted {
+            false => vec![false; rows],
+            true => sheet.dates(&artifact.input_schema, context.timezone()),
         };
         let mut fallback = vec![false; rows];
         let mut erred = false;
         let sure = match shared {
             true => None,
-            false => Entity::sure(artifact, columns, &sheet.entities, goals),
+            false => Entity::sure(
+                artifact,
+                columns,
+                &sheet.entities,
+                goals,
+                converted,
+                unresolved.is_some(),
+            )
+            .map(|mut sure| {
+                if let Some(unresolved) = &unresolved {
+                    sure.iter_mut()
+                        .zip(unresolved)
+                        .for_each(|(sure, missing)| *sure &= !missing);
+                }
+                sure
+            }),
         };
         sheet
             .entities
@@ -237,8 +330,25 @@ impl PolicyPlan {
             .filter_map(|entity| entity.hosted.as_deref())
             .flatten()
             .for_each(|&row| fallback[row] = true);
+        if Census::on() {
+            let irregular = fallback.iter().filter(|&&f| f).count();
+            if irregular > 0 {
+                Census::record("policy hosted | irregular list".into(), irregular, 0);
+            }
+            let unsure = (0..rows)
+                .filter(|&row| sure.as_ref().is_none_or(|sure| !sure[row]))
+                .count();
+            if unsure > 0 {
+                let why = match (sure.is_some(), shared) {
+                    (_, true) => "shared",
+                    (false, false) => "no columnar validation",
+                    (true, false) => "not validated by columns",
+                };
+                Census::record(format!("policy rows | prepared per row | {why}"), unsure, 0);
+            }
+        }
         for row in 0..rows {
-            if !dated[row] && sure.as_ref().is_some_and(|sure| sure[row]) {
+            if sure.as_ref().is_some_and(|sure| sure[row]) {
                 continue;
             }
             let req = request(row);
@@ -249,6 +359,9 @@ impl PolicyPlan {
                     .is_some()
             {
                 fallback[row] = true;
+                if Census::on() {
+                    Census::record("policy hosted | date input".into(), 1, 0);
+                }
                 continue;
             }
             match artifact.prepare(&req, context.timezone()) {
@@ -258,6 +371,9 @@ impl PolicyPlan {
                 }
                 Ok((store, _)) if shared => {
                     let _ = stores[row].set(store);
+                }
+                Ok(_) if unresolved.as_ref().is_some_and(|unresolved| unresolved[row]) => {
+                    fallback[row] = true;
                 }
                 Ok(_) => {}
             }
@@ -366,6 +482,10 @@ impl PolicyPlan {
                     ..counts
                 },
             );
+        }
+        if Census::on() {
+            Census::record("policy hosted | rows".into(), hosted.len(), 0);
+            Census::record("policy rows | objects after walk".into(), finished.len(), 0);
         }
         let requests: Vec<EvaluateRequest> = hosted.iter().map(|&row| request(row)).collect();
         let mut shredder = Shredder::new(rows);

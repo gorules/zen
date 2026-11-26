@@ -62,6 +62,7 @@ pub enum Clock {
     Strict,
     Matches,
     Text,
+    Declared,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -155,6 +156,7 @@ pub enum Op {
     FirstMatch {
         conds: Vec<NodeId>,
         strict: bool,
+        blind: Vec<bool>,
     },
     Pick(NodeId, Vec<NodeId>),
     Call(Func, Vec<NodeId>),
@@ -369,6 +371,44 @@ impl Schema {
     }
 }
 
+impl Hir {
+    pub fn declared(&self) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.op, Op::Clock(Clock::Declared, _)))
+    }
+
+    pub fn shows_declared(&self) -> bool {
+        let mut carried = vec![false; self.nodes.len()];
+        for (at, node) in self.nodes.iter().enumerate() {
+            let inputs = node.op.inputs();
+            let from = |x: &NodeId| carried.get(*x as usize).copied().unwrap_or(false);
+            if !inputs.iter().any(from) {
+                carried[at] = matches!(node.op, Op::Clock(Clock::Declared, _));
+                continue;
+            }
+            carried[at] = match &node.op {
+                Op::Cmp(..)
+                | Op::InSet(..)
+                | Op::InRange(..)
+                | Op::Clock(Clock::Matches, _)
+                | Op::Host(Host::Method(_), _) => false,
+                Op::Checked(_) | Op::Clock(Clock::Strict, _) => true,
+                Op::Coalesce(..) | Op::Pick(..) => true,
+                Op::If(c, ..) if !from(c) => true,
+                _ => return true,
+            };
+        }
+        let shown = |x: NodeId| carried.get(x as usize).copied().unwrap_or(false);
+        self.outputs.iter().chain(&self.parts).any(|out| {
+            shown(out.node)
+                || out
+                    .collect
+                    .is_some_and(|c| shown(c.item) || c.keep.is_some_and(shown))
+        })
+    }
+}
+
 impl Op {
     pub fn inputs(&self) -> Vec<NodeId> {
         match self {
@@ -431,9 +471,14 @@ impl Op {
                 value: value.map(&f),
                 empty: *empty,
             },
-            Op::FirstMatch { conds, strict } => Op::FirstMatch {
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => Op::FirstMatch {
                 conds: conds.iter().map(|c| f(*c)).collect(),
                 strict: *strict,
+                blind: blind.clone(),
             },
             Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
             Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
@@ -728,9 +773,25 @@ impl Hir {
                 value.map_or("-".to_string(), |x| format!("%{x}"))
             )
             .to_lowercase(),
-            Op::FirstMatch { conds, strict } => format!(
-                "firstmatch{} [{}]",
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => format!(
+                "firstmatch{}{} [{}]",
                 if *strict { " strict" } else { "" },
+                match blind.contains(&true) {
+                    true => format!(
+                        " blind {:?}",
+                        blind
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, b)| **b)
+                            .map(|(at, _)| at)
+                            .collect::<Vec<_>>()
+                    ),
+                    false => String::new(),
+                },
                 ids(conds)
             ),
             Op::Pick(sel, arms) => format!("pick %{sel} [{}]", ids(arms)),

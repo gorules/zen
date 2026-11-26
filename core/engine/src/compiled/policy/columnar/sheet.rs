@@ -12,6 +12,7 @@ use zen_types::path::DotPath;
 pub(super) struct Entry<'a> {
     pub(super) path: Arc<str>,
     pub(super) leaf: Leaf<'a>,
+    pub(super) raw: Option<Leaf<'a>>,
     present: Option<Rc<[u64]>>,
     pub(super) input: bool,
     dead: bool,
@@ -68,6 +69,7 @@ impl<'a> Sheet<'a> {
             entries.push(Entry {
                 path: Arc::from(*path),
                 leaf: Normalizer::lean(*column, rows),
+                raw: None,
                 present,
                 input: true,
                 dead: false,
@@ -100,7 +102,8 @@ impl<'a> Sheet<'a> {
             if let Some(leaf) =
                 Self::converted(schema, &at, &entry.leaf, rows, tz, |row| dated[row] = true)
             {
-                entry.leaf = leaf;
+                let raw = std::mem::replace(&mut entry.leaf, leaf);
+                entry.raw = Self::declared(&at, raw);
             }
         }
         for entity in self.entities.iter_mut() {
@@ -125,11 +128,26 @@ impl<'a> Sheet<'a> {
                         dated[owner[child]] = true
                     })
                 {
-                    field.leaf = leaf;
+                    let raw = std::mem::replace(&mut field.leaf, leaf);
+                    field.raw = Self::declared(&at, raw);
                 }
             }
         }
         dated
+    }
+
+    fn declared(at: &DatesAt, raw: Leaf<'a>) -> Option<Leaf<'a>> {
+        let single = match at {
+            DatesAt::Property(property, _) => {
+                !property.array && matches!(property.kind, crate::policy::ir::PropertyTypeIr::Date)
+            }
+            _ => false,
+        };
+        let text = matches!(
+            Normalizer::class(&raw.column().values),
+            Some(zen_expression::typed::Class::Text)
+        );
+        (single && text).then_some(raw)
     }
 
     fn converted(
@@ -237,6 +255,31 @@ impl<'a> Sheet<'a> {
         }
     }
 
+    pub(super) fn resolve(
+        &mut self,
+        keys: &[Arc<str>],
+        fields: Vec<(Arc<str>, Leaf<'a>, Option<Rc<[u64]>>)>,
+    ) {
+        for entry in self.entries.iter_mut() {
+            if keys.iter().any(|key| *key == entry.path) {
+                entry.dead = true;
+            }
+        }
+        for (path, leaf, present) in fields {
+            self.push(
+                Entry {
+                    path,
+                    leaf,
+                    raw: None,
+                    present,
+                    input: true,
+                    dead: false,
+                },
+                None,
+            );
+        }
+    }
+
     pub(super) fn present(entry: &Entry, row: usize) -> bool {
         entry
             .present
@@ -263,6 +306,13 @@ impl<'a> Sheet<'a> {
             }
         }
         let path = entity.path.clone();
+        if crate::compiled::census::Census::on() {
+            crate::compiled::census::Census::record(
+                "policy rows | entity composed per row".into(),
+                self.rows,
+                0,
+            );
+        }
         self.entities[at].active = false;
         self.hosted(path, values, present);
     }
@@ -347,6 +397,7 @@ impl<'a> Sheet<'a> {
             Entry {
                 path,
                 leaf,
+                raw: None,
                 present,
                 input: false,
                 dead: false,
@@ -374,6 +425,7 @@ impl<'a> Sheet<'a> {
             Entry {
                 path,
                 leaf: Leaf::Any(values.into()),
+                raw: None,
                 present: (!full).then(|| present.into()),
                 input: false,
                 dead: false,
@@ -419,6 +471,13 @@ impl<'a> Sheet<'a> {
                 })
                 .collect(),
             true => {
+                if crate::compiled::census::Census::on() {
+                    crate::compiled::census::Census::record(
+                        "policy rows | output assembled per row".into(),
+                        finished.len(),
+                        0,
+                    );
+                }
                 let mut shredder = Shredder::new(self.rows);
                 for &row in finished {
                     shredder.visit(&self.object(row), 0, row);

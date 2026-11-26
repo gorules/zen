@@ -6,6 +6,7 @@ mod host;
 mod lane;
 mod member;
 mod output;
+mod refs;
 mod sheet;
 mod table;
 mod typed;
@@ -95,10 +96,17 @@ impl<'s, 'a> Pass<'s, 'a> {
         self.fallback.fall(row);
     }
 
+    fn dropped(why: &str, rows: usize) {
+        if rows > 0 && crate::compiled::census::Census::on() {
+            crate::compiled::census::Census::record(format!("policy fall | {why}"), rows, 0);
+        }
+    }
+
     fn fail(&mut self, positions: &[usize], failed: &[bool]) {
         if !failed.contains(&true) {
             return;
         }
+        Pass::dropped("lane failed", failed.iter().filter(|&&f| f).count());
         for (&row, &f) in positions.iter().zip(failed) {
             if f {
                 self.fall(row);
@@ -156,12 +164,17 @@ impl<'s, 'a> Pass<'s, 'a> {
                     return self.member(at, block, event, positions);
                 }
                 if selected || self.sheet.entities[at].cached() {
+                    Pass::dropped("member block unsupported after selection", positions.len());
                     positions.iter().for_each(|&row| self.fall(row));
                     return;
                 }
                 self.sheet.retire(at);
             }
             if selected {
+                Pass::dropped(
+                    "member block without entity after selection",
+                    positions.len(),
+                );
                 positions.iter().for_each(|&row| self.fall(row));
                 return;
             }

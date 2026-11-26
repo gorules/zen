@@ -46,7 +46,9 @@ struct Probed {
 
 enum Source {
     Entry(usize),
+    Raw(usize),
     Field(usize),
+    RawField(usize),
     List(usize, Vec<usize>),
     Listed(usize),
     Absent,
@@ -147,7 +149,15 @@ impl TypedGroup {
                 if consumed == 0 {
                     return Built::Done(Self::empty(record));
                 }
-                let built = match Program::new(lowering.finish()) {
+                let hir = lowering.finish();
+                if hir.declared() && hir.shows_declared() {
+                    Census::reason(|| "declared date shown as text".into());
+                    return Built::Shrink {
+                        consumed,
+                        fallback: Self::empty(record),
+                    };
+                }
+                let built = match Program::new(hir) {
                     Ok(program) => Self::new(program, sinks, consumed, record, entity.is_some()),
                     Err(e) => {
                         Census::reason(|| format!("build: {}", e.0));
@@ -413,10 +423,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let leaves: Option<Vec<Leaf<'a>>> = group
             .columns
             .iter()
-            .map(|&at| match sources.get(at)? {
-                Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
-                _ => None,
-            })
+            .map(|&at| self.entry_leaf(sources.get(at)?))
             .collect();
         let Some(leaves) = leaves else {
             return Rows::Plain;
@@ -464,10 +471,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let leaves: Vec<Leaf<'a>> = group
             .columns
             .iter()
-            .map(|&at| match sources.get(at)? {
-                Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
-                _ => None,
-            })
+            .map(|&at| self.entry_leaf(sources.get(at)?))
             .collect::<Option<_>>()?;
         let total = self.sheet.rows;
         let codes: Vec<Hint> = leaves
@@ -501,8 +505,9 @@ impl<'s, 'a> Pass<'s, 'a> {
     ) -> Option<Outputs> {
         let leaf = |at: usize| -> Option<Leaf<'a>> {
             match sources.get(at)? {
-                Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
+                Source::Entry(_) | Source::Raw(_) => self.entry_leaf(sources.get(at)?),
                 Source::Field(field) => Some(self.sheet.entities[entity?].view(*field)),
+                Source::RawField(field) => self.sheet.entities[entity?].raw_view(*field),
                 Source::List(..) | Source::Listed(_) | Source::Absent => None,
             }
         };
@@ -597,7 +602,18 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
     }
 
+    fn entry_leaf(&self, source: &Source) -> Option<Leaf<'a>> {
+        match source {
+            Source::Entry(entry) => Some(self.sheet.entries[*entry].leaf.clone()),
+            Source::Raw(entry) => self.sheet.entries[*entry].raw.clone(),
+            _ => None,
+        }
+    }
+
     fn bound(&self, entry: usize) -> (Resolved, Source) {
+        if self.sheet.entries[entry].raw.is_some() {
+            return (Resolved::Dated, Source::Raw(entry));
+        }
         match Normalizer::class(&self.sheet.entries[entry].leaf.column().values) {
             Some(class) => (Resolved::Column(class), Source::Entry(entry)),
             None => self.listed_entry(entry),
@@ -695,6 +711,9 @@ impl<'s, 'a> Pass<'s, 'a> {
             (Some(at), Ask::Alias) => {
                 let owner = &self.sheet.entities[at];
                 match self.site(at, Some(&format!("{}.{key}", owner.name)), rows) {
+                    Member::Field(field) if owner.fields[field].raw.is_some() => {
+                        (Resolved::Dated, Source::RawField(field))
+                    }
                     Member::Field(field) => column(&owner.view(field), Source::Field(field)),
                     Member::Absent => (Resolved::Absent, Source::Absent),
                     _ => unsupported,

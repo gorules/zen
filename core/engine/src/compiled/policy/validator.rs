@@ -202,6 +202,14 @@ impl InputSchema {
         }
     }
 
+    pub(crate) fn root(&self, name: &str) -> bool {
+        self.roots.contains(name)
+    }
+
+    pub(crate) fn has_dated(&self, entity: &str) -> bool {
+        self.dated.contains(entity)
+    }
+
     pub(crate) fn has_dates(&self) -> bool {
         !self.dated.is_empty()
             || self
@@ -490,6 +498,7 @@ struct Sureness<'s> {
     schema: &'s InputSchema,
     rows: usize,
     sure: Vec<bool>,
+    resolved: bool,
 }
 
 impl Sureness<'_> {
@@ -563,19 +572,110 @@ impl Sureness<'_> {
                 _ => false,
             },
             PropertyTypeIr::Relationship { target } => self.objects(target, column, at),
-            PropertyTypeIr::Date | PropertyTypeIr::Reference { .. } => false,
+            PropertyTypeIr::Date => match column.variable(at) {
+                Variable::Null => true,
+                Variable::String(text) => {
+                    text.is_empty() || zen_expression::DateValue::is_text(&text)
+                }
+                other => zen_expression::DateValue::is(&other),
+            },
+            PropertyTypeIr::Reference { .. } => {
+                self.resolved
+                    && matches!(column.variable(at), Variable::String(_) | Variable::Null)
+            }
         }
     }
 
     fn objects(&self, target: &str, column: &zen_expression::lane::Column, at: usize) -> bool {
         use zen_expression::lane::Values;
         if !self.schema.entities.contains_key(target) {
-            return false;
+            return match (self.schema.dictionaries.get(target), column.variable(at)) {
+                (Some(_), Variable::Null) => true,
+                (Some(dict), Variable::String(text)) => dict.values().any(|value| **value == *text),
+                _ => false,
+            };
         }
         match column.values {
             Values::Struct { fields, .. } => self.structs(target, fields, at),
-            _ => false,
+            _ => self.loose(target, &column.variable(at)),
         }
+    }
+
+    fn loose_items(&self, prop: &Property, value: &Variable) -> bool {
+        match value {
+            Variable::Null => return true,
+            Variable::Array(items)
+                if items
+                    .borrow()
+                    .iter()
+                    .all(|item| Self::shallow(item, MAX_RECURSION_DEPTH / 2)) => {}
+            _ => return false,
+        }
+        if matches!(prop.kind, PropertyTypeIr::Reference { .. }) {
+            return false;
+        }
+        let pools = RefPoolIndex::from_input(&Variable::Null, std::iter::empty());
+        let mut validator = InputValidator {
+            entities: &self.schema.entities,
+            dictionaries: &self.schema.dictionaries,
+            ref_pools: &pools,
+            errors: Vec::new(),
+            depth: 0,
+            path: Vec::new(),
+        };
+        validator.validate_array_of_property(value, prop);
+        validator.errors.is_empty()
+    }
+
+    fn shallow(value: &Variable, limit: usize) -> bool {
+        if limit == 0 {
+            return false;
+        }
+        match value {
+            Variable::Object(map) => map.borrow().values().all(|v| Self::shallow(v, limit - 1)),
+            Variable::Array(items) => items.borrow().iter().all(|v| Self::shallow(v, limit - 1)),
+            _ => true,
+        }
+    }
+
+    fn loose(&self, target: &str, value: &Variable) -> bool {
+        const SHALLOW: usize = MAX_RECURSION_DEPTH / 2;
+        fn nesting(value: &Variable, depth: usize) -> usize {
+            if depth > SHALLOW {
+                return depth;
+            }
+            match value {
+                Variable::Object(map) => map
+                    .borrow()
+                    .values()
+                    .map(|v| nesting(v, depth + 1))
+                    .max()
+                    .unwrap_or(depth + 1),
+                Variable::Array(items) => items
+                    .borrow()
+                    .iter()
+                    .map(|v| nesting(v, depth + 1))
+                    .max()
+                    .unwrap_or(depth + 1),
+                _ => depth,
+            }
+        }
+        match value {
+            Variable::Null => return true,
+            Variable::Object(_) if nesting(value, 0) <= SHALLOW => {}
+            _ => return false,
+        }
+        let pools = RefPoolIndex::from_input(&Variable::Null, std::iter::empty());
+        let mut validator = InputValidator {
+            entities: &self.schema.entities,
+            dictionaries: &self.schema.dictionaries,
+            ref_pools: &pools,
+            errors: Vec::new(),
+            depth: 0,
+            path: Vec::new(),
+        };
+        validator.validate_entity(value, target);
+        validator.errors.is_empty()
     }
 
     fn structs(
@@ -604,7 +704,7 @@ impl Sureness<'_> {
             false => self.scalar(&prop.kind, column, at),
             true => {
                 let Values::List { child, .. } = column.values else {
-                    return false;
+                    return self.loose_items(prop, &column.variable(at));
                 };
                 let Some((a, b)) = column.range(at) else {
                     return true;
@@ -658,6 +758,21 @@ impl Sureness<'_> {
         }
     }
 
+    fn pool(&self, target: &str, column: &zen_expression::lane::Column, row: usize) -> bool {
+        use zen_expression::lane::{Dictionary, Values};
+        let Values::List { child, .. } = column.values else {
+            return false;
+        };
+        let Some((a, b)) = column.range(row) else {
+            return true;
+        };
+        let child = match child {
+            Dictionary::Column(child) => *child,
+            other => other.column(),
+        };
+        (a..b).all(|item| !child.valid(item) || self.objects(target, &child, item))
+    }
+
     fn mark(&mut self, column: &zen_expression::lane::Column, test: impl Fn(&Self, usize) -> bool) {
         for row in 0..self.rows {
             if self.sure[row] && column.valid(row) && !test(self, row) {
@@ -670,7 +785,12 @@ impl Sureness<'_> {
         let segments: Vec<&str> = path.split('.').collect();
         let (first, rest) = segments.split_first()?;
         if self.schema.ref_targets.contains(*first) {
-            return None;
+            if !self.resolved || !rest.is_empty() {
+                return None;
+            }
+            let target: Arc<str> = Arc::from(*first);
+            self.mark(column, |s, row| s.pool(&target, column, row));
+            return Some(());
         }
         if self.schema.roots.contains(*first) {
             let mut entity: Arc<str> = Arc::from(*first);
@@ -717,19 +837,27 @@ impl Sureness<'_> {
 }
 
 impl InputSchema {
-    pub(crate) fn sure(&self, columns: &zen_expression::lane::Columns) -> Option<Vec<bool>> {
+    pub(crate) fn sure(
+        &self,
+        columns: &zen_expression::lane::Columns,
+        converted: bool,
+        resolved: bool,
+    ) -> Option<Vec<bool>> {
         let dated_global = self.globals.values().any(|p| match &p.kind {
             PropertyTypeIr::Date => true,
             PropertyTypeIr::Relationship { target } => self.dated.contains(target),
             _ => false,
         });
-        if !self.dated.is_empty() || !self.ref_targets.is_empty() || dated_global {
+        if (!resolved && !self.ref_targets.is_empty())
+            || (!converted && (!self.dated.is_empty() || dated_global))
+        {
             return None;
         }
         let mut sureness = Sureness {
             schema: self,
             rows: columns.rows,
             sure: vec![true; columns.rows],
+            resolved,
         };
         for (path, column) in &columns.columns {
             sureness.path(path, column)?;

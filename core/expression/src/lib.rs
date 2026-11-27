@@ -57,6 +57,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod context;
 mod isolate;
 
 pub mod compiler;
@@ -65,10 +66,13 @@ mod exports;
 pub mod expression;
 pub mod functions;
 pub mod intellisense;
+pub mod lane;
 pub mod lexer;
 pub mod parser;
 pub mod scope;
 pub mod slot;
+#[doc(hidden)]
+pub mod typed;
 pub mod validate;
 pub mod variable;
 pub mod vm;

@@ -21,6 +21,12 @@ pub(crate) struct ZenEngine {
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
     pub trace: Option<bool>,
+    #[uniffi(default = None)]
+    pub now: Option<String>,
+    #[uniffi(default = None)]
+    pub timezone: Option<String>,
+    #[uniffi(default = None)]
+    pub seed: Option<u64>,
 }
 
 impl Default for ZenEvaluateOptions {
@@ -28,16 +34,59 @@ impl Default for ZenEvaluateOptions {
         Self {
             max_depth: Some(5),
             trace: Some(false),
+            now: None,
+            timezone: None,
+            seed: None,
         }
     }
 }
 
 impl From<ZenEvaluateOptions> for EvaluationOptions {
     fn from(value: ZenEvaluateOptions) -> Self {
+        use zen_engine::context::{parse_instant, parse_timezone};
         Self {
             max_depth: value.max_depth.unwrap_or(5),
-            trace: value.trace.unwrap_or(false),
+            trace: match value.trace.unwrap_or(false) {
+                true => zen_engine::trace::TraceFormat::Legacy,
+                false => zen_engine::trace::TraceFormat::Off,
+            },
+            now: value.now.as_deref().and_then(parse_instant),
+            timezone: value.timezone.as_deref().and_then(parse_timezone),
+            seed: value.seed,
         }
+    }
+}
+
+impl ZenEngine {
+    fn build(
+        loader: Option<ZenLoader>,
+        custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
+        version: Option<u32>,
+    ) -> Result<Self, ZenError> {
+        let loader: DynamicLoader = match loader {
+            Some(loader) => loader.into_dynamic_loader()?,
+            None => Arc::new(ZenDecisionLoaderCallbackWrapper(Arc::new(
+                NoopDecisionLoader,
+            ))),
+        };
+
+        let mut engine = DecisionEngine::new(
+            loader,
+            Arc::new(ZenCustomNodeCallbackWrapper(
+                custom_node.unwrap_or_else(|| Box::new(NoopCustomNodeCallback)),
+            )),
+        );
+        if let Some(version) = version {
+            engine.set_version(
+                zen_engine::EngineVersion::try_from(version)
+                    .map_err(|e| ZenError::ValidationError(e.to_string()))?,
+            );
+        }
+        engine.compile();
+
+        Ok(Self {
+            engine: Arc::new(engine),
+        })
     }
 }
 
@@ -48,24 +97,18 @@ impl ZenEngine {
         loader: Option<ZenLoader>,
         custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
     ) -> Result<Self, ZenError> {
-        let loader: DynamicLoader = match loader {
-            Some(loader) => loader.into_dynamic_loader()?,
-            None => Arc::new(ZenDecisionLoaderCallbackWrapper(Arc::new(
-                NoopDecisionLoader,
-            ))),
-        };
+        Self::build(loader, custom_node, None)
+    }
 
-        let engine = DecisionEngine::new(
-            loader,
-            Arc::new(ZenCustomNodeCallbackWrapper(
-                custom_node.unwrap_or_else(|| Box::new(NoopCustomNodeCallback)),
-            )),
-        );
-        engine.compile();
-
-        Ok(Self {
-            engine: Arc::new(engine),
-        })
+    /// Creates an engine of the given version: 1 is the interpreted engine, 2 the compiled
+    /// engine.
+    #[uniffi::constructor(default(loader = None, custom_node = None))]
+    pub fn with_version(
+        version: u32,
+        loader: Option<ZenLoader>,
+        custom_node: Option<Box<dyn ZenCustomNodeCallback>>,
+    ) -> Result<Self, ZenError> {
+        Self::build(loader, custom_node, Some(version))
     }
 
     pub async fn evaluate(

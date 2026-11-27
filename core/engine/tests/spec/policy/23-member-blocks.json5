@@ -1,0 +1,923 @@
+// Member blocks: match, table and assertion blocks keyed on an iterated entity run once per
+// member and write into that member, like the expression blocks of chapter 09. This chapter
+// pins down each block kind per member, member blocks reading globals and the root entity, an
+// entity type reached by two relationships, and the order in which member and root blocks run
+// when they read each other.
+
+// ---------------------------------------------------------------------------
+// Per-member match blocks.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member match with several arms",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {match: "company.segment", arms: [
+        ["company.country != 'US'", "'international'"],
+        ["company.revenue >= 1000", "'enterprise'"],
+        ["company.revenue >= 100", "'mid'"],
+        ["", "'small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 5000, country: "DE"}, {revenue: 5000, country: "US"}, {revenue: 100, country: "US"}, {revenue: 99.99, country: "US"}]}},
+      {customer: {companies: [
+        {revenue: 5000, country: "DE", segment: "international"},
+        {revenue: 5000, country: "US", segment: "enterprise"},
+        {revenue: 100, country: "US", segment: "mid"},
+        {revenue: 99.99, country: "US", segment: "small"},
+      ]}},
+    ],
+    [{customer: {companies: [{revenue: 0, country: "US"}]}}, {customer: {companies: [{revenue: 0, country: "US", segment: "small"}]}}],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// Arms of a per-member match read the root entity and globals.
+{
+  name: "per-member match arms read root and globals",
+  policy: {
+    models: {customer: {vip: "boolean", companies: "company[]"}, company: {revenue: "number"}},
+    globals: {settings: {threshold: "number"}},
+    blocks: [
+      {match: "company.priority", arms: [
+        ["customer.vip and company.revenue > threshold", "'urgent'"],
+        ["customer.vip", "'high'"],
+        ["company.revenue > threshold", "'normal'"],
+        ["", "'low'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {threshold: 10, customer: {vip: true, companies: [{revenue: 20}, {revenue: 5}]}},
+      {threshold: 10, customer: {vip: true, companies: [{revenue: 20, priority: "urgent"}, {revenue: 5, priority: "high"}]}},
+    ],
+    [
+      {threshold: 10, customer: {vip: false, companies: [{revenue: 20}, {revenue: 10}]}},
+      {threshold: 10, customer: {vip: false, companies: [{revenue: 20, priority: "normal"}, {revenue: 10, priority: "low"}]}},
+    ],
+    [
+      {threshold: -1, customer: {vip: false, companies: [{revenue: 0}]}},
+      {threshold: -1, customer: {vip: false, companies: [{revenue: 0, priority: "normal"}]}},
+    ],
+  ],
+}
+
+// Arm values computed from the member, the root and globals.
+{
+  name: "per-member match arm values are expressions",
+  policy: {
+    models: {customer: {discount: "number", companies: "company[]"}, company: {price: "number", promo: "boolean"}},
+    globals: {settings: {promoRate: "number"}},
+    blocks: [
+      {match: "company.net", arms: [
+        ["company.promo", "company.price * (1 - promoRate)"],
+        ["", "company.price * (1 - customer.discount)"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {promoRate: 0.5, customer: {discount: 0.1, companies: [{price: 10, promo: true}, {price: 10, promo: false}]}},
+      {promoRate: 0.5, customer: {discount: 0.1, companies: [{price: 10, promo: true, net: 5}, {price: 10, promo: false, net: 9}]}},
+    ],
+    [
+      {promoRate: 0, customer: {discount: 0, companies: [{price: 3, promo: true}]}},
+      {promoRate: 0, customer: {discount: 0, companies: [{price: 3, promo: true, net: 3}]}},
+    ],
+  ],
+}
+
+// A per-member match without a default arm: members matching no arm get null.
+{
+  name: "per-member match without a default",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {match: "company.flag", arms: [
+        ["company.revenue > 100", "'big'"],
+        ["company.revenue < 0", "'loss'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 500}, {revenue: 50}, {revenue: -5}]}},
+      {customer: {companies: [{revenue: 500, flag: "big"}, {revenue: 50, flag: null}, {revenue: -5, flag: "loss"}]}},
+    ],
+    [{customer: {companies: [{revenue: 0}]}}, {customer: {companies: [{revenue: 0, flag: null}]}}],
+  ],
+}
+
+// Per-member match reading another per-member computed, then aggregated.
+{
+  name: "per-member match on a member computed",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.margin", value: "company.revenue == 0 ? 0 : (company.revenue - company.cost) / company.revenue"},
+      {match: "company.health", arms: [
+        ["company.margin >= 0.3", "'good'"],
+        ["company.margin >= 0", "'ok'"],
+        ["", "'bad'"],
+      ]},
+      {expression: "customer.bad", value: "count(customer.companies, #.health == 'bad')"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, cost: 5}, {revenue: 10, cost: 9}, {revenue: 10, cost: 20}, {revenue: 0, cost: 1}]}},
+      {customer: {companies: [
+        {revenue: 10, cost: 5, margin: 0.5, health: "good"},
+        {revenue: 10, cost: 9, margin: 0.1, health: "ok"},
+        {revenue: 10, cost: 20, margin: -1, health: "bad"},
+        {revenue: 0, cost: 1, margin: 0, health: "ok"},
+      ], bad: 1}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], bad: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Per-member decision tables.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member table with several inputs and outputs",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {country: "string", employees: "number"}},
+    blocks: [
+      {table: "classify", inputs: ["company.country", "company.employees"], outputs: ["company.size", "company.fee"], rules: [
+        ["'US'", ">= 500", "'large'", "100"],
+        ["'US'", "", "'small'", "10"],
+        ["", ">= 500", "'large'", "150"],
+        ["", "", "'small'", "15"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{country: "US", employees: 500}, {country: "US", employees: 499}, {country: "DE", employees: 1000}, {country: "DE", employees: 1}]}},
+      {customer: {companies: [
+        {country: "US", employees: 500, size: "large", fee: 100},
+        {country: "US", employees: 499, size: "small", fee: 10},
+        {country: "DE", employees: 1000, size: "large", fee: 150},
+        {country: "DE", employees: 1, size: "small", fee: 15},
+      ]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// A per-member table where some members match no rule: their outputs are null.
+{
+  name: "per-member table with unmatched members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "band", inputs: ["company.revenue"], outputs: ["company.band"], rules: [
+        ["[0..100)", "'low'"],
+        ["[100..1000]", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 100}, {revenue: 5000}, {revenue: -1}]}},
+      {customer: {companies: [{revenue: 50, band: "low"}, {revenue: 100, band: "high"}, {revenue: 5000, band: null}, {revenue: -1, band: null}]}},
+    ],
+    [{customer: {companies: [{revenue: 1000}]}}, {customer: {companies: [{revenue: 1000, band: "high"}]}}],
+  ],
+}
+
+// A per-member table whose inputs read the root entity and a global.
+{
+  name: "per-member table inputs read root and globals",
+  policy: {
+    models: {customer: {region: "string", companies: "company[]"}, company: {revenue: "number"}},
+    globals: {settings: {season: "string"}},
+    blocks: [
+      {table: "rate", inputs: ["customer.region", "season", "company.revenue"], outputs: ["company.rate"], rules: [
+        ["'EU'", "'peak'", "> 100", "0.3"],
+        ["'EU'", "", "", "0.2"],
+        ["", "'peak'", "", "0.15"],
+        ["", "", "", "0.1"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {season: "peak", customer: {region: "EU", companies: [{revenue: 200}, {revenue: 50}]}},
+      {season: "peak", customer: {region: "EU", companies: [{revenue: 200, rate: 0.3}, {revenue: 50, rate: 0.2}]}},
+    ],
+    [
+      {season: "peak", customer: {region: "US", companies: [{revenue: 200}]}},
+      {season: "peak", customer: {region: "US", companies: [{revenue: 200, rate: 0.15}]}},
+    ],
+    [
+      {season: "low", customer: {region: "US", companies: [{revenue: 200}, {revenue: 1}]}},
+      {season: "low", customer: {region: "US", companies: [{revenue: 200, rate: 0.1}, {revenue: 1, rate: 0.1}]}},
+    ],
+  ],
+}
+
+// Per-member table output expressions combine member, root and global values.
+{
+  name: "per-member table output expressions",
+  policy: {
+    models: {customer: {multiplier: "number", companies: "company[]"}, company: {revenue: "number"}},
+    globals: {settings: {base: "number"}},
+    blocks: [
+      {table: "score", inputs: ["company.revenue"], outputs: ["company.score"], rules: [
+        ["> 100", "base + company.revenue * customer.multiplier"],
+        ["", "base"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {base: 1, customer: {multiplier: 2, companies: [{revenue: 200}, {revenue: 5}]}},
+      {base: 1, customer: {multiplier: 2, companies: [{revenue: 200, score: 401}, {revenue: 5, score: 1}]}},
+    ],
+    [
+      {base: 0, customer: {multiplier: 0.5, companies: [{revenue: 101}]}},
+      {base: 0, customer: {multiplier: 0.5, companies: [{revenue: 101, score: 50.5}]}},
+    ],
+  ],
+}
+
+// A per-member collect table: each member gathers its own list.
+{
+  name: "per-member collect table",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {table: "flags", hit: "collect", inputs: ["company.revenue", "company.country"], outputs: ["company.flags"], rules: [
+        ["> 1000", "", "'large'"],
+        ["", "'US'", "'domestic'"],
+        ["< 0", "", "'loss'"],
+      ]},
+      {expression: "customer.allFlags", value: "flatMap(customer.companies, #.flags)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 2000, country: "US"}, {revenue: 5, country: "DE"}, {revenue: -1, country: "US"}]}},
+      {customer: {companies: [
+        {revenue: 2000, country: "US", flags: ["large", "domestic"]},
+        {revenue: 5, country: "DE", flags: []},
+        {revenue: -1, country: "US", flags: ["domestic", "loss"]},
+      ], allFlags: ["large", "domestic", "domestic", "loss"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], allFlags: []}}],
+  ],
+}
+
+// A per-member table with a per-column collect next to a first-hit column.
+{
+  name: "per-member table mixing collect and first-hit columns",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "mixed", inputs: ["company.revenue"], outputs: ["company.tags[]", "company.tier"], rules: [
+        ["> 100", "'big'", "'gold'"],
+        ["> 10", "'medium'", "'silver'"],
+        ["", "'any'", "'bronze'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 500}, {revenue: 50}, {revenue: 1}]}},
+      {customer: {companies: [
+        {revenue: 500, tags: ["big", "medium", "any"], tier: "gold"},
+        {revenue: 50, tags: ["medium", "any"], tier: "silver"},
+        {revenue: 1, tags: ["any"], tier: "bronze"},
+      ]}},
+    ],
+  ],
+}
+
+// Two per-member tables chained: the second reads the first's output.
+{
+  name: "chained per-member tables",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "tier", inputs: ["company.revenue"], outputs: ["company.tier"], rules: [
+        ["> 100", "'gold'"],
+        ["", "'basic'"],
+      ]},
+      {table: "limit", inputs: ["company.tier"], outputs: ["company.limit"], rules: [
+        ["'gold'", "company.revenue * 10"],
+        ["'basic'", "100"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}, {revenue: 3}]}},
+      {customer: {companies: [{revenue: 200, tier: "gold", limit: 2000}, {revenue: 3, tier: "basic", limit: 100}]}},
+    ],
+    [{customer: {companies: [{revenue: 101}]}}, {customer: {companies: [{revenue: 101, tier: "gold", limit: 1010}]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Per-member assertion blocks.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member assertion with an and chain",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", audited: "boolean", country: "string"}},
+    blocks: [
+      {assertion: "company.eligible", conditions: ["company.revenue > 10", "company.audited", "company.country == 'US'"]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [
+        {revenue: 20, audited: true, country: "US"},
+        {revenue: 5, audited: true, country: "US"},
+        {revenue: 20, audited: false, country: "US"},
+        {revenue: 20, audited: true, country: "DE"},
+      ]}},
+      {customer: {companies: [
+        {revenue: 20, audited: true, country: "US", eligible: true},
+        {revenue: 5, audited: true, country: "US", eligible: false},
+        {revenue: 20, audited: false, country: "US", eligible: false},
+        {revenue: 20, audited: true, country: "DE", eligible: false},
+      ]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+{
+  name: "per-member assertion with or and groups reading root and globals",
+  policy: {
+    models: {customer: {vip: "boolean", companies: "company[]"}, company: {revenue: "number", audited: "boolean"}},
+    globals: {settings: {minRevenue: "number"}},
+    blocks: [
+      {assertion: "company.ok", conditions: [
+        ["or", "customer.vip"],
+        ["and", "company.revenue >= minRevenue", 1],
+        ["and", "company.audited", 1],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {minRevenue: 10, customer: {vip: true, companies: [{revenue: 0, audited: false}]}},
+      {minRevenue: 10, customer: {vip: true, companies: [{revenue: 0, audited: false, ok: true}]}},
+    ],
+    [
+      {minRevenue: 10, customer: {vip: false, companies: [{revenue: 10, audited: true}, {revenue: 10, audited: false}, {revenue: 9, audited: true}]}},
+      {minRevenue: 10, customer: {vip: false, companies: [{revenue: 10, audited: true, ok: true}, {revenue: 10, audited: false, ok: false}, {revenue: 9, audited: true, ok: false}]}},
+    ],
+  ],
+}
+
+// A non-boolean condition counts as false, per member.
+{
+  name: "per-member assertion on a nullable field",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {audited: "boolean?"}},
+    blocks: [{assertion: "company.ok", conditions: ["company.audited"]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{audited: true}, {audited: false}, {audited: null}, {}]}},
+      {customer: {companies: [{audited: true, ok: true}, {audited: false, ok: false}, {audited: null, ok: false}, {ok: false}]}},
+    ],
+  ],
+}
+
+// A root assertion over per-member assertions.
+{
+  name: "root assertion over member assertions",
+  policy: {
+    models: {customer: {age: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {assertion: "company.ok", conditions: ["company.revenue > 0"]},
+      {assertion: "customer.ok", conditions: ["customer.age >= 18", "all(customer.companies, #.ok)"]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {age: 30, companies: [{revenue: 1}, {revenue: 2}]}},
+      {customer: {age: 30, ok: true, companies: [{revenue: 1, ok: true}, {revenue: 2, ok: true}]}},
+    ],
+    [
+      {customer: {age: 30, companies: [{revenue: 1}, {revenue: 0}]}},
+      {customer: {age: 30, ok: false, companies: [{revenue: 1, ok: true}, {revenue: 0, ok: false}]}},
+    ],
+    [
+      {customer: {age: 10, companies: []}},
+      {customer: {age: 10, ok: false, companies: []}},
+    ],
+    [
+      {customer: {age: 18, companies: []}},
+      {customer: {age: 18, ok: true, companies: []}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Member blocks reading the root entity and globals, input and computed.
+// ---------------------------------------------------------------------------
+{
+  name: "member blocks read a computed root property and a computed global",
+  policy: {
+    models: {customer: {income: "number", companies: "company[]"}, company: {debt: "number"}},
+    globals: {settings: {rate: "number"}},
+    blocks: [
+      {expression: "adjustedRate", value: "rate * 2"},
+      {expression: "customer.capacity", value: "customer.income * adjustedRate"},
+      {expression: "company.covered", value: "company.debt <= customer.capacity"},
+    ],
+  },
+  cases: [
+    [
+      {rate: 0.25, customer: {income: 100, companies: [{debt: 50}, {debt: 51}]}},
+      {rate: 0.25, adjustedRate: 0.5, customer: {income: 100, capacity: 50, companies: [{debt: 50, covered: true}, {debt: 51, covered: false}]}},
+    ],
+    [
+      {rate: 0, customer: {income: 100, companies: [{debt: 0}, {debt: 1}]}},
+      {rate: 0, adjustedRate: 0, customer: {income: 100, capacity: 0, companies: [{debt: 0, covered: true}, {debt: 1, covered: false}]}},
+    ],
+  ],
+}
+
+// A member block reading root properties that are missing: required root inputs.
+{
+  name: "member block reading a missing root input",
+  policy: {
+    models: {customer: {rate: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.fee", value: "company.revenue * customer.rate"}],
+  },
+  cases: [
+    [{customer: {rate: 2, companies: [{revenue: 3}]}}, {customer: {rate: 2, companies: [{revenue: 3, fee: 6}]}}],
+    [{customer: {companies: [{revenue: 3}]}}, "!error: MissingRequiredInputs"],
+    [{customer: {rate: null, companies: [{revenue: 3}]}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Optional root input with a default inside a member block.
+{
+  name: "member block with an optional root input",
+  policy: {
+    models: {customer: {rate: "number?", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.fee", value: "company.revenue * (customer.rate ?? 1)"}],
+  },
+  cases: [
+    [{customer: {rate: 2, companies: [{revenue: 3}, {revenue: 4}]}}, {customer: {rate: 2, companies: [{revenue: 3, fee: 6}, {revenue: 4, fee: 8}]}}],
+    [{customer: {companies: [{revenue: 3}]}}, {customer: {companies: [{revenue: 3, fee: 3}]}}],
+    [{customer: {rate: null, companies: [{revenue: 3}]}}, {customer: {rate: null, companies: [{revenue: 3, fee: 3}]}}],
+  ],
+}
+
+// Member blocks reading a global array (not the member's own relationship).
+{
+  name: "member block reads a global list",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {country: "string"}},
+    globals: {settings: {sanctioned: "string[]"}},
+    blocks: [
+      {expression: "company.blocked", value: "company.country in sanctioned"},
+      {expression: "customer.blocked", value: "some(customer.companies, #.blocked)"},
+    ],
+  },
+  cases: [
+    [
+      {sanctioned: ["XX", "YY"], customer: {companies: [{country: "US"}, {country: "YY"}]}},
+      {sanctioned: ["XX", "YY"], customer: {blocked: true, companies: [{country: "US", blocked: false}, {country: "YY", blocked: true}]}},
+    ],
+    [
+      {sanctioned: [], customer: {companies: [{country: "XX"}]}},
+      {sanctioned: [], customer: {blocked: false, companies: [{country: "XX", blocked: false}]}},
+    ],
+  ],
+}
+
+// A member block reading other members of its own relationship through the root.
+{
+  name: "member block reads its siblings",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {name: "string", revenue: "number"}},
+    blocks: [
+      {expression: "company.rank", value: "count(customer.companies, #.revenue > company.revenue) + 1"},
+      {expression: "company.peers", value: "len(customer.companies) - 1"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{name: "a", revenue: 5}, {name: "b", revenue: 50}, {name: "c", revenue: 20}]}},
+      {customer: {companies: [
+        {name: "a", revenue: 5, rank: 3, peers: 2},
+        {name: "b", revenue: 50, rank: 1, peers: 2},
+        {name: "c", revenue: 20, rank: 2, peers: 2},
+      ]}},
+    ],
+    [
+      {customer: {companies: [{name: "a", revenue: 5}, {name: "b", revenue: 5}]}},
+      {customer: {companies: [{name: "a", revenue: 5, rank: 1, peers: 1}, {name: "b", revenue: 5, rank: 1, peers: 1}]}},
+    ],
+    [{customer: {companies: [{name: "a", revenue: 0}]}}, {customer: {companies: [{name: "a", revenue: 0, rank: 1, peers: 0}]}}],
+  ],
+}
+
+// Members of a global array read a root entity and a global scalar.
+{
+  name: "global array members read a root entity",
+  policy: {
+    models: {customer: {country: "string"}, company: {country: "string", revenue: "number"}},
+    globals: {market: {companies: "company[]", fx: "number"}},
+    blocks: [
+      {match: "company.relation", arms: [
+        ["company.country == customer.country", "'local'"],
+        ["", "'foreign'"],
+      ]},
+      {expression: "company.converted", value: "company.revenue * fx"},
+    ],
+  },
+  cases: [
+    [
+      {fx: 2, customer: {country: "US"}, companies: [{country: "US", revenue: 1}, {country: "DE", revenue: 3}]},
+      {fx: 2, customer: {country: "US"}, companies: [{country: "US", revenue: 1, relation: "local", converted: 2}, {country: "DE", revenue: 3, relation: "foreign", converted: 6}]},
+    ],
+    [
+      {fx: 1, customer: {country: "FR"}, companies: []},
+      {fx: 1, customer: {country: "FR"}, companies: []},
+    ],
+  ],
+}
+
+// A per-member table whose input is an aggregate over the siblings.
+{
+  name: "per-member table input compares against siblings",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "position", inputs: ["company.revenue / max(map(customer.companies, #.revenue))"], outputs: ["company.position"], rules: [
+        ["1", "'top'"],
+        [">= 0.5", "'upper'"],
+        ["", "'lower'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10}, {revenue: 6}, {revenue: 2}]}},
+      {customer: {companies: [{revenue: 10, position: "top"}, {revenue: 6, position: "upper"}, {revenue: 2, position: "lower"}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 4}, {revenue: 4}]}},
+      {customer: {companies: [{revenue: 4, position: "top"}, {revenue: 4, position: "top"}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Order of evaluation across members.
+// ---------------------------------------------------------------------------
+
+// A member block reads a computed property of its siblings: every member's first computed
+// must exist before any member's second computed runs.
+{
+  name: "member block reads a sibling computed",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {name: "string", revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.profit", value: "company.revenue - company.cost"},
+      {expression: "company.rank", value: "count(customer.companies, #.profit > company.profit) + 1"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{name: "a", revenue: 10, cost: 9}, {name: "b", revenue: 10, cost: 0}, {name: "c", revenue: 10, cost: 5}]}},
+      {customer: {companies: [
+        {name: "a", revenue: 10, cost: 9, profit: 1, rank: 3},
+        {name: "b", revenue: 10, cost: 0, profit: 10, rank: 1},
+        {name: "c", revenue: 10, cost: 5, profit: 5, rank: 2},
+      ]}},
+    ],
+    [
+      {customer: {companies: [{name: "a", revenue: 1, cost: 2}]}},
+      {customer: {companies: [{name: "a", revenue: 1, cost: 2, profit: -1, rank: 1}]}},
+    ],
+  ],
+}
+
+// The same, with the reading block declared first.
+{
+  name: "sibling computed read declared before its writer",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.best", value: "company.profit == max(map(customer.companies, #.profit))"},
+      {expression: "company.profit", value: "company.revenue - company.cost"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, cost: 9}, {revenue: 10, cost: 0}]}},
+      {customer: {companies: [{revenue: 10, cost: 9, profit: 1, best: false}, {revenue: 10, cost: 0, profit: 10, best: true}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 3, cost: 1}, {revenue: 4, cost: 2}]}},
+      {customer: {companies: [{revenue: 3, cost: 1, profit: 2, best: true}, {revenue: 4, cost: 2, profit: 2, best: true}]}},
+    ],
+  ],
+}
+
+// A sibling read through a per-member match and table.
+{
+  name: "member match reads a sibling table output",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "tier", inputs: ["company.revenue"], outputs: ["company.tier"], rules: [
+        ["> 100", "'gold'"],
+        ["", "'basic'"],
+      ]},
+      {match: "company.status", arms: [
+        ["company.tier == 'gold'", "'leader'"],
+        ["some(customer.companies, #.tier == 'gold')", "'follower'"],
+        ["", "'alone'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 5}, {revenue: 500}]}},
+      {customer: {companies: [{revenue: 5, tier: "basic", status: "follower"}, {revenue: 500, tier: "gold", status: "leader"}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 5}, {revenue: 6}]}},
+      {customer: {companies: [{revenue: 5, tier: "basic", status: "alone"}, {revenue: 6, tier: "basic", status: "alone"}]}},
+    ],
+  ],
+}
+
+// Member -> root -> member -> root, all through computed properties.
+{
+  name: "member and root blocks interleave",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.flagged", value: "count(customer.companies, #.outlier)"},
+      {expression: "company.outlier", value: "company.deviation > 10"},
+      {expression: "company.deviation", value: "abs(company.revenue - customer.mean)"},
+      {expression: "customer.mean", value: "sum(map(customer.companies, #.revenue)) / len(customer.companies)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10}, {revenue: 12}, {revenue: 38}]}},
+      {customer: {mean: 20, flagged: 1, companies: [
+        {revenue: 10, deviation: 10, outlier: false},
+        {revenue: 12, deviation: 8, outlier: false},
+        {revenue: 38, deviation: 18, outlier: true},
+      ]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 0}, {revenue: 100}]}},
+      {customer: {mean: 50, flagged: 2, companies: [{revenue: 0, deviation: 50, outlier: true}, {revenue: 100, deviation: 50, outlier: true}]}},
+    ],
+  ],
+}
+
+// One failing member fails the evaluation, wherever it sits in the array.
+{
+  name: "a failing member fails the evaluation",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {code: "string"}},
+    blocks: [{expression: "company.n", value: "number(company.code)"}],
+  },
+  cases: [
+    [{customer: {companies: [{code: "1"}, {code: "2"}]}}, {customer: {companies: [{code: "1", n: 1}, {code: "2", n: 2}]}}],
+    [{customer: {companies: [{code: "x"}, {code: "2"}]}}, "!error: ExpressionFailed"],
+    [{customer: {companies: [{code: "1"}, {code: "x"}]}}, "!error: ExpressionFailed"],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// Member order is the array order: per-member writes keep positions.
+{
+  name: "member writes keep array positions",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {id: "string"}},
+    blocks: [
+      {expression: "company.tag", value: "'#' + company.id"},
+      {expression: "customer.order", value: "map(customer.companies, #.tag)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{id: "c"}, {id: "a"}, {id: "b"}, {id: "a"}]}},
+      {customer: {companies: [{id: "c", tag: "#c"}, {id: "a", tag: "#a"}, {id: "b", tag: "#b"}, {id: "a", tag: "#a"}], order: ["#c", "#a", "#b", "#a"]}},
+    ],
+    [{customer: {companies: [{id: ""}]}}, {customer: {companies: [{id: "", tag: "#"}], order: ["#"]}}],
+  ],
+}
+
+// Per-member blocks writing nested paths inside the member.
+{
+  name: "per-member nested write paths",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.stats.profit", value: "company.revenue - company.cost"},
+      {match: "company.stats.label", arms: [["company.stats.profit > 0", "'profit'"], ["", "'loss'"]]},
+      {expression: "customer.labels", value: "map(customer.companies, #.stats.label)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 5, cost: 1}, {revenue: 1, cost: 5}]}},
+      {customer: {companies: [
+        {revenue: 5, cost: 1, stats: {profit: 4, label: "profit"}},
+        {revenue: 1, cost: 5, stats: {profit: -4, label: "loss"}},
+      ], labels: ["profit", "loss"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], labels: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// One entity type reached by two relationships. An entity has a single source path (the first
+// relationship targeting it, models sorted by name, properties in order), so per-member
+// blocks run over that relationship only.
+// ---------------------------------------------------------------------------
+{
+  name: "two relationships of one entity on the root",
+  policy: {
+    models: {customer: {companies: "company[]", subsidiaries: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}], subsidiaries: [{revenue: 300}, {revenue: 1}]}},
+      {customer: {companies: [{revenue: 200, big: true}], subsidiaries: [{revenue: 300, big: true}, {revenue: 1, big: false}]}},
+      "bug: per-member blocks run only over the entity's first relationship (customer.companies); members of customer.subsidiaries are the same entity type and are not evaluated",
+    ],
+    [
+      {customer: {companies: [], subsidiaries: [{revenue: 300}]}},
+      {customer: {companies: [], subsidiaries: [{revenue: 300, big: true}]}},
+      "bug: members of the second relationship of the same entity type are not evaluated",
+    ],
+    [
+      {customer: {companies: [{revenue: 1}], subsidiaries: []}},
+      {customer: {companies: [{revenue: 1, big: false}], subsidiaries: []}},
+    ],
+  ],
+}
+
+// Aggregating a member computed over the second relationship: the computed property exists only
+// on the first relationship's members, so the type checker reports UNDEFINED_VARIABLE and the
+// policy is refused.
+{
+  name: "aggregate over the second relationship's member computed",
+  policy: {
+    models: {customer: {companies: "company[]", subsidiaries: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.bigCompanies", value: "count(customer.companies, #.big)"},
+      {expression: "customer.bigSubsidiaries", value: "count(customer.subsidiaries, #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}], subsidiaries: [{revenue: 300}]}},
+      {customer: {companies: [{revenue: 200, big: true}], subsidiaries: [{revenue: 300, big: true}], bigCompanies: 1, bigSubsidiaries: 1}},
+      "bug: the computed `big` is attached only to customer.companies members; reading it on customer.subsidiaries is UNDEFINED_VARIABLE and the policy is refused",
+    ],
+    [
+      {customer: {companies: [], subsidiaries: []}},
+      {customer: {companies: [], subsidiaries: [], bigCompanies: 0, bigSubsidiaries: 0}},
+      "bug: refused with UNDEFINED_VARIABLE for customer.subsidiaries[].big",
+    ],
+  ],
+}
+
+// A single and an array relationship to the same entity type on the root.
+{
+  name: "single and array relationship of one entity type",
+  policy: {
+    models: {customer: {main: "company", others: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {customer: {main: {revenue: 500}, others: [{revenue: 1}, {revenue: 200}]}},
+      {customer: {main: {revenue: 500, big: true}, others: [{revenue: 1, big: false}, {revenue: 200, big: true}]}},
+      "bug: only the first relationship (customer.main) is evaluated; members of customer.others are not",
+    ],
+    [
+      {customer: {main: {revenue: 5}, others: []}},
+      {customer: {main: {revenue: 5, big: false}, others: []}},
+    ],
+  ],
+}
+
+// Two owners of the same entity type: a root entity and a global. The source is chosen by model
+// name, so which relationship is evaluated depends on how the models are named.
+{
+  name: "entity reached from the root and from a global",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    globals: {market: {competitors: "company[]"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {competitors: [{revenue: 1000}], customer: {companies: [{revenue: 5}]}},
+      {competitors: [{revenue: 1000, big: true}], customer: {companies: [{revenue: 5, big: false}]}},
+      "bug: only one relationship per entity type is evaluated",
+    ],
+  ],
+}
+
+// Two different root entities, each owning an array of the same entity type.
+{
+  name: "two root entities owning the same member type",
+  policy: {
+    models: {buyer: {companies: "company[]"}, seller: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {buyer: {companies: [{revenue: 500}]}, seller: {companies: [{revenue: 5}, {revenue: 600}]}},
+      {buyer: {companies: [{revenue: 500, big: true}]}, seller: {companies: [{revenue: 5, big: false}, {revenue: 600, big: true}]}},
+      "bug: only buyer.companies (first model by name) is evaluated; seller.companies members are not",
+    ],
+    [
+      {buyer: {companies: []}, seller: {companies: []}},
+      {buyer: {companies: []}, seller: {companies: []}},
+    ],
+  ],
+}
+
+// The workaround that works today: distinct entity types per relationship.
+{
+  name: "distinct entity types per relationship",
+  policy: {
+    models: {
+      customer: {companies: "company[]", subsidiaries: "subsidiary[]"},
+      company: {revenue: "number"},
+      subsidiary: {revenue: "number"},
+    },
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "subsidiary.big", value: "subsidiary.revenue > 100"},
+      {expression: "customer.bigCount", value: "count(customer.companies, #.big) + count(customer.subsidiaries, #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}], subsidiaries: [{revenue: 300}, {revenue: 1}]}},
+      {customer: {companies: [{revenue: 200, big: true}], subsidiaries: [{revenue: 300, big: true}, {revenue: 1, big: false}], bigCount: 2}},
+    ],
+    [
+      {customer: {companies: [], subsidiaries: []}},
+      {customer: {companies: [], subsidiaries: [], bigCount: 0}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Goals on member blocks.
+// ---------------------------------------------------------------------------
+{
+  name: "goals on per-member match and table blocks",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "tier", inputs: ["company.revenue"], outputs: ["company.tier"], rules: [["> 100", "'gold'"], ["", "'basic'"]]},
+      {match: "company.label", arms: [["company.revenue > 10", "'some'"], ["", "'none'"]]},
+      {assertion: "company.ok", conditions: ["company.tier == 'gold'"]},
+    ],
+  },
+  cases: [
+    {
+      input: {customer: {companies: [{revenue: 200}, {revenue: 5}]}},
+      goals: ["company.label"],
+      output: {customer: {companies: [{revenue: 200, label: "some"}, {revenue: 5, label: "none"}]}},
+    },
+    {
+      input: {customer: {companies: [{revenue: 200}, {revenue: 5}]}},
+      goals: ["company.ok"],
+      output: {customer: {companies: [{revenue: 200, tier: "gold", ok: true}, {revenue: 5, tier: "basic", ok: false}]}},
+    },
+    {
+      input: {customer: {companies: [{revenue: 200}]}},
+      goals: ["company.tier"],
+      output: {customer: {companies: [{revenue: 200, tier: "gold"}]}},
+    },
+  ],
+}

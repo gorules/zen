@@ -1,0 +1,308 @@
+expression (string);input (json 5);output (json 5);note
+# Values and comparisons in one list
+< 0, 10, > 100;{$: -1};true
+< 0, 10, > 100;{$: -0.01};true
+< 0, 10, > 100;{$: 0};false
+< 0, 10, > 100;{$: 5};false
+< 0, 10, > 100;{$: 10};true
+< 0, 10, > 100;{$: 10.0};true
+< 0, 10, > 100;{$: 11};false
+< 0, 10, > 100;{$: 100};false
+< 0, 10, > 100;{$: 100.01};true
+< 0, 10, > 100;{$: 1000};true
+< 0, 10, > 100;{$: null};!error
+< 0, 10, > 100;{};!error
+< 0, 10, > 100;{$: '10'};!error
+< 0, 10, > 100;{$: true};!error
+10, < 0, > 100;{$: -1};true
+10, < 0, > 100;{$: -0.01};true
+10, < 0, > 100;{$: 0};false
+10, < 0, > 100;{$: 5};false
+10, < 0, > 100;{$: 10};true
+10, < 0, > 100;{$: 10.0};true
+10, < 0, > 100;{$: 11};false
+10, < 0, > 100;{$: 100};false
+10, < 0, > 100;{$: 100.01};true
+10, < 0, > 100;{$: 1000};true
+10, < 0, > 100;{$: null};!error
+10, < 0, > 100;{};!error
+10, < 0, > 100;{$: '10'};!error
+10, < 0, > 100;{$: true};!error
+10, > 100, < 0;{$: -1};true
+10, > 100, < 0;{$: -0.01};true
+10, > 100, < 0;{$: 0};false
+10, > 100, < 0;{$: 5};false
+10, > 100, < 0;{$: 10};true
+10, > 100, < 0;{$: 10.0};true
+10, > 100, < 0;{$: 11};false
+10, > 100, < 0;{$: 100};false
+10, > 100, < 0;{$: 100.01};true
+10, > 100, < 0;{$: 1000};true
+10, > 100, < 0;{$: null};!error
+10, > 100, < 0;{};!error
+10, > 100, < 0;{$: '10'};!error
+10, > 100, < 0;{$: true};!error
+0, [1..5], > 9;{$: 0};true
+0, [1..5], > 9;{$: 0.5};false
+0, [1..5], > 9;{$: 1};true
+0, [1..5], > 9;{$: 3};true
+0, [1..5], > 9;{$: 5};true
+0, [1..5], > 9;{$: 5.5};false
+0, [1..5], > 9;{$: 9};false
+0, [1..5], > 9;{$: 9.01};true
+0, [1..5], > 9;{$: null};!error
+0, [1..5], > 9;{};!error
+0, [1..5], > 9;{$: '0'};!error
+1, 2, 3, 5, 8, 13;{$: 1};true
+1, 2, 3, 5, 8, 13;{$: 2};true
+1, 2, 3, 5, 8, 13;{$: 3};true
+1, 2, 3, 5, 8, 13;{$: 4};false
+1, 2, 3, 5, 8, 13;{$: 5};true
+1, 2, 3, 5, 8, 13;{$: 8};true
+1, 2, 3, 5, 8, 13;{$: 13};true
+1, 2, 3, 5, 8, 13;{$: 13.0};true
+1, 2, 3, 5, 8, 13;{$: 21};false
+1, 2, 3, 5, 8, 13;{$: 0};false
+1, 2, 3, 5, 8, 13;{$: null};false
+1, 2, 3, 5, 8, 13;{$: '1'};false
+-1, 0, 1;{$: -1};true
+-1, 0, 1;{$: -0};true
+-1, 0, 1;{$: 0};true
+-1, 0, 1;{$: 0.0};true
+-1, 0, 1;{$: 1};true
+-1, 0, 1;{$: 2};false
+-1, 0, 1;{$: -2};false
+-1, 0, 1;{$: null};false
+-1, 0, 1;{$: false};false
+0.5, 1.5, 2.5;{$: 0.5};true
+0.5, 1.5, 2.5;{$: 0.50};true
+0.5, 1.5, 2.5;{$: 1};false
+0.5, 1.5, 2.5;{$: 1.5};true
+0.5, 1.5, 2.5;{$: 2.5};true
+0.5, 1.5, 2.5;{$: 2.49};false
+0.5, 1.5, 2.5;{$: null};false
+# A list with null next to comparisons
+null, > 0;{$: null};true
+null, > 0;{};true
+null, > 0;{$: -1};false
+null, > 0;{$: 0};false
+null, > 0;{$: 1};true
+null, > 0;{$: 50};true
+null, > 0;{$: ''};!error
+null, > 0;{$: 'x'};!error
+null, > 0;{$: false};!error
+> 0, null;{$: null};!error;"question: a list entry errors on a type mismatch even when a later entry would match; order of entries changes the outcome"
+> 0, null;{};!error;"question: a list entry errors on a type mismatch even when a later entry would match; order of entries changes the outcome"
+> 0, null;{$: -1};false
+> 0, null;{$: 0};false
+> 0, null;{$: 1};true
+> 0, null;{$: 50};true
+> 0, null;{$: ''};!error
+> 0, null;{$: 'x'};!error
+> 0, null;{$: false};!error
+null, [1..10];{$: null};true
+null, [1..10];{};true
+null, [1..10];{$: -1};false
+null, [1..10];{$: 0};false
+null, [1..10];{$: 1};true
+null, [1..10];{$: 50};false
+null, [1..10];{$: ''};!error
+null, [1..10];{$: 'x'};!error
+null, [1..10];{$: false};!error
+null, 0;{$: null};true
+null, 0;{};true
+null, 0;{$: -1};false
+null, 0;{$: 0};true
+null, 0;{$: 1};false
+null, 0;{$: 50};false
+null, 0;{$: ''};false
+null, 0;{$: 'x'};false
+null, 0;{$: false};false
+null, '';{$: null};true
+null, '';{};true
+null, '';{$: -1};false
+null, '';{$: 0};false
+null, '';{$: 1};false
+null, '';{$: 50};false
+null, '';{$: ''};true
+null, '';{$: 'x'};false
+null, '';{$: false};false
+'', null, 'N/A';{$: null};true
+'', null, 'N/A';{};true
+'', null, 'N/A';{$: -1};false
+'', null, 'N/A';{$: 0};false
+'', null, 'N/A';{$: 1};false
+'', null, 'N/A';{$: 50};false
+'', null, 'N/A';{$: ''};true
+'', null, 'N/A';{$: 'x'};false
+'', null, 'N/A';{$: false};false
+'', null, 'N/A';{$: 'N/A'};true
+'', null, 'N/A';{$: 'n/a'};false
+# Strings next to comparisons: a string row reaching a comparison errors
+'a', 'b', > 5;{$: 'a'};true
+'a', 'b', > 5;{$: 'b'};true
+'a', 'b', > 5;{$: 'c'};!error
+'a', 'b', > 5;{$: 3};false
+'a', 'b', > 5;{$: 6};true
+'a', 'b', > 5;{$: null};!error
+'a', 'b', > 5;{};!error
+'a', 'b', > 5;{$: true};!error
+> 5, 'a', 'b';{$: 'a'};!error;"question: a list entry errors on a type mismatch even when a later entry would match; order of entries changes the outcome"
+> 5, 'a', 'b';{$: 'b'};!error;"question: a list entry errors on a type mismatch even when a later entry would match; order of entries changes the outcome"
+> 5, 'a', 'b';{$: 'c'};!error
+> 5, 'a', 'b';{$: 3};false
+> 5, 'a', 'b';{$: 6};true
+> 5, 'a', 'b';{$: null};!error
+> 5, 'a', 'b';{};!error
+> 5, 'a', 'b';{$: true};!error
+'a', [1..5];{$: 'a'};true
+'a', [1..5];{$: 'b'};!error
+'a', [1..5];{$: 'c'};!error
+'a', [1..5];{$: 3};true
+'a', [1..5];{$: 6};false
+'a', [1..5];{$: null};!error
+'a', [1..5];{};!error
+'a', [1..5];{$: true};!error
+# Comma binds loosest, `and` inside an entry
+> 5 and < 10, 20;{$: 5};false
+> 5 and < 10, 20;{$: 6};true
+> 5 and < 10, 20;{$: 7};true
+> 5 and < 10, 20;{$: 9.99};true
+> 5 and < 10, 20;{$: 10};false
+> 5 and < 10, 20;{$: 15};false
+> 5 and < 10, 20;{$: 20};true
+> 5 and < 10, 20;{$: 20.0};true
+> 5 and < 10, 20;{$: 25};false
+> 5 and < 10, 20;{$: null};!error
+20, > 5 and < 10;{$: 5};false
+20, > 5 and < 10;{$: 6};true
+20, > 5 and < 10;{$: 7};true
+20, > 5 and < 10;{$: 9.99};true
+20, > 5 and < 10;{$: 10};false
+20, > 5 and < 10;{$: 15};false
+20, > 5 and < 10;{$: 20};true;"bug: unary joins are folded left to right, giving (20, > 5) and < 10; each comma entry should be its own test"
+20, > 5 and < 10;{$: 20.0};true;"bug: unary joins are folded left to right, giving (20, > 5) and < 10; each comma entry should be its own test"
+20, > 5 and < 10;{$: 25};false
+20, > 5 and < 10;{$: null};!error
+> 5 and < 10, > 15 and < 25;{$: 5};false
+> 5 and < 10, > 15 and < 25;{$: 6};true
+> 5 and < 10, > 15 and < 25;{$: 7};true
+> 5 and < 10, > 15 and < 25;{$: 9.99};true
+> 5 and < 10, > 15 and < 25;{$: 10};false
+> 5 and < 10, > 15 and < 25;{$: 15};false
+> 5 and < 10, > 15 and < 25;{$: 20};true
+> 5 and < 10, > 15 and < 25;{$: 20.0};true
+> 5 and < 10, > 15 and < 25;{$: 25};false
+> 5 and < 10, > 15 and < 25;{$: null};!error
+[0..10] and != 7, 20;{$: 5};true
+[0..10] and != 7, 20;{$: 6};true
+[0..10] and != 7, 20;{$: 7};false
+[0..10] and != 7, 20;{$: 9.99};true
+[0..10] and != 7, 20;{$: 10};true
+[0..10] and != 7, 20;{$: 15};false
+[0..10] and != 7, 20;{$: 20};true
+[0..10] and != 7, 20;{$: 20.0};true
+[0..10] and != 7, 20;{$: 25};false
+[0..10] and != 7, 20;{$: null};!error
+[0..10] and != 7, 20;{$: 0};true
+# `or` between list entries
+10 or 20 or > 100;{$: -1};false
+10 or 20 or > 100;{$: -0.01};false
+10 or 20 or > 100;{$: 0};false
+10 or 20 or > 100;{$: 5};false
+10 or 20 or > 100;{$: 10};true
+10 or 20 or > 100;{$: 10.0};true
+10 or 20 or > 100;{$: 11};false
+10 or 20 or > 100;{$: 100};false
+10 or 20 or > 100;{$: 100.01};true
+10 or 20 or > 100;{$: 1000};true
+10 or 20 or > 100;{$: null};!error
+10 or 20 or > 100;{};!error
+10 or 20 or > 100;{$: '10'};!error
+10 or 20 or > 100;{$: true};!error
+10, 20 or > 100;{$: -1};false
+10, 20 or > 100;{$: -0.01};false
+10, 20 or > 100;{$: 0};false
+10, 20 or > 100;{$: 5};false
+10, 20 or > 100;{$: 10};true
+10, 20 or > 100;{$: 10.0};true
+10, 20 or > 100;{$: 11};false
+10, 20 or > 100;{$: 100};false
+10, 20 or > 100;{$: 100.01};true
+10, 20 or > 100;{$: 1000};true
+10, 20 or > 100;{$: null};!error
+10, 20 or > 100;{};!error
+10, 20 or > 100;{$: '10'};!error
+10, 20 or > 100;{$: true};!error
+< 0 or 10, 20;{$: -1};true
+< 0 or 10, 20;{$: -0.01};true
+< 0 or 10, 20;{$: 0};false
+< 0 or 10, 20;{$: 5};false
+< 0 or 10, 20;{$: 10};true
+< 0 or 10, 20;{$: 10.0};true
+< 0 or 10, 20;{$: 11};false
+< 0 or 10, 20;{$: 100};false
+< 0 or 10, 20;{$: 100.01};false
+< 0 or 10, 20;{$: 1000};false
+< 0 or 10, 20;{$: null};!error
+< 0 or 10, 20;{};!error
+< 0 or 10, 20;{$: '10'};!error
+< 0 or 10, 20;{$: true};!error
+# Array literal entries next to scalars
+[1, 2], 10;{$: 1};true
+[1, 2], 10;{$: 2};true
+[1, 2], 10;{$: 3};false
+[1, 2], 10;{$: 4};false
+[1, 2], 10;{$: 10};true
+[1, 2], 10;{$: null};false
+[1, 2], 10;{$: 'x'};false
+10, [1, 2];{$: 1};true
+10, [1, 2];{$: 2};true
+10, [1, 2];{$: 3};false
+10, [1, 2];{$: 4};false
+10, [1, 2];{$: 10};true
+10, [1, 2];{$: null};false
+10, [1, 2];{$: 'x'};false
+[1, 2], [3], > 5;{$: 1};true
+[1, 2], [3], > 5;{$: 2};true
+[1, 2], [3], > 5;{$: 3};true
+[1, 2], [3], > 5;{$: 4};false
+[1, 2], [3], > 5;{$: 10};true
+[1, 2], [3], > 5;{$: null};!error
+[1, 2], [3], > 5;{$: 'x'};!error
+# Boolean flags with null
+true;{$: true};true
+true;{$: false};false
+true;{$: null};false
+true;{};false
+true;{$: 1};false
+true;{$: 0};false
+true;{$: 'true'};false
+false, null;{$: true};false
+false, null;{$: false};true
+false, null;{$: null};true
+false, null;{};true
+false, null;{$: 1};false
+false, null;{$: 0};false
+false, null;{$: 'true'};false
+true, false;{$: true};true
+true, false;{$: false};true
+true, false;{$: null};false
+true, false;{};false
+true, false;{$: 1};false
+true, false;{$: 0};false
+true, false;{$: 'true'};false
+!= true;{$: true};false
+!= true;{$: false};true
+!= true;{$: null};true
+!= true;{};true
+!= true;{$: 1};true
+!= true;{$: 0};true
+!= true;{$: 'true'};true
+$ == true or $ == null;{$: true};true
+$ == true or $ == null;{$: false};false
+$ == true or $ == null;{$: null};true
+$ == true or $ == null;{};true
+$ == true or $ == null;{$: 1};false
+$ == true or $ == null;{$: 0};false
+$ == true or $ == null;{$: 'true'};false

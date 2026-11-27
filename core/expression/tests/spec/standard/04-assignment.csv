@@ -1,0 +1,219 @@
+expression (string);input (json 5);output (json 5);note
+# A program of only assignments returns an object of the assigned keys (not the whole environment)
+"x = 1";{};{x: 1}
+"x = 1";{y: 2};{x: 1}
+"x = 1";{x: 5};{x: 1}
+"x = 1";{x: 2, y: 3};{x: 1}
+"x = 1";{a: null};{x: 1}
+"x = null";{x: 5};{x: null}
+"x = 'a'";{};{x: 'a'}
+"x = [1, 2]";{};{x: [1, 2]}
+"x = {a: 1}";{};{x: {a: 1}}
+"x = 1; y = 2";{};{x: 1, y: 2}
+"x = 1; y = 2";{z: 3};{x: 1, y: 2}
+"x = 1; y = x + 1";{};{x: 1, y: 2}
+"x = 1; x = x + 1";{};{x: 2}
+"x.y = 1; x = 2";{};{x: 2}
+"a.b = 1";{};{a: {b: 1}}
+"a.b = 1";{a: {c: 2}};{a: {b: 1}}
+"a.b = 1";{a: {b: 0, c: 1}};{a: {b: 1}}
+"a.b.c = 1";{};{a: {b: {c: 1}}}
+"a.b.c = 1";{a: {b: 5}};{a: {b: {c: 1}}}
+"a.b.c = 1; a.b.d = 2";{};{a: {b: {c: 1, d: 2}}}
+"a.b = 1; a.c = 2";{a: {z: 0}};{a: {b: 1, c: 2}}
+"x.y.z = 1";{x: {y: {w: 2}}};{x: {y: {z: 1}}}
+# The assigned-keys object disagrees with the environment when a scalar is later extended
+"a = 1; a.b = 2";{};{a: {b: 2}};bug: env holds a = {b: 2} (a reads back as {b: 2}) but the returned object keeps a = 1
+"a.b = 1; a.b.c = 2";{};{a: {b: {c: 2}}};bug: env holds a.b = {c: 2} but the returned object silently keeps a.b = 1
+"a = 1; a.b = 2; a";{};{b: 2}
+"a.b = 1; a.b.c = 2; a";{};{b: {c: 2}}
+# Trailing semicolon
+"x = 1;";{};{x: 1}
+"x = 1; y = 2;";{};{x: 1, y: 2}
+"x = 1; x;";{};1;bug: a trailing ; is accepted after an assignment but rejected after the final expression
+"x = 1; x + 1;";{};2;bug: a trailing ; is accepted after an assignment but rejected after the final expression
+"x = 1;; x";{};!error
+# Final expression is the result
+"x = 1; x";{};1
+"a = 5; b = 10; a + b";{};15
+"x = 1; y = 2; x + y";{};3
+"x = 1 ; y = 2 ; x + y";{};3
+"x=1;y=x*2;y";{};2
+"x = 1; x = x + 1; x";{};2
+"x = 1; x = 'a'; x = [x]; x";{};['a']
+"x = 1; y = x; x = 2; y";{};1
+"x = 1; y = 2; [x, y, z]";{};[1, 2, null]
+"x = 1; (x + 1)";{};2
+"x = 1; {a: x}";{};{a: 1}
+"x = 1; [x]";{};[1]
+"x = 1; `v${x}`";{};'v1'
+"x = 1; -x";{};-1
+"x = 1; not true";{};false
+"x = 1; 'str'";{};'str'
+"x = 1; map([1], # + x)";{};[2]
+"x = 'a'; y = x + 'b'; y";{};'ab'
+"x = [1, 2]; x[0]";{};1
+"x = [1, 2, 3]; x[1:2]";{};[2, 3]
+"x = 'ab'; x[0]";{};'a'
+"x = {a: 1}; x.a";{};1
+"x = 1; y = x.z; y";{};null
+"x = 1 == 1; x";{};true
+"x = 1 ?? 2; x";{};1
+"x = true and false; x";{};false
+"x = 1 > 0 ? 'a' : 'b'; x";{};'a'
+"x = [1..5]; 3 in x";{};true
+"user.name = 'Eve'; user.name";{};'Eve'
+"config.debug = true; config.env = 'dev'; config";{};{debug: true, env: 'dev'}
+"config.debug = true; config.env = 'dev'; $root";{};{config: {debug: true, env: 'dev'}}
+# Assignments read the input
+"x = x + 1; x";{x: 1};2
+"x = x + 1; x";{x: 1.5};2.5
+"x = x + 1; x";{x: null};!error
+"x = x + 1; x";{};!error
+"x = x + 1; x";{x: 'a'};!error
+"x = x ?? 'd'; x";{x: null};'d'
+"x = x ?? 'd'; x";{};'d'
+"x = x ?? 'd'; x";{x: 'v'};'v'
+"x = x ?? 'd'; x";{x: 0};0
+"x = x ?? 'd'; x";{x: false};false
+"total = price * qty; total";{price: 2, qty: 3};6
+"total = price * qty; total";{price: 2.5, qty: 2};5
+"total = price * qty; total";{price: 0, qty: 2};0
+"total = price * qty; total";{price: null, qty: 2};!error
+"total = price * qty; total";{qty: 2};!error
+"total = price * qty; total";{price: '2', qty: 2};!error
+"x = a[0]; x";{a: [7]};7
+"x = a[0]; x";{a: []};null
+"x = a[0]; x";{a: null};null
+"x = a[0]; x";{};null
+"x = a.b; x";{a: {b: 'v'}};'v'
+"x = a.b; x";{a: 5};null
+"x = a.b; x";{};null
+"u.name = upper(u.name); u";{u: {name: 'ann', age: 3}};{name: 'ANN', age: 3}
+"u.name = upper(u.name); u";{u: {name: 'ann'}};{name: 'ANN'}
+"u.name = upper(u.name); u";{u: {name: 'x', tags: [1]}};{name: 'X', tags: [1]}
+"a.b = a.b + 1; a";{a: {b: 1, c: 2}};{b: 2, c: 2}
+"a.b = a.b + 1";{a: {b: 1, c: 2}};{a: {b: 2}}
+"a.b = a.b + 1; a.b";{a: null};!error
+"a.b = (a.b ?? 0) + 1; a.b";{a: {b: 41}};42
+"a.b = (a.b ?? 0) + 1; a.b";{a: null};1
+"a.b = (a.b ?? 0) + 1; a.b";{a: 5};1
+"a.b = (a.b ?? 0) + 1; a.b";{};1
+"a.b = (a.b ?? 0) + 1; a.b";{a: {c: 1}};1
+# Dotted assignment merges into existing objects and replaces non-objects
+"a.b = 1; a";{a: {c: 2}};{b: 1, c: 2}
+"a.b = 1; a";{a: {}};{b: 1}
+"a.b = 1; a";{a: 5};{b: 1}
+"a.b = 1; a";{a: null};{b: 1}
+"a.b = 1; a";{a: [1]};{b: 1}
+"a.b = 1; a";{a: 'str'};{b: 1}
+"a.b = 1; a";{};{b: 1}
+"a.b.c = 1; a";{a: {b: 5}};{b: {c: 1}}
+"x.y.z = 1; x";{x: {y: {w: 2}, v: 3}};{v: 3, y: {w: 2, z: 1}}
+"x.y.z = 1; x.y";{x: {y: {w: 2}}};{w: 2, z: 1}
+"x.y.z = 1; x.y.z";{};1
+"a.b = 1; $root";{a: {c: 2}};{a: {b: 1, c: 2}}
+"a.b = 1; a.b";{};1
+"a.b = 1; a['b']";{};1
+"a.b = 1; a[k]";{k: 'b'};1
+"a.b = 1; a.b + a.c";{a: {c: 2}};3
+"a.b = 1; x = a.b + 1; x";{};2
+"a.b.c = 1; a.b.d = 2; a";{};{b: {c: 1, d: 2}}
+"x.y = 1; x.y = 2; x";{};{y: 2}
+"x = 1; x.y = 2; x";{};{y: 2}
+"x.y = 1; x = 2; x";{};2
+"x = {a: 1}; x.a = 2; x";{};{a: 2}
+"x = {a: 1}; x.b = 2; x";{};{a: 1, b: 2}
+# $root sees assignments
+"x = 1; $root";{};{x: 1}
+"x = 1; $root";{x: 0};{x: 1}
+"x = 1; $root";{y: 2};{x: 1, y: 2}
+"x = x + 1; $root";{x: 1, y: 2};{x: 2, y: 2}
+"x = 1; y = 2; $root";{x: 0, y: 0, z: 0};{x: 1, y: 2, z: 0}
+"x = 1; y = $root; y";{a: 2};{a: 2, x: 1}
+"x = 1; y = $root; y.x";{a: 2};1
+"x = 1; k = 'x'; $root[k]";{};1
+"x = 1; ($root).x";{x: 5};1
+"x = 1; $root.x";{};1;bug: $root.x compiles to a fast path that reads the original input while $root and ($root).x see the assignment
+"x = 1; $root.x";{x: 5};1;bug: $root.x reads the original input (5) while ($root).x reads the assigned 1
+"x = 1; $root['x']";{};1;bug: $root['x'] compiles to a fast path that reads the original input
+"x = 1; $root['x']";{x: 5};1;bug: $root['x'] reads the original input while $root[k] with k = 'x' sees the assignment
+"a.b = 1; $root.a.b";{};1;bug: $root.a.b reads the original input instead of the assigned value
+"a.b = 1; $root.a.b";{a: {b: 0}};1;bug: $root.a.b reads the original input instead of the assigned value
+"x.y = 1; $root.x";{x: {z: 1}};{y: 1, z: 1};bug: $root.x reads the original input instead of the assigned value
+"x.y = 1; $root.x.y";{x: {z: 1}};1;bug: $root.x.y reads the original input instead of the assigned value
+# Assigning to $root and $-prefixed names
+"$root = 1";{};{'$root': 1};question: $root is accepted as an assignment target and creates a literal '$root' key
+"$root.x = 1";{};{'$root': {x: 1}};question: $root.x = 1 writes a nested '$root' key instead of assigning x at the root
+"$root.x = 1; x";{};null;question: $root.x = 1 does not make x visible
+"$root.x = 1; $root";{};{'$root': {x: 1}};question: $root.x = 1 writes a literal '$root' key into the environment
+"$x = 1; $x";{};1
+"$ = 1; $";{};1
+"_x = 1; _x";{};1
+"x1 = 1; x1";{};1
+"len = 1; len";{};1
+"d = 1; d";{};1
+"x = 1; X";{};null
+# Invalid assignment targets and malformed programs
+"a['b'] = 1";{};!error
+"a[0] = 1";{a: [0]};!error
+"a[k] = 1";{k: 'b'};!error
+"a.b[0] = 1";{};!error
+"true = 1";{};!error
+"null = 1";{};!error
+"in = 1";{};!error
+"x.true = 1; x";{};!error
+"= 1";{};!error
+"x =";{};!error
+"x = ;";{};!error
+"x = 1 = 2";{};!error
+"x = 1, y = 2";{};!error
+"x = 1 y = 2";{};!error
+"x == 1; y = 2";{x: 1};!error
+"x = 1; x + 1; 5";{};!error
+"5; x = 1";{};!error
+"1 + 1; 2";{};!error
+"x = 3; filter(list, # > x); x";{list: [1, 5]};!error
+# An assignment as the value of another assignment
+"x = 1; y = x.w = 2";{};{x: 1, y: {x: {w: 2}}};question: y = x.w = 2 parses the right side as a nested assignment program whose value is its assigned-keys object and which also rebinds x
+# Assignment values that error or produce null
+"x = 1 + {}; 2";{};!error
+"x = y; x";{};null
+"x = null; x";{x: 5};null
+"x = 1; x + y";{y: 2};3
+"x = y + 1; y = 5; x";{};!error
+"x = y + 1; y = 5; x";{y: 1};2
+"x = y + 1; y = 5; [x, y]";{y: 1};[2, 5]
+# Assignments need an object environment
+"x = 1";;!error;question: assignments need an object environment - with no input they fail
+"x = 1; x";;!error;question: assignments need an object environment - with no input they fail
+"x = 1";5;!error
+"x = 1";[1];!error
+"x = 1";'s';!error
+"x = 1";true;!error
+# Values are copied on assignment - later writes do not reach other names or the input
+"b = a; a = 5; b";{a: {x: 1}};{x: 1}
+"b = a; a.c = 1; b";{a: {x: 1}};{x: 1}
+"x.y = 1; z = x; x.w = 2; z";{};{y: 1}
+"b = list; list = map(list, 0); b";{list: [1, 2]};[1, 2]
+"f = map(list, #); list = [9]; f";{list: [1, 2]};[1, 2]
+"b = a; b.c = 1; a";{a: {x: 1}};{x: 1};bug: b.c = 1 mutates the object shared with a (and the caller's input) in place
+"b = a; b.c = 1; a";{a: {}};{};bug: b.c = 1 mutates the object shared with a (and the caller's input) in place
+"b = a; b.x = 2; a.x";{a: {x: 1}};1;bug: b.x = 2 overwrites a.x through the shared reference
+"b = a; b.c = 1; $root";{a: {x: 1}};{a: {x: 1}, b: {c: 1, x: 1}};bug: b.c = 1 leaks into a through the shared reference
+"b = a; b.c = 1";{a: {x: 1}};{b: {c: 1, x: 1}}
+"b = a.x; b.z = 2; a";{a: {x: {y: 1}}};{x: {y: 1}};bug: b.z = 2 mutates the nested input object a.x in place
+"c = {v: 1}; d = c; d.v = 2; c.v";{};1;bug: d.v = 2 mutates c through the shared reference
+"c = {v: 1}; d = c; c.v = 2; d.v";{};1;bug: c.v = 2 mutates d through the shared reference (the reverse direction on input a does not)
+"x.y = 1; z = x; z.w = 2; x";{};{y: 1};bug: z.w = 2 mutates x through the shared reference while x.w = 2 does not reach z
+"x.y = 1; z = x; z.w = 2; $root";{};{x: {y: 1}, z: {w: 2, y: 1}};bug: z.w = 2 leaks into x through the shared reference
+# Parenthesized statement sequences
+"(t = 1; t + 1)";{};2
+"(t = 1; t + 1) * 10";{};20
+"1 + (t = 1; t)";{};2
+"(a = 1; b = 2; a + b)";{};3
+"x = (y = 1; z = 2; y + z); x";{};3
+"x = 1; y = (z = 2; z + x)";{};{x: 1, y: 3}
+"(t = 1)";{};!error
+"x = (y = 1; z = 2); x";{};!error
+"(t = 1; t + 1); t";{};!error;question: a program cannot begin with a parenthesized sequence followed by more statements

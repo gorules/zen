@@ -1,0 +1,349 @@
+// Realistic lending decisions modelled on the shapes of the published sample graphs: scorecards
+// built from chained pass-through tables writing dotted `eval.*` outputs, affordability gates in
+// front of ratio checks, rate pricing from a base table plus collected basis-point adjustments,
+// exposure limits from a loop joined with the request, KYC gates over dates, and a bureau score
+// sub-decision. Each suite is one decision exercised across main paths, boundaries, missing data
+// and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Credit limit review: three scoring tables, a total, a recommendation band with half-open
+// intervals, and a final expression that rounds the change and reads `$` for the new limit.
+{
+  name: "credit limit review: scorecard bands and the recommended new limit",
+  graph: {
+    nodes: [
+      {table: "paymentHistory", passThrough: true, inputs: ["account.payments.onTimePct", "account.payments.late12m"], outputs: ["eval.payment.rating", "eval.payment.score"], rules: [
+        [">= 95", "<= 0", "'excellent'", "30"],
+        [">= 90", "<= 1", "'good'", "20"],
+        [">= 80", "<= 3", "'fair'", "10"],
+        ["", "", "'poor'", "0"],
+      ]},
+      {table: "utilization", passThrough: true, inputs: ["account.utilization.current", "account.utilization.avg6m"], outputs: ["eval.utilization.rating", "eval.utilization.score"], rules: [
+        ["< 30", "< 50", "'low'", "25"],
+        ["< 50", "", "'moderate'", "15"],
+        ["< 80", "", "'high'", "5"],
+        ["", "", "'maxed'", "-10"],
+      ]},
+      {table: "behaviour", passThrough: true, inputs: ["account.behaviour.inquiries", "account.behaviour.years", "account.behaviour.incomeVerified"], outputs: ["eval.behaviour.score"], rules: [
+        ["< 1", ">= 3", "true", "25"],
+        ["< 3", ">= 1", "true", "15"],
+        ["< 3", "", "", "5"],
+        ["", "", "", "-5"],
+      ]},
+      {expression: "total", passThrough: true, fields: {totalScore: "eval.payment.score + eval.utilization.score + eval.behaviour.score"}},
+      {table: "recommendation", passThrough: true, inputs: ["totalScore"], outputs: ["rec.pct", "rec.why"], rules: [
+        ["> 70", "30", "'significant increase'"],
+        ["[50..70]", "15", "'moderate increase'"],
+        ["[30..50)", "5", "'small increase'"],
+        ["[0..30)", "0", "'no change'"],
+        ["< 0", "-20", "'decrease'"],
+      ]},
+      {expression: "amounts", fields: {
+        score: "totalScore",
+        ratings: "[eval.payment.rating, eval.utilization.rating]",
+        "rec.pct": "rec.pct",
+        "rec.why": "rec.why",
+        "rec.change": "round(account.limit * rec.pct / 100)",
+        "rec.newLimit": "account.limit + $.rec.change",
+      }},
+    ],
+  },
+  cases: [
+    [{account: {limit: 5000, payments: {onTimePct: 98, late12m: 0}, utilization: {current: 20, avg6m: 40}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, {score: 80, ratings: ["excellent", "low"], rec: {pct: 30, why: "significant increase", change: 1500, newLimit: 6500}}],
+    [{account: {limit: 5000, payments: {onTimePct: 95, late12m: 0}, utilization: {current: 30, avg6m: 40}, behaviour: {inquiries: 1, years: 2, incomeVerified: true}}}, {score: 60, ratings: ["excellent", "moderate"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {limit: 5000, payments: {onTimePct: 92, late12m: 1}, utilization: {current: 29, avg6m: 50}, behaviour: {inquiries: 0, years: 2, incomeVerified: false}}}, {score: 40, ratings: ["good", "moderate"], rec: {pct: 5, why: "small increase", change: 250, newLimit: 5250}}],
+    [{account: {limit: 5000, payments: {onTimePct: 85, late12m: 3}, utilization: {current: 79, avg6m: 60}, behaviour: {inquiries: 2, years: 0, incomeVerified: true}}}, {score: 20, ratings: ["fair", "high"], rec: {pct: 0, why: "no change", change: 0, newLimit: 5000}}],
+    [{account: {limit: 5000, payments: {onTimePct: 70, late12m: 6}, utilization: {current: 95, avg6m: 90}, behaviour: {inquiries: 6, years: 1, incomeVerified: true}}}, {score: -15, ratings: ["poor", "maxed"], rec: {pct: -20, why: "decrease", change: -1000, newLimit: 4000}}],
+    // Band edges: 50 and 70 are both in the closed middle band, 30 opens the half-open small band,
+    // 0 opens the no-change band.
+    [{account: {limit: 5000, payments: {onTimePct: 90, late12m: 1}, utilization: {current: 10, avg6m: 10}, behaviour: {inquiries: 2, years: 0, incomeVerified: false}}}, {score: 50, ratings: ["good", "low"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {limit: 5000, payments: {onTimePct: 99, late12m: 0}, utilization: {current: 10, avg6m: 10}, behaviour: {inquiries: 1, years: 1, incomeVerified: true}}}, {score: 70, ratings: ["excellent", "low"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {limit: 5000, payments: {onTimePct: 80, late12m: 2}, utilization: {current: 60, avg6m: 60}, behaviour: {inquiries: 2, years: 1, incomeVerified: true}}}, {score: 30, ratings: ["fair", "high"], rec: {pct: 5, why: "small increase", change: 250, newLimit: 5250}}],
+    [{account: {limit: 5000, payments: {onTimePct: 50, late12m: 9}, utilization: {current: 70, avg6m: 70}, behaviour: {inquiries: 5, years: 9, incomeVerified: true}}}, {score: 0, ratings: ["poor", "high"], rec: {pct: 0, why: "no change", change: 0, newLimit: 5000}}],
+    [{account: {limit: 3333, payments: {onTimePct: 95, late12m: 0}, utilization: {current: 30, avg6m: 40}, behaviour: {inquiries: 1, years: 2, incomeVerified: true}}}, {score: 60, ratings: ["excellent", "moderate"], rec: {pct: 15, why: "moderate increase", change: 500, newLimit: 3833}}],
+    // Missing sections fall to each table's catch-all row; a mistyped percentage errors in every
+    // comparison cell and lands in `poor`.
+    [{account: {limit: 5000, payments: {onTimePct: 98, late12m: 0}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, {score: 45, ratings: ["excellent", "maxed"], rec: {pct: 5, why: "small increase", change: 250, newLimit: 5250}}],
+    [{account: {limit: 5000, utilization: {current: 20, avg6m: 40}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, {score: 50, ratings: ["poor", "low"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {limit: 5000, payments: {onTimePct: "98", late12m: 0}, utilization: {current: 20, avg6m: 40}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, {score: 50, ratings: ["poor", "low"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {limit: 5000, payments: {onTimePct: 98}, utilization: {current: 20, avg6m: 40}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, {score: 50, ratings: ["poor", "low"], rec: {pct: 15, why: "moderate increase", change: 750, newLimit: 5750}}],
+    [{account: {payments: {onTimePct: 98, late12m: 0}, utilization: {current: 20, avg6m: 40}, behaviour: {inquiries: 0, years: 5, incomeVerified: true}}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Affordability: an income gate first, then obligations and ratios as pass-through expressions,
+// then a first-hit switch into decline, refer and approve.
+{
+  name: "affordability: income gate, DTI and residual income",
+  graph: {
+    nodes: [
+      {switch: "incomeGate", when: ["(applicant.income ?? 0) <= 0", ""]},
+      {expression: "noIncome", fields: {decision: "'decline'", reason: "'no income'"}},
+      {expression: "obligations", passThrough: true, fields: {
+        "afford.existingDebt": "sum(map(debts ?? [], #.monthly))",
+        "afford.newPayment": "round(request.amount / request.termMonths, 2)",
+      }},
+      {expression: "ratios", passThrough: true, fields: {
+        "afford.housing": "housing.payment ?? 0",
+        "afford.dti": "round((afford.existingDebt + afford.newPayment + $.afford.housing) / applicant.income, 4)",
+        "afford.residual": "applicant.income - applicant.expenses - afford.existingDebt - afford.newPayment - $.afford.housing",
+      }},
+      {switch: "band", when: ["afford.dti > 0.5 or afford.residual < 0", "afford.dti > 0.36 or afford.residual < 500", ""]},
+      {expression: "decline", fields: {decision: "'decline'", reason: "'unaffordable'", dti: "afford.dti", residual: "afford.residual"}},
+      {expression: "refer", fields: {decision: "'refer'", dti: "afford.dti", residual: "afford.residual"}},
+      {expression: "approve", fields: {
+        decision: "'approve'",
+        dti: "afford.dti",
+        residual: "afford.residual",
+        maxPayment: "round(applicant.income * 0.36 - afford.existingDebt - afford.housing, 2)",
+      }},
+    ],
+    edges: [
+      "input -> incomeGate",
+      "incomeGate:0 -> noIncome -> output",
+      "incomeGate:1 -> obligations -> ratios -> band",
+      "band:0 -> decline -> output",
+      "band:1 -> refer -> output",
+      "band:2 -> approve -> output",
+    ],
+  },
+  cases: [
+    [{applicant: {income: 6000, expenses: 2000}, debts: [{type: "card", monthly: 300}], request: {amount: 12000, termMonths: 24}, housing: {payment: 1200}}, {decision: "approve", dti: 0.3333, residual: 2000, maxPayment: 660}],
+    [{applicant: {income: 6000, expenses: 2000}, debts: [{type: "card", monthly: 300}], request: {amount: 12000, termMonths: 24}, housing: {payment: 1700}}, {decision: "refer", dti: 0.4167, residual: 1500}],
+    [{applicant: {income: 6000, expenses: 2000}, debts: [{type: "card", monthly: 300}], request: {amount: 12000, termMonths: 24}, housing: {payment: 2800}}, {decision: "decline", reason: "unaffordable", dti: 0.6, residual: 400}],
+    [{applicant: {income: 5000, expenses: 1000}, debts: [], request: {amount: 6000, termMonths: 12}, housing: {payment: 1300}}, {decision: "approve", dti: 0.36, residual: 2200, maxPayment: 500}],
+    [{applicant: {income: 5000, expenses: 3201}, debts: [], request: {amount: 6000, termMonths: 12}, housing: {payment: 800}}, {decision: "refer", dti: 0.26, residual: 499}],
+    [{applicant: {income: 5000, expenses: 3200}, debts: [], request: {amount: 6000, termMonths: 12}, housing: {payment: 800}}, {decision: "approve", dti: 0.26, residual: 500, maxPayment: 1000}],
+    [{applicant: {income: 5000, expenses: 4000}, debts: [], request: {amount: 6000, termMonths: 12}, housing: {payment: 800}}, {decision: "decline", reason: "unaffordable", dti: 0.26, residual: -300}],
+    [{applicant: {income: 4000, expenses: 1000}, request: {amount: 2400, termMonths: 12}}, {decision: "approve", dti: 0.05, residual: 2800, maxPayment: 1440}],
+    [{applicant: {income: 4000, expenses: 1000}, debts: [{type: "car", monthly: 100}, {type: "card", monthly: 250.5}], request: {amount: 2400, termMonths: 12}}, {decision: "approve", dti: 0.1376, residual: 2449.5, maxPayment: 1089.5}],
+    [{applicant: {income: 0, expenses: 1000}, request: {amount: 2400, termMonths: 12}}, {decision: "decline", reason: "no income"}],
+    [{applicant: {expenses: 1000}, request: {amount: 2400, termMonths: 12}}, {decision: "decline", reason: "no income"}],
+    [{applicant: {income: -100, expenses: 0}, request: {amount: 2400, termMonths: 12}}, {decision: "decline", reason: "no income"}],
+    [{applicant: {income: 0.01, expenses: 0}, request: {amount: 0, termMonths: 12}}, {decision: "refer", dti: 0, residual: 0.01}],
+    // A zero term divides by zero, a string income fails the gate's comparison (the default branch
+    // runs) and then the ratio, and a debt without `monthly` sums null.
+    [{applicant: {income: 4000, expenses: 1000}, request: {amount: 2400, termMonths: 0}}, "!error"],
+    [{applicant: {income: "5000", expenses: 1000}, request: {amount: 2400, termMonths: 12}}, "!error"],
+    [{applicant: {income: 4000, expenses: 1000}, debts: [{type: "card"}], request: {amount: 2400, termMonths: 12}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Loan pricing: base rate, floor and cap by product; collected basis-point adjustments; the rate
+// clamped into [floor, cap]; an amortized monthly payment with a negative exponent.
+{
+  name: "loan pricing: base rate, collected adjustments, clamp and payment",
+  graph: {
+    nodes: [
+      {table: "base", passThrough: true, inputs: ["product"], outputs: ["pricing.base", "pricing.floor", "pricing.cap"], rules: [
+        ["'mortgage'", "5.25", "3.5", "9"],
+        ["'auto'", "6.5", "4", "15"],
+        ["'personal'", "9.9", "6", "24.99"],
+      ]},
+      {table: "adjustments", hit: "collect", outputPath: "adjustments", passThrough: true, inputs: ["creditScore", "ltv", "termMonths", "autopay", "product", "customer.years"], outputs: ["code", "bps"], rules: [
+        [">= 760", "", "", "", "", "", "'score_prime'", "-50"],
+        ["< 660", "", "", "", "", "", "'score_subprime'", "200"],
+        ["< 600", "", "", "", "", "", "'score_deep'", "300"],
+        ["", "> 0.8", "", "", "'mortgage', 'auto'", "", "'high_ltv'", "75"],
+        ["", "", "> 60", "", "", "", "'long_term'", "25"],
+        ["", "", "", "true", "", "", "'autopay'", "-25"],
+        ["", "", "", "", "", ">= 10", "'loyalty'", "-150"],
+      ]},
+      {expression: "rate", fields: {
+        raw: "pricing.base + sum(map(adjustments, #.bps)) / 100",
+        rate: "min([max([$.raw, pricing.floor]), pricing.cap])",
+        codes: "map(adjustments, #.code)",
+        monthly: "round(amount * ($.rate / 1200) / (1 - (1 + $.rate / 1200) ^ (-termMonths)), 2)",
+      }},
+    ],
+  },
+  cases: [
+    [{product: "mortgage", amount: 300000, termMonths: 360, creditScore: 780, ltv: 0.75, autopay: true, customer: {years: 2}}, {raw: 4.75, rate: 4.75, codes: ["score_prime", "long_term", "autopay"], monthly: 1564.94}],
+    [{product: "mortgage", amount: 300000, termMonths: 360, creditScore: 700, ltv: 0.9, autopay: false}, {raw: 6.25, rate: 6.25, codes: ["high_ltv", "long_term"], monthly: 1847.15}],
+    [{product: "auto", amount: 25000, termMonths: 60, creditScore: 650, ltv: 1.1, autopay: true}, {raw: 9, rate: 9, codes: ["score_subprime", "high_ltv", "autopay"], monthly: 518.96}],
+    [{product: "auto", amount: 25000, termMonths: 72, creditScore: 590, ltv: 0.5}, {raw: 11.75, rate: 11.75, codes: ["score_subprime", "score_deep", "long_term"], monthly: 485.51}],
+    [{product: "personal", amount: 10000, termMonths: 36, creditScore: 550, autopay: true}, {raw: 14.65, rate: 14.65, codes: ["score_subprime", "score_deep", "autopay"], monthly: 344.94}],
+    [{product: "personal", amount: 10000, termMonths: 12, creditScore: 820, autopay: true}, {raw: 9.15, rate: 9.15, codes: ["score_prime", "autopay"], monthly: 875.21}],
+    [{product: "personal", amount: 10000, termMonths: 36, creditScore: 760, ltv: 0.9}, {raw: 9.4, rate: 9.4, codes: ["score_prime"], monthly: 319.86}],
+    [{product: "personal", amount: 10000, termMonths: 36, creditScore: 660}, {raw: 9.9, rate: 9.9, codes: [], monthly: 322.2}],
+    [{product: "personal", amount: 10000, termMonths: 36, creditScore: 600}, {raw: 11.9, rate: 11.9, codes: ["score_subprime"], monthly: 331.67}],
+    // Clamped to the product floor and to the product cap.
+    [{product: "mortgage", amount: 200000, termMonths: 120, creditScore: 800, ltv: 0.5, autopay: true, customer: {years: 12}}, {raw: 3.25, rate: 3.5, codes: ["score_prime", "long_term", "autopay", "loyalty"], monthly: 1977.72}],
+    [{product: "mortgage", amount: 200000, termMonths: 360, creditScore: 550, ltv: 0.95}, {raw: 11.25, rate: 9, codes: ["score_subprime", "score_deep", "high_ltv", "long_term"], monthly: 1609.25}],
+    // Missing score: score cells error and add nothing. Unknown product: no base rate, the sum
+    // with null errors. A string term fails the `> 60` cell and then the exponent.
+    [{product: "personal", amount: 10000, termMonths: 36, ltv: 0.9}, {raw: 9.9, rate: 9.9, codes: [], monthly: 322.2}],
+    [{product: "boat", amount: 10000, termMonths: 36, creditScore: 700}, "!error"],
+    [{product: "auto", amount: 25000, termMonths: "60", creditScore: 700}, "!error"],
+    [{product: "auto", amount: 0, termMonths: 60, creditScore: 700, customer: {years: 10}}, {raw: 5, rate: 5, codes: ["loyalty"], monthly: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Exposure limit: a loop expression weighs each existing facility, a segment table supplies the
+// caps, both join into one expression that picks the binding constraint and floors to hundreds.
+{
+  name: "exposure limit: facility loop joined with segment caps",
+  graph: {
+    nodes: [
+      {expression: "exposure", executionMode: "loop", inputField: "facilities", outputPath: "exposures", fields: {
+        exposure: "secured == true ? balance * 0.5 : max([limit, balance])",
+      }},
+      {table: "caps", passThrough: true, inputs: ["segment"], outputs: ["caps.product", "caps.incomeMultiple"], rules: [
+        ["'retail'", "25000", "0.5"],
+        ["'premier'", "100000", "1"],
+        ["'business'", "250000", "2"],
+        ["", "5000", "0.25"],
+      ]},
+      {expression: "limit", fields: {
+        currentExposure: "sum(map(exposures, #.exposure))",
+        incomeCap: "annualIncome * caps.incomeMultiple",
+        headroom: "max([0, $.incomeCap - $.currentExposure])",
+        approvedLimit: "floor(min([$.headroom, caps.product, requested ?? caps.product]) / 100) * 100",
+        constrainedBy: "requested != null and requested <= min([$.headroom, caps.product]) ? 'request' : ($.headroom < caps.product ? 'income' : 'product')",
+      }},
+    ],
+    edges: ["input -> exposure -> limit -> output", "input -> caps -> limit"],
+  },
+  cases: [
+    [{segment: "retail", annualIncome: 60000, facilities: [], requested: 10000}, {currentExposure: 0, incomeCap: 30000, headroom: 30000, approvedLimit: 10000, constrainedBy: "request"}],
+    [{segment: "retail", annualIncome: 60000, facilities: []}, {currentExposure: 0, incomeCap: 30000, headroom: 30000, approvedLimit: 25000, constrainedBy: "product"}],
+    [{segment: "retail", annualIncome: 40000, facilities: [{limit: 5000, balance: 2000}]}, {currentExposure: 5000, incomeCap: 20000, headroom: 15000, approvedLimit: 15000, constrainedBy: "income"}],
+    [{segment: "premier", annualIncome: 150000, facilities: [{limit: 0, balance: 100000, secured: true}], requested: 120000}, {currentExposure: 50000, incomeCap: 150000, headroom: 100000, approvedLimit: 100000, constrainedBy: "product"}],
+    [{segment: "retail", annualIncome: 40000, facilities: [{limit: 1000, balance: 1500}], requested: 2000}, {currentExposure: 1500, incomeCap: 20000, headroom: 18500, approvedLimit: 2000, constrainedBy: "request"}],
+    [{segment: "retail", annualIncome: 20000, facilities: [{limit: 8000, balance: 0}, {limit: 4000, balance: 4500}], requested: 5000}, {currentExposure: 12500, incomeCap: 10000, headroom: 0, approvedLimit: 0, constrainedBy: "income"}],
+    [{segment: "retail", annualIncome: 30001, facilities: []}, {currentExposure: 0, incomeCap: 15000.5, headroom: 15000.5, approvedLimit: 15000, constrainedBy: "income"}],
+    [{segment: "student", annualIncome: 100000, facilities: []}, {currentExposure: 0, incomeCap: 25000, headroom: 25000, approvedLimit: 5000, constrainedBy: "product"}],
+    [{annualIncome: 100000, facilities: [], requested: 5000}, {currentExposure: 0, incomeCap: 25000, headroom: 25000, approvedLimit: 5000, constrainedBy: "request"}],
+    [{segment: "business", annualIncome: 200000, facilities: [{limit: 50000, balance: 10000}, {limit: 0, balance: 80000, secured: true}], requested: 300000}, {currentExposure: 90000, incomeCap: 400000, headroom: 310000, approvedLimit: 250000, constrainedBy: "product"}],
+    [{segment: "retail", annualIncome: 60000, facilities: [], requested: 0}, {currentExposure: 0, incomeCap: 30000, headroom: 30000, approvedLimit: 0, constrainedBy: "request"}],
+    [{segment: "retail", annualIncome: 60000, facilities: [{limit: 1000, balance: 0, secured: "yes"}]}, {currentExposure: 1000, incomeCap: 30000, headroom: 29000, approvedLimit: 25000, constrainedBy: "product"}],
+    // Missing income, a facility without a limit, and no facilities array at all.
+    [{segment: "retail", facilities: []}, "!error"],
+    [{segment: "retail", annualIncome: 60000, facilities: [{balance: 100}]}, "!error"],
+    [{segment: "retail", annualIncome: 60000}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// KYC onboarding gates: derived age and document days left (evaluation time is fixed at
+// 2025-03-20T10:15:30Z), a country risk table, then a first-hit switch of ordered gates.
+{
+  name: "kyc onboarding: ordered gates over sanctions, age, documents and address",
+  graph: {
+    nodes: [
+      {expression: "derive", passThrough: true, fields: {
+        "kyc.age": "d().diff(d(customer.dob), 'year')",
+        "kyc.docDaysLeft": "customer.document.expiry == null ? null : d(customer.document.expiry).diff(d(), 'day')",
+      }},
+      {table: "countryRisk", passThrough: true, inputs: ["customer.country"], outputs: ["kyc.countryRisk"], rules: [
+        ["'IR', 'KP', 'SY'", "'prohibited'"],
+        ["'RU', 'BY', 'VE', 'MM'", "'high'"],
+        ["'US', 'GB', 'DE', 'FR', 'NL', 'SE'", "'low'"],
+        ["", "'medium'"],
+      ]},
+      {switch: "gates", when: [
+        "customer.sanctionsHit == true or kyc.countryRisk == 'prohibited'",
+        "kyc.age < 18",
+        "customer.document.expiry == null",
+        "kyc.docDaysLeft < 0",
+        "customer.pep == true or kyc.countryRisk == 'high'",
+        "customer.addressVerified != true",
+        "",
+      ]},
+      {expression: "block", fields: {status: "'blocked'", reason: "customer.sanctionsHit == true ? 'sanctions' : 'prohibited country'"}},
+      {expression: "minor", fields: {status: "'rejected'", reason: "'underage'", age: "kyc.age"}},
+      {expression: "noDocument", fields: {status: "'pending'", reason: "'document missing'"}},
+      {expression: "expired", fields: {status: "'pending'", reason: "'document expired'", expiredDays: "-kyc.docDaysLeft"}},
+      {expression: "edd", fields: {status: "'enhanced due diligence'", reason: "customer.pep == true ? 'pep' : 'high risk country'"}},
+      {expression: "address", fields: {status: "'pending'", reason: "'address unverified'"}},
+      {expression: "pass", fields: {status: "'verified'", age: "kyc.age", riskTier: "kyc.countryRisk", renewInDays: "min([kyc.docDaysLeft, 365])"}},
+    ],
+    edges: [
+      "input -> derive -> countryRisk -> gates",
+      "gates:0 -> block -> output",
+      "gates:1 -> minor -> output",
+      "gates:2 -> noDocument -> output",
+      "gates:3 -> expired -> output",
+      "gates:4 -> edd -> output",
+      "gates:5 -> address -> output",
+      "gates:6 -> pass -> output",
+    ],
+  },
+  cases: [
+    [{customer: {dob: "1990-05-01", country: "DE", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "verified", age: 34, riskTier: "low", renewInDays: 365}],
+    [{customer: {dob: "1990-05-01", country: "ES", document: {expiry: "2025-06-01"}, addressVerified: true}}, {status: "verified", age: 34, riskTier: "medium", renewInDays: 72}],
+    [{customer: {dob: "1990-03-20", document: {expiry: "2025-03-20"}, addressVerified: true}}, {status: "verified", age: 35, riskTier: "medium", renewInDays: 0}],
+    [{customer: {dob: "1990-03-21", country: "US", document: {expiry: "2025-03-19"}, addressVerified: true}}, {status: "pending", reason: "document expired", expiredDays: 1}],
+    [{customer: {dob: "2007-03-20", country: "US", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "verified", age: 18, riskTier: "low", renewInDays: 365}],
+    [{customer: {dob: "2007-03-21", country: "US", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "rejected", reason: "underage", age: 17}],
+    [{customer: {dob: "1990-05-01", country: "US", sanctionsHit: true, document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "blocked", reason: "sanctions"}],
+    [{customer: {dob: "1990-05-01", country: "IR", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "blocked", reason: "prohibited country"}],
+    [{customer: {dob: "1990-05-01", country: "RU", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "enhanced due diligence", reason: "high risk country"}],
+    [{customer: {dob: "1990-05-01", country: "US", pep: true, document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "enhanced due diligence", reason: "pep"}],
+    [{customer: {dob: "1990-05-01", country: "US", document: {expiry: "2030-01-01"}}}, {status: "pending", reason: "address unverified"}],
+    [{customer: {dob: "1990-05-01", country: "US", document: {expiry: "2030-01-01"}, addressVerified: "true"}}, {status: "pending", reason: "address unverified"}],
+    [{customer: {dob: "2010-01-01", country: "KP", sanctionsHit: false, document: {expiry: "2030-01-01"}}}, {status: "blocked", reason: "prohibited country"}],
+    [{customer: {dob: "2010-01-01", country: "US", document: {expiry: "2020-01-01"}}}, {status: "rejected", reason: "underage", age: 15}],
+    [{customer: {dob: "1990-05-01", country: "US", addressVerified: true}}, {status: "pending", reason: "document missing"}],
+    [{customer: {dob: "1990-05-01", country: "us", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "verified", age: 34, riskTier: "medium", renewInDays: 365}],
+    // A missing or unparsable birth date makes the age diff null (dropped from the output); the
+    // `kyc.age < 18` gate errors on null, counts as false, and the applicant passes as verified.
+    [{customer: {country: "US", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "verified", riskTier: "low", renewInDays: 365}],
+    [{customer: {dob: "not a date", country: "US", document: {expiry: "2030-01-01"}, addressVerified: true}}, {status: "verified", riskTier: "low", renewInDays: 365}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Buy-now-pay-later: a bureau sub-decision bands the applicant under `risk`, a plan table compares
+// the cart against the band's exposure (a cell reading another field), and an expression splits
+// the cart into installments.
+{
+  name: "bnpl: bureau band sub-decision, exposure-limited installment plan",
+  decisions: {
+    bureau: {
+      nodes: [
+        {table: "band", inputs: ["bureau.score", "bureau.delinquencies"], outputs: ["band", "maxExposure"], rules: [
+          [">= 700", "== 0", "'A'", "2000"],
+          [">= 620", "<= 1", "'B'", "1000"],
+          [">= 550", "", "'C'", "300"],
+          ["", "", "'D'", "0"],
+        ]},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "score", key: "bureau", passThrough: true, outputPath: "risk"},
+      {table: "plans", passThrough: true, inputs: ["risk.band", "cart.total"], outputs: ["plan.installments", "plan.feePct"], rules: [
+        ["'A', 'B'", "<= risk.maxExposure", "4", "0"],
+        ["'C'", "<= risk.maxExposure", "3", "0.03"],
+        ["", "", "0", "0"],
+      ]},
+      {expression: "offer", fields: {
+        approved: "plan.installments > 0",
+        band: "risk.band",
+        installments: "plan.installments",
+        installment: "plan.installments > 0 ? round(cart.total * (1 + plan.feePct) / plan.installments, 2) : 0",
+      }},
+    ],
+  },
+  cases: [
+    [{bureau: {score: 720, delinquencies: 0}, cart: {total: 400}}, {approved: true, band: "A", installments: 4, installment: 100}],
+    [{bureau: {score: 720, delinquencies: 1}, cart: {total: 999.99}}, {approved: true, band: "B", installments: 4, installment: 250}],
+    [{bureau: {score: 650, delinquencies: 2}, cart: {total: 300}}, {approved: true, band: "C", installments: 3, installment: 103}],
+    [{bureau: {score: 650, delinquencies: 2}, cart: {total: 301}}, {approved: false, band: "C", installments: 0, installment: 0}],
+    [{bureau: {score: 500, delinquencies: 0}, cart: {total: 50}}, {approved: false, band: "D", installments: 0, installment: 0}],
+    [{bureau: {score: 700, delinquencies: 0}, cart: {total: 2000}}, {approved: true, band: "A", installments: 4, installment: 500}],
+    [{bureau: {score: 700, delinquencies: 0}, cart: {total: 2000.01}}, {approved: false, band: "A", installments: 0, installment: 0}],
+    [{bureau: {score: 620, delinquencies: 1}, cart: {total: 1000}}, {approved: true, band: "B", installments: 4, installment: 250}],
+    [{bureau: {score: 619, delinquencies: 0}, cart: {total: 200}}, {approved: true, band: "C", installments: 3, installment: 68.67}],
+    [{bureau: {score: 720}, cart: {total: 200}}, {approved: true, band: "C", installments: 3, installment: 68.67}],
+    [{bureau: {score: "720", delinquencies: 0}, cart: {total: 200}}, {approved: false, band: "D", installments: 0, installment: 0}],
+    [{cart: {total: 200}}, {approved: false, band: "D", installments: 0, installment: 0}],
+    [{bureau: {score: 720, delinquencies: 0}}, {approved: false, band: "A", installments: 0, installment: 0}],
+    [{bureau: {score: 720, delinquencies: 0}, cart: {total: 0}}, {approved: true, band: "A", installments: 4, installment: 0}],
+  ],
+}

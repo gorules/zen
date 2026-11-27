@@ -1,0 +1,403 @@
+expression (string);input (json 5);output (json 5);note
+# age from a birthdate at a fixed reference date
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '2000-02-29'};25
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '2007-03-20'};18
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '2007-03-21'};17
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '1990-12-31'};34
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '2025-03-20'};0
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: '2010-06-15 23:59'};14
+d(ref).diff(d(birth), 'year');{ref: '2025-03-20', birth: null};null
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '2000-02-29'};true
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '2007-03-20'};true
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '2007-03-21'};false
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '1990-12-31'};true
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '2025-03-20'};false
+d(ref).diff(d(birth), 'year') >= 18;{ref: '2025-03-20', birth: '2010-06-15 23:59'};false
+d(birth).add(18, 'y').isSameOrBefore(d(ref));{ref: '2025-03-20', birth: '2007-03-20'};true
+d(birth).add(18, 'y').isSameOrBefore(d(ref));{ref: '2025-03-20', birth: '2007-03-21'};false
+d(birth).add(18, 'y').isSameOrBefore(d(ref));{ref: '2025-03-20', birth: '1990-12-31'};true
+d(birth).add(18, 'y').isSameOrBefore(d(ref));{ref: '2025-03-20', birth: '2025-03-20'};false
+d(birth).add(18, 'y').isSameOrBefore(d(ref));{ref: '2025-03-20', birth: '2010-06-15 23:59'};false
+d().diff(d(birth), 'year');{birth: '2000-02-29'};25
+d().diff(d(birth), 'year');{birth: '2007-03-20'};18
+d().diff(d(birth), 'year');{birth: '2007-03-21'};17
+d().diff(d(birth), 'year');{birth: '1990-12-31'};34
+d().diff(d(birth), 'year');{birth: '2025-03-20'};0
+d().diff(d(birth), 'year');{birth: '2010-06-15 23:59'};14
+d().diff(d(birth), 'year');{birth: null};null
+d(ref).diff(d(birth), 'M') % 12;{ref: '2025-03-20', birth: '2000-01-31'};1
+d(ref).diff(d(birth), 'M') % 12;{ref: '2025-03-20', birth: '2024-03-21'};11
+d(ref).diff(d(birth), 'M') % 12;{ref: '2025-03-20', birth: '2024-12-20'};3
+d(ref).diff(d(birth), 'M') % 12;{ref: '2025-03-20', birth: '2025-01-19'};2
+# Feb 29 birthdays: the 18th birthday
+d(birth).add(18, 'y').format('%F');{birth: '2004-02-29'};'2022-02-28';bug: adding a year to Feb 29 gives an invalid date instead of clamping to Feb 28 like months do
+d(birth).add(18, 'y').format('%F');{birth: '2004-03-01'};'2022-03-01'
+d(birth).add(18, 'y').format('%F');{birth: '2003-02-28'};'2021-02-28'
+d(birth).add(216, 'M').format('%F');{birth: '2004-02-29'};'2022-02-28'
+d(birth).add(216, 'M').format('%F');{birth: '2004-03-01'};'2022-03-01'
+d(birth).add(216, 'M').format('%F');{birth: '2003-02-28'};'2021-02-28'
+# SLA: resolution within N business hours / hours
+d(resolved).isSameOrBefore(d(opened).add(48, 'h'));{opened: '2025-03-14 16:00', resolved: '2025-03-16 15:59'};true
+d(resolved).isSameOrBefore(d(opened).add(48, 'h'));{opened: '2025-03-14 16:00', resolved: '2025-03-16 16:01'};false
+d(resolved).isSameOrBefore(d(opened).add(48, 'h'));{opened: '2025-03-14 16:00', resolved: null};false
+d(resolved).isSameOrBefore(d(opened).add(48, 'h'));{opened: '2025-03-17 09:00', resolved: '2025-03-17 09:00'};true
+d(resolved).diff(d(opened), 'h') > 47 ? 'breach' : 'ok';{opened: '2025-03-14 16:00', resolved: '2025-03-16 15:59'};'ok'
+d(resolved).diff(d(opened), 'h') > 47 ? 'breach' : 'ok';{opened: '2025-03-14 16:00', resolved: '2025-03-16 16:01'};'breach'
+d(resolved).diff(d(opened), 'h') > 47 ? 'breach' : 'ok';{opened: '2025-03-17 09:00', resolved: '2025-03-17 09:00'};'ok'
+(d(resolved).diff(d(opened), 'h') ?? 999) > 47 ? 'breach' : 'ok';{opened: '2025-03-14 16:00', resolved: '2025-03-16 15:59'};'ok'
+(d(resolved).diff(d(opened), 'h') ?? 999) > 47 ? 'breach' : 'ok';{opened: '2025-03-14 16:00', resolved: '2025-03-16 16:01'};'breach'
+(d(resolved).diff(d(opened), 'h') ?? 999) > 47 ? 'breach' : 'ok';{opened: '2025-03-14 16:00', resolved: null};'breach'
+(d(resolved).diff(d(opened), 'h') ?? 999) > 47 ? 'breach' : 'ok';{opened: '2025-03-17 09:00', resolved: '2025-03-17 09:00'};'ok'
+d(opened).weekday() >= 6 ? d(opened).add(8 - d(opened).weekday(), 'd').startOf('day').add(9, 'h') : d(opened);{opened: '2025-03-15 22:10'};'2025-03-17T09:00:00Z'
+d(opened).weekday() >= 6 ? d(opened).add(8 - d(opened).weekday(), 'd').startOf('day').add(9, 'h') : d(opened);{opened: '2025-03-16 03:00'};'2025-03-17T09:00:00Z'
+d(opened).weekday() >= 6 ? d(opened).add(8 - d(opened).weekday(), 'd').startOf('day').add(9, 'h') : d(opened);{opened: '2025-03-17 03:00'};'2025-03-17T03:00:00Z'
+d(opened).weekday() >= 6 ? d(opened).add(8 - d(opened).weekday(), 'd').startOf('day').add(9, 'h') : d(opened);{opened: '2025-03-21 23:59'};'2025-03-21T23:59:00Z'
+d(opened, 'America/New_York').add(24, 'h').format('%a %H:%M %Z');{opened: '2025-03-08 12:00'};'Sun 13:00 EDT'
+d(opened, 'America/New_York').add(24, 'h').format('%a %H:%M %Z');{opened: '2025-11-01 12:00'};'Sun 11:00 EST'
+d(opened, 'America/New_York').add(24, 'h').format('%a %H:%M %Z');{opened: '2025-06-01 12:00'};'Mon 12:00 EDT'
+d(opened, 'Europe/Berlin').add(1, 'd').format('%a %H:%M %Z');{opened: '2025-03-29 12:00'};'Sun 13:00 CEST';"question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it"
+d(opened, 'Europe/Berlin').add(1, 'd').format('%a %H:%M %Z');{opened: '2025-10-25 12:00'};'Sun 11:00 CET';"question: days are exact 86400-second spans, so crossing a DST change shifts the wall-clock hour; a calendar day (moment, Temporal) would keep it"
+d(opened, 'Europe/Berlin').add(1, 'd').format('%a %H:%M %Z');{opened: '2025-07-01 12:00'};'Wed 12:00 CEST'
+d(opened, 'Europe/Berlin').add(1, 'd').format('%a %H:%M %Z');{opened: 'bad'};'Invalid date'
+# subscription renewal
+d(start).add(n, 'M').format('%F');{start: '2024-01-31', n: 1};'2024-02-29'
+d(start).add(n, 'M').format('%F');{start: '2024-02-29', n: 12};'2025-02-28'
+d(start).add(n, 'M').format('%F');{start: '2023-08-31 12:00', n: 6};'2024-02-29'
+d(start).add(n, 'M').format('%F');{start: '2025-03-20 10:15:30', n: 3};'2025-06-20'
+d(start).add(n, 'M').format('%F');{start: 'x', n: 1};'Invalid date'
+d(start).add(n, 'M').format('%F');{start: '2024-01-31', n: 13};'2025-02-28'
+d(start).add(n, 'M').format('%F');{start: '2024-01-31', n: 0};'2024-01-31'
+d(start).add(n, 'M').format('%F');{start: '2024-01-31', n: -1};'2023-12-31'
+d(start).add(1, 'y').sub(1, 'd').format('%F');{start: '2024-01-31'};'2025-01-30'
+d(start).add(1, 'y').sub(1, 'd').format('%F');{start: '2023-08-31 12:00'};'2024-08-30'
+d(start).add(1, 'y').sub(1, 'd').format('%F');{start: '2025-03-20 10:15:30'};'2026-03-19'
+d(start).add(1, 'y').sub(1, 'd').format('%F');{start: 'x'};'Invalid date'
+d(start).add(1, 'y').sub(1, 'd').format('%F');{start: '2024-02-29'};'2025-02-27';bug: adding a year to Feb 29 gives an invalid date instead of clamping to Feb 28 like months do
+d(start).add(12, 'M').sub(1, 'd').format('%F');{start: '2024-01-31'};'2025-01-30'
+d(start).add(12, 'M').sub(1, 'd').format('%F');{start: '2024-02-29'};'2025-02-27'
+d(start).add(12, 'M').sub(1, 'd').format('%F');{start: '2023-08-31 12:00'};'2024-08-30'
+d(start).add(12, 'M').sub(1, 'd').format('%F');{start: '2025-03-20 10:15:30'};'2026-03-19'
+d(start).add(12, 'M').sub(1, 'd').format('%F');{start: 'x'};'Invalid date'
+d(start).add(d(ref).diff(d(start), 'M') + 1, 'M').format('%F');{start: '2024-01-31', ref: '2025-03-20'};'2025-03-31'
+d(start).add(d(ref).diff(d(start), 'M') + 1, 'M').format('%F');{start: '2023-03-20', ref: '2025-03-20'};'2025-04-20'
+d(start).add(d(ref).diff(d(start), 'M') + 1, 'M').format('%F');{start: '2025-02-28', ref: '2025-03-20'};'2025-03-28'
+d(start).add(d(ref).diff(d(start), 'M') + 1, 'M').format('%F');{start: '2024-11-30 10:00', ref: '2025-03-20'};'2025-03-30'
+d(end).isBefore(d(ref)) ? 'expired' : d(end).diff(d(ref), 'd') <= 30 ? 'renew-soon' : 'active';{end: '2025-03-19', ref: '2025-03-20'};'expired'
+d(end).isBefore(d(ref)) ? 'expired' : d(end).diff(d(ref), 'd') <= 30 ? 'renew-soon' : 'active';{end: '2025-03-20', ref: '2025-03-20'};'renew-soon'
+d(end).isBefore(d(ref)) ? 'expired' : d(end).diff(d(ref), 'd') <= 30 ? 'renew-soon' : 'active';{end: '2025-04-19', ref: '2025-03-20'};'renew-soon'
+d(end).isBefore(d(ref)) ? 'expired' : d(end).diff(d(ref), 'd') <= 30 ? 'renew-soon' : 'active';{end: '2025-04-20', ref: '2025-03-20'};'active'
+d(end).isBefore(d(ref)) ? 'expired' : d(end).diff(d(ref), 'd') <= 30 ? 'renew-soon' : 'active';{end: '2026-01-01', ref: '2025-03-20'};'active'
+d(end).endOf('day').isBefore(d(ref)) ? 'expired' : 'active';{end: '2025-03-19', ref: '2025-03-20 10:15'};'expired'
+d(end).endOf('day').isBefore(d(ref)) ? 'expired' : 'active';{end: '2025-03-20', ref: '2025-03-20 10:15'};'active'
+d(end).endOf('day').isBefore(d(ref)) ? 'expired' : 'active';{end: '2025-03-21', ref: '2025-03-20 10:15'};'active'
+map([1..4], d(start).add(# * 3, 'M').format('%F'));{start: '2024-11-30'};['2025-02-28', '2025-05-30', '2025-08-30', '2025-11-30']
+map([1..4], d(start).add(# * 3, 'M').format('%F'));{start: '2024-08-31'};['2024-11-30', '2025-02-28', '2025-05-31', '2025-08-31']
+map([1..4], d(start).add(# * 3, 'M').format('%F'));{start: '2025-01-01'};['2025-04-01', '2025-07-01', '2025-10-01', '2026-01-01']
+# weekday-based pricing
+d(at).weekday() >= 6 ? price * 1.25 : price;{at: '2025-03-14 23:59', price: 80};80
+d(at).weekday() >= 6 ? price * 1.25 : price;{at: '2025-03-15', price: 80};100.0
+d(at).weekday() >= 6 ? price * 1.25 : price;{at: '2025-03-16 23:59:59', price: 80};100.0
+d(at).weekday() >= 6 ? price * 1.25 : price;{at: '2025-03-17', price: 80};80
+d(at, 'Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-14 23:59'};'weekday'
+d(at, 'Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-15'};'weekend'
+d(at, 'Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-17 00:00'};'weekday'
+d(at).tz('Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-14 18:29'};'weekday'
+d(at).tz('Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-14 18:30'};'weekend'
+d(at).tz('Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-16 18:29'};'weekend'
+d(at).tz('Asia/Kolkata').weekday() >= 6 ? 'weekend' : 'weekday';{at: '2025-03-16 18:30'};'weekday'
+d(at).hour() >= 22 or d(at).hour() < 6 ? 'night' : 'day';{at: '2025-03-14 21:59:59'};'day'
+d(at).hour() >= 22 or d(at).hour() < 6 ? 'night' : 'day';{at: '2025-03-14 22:00'};'night'
+d(at).hour() >= 22 or d(at).hour() < 6 ? 'night' : 'day';{at: '2025-03-15 05:59'};'night'
+d(at).hour() >= 22 or d(at).hour() < 6 ? 'night' : 'day';{at: '2025-03-15 06:00'};'day'
+d(at, 'Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-30 08:59'};'closed'
+d(at, 'Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-30 09:00'};'open'
+d(at, 'Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-30 17:59'};'open'
+d(at, 'Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-30 18:00'};'closed'
+d(at).tz('Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-29 08:00'};'open'
+d(at).tz('Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-31 07:00'};'open'
+d(at).tz('Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-31 15:59'};'open'
+d(at).tz('Europe/Berlin').hour() in [9..17] ? 'open' : 'closed';{at: '2025-03-31 16:00'};'closed'
+price * (d(at).day() == d(at).endOf('month').day() ? 0.9 : 1);{at: '2024-02-29', price: 100};90.0
+price * (d(at).day() == d(at).endOf('month').day() ? 0.9 : 1);{at: '2023-02-28', price: 100};90.0
+price * (d(at).day() == d(at).endOf('month').day() ? 0.9 : 1);{at: '2024-02-28', price: 100};100
+price * (d(at).day() == d(at).endOf('month').day() ? 0.9 : 1);{at: '2025-04-30 12:00', price: 100};90.0
+price * (d(at).day() == d(at).endOf('month').day() ? 0.9 : 1);{at: '2025-04-29', price: 100};100
+d(at).isLeapYear() and d(at).month() == 2 ? 29 : d(at).endOf('M').day();{at: '2024-02-10'};29
+d(at).isLeapYear() and d(at).month() == 2 ? 29 : d(at).endOf('M').day();{at: '2023-02-10'};28
+d(at).isLeapYear() and d(at).month() == 2 ? 29 : d(at).endOf('M').day();{at: '2100-02-01'};28
+d(at).isLeapYear() and d(at).month() == 2 ? 29 : d(at).endOf('M').day();{at: '2000-02-01'};29
+d(at).isLeapYear() and d(at).month() == 2 ? 29 : d(at).endOf('M').day();{at: '2025-09-09'};30
+# templates with formatted dates
+`Due ${d(s).add(30, 'd').format('%d %b %Y')}`;{s: '2024-02-01'};'Due 02 Mar 2024'
+`Due ${d(s).add(30, 'd').format('%d %b %Y')}`;{s: '2024-12-15'};'Due 14 Jan 2025'
+`Due ${d(s).add(30, 'd').format('%d %b %Y')}`;{s: '2025-01-31 23:00'};'Due 02 Mar 2025'
+`Due ${d(s).add(30, 'd').format('%d %b %Y')}`;{s: 'bad'};'Due Invalid date'
+`${d(s).format('%A')} is day ${d(s).weekday()} of week ${d(s).week()}`;{s: '2025-03-20'};'Thursday is day 4 of week 12'
+`${d(s).format('%A')} is day ${d(s).weekday()} of week ${d(s).week()}`;{s: '2024-12-30'};'Monday is day 1 of week 1'
+`${d(s).format('%A')} is day ${d(s).weekday()} of week ${d(s).week()}`;{s: '2021-01-03'};'Sunday is day 7 of week 53'
+`Q${d(s).quarter()} ${d(s).year()}`;{s: '2025-03-31 23:59:59'};'Q1 2025'
+`Q${d(s).quarter()} ${d(s).year()}`;{s: '2025-04-01'};'Q2 2025'
+`Q${d(s).quarter()} ${d(s).year()}`;{s: '2024-12-31'};'Q4 2024'
+`${d(s, z).format('%H:%M')} ${z}`;{s: '2025-03-20 09:30', z: 'UTC'};'09:30 UTC'
+`${d(s, z).format('%H:%M')} ${z}`;{s: '2025-03-20 09:30', z: 'Europe/Berlin'};'09:30 Europe/Berlin'
+`${d(s, z).format('%H:%M')} ${z}`;{s: '2025-03-20 09:30', z: 'Asia/Kolkata'};'09:30 Asia/Kolkata'
+`${d(s, z).format('%H:%M')} ${z}`;{s: '2025-03-20 09:30', z: 'Etc/GMT+5'};'09:30 Etc/GMT+5'
+`${d(s).diff(d(t), 'd')} days`;{s: '2025-03-20', t: '2025-01-01'};'78 days'
+`${d(s).diff(d(t), 'd')} days`;{s: '2024-03-01', t: '2024-02-01'};'29 days'
+`${d(s).diff(d(t), 'd')} days`;{s: '2024-01-01', t: '2024-03-01'};'-60 days'
+`${d(s).diff(d(t), 'd')} days`;{s: 'x', t: '2025-01-01'};'null days'
+`from ${d(s).startOf('week').format('%F')} to ${d(s).endOf('week').format('%F')}`;{s: '2025-03-20'};'from 2025-03-17 to 2025-03-23'
+`from ${d(s).startOf('week').format('%F')} to ${d(s).endOf('week').format('%F')}`;{s: '2025-01-01'};'from 2024-12-30 to 2025-01-05'
+`from ${d(s).startOf('week').format('%F')} to ${d(s).endOf('week').format('%F')}`;{s: '2024-02-29'};'from 2024-02-26 to 2024-03-03'
+`from ${d(s).startOf('week').format('%F')} to ${d(s).endOf('week').format('%F')}`;{s: '2025-03-16 23:59:59'};'from 2025-03-10 to 2025-03-16'
+# fallbacks for missing and invalid dates
+d(s ?? '2000-01-01').format('%F');{s: '2024-02-29'};'2024-02-29'
+d(s ?? '2000-01-01').format('%F');{s: null};'2000-01-01'
+d(s ?? '2000-01-01').format('%F');{s: 'bad'};'Invalid date'
+d(s ?? '2000-01-01').format('%F');{s: 1700000000000};'2023-11-14'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: '2024-02-29'};'2024-02-29'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: null};'n/a'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: 'bad'};'n/a'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: '2023-02-29'};'n/a'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: true};'n/a'
+d(s).isValid() ? d(s).format('%F') : 'n/a';{s: 1700000000000};'2023-11-14'
+d(s).year() ?? 0;{s: '2024-02-29'};2024
+d(s).year() ?? 0;{s: null};0
+d(s).year() ?? 0;{s: 'bad'};0
+d(s).year() ?? 0;{s: 0};1970
+d(s).diff(d(t), 'day') ?? -1;{s: '2024-03-01', t: '2024-02-01'};29
+d(s).diff(d(t), 'day') ?? -1;{s: null, t: '2024-02-01'};-1
+d(s).diff(d(t), 'day') ?? -1;{s: '2024-03-01', t: 'x'};-1
+(d(s).isValid() ? d(s) : d(t)).add(1, 'd').format('%F');{s: '2024-02-28', t: '2000-01-01'};'2024-02-29'
+(d(s).isValid() ? d(s) : d(t)).add(1, 'd').format('%F');{s: 'x', t: '2000-01-01'};'2000-01-02'
+(d(s).isValid() ? d(s) : d(t)).add(1, 'd').format('%F');{s: null, t: null};'Invalid date'
+d(s).isValid() and d(s).isBefore(d(t));{s: '2024-02-28', t: '2024-03-01'};true
+d(s).isValid() and d(s).isBefore(d(t));{s: 'x', t: '2024-03-01'};false
+d(s).isValid() and d(s).isBefore(d(t));{s: '2024-03-02', t: '2024-03-01'};false
+d(s).add(1, 'M').format('%F') ?? 'none';{s: '2024-01-31'};'2024-02-29'
+d(s).add(1, 'M').format('%F') ?? 'none';{s: 'x'};'Invalid date'
+d(s).timestamp() ?? 'none';{s: '2024-01-31'};1706659200000
+d(s).timestamp() ?? 'none';{s: 'x'};'none'
+d(s).timestamp() ?? 'none';{s: null};'none'
+# dates from different zones compared
+d(a, za) == d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};true
+d(a, za) == d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};true
+d(a, za) == d(b, zb);{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};true
+d(a, za) == d(b, zb);{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};true
+d(a, za) == d(b, zb);{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};true
+d(a, za) < d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};false
+d(a, za) < d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};false
+d(a, za) < d(b, zb);{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};false
+d(a, za) < d(b, zb);{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};false
+d(a, za) < d(b, zb);{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};false
+d(a, za).isSame(d(b, zb));{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};true
+d(a, za).isSame(d(b, zb));{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};true
+d(a, za).isSame(d(b, zb));{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};true
+d(a, za).isSame(d(b, zb));{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};true
+d(a, za).isSame(d(b, zb));{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};true
+d(a, za).diff(d(b, zb), 'minute');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};0
+d(a, za).diff(d(b, zb), 'minute');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};0
+d(a, za).diff(d(b, zb), 'minute');{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};0
+d(a, za).diff(d(b, zb), 'minute');{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};0
+d(a, za).diff(d(b, zb), 'minute');{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};0
+d(a, za).diff(d(b, zb));{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};0
+d(a, za).diff(d(b, zb));{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};0
+d(a, za).diff(d(b, zb));{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};0
+d(a, za).diff(d(b, zb));{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};0
+d(a, za).diff(d(b, zb));{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};0
+d(a, za).tz(zb).format('%F %R');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};'2025-03-20 05:00'
+d(a, za).tz(zb).format('%F %R');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};'2025-03-20 14:30'
+d(a, za).tz(zb).format('%F %R');{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};'2025-06-01 05:00'
+d(a, za).tz(zb).format('%F %R');{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};'2025-10-25 19:30'
+d(a, za).tz(zb).format('%F %R');{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};'2024-12-31 18:30'
+d(a, za).tz(zb) == d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};true
+d(a, za).tz(zb) == d(b, zb);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};true
+d(a, za).tz(zb) == d(b, zb);{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};true
+d(a, za).tz(zb) == d(b, zb);{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};true
+d(a, za).tz(zb) == d(b, zb);{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};true
+d(a, za).isSame(d(b, zb).tz(za), 'day');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};true
+d(a, za).isSame(d(b, zb).tz(za), 'day');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};true
+d(a, za).isSame(d(b, zb).tz(za), 'day');{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};true
+d(a, za).isSame(d(b, zb).tz(za), 'day');{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};true
+d(a, za).isSame(d(b, zb).tz(za), 'day');{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};true
+max([d(a, za), d(b, zb).add(1, 'm')]);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};'2025-03-20T05:01:00-04:00'
+max([d(a, za), d(b, zb).add(1, 'm')]);{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};'2025-03-20T14:31:00+05:30'
+max([d(a, za), d(b, zb).add(1, 'm')]);{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};'2025-06-01T05:01:00Z'
+max([d(a, za), d(b, zb).add(1, 'm')]);{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};'2025-10-25T19:31:00-04:00'
+max([d(a, za), d(b, zb).add(1, 'm')]);{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};'2024-12-31T18:31:00Z'
+d(a, za).startOf('day') < d(b, zb).startOf('day');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 05:00', zb: 'America/New_York'};true
+d(a, za).startOf('day') < d(b, zb).startOf('day');{a: '2025-03-20 10:00', za: 'Europe/Berlin', b: '2025-03-20 14:30', zb: 'Asia/Kolkata'};false
+d(a, za).startOf('day') < d(b, zb).startOf('day');{a: '2025-06-01 00:00', za: 'Etc/GMT+5', b: '2025-06-01 05:00', zb: 'UTC'};false
+d(a, za).startOf('day') < d(b, zb).startOf('day');{a: '2025-10-26 01:30', za: 'Europe/Berlin', b: '2025-10-25 19:30', zb: 'America/New_York'};false
+d(a, za).startOf('day') < d(b, zb).startOf('day');{a: '2025-01-01 00:00', za: 'Asia/Kolkata', b: '2024-12-31 18:30', zb: 'UTC'};false
+# chained calendar arithmetic on input rows (fast-path shapes)
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-01-31 10:20:30'};'2024-01-31T00:00:00Z'
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-02-29 23:59:59'};'2024-02-29T00:00:00Z'
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: '2023-12-31 23:30:15'};'2023-12-31T00:00:00Z'
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-08-31 18:00'};'2025-08-31T00:00:00Z'
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-03-16 08:45:00'};'2025-03-31T00:00:00Z'
+d(s).startOf('M').add(1, 'M').sub(1, 'd');{s: null};'Invalid date'
+d(s).add(1, 'M').endOf('M');{s: '2024-01-31 10:20:30'};'2024-02-29T23:59:59Z'
+d(s).add(1, 'M').endOf('M');{s: '2024-02-29 23:59:59'};'2024-03-31T23:59:59Z'
+d(s).add(1, 'M').endOf('M');{s: '2023-12-31 23:30:15'};'2024-01-31T23:59:59Z'
+d(s).add(1, 'M').endOf('M');{s: '2025-08-31 18:00'};'2025-09-30T23:59:59Z'
+d(s).add(1, 'M').endOf('M');{s: '2025-03-16 08:45:00'};'2025-04-30T23:59:59Z'
+d(s).add(1, 'M').endOf('M');{s: null};'Invalid date'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: '2024-01-31 10:20:30'};'2024-06-30T23:59:59Z'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: '2024-02-29 23:59:59'};'2024-06-30T23:59:59Z'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: '2023-12-31 23:30:15'};'2023-06-30T23:59:59Z'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: '2025-08-31 18:00'};'2025-06-30T23:59:59Z'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: '2025-03-16 08:45:00'};'2025-06-30T23:59:59Z'
+d(s).startOf('y').add(6, 'M').sub(1, 's');{s: null};'Invalid date'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: '2024-01-31 10:20:30'};'2024-02-02T17:00:00Z'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: '2024-02-29 23:59:59'};'2024-03-01T17:00:00Z'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: '2023-12-31 23:30:15'};'2023-12-29T17:00:00Z'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: '2025-08-31 18:00'};'2025-08-29T17:00:00Z'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: '2025-03-16 08:45:00'};'2025-03-14T17:00:00Z'
+d(s).startOf('w').add(4, 'd').add(17, 'h');{s: null};'Invalid date'
+d(s).endOf('d').startOf('h');{s: '2024-01-31 10:20:30'};'2024-01-31T23:00:00Z'
+d(s).endOf('d').startOf('h');{s: '2024-02-29 23:59:59'};'2024-02-29T23:00:00Z'
+d(s).endOf('d').startOf('h');{s: '2023-12-31 23:30:15'};'2023-12-31T23:00:00Z'
+d(s).endOf('d').startOf('h');{s: '2025-08-31 18:00'};'2025-08-31T23:00:00Z'
+d(s).endOf('d').startOf('h');{s: '2025-03-16 08:45:00'};'2025-03-16T23:00:00Z'
+d(s).endOf('d').startOf('h');{s: null};'Invalid date'
+d(s).sub(1, 'q').startOf('q');{s: '2024-01-31 10:20:30'};'2023-10-01T00:00:00Z'
+d(s).sub(1, 'q').startOf('q');{s: '2024-02-29 23:59:59'};'2023-10-01T00:00:00Z'
+d(s).sub(1, 'q').startOf('q');{s: '2023-12-31 23:30:15'};'2023-07-01T00:00:00Z'
+d(s).sub(1, 'q').startOf('q');{s: '2025-08-31 18:00'};'2025-04-01T00:00:00Z';bug: the month is moved before the day is reset, April 31 does not exist
+d(s).sub(1, 'q').startOf('q');{s: '2025-03-16 08:45:00'};'2024-10-01T00:00:00Z'
+d(s).sub(1, 'q').startOf('q');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-01-31 10:20:30'};'2024-01-31T00:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-02-29 23:59:59'};'2024-02-29T00:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: '2023-12-31 23:30:15'};'2023-12-31T00:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-08-31 18:00'};'2025-08-31T00:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-03-16 08:45:00'};'2025-03-31T00:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('M').add(1, 'M').sub(1, 'd');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: '2024-01-31 10:20:30'};'2024-02-29T23:59:59-05:00'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: '2024-02-29 23:59:59'};'2024-03-31T23:59:59-05:00'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: '2023-12-31 23:30:15'};'2024-01-31T23:59:59-05:00'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: '2025-08-31 18:00'};'2025-09-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: '2025-03-16 08:45:00'};'2025-04-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').add(1, 'M').endOf('M');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-01-31 10:20:30'};'2024-06-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-02-29 23:59:59'};'2024-06-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: '2023-12-31 23:30:15'};'2023-06-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-08-31 18:00'};'2025-06-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-03-16 08:45:00'};'2025-06-30T23:59:59-05:00'
+d(s, 'Etc/GMT+5').startOf('y').add(6, 'M').sub(1, 's');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-01-31 10:20:30'};'2024-02-02T17:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-02-29 23:59:59'};'2024-03-01T17:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: '2023-12-31 23:30:15'};'2023-12-29T17:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-08-31 18:00'};'2025-08-29T17:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-03-16 08:45:00'};'2025-03-14T17:00:00-05:00'
+d(s, 'Etc/GMT+5').startOf('w').add(4, 'd').add(17, 'h');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: '2024-01-31 10:20:30'};'2024-01-31T23:00:00-05:00'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: '2024-02-29 23:59:59'};'2024-02-29T23:00:00-05:00'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: '2023-12-31 23:30:15'};'2023-12-31T23:00:00-05:00'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: '2025-08-31 18:00'};'2025-08-31T23:00:00-05:00'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: '2025-03-16 08:45:00'};'2025-03-16T23:00:00-05:00'
+d(s, 'Etc/GMT+5').endOf('d').startOf('h');{s: null};'Invalid date'
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: '2024-01-31 10:20:30'};'2023-10-01T00:00:00-05:00'
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: '2024-02-29 23:59:59'};'2023-10-01T00:00:00-05:00'
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: '2023-12-31 23:30:15'};'2023-07-01T00:00:00-05:00'
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: '2025-08-31 18:00'};'2025-04-01T00:00:00-05:00';bug: the month is moved before the day is reset, April 31 does not exist
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: '2025-03-16 08:45:00'};'2024-10-01T00:00:00-05:00'
+d(s, 'Etc/GMT+5').sub(1, 'q').startOf('q');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-01-31 10:20:30'};'2024-01-31T00:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-02-29 23:59:59'};'2024-02-29T00:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: '2023-12-31 23:30:15'};'2023-12-31T00:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-08-31 18:00'};'2025-08-31T00:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-03-16 08:45:00'};'2025-03-31T00:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('M').add(1, 'M').sub(1, 'd');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: '2024-01-31 10:20:30'};'2024-02-29T23:59:59+05:30'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: '2024-02-29 23:59:59'};'2024-03-31T23:59:59+05:30'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: '2023-12-31 23:30:15'};'2024-01-31T23:59:59+05:30'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: '2025-08-31 18:00'};'2025-09-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: '2025-03-16 08:45:00'};'2025-04-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').add(1, 'M').endOf('M');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-01-31 10:20:30'};'2024-06-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-02-29 23:59:59'};'2024-06-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: '2023-12-31 23:30:15'};'2023-06-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-08-31 18:00'};'2025-06-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-03-16 08:45:00'};'2025-06-30T23:59:59+05:30'
+d(s, 'Asia/Kolkata').startOf('y').add(6, 'M').sub(1, 's');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-01-31 10:20:30'};'2024-02-02T17:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-02-29 23:59:59'};'2024-03-01T17:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: '2023-12-31 23:30:15'};'2023-12-29T17:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-08-31 18:00'};'2025-08-29T17:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-03-16 08:45:00'};'2025-03-14T17:00:00+05:30'
+d(s, 'Asia/Kolkata').startOf('w').add(4, 'd').add(17, 'h');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: '2024-01-31 10:20:30'};'2024-01-31T23:00:00+05:30'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: '2024-02-29 23:59:59'};'2024-02-29T23:00:00+05:30'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: '2023-12-31 23:30:15'};'2023-12-31T23:00:00+05:30'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: '2025-08-31 18:00'};'2025-08-31T23:00:00+05:30'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: '2025-03-16 08:45:00'};'2025-03-16T23:00:00+05:30'
+d(s, 'Asia/Kolkata').endOf('d').startOf('h');{s: null};'Invalid date'
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: '2024-01-31 10:20:30'};'2023-10-01T00:00:00+05:30'
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: '2024-02-29 23:59:59'};'2023-10-01T00:00:00+05:30'
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: '2023-12-31 23:30:15'};'2023-07-01T00:00:00+05:30'
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: '2025-08-31 18:00'};'2025-04-01T00:00:00+05:30';bug: the month is moved before the day is reset, April 31 does not exist
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: '2025-03-16 08:45:00'};'2024-10-01T00:00:00+05:30'
+d(s, 'Asia/Kolkata').sub(1, 'q').startOf('q');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-01-31 10:20:30'};'2024-01-31T00:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: '2024-02-29 23:59:59'};'2024-02-29T00:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: '2023-12-31 23:30:15'};'2023-12-31T00:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-08-31 18:00'};'2025-08-31T00:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: '2025-03-16 08:45:00'};'2025-03-31T00:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('M').add(1, 'M').sub(1, 'd');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: '2024-01-31 10:20:30'};'2024-02-29T23:59:59+14:00'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: '2024-02-29 23:59:59'};'2024-03-31T23:59:59+14:00'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: '2023-12-31 23:30:15'};'2024-01-31T23:59:59+14:00'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: '2025-08-31 18:00'};'2025-09-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: '2025-03-16 08:45:00'};'2025-04-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').add(1, 'M').endOf('M');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-01-31 10:20:30'};'2024-06-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: '2024-02-29 23:59:59'};'2024-06-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: '2023-12-31 23:30:15'};'2023-06-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-08-31 18:00'};'2025-06-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: '2025-03-16 08:45:00'};'2025-06-30T23:59:59+14:00'
+d(s, 'Etc/GMT-14').startOf('y').add(6, 'M').sub(1, 's');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-01-31 10:20:30'};'2024-02-02T17:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: '2024-02-29 23:59:59'};'2024-03-01T17:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: '2023-12-31 23:30:15'};'2023-12-29T17:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-08-31 18:00'};'2025-08-29T17:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: '2025-03-16 08:45:00'};'2025-03-14T17:00:00+14:00'
+d(s, 'Etc/GMT-14').startOf('w').add(4, 'd').add(17, 'h');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: '2024-01-31 10:20:30'};'2024-01-31T23:00:00+14:00'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: '2024-02-29 23:59:59'};'2024-02-29T23:00:00+14:00'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: '2023-12-31 23:30:15'};'2023-12-31T23:00:00+14:00'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: '2025-08-31 18:00'};'2025-08-31T23:00:00+14:00'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: '2025-03-16 08:45:00'};'2025-03-16T23:00:00+14:00'
+d(s, 'Etc/GMT-14').endOf('d').startOf('h');{s: null};'Invalid date'
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: '2024-01-31 10:20:30'};'2023-10-01T00:00:00+14:00'
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: '2024-02-29 23:59:59'};'2023-10-01T00:00:00+14:00'
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: '2023-12-31 23:30:15'};'2023-07-01T00:00:00+14:00'
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: '2025-08-31 18:00'};'2025-04-01T00:00:00+14:00';bug: the month is moved before the day is reset, April 31 does not exist
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: '2025-03-16 08:45:00'};'2024-10-01T00:00:00+14:00'
+d(s, 'Etc/GMT-14').sub(1, 'q').startOf('q');{s: null};'Invalid date'
+# amount and unit from the input
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 1, u: 'd'};'2024-02-01T12:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: -1, u: 'M'};'2023-12-31T12:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 2, u: 'q'};'2024-07-31T12:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 36, u: 'h'};'2024-02-02T00:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 0, u: 'y'};'2024-01-31T12:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 1.5, u: 'd'};'2024-02-02T00:00:00Z'
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 1, u: 'fortnight'};!error
+d(s).add(n, u);{s: '2024-01-31 12:00', n: '2', u: 'd'};!error
+d(s).add(n, u);{s: '2024-01-31 12:00', n: null, u: 'd'};!error
+d(s).add(n, u);{s: '2024-01-31 12:00', n: 1, u: null};!error
+d(s, 'Etc/GMT+5').sub(n, u);{s: '2024-03-31', n: 1, u: 'M'};'2024-02-29T00:00:00-05:00'
+d(s, 'Etc/GMT+5').sub(n, u);{s: '2024-02-29', n: 1, u: 'y'};'2023-02-28T00:00:00-05:00';bug: adding a year to Feb 29 gives an invalid date instead of clamping to Feb 28 like months do
+d(s, 'Etc/GMT+5').sub(n, u);{s: '2025-01-01', n: 1, u: 's'};'2024-12-31T23:59:59-05:00'
+d(s, 'Etc/GMT+5').sub(n, u);{s: '2024-12-31 23:59:59', n: 52, u: 'w'};'2024-01-02T23:59:59-05:00'
+d(s, 'Etc/GMT+5').sub(n, u);{s: '2024-05-31', n: 1, u: 'q'};'2024-02-29T00:00:00-05:00'
+# startOf week stepping back through a transition day
+d(s, 'Europe/Berlin').startOf('week');{s: '2025-04-02 02:30'};'2025-03-31T00:00:00+02:00'
+d(s, 'Europe/Berlin').startOf('week');{s: '2025-04-02 12:00'};'2025-03-31T00:00:00+02:00'
+d(s, 'America/New_York').startOf('week');{s: '2025-03-12 02:30'};'2025-03-10T00:00:00-04:00'
+d(s, 'America/New_York').startOf('week');{s: '2025-03-12 09:00'};'2025-03-10T00:00:00-04:00'
+d(s, 'Europe/Berlin').startOf('week');{s: '2025-03-26 02:30'};'2025-03-24T00:00:00+01:00'
+d(s, 'Europe/Berlin').endOf('week');{s: '2025-03-26 02:30'};'2025-03-30T23:59:59+02:00';bug: endOf('week') steps through the transition day at the same wall time and gives an invalid date
+d(s, 'Europe/Berlin').endOf('week');{s: '2025-10-22 02:30'};'2025-10-26T23:59:59+01:00';bug: endOf('week') steps through the transition day at the same wall time and gives an invalid date
+d(s, 'America/New_York').endOf('week');{s: '2025-03-05 02:30'};'2025-03-09T23:59:59-04:00';bug: endOf('week') steps through the transition day at the same wall time and gives an invalid date
+d(s, 'America/New_York').endOf('week');{s: '2025-03-05 12:00'};'2025-03-09T23:59:59-04:00'

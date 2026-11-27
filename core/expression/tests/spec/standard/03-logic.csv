@@ -1,0 +1,153 @@
+expression (string);input (json 5);output (json 5);note
+# Logic: truth tables
+true and true;;true
+true and false;;false
+false and true;;false
+false and false;;false
+true or true;;true
+true or false;;true
+false or true;;true
+false or false;;false
+not true;;false
+not false;;true
+!true;;false
+!false;;true
+! true;;false
+not not true;;true
+!!true;;true
+not !false;;false
+!not true;;true
+!(1 == 2);;true
+not (1 == 1);;false
+# Logic: `and` binds tighter than `or`
+true or false and false;;true
+(true or false) and false;;false
+false and false or true;;true
+false and (false or true);;false
+false or false or true;;true
+true and true and false;;false
+true and true and true;;true
+# Logic: `not` binds tighter than comparison and `and`
+not true and false;;false
+not false and true;;true
+not false or false;;true
+not (true and false);;true
+not true == false;;true
+not false == false;;false
+not 1 == 2;;!error
+not 2 * 3 == 6;;!error
+not (2 * 3 == 6);;false
+!1 == 2;;!error
+# Logic: operands must be booleans
+not 1;;!error
+not 0;;!error
+not null;;!error
+not '';;!error
+not 'true';;!error
+not [];;!error
+not {};;!error
+!null;;!error
+1 and true;;!error
+0 and true;;!error
+null and true;;!error
+'' and true;;!error
+[] and true;;!error
+1 or true;;!error
+0 or false;;!error
+null or true;;!error
+'x' or false;;!error
+{} or true;;!error
+true and 1;;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+true and null;;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+true and 'x';;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or 'x';;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or 0;;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or null;;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or [1];;!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+# Logic: short circuit leaves the right side unevaluated
+false and (1 + {});;false
+true or (1 + {});;true
+false and 1 + {} == 1;;false
+true or 1 + {} == 1;;true
+false and not 1;;false
+true or not 1;;true
+false and 1;;false
+true or 1;;true
+false and null;;false
+true or 'x';;true
+true and (1 + {});;!error
+false or (1 + {});;!error
+false and false and (1 + {});;false
+true and false and (1 + {});;false
+false or true or (1 + {});;true
+false and (1 + {}) or true;;true
+true or (1 + {}) and true;;true
+1 + {} and false;;!error
+(1 + {}) or true;;!error
+x and y;{x: false};false
+x and y;{x: false, y: 1};false
+x or y;{x: true};true
+x or y;{x: true, y: 'z'};true
+# Logic: variable operands
+x and y;{x: true, y: true};true
+x and y;{x: true, y: false};false
+x and y;{x: false, y: true};false
+x and y;{x: null, y: true};!error
+x and y;{y: true};!error
+x and y;{x: 1, y: true};!error
+x and y;{x: 'true', y: true};!error
+x and y;{x: true, y: null};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+x and y;{x: true};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+x or y;{x: false, y: false};false
+x or y;{x: false, y: true};true
+x or y;{x: true, y: false};true
+x or y;{x: null, y: true};!error
+x or y;{};!error
+x or y;{x: 0, y: true};!error
+x or y;{x: false, y: 'z'};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+x or y;{x: false, y: 0};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+not x;{x: true};false
+not x;{x: false};true
+not x;{x: null};!error
+not x;{};!error
+not x;{x: 0};!error
+not x;{x: 'false'};!error
+!x;{x: false};true
+!x;{x: true};false
+!x;{x: []};!error
+!x;{};!error
+x and not y;{x: true, y: false};true
+x and not y;{x: true, y: true};false
+x and not y;{x: false, y: 1};false
+x and not y;{x: true, y: 1};!error
+x or not y;{x: false, y: false};true
+x or not y;{x: true, y: 'a'};true
+x or not y;{x: false, y: null};!error
+not x or y;{x: true, y: true};true
+not x or y;{x: false, y: 1};true
+not x or y;{x: true, y: false};false
+not x or y;{x: 1, y: false};!error
+x > 1 and x < 5;{x: 3};true
+x > 1 and x < 5;{x: 5};false
+x > 1 and x < 5;{x: 0};false
+x > 1 and x < 5;{x: null};!error
+x > 1 and x < 5;{x: '3'};!error
+x == 1 or x == 2;{x: 1};true
+x == 1 or x == 2;{x: 2};true
+x == 1 or x == 2;{x: 3};false
+x == 1 or x == 2;{x: null};false
+x == 1 or x == 2;{};false
+x != null and x > 10;{x: 20};true
+x != null and x > 10;{x: 5};false
+x != null and x > 10;{x: null};false
+x != null and x > 10;{};false
+x == null or x > 10;{};true
+x == null or x > 10;{x: 11};true
+x == null or x > 10;{x: 1};false
+x == null or x > 10;{x: 'a'};!error
+# Logic: equality of booleans produced by logic
+(true and false) == false;;true
+(true or false) != true;;false
+true and false == false;;true
+false or true == true;;true
+true == false or true;;true

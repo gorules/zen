@@ -1,0 +1,186 @@
+expression (string);input (json 5);output (json 5);note
+# d(): date-only strings are midnight in the local zone (UTC for this suite)
+d('2023-10-15');;'2023-10-15T00:00:00Z'
+d('2024-02-29');;'2024-02-29T00:00:00Z'
+d('2000-01-01');;'2000-01-01T00:00:00Z'
+d('1970-01-01');;'1970-01-01T00:00:00Z'
+d('1900-03-01');;'1900-03-01T00:00:00Z'
+d('0001-01-01');;'0001-01-01T00:00:00Z'
+d('9999-12-31');;'9999-12-31T00:00:00Z'
+d('1969-07-20');;'1969-07-20T00:00:00Z'
+# d(): 'YYYY-MM-DD HH:MM' and 'YYYY-MM-DD HH:MM:SS'
+d('2023-10-15 14:30');;'2023-10-15T14:30:00Z'
+d('2023-10-15 14:30:45');;'2023-10-15T14:30:45Z'
+d('2023-10-15 00:00');;'2023-10-15T00:00:00Z'
+d('2023-10-15 23:59:59');;'2023-10-15T23:59:59Z'
+d('2023-10-15 24:00');;'Invalid date'
+d('2023-10-15 12:60');;'Invalid date'
+d('2023-10-15 12:30:61');;'Invalid date'
+# d(): RFC 3339 with Z
+d('2023-10-15T14:30:45Z');;'2023-10-15T14:30:45Z'
+d('2023-10-15T14:30:45.123Z');;'2023-10-15T14:30:45Z'
+d('2023-10-15T14:30:45.123Z').timestamp();;1697380245123
+d('2023-10-15T14:30:45.999999999Z').timestamp();;1697380245999
+d('2023-10-15t14:30:45z');;'2023-10-15T14:30:45Z'
+d('2023-10-15 14:30:45Z');;'2023-10-15T14:30:45Z'
+d('2023-10-15T00:00:00+00:00');;'2023-10-15T00:00:00Z'
+d('2023-10-15T00:00:00-00:00');;'2023-10-15T00:00:00Z'
+# d(): an explicit offset names an instant; it is shown in the local zone
+d('2023-10-15T12:00:00+02:00');;'2023-10-15T10:00:00Z'
+d('2023-10-15T12:00:00-05:30');;'2023-10-15T17:30:00Z'
+d('2023-10-15T01:00:00+05:45');;'2023-10-14T19:15:00Z'
+d('2023-10-15T12:00:00+02:00').timestamp();;1697364000000
+d('2023-10-15T12:00:00+02:00') == d('2023-10-15T10:00:00Z');;true
+d('2023-10-15T12:00:00+02:00', 'Etc/GMT-2');;'2023-10-15T12:00:00+02:00'
+d('2023-10-15T12:00:00+02:00', 'Europe/Berlin');;'2023-10-15T12:00:00+02:00'
+d('2023-10-15T12:00:00Z', 'Europe/Berlin');;'2023-10-15T14:00:00+02:00'
+d('2023-10-15T12:00:00Z', 'America/New_York');;'2023-10-15T08:00:00-04:00'
+d('2023-10-15T12:00:00Z', 'UTC');;'2023-10-15T12:00:00Z'
+# d(): strings that are not accepted give an invalid date, not an error
+d('2023-10-15T14:30:00');;'2023-10-15T14:30:00Z'
+d('2023-10-15T14:30');;'2023-10-15T14:30:00Z'
+d('10:30');;'Invalid date';question: a bare time of day is not accepted by d()
+d('10:30:00');;'Invalid date';question: a bare time of day is not accepted by d()
+d('foo');;'Invalid date'
+d('');;'Invalid date'
+d(' ');;'Invalid date'
+d('2023-13-01');;'Invalid date'
+d('2023-02-30');;'Invalid date'
+d('2023-02-29');;'Invalid date'
+d('2023-00-10');;'Invalid date'
+d('2023-10-00');;'Invalid date'
+d('2023/10/15');;'2023-10-15T00:00:00Z'
+d('15-10-2023');;'Invalid date'
+d('20231015');;'2023-10-15T00:00:00Z'
+d('2023-10');;'2023-10-01T00:00:00Z'
+d('2023');;'2023-01-01T00:00:00Z'
+d('Oct 15 2023');;'Invalid date'
+d('2023-10-15T25:00:00Z');;'Invalid date'
+d('2023-10-15T12:00:00+25:00');;'Invalid date'
+d('now');;'Invalid date'
+d('today');;'Invalid date'
+d('2023-10-15').isValid();;true
+d('foo').isValid();;false
+d('2023-02-29').isValid();;false
+d('2024-02-29').isValid();;true
+d('1900-02-29').isValid();;false
+d('2000-02-29').isValid();;true
+# d(): unix timestamps in milliseconds
+d(0);;'1970-01-01T00:00:00Z'
+d(1697328000000);;'2023-10-15T00:00:00Z'
+d(1697380245123);;'2023-10-15T14:30:45Z'
+d(1697380245123).timestamp();;1697380245123
+d(-86400000);;'1969-12-31T00:00:00Z'
+d(-1);;'1969-12-31T23:59:59Z'
+d(-1).timestamp();;-1
+d(1000);;'1970-01-01T00:00:01Z'
+d(1.5).timestamp();;1
+d(1.9).timestamp();;1
+d(-1.5).timestamp();;-1
+d(951782400000);;'2000-02-29T00:00:00Z'
+d(253402300799000);;'9999-12-31T23:59:59Z'
+d(1e20);;'Invalid date'
+d(1697328000000, 'Europe/Berlin');;'2023-10-15T02:00:00+02:00'
+d(1697328000000, 'America/New_York');;'2023-10-14T20:00:00-04:00'
+d(0, 'Asia/Kolkata');;'1970-01-01T05:30:00+05:30'
+# d(): non-string, non-number arguments
+d(null);;'Invalid date'
+d(null).isValid();;false
+d(true);;'Invalid date'
+d(false).isValid();;false
+d([]);;'Invalid date'
+d({}).isValid();;false
+d(['2023-10-15']).isValid();;false
+# d(): a date argument is passed through
+d(d('2023-10-15'));;'2023-10-15T00:00:00Z'
+d(d('2023-10-15', 'Europe/Berlin'));;'2023-10-15T00:00:00+02:00'
+d(d('2023-10-15', 'Europe/Berlin'), 'UTC');;'2023-10-14T22:00:00Z'
+d(d('foo')).isValid();;false
+# d(): no argument is the evaluation time; a zone name alone is now in that zone
+d();;'2025-03-20T10:15:30Z'
+d().timestamp();;1742465730000
+d().isValid();;true
+d('UTC');;'2025-03-20T10:15:30Z'
+d('Europe/Berlin');;'2025-03-20T11:15:30+01:00'
+d('America/New_York');;'2025-03-20T06:15:30-04:00'
+d('Asia/Kathmandu');;'2025-03-20T16:00:30+05:45'
+d('Europe/Berlin').timestamp();;1742465730000
+d('Europe/Berlin') == d();;true
+d('Europe/Berlin').isToday();;true
+d('Nowhere/City').isValid();;false
+# d(): second argument time zone
+d('2023-10-15', 'UTC');;'2023-10-15T00:00:00Z'
+d('2023-10-15', 'Etc/UTC');;'2023-10-15T00:00:00Z'
+d('2023-10-15', 'Europe/Berlin');;'2023-10-15T00:00:00+02:00'
+d('2023-01-15', 'Europe/Berlin');;'2023-01-15T00:00:00+01:00'
+d('2023-10-15', 'America/New_York');;'2023-10-15T00:00:00-04:00'
+d('2023-01-15', 'America/New_York');;'2023-01-15T00:00:00-05:00'
+d('2023-10-15', 'America/Los_Angeles');;'2023-10-15T00:00:00-07:00'
+d('2023-10-15', 'Europe/London');;'2023-10-15T00:00:00+01:00'
+d('2023-01-15', 'Europe/London');;'2023-01-15T00:00:00Z'
+d('2023-10-15', 'Etc/GMT+5');;'2023-10-15T00:00:00-05:00'
+d('2023-10-15', 'Etc/GMT-14');;'2023-10-15T00:00:00+14:00'
+d('2023-10-15', 'Asia/Kolkata');;'2023-10-15T00:00:00+05:30'
+d('2023-10-15', 'Asia/Kathmandu');;'2023-10-15T00:00:00+05:45'
+d('2023-10-15', 'Australia/Lord_Howe');;'2023-10-15T00:00:00+11:00'
+d('2023-06-15', 'Australia/Lord_Howe');;'2023-06-15T00:00:00+10:30'
+d('2023-10-15', 'Asia/Tokyo');;'2023-10-15T00:00:00+09:00'
+d('2023-10-15', 'Pacific/Chatham');;'2023-10-15T00:00:00+13:45'
+d('2023-10-15', 'America/St_Johns');;'2023-10-15T00:00:00-02:30'
+d('2023-10-15 14:30', 'Asia/Kolkata');;'2023-10-15T14:30:00+05:30'
+d('2023-10-15 14:30', 'Asia/Kolkata').timestamp();;1697360400000
+d('2023-10-15', 'Asia/Kathmandu').timestamp();;1697307300000
+d('2023-10-15', 'Nope/Zone');;!error
+d('2023-10-15', 'utc');;!error;question: time zone names are case-sensitive, so 'utc' is an error while 'UTC' works
+d('2023-10-15', 'europe/berlin');;!error;question: time zone names are case-sensitive
+d('2023-10-15', '');;!error
+d('2023-10-15', '+02:00');;!error;question: fixed offsets are only accepted as Etc/GMT names
+d('2023-10-15', 'CET');;'2023-10-15T00:00:00+02:00'
+d('2023-10-15', 'EST');;'2023-10-15T00:00:00-05:00'
+d('foo', 'Europe/Berlin').isValid();;false
+d(null, 'Europe/Berlin').isValid();;false
+# d(s): parsing rows from the environment
+d(s);{s: '2023-10-15'};'2023-10-15T00:00:00Z'
+d(s);{s: '2023-10-15'};'2023-10-15T00:00:00Z'
+d(s);{s: '2024-02-29 23:59:59'};'2024-02-29T23:59:59Z'
+d(s);{s: '2023-10-15T14:30:45Z'};'2023-10-15T14:30:45Z'
+d(s);{s: '2023-02-29'};'Invalid date'
+d(s);{s: 'garbage'};'Invalid date'
+d(s);{s: null};'Invalid date'
+d(s);{};'Invalid date'
+d(s);{s: 1697328000000};'2023-10-15T00:00:00Z'
+d(s);{s: -86400000};'1969-12-31T00:00:00Z'
+d(s);{s: 'Europe/Berlin'};'2025-03-20T11:15:30+01:00'
+d(s).isValid();{s: '2023-10-15'};true
+d(s).isValid();{s: '2023-10-15'};true
+d(s).isValid();{s: '2023-10-32'};false
+d(s).isValid();{s: ''};false
+d(s).isValid();{s: null};false
+d(s).isValid();{};false
+d(s).isValid();{s: 0};true
+d(s).isValid();{s: true};false
+d(s, 'Europe/Berlin');{s: '2025-03-30'};'2025-03-30T00:00:00+01:00'
+d(s, 'Europe/Berlin');{s: '2025-03-30 01:59:59'};'2025-03-30T01:59:59+01:00'
+d(s, 'Europe/Berlin');{s: '2025-03-30 03:00'};'2025-03-30T03:00:00+02:00'
+d(s, 'Europe/Berlin');{s: '2025-10-26 02:30'};'2025-10-26T02:30:00+02:00'
+d(s, 'Europe/Berlin');{s: '2025-10-26 03:00'};'2025-10-26T03:00:00+01:00'
+d(s, 'Europe/Berlin');{s: '2025-10-26 03:00'};'2025-10-26T03:00:00+01:00'
+d(s, 'Europe/Berlin');{s: 'nope'};'Invalid date'
+d(s, 'Europe/Berlin');{s: 1742465730000};'2025-03-20T11:15:30+01:00'
+d(s, z);{s: '2023-10-15', z: 'Asia/Kolkata'};'2023-10-15T00:00:00+05:30'
+d(s, z);{s: '2023-10-15', z: 'Asia/Kathmandu'};'2023-10-15T00:00:00+05:45'
+d(s, z);{s: '2023-10-15', z: 'Australia/Lord_Howe'};'2023-10-15T00:00:00+11:00'
+d(s, z);{s: '2023-10-15', z: 'UTC'};'2023-10-15T00:00:00Z'
+d(s, z);{s: '2023-10-15', z: 'Etc/GMT+5'};'2023-10-15T00:00:00-05:00'
+d(s, z);{s: '2023-10-15', z: 'Mars/Olympus'};!error
+d(s, z);{s: '2023-10-15', z: null};!error;question: a null zone is an error rather than falling back to the local zone like the one-argument form
+d(s, z);{s: '2023-10-15'};!error
+# d(): times inside a DST gap and overlap
+d('2025-03-30 02:30', 'Europe/Berlin');;'2025-03-30T03:30:00+02:00'
+d('2025-03-09 02:30', 'America/New_York');;'2025-03-09T03:30:00-04:00'
+d('2025-03-09', 'America/Havana');;'2025-03-09T01:00:00-04:00'
+d('2025-10-26 02:30', 'Europe/Berlin');;'2025-10-26T02:30:00+02:00'
+d('2025-11-02 01:30', 'America/New_York');;'2025-11-02T01:30:00-04:00'
+d('2025-11-02 01:30', 'America/New_York').timestamp();;1762061400000
+d('2025-10-05 02:15', 'Australia/Lord_Howe');;'2025-10-05T02:45:00+11:00'
+d('2025-04-06 01:45', 'Australia/Lord_Howe');;'2025-04-06T01:45:00+11:00'

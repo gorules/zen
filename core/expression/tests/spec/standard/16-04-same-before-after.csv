@@ -1,0 +1,345 @@
+expression (string);input (json 5);output (json 5);note
+# isSame(other, unit) with both dates in UTC
+d(a).isSame(d(b), 'second');{a: '2025-03-17', b: '2025-03-23 23:59:59'};false
+d(a).isSame(d(b), 'second');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a).isSame(d(b), 'second');{a: '2024-03-31', b: '2024-01-01'};false
+d(a).isSame(d(b), 'second');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isSame(d(b), 'second');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'minute');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a).isSame(d(b), 'minute');{a: '2024-03-31', b: '2024-01-01'};false
+d(a).isSame(d(b), 'minute');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isSame(d(b), 'minute');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'minute');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'hour');{a: '2024-03-31', b: '2024-01-01'};false
+d(a).isSame(d(b), 'hour');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isSame(d(b), 'hour');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'hour');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a).isSame(d(b), 'hour');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'day');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isSame(d(b), 'day');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'day');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a).isSame(d(b), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a).isSame(d(b), 'day');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'week');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};true
+d(a).isSame(d(b), 'week');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a).isSame(d(b), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a).isSame(d(b), 'week');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a).isSame(d(b), 'week');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'month');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'month');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a).isSame(d(b), 'month');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a).isSame(d(b), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a).isSame(d(b), 'month');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'quarter');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'quarter');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a).isSame(d(b), 'quarter');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a).isSame(d(b), 'quarter');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a).isSame(d(b), 'quarter');{a: null, b: '2024-01-01'};false
+d(a).isSame(d(b), 'year');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a).isSame(d(b), 'year');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a).isSame(d(b), 'year');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a).isSame(d(b), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a).isSame(d(b), 'year');{a: null, b: '2024-01-01'};false
+# isBefore/isAfter with a unit in UTC
+d(a).isBefore(d(b), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a).isBefore(d(b), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a).isBefore(d(b), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a).isBefore(d(b), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a).isAfter(d(b), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a).isAfter(d(b), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};true
+d(a).isAfter(d(b), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a).isAfter(d(b), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a).isBefore(d(b), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a).isBefore(d(b), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a).isBefore(d(b), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a).isBefore(d(b), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a).isAfter(d(b), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a).isAfter(d(b), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a).isAfter(d(b), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a).isAfter(d(b), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a).isBefore(d(b), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a).isBefore(d(b), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a).isBefore(d(b), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};true
+d(a).isBefore(d(b), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a).isAfter(d(b), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a).isAfter(d(b), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a).isAfter(d(b), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isAfter(d(b), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};true
+d(a).isBefore(d(b), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a).isBefore(d(b), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a).isBefore(d(b), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isBefore(d(b), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a).isAfter(d(b), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a).isAfter(d(b), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a).isAfter(d(b), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a).isAfter(d(b), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+# isSame(other, unit) with both dates in Etc/GMT+5
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'second');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'second');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'second');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'second');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'second');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'minute');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'minute');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'minute');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'minute');{a: '2025-03-17', b: '2025-03-23 23:59:59'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'minute');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'hour');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'hour');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'hour');{a: '2025-03-17', b: '2025-03-23 23:59:59'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'hour');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'hour');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'day');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'day');{a: '2025-03-17', b: '2025-03-23 23:59:59'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'day');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'day');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'week');{a: '2025-03-17', b: '2025-03-23 23:59:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'week');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'week');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'week');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'month');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'month');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'month');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'month');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'quarter');{a: '2024-03-31', b: '2024-01-01'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'quarter');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'quarter');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'quarter');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'quarter');{a: null, b: '2024-01-01'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'year');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'year');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'year');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'Etc/GMT+5').isSame(d(b, 'Etc/GMT+5'), 'year');{a: null, b: '2024-01-01'};false
+# isBefore/isAfter with a unit in Etc/GMT+5
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};true
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};true
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};true
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isBefore(d(b, 'Etc/GMT+5'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Etc/GMT+5').isAfter(d(b, 'Etc/GMT+5'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+# isSame(other, unit) with both dates in Europe/Berlin
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'second');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'second');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'second');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'second');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'second');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'minute');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'minute');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'minute');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'minute');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'minute');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'hour');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'hour');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'hour');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'hour');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'hour');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'day');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'day');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'day');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'day');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'week');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'week');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'week');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'week');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'month');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'month');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-17', b: '2025-03-23 23:59:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'month');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'quarter');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'quarter');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'quarter');{a: '2025-03-17', b: '2025-03-23 23:59:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'quarter');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'quarter');{a: null, b: '2024-01-01'};false
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-17', b: '2025-03-23 23:59:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'year');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'year');{a: '2024-03-31', b: '2024-01-01'};true
+d(a, 'Europe/Berlin').isSame(d(b, 'Europe/Berlin'), 'year');{a: null, b: '2024-01-01'};false
+# isBefore/isAfter with a unit in Europe/Berlin
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'day');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};true
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};true
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'day');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'week');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'week');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};true
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};true
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'month');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isBefore(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'Europe/Berlin').isAfter(d(b, 'Europe/Berlin'), 'year');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+# isSame(other, unit) with both dates in America/New_York
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'second');{a: '2025-03-17', b: '2025-03-23 23:59:59'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'second');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'second');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'second');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'second');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'minute');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'minute');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'minute');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'minute');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'minute');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'hour');{a: '2024-03-31', b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'hour');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'hour');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'hour');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'hour');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'day');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'day');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'day');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'day');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'day');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'week');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'week');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'week');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'week');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'week');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'month');{a: '2025-03-30 12:00', b: '2025-03-24 00:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'month');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'month');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'month');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'month');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'quarter');{a: '2025-11-02 12:00', b: '2025-11-02 00:15'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'quarter');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'quarter');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'quarter');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'quarter');{a: null, b: '2024-01-01'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'year');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'year');{a: '2024-12-30 00:00:00', b: '2025-01-05 12:00'};false
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'year');{a: '2024-12-30 00:00:00', b: '2024-12-31 23:59:59'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'year');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'America/New_York').isSame(d(b, 'America/New_York'), 'year');{a: null, b: '2024-01-01'};false
+# isBefore/isAfter with a unit in America/New_York
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};true
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'day');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};true
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};true
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};true
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'day');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'week');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2024-02-29 23:59:59', b: '2024-03-01 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2024-03-01 00:00:00', b: '2024-02-29 23:59:59'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2023-12-31 23:30:15', b: '2023-12-31 23:30:59'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2023-12-31 23:30:59', b: '2023-12-31 23:30:15'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2025-10-26 12:00', b: '2025-10-26 23:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2025-10-26 23:00', b: '2025-10-26 12:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'week');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};true
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'month');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};true
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'month');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isBefore(d(b, 'America/New_York'), 'year');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2025-03-16 08:45:00', b: '2025-03-17 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2025-03-17 00:00:00', b: '2025-03-16 08:45:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2024-06-30 23:59:59', b: '2024-07-01 00:00:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2024-07-01 00:00:00', b: '2024-06-30 23:59:59'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2025-03-09 12:00', b: '2025-03-03 08:00'};false
+d(a, 'America/New_York').isAfter(d(b, 'America/New_York'), 'year');{a: '2025-03-03 08:00', b: '2025-03-09 12:00'};false

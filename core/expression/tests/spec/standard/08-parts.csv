@@ -1,0 +1,239 @@
+expression (string);input (json 5);output (json 5);note
+# getters on a UTC date-time (Sunday 2023-10-15 14:30:45.123)
+d('2023-10-15T14:30:45.123Z').year();;2023
+d('2023-10-15T14:30:45.123Z').quarter();;4
+d('2023-10-15T14:30:45.123Z').month();;10
+d('2023-10-15T14:30:45.123Z').week();;41
+d('2023-10-15T14:30:45.123Z').day();;15
+d('2023-10-15T14:30:45.123Z').weekday();;7
+d('2023-10-15T14:30:45.123Z').dayOfYear();;288
+d('2023-10-15T14:30:45.123Z').hour();;14
+d('2023-10-15T14:30:45.123Z').minute();;30
+d('2023-10-15T14:30:45.123Z').second();;45
+d('2023-10-15T14:30:45.123Z').timestamp();;1697380245123
+d('2023-10-15T14:30:45.123Z').isValid();;true
+d('2023-10-15T14:30:45.123Z').isLeapYear();;false
+# weekday: Monday is 1, Sunday is 7
+d('2023-10-16').weekday();;1
+d('2023-10-17').weekday();;2
+d('2023-10-18').weekday();;3
+d('2023-10-19').weekday();;4
+d('2023-10-20').weekday();;5
+d('2023-10-21').weekday();;6
+d('2023-10-22').weekday();;7
+d('1970-01-01').weekday();;4
+d('2000-01-01').weekday();;6
+# week: ISO 8601 week number
+d('2021-01-01').week();;53
+d('2021-01-03').week();;53
+d('2021-01-04').week();;1
+d('2024-12-29').week();;52
+d('2024-12-30').week();;1
+d('2024-12-31').week();;1
+d('2020-12-31').week();;53
+d('2015-12-31').week();;53
+d('2026-01-01').week();;1
+d('2027-01-01').week();;53
+d('2025-03-20').week();;12
+# dayOfYear
+d('2023-01-01').dayOfYear();;1
+d('2023-12-31').dayOfYear();;365
+d('2024-12-31').dayOfYear();;366
+d('2024-02-29').dayOfYear();;60
+d('2024-03-01').dayOfYear();;61
+d('2023-03-01').dayOfYear();;60
+d('1900-12-31').dayOfYear();;365
+d('2000-12-31').dayOfYear();;366
+# quarter
+d('2023-01-01').quarter();;1
+d('2023-03-31 23:59:59').quarter();;1
+d('2023-04-01').quarter();;2
+d('2023-06-30').quarter();;2
+d('2023-07-01').quarter();;3
+d('2023-09-30').quarter();;3
+d('2023-10-01').quarter();;4
+d('2023-12-31').quarter();;4
+# isLeapYear: divisible by 4, except centuries unless divisible by 400
+d('2024-06-01').isLeapYear();;true
+d('2023-06-01').isLeapYear();;false
+d('2000-06-01').isLeapYear();;true
+d('1900-06-01').isLeapYear();;false
+d('2100-06-01').isLeapYear();;false
+d('2400-06-01').isLeapYear();;true
+d('1996-01-01').isLeapYear();;true
+# getters on invalid dates return null
+d('foo').year();;null
+d('foo').month();;null
+d('foo').day();;null
+d('foo').weekday();;null
+d('foo').week();;null
+d('foo').hour();;null
+d('foo').timestamp();;null
+d('foo').offsetName();;null
+d('foo').isLeapYear();;null
+d('foo').isToday();;null
+d(null).quarter();;null
+# getters are read in the date's own zone
+d('2023-10-15T23:30:00Z').tz('Asia/Tokyo').day();;16
+d('2023-10-15T23:30:00Z').tz('Asia/Tokyo').hour();;8
+d('2023-10-15T23:30:00Z').tz('Asia/Tokyo').weekday();;1
+d('2023-10-15T23:30:00Z').tz('Asia/Tokyo').timestamp();;1697412600000
+d('2023-12-31T23:30:00Z').tz('Asia/Tokyo').year();;2024
+d('2023-12-31T23:30:00Z').tz('Asia/Tokyo').dayOfYear();;1
+d('2024-01-01T01:00:00Z').tz('America/New_York').year();;2023
+d('2024-01-01T01:00:00Z').tz('America/New_York').quarter();;4
+d('2024-01-01T01:00:00Z').tz('America/New_York').week();;52
+d('2023-10-15T00:00:00Z').tz('Asia/Kathmandu').minute();;45
+d('2023-10-15T00:00:00Z').tz('Asia/Kathmandu').hour();;5
+d('2023-10-15T00:00:00Z').tz('Asia/Kolkata').minute();;30
+d('2023-10-15T00:00:00Z').tz('Australia/Lord_Howe').hour();;11
+d('2023-06-15T00:00:00Z').tz('Australia/Lord_Howe').minute();;30
+d('2023-10-15 00:30', 'Etc/GMT+5').day();;15
+d('2023-10-15 00:30', 'Etc/GMT+5').timestamp();;1697347800000
+# offsetName is the zone name
+d('2023-10-15', 'UTC').offsetName();;'UTC'
+d('2023-10-15', 'Europe/Berlin').offsetName();;'Europe/Berlin'
+d('2023-10-15', 'Etc/GMT+5').offsetName();;'Etc/GMT+5'
+d('2023-10-15').tz('Asia/Kolkata').offsetName();;'Asia/Kolkata'
+d('2023-10-15').tz('Australia/Lord_Howe').offsetName();;'Australia/Lord_Howe'
+# isToday / isYesterday / isTomorrow (evaluation time 2025-03-20T10:15:30Z)
+d('2025-03-20').isToday();;true
+d('2025-03-20 23:59:59').isToday();;true
+d('2025-03-19 23:59:59').isToday();;false
+d('2025-03-21').isToday();;false
+d('2025-03-19').isYesterday();;true
+d('2025-03-19 23:59:59').isYesterday();;true
+d('2025-03-18').isYesterday();;false
+d('2025-03-20').isYesterday();;false
+d('2025-03-21').isTomorrow();;true
+d('2025-03-21 23:59:59').isTomorrow();;true
+d('2025-03-22').isTomorrow();;false
+d('2025-03-20').isTomorrow();;false
+d('2024-03-20').isToday();;false
+d().isToday();;true
+d().add(1, 'd').isTomorrow();;true
+d().sub(1, 'd').isYesterday();;true
+d().add(1, 'y').isToday();;false
+d('2025-03-20 23:30', 'America/New_York').isToday();;true
+d('2025-03-21 01:00', 'Asia/Tokyo').isToday();;false
+d('2025-03-21 01:00', 'Asia/Tokyo').isTomorrow();;true
+d('2025-03-20 18:00', 'Asia/Tokyo').isToday();;true
+d('2025-03-19 22:00', 'America/Los_Angeles').isYesterday();;true
+d(s).isToday();{s: '2025-03-20'};true
+d(s).isToday();{s: '2025-03-20'};true
+d(s).isToday();{s: '2025-03-20 00:00:00'};true
+d(s).isToday();{s: '2025-03-19'};false
+d(s).isToday();{s: '2025-03-20T10:15:30Z'};true
+d(s).isToday();{s: 'x'};null
+d(s).isToday();{};null
+d(s).isToday();{s: 1742465730000};true
+# getters on rows
+d(s).year();{s: '2023-10-15'};2023
+d(s).year();{s: '2023-10-15'};2023
+d(s).year();{s: '1999-12-31 23:59:59'};1999
+d(s).year();{s: '2024-02-29'};2024
+d(s).year();{s: 'bad'};null
+d(s).year();{s: null};null
+d(s).year();{};null
+d(s).year();{s: 0};1970
+d(s).month();{s: '2023-01-31'};1
+d(s).month();{s: '2023-12-01'};12
+d(s).month();{s: '2023-12-01'};12
+d(s).month();{s: '2023-13-01'};null
+d(s).day();{s: '2024-02-29'};29
+d(s).day();{s: '2023-10-01'};1
+d(s).day();{s: '2023-10-31 23:59'};31
+d(s).day();{s: ''};null
+d(s).weekday();{s: '2023-10-15'};7
+d(s).weekday();{s: '2023-10-16'};1
+d(s).weekday();{s: '2023-10-16'};1
+d(s).weekday();{s: '2024-02-29'};4
+d(s).weekday();{};null
+d(s).week();{s: '2021-01-03'};53
+d(s).week();{s: '2021-01-04'};1
+d(s).week();{s: '2024-12-30'};1
+d(s).week();{s: 'x'};null
+d(s).dayOfYear();{s: '2024-12-31'};366
+d(s).dayOfYear();{s: '2023-12-31'};365
+d(s).dayOfYear();{s: '2023-12-31'};365
+d(s).dayOfYear();{s: null};null
+d(s).quarter();{s: '2023-03-31'};1
+d(s).quarter();{s: '2023-04-01'};2
+d(s).quarter();{s: '2023-09-30'};3
+d(s).quarter();{s: '2023-10-01'};4
+d(s).hour() * 60 + d(s).minute();{s: '2023-10-15 14:30'};870
+d(s).hour() * 60 + d(s).minute();{s: '2023-10-15 00:01'};1
+d(s).hour() * 60 + d(s).minute();{s: 'x'};!error
+d(s).second();{s: '2023-10-15 14:30:59'};59
+d(s).second();{s: '2023-10-15T14:30:59.999Z'};59
+d(s).timestamp();{s: '2023-10-15'};1697328000000
+d(s).timestamp();{s: '2023-10-15'};1697328000000
+d(s).timestamp();{s: '1969-12-31 23:59:59'};-1000
+d(s).timestamp();{s: 1697328000000};1697328000000
+d(s).timestamp();{s: 'nope'};null
+d(s).isLeapYear();{s: '2024-01-01'};true
+d(s).isLeapYear();{s: '1900-01-01'};false
+d(s).isLeapYear();{s: '2000-01-01'};true
+d(s).isLeapYear();{s: '2023-01-01'};false
+d(s).isLeapYear();{s: null};null
+d(s).isValid();{s: '2024-02-29'};true
+d(s).isValid();{s: '2023-02-29'};false
+d(s, 'Europe/Berlin').hour();{s: '2025-03-30 01:30'};1
+d(s, 'Europe/Berlin').hour();{s: '2025-03-30 03:30'};3
+d(s, 'Europe/Berlin').hour();{s: '2025-10-26 02:30'};2
+d(s, 'Europe/Berlin').hour();{s: '2025-10-26 02:30'};2
+d(s, 'Europe/Berlin').hour();{s: 1761438600000};2
+d(s, 'Europe/Berlin').hour();{s: 1761442200000};2
+d(s, 'Europe/Berlin').hour();{s: 'x'};null
+# set(unit, value)
+d('2023-10-15T10:30:45Z').set('year', 2024);;'2024-10-15T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('y', 1999);;'1999-10-15T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('month', 1);;'2023-01-15T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('M', 12);;'2023-12-15T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('day', 1);;'2023-10-01T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('d', 31);;'2023-10-31T10:30:45Z'
+d('2023-10-15T10:30:45Z').set('hour', 0);;'2023-10-15T00:30:45Z'
+d('2023-10-15T10:30:45Z').set('h', 23);;'2023-10-15T23:30:45Z'
+d('2023-10-15T10:30:45Z').set('minute', 0);;'2023-10-15T10:00:45Z'
+d('2023-10-15T10:30:45Z').set('m', 59);;'2023-10-15T10:59:45Z'
+d('2023-10-15T10:30:45Z').set('second', 0);;'2023-10-15T10:30:00Z'
+d('2023-10-15T10:30:45Z').set('s', 59);;'2023-10-15T10:30:59Z'
+d('2023-10-15T10:30:45.500Z').set('second', 0).timestamp();;1697365800500
+d('2023-10-15').set('year', 0);;'0000-10-15T00:00:00Z'
+d('2023-10-15').set('month', 1.9);;'2023-01-15T00:00:00Z';question: a fractional value is truncated rather than rejected
+d('2023-10-15').set('year', -1);;!error;question: negative years are rejected with an error while year 0 is accepted
+d('2023-10-15').set('day', -1);;!error
+d('2023-10-15').set('month', 13);;'Invalid date';question: an out-of-range value gives an invalid date rather than an error or rollover
+d('2023-10-15').set('month', 0);;'Invalid date'
+d('2023-10-15').set('day', 0);;'Invalid date'
+d('2023-10-15').set('day', 32);;'Invalid date'
+d('2023-10-15').set('hour', 24);;'Invalid date'
+d('2023-10-15').set('minute', 60);;'Invalid date'
+d('2023-10-15').set('second', 60);;'Invalid date'
+d('2023-09-15').set('day', 31);;'Invalid date';question: setting a day past the end of the month gives an invalid date instead of clamping like add(1, 'M') does
+d('2023-01-31').set('month', 2);;'Invalid date';question: moving Jan 31 to February gives an invalid date instead of clamping to Feb 28
+d('2024-02-29').set('year', 2023);;'Invalid date';question: moving Feb 29 to a non-leap year gives an invalid date instead of clamping
+d('2024-02-29').set('year', 2028);;'2028-02-29T00:00:00Z'
+d('2023-10-15').set('week', 3);;'2023-10-15T00:00:00Z';question: setting the week is silently ignored instead of moving to that week or failing
+d('2023-10-15').set('quarter', 1);;'2023-10-15T00:00:00Z';question: setting the quarter is silently ignored instead of moving to that quarter or failing
+d('2023-10-15').set('ms', 1);;!error
+d('2023-10-15').set('D', 1);;!error
+d('2023-10-15').set('day', '1');;!error
+d('2023-10-15').set('day', null);;!error
+d('foo').set('day', 1);;'Invalid date'
+d('2023-10-15', 'Europe/Berlin').set('month', 1);;'2023-01-15T00:00:00+01:00'
+d('2023-10-15', 'Asia/Kathmandu').set('hour', 5).timestamp();;1697325300000
+d('2025-10-26 12:00', 'Europe/Berlin').set('hour', 2);;'2025-10-26T02:00:00+02:00';bug: a wall time in the fall-back overlap becomes invalid, while d() resolves the same wall time to the earlier offset
+d('2025-03-30 12:00', 'Europe/Berlin').set('hour', 2);;'Invalid date';question: a wall time inside the spring-forward gap is invalid, consistent with d()
+d(s).set('day', 31);{s: '2023-01-15'};'2023-01-31T00:00:00Z'
+d(s).set('day', 31);{s: '2023-01-15'};'2023-01-31T00:00:00Z'
+d(s).set('day', 31);{s: '2023-04-15'};'Invalid date'
+d(s).set('day', 31);{s: 'x'};'Invalid date'
+d(s).set('day', 31);{};'Invalid date'
+d(s).set('month', 2);{s: '2024-01-29'};'2024-02-29T00:00:00Z'
+d(s).set('month', 2);{s: '2023-01-29'};'Invalid date'
+d(s).set('month', 2);{s: '2023-01-28 12:00'};'2023-02-28T12:00:00Z'
+d(s).set(u, v);{s: '2023-10-15', u: 'year', v: 2020};'2020-10-15T00:00:00Z'
+d(s).set(u, v);{s: '2023-10-15', u: 'hour', v: 7};'2023-10-15T07:00:00Z'
+d(s).set(u, v);{s: '2023-10-15', u: 'nope', v: 7};!error
+d(s).set(u, v);{s: '2023-10-15', u: 'day', v: null};!error

@@ -5,6 +5,7 @@ name = "zen-expression"
 license = "MIT"
 version = "2.1.8"
 edition = "2021"
+rust-version = "1.88"
 repository = "https://github.com/gorules/zen.git"
 homepage = "https://gorules.io"
 
@@ -16,7 +17,6 @@ bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
 chrono-tz = "0.10"
 humantime = { workspace = true }
-fastrand = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
@@ -64,3 +64,7 @@ name = "unary"
 [[bench]]
 harness = false
 name = "isolate"
+
+[[bench]]
+harness = false
+name = "lane"

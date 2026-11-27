@@ -1,0 +1,1055 @@
+// Merges and joins: nodes with several incoming edges (fan-in).
+//
+// A node's input is the merge of its parents' outputs. The merge is deep for objects,
+// replaces arrays and primitives, and a null value in a later parent deletes the key.
+// Parents are merged in reverse edge-insertion order, so on a key conflict the parent
+// whose edge into the join was declared first wins. The graph result is the merge of the
+// visited leaf nodes (normally only the output node), and that final merge drops
+// top-level null values.
+
+// ---------------------------------------------------------------------------------------
+// Parallel branches from the input with disjoint keys: the join sees the union.
+
+{
+  name: "two branches with disjoint keys meet at the output",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {fromA: "x + 1"}},
+      {expression: "b", fields: {fromB: "x * 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {fromA: 2, fromB: 2}],
+    [{x: 0}, {fromA: 1, fromB: 0}],
+    [{x: -2.5}, {fromA: -1.5, fromB: -5}],
+    [{x: 10, other: true}, {fromA: 11, fromB: 20}],
+  ],
+}
+
+{
+  name: "three branches with disjoint keys meet at the output",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {a: "'A' + s"}},
+      {expression: "b", fields: {b: "len(s)"}},
+      {expression: "c", fields: {c: "s == ''"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{s: "xy"}, {a: "Axy", b: 2, c: false}],
+    [{s: ""}, {a: "A", b: 0, c: true}],
+    [{s: "hello"}, {a: "Ahello", b: 5, c: false}],
+  ],
+}
+
+{
+  name: "branches of different node kinds meet at the output",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {doubled: "n * 2"}},
+      {table: "grade", inputs: ["n"], outputs: ["grade"], rules: [
+        [">= 10", "'high'"],
+        ["", "'low'"],
+      ]},
+      {custom: "cfg", kind: "config", config: {source: "custom"}},
+    ],
+    edges: ["input -> calc -> output", "input -> grade -> output", "input -> cfg -> output"],
+  },
+  cases: [
+    [{n: 12}, {doubled: 24, grade: "high", source: "custom"}],
+    [{n: 1}, {doubled: 2, grade: "low", source: "custom"}],
+    [{n: 10}, {doubled: 20, grade: "high", source: "custom"}],
+  ],
+}
+
+{
+  name: "branches without pass-through drop the original input at the join",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {p: "1"}},
+      {expression: "b", fields: {q: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{keep: "no"}, {p: 1, q: 2}],
+    [{}, {p: 1, q: 2}],
+    [{p: 9, q: 9}, {p: 1, q: 2}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Key conflicts: the parent whose edge into the join was declared first wins.
+
+{
+  name: "conflicting key: first declared edge into the join wins (a first)",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'", onlyA: "1"}},
+      {expression: "b", fields: {k: "'b'", onlyB: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {k: "a", onlyA: 1, onlyB: 2}, "question: conflicts are resolved by edge declaration order (first edge wins), an artifact of petgraph's reverse incoming iteration rather than a documented rule"],
+    [{k: "input"}, {k: "a", onlyA: 1, onlyB: 2}, "question: conflicts are resolved by edge declaration order (first edge wins), an artifact of petgraph's reverse incoming iteration rather than a documented rule"],
+  ],
+}
+
+{
+  name: "conflicting key: first declared edge into the join wins (b first)",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'", onlyA: "1"}},
+      {expression: "b", fields: {k: "'b'", onlyB: "2"}},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{}, {k: "b", onlyA: 1, onlyB: 2}, "question: same graph as above with edges declared in the other order; the result flips"],
+    [{k: "input"}, {k: "b", onlyA: 1, onlyB: 2}, "question: same graph as above with edges declared in the other order; the result flips"],
+  ],
+}
+
+{
+  name: "conflict order follows edges into the join, not the order of nodes",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'"}},
+      {expression: "b", fields: {k: "'b'"}},
+    ],
+    edges: ["input -> a", "input -> b", "b -> output", "a -> output"],
+  },
+  cases: [
+    [{}, {k: "b"}, "question: b -> output is declared before a -> output, so b wins"],
+    [{n: 1}, {k: "b"}, "question: b -> output is declared before a -> output, so b wins"],
+  ],
+}
+
+{
+  name: "three-way conflict: first declared edge wins over both others",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1", ab: "'a'"}},
+      {expression: "b", fields: {k: "2", ab: "'b'", bc: "'b'"}},
+      {expression: "c", fields: {k: "3", bc: "'c'"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{}, {k: 1, ab: "a", bc: "b"}, "question: precedence is a > b > c by edge declaration order"],
+    [{k: 0}, {k: 1, ab: "a", bc: "b"}, "question: precedence is a > b > c by edge declaration order"],
+  ],
+}
+
+{
+  name: "conflicting values of different types: the winner replaces the loser",
+  graph: {
+    nodes: [
+      {expression: "obj", fields: {k: "{x: 1}"}},
+      {expression: "num", fields: {k: "5"}},
+    ],
+    edges: ["input -> num -> output", "input -> obj -> output"],
+  },
+  cases: [
+    [{}, {k: 5}],
+    [{k: "ignored"}, {k: 5}],
+  ],
+}
+
+{
+  name: "conflicting values of different types: an object winner replaces a primitive",
+  graph: {
+    nodes: [
+      {expression: "obj", fields: {k: "{x: 1}"}},
+      {expression: "num", fields: {k: "5"}},
+    ],
+    edges: ["input -> obj -> output", "input -> num -> output"],
+  },
+  cases: [
+    [{}, {k: {x: 1}}],
+    [{z: 1}, {k: {x: 1}}],
+  ],
+}
+
+{
+  name: "conflicting strings, booleans and numbers",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {s: "'a'", b: "true", n: "1.50"}},
+      {expression: "b", fields: {s: "'b'", b: "false", n: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {s: "a", b: true, n: 1.5}],
+    [{s: "x"}, {s: "a", b: true, n: 1.5}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Deep merge of nested objects.
+
+{
+  name: "nested objects from two parents merge key by key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"o.x": "1", "o.deep.p": "'a'"}},
+      {expression: "b", fields: {"o.y": "2", "o.deep.q": "'b'"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {o: {x: 1, y: 2, deep: {p: "a", q: "b"}}}],
+    [{o: {z: 3}}, {o: {x: 1, y: 2, deep: {p: "a", q: "b"}}}],
+  ],
+}
+
+{
+  name: "nested conflict: the winner's leaf replaces, siblings survive",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"o.k": "'a'", "o.onlyA": "true"}},
+      {expression: "b", fields: {"o.k": "'b'", "o.onlyB": "true"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {o: {k: "a", onlyA: true, onlyB: true}}],
+    [{o: 1}, {o: {k: "a", onlyA: true, onlyB: true}}],
+  ],
+}
+
+{
+  name: "object literals as values merge deeply too",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {cfg: "{limits: {min: 1}, name: 'a'}"}},
+      {expression: "b", fields: {cfg: "{limits: {max: 9}, tags: ['b']}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {cfg: {limits: {min: 1, max: 9}, name: "a", tags: ["b"]}}],
+    [{cfg: {limits: {min: 0}}}, {cfg: {limits: {min: 1, max: 9}, name: "a", tags: ["b"]}}],
+  ],
+}
+
+{
+  name: "nested object replaced by a primitive from the winner",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"o.inner": "'flat'"}},
+      {expression: "b", fields: {"o.inner.deep": "1"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {o: {inner: "flat"}}],
+    [{x: 1}, {o: {inner: "flat"}}],
+  ],
+}
+
+{
+  name: "deep merge three levels down",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"l1.l2.l3.a": "1"}},
+      {expression: "b", fields: {"l1.l2.l3.b": "2", "l1.l2.b": "3"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {l1: {l2: {l3: {a: 1, b: 2}, b: 3}}}],
+    [{l1: null}, {l1: {l2: {l3: {a: 1, b: 2}, b: 3}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Arrays are values: they are replaced, never concatenated or merged by index.
+
+{
+  name: "arrays at the same key are replaced by the winner",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {arr: "[1, 2, 3]"}},
+      {expression: "b", fields: {arr: "[9]"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {arr: [1, 2, 3]}],
+    [{arr: [0, 0, 0, 0]}, {arr: [1, 2, 3]}],
+  ],
+}
+
+{
+  name: "a shorter winner array does not keep the loser's tail",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {arr: "[1, 2, 3]"}},
+      {expression: "b", fields: {arr: "[9]"}},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{}, {arr: [9]}],
+    [{z: 1}, {arr: [9]}],
+  ],
+}
+
+{
+  name: "arrays of objects are not merged element by element",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {items: "[{id: 1, a: true}]"}},
+      {expression: "b", fields: {items: "[{id: 1, b: true}, {id: 2}]"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {items: [{id: 1, a: true}]}],
+    [{items: []}, {items: [{id: 1, a: true}]}],
+  ],
+}
+
+{
+  name: "empty array from the winner replaces a populated one",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {arr: "[]", "o.list": "[]"}},
+      {expression: "b", fields: {arr: "[1]", "o.list": "['x']", "o.keep": "1"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {arr: [], o: {list: [], keep: 1}}],
+    [{arr: [5]}, {arr: [], o: {list: [], keep: 1}}],
+  ],
+}
+
+{
+  name: "array versus object at the same key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "[1]"}},
+      {expression: "b", fields: {v: "{x: 1}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {v: [1]}],
+    [{v: "s"}, {v: [1]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Null values: a null from the winning parent deletes the key; a null from the losing
+// parent survives the join but top-level nulls are dropped from the final result.
+
+{
+  name: "a null from the winning parent deletes the loser's key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "null", keepA: "1"}},
+      {expression: "b", fields: {k: "'b'", keepB: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {keepA: 1, keepB: 2}],
+    [{k: "input"}, {keepA: 1, keepB: 2}],
+  ],
+}
+
+{
+  name: "a null from the losing parent does not override the winner",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'"}},
+      {expression: "b", fields: {k: "null", z: "null"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {k: "a"}],
+    [{z: 1}, {k: "a"}],
+  ],
+}
+
+{
+  name: "a nested null from the winner deletes the nested key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {o: "{x: null, y: 1}"}},
+      {expression: "b", fields: {o: "{x: 'b', z: 2}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {o: {y: 1, z: 2}}],
+    [{o: {x: 1}}, {o: {y: 1, z: 2}}],
+  ],
+}
+
+{
+  name: "a nested null from the loser survives into the result",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {o: "{y: 1}"}},
+      {expression: "b", fields: {o: "{x: null, z: 2}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {o: {x: null, y: 1, z: 2}}, "question: nested nulls survive while top-level nulls are dropped by the final merge"],
+    [{x: 1}, {o: {x: null, y: 1, z: 2}}, "question: nested nulls survive while top-level nulls are dropped by the final merge"],
+  ],
+}
+
+{
+  name: "a node downstream of the join sees the loser's null as null",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {expression: "b", fields: {x: "null", k: "null"}},
+      {expression: "after", fields: {xIsNull: "x == null", k: "k", hasX: "'x' in keys($root)"}},
+    ],
+    edges: ["input -> a -> after", "input -> b -> after", "after -> output"],
+  },
+  cases: [
+    [{}, {xIsNull: true, k: 1, hasX: true}],
+    [{x: 5}, {xIsNull: true, k: 1, hasX: true}],
+  ],
+}
+
+{
+  name: "a node downstream of the join does not see a deleted key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "null"}},
+      {expression: "b", fields: {k: "1"}},
+      {expression: "after", fields: {hasK: "'k' in keys($root)", k: "k ?? 'none'"}},
+    ],
+    edges: ["input -> a -> after", "input -> b -> after", "after -> output"],
+  },
+  cases: [
+    [{}, {hasK: false, k: "none"}],
+    [{k: 3}, {hasK: false, k: "none"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Non-object parent outputs: an unmatched first-hit table produces null, a collect table
+// produces an array.
+
+{
+  name: "an unmatched table at a join is ignored (table edge declared first)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["v"], rules: [["> 100", "'big'"]]},
+      {expression: "a", fields: {k: "1"}},
+    ],
+    edges: ["input -> t -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{n: 1}, {k: 1}],
+    [{n: 500}, {v: "big", k: 1}],
+    [{}, {k: 1}],
+  ],
+}
+
+{
+  name: "an unmatched table at a join is ignored (table edge declared last)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["v"], rules: [["> 100", "'big'"]]},
+      {expression: "a", fields: {k: "1"}},
+    ],
+    edges: ["input -> a -> output", "input -> t -> output"],
+  },
+  cases: [
+    [{n: 1}, {k: 1}],
+    [{n: 500}, {v: "big", k: 1}],
+    [{n: null}, {k: 1}],
+  ],
+}
+
+{
+  name: "two unmatched tables meeting at the output give an empty object",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: ["n"], outputs: ["a"], rules: [["> 100", "1"]]},
+      {table: "t2", inputs: ["n"], outputs: ["b"], rules: [["< 0", "2"]]},
+    ],
+    edges: ["input -> t1 -> output", "input -> t2 -> output"],
+  },
+  cases: [
+    [{n: 5}, {}],
+    [{n: 500}, {a: 1}],
+    [{n: -1}, {b: 2}],
+  ],
+}
+
+{
+  name: "a collect table losing at a join is replaced by the object parent",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+    ],
+    edges: ["input -> a -> output", "input -> t -> output"],
+  },
+  cases: [
+    [{n: 1}, {k: 1}, "question: the collect table's rows are silently discarded because the object parent replaces the array head"],
+    [{n: -1}, {k: 1}, "question: the collect table's rows are silently discarded because the object parent replaces the array head"],
+  ],
+}
+
+{
+  name: "a collect table winning at a join replaces everything with its rows",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{n: 1}, [{v: "pos"}, {v: "any"}], "question: a top-level array from the winning parent replaces the merged object, dropping the sibling's keys"],
+    [{n: -1}, [{v: "any"}], "question: a top-level array from the winning parent replaces the merged object, dropping the sibling's keys"],
+  ],
+}
+
+{
+  name: "a collect table with no matching rows at a join",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [["> 100", "'big'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{n: 1}, [], "question: an empty collect result wins the join and replaces the sibling's object"],
+    [{n: 101}, [{v: "big"}], "question: a top-level array from the winning parent replaces the merged object"],
+  ],
+}
+
+{
+  name: "a collect table under an output path merges like any object",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {table: "t", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["v"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{n: 1}, {k: 1, rows: [{v: "pos"}, {v: "any"}]}],
+    [{n: 0}, {k: 1, rows: [{v: "any"}]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Diamonds: one node fans out and the branches join again.
+
+{
+  name: "diamond: both branches see the shared parent's output",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {v: "x * 10"}},
+      {expression: "left", fields: {l: "v + 1"}},
+      {expression: "right", fields: {r: "v + 2"}},
+      {expression: "join", fields: {sum: "l + r"}},
+    ],
+    edges: ["input -> base", "base -> left -> join", "base -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 1}, {sum: 23}],
+    [{x: 0}, {sum: 3}],
+    [{x: -1}, {sum: -17}],
+    [{x: 0.5}, {sum: 13}],
+  ],
+}
+
+{
+  name: "diamond with pass-through branches carries the shared parent's keys",
+  graph: {
+    nodes: [
+      {expression: "base", passThrough: true, fields: {v: "x * 10"}},
+      {expression: "left", passThrough: true, fields: {l: "v + 1"}},
+      {expression: "right", passThrough: true, fields: {r: "v + 2"}},
+    ],
+    edges: ["input -> base", "base -> left -> output", "base -> right -> output"],
+  },
+  cases: [
+    [{x: 1}, {x: 1, v: 10, l: 11, r: 12}],
+    [{x: 2, y: "keep"}, {x: 2, y: "keep", v: 20, l: 21, r: 22}],
+  ],
+}
+
+{
+  name: "diamond where both branches rewrite the same key",
+  graph: {
+    nodes: [
+      {expression: "base", passThrough: true, fields: {v: "1"}},
+      {expression: "left", passThrough: true, fields: {v: "v + 10"}},
+      {expression: "right", passThrough: true, fields: {v: "v + 100"}},
+    ],
+    edges: ["input -> base", "base -> left -> output", "base -> right -> output"],
+  },
+  cases: [
+    [{}, {v: 11}],
+    [{v: 0, w: 1}, {v: 11, w: 1}],
+  ],
+}
+
+{
+  name: "diamond where only one branch passes the parent through",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {v: "x + 1", tag: "'base'"}},
+      {expression: "left", passThrough: true, fields: {l: "v * 2"}},
+      {expression: "right", fields: {r: "v * 3"}},
+    ],
+    edges: ["input -> base", "base -> left -> output", "base -> right -> output"],
+  },
+  cases: [
+    [{x: 1}, {v: 2, tag: "base", l: 4, r: 6}],
+    [{x: 9}, {v: 10, tag: "base", l: 20, r: 30}],
+  ],
+}
+
+{
+  name: "nested diamonds",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {n: "x"}},
+      {expression: "b1", passThrough: true, fields: {b1: "n + 1"}},
+      {expression: "b2", passThrough: true, fields: {b2: "n + 2"}},
+      {expression: "c", fields: {c: "b1 + b2"}},
+      {expression: "d1", passThrough: true, fields: {d1: "c * 2"}},
+      {expression: "d2", passThrough: true, fields: {d2: "c * 3"}},
+    ],
+    edges: [
+      "input -> a",
+      "a -> b1 -> c", "a -> b2 -> c",
+      "c -> d1 -> output", "c -> d2 -> output",
+    ],
+  },
+  cases: [
+    [{x: 0}, {c: 3, d1: 6, d2: 9}],
+    [{x: 5}, {c: 13, d1: 26, d2: 39}],
+  ],
+}
+
+{
+  name: "diamond whose shared parent is a table",
+  graph: {
+    nodes: [
+      {table: "rate", inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.2"],
+        ["", "0.05"],
+      ]},
+      {expression: "fee", fields: {fee: "amount * rate"}},
+      {expression: "label", fields: {label: "'rate ' + string(rate)"}},
+    ],
+    edges: ["input -> rate", "input -> fee", "input -> label", "rate -> fee -> output", "rate -> label -> output"],
+  },
+  cases: [
+    [{tier: "gold", amount: 100}, {fee: 20, label: "rate 0.2"}],
+    [{tier: "basic", amount: 100}, {fee: 5, label: "rate 0.05"}],
+    [{amount: 10}, {fee: 0.5, label: "rate 0.05"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// The input as one parent of a join.
+
+{
+  name: "a join of the input and a branch sees both",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "price * qty"}},
+      {expression: "join", fields: {line: "string(qty) + ' x ' + string(price) + ' = ' + string(total)"}},
+    ],
+    edges: ["input -> calc -> join", "input -> join", "join -> output"],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {line: "3 x 2 = 6"}],
+    [{price: 1.5, qty: 1}, {line: "1 x 1.5 = 1.5"}],
+    [{price: 0, qty: 0}, {line: "0 x 0 = 0"}],
+  ],
+}
+
+{
+  name: "input joined with a branch at the output keeps the input's keys",
+  graph: {
+    nodes: [{expression: "calc", fields: {total: "a + b"}}],
+    edges: ["input -> calc -> output", "input -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, total: 99}, {a: 1, b: 2, total: 3}],
+    [{a: 0, b: 0, nested: {x: [1]}}, {a: 0, b: 0, total: 0, nested: {x: [1]}}],
+  ],
+}
+
+{
+  name: "input edge declared first: the input wins key conflicts",
+  graph: {
+    nodes: [{expression: "calc", fields: {total: "a + b"}}],
+    edges: ["input -> output", "input -> calc -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3}],
+    [{a: 1, b: 2, total: 99}, {a: 1, b: 2, total: 99}, "question: the stale input value beats the computed one only because its edge was declared first"],
+  ],
+}
+
+{
+  name: "a branch null deletes an input key at the join",
+  graph: {
+    nodes: [{expression: "scrub", fields: {secret: "null"}}],
+    edges: ["input -> scrub -> output", "input -> output"],
+  },
+  cases: [
+    [{secret: "pw", user: "ann"}, {user: "ann"}],
+    [{user: "bob"}, {user: "bob"}],
+    [{secret: {nested: true}}, {}],
+  ],
+}
+
+{
+  name: "input nested object deep-merges with a branch object",
+  graph: {
+    nodes: [{expression: "enrich", fields: {"customer.segment": "customer.age >= 65 ? 'senior' : 'adult'"}}],
+    edges: ["input -> enrich -> output", "input -> output"],
+  },
+  cases: [
+    [{customer: {age: 70, name: "a"}}, {customer: {age: 70, name: "a", segment: "senior"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, segment: "adult"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Nodes downstream of a join.
+
+{
+  name: "an expression after the join reads keys from both parents",
+  graph: {
+    nodes: [
+      {expression: "tax", fields: {tax: "amount * 0.2"}},
+      {expression: "ship", fields: {shipping: "amount > 100 ? 0 : 5"}},
+      {expression: "total", fields: {total: "tax + shipping"}},
+    ],
+    edges: ["input -> tax -> total", "input -> ship -> total", "total -> output"],
+  },
+  cases: [
+    [{amount: 50}, {total: 15}],
+    [{amount: 200}, {total: 40}],
+    [{amount: 100}, {total: 25}],
+  ],
+}
+
+{
+  name: "a table after the join matches on keys from both parents",
+  graph: {
+    nodes: [
+      {expression: "age", fields: {adult: "(age ?? 0) >= 18"}},
+      {expression: "score", fields: {good: "(score ?? 0) > 600"}},
+      {table: "decide", inputs: ["adult", "good"], outputs: ["approved"], rules: [
+        ["true", "true", "true"],
+        ["", "", "false"],
+      ]},
+    ],
+    edges: ["input -> age -> decide", "input -> score -> decide", "decide -> output"],
+  },
+  cases: [
+    [{age: 20, score: 700}, {approved: true}],
+    [{age: 20, score: 500}, {approved: false}],
+    [{age: 10, score: 700}, {approved: false}],
+    [{}, {approved: false}],
+  ],
+}
+
+{
+  name: "a chain after the join keeps working on the merged input",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1"}},
+      {expression: "b", fields: {y: "2"}},
+      {expression: "c", passThrough: true, fields: {z: "x + y"}},
+      {expression: "d", passThrough: true, fields: {w: "z * 10"}},
+    ],
+    edges: ["input -> a -> c", "input -> b -> c", "c -> d -> output"],
+  },
+  cases: [
+    [{}, {x: 1, y: 2, z: 3, w: 30}],
+    [{x: 100}, {x: 1, y: 2, z: 3, w: 30}],
+  ],
+}
+
+{
+  name: "a join that is itself a fan-out source",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "n + 1"}},
+      {expression: "b", fields: {y: "n + 2"}},
+      {expression: "j", fields: {s: "x + y"}},
+      {expression: "p", fields: {p: "s * 2"}},
+      {expression: "q", fields: {q: "s * 3"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> p -> output", "j -> q -> output"],
+  },
+  cases: [
+    [{n: 0}, {p: 6, q: 9}],
+    [{n: 1}, {p: 10, q: 15}],
+  ],
+}
+
+{
+  name: "a sub-decision after the join receives the merged input",
+  decisions: {
+    child: {nodes: [{expression: "sum", fields: {sum: "x + y"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "n"}},
+      {expression: "b", fields: {y: "n * 2"}},
+      {decision: "call", key: "child"},
+    ],
+    edges: ["input -> a -> call", "input -> b -> call", "call -> output"],
+  },
+  cases: [
+    [{n: 1}, {sum: 3}],
+    [{n: 5}, {sum: 15}],
+  ],
+}
+
+{
+  name: "a function node after the join receives the merged input",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "n"}},
+      {expression: "b", fields: {y: "n * 2"}},
+      {function: "f", source: """export const handler = async (input) => ({keys: Object.keys(input).filter((k) => !k.startsWith('$')).sort(), sum: input.x + input.y});"""},
+    ],
+    edges: ["input -> a -> f", "input -> b -> f", "f -> output"],
+  },
+  cases: [
+    [{n: 1}, {keys: ["x", "y"], sum: 3}],
+    [{n: 4}, {keys: ["x", "y"], sum: 12}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// $nodes at a join: every parent's own output stays addressable regardless of conflicts.
+
+{
+  name: "$nodes exposes each parent of a join",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'"}},
+      {expression: "b", fields: {k: "'b'"}},
+      {expression: "c", fields: {fromA: "$nodes.a.k", fromB: "$nodes.b.k", merged: "k", inp: "$nodes.input.q"}},
+    ],
+    edges: ["input -> a -> c", "input -> b -> c", "c -> output"],
+  },
+  cases: [
+    [{q: 5}, {fromA: "a", fromB: "b", merged: "a", inp: 5}],
+    [{q: "x"}, {fromA: "a", fromB: "b", merged: "a", inp: "x"}],
+  ],
+}
+
+{
+  name: "$nodes keeps a parent's key that the merge deleted",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "null"}},
+      {expression: "b", fields: {k: "'b'"}},
+      {expression: "c", fields: {merged: "k ?? 'gone'", fromB: "$nodes.b.k"}},
+    ],
+    edges: ["input -> a -> c", "input -> b -> c", "c -> output"],
+  },
+  cases: [
+    [{}, {merged: "gone", fromB: "b"}],
+    [{k: 1}, {merged: "gone", fromB: "b"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Repeated and redundant edges.
+
+{
+  name: "a duplicated edge merges the same parent twice without effect",
+  graph: {
+    nodes: [{expression: "a", fields: {k: "x + 1", "o.p": "1"}}],
+    edges: ["input -> a -> output", "a -> output"],
+  },
+  cases: [
+    [{x: 1}, {k: 2, o: {p: 1}}],
+    [{x: 0}, {k: 1, o: {p: 1}}],
+  ],
+}
+
+{
+  name: "a transitive shortcut edge: the join sees both the ancestor and the child",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "1", fromA: "true"}},
+      {expression: "b", fields: {v: "2", fromB: "true"}},
+    ],
+    edges: ["input -> a -> b -> output", "a -> output"],
+  },
+  cases: [
+    [{}, {v: 2, fromA: true, fromB: true}],
+    [{v: 0}, {v: 2, fromA: true, fromB: true}],
+  ],
+}
+
+{
+  name: "a transitive shortcut edge declared first wins over the child",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "1", fromA: "true"}},
+      {expression: "b", fields: {v: "2", fromB: "true"}},
+    ],
+    edges: ["a -> output", "input -> a -> b -> output"],
+  },
+  cases: [
+    [{}, {v: 1, fromA: true, fromB: true}, "question: the ancestor's stale value beats its descendant's only because its edge into the join was declared first"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Joins behind a switch: a pruned branch does not contribute to the join.
+
+{
+  name: "a join behind a switch only merges the taken branch",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["kind == 'a'", ""]},
+      {expression: "a", fields: {picked: "'a'", fromA: "true"}},
+      {expression: "b", fields: {picked: "'b'", fromB: "true"}},
+      {expression: "join", passThrough: true, fields: {done: "true"}},
+    ],
+    edges: ["input -> route", "route:0 -> a -> join", "route:1 -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{kind: "a"}, {picked: "a", fromA: true, done: true}],
+    [{kind: "b"}, {picked: "b", fromB: true, done: true}],
+    [{}, {picked: "b", fromB: true, done: true}],
+  ],
+}
+
+{
+  name: "a collect switch taking both branches merges both at the join",
+  graph: {
+    nodes: [
+      {switch: "route", hit: "collect", when: ["x > 0", "x > 10"]},
+      {expression: "a", fields: {big: "false", pos: "true"}},
+      {expression: "b", fields: {big: "true"}},
+    ],
+    edges: ["input -> route", "route:0 -> a -> output", "route:1 -> b -> output"],
+  },
+  cases: [
+    [{x: 5}, {big: false, pos: true}],
+    [{x: 50}, {big: false, pos: true}, "question: both branches are taken and the first declared branch wins the conflict"],
+    [{x: -1}, {}],
+  ],
+}
+
+{
+  name: "a join fed by the input and by a switch branch",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["flag", ""]},
+      {expression: "on", fields: {state: "'on'"}},
+      {expression: "join", fields: {state: "state ?? 'unset'", v: "v"}},
+    ],
+    edges: ["input -> route", "route:0 -> on -> join", "input -> join", "join -> output"],
+  },
+  cases: [
+    [{flag: true, v: 1}, {state: "on", v: 1}],
+    [{flag: false, v: 2}, {state: "unset", v: 2}],
+    [{v: 3, state: "input"}, {state: "input", v: 3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Leaves: the result is the merge of visited leaf nodes.
+
+{
+  name: "a graph without an output node merges all leaves",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "x1", key: "y", value: "n + 1"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "x2", key: "z", value: "n + 2"}]}},
+      ],
+      edges: [{id: "e1", sourceId: "i", targetId: "a"}, {id: "e2", sourceId: "i", targetId: "b"}],
+    },
+  },
+  cases: [
+    [{n: 0}, {y: 1, z: 2}],
+    [{n: 10}, {y: 11, z: 12}],
+  ],
+}
+
+{
+  name: "a dangling branch visited after the output does not contribute",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {expression: "d", fields: {dangling: "1"}},
+    ],
+    edges: ["input -> a -> output", "input -> d"],
+  },
+  cases: [
+    [{}, {k: 1}],
+    [{k: 5}, {k: 1}],
+  ],
+}
+
+{
+  name: "a dangling branch visited before the output contributes to the result",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "1"}},
+      {expression: "d", fields: {dangling: "1"}},
+    ],
+    edges: ["input -> d", "input -> a -> output"],
+  },
+  cases: [
+    [{}, {k: 1, dangling: 1}, "question: whether a leaf that never reaches the output node contributes depends on edge declaration order"],
+    [{k: 5}, {k: 1, dangling: 1}, "question: whether a leaf that never reaches the output node contributes depends on edge declaration order"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Top-level nulls and the final merge.
+
+{
+  name: "top-level null values are dropped from the result, nested ones kept",
+  graph: {
+    nodes: [{expression: "a", fields: {x: "null", y: "1", "n.z": "null"}}],
+  },
+  cases: [
+    [{}, {y: 1, n: {z: null}}, "question: the final merge drops top-level nulls but keeps nested ones"],
+    [{x: 1}, {y: 1, n: {z: null}}, "question: the final merge drops top-level nulls but keeps nested ones"],
+  ],
+}
+
+{
+  name: "input nulls are dropped when the input reaches the output",
+  graph: {},
+  cases: [
+    [{a: null, b: 1}, {b: 1}, "question: the final merge drops top-level nulls of the input"],
+    [{o: {p: null}}, {o: {p: null}}],
+  ],
+}

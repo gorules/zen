@@ -1,0 +1,312 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request"
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Lines",
+   "content": {
+    "expressions": [
+     {
+      "id": "e1x0",
+      "key": "total",
+      "value": "price * qty"
+     },
+     {
+      "id": "e1x1",
+      "key": "label",
+      "value": "name + '!'"
+     },
+     {
+      "id": "e1x2",
+      "key": "nested.flag",
+      "value": "price > 10"
+     }
+    ],
+    "executionMode": "loop",
+    "inputField": "lines",
+    "outputPath": "priced",
+    "passThrough": true
+   }
+  },
+  {
+   "id": "e2",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Strict",
+   "content": {
+    "expressions": [
+     {
+      "id": "e2x0",
+      "key": "ratio",
+      "value": "price / qty"
+     }
+    ],
+    "executionMode": "loop",
+    "inputField": "lines",
+    "outputPath": "ratios",
+    "passThrough": false
+   }
+  },
+  {
+   "id": "t1",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Tiers",
+   "content": {
+    "hitPolicy": "first",
+    "executionMode": "loop",
+    "inputs": [
+     {
+      "id": "t1i0",
+      "name": "price",
+      "field": "price"
+     },
+     {
+      "id": "t1i1",
+      "name": "meta.kind",
+      "field": "meta.kind"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t1o0",
+      "name": "tier",
+      "field": "tier"
+     },
+     {
+      "id": "t1o1",
+      "name": "tags[]",
+      "field": "tags[]"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t1r0",
+      "t1i0": "> 50",
+      "t1i1": "'gold'",
+      "t1o0": "'premium'",
+      "t1o1": "'big'"
+     },
+     {
+      "_id": "t1r1",
+      "t1i0": "> 10",
+      "t1i1": "",
+      "t1o0": "'standard'",
+      "t1o1": "'mid'"
+     },
+     {
+      "_id": "t1r2",
+      "t1i0": "",
+      "t1i1": "",
+      "t1o0": "",
+      "t1o1": "'any'"
+     }
+    ],
+    "inputField": "lines",
+    "outputPath": "tiers",
+    "passThrough": true
+   }
+  },
+  {
+   "id": "t2",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Collect",
+   "content": {
+    "hitPolicy": "collect",
+    "executionMode": "loop",
+    "inputs": [
+     {
+      "id": "t2i0",
+      "name": "qty",
+      "field": "qty"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t2o0",
+      "name": "code",
+      "field": "code"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t2r0",
+      "t2i0": "> 1",
+      "t2o0": "qty * 10"
+     },
+     {
+      "_id": "t2r1",
+      "t2i0": "",
+      "t2o0": "'one'"
+     }
+    ],
+    "inputField": "lines",
+    "outputPath": "codes",
+    "passThrough": false
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "e1",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x2",
+   "sourceId": "in",
+   "targetId": "e2",
+   "type": "edge"
+  },
+  {
+   "id": "x3",
+   "sourceId": "e2",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x4",
+   "sourceId": "in",
+   "targetId": "t1",
+   "type": "edge"
+  },
+  {
+   "id": "x5",
+   "sourceId": "t1",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x6",
+   "sourceId": "in",
+   "targetId": "t2",
+   "type": "edge"
+  },
+  {
+   "id": "x7",
+   "sourceId": "t2",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "lines": [
+     {
+      "name": "a",
+      "price": 20,
+      "qty": 2,
+      "meta": {
+       "kind": "gold"
+      }
+     },
+     {
+      "name": "b",
+      "price": 5,
+      "qty": 1
+     },
+     {
+      "name": "c",
+      "price": 60,
+      "qty": 0
+     }
+    ]
+   }
+  },
+  {
+   "input": {
+    "lines": []
+   }
+  },
+  {
+   "input": {
+    "lines": [
+     {
+      "price": "x",
+      "qty": 2
+     }
+    ]
+   }
+  },
+  {
+   "input": {
+    "lines": [
+     1,
+     2
+    ]
+   }
+  },
+  {
+   "input": {
+    "lines": "no"
+   }
+  },
+  {
+   "input": {}
+  },
+  {
+   "input": {
+    "lines": [
+     {
+      "name": "z",
+      "price": 70,
+      "qty": 3,
+      "meta": {
+       "kind": "silver"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "input": {
+    "lines": [
+     {
+      "name": null,
+      "price": null
+     }
+    ]
+   }
+  }
+ ]
+}

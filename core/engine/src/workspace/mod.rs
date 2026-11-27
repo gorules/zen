@@ -26,22 +26,31 @@ pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
-    EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
-    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, OutputProperty, PathEdit, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
-    SearchHitKind, Severity, SlotRole, Span, Trace, WriteConflict, WriteTrace,
+    EngineEdit, Entity, EntityField, ExpressionKind, FieldOrigin, GuardedProperty, InputProperty,
+    InputValidationError, InspectResult, OutputProperty, PathEdit, PrepareRename, PropertyKind,
+    ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest,
+    SearchHit, SearchHitKind, Severity, SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
 
+pub type EvaluateRequest = types::EvaluateRequest<crate::trace::TraceFormat>;
+pub type EvaluationResult = types::EvaluationResult<crate::trace::PolicyTrace>;
+pub type EvaluationError = types::EvaluationError<crate::trace::PolicyTrace>;
+
 pub struct Workspace {
     db: Db,
+    compiled: crate::compiled::policy::artifact::Artifacts,
+    engine: crate::compiled::Engine,
 }
 
 impl Workspace {
     pub fn new() -> Self {
-        Self { db: Db::new() }
+        Self {
+            db: Db::new(),
+            compiled: Default::default(),
+            engine: crate::compiled::Engine::Interpreted,
+        }
     }
 
     pub fn set_document(&mut self, path: impl Into<Arc<str>>, document: DecisionContent) {
@@ -81,14 +90,143 @@ impl Workspace {
     }
 
     pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
-        self.db.evaluate(req)
+        self.evaluate_pinned(req, &Default::default())
+    }
+
+    pub fn evaluate_pinned(
+        &self,
+        req: &EvaluateRequest,
+        options: &crate::EvaluationOptions,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        if self.engine.compiled() {
+            let context = crate::compiled::pinning::single(options);
+            return crate::compiled::policy::artifact::Runtime::evaluate(
+                &self.db,
+                &self.compiled,
+                req,
+                &context,
+            );
+        }
+        self.evaluate_with_driver(req, options.now)
     }
 
     pub fn enhance_trace(
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
-        self.db.enhance_trace(req)
+        self.enhance_trace_pinned(req, &Default::default())
+    }
+
+    pub fn enhance_trace_pinned(
+        &self,
+        req: &EvaluateRequest,
+        options: &crate::EvaluationOptions,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        if self.engine.compiled() {
+            let context = crate::compiled::pinning::single(options);
+            return crate::compiled::policy::artifact::Runtime::enhance_trace(
+                &self.db,
+                &self.compiled,
+                req,
+                &context,
+            );
+        }
+        self.enhance_trace_with_driver(req, options.now)
+    }
+
+    pub fn evaluate_batch(
+        &self,
+        requests: &[EvaluateRequest],
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        self.evaluate_batch_pinned(requests, &Default::default())
+    }
+
+    pub fn evaluate_batch_pinned(
+        &self,
+        requests: &[EvaluateRequest],
+        options: &crate::EvaluationOptions,
+    ) -> Vec<Result<EvaluationResult, EvaluationError>> {
+        crate::compiled::policy::artifact::Runtime::evaluate_batch(
+            &self.db,
+            &self.compiled,
+            requests,
+            &crate::compiled::pinning::batch(options),
+        )
+    }
+
+    pub fn evaluate_columns<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a crate::columns::Columns<'a>,
+    ) -> Result<crate::ColumnarOutput<'a>, EvaluationError> {
+        self.evaluate_columns_pinned(policy_path, goals, columns, &Default::default())
+    }
+
+    pub fn evaluate_columns_pinned<'a>(
+        &self,
+        policy_path: &Arc<str>,
+        goals: &[Arc<str>],
+        columns: &'a crate::columns::Columns<'a>,
+        options: &crate::EvaluationOptions,
+    ) -> Result<crate::ColumnarOutput<'a>, EvaluationError> {
+        crate::compiled::policy::artifact::Runtime::evaluate_columns(
+            &self.db,
+            &self.compiled,
+            policy_path,
+            goals,
+            columns,
+            &crate::compiled::pinning::batch(options),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn evaluate_with_driver(
+        &self,
+        req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        self.db
+            .evaluate_at(&req.legacy(), now)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
+    #[doc(hidden)]
+    pub fn enhance_trace_with_driver(
+        &self,
+        req: &EvaluateRequest,
+        now: Option<zen_expression::context::Instant>,
+    ) -> Result<EvaluationResult, EvaluationError> {
+        self.db
+            .enhance_trace(&req.legacy(), now)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
+    pub fn with_version(mut self, version: crate::EngineVersion) -> Self {
+        self.engine = version.into();
+        self
+    }
+
+    pub fn set_version(&mut self, version: crate::EngineVersion) {
+        self.engine = version.into();
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Interpreted;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn compiled_engine(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Compiled;
+        self
     }
 
     pub fn enhance_graph_trace(
@@ -96,7 +234,9 @@ impl Workspace {
         document: &Arc<str>,
         trace: &GraphTraceMap,
     ) -> Result<Trace, EvaluationError> {
-        self.db.enhance_graph_trace(document, trace)
+        self.db
+            .enhance_graph_trace(document, trace)
+            .map_err(Into::into)
     }
 
     pub(crate) fn eval_artifact(&self, policy: &str) -> Arc<EvalArtifact> {

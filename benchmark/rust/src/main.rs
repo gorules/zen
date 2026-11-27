@@ -55,8 +55,9 @@ async fn main() {
         let input: Variable = e.input.clone().into();
         for trace in [false, true] {
             let opts = || EvaluationOptions {
-                trace,
+                trace: trace.into(),
                 max_depth: 10,
+                ..Default::default()
             };
             engine
                 .evaluate_with_opts(e.file.as_str(), input.clone(), opts())

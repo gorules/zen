@@ -1,0 +1,347 @@
+expression (string);input (json 5);output (json 5);note
+# Prefix and suffix cells
+startsWith($, 'GB');{$: 'GB29NWBK60161331926819'};true
+startsWith($, 'GB');{$: 'gb29NWBK'};false
+startsWith($, 'GB');{$: 'GB'};true
+startsWith($, 'GB');{$: 'G'};false
+startsWith($, 'GB');{$: ''};false
+startsWith($, 'GB');{$: 'DE89370400440532013000'};false
+startsWith($, 'GB');{$: 'XGB12'};false
+startsWith($, 'GB');{$: ' GB12'};false
+startsWith($, 'GB');{$: null};!error
+startsWith($, 'GB');{};!error
+startsWith($, 'GB');{$: 1234};!error
+startsWith($, 'GB');{$: true};!error
+not startsWith($, 'GB');{$: 'GB29NWBK60161331926819'};false
+not startsWith($, 'GB');{$: 'gb29NWBK'};true
+not startsWith($, 'GB');{$: 'GB'};false
+not startsWith($, 'GB');{$: 'G'};true
+not startsWith($, 'GB');{$: ''};true
+not startsWith($, 'GB');{$: 'DE89370400440532013000'};true
+not startsWith($, 'GB');{$: 'XGB12'};true
+not startsWith($, 'GB');{$: ' GB12'};true
+not startsWith($, 'GB');{$: null};!error
+not startsWith($, 'GB');{};!error
+not startsWith($, 'GB');{$: 1234};!error
+not startsWith($, 'GB');{$: true};!error
+startsWith(upper($), 'GB');{$: 'GB29NWBK60161331926819'};true
+startsWith(upper($), 'GB');{$: 'gb29NWBK'};true
+startsWith(upper($), 'GB');{$: 'GB'};true
+startsWith(upper($), 'GB');{$: 'G'};false
+startsWith(upper($), 'GB');{$: ''};false
+startsWith(upper($), 'GB');{$: 'DE89370400440532013000'};false
+startsWith(upper($), 'GB');{$: 'XGB12'};false
+startsWith(upper($), 'GB');{$: ' GB12'};false
+startsWith(upper($), 'GB');{$: null};!error
+startsWith(upper($), 'GB');{};!error
+startsWith(upper($), 'GB');{$: 1234};!error
+startsWith(upper($), 'GB');{$: true};!error
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'GB29NWBK60161331926819'};true
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'gb29NWBK'};false
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'GB'};true
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'G'};false
+startsWith($, 'GB') or startsWith($, 'DE');{$: ''};false
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'DE89370400440532013000'};true
+startsWith($, 'GB') or startsWith($, 'DE');{$: 'XGB12'};false
+startsWith($, 'GB') or startsWith($, 'DE');{$: ' GB12'};false
+startsWith($, 'GB') or startsWith($, 'DE');{$: null};!error
+startsWith($, 'GB') or startsWith($, 'DE');{};!error
+startsWith($, 'GB') or startsWith($, 'DE');{$: 1234};!error
+startsWith($, 'GB') or startsWith($, 'DE');{$: true};!error
+endsWith($, '19');{$: 'GB29NWBK60161331926819'};true
+endsWith($, '19');{$: 'gb29NWBK'};false
+endsWith($, '19');{$: 'GB'};false
+endsWith($, '19');{$: 'G'};false
+endsWith($, '19');{$: ''};false
+endsWith($, '19');{$: 'DE89370400440532013000'};false
+endsWith($, '19');{$: 'XGB12'};false
+endsWith($, '19');{$: ' GB12'};false
+endsWith($, '19');{$: null};!error
+endsWith($, '19');{};!error
+endsWith($, '19');{$: 1234};!error
+endsWith($, '19');{$: true};!error
+startsWith($, '');{$: 'GB29NWBK60161331926819'};true
+startsWith($, '');{$: 'gb29NWBK'};true
+startsWith($, '');{$: 'GB'};true
+startsWith($, '');{$: 'G'};true
+startsWith($, '');{$: ''};true
+startsWith($, '');{$: 'DE89370400440532013000'};true
+startsWith($, '');{$: 'XGB12'};true
+startsWith($, '');{$: ' GB12'};true
+startsWith($, '');{$: null};!error
+startsWith($, '');{};!error
+startsWith($, '');{$: 1234};!error
+startsWith($, '');{$: true};!error
+# Length cells
+len($) == 5;{$: '12345'};true
+len($) == 5;{$: '1234'};false
+len($) == 5;{$: '123456'};false
+len($) == 5;{$: ''};false
+len($) == 5;{$: '  345'};true
+len($) == 5;{$: 'ABCDE'};true
+len($) == 5;{$: null};!error
+len($) == 5;{};!error
+len($) == 5;{$: 12345};!error
+len($) == 5;{$: ['1', '2', '3', '4', '5']};true
+len($) >= 4 and len($) <= 5;{$: '12345'};true
+len($) >= 4 and len($) <= 5;{$: '1234'};true
+len($) >= 4 and len($) <= 5;{$: '123456'};false
+len($) >= 4 and len($) <= 5;{$: ''};false
+len($) >= 4 and len($) <= 5;{$: '  345'};true
+len($) >= 4 and len($) <= 5;{$: 'ABCDE'};true
+len($) >= 4 and len($) <= 5;{$: null};!error
+len($) >= 4 and len($) <= 5;{};!error
+len($) >= 4 and len($) <= 5;{$: 12345};!error
+len($) >= 4 and len($) <= 5;{$: ['1', '2', '3', '4', '5']};true
+len(trim($)) == 5;{$: '12345'};true
+len(trim($)) == 5;{$: '1234'};false
+len(trim($)) == 5;{$: '123456'};false
+len(trim($)) == 5;{$: ''};false
+len(trim($)) == 5;{$: '  345'};false
+len(trim($)) == 5;{$: 'ABCDE'};true
+len(trim($)) == 5;{$: null};!error
+len(trim($)) == 5;{};!error
+len(trim($)) == 5;{$: 12345};!error
+len(trim($)) == 5;{$: ['1', '2', '3', '4', '5']};!error
+len($) in [4..6];{$: '12345'};true
+len($) in [4..6];{$: '1234'};true
+len($) in [4..6];{$: '123456'};true
+len($) in [4..6];{$: ''};false
+len($) in [4..6];{$: '  345'};true
+len($) in [4..6];{$: 'ABCDE'};true
+len($) in [4..6];{$: null};!error
+len($) in [4..6];{};!error
+len($) in [4..6];{$: 12345};!error
+len($) in [4..6];{$: ['1', '2', '3', '4', '5']};true
+len($) > 0;{$: '12345'};true
+len($) > 0;{$: '1234'};true
+len($) > 0;{$: '123456'};true
+len($) > 0;{$: ''};false
+len($) > 0;{$: '  345'};true
+len($) > 0;{$: 'ABCDE'};true
+len($) > 0;{$: null};!error
+len($) > 0;{};!error
+len($) > 0;{$: 12345};!error
+len($) > 0;{$: ['1', '2', '3', '4', '5']};true
+# Contains cells
+contains($, 'x');{$: 'express delivery'};true
+contains($, 'x');{$: 'Express'};true
+contains($, 'x');{$: 'EXPRESS'};false
+contains($, 'x');{$: 'x'};true
+contains($, 'x');{$: ''};false
+contains($, 'x');{$: 'none'};false
+contains($, 'x');{$: null};!error
+contains($, 'x');{};!error
+contains($, 'x');{$: 7};!error
+contains($, 'x');{$: ['express']};false
+contains($, 'x');{$: ['x', 'y']};true
+contains($, 'express');{$: 'express delivery'};true
+contains($, 'express');{$: 'Express'};false
+contains($, 'express');{$: 'EXPRESS'};false
+contains($, 'express');{$: 'x'};false
+contains($, 'express');{$: ''};false
+contains($, 'express');{$: 'none'};false
+contains($, 'express');{$: null};!error
+contains($, 'express');{};!error
+contains($, 'express');{$: 7};!error
+contains($, 'express');{$: ['express']};true
+contains($, 'express');{$: ['x', 'y']};false
+contains(lower($), 'express');{$: 'express delivery'};true
+contains(lower($), 'express');{$: 'Express'};true
+contains(lower($), 'express');{$: 'EXPRESS'};true
+contains(lower($), 'express');{$: 'x'};false
+contains(lower($), 'express');{$: ''};false
+contains(lower($), 'express');{$: 'none'};false
+contains(lower($), 'express');{$: null};!error
+contains(lower($), 'express');{};!error
+contains(lower($), 'express');{$: 7};!error
+contains(lower($), 'express');{$: ['express']};!error
+contains(lower($), 'express');{$: ['x', 'y']};!error
+not contains($, 'x');{$: 'express delivery'};false
+not contains($, 'x');{$: 'Express'};false
+not contains($, 'x');{$: 'EXPRESS'};true
+not contains($, 'x');{$: 'x'};false
+not contains($, 'x');{$: ''};true
+not contains($, 'x');{$: 'none'};true
+not contains($, 'x');{$: null};!error
+not contains($, 'x');{};!error
+not contains($, 'x');{$: 7};!error
+not contains($, 'x');{$: ['express']};true
+not contains($, 'x');{$: ['x', 'y']};false
+contains($, 'express') and not contains($, 'none');{$: 'express delivery'};true
+contains($, 'express') and not contains($, 'none');{$: 'Express'};false
+contains($, 'express') and not contains($, 'none');{$: 'EXPRESS'};false
+contains($, 'express') and not contains($, 'none');{$: 'x'};false
+contains($, 'express') and not contains($, 'none');{$: ''};false
+contains($, 'express') and not contains($, 'none');{$: 'none'};false
+contains($, 'express') and not contains($, 'none');{$: null};!error
+contains($, 'express') and not contains($, 'none');{};!error
+contains($, 'express') and not contains($, 'none');{$: 7};!error
+contains($, 'express') and not contains($, 'none');{$: ['express']};true
+contains($, 'express') and not contains($, 'none');{$: ['x', 'y']};false
+# Regular-expression cells
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB123'};true
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB1'};true
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'ab123'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'A1'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'ABC123'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB123X'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB 123'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: ''};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: null};!error
+matches($, '^[A-Z]{2}[0-9]+$');{};!error
+matches($, '^[A-Z]{2}[0-9]+$');{$: 123};!error
+matches($, '[0-9]');{$: 'AB123'};true
+matches($, '[0-9]');{$: 'AB1'};true
+matches($, '[0-9]');{$: 'ab123'};true
+matches($, '[0-9]');{$: 'A1'};true
+matches($, '[0-9]');{$: 'ABC123'};true
+matches($, '[0-9]');{$: 'AB123X'};true
+matches($, '[0-9]');{$: 'AB 123'};true
+matches($, '[0-9]');{$: ''};false
+matches($, '[0-9]');{$: null};!error
+matches($, '[0-9]');{};!error
+matches($, '[0-9]');{$: 123};!error
+matches($, '(?i)^ab');{$: 'AB123'};true
+matches($, '(?i)^ab');{$: 'AB1'};true
+matches($, '(?i)^ab');{$: 'ab123'};true
+matches($, '(?i)^ab');{$: 'A1'};false
+matches($, '(?i)^ab');{$: 'ABC123'};true
+matches($, '(?i)^ab');{$: 'AB123X'};true
+matches($, '(?i)^ab');{$: 'AB 123'};true
+matches($, '(?i)^ab');{$: ''};false
+matches($, '(?i)^ab');{$: null};!error
+matches($, '(?i)^ab');{};!error
+matches($, '(?i)^ab');{$: 123};!error
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'AB123'};true
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'AB1'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'ab123'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'A1'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'ABC123'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'AB123X'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 'AB 123'};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: ''};false
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: null};!error
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{};!error
+matches($, '^[A-Z]{2}[0-9]{3}$') or $ == null;{$: 123};!error
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'AB123'};true
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'AB1'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'ab123'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'A1'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'ABC123'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'AB123X'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 'AB 123'};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: ''};false
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: null};true
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{};true
+$ == null or matches($, '^[A-Z]{2}[0-9]{3}$');{$: 123};!error
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: 'a@b.co'};true
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: 'john.doe@example.com'};true
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: 'no-at-sign'};false
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: '@b.co'};false
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: 'a@b'};false
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: ''};false
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: null};!error
+matches($, '^[^@]+@[^@]+\.[a-z]+$');{$: 5};!error
+endsWith(lower($), '@example.com');{$: 'a@b.co'};false
+endsWith(lower($), '@example.com');{$: 'john.doe@example.com'};true
+endsWith(lower($), '@example.com');{$: 'no-at-sign'};false
+endsWith(lower($), '@example.com');{$: '@b.co'};false
+endsWith(lower($), '@example.com');{$: 'a@b'};false
+endsWith(lower($), '@example.com');{$: ''};false
+endsWith(lower($), '@example.com');{$: null};!error
+endsWith(lower($), '@example.com');{$: 5};!error
+matches($, '[');{$: 'a'};!error
+matches($, '[');{$: '['};!error
+matches($, '[');{$: null};!error
+# Numeric-string cells
+isNumeric($);{$: '12'};true
+isNumeric($);{$: '12.5'};true
+isNumeric($);{$: '-3'};true
+isNumeric($);{$: '0'};true
+isNumeric($);{$: 'abc'};false
+isNumeric($);{$: ''};false
+isNumeric($);{$: ' 12'};true
+isNumeric($);{$: '1e3'};true
+isNumeric($);{$: null};false
+isNumeric($);{};false
+isNumeric($);{$: 12};true
+isNumeric($);{$: true};false
+isNumeric($) and number($) > 10;{$: '12'};true
+isNumeric($) and number($) > 10;{$: '12.5'};true
+isNumeric($) and number($) > 10;{$: '-3'};false
+isNumeric($) and number($) > 10;{$: '0'};false
+isNumeric($) and number($) > 10;{$: 'abc'};false
+isNumeric($) and number($) > 10;{$: ''};false
+isNumeric($) and number($) > 10;{$: ' 12'};true
+isNumeric($) and number($) > 10;{$: '1e3'};true
+isNumeric($) and number($) > 10;{$: null};false
+isNumeric($) and number($) > 10;{};false
+isNumeric($) and number($) > 10;{$: 12};true
+isNumeric($) and number($) > 10;{$: true};false
+# Type checks in a cell
+type($) == 'string';{$: 'a'};true
+type($) == 'string';{$: 1};false
+type($) == 'string';{$: 1.5};false
+type($) == 'string';{$: true};false
+type($) == 'string';{$: null};false
+type($) == 'string';{};false
+type($) == 'string';{$: [1]};false
+type($) == 'string';{$: {a: 1}};false
+type($) == 'number';{$: 'a'};false
+type($) == 'number';{$: 1};true
+type($) == 'number';{$: 1.5};true
+type($) == 'number';{$: true};false
+type($) == 'number';{$: null};false
+type($) == 'number';{};false
+type($) == 'number';{$: [1]};false
+type($) == 'number';{$: {a: 1}};false
+type($) in ['array', 'object'];{$: 'a'};false
+type($) in ['array', 'object'];{$: 1};false
+type($) in ['array', 'object'];{$: 1.5};false
+type($) in ['array', 'object'];{$: true};false
+type($) in ['array', 'object'];{$: null};false
+type($) in ['array', 'object'];{};false
+type($) in ['array', 'object'];{$: [1]};true
+type($) in ['array', 'object'];{$: {a: 1}};true
+type($) != 'null';{$: 'a'};true
+type($) != 'null';{$: 1};true
+type($) != 'null';{$: 1.5};true
+type($) != 'null';{$: true};true
+type($) != 'null';{$: null};false
+type($) != 'null';{};false
+type($) != 'null';{$: [1]};true
+type($) != 'null';{$: {a: 1}};true
+# Rounding helpers before a comparison
+round($) == 5;{$: 4.4};false
+round($) == 5;{$: 4.5};true
+round($) == 5;{$: 4.49};false
+round($) == 5;{$: 5.5};false
+round($) == 5;{$: -4.5};false
+round($) == 5;{$: 10};false
+round($) == 5;{$: null};!error
+round($) == 5;{$: '4.5'};!error
+floor($) == 4;{$: 4.4};true
+floor($) == 4;{$: 4.5};true
+floor($) == 4;{$: 4.49};true
+floor($) == 4;{$: 5.5};false
+floor($) == 4;{$: -4.5};false
+floor($) == 4;{$: 10};false
+floor($) == 4;{$: null};!error
+floor($) == 4;{$: '4.5'};!error
+ceil($) >= 5;{$: 4.4};true
+ceil($) >= 5;{$: 4.5};true
+ceil($) >= 5;{$: 4.49};true
+ceil($) >= 5;{$: 5.5};true
+ceil($) >= 5;{$: -4.5};false
+ceil($) >= 5;{$: 10};true
+ceil($) >= 5;{$: null};!error
+ceil($) >= 5;{$: '4.5'};!error
+abs($) > 4.45;{$: 4.4};false
+abs($) > 4.45;{$: 4.5};true
+abs($) > 4.45;{$: 4.49};true
+abs($) > 4.45;{$: 5.5};true
+abs($) > 4.45;{$: -4.5};true
+abs($) > 4.45;{$: 10};true
+abs($) > 4.45;{$: null};!error
+abs($) > 4.45;{$: '4.5'};!error

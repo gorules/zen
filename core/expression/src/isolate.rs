@@ -31,6 +31,8 @@ pub struct Isolate {
     scope: Scope,
     references: HashMap<String, Variable>,
     cache: Option<Arc<OpcodeCache>>,
+    lane: Option<crate::lane::Backend>,
+    now: Option<crate::context::Instant>,
 }
 
 impl Isolate {
@@ -45,6 +47,8 @@ impl Isolate {
             scope: Scope::default(),
             references: Default::default(),
             cache: None,
+            lane: None,
+            now: None,
         }
     }
 
@@ -57,6 +61,21 @@ impl Isolate {
 
     pub fn with_cache(mut self, cache: Option<Arc<OpcodeCache>>) -> Self {
         self.cache = cache;
+        self
+    }
+
+    pub fn with_now(mut self, now: Option<crate::context::Instant>) -> Self {
+        self.set_now(now);
+        self
+    }
+
+    pub fn set_now(&mut self, now: Option<crate::context::Instant>) {
+        self.now = now;
+        self.vm.set_now(now);
+    }
+
+    pub fn with_lane(mut self, lane: bool) -> Self {
+        self.lane = lane.then(Default::default);
         self
     }
 
@@ -141,7 +160,19 @@ impl Isolate {
         Ok(Expression::new_standard(Arc::from(bytecode)))
     }
 
+    fn pinned(now: Option<crate::context::Instant>) -> crate::context::EvaluationContext {
+        crate::context::EvaluationContext::new(crate::context::Pinned {
+            now,
+            ..Default::default()
+        })
+    }
+
     pub fn run_standard(&mut self, source: &str) -> Result<Variable, IsolateError> {
+        if let Some(lane) = &mut self.lane {
+            let context = Self::pinned(self.now);
+            return lane.run(source, ExpressionKind::Standard, &self.scope, &context);
+        }
+
         let cached = self
             .cache
             .as_ref()
@@ -171,6 +202,14 @@ impl Isolate {
     }
 
     pub fn run_unary(&mut self, source: &str) -> Result<bool, IsolateError> {
+        if let Some(lane) = &mut self.lane {
+            let context = Self::pinned(self.now);
+            return lane
+                .run(source, ExpressionKind::Unary, &self.scope, &context)?
+                .as_bool()
+                .ok_or(IsolateError::ValueCastError);
+        }
+
         let cached = self
             .cache
             .as_ref()

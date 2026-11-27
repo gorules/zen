@@ -54,7 +54,7 @@ pub(crate) async fn evaluate_policy(
     };
 
     let result = workspace
-        .evaluate(&request)
+        .evaluate_pinned(&request, &options)
         .map_err(|e| Box::new(EvaluationError::Policy(e)))?;
 
     Ok(DecisionGraphResponse {

@@ -1,0 +1,991 @@
+// Switch nesting: switches inside the branches of other switches, switches separated by
+// tables, switches routing on what earlier nodes produced, switches with many branches and
+// graphs where every branch converges on one node. Each switch prunes the edges of its
+// untaken branches; an inner switch only runs when its branch survives.
+
+// ---------------------------------------------------------------------------------------
+// An inner switch in every branch of the outer switch: a decision tree. Each leaf is
+// reached by exactly one path of conditions.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "an inner switch in each branch of the outer switch",
+  graph: {
+    nodes: [
+      {switch: "region", when: ["country == 'US'", ""]},
+      {switch: "us", when: ["state == 'CA'", "state == 'NY'", ""]},
+      {switch: "intl", when: ["eu", ""]},
+      {expression: "ca", fields: {tax: "0.0725"}},
+      {expression: "ny", fields: {tax: "0.04"}},
+      {expression: "usOther", fields: {tax: "0.05"}},
+      {expression: "eu", fields: {tax: "0.2"}},
+      {expression: "row", fields: {tax: "0"}},
+    ],
+    edges: [
+      "input -> region", "region:0 -> us", "region:1 -> intl",
+      "us:0 -> ca -> output", "us:1 -> ny -> output", "us:2 -> usOther -> output",
+      "intl:0 -> eu -> output", "intl:1 -> row -> output",
+    ],
+  },
+  cases: [
+    [{country: "US", state: "CA"}, {tax: 0.0725}],
+    [{country: "US", state: "NY"}, {tax: 0.04}],
+    [{country: "US", state: "TX"}, {tax: 0.05}],
+    [{country: "US"}, {tax: 0.05}],
+    [{country: "DE", eu: true}, {tax: 0.2}],
+    [{country: "DE", eu: false, state: "CA"}, {tax: 0}],
+    [{}, {tax: 0}],
+    [{country: null, eu: true}, {tax: 0.2}],
+  ],
+}
+
+{
+  name: "a binary decision tree four switches deep over one number",
+  graph: {
+    nodes: [
+      {switch: "s50", when: ["n < 50", ""]},
+      {switch: "s25", when: ["n < 25", ""]},
+      {switch: "s75", when: ["n < 75", ""]},
+      {switch: "s12", when: ["n < 12.5", ""]},
+      {expression: "q0", fields: {bucket: "0"}},
+      {expression: "q1", fields: {bucket: "1"}},
+      {expression: "q2", fields: {bucket: "2"}},
+      {expression: "q3", fields: {bucket: "3"}},
+      {expression: "q4", fields: {bucket: "4"}},
+    ],
+    edges: [
+      "input -> s50", "s50:0 -> s25", "s50:1 -> s75",
+      "s25:0 -> s12", "s25:1 -> q2 -> output",
+      "s12:0 -> q0 -> output", "s12:1 -> q1 -> output",
+      "s75:0 -> q3 -> output", "s75:1 -> q4 -> output",
+    ],
+  },
+  cases: [
+    [{n: 0}, {bucket: 0}],
+    [{n: 12.4999}, {bucket: 0}],
+    [{n: 12.5}, {bucket: 1}],
+    [{n: 24.99}, {bucket: 1}],
+    [{n: 25}, {bucket: 2}],
+    [{n: 49}, {bucket: 2}],
+    [{n: 50}, {bucket: 3}],
+    [{n: 74.5}, {bucket: 3}],
+    [{n: 75}, {bucket: 4}],
+    [{n: -1000}, {bucket: 0}],
+    [{}, {bucket: 4}],
+    [{n: "10"}, {bucket: 4}],
+  ],
+}
+
+{
+  name: "an inner switch whose default branch rejoins the outer default",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["member", ""]},
+      {switch: "inner", when: ["points >= 1000", ""]},
+      {expression: "gold", fields: {perk: "'gold'"}},
+      {expression: "standard", fields: {perk: "'standard'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> gold -> output", "inner:1 -> standard", "outer:1 -> standard -> output"],
+  },
+  cases: [
+    [{member: true, points: 1000}, {perk: "gold"}],
+    [{member: true, points: 999}, {perk: "standard"}],
+    [{member: false, points: 5000}, {perk: "standard"}],
+    [{points: 5000}, {perk: "standard"}],
+    [{member: true}, {perk: "standard"}],
+  ],
+}
+
+{
+  name: "inner and outer switch passing the input straight through to the output",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["a", ""]},
+      {switch: "inner", when: ["b", ""]},
+      {expression: "notB", fields: {r: "'a, not b'"}},
+      {expression: "notA", fields: {r: "'not a'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> output", "inner:1 -> notB -> output", "outer:1 -> notA -> output"],
+  },
+  cases: [
+    [{a: true, b: true, x: 1}, {a: true, b: true, x: 1}],
+    [{a: true, b: false, x: 1}, {r: "a, not b"}],
+    [{a: false, b: true}, {r: "not a"}],
+    [{a: true, b: true, nested: {k: [1, null]}}, {a: true, b: true, nested: {k: [1, null]}}],
+  ],
+}
+
+{
+  name: "the inner switch sees what a node between the switches wrote",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["kind == 'loan'", ""]},
+      {expression: "ratio", passThrough: true, fields: {dti: "debt / income"}},
+      {switch: "inner", when: ["dti <= 0.3", "dti <= 0.45", ""]},
+      {expression: "approve", fields: {decision: "'approve'", dti: "dti"}},
+      {expression: "review", fields: {decision: "'review'", dti: "dti"}},
+      {expression: "decline", fields: {decision: "'decline'", dti: "dti"}},
+      {expression: "other", fields: {decision: "'n/a'"}},
+    ],
+    edges: [
+      "input -> outer", "outer:0 -> ratio -> inner", "outer:1 -> other -> output",
+      "inner:0 -> approve -> output", "inner:1 -> review -> output", "inner:2 -> decline -> output",
+    ],
+  },
+  cases: [
+    [{kind: "loan", debt: 300, income: 1000}, {decision: "approve", dti: 0.3}],
+    [{kind: "loan", debt: 450, income: 1000}, {decision: "review", dti: 0.45}],
+    [{kind: "loan", debt: 451, income: 1000}, {decision: "decline", dti: 0.451}],
+    [{kind: "card", debt: 1, income: 0}, {decision: "n/a"}],
+    [{kind: "loan", debt: 1, income: 0}, {decision: "decline"}],
+  ],
+}
+
+{
+  name: "an inner collect switch inside a first switch branch",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["active", ""]},
+      {switch: "flags", hit: "collect", when: ["overdue", "vip", "len(tags) > 0"]},
+      {expression: "fOverdue", fields: {overdue: "true"}},
+      {expression: "fVip", fields: {vip: "true"}},
+      {expression: "fTags", fields: {tagCount: "len(tags)"}},
+      {expression: "inactive", fields: {inactive: "true"}},
+    ],
+    edges: [
+      "input -> outer", "outer:0 -> flags", "outer:1 -> inactive -> output",
+      "flags:0 -> fOverdue -> output", "flags:1 -> fVip -> output", "flags:2 -> fTags -> output",
+    ],
+  },
+  cases: [
+    [{active: true, overdue: true, vip: true, tags: ["a"]}, {overdue: true, vip: true, tagCount: 1}],
+    [{active: true, overdue: false, vip: true, tags: []}, {vip: true}],
+    [{active: true, tags: ["a", "b"]}, {tagCount: 2}],
+    [{active: true, overdue: false, vip: false, tags: []}, {}],
+    [{active: false, overdue: true, vip: true, tags: ["a"]}, {inactive: true}],
+  ],
+}
+
+{
+  name: "an inner switch that matches nothing leaves the outer graph empty",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["n > 0", ""]},
+      {switch: "inner", when: ["n > 100", "n > 10"]},
+      {expression: "huge", fields: {r: "'huge'"}},
+      {expression: "big", fields: {r: "'big'"}},
+      {expression: "neg", fields: {r: "'non-positive'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "outer:1 -> neg -> output", "inner:0 -> huge -> output", "inner:1 -> big -> output"],
+  },
+  cases: [
+    [{n: 101}, {r: "huge"}],
+    [{n: 11}, {r: "big"}],
+    [{n: 10}, {}],
+    [{n: 1}, {}],
+    [{n: 0}, {r: "non-positive"}],
+  ],
+}
+
+{
+  name: "an inner switch with no match next to a sibling branch of the outer collect switch",
+  graph: {
+    nodes: [
+      {switch: "outer", hit: "collect", when: ["true", "true"]},
+      {switch: "inner", when: ["n > 10"]},
+      {expression: "big", fields: {big: "true"}},
+      {expression: "side", fields: {side: "n"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> big -> output", "outer:1 -> side -> output"],
+  },
+  cases: [
+    [{n: 11}, {big: true, side: 11}],
+    [{n: 10}, {side: 10}],
+    [{n: -1}, {side: -1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Switch, table, switch: a table between two switches computes the value the second
+// switch routes on. An unmatched first-hit table yields nothing for the next switch.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "switch, table, switch on the table's band",
+  graph: {
+    nodes: [
+      {switch: "product", when: ["product == 'loan'", ""]},
+      {table: "score", inputs: ["income", "debt"], outputs: ["band"], rules: [
+        [">= 5000", "< 1000", "'A'"],
+        [">= 3000", "", "'B'"],
+        ["", "", "'C'"],
+      ]},
+      {switch: "band", when: ["band == 'A'", "band == 'B'", ""]},
+      {expression: "a", fields: {offer: "'prime'"}},
+      {expression: "b", fields: {offer: "'standard'"}},
+      {expression: "c", fields: {offer: "'decline'"}},
+      {expression: "noloan", fields: {offer: "'none'"}},
+    ],
+    edges: [
+      "input -> product", "product:0 -> score -> band", "product:1 -> noloan -> output",
+      "band:0 -> a -> output", "band:1 -> b -> output", "band:2 -> c -> output",
+    ],
+  },
+  cases: [
+    [{product: "loan", income: 6000, debt: 500}, {offer: "prime"}],
+    [{product: "loan", income: 6000, debt: 1000}, {offer: "standard"}],
+    [{product: "loan", income: 3000, debt: 0}, {offer: "standard"}],
+    [{product: "loan", income: 2999, debt: 0}, {offer: "decline"}],
+    [{product: "loan"}, {offer: "decline"}],
+    [{product: "card", income: 6000, debt: 0}, {offer: "none"}],
+  ],
+}
+
+{
+  name: "an unmatched table before a switch sends the switch an empty object",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["band"], rules: [
+        ["> 10", "'high'"],
+        ["> 0", "'low'"],
+      ]},
+      {switch: "s", when: ["band == 'high'", "band == 'low'", "band == null", ""]},
+      {expression: "h", fields: {r: "'high'"}},
+      {expression: "l", fields: {r: "'low'"}},
+      {expression: "none", fields: {r: "'none'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> t -> s", "s:0 -> h -> output", "s:1 -> l -> output", "s:2 -> none -> output", "s:3 -> def -> output"],
+  },
+  cases: [
+    [{n: 11}, {r: "high"}],
+    [{n: 1}, {r: "low"}],
+    [{n: 0}, {r: "none"}],
+    [{}, {r: "none"}],
+  ],
+}
+
+{
+  name: "a passThrough table before a switch: conditions see input and table output",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["age"], outputs: ["group"], rules: [
+        ["< 18", "'minor'"],
+        ["< 65", "'adult'"],
+        ["", "'senior'"],
+      ]},
+      {switch: "s", when: ["group == 'adult' and employed", "group == 'senior' or disabled", ""]},
+      {expression: "work", fields: {plan: "'employer'", age: "age"}},
+      {expression: "gov", fields: {plan: "'public'", age: "age"}},
+      {expression: "self", fields: {plan: "'private'", group: "group"}},
+    ],
+    edges: ["input -> t -> s", "s:0 -> work -> output", "s:1 -> gov -> output", "s:2 -> self -> output"],
+  },
+  cases: [
+    [{age: 30, employed: true}, {plan: "employer", age: 30}],
+    [{age: 30, employed: false}, {plan: "private", group: "adult"}],
+    [{age: 70, employed: true}, {plan: "public", age: 70}],
+    [{age: 10, disabled: true}, {plan: "public", age: 10}],
+    [{age: 10}, {plan: "private", group: "minor"}],
+  ],
+}
+
+{
+  name: "a table on a branch between two switches, with outputPath",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["type == 'parcel'", ""]},
+      {table: "rate", passThrough: true, outputPath: "rate", inputs: ["weight"], outputs: ["per", "zone"], rules: [
+        ["<= 1", "5", "'light'"],
+        ["<= 10", "3", "'medium'"],
+        ["", "2", "'heavy'"],
+      ]},
+      {switch: "s2", when: ["rate.zone == 'heavy'", ""]},
+      {expression: "freight", fields: {cost: "weight * rate.per + 50", via: "'freight'"}},
+      {expression: "post", fields: {cost: "weight * rate.per", via: "'post'"}},
+      {expression: "letter", fields: {cost: "1", via: "'letter'"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> rate -> s2", "s1:1 -> letter -> output",
+      "s2:0 -> freight -> output", "s2:1 -> post -> output",
+    ],
+  },
+  cases: [
+    [{type: "parcel", weight: 1}, {cost: 5, via: "post"}],
+    [{type: "parcel", weight: 10}, {cost: 30, via: "post"}],
+    [{type: "parcel", weight: 11}, {cost: 72, via: "freight"}],
+    [{type: "letter", weight: 100}, {cost: 1, via: "letter"}],
+  ],
+}
+
+{
+  name: "a collect table before a switch hands the switch an array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["tag"], rules: [
+        ["> 0", "'pos'"],
+        ["> 10", "'big'"],
+      ]},
+      {switch: "s", when: ["len($root) == 2", "len($root) == 1", ""]},
+      {expression: "two", fields: {r: "'two'"}},
+      {expression: "one", fields: {r: "'one'"}},
+      {expression: "zero", fields: {r: "'zero'"}},
+    ],
+    edges: ["input -> t -> s", "s:0 -> two -> output", "s:1 -> one -> output", "s:2 -> zero -> output"],
+  },
+  cases: [
+    [{n: 11}, {r: "two"}],
+    [{n: 5}, {r: "one"}],
+    [{n: 0}, {r: "zero"}],
+  ],
+}
+
+{
+  name: "switch, table on one branch, switch on both branches' outcome",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["manual", ""]},
+      {expression: "fixed", fields: {level: "manualLevel"}},
+      {table: "auto", inputs: ["risk"], outputs: ["level"], rules: [
+        ["> 0.8", "3"],
+        ["> 0.5", "2"],
+        ["", "1"],
+      ]},
+      {switch: "s2", when: ["level >= 3", "level == 2", ""]},
+      {expression: "high", fields: {action: "'block'", level: "level"}},
+      {expression: "mid", fields: {action: "'review'", level: "level"}},
+      {expression: "low", fields: {action: "'allow'", level: "level"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> fixed -> s2", "s1:1 -> auto -> s2",
+      "s2:0 -> high -> output", "s2:1 -> mid -> output", "s2:2 -> low -> output",
+    ],
+  },
+  cases: [
+    [{manual: true, manualLevel: 3, risk: 0}, {action: "block", level: 3}],
+    [{manual: true, manualLevel: 2, risk: 0.9}, {action: "review", level: 2}],
+    [{manual: true, risk: 0.9}, {action: "allow"}],
+    [{manual: false, risk: 0.9}, {action: "block", level: 3}],
+    [{risk: 0.6}, {action: "review", level: 2}],
+    [{risk: 0.5}, {action: "allow", level: 1}],
+  ],
+}
+
+{
+  name: "a table inside a nested switch branch with an unmatched row",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["a", ""]},
+      {switch: "inner", when: ["b", ""]},
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 0", "'pos'"],
+      ]},
+      {expression: "nb", fields: {r: "'not b'"}},
+      {expression: "na", fields: {r: "'not a'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "outer:1 -> na -> output", "inner:0 -> t -> output", "inner:1 -> nb -> output"],
+  },
+  cases: [
+    [{a: true, b: true, n: 1}, {r: "pos"}],
+    [{a: true, b: true, n: 0}, {}],
+    [{a: true, b: false, n: 1}, {r: "not b"}],
+    [{a: false, b: true, n: 1}, {r: "not a"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Switches routing on outputs of earlier nodes that are not their direct parents, through
+// $nodes, and on nodes that pruned branches never ran.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a switch reads a sibling node's output through $nodes",
+  graph: {
+    nodes: [
+      {expression: "limit", fields: {max: "cap * 2"}},
+      {expression: "usage", fields: {used: "sum(map(items, #.qty))"}},
+      {switch: "s", when: ["$nodes.usage.used > $nodes.limit.max", ""]},
+      {expression: "over", fields: {over: "true"}},
+      {expression: "ok", fields: {over: "false"}},
+    ],
+    edges: ["input -> limit -> s", "input -> usage", "usage -> s", "s:0 -> over -> output", "s:1 -> ok -> output"],
+  },
+  cases: [
+    [{cap: 2, items: [{qty: 3}, {qty: 2}]}, {over: true}],
+    [{cap: 2, items: [{qty: 3}, {qty: 1}]}, {over: false}],
+    [{cap: 0, items: []}, {over: false}],
+  ],
+}
+
+{
+  name: "a switch reads a field a non-passThrough parent dropped through $nodes.input",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {score: "a + b"}},
+      {switch: "s", when: ["score > 10 and $nodes.input.vip", "score > 10", "score == null", ""]},
+      {expression: "vipHigh", fields: {r: "'vip-high'"}},
+      {expression: "high", fields: {r: "'high'"}},
+      {expression: "nil", fields: {r: "'nil'"}},
+      {expression: "low", fields: {r: "'low'", vipVisible: "vip"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> vipHigh -> output", "s:1 -> high -> output", "s:2 -> nil -> output", "s:3 -> low -> output"],
+  },
+  cases: [
+    [{a: 10, b: 1, vip: true}, {r: "vip-high"}],
+    [{a: 10, b: 1, vip: false}, {r: "high"}],
+    [{a: 10, b: 1}, {r: "high"}],
+    [{a: 1, b: 1, vip: true}, {r: "low"}],
+  ],
+}
+
+{
+  name: "a second switch reads $nodes of the first switch's taken branch",
+  graph: {
+    nodes: [
+      {switch: "s1", hit: "collect", when: ["x > 0", "y > 0"]},
+      {expression: "px", fields: {v: "x"}},
+      {expression: "py", fields: {v: "y"}},
+      {switch: "s2", when: ["$nodes.px.v > 5", "$nodes.py.v > 5", "$nodes.px == null and $nodes.py == null", ""]},
+      {expression: "rx", fields: {r: "'x'"}},
+      {expression: "ry", fields: {r: "'y'"}},
+      {expression: "none", fields: {r: "'none'"}},
+      {expression: "small", fields: {r: "'small'"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> px -> s2", "s1:1 -> py -> s2", "input -> s2",
+      "s2:0 -> rx -> output", "s2:1 -> ry -> output", "s2:2 -> none -> output", "s2:3 -> small -> output",
+    ],
+  },
+  cases: [
+    [{x: 6, y: 6}, {r: "x"}],
+    [{x: 1, y: 6}, {r: "y"}],
+    [{x: 0, y: 6}, {r: "y"}],
+    [{x: 0, y: 0}, {r: "none"}],
+    [{x: 1, y: 1}, {r: "small"}],
+  ],
+}
+
+{
+  name: "a switch reads the output of a function node",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ kind: typeof input.v, len: Array.isArray(input.v) ? input.v.length : null });"""},
+      {switch: "s", when: ["kind == 'number'", "kind == 'string'", "len != null", ""]},
+      {expression: "num", fields: {r: "'number'"}},
+      {expression: "str", fields: {r: "'string'"}},
+      {expression: "arr", fields: {r: "'array'", len: "len"}},
+      {expression: "other", fields: {r: "kind"}},
+    ],
+    edges: ["input -> f -> s", "s:0 -> num -> output", "s:1 -> str -> output", "s:2 -> arr -> output", "s:3 -> other -> output"],
+  },
+  cases: [
+    [{v: 1}, {r: "number"}],
+    [{v: "a"}, {r: "string"}],
+    [{v: [1, 2]}, {r: "array", len: 2}],
+    [{v: true}, {r: "boolean"}],
+    [{}, {r: "undefined"}],
+  ],
+}
+
+{
+  name: "a switch reads a sub-decision's result",
+  decisions: {
+    score: {nodes: [
+      {table: "t", inputs: ["income"], outputs: ["score"], rules: [
+        [">= 100", "700"],
+        [">= 50", "600"],
+        ["", "400"],
+      ]},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "score", outputPath: "credit", passThrough: true},
+      {switch: "s", when: ["credit.score >= 650", "credit.score >= 500", ""]},
+      {expression: "good", fields: {r: "'good'", income: "income"}},
+      {expression: "fair", fields: {r: "'fair'", income: "income"}},
+      {expression: "poor", fields: {r: "'poor'", score: "credit.score"}},
+    ],
+    edges: ["input -> call -> s", "s:0 -> good -> output", "s:1 -> fair -> output", "s:2 -> poor -> output"],
+  },
+  cases: [
+    [{income: 100}, {r: "good", income: 100}],
+    [{income: 50}, {r: "fair", income: 50}],
+    [{income: 49}, {r: "poor", score: 400}],
+    [{}, {r: "poor", score: 400}],
+  ],
+}
+
+{
+  name: "a switch after a join routes on keys from both parents",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {left: "x * 2"}},
+      {expression: "b", fields: {right: "y * 3"}},
+      {switch: "s", when: ["left > right", "left < right", ""]},
+      {expression: "l", fields: {r: "'left'"}},
+      {expression: "rr", fields: {r: "'right'"}},
+      {expression: "eq", fields: {r: "'tie'", v: "left"}},
+    ],
+    edges: ["input -> a -> s", "input -> b -> s", "s:0 -> l -> output", "s:1 -> rr -> output", "s:2 -> eq -> output"],
+  },
+  cases: [
+    [{x: 4, y: 2}, {r: "left"}],
+    [{x: 1, y: 1}, {r: "right"}],
+    [{x: 3, y: 2}, {r: "tie", v: 6}],
+    [{x: 0, y: 0}, {r: "tie", v: 0}],
+  ],
+}
+
+{
+  name: "a switch reads $nodes of a node on a pruned branch as null",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["a", ""]},
+      {expression: "onA", fields: {v: "1"}},
+      {expression: "notA", fields: {v: "2"}},
+      {switch: "s2", when: ["$nodes.onA != null", "$nodes.notA != null", ""]},
+      {expression: "sawA", fields: {r: "'a ran'"}},
+      {expression: "sawNotA", fields: {r: "'not-a ran'"}},
+      {expression: "none", fields: {r: "'neither'"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> onA -> s2", "s1:1 -> notA -> s2",
+      "s2:0 -> sawA -> output", "s2:1 -> sawNotA -> output", "s2:2 -> none -> output",
+    ],
+  },
+  cases: [
+    [{a: true}, {r: "a ran"}],
+    [{a: false}, {r: "not-a ran"}],
+    [{}, {r: "not-a ran"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Many-branch switches: eight or more branches, first and collect.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "eight branches over score ranges, first hit",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["score >= 97", "score >= 93", "score >= 90", "score >= 87", "score >= 83", "score >= 80", "score >= 70", ""]},
+      {expression: "b0", fields: {grade: "'A+'"}},
+      {expression: "b1", fields: {grade: "'A'"}},
+      {expression: "b2", fields: {grade: "'A-'"}},
+      {expression: "b3", fields: {grade: "'B+'"}},
+      {expression: "b4", fields: {grade: "'B'"}},
+      {expression: "b5", fields: {grade: "'B-'"}},
+      {expression: "b6", fields: {grade: "'C'"}},
+      {expression: "b7", fields: {grade: "'F'"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> b0 -> output", "s:1 -> b1 -> output", "s:2 -> b2 -> output", "s:3 -> b3 -> output",
+      "s:4 -> b4 -> output", "s:5 -> b5 -> output", "s:6 -> b6 -> output", "s:7 -> b7 -> output",
+    ],
+  },
+  cases: [
+    [{score: 100}, {grade: "A+"}],
+    [{score: 97}, {grade: "A+"}],
+    [{score: 96.9}, {grade: "A"}],
+    [{score: 90}, {grade: "A-"}],
+    [{score: 89}, {grade: "B+"}],
+    [{score: 85}, {grade: "B"}],
+    [{score: 80}, {grade: "B-"}],
+    [{score: 79.99}, {grade: "C"}],
+    [{score: 70}, {grade: "C"}],
+    [{score: 0}, {grade: "F"}],
+    [{}, {grade: "F"}],
+    [{score: "100"}, {grade: "F"}],
+  ],
+}
+
+{
+  name: "ten branches over an enum string",
+  graph: {
+    nodes: [
+      {switch: "s", when: [
+        "day == 'mon'", "day == 'tue'", "day == 'wed'", "day == 'thu'", "day == 'fri'",
+        "day == 'sat'", "day == 'sun'", "day == null", "len(day) > 3", "",
+      ]},
+      {expression: "d0", fields: {n: "1"}},
+      {expression: "d1", fields: {n: "2"}},
+      {expression: "d2", fields: {n: "3"}},
+      {expression: "d3", fields: {n: "4"}},
+      {expression: "d4", fields: {n: "5"}},
+      {expression: "d5", fields: {n: "6", weekend: "true"}},
+      {expression: "d6", fields: {n: "7", weekend: "true"}},
+      {expression: "d7", fields: {n: "0", missing: "true"}},
+      {expression: "d8", fields: {n: "-1", long: "true"}},
+      {expression: "d9", fields: {n: "-2"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> d0 -> output", "s:1 -> d1 -> output", "s:2 -> d2 -> output", "s:3 -> d3 -> output", "s:4 -> d4 -> output",
+      "s:5 -> d5 -> output", "s:6 -> d6 -> output", "s:7 -> d7 -> output", "s:8 -> d8 -> output", "s:9 -> d9 -> output",
+    ],
+  },
+  cases: [
+    [{day: "mon"}, {n: 1}],
+    [{day: "wed"}, {n: 3}],
+    [{day: "fri"}, {n: 5}],
+    [{day: "sat"}, {n: 6, weekend: true}],
+    [{day: "sun"}, {n: 7, weekend: true}],
+    [{}, {n: 0, missing: true}],
+    [{day: null}, {n: 0, missing: true}],
+    [{day: "monday"}, {n: -1, long: true}],
+    [{day: "Mon"}, {n: -2}],
+    [{day: ""}, {n: -2}],
+  ],
+}
+
+{
+  name: "eight collect branches, each writing its own key",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n % 2 == 0", "n % 3 == 0", "n % 5 == 0", "n % 7 == 0", "n > 50", "n < 10", "n == 0", ""]},
+      {expression: "b0", fields: {div2: "true"}},
+      {expression: "b1", fields: {div3: "true"}},
+      {expression: "b2", fields: {div5: "true"}},
+      {expression: "b3", fields: {div7: "true"}},
+      {expression: "b4", fields: {large: "true"}},
+      {expression: "b5", fields: {small: "true"}},
+      {expression: "b6", fields: {zero: "true"}},
+      {expression: "b7", fields: {seen: "n"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> b0 -> output", "s:1 -> b1 -> output", "s:2 -> b2 -> output", "s:3 -> b3 -> output",
+      "s:4 -> b4 -> output", "s:5 -> b5 -> output", "s:6 -> b6 -> output", "s:7 -> b7 -> output",
+    ],
+  },
+  cases: [
+    [{n: 0}, {div2: true, div3: true, div5: true, div7: true, small: true, zero: true, seen: 0}],
+    [{n: 210}, {div2: true, div3: true, div5: true, div7: true, large: true, seen: 210}],
+    [{n: 1}, {small: true, seen: 1}],
+    [{n: 11}, {seen: 11}],
+    [{n: 49}, {div7: true, seen: 49}],
+    [{n: 60}, {div2: true, div3: true, div5: true, large: true, seen: 60}],
+  ],
+}
+
+{
+  name: "eight collect branches writing the same key: the first declared edge into the output wins",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n >= 1", "n >= 2", "n >= 3", "n >= 4", "n >= 5", "n >= 6", "n >= 7", "n >= 8"]},
+      {expression: "b0", fields: {v: "1"}},
+      {expression: "b1", fields: {v: "2"}},
+      {expression: "b2", fields: {v: "3"}},
+      {expression: "b3", fields: {v: "4"}},
+      {expression: "b4", fields: {v: "5"}},
+      {expression: "b5", fields: {v: "6"}},
+      {expression: "b6", fields: {v: "7"}},
+      {expression: "b7", fields: {v: "8"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> b0", "s:1 -> b1", "s:2 -> b2", "s:3 -> b3", "s:4 -> b4", "s:5 -> b5", "s:6 -> b6", "s:7 -> b7",
+      "b7 -> output", "b6 -> output", "b5 -> output", "b4 -> output", "b3 -> output", "b2 -> output", "b1 -> output", "b0 -> output",
+    ],
+  },
+  cases: [
+    [{n: 8}, {v: 8}],
+    [{n: 5}, {v: 5}],
+    [{n: 1}, {v: 1}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "eight branches with gaps: some matched branches have no edge",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n == 0", "n == 1", "n == 2", "n == 3", "n == 4", "n == 5", "n == 6", ""]},
+      {expression: "even", fields: {r: "'even'", n: "n"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> even", "s:2 -> even", "s:4 -> even", "s:6 -> even -> output", "s:7 -> def -> output"],
+  },
+  cases: [
+    [{n: 0}, {r: "even", n: 0}],
+    [{n: 4}, {r: "even", n: 4}],
+    [{n: 6}, {r: "even", n: 6}],
+    [{n: 1}, {}],
+    [{n: 5}, {}],
+    [{n: 7}, {r: "default"}],
+  ],
+}
+
+{
+  name: "nine branches with duplicate conditions: only the first duplicate routes",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["t == 'a'", "t == 'a'", "t == 'b'", "t == 'b'", "t == 'c'", "t == 'c'", "t == 'd'", "t == 'd'", ""]},
+      {expression: "a1", fields: {r: "'a1'"}},
+      {expression: "a2", fields: {r: "'a2'"}},
+      {expression: "b1", fields: {r: "'b1'"}},
+      {expression: "b2", fields: {r: "'b2'"}},
+      {expression: "c1", fields: {r: "'c1'"}},
+      {expression: "c2", fields: {r: "'c2'"}},
+      {expression: "d1", fields: {r: "'d1'"}},
+      {expression: "d2", fields: {r: "'d2'"}},
+      {expression: "z", fields: {r: "'z'"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> a1 -> output", "s:1 -> a2 -> output", "s:2 -> b1 -> output", "s:3 -> b2 -> output",
+      "s:4 -> c1 -> output", "s:5 -> c2 -> output", "s:6 -> d1 -> output", "s:7 -> d2 -> output", "s:8 -> z -> output",
+    ],
+  },
+  cases: [
+    [{t: "a"}, {r: "a1"}],
+    [{t: "b"}, {r: "b1"}],
+    [{t: "c"}, {r: "c1"}],
+    [{t: "d"}, {r: "d1"}],
+    [{t: "e"}, {r: "z"}],
+  ],
+}
+
+{
+  name: "eight branches into eight different node kinds and shapes",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {r: "'child'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["k == 0", "k == 1", "k == 2", "k == 3", "k == 4", "k == 5", "k == 6", ""]},
+      {expression: "e0", fields: {r: "'expr'"}},
+      {table: "t1", inputs: ["k"], outputs: ["r"], rules: [["1", "'table'"]]},
+      {table: "t2", hit: "collect", inputs: ["k"], outputs: ["r"], rules: [["2", "'a'"], ["", "'b'"]]},
+      {decision: "d3", key: "child"},
+      {function: "f4", source: """export const handler = async (input) => ({ r: 'fn' });"""},
+      {custom: "c5", kind: "config", config: {r: "custom"}},
+      {expression: "e6", outputPath: "nested.deep", fields: {r: "'path'"}},
+      {expression: "e7", passThrough: true, fields: {r: "'pass'"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> e0 -> output", "s:1 -> t1 -> output", "s:2 -> t2 -> output", "s:3 -> d3 -> output",
+      "s:4 -> f4 -> output", "s:5 -> c5 -> output", "s:6 -> e6 -> output", "s:7 -> e7 -> output",
+    ],
+  },
+  cases: [
+    [{k: 0}, {r: "expr"}],
+    [{k: 1}, {r: "table"}],
+    [{k: 2}, [{r: "a"}, {r: "b"}]],
+    [{k: 3}, {r: "child"}],
+    [{k: 4}, {r: "fn"}],
+    [{k: 5}, {r: "custom"}],
+    [{k: 6}, {nested: {deep: {r: "path"}}}],
+    [{k: 7}, {k: 7, r: "pass"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// All branches converging on one node: the converging node runs once with whatever the
+// taken branches produced. Under first hit it sees one branch; under collect it sees the
+// merge of the taken branches, first declared edge into it winning conflicts.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "eight first-hit branches converge on one summary node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n == 1", "n == 2", "n == 3", "n == 4", "n == 5", "n == 6", "n == 7", ""]},
+      {expression: "b0", fields: {w: "10"}},
+      {expression: "b1", fields: {w: "20"}},
+      {expression: "b2", fields: {w: "30"}},
+      {expression: "b3", fields: {w: "40"}},
+      {expression: "b4", fields: {w: "50"}},
+      {expression: "b5", fields: {w: "60"}},
+      {expression: "b6", fields: {w: "70"}},
+      {expression: "b7", fields: {w: "0"}},
+      {expression: "sum", fields: {weight: "w", double: "w * 2"}},
+    ],
+    edges: [
+      "input -> s",
+      "s:0 -> b0 -> sum", "s:1 -> b1 -> sum", "s:2 -> b2 -> sum", "s:3 -> b3 -> sum",
+      "s:4 -> b4 -> sum", "s:5 -> b5 -> sum", "s:6 -> b6 -> sum", "s:7 -> b7 -> sum",
+      "sum -> output",
+    ],
+  },
+  cases: [
+    [{n: 1}, {weight: 10, double: 20}],
+    [{n: 4}, {weight: 40, double: 80}],
+    [{n: 7}, {weight: 70, double: 140}],
+    [{n: 8}, {weight: 0, double: 0}],
+    [{}, {weight: 0, double: 0}],
+  ],
+}
+
+{
+  name: "collect branches converge on one node that sums their keys",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c", "d"]},
+      {expression: "fa", fields: {pa: "1"}},
+      {expression: "fb", fields: {pb: "2"}},
+      {expression: "fc", fields: {pc: "4"}},
+      {expression: "fd", fields: {pd: "8"}},
+      {expression: "total", fields: {mask: "(pa ?? 0) + (pb ?? 0) + (pc ?? 0) + (pd ?? 0)"}},
+    ],
+    edges: [
+      "input -> s", "s:0 -> fa -> total", "s:1 -> fb -> total", "s:2 -> fc -> total", "s:3 -> fd -> total",
+      "total -> output",
+    ],
+  },
+  cases: [
+    [{a: true, b: true, c: true, d: true}, {mask: 15}],
+    [{a: true, c: true}, {mask: 5}],
+    [{d: true}, {mask: 8}],
+    [{b: true, c: true, d: true}, {mask: 14}],
+  ],
+}
+
+{
+  name: "collect branches converge with no condition true",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "fa", fields: {pa: "1"}},
+      {expression: "fb", fields: {pb: "2"}},
+      {expression: "total", fields: {sum: "(pa ?? 0) + (pb ?? 0)"}},
+    ],
+    edges: ["input -> s", "s:0 -> fa -> total", "s:1 -> fb -> total", "total -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {sum: 3}],
+    [{a: true}, {sum: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "collect branches converge writing the same key: the first edge into the join wins",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "fa", fields: {who: "'a'", a: "true"}},
+      {expression: "fb", fields: {who: "'b'", b: "true"}},
+      {expression: "fc", fields: {who: "'c'", c: "true"}},
+      {expression: "join", passThrough: true, fields: {joined: "who"}},
+    ],
+    edges: ["input -> s", "s:0 -> fa", "s:1 -> fb", "s:2 -> fc", "fc -> join", "fa -> join", "fb -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {who: "c", a: true, b: true, c: true, joined: "c"}],
+    [{a: true, b: true}, {who: "a", a: true, b: true, joined: "a"}],
+    [{b: true}, {who: "b", b: true, joined: "b"}],
+  ],
+}
+
+{
+  name: "branches of nested switches all converge on one node",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["x > 0", ""]},
+      {switch: "innerPos", when: ["y > 0", ""]},
+      {switch: "innerNeg", when: ["y > 0", ""]},
+      {expression: "q1", fields: {q: "1"}},
+      {expression: "q2", fields: {q: "4"}},
+      {expression: "q3", fields: {q: "2"}},
+      {expression: "q4", fields: {q: "3"}},
+      {expression: "label", fields: {quadrant: "'Q' + string(q)"}},
+    ],
+    edges: [
+      "input -> outer", "outer:0 -> innerPos", "outer:1 -> innerNeg",
+      "innerPos:0 -> q1 -> label", "innerPos:1 -> q2 -> label",
+      "innerNeg:0 -> q3 -> label", "innerNeg:1 -> q4 -> label",
+      "label -> output",
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, {quadrant: "Q1"}],
+    [{x: -1, y: 1}, {quadrant: "Q2"}],
+    [{x: -1, y: -1}, {quadrant: "Q3"}],
+    [{x: 1, y: -1}, {quadrant: "Q4"}],
+    [{x: 0, y: 0}, {quadrant: "Q3"}],
+  ],
+}
+
+{
+  name: "branches converge straight into the node: the switch input passes through",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'a'", "mode == 'b'", ""]},
+      {expression: "sink", fields: {mode: "mode", v: "v"}},
+    ],
+    edges: ["input -> s", "s:0 -> sink", "s:1 -> sink", "s:2 -> sink", "sink -> output"],
+  },
+  cases: [
+    [{mode: "a", v: 1}, {mode: "a", v: 1}],
+    [{mode: "b", v: [1]}, {mode: "b", v: [1]}],
+    [{mode: "c", v: {k: 1}}, {mode: "c", v: {k: 1}}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "collect branches straight into one node see the input once",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["true", "true", "true"]},
+      {expression: "sink", fields: {n: "n", m: "m"}},
+    ],
+    edges: ["input -> s", "s:0 -> sink", "s:1 -> sink", "s:2 -> sink", "sink -> output"],
+  },
+  cases: [
+    [{n: 1}, {n: 1}],
+    [{n: 2, m: 3}, {n: 2, m: 3}],
+    [{m: [1, 2]}, {m: [1, 2]}],
+  ],
+}
+
+{
+  name: "a converging node also fed by the input: the input edge is declared first and wins",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["vip", "member", ""]},
+      {expression: "v", fields: {rate: "0.2"}},
+      {expression: "m", fields: {rate: "0.1"}},
+      {expression: "g", fields: {rate: "0"}},
+      {expression: "price", fields: {final: "base * (1 - rate)"}},
+    ],
+    edges: ["input -> price", "input -> s", "s:0 -> v -> price", "s:1 -> m -> price", "s:2 -> g -> price", "price -> output"],
+  },
+  cases: [
+    [{vip: true, base: 100}, {final: 80}],
+    [{member: true, base: 100}, {final: 90}],
+    [{base: 100}, {final: 100}],
+    [{vip: true, base: 100, rate: 0.5}, {final: 50}],
+    [{base: 100, rate: 0.25}, {final: 75}],
+  ],
+}
+
+{
+  name: "a converging node fed by branches of two different switches",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["a", ""]},
+      {switch: "s2", when: ["b", ""]},
+      {expression: "a1", fields: {fromA: "'yes'"}},
+      {expression: "a2", fields: {fromA: "'no'"}},
+      {expression: "b1", fields: {fromB: "'yes'"}},
+      {expression: "b2", fields: {fromB: "'no'"}},
+      {expression: "join", fields: {r: "fromA + '/' + fromB"}},
+    ],
+    edges: [
+      "input -> s1", "input -> s2",
+      "s1:0 -> a1 -> join", "s1:1 -> a2 -> join", "s2:0 -> b1 -> join", "s2:1 -> b2 -> join",
+      "join -> output",
+    ],
+  },
+  cases: [
+    [{a: true, b: true}, {r: "yes/yes"}],
+    [{a: true, b: false}, {r: "yes/no"}],
+    [{a: false, b: true}, {r: "no/yes"}],
+    [{}, {r: "no/no"}],
+  ],
+}

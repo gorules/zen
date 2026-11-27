@@ -1,0 +1,813 @@
+// Decision nodes: a node that evaluates another decision (loaded by key) with its own input and
+// returns that decision's result as its output.
+
+// --- Basic calls ---------------------------------------------------------------------------------
+// The child receives the decision node's input and its result becomes the node output.
+{
+  name: "child result replaces the node input",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 4}, {y: 8}],
+    [{x: 0.5}, {y: 1}],
+    [{x: -3, other: true}, {y: -6}],
+    [{x: "a"}, "!error"],
+  ],
+}
+
+{
+  name: "an empty child graph echoes its input",
+  decisions: {
+    child: {},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 1, b: {c: [1, 2]}}, {a: 1, b: {c: [1, 2]}}],
+    [{}, {}],
+    [{s: "x", n: null}, {s: "x"}, "question: the child's final merge drops its top-level null values (as for a root graph, see 10-merges), so they are missing in the parent even under an outputPath"],
+  ],
+}
+
+{
+  name: "child with a pass-through expression keeps the parent's fields",
+  decisions: {
+    child: {nodes: [{expression: "e", passThrough: true, fields: {sum: "a + b"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, sum: 3}],
+    [{a: 1, b: 2, sum: 99}, {a: 1, b: 2, sum: 3}],
+  ],
+}
+
+{
+  name: "child result is merged with parallel parent branches",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {fromChild: "x + 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "local", fields: {fromParent: "x - 1"}},
+    ],
+    edges: ["input -> call -> output", "input -> local -> output"],
+  },
+  cases: [
+    [{x: 10}, {fromChild: 11, fromParent: 9}],
+    [{x: 0}, {fromChild: 1, fromParent: -1}],
+  ],
+}
+
+{
+  name: "parent nodes after the call see the child result",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {score: "a * 10"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {grade: "score >= 50 ? 'pass' : 'fail'", hasA: "a != null"}},
+    ],
+  },
+  cases: [
+    [{a: 7}, {grade: "pass", hasA: false}],
+    [{a: 2}, {grade: "fail", hasA: false}],
+  ],
+}
+
+{
+  name: "the same child called from two nodes",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {"out.double": "v * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "first", key: "child", inputField: "a", outputPath: "a"},
+      {decision: "second", key: "child", inputField: "b", outputPath: "b"},
+    ],
+    edges: ["input -> first -> output", "input -> second -> output"],
+  },
+  cases: [
+    [{a: {v: 1}, b: {v: 2}}, {a: {out: {double: 2}}, b: {out: {double: 4}}}],
+    [{a: {v: 0}, b: {v: -5}}, {a: {out: {double: 0}}, b: {out: {double: -10}}}],
+  ],
+}
+
+{
+  name: "two different children in sequence",
+  decisions: {
+    enrich: {nodes: [{expression: "e", passThrough: true, fields: {tier: "spend > 100 ? 'gold' : 'basic'"}}]},
+    price: {nodes: [{table: "t", inputs: ["tier"], outputs: ["discount"], rules: [["'gold'", "0.2"], ["", "0"]]}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "enrich"},
+      {decision: "b", key: "price"},
+    ],
+  },
+  cases: [
+    [{spend: 500}, {discount: 0.2}],
+    [{spend: 10}, {discount: 0}],
+    [{}, "!error"],
+  ],
+}
+
+// --- Nesting -------------------------------------------------------------------------------------
+// A child can itself call further children, several levels deep.
+{
+  name: "three levels of nesting",
+  decisions: {
+    level1: {nodes: [{expression: "e1", passThrough: true, fields: {l1: "v + 1"}}, {decision: "d2", key: "level2"}]},
+    level2: {nodes: [{expression: "e2", passThrough: true, fields: {l2: "l1 + 1"}}, {decision: "d3", key: "level3"}]},
+    level3: {nodes: [{expression: "e3", passThrough: true, fields: {l3: "l2 + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d1", key: "level1"}],
+  },
+  cases: [
+    [{v: 0}, {v: 0, l1: 1, l2: 2, l3: 3}],
+    [{v: 10}, {v: 10, l1: 11, l2: 12, l3: 13}],
+    [{v: "x"}, "!error"],
+  ],
+}
+
+{
+  name: "nested children with outputPath at each level",
+  decisions: {
+    outer: {nodes: [{decision: "inner", key: "inner", outputPath: "inner"}]},
+    inner: {nodes: [{expression: "e", fields: {v: "x"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "outer", outputPath: "outer"}],
+  },
+  cases: [
+    [{x: 1}, {outer: {inner: {v: 1}}}],
+    [{x: null}, {outer: {inner: {}}}, "question: the child's final merge drops its top-level null values (as for a root graph, see 10-merges), so they are missing in the parent even under an outputPath"],
+    [{}, {outer: {inner: {}}}, "question: the child's final merge drops its top-level null values (as for a root graph, see 10-merges), so they are missing in the parent even under an outputPath"],
+  ],
+}
+
+{
+  name: "eight levels of nesting stays within the depth limit",
+  decisions: {
+    d1: {nodes: [{decision: "n", key: "d2"}]},
+    d2: {nodes: [{decision: "n", key: "d3"}]},
+    d3: {nodes: [{decision: "n", key: "d4"}]},
+    d4: {nodes: [{decision: "n", key: "d5"}]},
+    d5: {nodes: [{decision: "n", key: "d6"}]},
+    d6: {nodes: [{decision: "n", key: "d7"}]},
+    d7: {nodes: [{decision: "n", key: "d8"}]},
+    d8: {nodes: [{expression: "e", fields: {deep: "v * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "n", key: "d1"}],
+  },
+  cases: [
+    [{v: 1}, {deep: 2}],
+    [{v: 21}, {deep: 42}],
+  ],
+}
+
+// --- Recursion and the depth limit -----------------------------------------------------------
+// A decision may call itself; recursion is bounded by the evaluation depth limit (default 10:
+// the root runs at depth 0 and a graph at depth 10 is refused).
+{
+  name: "recursive countdown terminates through a switch",
+  decisions: {
+    countdown: {
+      nodes: [
+        {switch: "s", when: ["n > 0", ""]},
+        {expression: "step", fields: {n: "n - 1", acc: "(acc ?? 0) + n"}},
+        {decision: "again", key: "countdown"},
+        {expression: "done", fields: {acc: "acc ?? 0"}},
+      ],
+      edges: ["input -> s", "s:0 -> step -> again -> output", "s:1 -> done -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "countdown"}],
+  },
+  cases: [
+    [{n: 0}, {acc: 0}],
+    [{n: 1}, {acc: 1}],
+    [{n: 3}, {acc: 6}],
+    [{n: 8}, {acc: 36}],
+    [{n: 9}, "!error"],
+    [{n: 50}, "!error"],
+  ],
+}
+
+{
+  name: "unbounded self-recursion hits the depth limit",
+  decisions: {
+    forever: {nodes: [{decision: "again", key: "forever"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "forever"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "mutual recursion hits the depth limit",
+  decisions: {
+    ping: {nodes: [{expression: "e", passThrough: true, fields: {n: "(n ?? 0) + 1"}}, {decision: "d", key: "pong"}]},
+    pong: {nodes: [{decision: "d", key: "ping"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "ping"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{n: 100}, "!error"],
+  ],
+}
+
+{
+  name: "graph calling itself under its own key",
+  decisions: {
+    self: {
+      nodes: [
+        {switch: "s", when: ["len(xs) > 0", ""]},
+        {expression: "pop", fields: {xs: "xs[1:]", total: "(total ?? 0) + xs[0]"}},
+        {decision: "again", key: "self"},
+        {expression: "end", fields: {total: "total ?? 0"}},
+      ],
+      edges: ["input -> s", "s:0 -> pop -> again -> output", "s:1 -> end -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "self"}],
+  },
+  cases: [
+    [{xs: []}, {total: 0}],
+    [{xs: [5]}, {total: 5}],
+    [{xs: [1, 2, 3, 4]}, {total: 10}],
+    [{xs: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}, "!error"],
+  ],
+}
+
+// --- Missing and unusable children ---------------------------------------------------------
+{
+  name: "missing key is an error",
+  graph: {
+    nodes: [{decision: "call", key: "nowhere"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{x: 1}, "!error"],
+  ],
+}
+
+{
+  name: "missing key on a switch branch not taken is not an error",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {decision: "call", key: "nowhere"},
+      {expression: "skip", fields: {skipped: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> call -> output", "s:1 -> skip -> output"],
+  },
+  cases: [
+    [{go: false}, {skipped: true}],
+    [{go: true}, "!error"],
+  ],
+}
+
+{
+  name: "missing key in a nested child",
+  decisions: {
+    child: {nodes: [{decision: "inner", key: "nowhere"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "child with a cycle is an error",
+  decisions: {
+    child: {
+      nodes: [{expression: "a", fields: {x: "1"}}, {expression: "b", fields: {y: "2"}}],
+      edges: ["input -> a -> b -> a", "b -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{z: 1}, "!error"],
+  ],
+}
+
+{
+  name: "child with two input nodes is an error",
+  decisions: {
+    child: {raw: {
+      nodes: [
+        {id: "i1", name: "in1", type: "inputNode", content: {}},
+        {id: "i2", name: "in2", type: "inputNode", content: {}},
+        {id: "o", name: "out", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "i1", targetId: "o"}, {id: "e2", sourceId: "i2", targetId: "o"}],
+    }},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+// --- Child errors propagate ------------------------------------------------------------------
+{
+  name: "an expression error in the child fails the parent",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "a / b"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 6, b: 3}, {v: 2}],
+    [{a: "x", b: 3}, "!error"],
+    [{a: 1, b: 0}, {}, "question: division by zero yields null rather than an error; the null is then dropped by the child's final merge"],
+  ],
+}
+
+{
+  name: "a failing custom node in the child fails the parent",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "fail", config: {message: "boom"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error: boom"],
+    [{x: 1}, "!error: boom"],
+  ],
+}
+
+{
+  name: "a child error only on the taken branch",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["safe", ""]},
+        {expression: "ok", fields: {r: "'ok'"}},
+        {custom: "bad", kind: "fail", config: {message: "unsafe branch"}},
+      ],
+      edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> bad -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{safe: true}, {r: "ok"}],
+    [{safe: false}, "!error: unsafe branch"],
+    [{}, "!error: unsafe branch"],
+  ],
+}
+
+{
+  name: "child input schema rejects the call",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", properties: {age: {type: "number"}}, required: ["age"]}},
+      {expression: "e", fields: {adult: "age >= 18"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{age: 20}, {adult: true}],
+    [{age: 3}, {adult: false}],
+    [{}, "!error"],
+    [{age: "old"}, "!error"],
+  ],
+}
+
+{
+  name: "child output schema rejects the result",
+  decisions: {
+    child: {nodes: [
+      {expression: "e", fields: {total: "a + b"}},
+      {output: "out", schema: {type: "object", properties: {total: {type: "number", maximum: 100}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3}],
+    [{a: 99, b: 2}, "!error"],
+  ],
+}
+
+{
+  name: "a deep error surfaces from the innermost child",
+  decisions: {
+    a: {nodes: [{decision: "n", key: "b"}]},
+    b: {nodes: [{decision: "n", key: "c"}]},
+    c: {nodes: [{custom: "f", kind: "fail", config: {message: "deep failure"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "a"}],
+  },
+  cases: [
+    [{}, "!error: deep failure"],
+    [{v: 1}, "!error: deep failure"],
+  ],
+}
+
+// --- Children with switches and tables ----------------------------------------------------
+{
+  name: "child with a first-hit switch",
+  decisions: {
+    route: {
+      nodes: [
+        {switch: "s", when: ["amount > 1000", "amount > 100", ""]},
+        {expression: "high", fields: {band: "'high'"}},
+        {expression: "mid", fields: {band: "'mid'"}},
+        {expression: "low", fields: {band: "'low'"}},
+      ],
+      edges: ["input -> s", "s:0 -> high -> output", "s:1 -> mid -> output", "s:2 -> low -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "route"}],
+  },
+  cases: [
+    [{amount: 5000}, {band: "high"}],
+    [{amount: 500}, {band: "mid"}],
+    [{amount: 5}, {band: "low"}],
+    [{amount: null}, {band: "low"}],
+  ],
+}
+
+{
+  name: "child with a collect switch merges taken branches",
+  decisions: {
+    flags: {
+      nodes: [
+        {switch: "s", hit: "collect", when: ["age < 18", "country != 'US'", "vip"]},
+        {expression: "minor", fields: {minor: "true"}},
+        {expression: "foreign", fields: {foreign: "true"}},
+        {expression: "vip", fields: {vip: "true"}},
+      ],
+      edges: ["input -> s", "s:0 -> minor -> output", "s:1 -> foreign -> output", "s:2 -> vip -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "flags", outputPath: "flags"}],
+  },
+  cases: [
+    [{age: 10, country: "DE", vip: true}, {flags: {minor: true, foreign: true, vip: true}}],
+    [{age: 30, country: "US", vip: false}, {flags: {}}],
+    [{age: 30, country: "FR", vip: false}, {flags: {foreign: true}}],
+  ],
+}
+
+{
+  name: "child with a first-hit table",
+  decisions: {
+    rates: {nodes: [{table: "t", inputs: ["tier", "years"], outputs: ["rate"], rules: [
+      ["'gold'", ">= 5", "0.03"],
+      ["'gold'", "", "0.02"],
+      ["", "", "0.01"],
+    ]}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "rates", outputPath: "pricing"}],
+  },
+  cases: [
+    [{tier: "gold", years: 7}, {pricing: {rate: 0.03}}],
+    [{tier: "gold", years: 1}, {pricing: {rate: 0.02}}],
+    [{tier: "silver", years: 9}, {pricing: {rate: 0.01}}],
+    [{}, {pricing: {rate: 0.01}}],
+  ],
+}
+
+{
+  name: "child with a collect table returns an array",
+  decisions: {
+    tags: {nodes: [{table: "t", hit: "collect", inputs: ["score"], outputs: ["tag"], rules: [
+      ["> 50", "'high'"],
+      ["> 90", "'top'"],
+      ["< 10", "'low'"],
+    ]}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "tags", outputPath: "tags"}],
+  },
+  cases: [
+    [{score: 95}, {tags: [{tag: "high"}, {tag: "top"}]}],
+    [{score: 60}, {tags: [{tag: "high"}]}],
+    [{score: 30}, {tags: []}],
+    [{score: 1}, {tags: [{tag: "low"}]}],
+  ],
+}
+
+{
+  name: "child table with no match",
+  decisions: {
+    t: {nodes: [{table: "t", inputs: ["v"], outputs: ["r"], rules: [["1", "'one'"]]}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "t", outputPath: "res"}],
+  },
+  cases: [
+    [{v: 1}, {res: {r: "one"}}],
+    [{v: 2}, {res: {}}],
+  ],
+}
+
+// --- Children returning non-objects ------------------------------------------------------------
+// A child's result is the merge of its ending nodes: arrays survive, scalars collapse to {}.
+{
+  name: "child returning an array",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {v: "$root + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{xs: [1, 2]}, {out: [{v: 2}, {v: 3}]}],
+    [{xs: []}, {out: []}],
+  ],
+}
+
+{
+  name: "child returning an array without outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {v: "$root"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{xs: [7]}, [{v: 7}]],
+    [{xs: [1, 2, 3]}, [{v: 1}, {v: 2}, {v: 3}]],
+  ],
+}
+
+{
+  name: "child returning a scalar from a function node",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => input.n * 2;"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{n: 2}, {out: {}}, "question: a scalar function result is dropped at the child's output (ending merge starts from {}), so the parent sees {}"],
+    [{n: 0}, {out: {}}, "question: a scalar function result is dropped at the child's output (ending merge starts from {}), so the parent sees {}"],
+  ],
+}
+
+{
+  name: "child output from two ending branches is merged",
+  decisions: {
+    child: {
+      nodes: [{expression: "a", fields: {a: "1", shared: "'a'"}}, {expression: "b", fields: {b: "2", shared: "'b'"}}],
+      edges: ["input -> a -> output", "input -> b -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, {a: 1, b: 2, shared: "a"}, "question: at the child's output fan-in the first branch keeps a shared key; which branch wins is not obvious from the graph"],
+  ],
+}
+
+{
+  name: "child with no output node reachable returns its ending nodes",
+  decisions: {
+    child: {raw: {
+      nodes: [
+        {id: "i", name: "in", type: "inputNode", content: {}},
+        {id: "e", name: "calc", type: "expressionNode", content: {expressions: [{id: "x", key: "v", value: "a + 1"}], passThrough: false}},
+        {id: "o", name: "out", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "i", targetId: "e"}],
+    }},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 1}, {v: 2}, "question: a child without an edge into its output node returns the dangling ending node's result"],
+  ],
+}
+
+// --- Transform attributes on decision nodes ------------------------------------------------------
+{
+  name: "inputField selects the child's input",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {greeting: "'hi ' + name"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "customer"}],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {greeting: "hi ann"}],
+    [{customer: {name: "bo"}, name: "outer"}, {greeting: "hi bo"}],
+  ],
+}
+
+{
+  name: "inputField to a missing or non-object field",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {n: "name ?? 'none'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "customer", outputPath: "out"}],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {out: {n: "ann"}}],
+    [{}, {out: {n: "none"}}],
+    [{customer: null}, {out: {n: "none"}}],
+    [{customer: 5}, {out: {n: "none"}}],
+  ],
+}
+
+{
+  name: "inputField as an expression",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "a + b"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "{a: x * 2, b: y}", outputPath: "res"}],
+  },
+  cases: [
+    [{x: 1, y: 1}, {res: {total: 3}}],
+    [{x: 5, y: 0}, {res: {total: 10}}],
+  ],
+}
+
+{
+  name: "outputPath nests the child result",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "x"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "result.inner"}],
+  },
+  cases: [
+    [{x: 1}, {result: {inner: {v: 1}}}],
+    [{x: [1]}, {result: {inner: {v: [1]}}}],
+  ],
+}
+
+{
+  name: "passThrough keeps the parent input next to the child result",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {score: "a + b"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, score: 3}],
+    [{a: 1, b: 2, score: 0}, {a: 1, b: 2, score: 3}],
+  ],
+}
+
+{
+  name: "passThrough with outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {score: "a + b"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true, outputPath: "child"}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, child: {score: 3}}],
+    [{a: 1, b: 2, child: {old: true}}, {a: 1, b: 2, child: {old: true, score: 3}}],
+  ],
+}
+
+{
+  name: "passThrough, inputField and outputPath together",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {upper: "upper(name)"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true, inputField: "customer", outputPath: "customer"}],
+  },
+  cases: [
+    [{id: 1, customer: {name: "ann", age: 3}}, {id: 1, customer: {name: "ann", age: 3, upper: "ANN"}}],
+    [{id: 2, customer: {name: ""}}, {id: 2, customer: {name: "", upper: ""}}],
+  ],
+}
+
+// --- Policies as children ------------------------------------------------------------------------
+// A decision node expects a graph; a key naming a policy is reported as an error.
+{
+  name: "a policy child is rejected",
+  decisions: {
+    pol: {policy: {
+      models: {customer: {age: "number"}},
+      blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+    }},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "pol"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error: expected graph"],
+    [{customer: {age: 1}}, "!error: expected graph"],
+  ],
+}
+
+// --- Children seen from the parent graph ------------------------------------------------
+{
+  name: "child nodes are not visible through the parent's $nodes",
+  decisions: {
+    child: {nodes: [{expression: "inner", fields: {v: "1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {callOut: "$nodes.call.v", inner: "$nodes.inner"}},
+    ],
+  },
+  cases: [
+    [{}, {callOut: 1}],
+    [{v: 9}, {callOut: 1}],
+  ],
+}
+
+{
+  name: "child with a function node",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => ({len: input.items.length, first: input.items[0] ?? null});"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "info"}],
+  },
+  cases: [
+    [{items: [3, 4]}, {info: {len: 2, first: 3}}],
+    [{items: []}, {info: {len: 0}}, "question: the child's final merge drops its top-level null values (as for a root graph, see 10-merges), so they are missing in the parent even under an outputPath"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "child with a custom node",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "render", config: {msg: "{{ who }} ok"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{who: "ann"}, {who: "ann", msg: "ann ok"}],
+    [{who: "bo"}, {who: "bo", msg: "bo ok"}],
+  ],
+}
+
+{
+  name: "sub-decision on one switch branch only",
+  decisions: {
+    scoring: {nodes: [{expression: "e", fields: {score: "income / 1000"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["income != null", ""]},
+      {decision: "score", key: "scoring"},
+      {expression: "none", fields: {score: "0"}},
+    ],
+    edges: ["input -> s", "s:0 -> score -> output", "s:1 -> none -> output"],
+  },
+  cases: [
+    [{income: 50000}, {score: 50}],
+    [{}, {score: 0}],
+    [{income: null}, {score: 0}],
+    [{income: 1500}, {score: 1.5}],
+  ],
+}

@@ -1,0 +1,859 @@
+// Decision table cells.
+//
+// An input column with a field evaluates that field against the node input and binds it as `$`;
+// each cell is then a unary test (`> 5`, `[1..10]`, `'a', 'b'`, or a full boolean expression
+// using `$`). A cell that errors does not match. An input column without a field runs its
+// cells as standard expressions over the node input; only a boolean `true` matches. Output
+// cells are standard expressions over the node input. The unary language itself is pinned
+// down in core/expression/tests/spec/unary; this chapter covers how tables wire it up.
+
+// --- Unary shorthands ---------------------------------------------------------------------
+
+{
+  name: "cells: comparison shorthands",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["op"], rules: [
+        ["> 5", "'gt'"],
+        [">= 5", "'gte'"],
+        ["< 5", "'lt'"],
+        ["<= 5", "'lte'"],
+        ["== 5", "'eq'"],
+        ["!= 5", "'ne'"],
+        ["5", "'bare'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 6}, [{op: "gt"}, {op: "gte"}, {op: "ne"}]],
+    [{n: 5}, [{op: "gte"}, {op: "lte"}, {op: "eq"}, {op: "bare"}]],
+    [{n: 4.999}, [{op: "lt"}, {op: "lte"}, {op: "ne"}]],
+    [{n: 5.000}, [{op: "gte"}, {op: "lte"}, {op: "eq"}, {op: "bare"}]],
+    [{n: -100}, [{op: "lt"}, {op: "lte"}, {op: "ne"}]],
+  ],
+}
+
+{
+  name: "cells: closed, open and half-open intervals",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["iv"], rules: [
+        ["[1..10]", "'closed'"],
+        ["(1..10)", "'open'"],
+        ["[1..10)", "'right-open'"],
+        ["(1..10]", "'left-open'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{iv: "closed"}, {iv: "right-open"}]],
+    [{n: 10}, [{iv: "closed"}, {iv: "left-open"}]],
+    [{n: 5.5}, [{iv: "closed"}, {iv: "open"}, {iv: "right-open"}, {iv: "left-open"}]],
+    [{n: 0.99}, []],
+    [{n: 10.01}, []],
+    [{n: "5"}, []],
+    [{n: null}, []],
+  ],
+}
+
+{
+  name: "cells: comma lists match any entry",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["'a', 'b'", "'letter'"],
+        ["1, 2, 3", "'digit'"],
+        ["> 100, < -100", "'extreme'"],
+        ["'x', 7", "'mixed'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "a"}, {r: "letter"}],
+    [{v: "b"}, {r: "letter"}],
+    [{v: "c"}, {r: "none"}],
+    [{v: 2}, {r: "digit"}],
+    [{v: 2.0}, {r: "digit"}],
+    [{v: 101}, {r: "extreme"}],
+    [{v: -101}, {r: "extreme"}],
+    [{v: 50}, {r: "none"}],
+    [{v: "x"}, {r: "mixed"}],
+    [{v: 7}, {r: "mixed"}],
+    [{v: "7"}, {r: "none"}],
+  ],
+}
+
+{
+  name: "cells: array literal and `in` / `not in` shorthands",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["['a', 'b']", "'arr'"],
+        ["in ['a', 'c']", "'in'"],
+        ["not in ['a', 'b']", "'not-in'"],
+        ["in [1..5]", "'in-range'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "a"}, [{r: "arr"}, {r: "in"}]],
+    [{v: "b"}, [{r: "arr"}]],
+    [{v: "c"}, [{r: "in"}, {r: "not-in"}]],
+    [{v: 3}, [{r: "not-in"}, {r: "in-range"}]],
+    [{v: null}, [{r: "not-in"}]],
+  ],
+}
+
+{
+  name: "cells: FEEL-style not(...) list negation is not supported",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["not('a', 'b')", "'not a or b'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "c"}, {r: "other"}, "question: `not('a', 'b')` is not a list negation (it never matches); a FEEL-style reading would match any value other than 'a' and 'b'"],
+    [{v: "a"}, {r: "other"}],
+    [{v: "b"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "cells: `not` applied to a full expression over $",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["not ($ in ['a', 'b'])", "'not a or b'"],
+        ["not startsWith($, 'x')", "'no x prefix'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "c"}, {r: "not a or b"}],
+    [{v: "a"}, {r: "no x prefix"}],
+    [{v: "xa"}, {r: "not a or b"}],
+  ],
+}
+
+{
+  name: "cells: boolean and null literal cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["true", "'true'"],
+        ["false", "'false'"],
+        ["null", "'null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: true}, {r: "true"}],
+    [{v: false}, {r: "false"}],
+    [{v: null}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{v: 0}, {r: "other"}],
+    [{v: ""}, {r: "other"}],
+  ],
+}
+
+{
+  name: "cells: surrounding whitespace in cells is ignored",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["   > 5  ", "  'big'  "],
+        ["  ", "'blank cell is a wildcard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 6}, {r: "big"}],
+    [{v: 1}, {r: "blank cell is a wildcard"}],
+    [{}, {r: "blank cell is a wildcard"}],
+  ],
+}
+
+// --- `$` references in input cells ---------------------------------------------------------
+
+{
+  name: "cells: `$` is the column's field value",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["user.name"], outputs: ["r"], rules: [
+        ["startsWith($, 'A')", "'starts-a'"],
+        ["len($) > 3", "'long'"],
+        ["$ == upper($)", "'upper'"],
+        ["contains(lower($), 'bob')", "'bob'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{user: {name: "Alice"}}, [{r: "starts-a"}, {r: "long"}]],
+    [{user: {name: "BOB"}}, [{r: "upper"}, {r: "bob"}]],
+    [{user: {name: "Al"}}, [{r: "starts-a"}]],
+    [{user: {name: "ABOBA"}}, [{r: "starts-a"}, {r: "long"}, {r: "upper"}, {r: "bob"}]],
+  ],
+}
+
+{
+  name: "cells: `$` on an array field",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["tags"], outputs: ["r"], rules: [
+        ["contains($, 'vip')", "'vip'"],
+        ["len($) == 0", "'empty'"],
+        ["some($, # == 'new')", "'has-new'"],
+        ["len($) >= 2", "'many'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tags: ["vip", "new"]}, [{r: "vip"}, {r: "has-new"}, {r: "many"}]],
+    [{tags: []}, [{r: "empty"}]],
+    [{tags: ["old"]}, []],
+    [{tags: null}, [], "question: every cell errors on a null array (len/contains/some of null), so no rule matches; `len($) == 0` does not treat null as empty"],
+  ],
+}
+
+{
+  name: "cells: `$` on an object field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["address"], outputs: ["r"], rules: [
+        ["$.country == 'US' and $.zip != null", "'us-complete'"],
+        ["$.country == 'US'", "'us'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{address: {country: "US", zip: "10001"}}, {r: "us-complete"}],
+    [{address: {country: "US"}}, {r: "us"}],
+    [{address: {country: "DE"}}, {r: "other"}],
+    [{address: {}}, {r: "other"}],
+    [{}, {r: "other"}],
+  ],
+}
+
+{
+  name: "cells: `$` compared with another input field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["spent"], outputs: ["status"], rules: [
+        ["> budget", "'over'"],
+        ["$ == budget", "'exact'"],
+        ["< budget * 0.5", "'well under'"],
+        ["", "'under'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{spent: 120, budget: 100}, {status: "over"}],
+    [{spent: 100, budget: 100}, {status: "exact"}],
+    [{spent: 40, budget: 100}, {status: "well under"}],
+    [{spent: 80, budget: 100}, {status: "under"}],
+    [{spent: 80}, {status: "under"}],
+    [{spent: 80, budget: "100"}, {status: "under"}],
+  ],
+}
+
+{
+  name: "cells: a cell may reference fields of nested objects and other columns' fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["order.total", "customer.tier"], outputs: ["r"], rules: [
+        ["> customer.limit", "'gold'", "'over gold limit'"],
+        ["> customer.limit", "", "'over limit'"],
+        ["", "$ == customer.preferred", "'preferred tier'"],
+        ["", "", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {total: 500}, customer: {tier: "gold", limit: 100}}, {r: "over gold limit"}],
+    [{order: {total: 500}, customer: {tier: "silver", limit: 100}}, {r: "over limit"}],
+    [{order: {total: 50}, customer: {tier: "silver", limit: 100, preferred: "silver"}}, {r: "preferred tier"}],
+    [{order: {total: 50}, customer: {tier: "silver", limit: 100}}, {r: "ok"}],
+    [{order: {total: 500}, customer: {tier: "gold"}}, {r: "ok"}],
+  ],
+}
+
+{
+  name: "cells: `$` is rebound per column within one rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b"], outputs: ["r"], rules: [
+        ["$ > 1", "$ > 10", "'both'"],
+        ["$ > 1", "", "'a only'"],
+        ["", "$ > 10", "'b only'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 2, b: 20}, {r: "both"}],
+    [{a: 2, b: 2}, {r: "a only"}],
+    [{a: 0, b: 20}, {r: "b only"}],
+    [{a: 20, b: 0}, {r: "a only"}],
+    [{a: 0, b: 0}, {}],
+  ],
+}
+
+// --- Input fields that are expressions ------------------------------------------------------
+
+{
+  name: "cells: an input field may be an arbitrary expression",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["price * qty", "len(items)"], outputs: ["r"], rules: [
+        ["> 100", "> 2", "'big order, many items'"],
+        ["> 100", "", "'big order'"],
+        ["", "0", "'empty'"],
+        ["", "", "'small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{price: 50, qty: 3, items: [1, 2, 3]}, {r: "big order, many items"}],
+    [{price: 50, qty: 3, items: [1]}, {r: "big order"}],
+    [{price: 1, qty: 1, items: []}, {r: "empty"}],
+    [{price: 1, qty: 1, items: [1]}, {r: "small"}],
+  ],
+}
+
+{
+  name: "cells: a field expression that errors makes every non-empty cell in that column fail",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["price * qty"], outputs: ["r"], rules: [
+        ["> 100", "'big'"],
+        ["<= 100", "'small'"],
+        ["", "'wildcard still matches'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{price: 50, qty: 3}, {r: "big"}],
+    [{price: 50, qty: 1}, {r: "small"}],
+    [{price: "x", qty: 1}, {r: "wildcard still matches"}],
+    [{price: 50}, {r: "wildcard still matches"}],
+    [{}, {r: "wildcard still matches"}],
+  ],
+}
+
+{
+  name: "cells: a field expression with a function call and a default",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["upper(country ?? 'unknown')"], outputs: ["r"], rules: [
+        ["'US', 'CA'", "'na'"],
+        ["'UNKNOWN'", "'missing'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "us"}, {r: "na"}],
+    [{country: "Ca"}, {r: "na"}],
+    [{}, {r: "missing"}],
+    [{country: null}, {r: "missing"}],
+    [{country: "de"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "cells: a field reading an upstream node through $nodes",
+  graph: {
+    nodes: [
+      {expression: "score", fields: {value: "a + b"}},
+      {table: "t", inputs: ["$nodes.score.value"], outputs: ["r"], rules: [
+        ["> 10", "'high'"],
+        ["", "'low'"],
+      ]},
+    ],
+    edges: ["input -> score -> t -> output"],
+  },
+  cases: [
+    [{a: 6, b: 6}, {r: "high"}],
+    [{a: 1, b: 2}, {r: "low"}],
+  ],
+}
+
+// --- Input columns without a field --------------------------------------------------------
+
+{
+  name: "cells: a field-less column runs each cell as a full boolean expression",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["age >= 18 and country == 'US'", "'adult us'"],
+        ["age >= 18", "'adult'"],
+        ["", "'minor'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 30, country: "US"}, {r: "adult us"}],
+    [{age: 30, country: "DE"}, {r: "adult"}],
+    [{age: 10, country: "US"}, {r: "minor"}],
+  ],
+}
+
+{
+  name: "cells: an empty-string field is the same as no field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [""], outputs: ["r"], rules: [
+        ["x > 1", "'yes'"],
+        ["", "'no'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 2}, {r: "yes"}],
+    [{x: 1}, {r: "no"}],
+  ],
+}
+
+{
+  name: "cells: a field-less cell that is not a boolean does not match",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["x", "'truthy x'"],
+        ["1", "'number'"],
+        ["'true'", "'string'"],
+        ["null", "'null'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: true}, {r: "truthy x"}],
+    [{x: false}, {r: "fallback"}],
+    [{x: 1}, {r: "fallback"}],
+    [{x: "yes"}, {r: "fallback"}],
+    [{}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: a field-less cell that errors does not match",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["amount > 100", "'big'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 200}, {r: "big"}],
+    [{amount: 50}, {r: "fallback"}],
+    [{amount: null}, {r: "fallback"}],
+    [{amount: "200"}, {r: "fallback"}],
+    [{}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: field-less shorthand cells have no `$` to compare",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["> 5", "'gt'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 10}, {r: "fallback"}],
+    [{}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: field and field-less columns combine in one rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier", null], outputs: ["discount"], rules: [
+        ["'gold'", "total > 1000 and !blocked", "0.2"],
+        ["'gold'", "", "0.1"],
+        ["", "total > 5000", "0.05"],
+        ["", "", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", total: 2000, blocked: false}, {discount: 0.2}],
+    [{tier: "gold", total: 2000, blocked: true}, {discount: 0.1}],
+    [{tier: "gold", total: 2000}, {discount: 0.1}, "question: `!blocked` with a missing `blocked` errors (not of null), so the cell fails and the rule falls through"],
+    [{tier: "silver", total: 6000}, {discount: 0.05}],
+    [{tier: "silver", total: 10}, {discount: 0}],
+  ],
+}
+
+{
+  name: "cells: field-less cells using closures over input arrays",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["all(items, #.qty > 0)", "'all positive'"],
+        ["some(items, #.qty < 0)", "'some negative'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 1}, {qty: 2}]}, {r: "all positive"}],
+    [{items: [{qty: 1}, {qty: -2}]}, {r: "some negative"}],
+    [{items: [{qty: 0}]}, {r: "other"}],
+    [{items: []}, {r: "all positive"}],
+  ],
+}
+
+// --- Null and missing inputs against cells -------------------------------------------------
+
+{
+  name: "cells: comparison cells never match a null or missing value",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 0", "'gt'"],
+        ["< 0", "'lt'"],
+        ["[0..10]", "'range'"],
+        ["0", "'zero'"],
+        ["!= 0", "'ne'"],
+        ["null", "'null'"],
+        ["== null", "'eq-null'"],
+        ["$ == null", "'dollar-null'"],
+        ["$ != null", "'not-null'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: null}, [{r: "ne"}, {r: "null"}, {r: "eq-null"}, {r: "dollar-null"}]],
+    [{}, [{r: "ne"}, {r: "null"}, {r: "eq-null"}, {r: "dollar-null"}]],
+    [{n: 0}, [{r: "range"}, {r: "zero"}, {r: "not-null"}]],
+    [{n: 5}, [{r: "gt"}, {r: "range"}, {r: "ne"}, {r: "not-null"}]],
+  ],
+}
+
+{
+  name: "cells: string cells against null, missing and wrongly typed values",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["s"], outputs: ["r"], rules: [
+        ["'a'", "'eq'"],
+        ["'a', 'b'", "'list'"],
+        ["startsWith($, 'a')", "'prefix'"],
+        ["!= 'a'", "'ne'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "a"}, [{r: "eq"}, {r: "list"}, {r: "prefix"}]],
+    [{s: "ab"}, [{r: "prefix"}, {r: "ne"}]],
+    [{s: null}, [{r: "ne"}]],
+    [{}, [{r: "ne"}]],
+    [{s: 1}, [{r: "ne"}]],
+    [{s: ["a"]}, [{r: "ne"}]],
+  ],
+}
+
+{
+  name: "cells: a missing intermediate object in a dotted field behaves like null",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a.b.c"], outputs: ["r"], rules: [
+        ["null", "'null'"],
+        ["> 0", "'positive'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: {b: {c: 5}}}, {r: "positive"}],
+    [{a: {b: {c: null}}}, {r: "null"}],
+    [{a: {b: {}}}, {r: "null"}],
+    [{a: {}}, {r: "null"}],
+    [{a: null}, {r: "null"}],
+    [{a: 5}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{a: {b: {c: "x"}}}, {r: "other"}],
+  ],
+}
+
+{
+  name: "cells: an error in one cell fails only that rule, later rules still run",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 5", "'big'"],
+        ["len($) > 2", "'long'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 6}, {r: "big"}],
+    [{v: "abc"}, {r: "long"}],
+    [{v: "ab"}, {r: "fallback"}],
+    [{v: 1}, {r: "fallback"}],
+    [{v: null}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: a malformed input cell never matches",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> > 5", "'broken'"],
+        ["[1..", "'broken range'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 6}, {r: "fallback"}, "question: a cell that does not parse is silently treated as a non-match instead of failing the evaluation"],
+    [{v: 1}, {r: "fallback"}, "question: a cell that does not parse is silently treated as a non-match instead of failing the evaluation"],
+  ],
+}
+
+// --- Output cells -------------------------------------------------------------------------
+
+{
+  name: "cells: output cells are expressions over the node input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["total", "label", "items"], rules: [
+        ["'sum'", "price * qty", "'Total: ' + string(price * qty)", "map(lines, #.id)"],
+        ["", "price", "upper(kind ?? 'none')", "[]"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "sum", price: 2, qty: 5, lines: [{id: 1}, {id: 2}]}, {total: 10, label: "Total: 10", items: [1, 2]}],
+    [{kind: "x", price: 3}, {total: 3, label: "X", items: []}],
+    [{price: 3}, {total: 3, label: "NONE", items: []}],
+  ],
+}
+
+{
+  name: "cells: output cells can reference fields that are not input columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier"], outputs: ["greeting"], rules: [
+        ["'gold'", "'Dear ' + customer.name"],
+        ["", "'Hi ' + (customer.nickname ?? customer.name)"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", customer: {name: "Ann"}}, {greeting: "Dear Ann"}],
+    [{tier: "basic", customer: {name: "Bob", nickname: "B"}}, {greeting: "Hi B"}],
+    [{tier: "basic", customer: {name: "Cy"}}, {greeting: "Hi Cy"}],
+  ],
+}
+
+{
+  name: "cells: output cells use template strings and conditionals",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["msg", "parity"], rules: [
+        ["> 0", "`n is ${n}`", "n % 2 == 0 ? 'even' : 'odd'"],
+        ["", "'non-positive'", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 4}, {msg: "n is 4", parity: "even"}],
+    [{n: 3}, {msg: "n is 3", parity: "odd"}],
+    [{n: 0}, {msg: "non-positive"}],
+  ],
+}
+
+{
+  name: "cells: `$` inside an output cell is the last bound input column value",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v", "w"], outputs: ["out"], rules: [
+        ["> 0", "> 0", "$"],
+        ["> 0", "", "$"],
+        ["", "", "$"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 5, w: 7}, {out: 7}, "question: `$` in an output cell leaks the value bound by the last non-empty input cell evaluated for the row; outputs have no defined `$`"],
+    [{v: 5, w: -7}, {out: 5}, "question: `$` in an output cell leaks the value bound by the last non-empty input cell evaluated for the row; outputs have no defined `$`"],
+    [{v: -5, w: 7}, {out: -5}, "question: `$` in an output cell leaks the value bound while testing an earlier, failed rule (the all-wildcard rule binds nothing); outputs have no defined `$`"],
+  ],
+}
+
+{
+  name: "cells: an output cell reading a missing field gives null, which drops the key",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["copy"], rules: [
+        ["source"],
+      ]},
+    ],
+  },
+  cases: [
+    [{source: 1}, {source: 1, copy: 1}],
+    [{source: "s"}, {source: "s", copy: "s"}],
+    [{}, {}],
+    [{copy: "old"}, {}],
+  ],
+}
+
+{
+  name: "cells: an output cell that errors makes a first-hit table skip to the next rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 0", "v + 'x' * 2"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 1}, "!error", "bug: an output cell that fails to evaluate silently discards the matched rule and falls through to the next one; it should fail the node"],
+    [{v: -1}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: an output cell that errors only for some inputs",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["r"], rules: [
+        ["'div'", "a / b"],
+        ["'len'", "len(s)"],
+        ["", "'default'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "div", a: 10, b: 4}, {r: 2.5}],
+    [{kind: "len", s: "abc"}, {r: 3}],
+    [{kind: "len", s: 5}, "!error", "bug: an output cell that fails to evaluate silently discards the matched rule and falls through to the next one; it should fail the node"],
+    [{kind: "other"}, {r: "default"}],
+  ],
+}
+
+{
+  name: "cells: an output cell that errors drops the entry from a collect table",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["r"], rules: [
+        ["1"],
+        ["len(missing)"],
+        ["3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, "!error", "bug: an output cell that fails to evaluate silently drops that rule's entry from the collected list; it should fail the node"],
+    [{missing: "ab"}, [{r: 1}, {r: 2}, {r: 3}]],
+  ],
+}
+
+{
+  name: "cells: an output cell that errors in a `[]` column skips the whole rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["first", "all[]"], rules: [
+        ["> 5", "'big'", "len(v)"],
+        ["> 0", "'positive'", "v"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 6}, "!error", "bug: an output cell that fails to evaluate silently discards the matched rule (scalars and collected values); it should fail the node"],
+    [{v: 1}, {first: "positive", all: [1]}],
+  ],
+}
+
+{
+  name: "cells: a malformed output cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 0", "1 +"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 1}, "!error", "bug: an output cell that does not parse silently discards the matched rule and falls through; it should fail the node"],
+    [{v: 0}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "cells: an output cell may copy a whole object or array from the input",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["copy"], rules: [
+        ["obj"],
+      ]},
+      {expression: "e", passThrough: true, fields: {objX: "obj.x", copyX: "copy.x"}},
+    ],
+  },
+  cases: [
+    [{obj: {x: 1}}, {obj: {x: 1}, copy: {x: 1}, objX: 1, copyX: 1}],
+    [{obj: [1, 2]}, {obj: [1, 2], copy: [1, 2]}],
+    [{obj: "s"}, {obj: "s", copy: "s"}],
+  ],
+}
+
+// --- Realistic combinations --------------------------------------------------------------
+
+{
+  name: "cells: loan pricing with ranges, lists, references and computed outputs",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["applicant.creditScore", "loan.purpose", "loan.amount / applicant.income"], outputs: ["rate", "reason"], rules: [
+        [">= 750", "'home', 'auto'", "< 0.3", "base - 0.5", "'prime'"],
+        [">= 750", "", "< 0.5", "base", "'good credit'"],
+        ["[650..750)", "'home'", "< 0.4", "base + 1", "'near prime home'"],
+        ["[650..750)", "", "", "base + 2", "'near prime'"],
+        ["< 650", "", "", "null", "'declined: score ' + string(applicant.creditScore)"],
+        ["", "", "", "base + 5", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{applicant: {creditScore: 800, income: 100000}, loan: {purpose: "home", amount: 20000}, base: 4.5}, {rate: 4, reason: "prime"}],
+    [{applicant: {creditScore: 800, income: 100000}, loan: {purpose: "boat", amount: 20000}, base: 4.5}, {rate: 4.5, reason: "good credit"}],
+    [{applicant: {creditScore: 800, income: 100000}, loan: {purpose: "home", amount: 40000}, base: 4.5}, {rate: 4.5, reason: "good credit"}],
+    [{applicant: {creditScore: 700, income: 100000}, loan: {purpose: "home", amount: 20000}, base: 4.5}, {rate: 5.5, reason: "near prime home"}],
+    [{applicant: {creditScore: 650, income: 100000}, loan: {purpose: "auto", amount: 20000}, base: 4.5}, {rate: 6.5, reason: "near prime"}],
+    [{applicant: {creditScore: 600, income: 100000}, loan: {purpose: "home", amount: 20000}, base: 4.5}, {reason: "declined: score 600"}],
+    [{applicant: {creditScore: 800, income: 10000}, loan: {purpose: "home", amount: 20000}, base: 4.5}, {rate: 9.5, reason: "other"}],
+    [{applicant: {creditScore: 800, income: 0}, loan: {purpose: "home", amount: 20000}, base: 4.5}, {rate: 9.5, reason: "other"}],
+  ],
+}
+
+{
+  name: "cells: a table reading its own earlier column results is not possible, cells see only the input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["a", "b"], rules: [
+        ["", "x * 2", "a ?? 'no a'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 2}, {a: 4, b: "no a"}],
+    [{x: 2, a: 100}, {a: 4, b: 100}],
+  ],
+}

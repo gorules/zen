@@ -1,0 +1,665 @@
+// `$nodes` across branch combinations: reads of nodes on taken and untaken branches, whole
+// node objects, `$nodes.input` after transforms, `$nodes` inside loop bodies and children, and
+// node names that collide with input keys, field keys and reserved words. Basics are in 15;
+// this chapter varies which branches ran from case to case.
+
+
+// ---------------------------------------------------------------------------------------
+// Presence of branch nodes per combination. A node that did not run reads as null, whole or
+// by member; `keys($nodes)` lists only nodes that ran.
+// ---------------------------------------------------------------------------------------
+
+
+// `n` counts input, s and the branch nodes that ran.
+{
+  name: "presence flags of three collect branches read by a join",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a == true", "b == true", "c == true"]},
+      {expression: "A", fields: {v: "10"}},
+      {expression: "B", fields: {v: "2"}},
+      {expression: "C", fields: {v: "3"}},
+      {expression: "join", fields: {ranA: "$nodes.A != null", ranB: "$nodes.B != null", ranC: "$nodes.C != null", aVal: "$nodes.A.v ?? 'none'", bc: "($nodes.B.v ?? 0) + ($nodes.C.v ?? 0)", n: "len(keys($nodes))"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> C -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {ranA: true, ranB: true, ranC: true, aVal: 10, bc: 5, n: 5}],
+    [{a: true, b: true, c: false}, {ranA: true, ranB: true, ranC: false, aVal: 10, bc: 2, n: 4}],
+    [{a: true, b: false, c: true}, {ranA: true, ranB: false, ranC: true, aVal: 10, bc: 3, n: 4}],
+    [{a: true, b: false, c: false}, {ranA: true, ranB: false, ranC: false, aVal: 10, bc: 0, n: 3}],
+    [{a: false, b: true, c: true}, {ranA: false, ranB: true, ranC: true, aVal: "none", bc: 5, n: 4}],
+    [{a: false, b: true, c: false}, {ranA: false, ranB: true, ranC: false, aVal: "none", bc: 2, n: 3}],
+    [{a: false, b: false, c: true}, {ranA: false, ranB: false, ranC: true, aVal: "none", bc: 3, n: 3}],
+    [{a: false, b: false, c: false}, {}],
+    [{a: "yes", b: true}, {ranA: false, ranB: true, ranC: false, aVal: "none", bc: 2, n: 3}],
+  ],
+}
+
+{
+  name: "one of three first-hit branches ran; whole node objects and members",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["k == 'a'", "k == 'b'", ""]},
+      {expression: "A", fields: {v: "1"}},
+      {expression: "B", fields: {v: "'two'"}},
+      {expression: "C", fields: {v: "[3]"}},
+      {expression: "join", fields: {ran: "$nodes.A != null ? 'A' : $nodes.B != null ? 'B' : 'C'", aIsNull: "$nodes.A == null", bIsNull: "$nodes.B == null", cIsNull: "$nodes.C == null", value: "$nodes.A.v ?? $nodes.B.v ?? $nodes.C.v", sees: "$nodes.A ?? $nodes.B ?? $nodes.C"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> C -> join", "join -> output"],
+  },
+  cases: [
+    [{k: "a"}, {ran: "A", aIsNull: false, bIsNull: true, cIsNull: true, value: 1, sees: {v: 1}}],
+    [{k: "b"}, {ran: "B", aIsNull: true, bIsNull: false, cIsNull: true, value: "two", sees: {v: "two"}}],
+    [{k: "c"}, {ran: "C", aIsNull: true, bIsNull: true, cIsNull: false, value: [3], sees: {v: [3]}}],
+    [{}, {ran: "C", aIsNull: true, bIsNull: true, cIsNull: false, value: [3], sees: {v: [3]}}],
+    [{k: null}, {ran: "C", aIsNull: true, bIsNull: true, cIsNull: false, value: [3], sees: {v: [3]}}],
+    [{k: "A"}, {ran: "C", aIsNull: true, bIsNull: true, cIsNull: false, value: [3], sees: {v: [3]}}],
+  ],
+}
+
+{
+  name: "deep member and index reads on untaken branch nodes are null",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", ""]},
+      {expression: "A", fields: {"x.y.z": "3", "x.y.w": "'leaf'"}},
+      {expression: "B", fields: {list: "[{v: 7}, {v: 8}]"}},
+      {expression: "D", fields: {}},
+      {expression: "join", fields: {depth: "$nodes.A.x.y.z ?? 'unset'", tail: "$nodes['A']['x']['y']['w']", list0: "$nodes.B.list[0].v", missing: "$nodes.B.list[5].v ?? $nodes.Z.q ?? 'fallback'"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> D -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {depth: 3, tail: "leaf", list0: 7, missing: "fallback"}],
+    [{a: true, b: false}, {depth: 3, tail: "leaf", missing: "fallback"}],
+    [{a: false, b: true}, {depth: "unset", list0: 7, missing: "fallback"}],
+    [{a: false, b: false}, {depth: "unset", missing: "fallback"}],
+  ],
+}
+
+{
+  name: "the keys of $nodes per combination",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", ""]},
+      {expression: "A", fields: {v: "1"}},
+      {expression: "B", fields: {v: "2"}},
+      {expression: "D", fields: {v: "3"}},
+      {expression: "join", fields: {ran: "filter(['A', 'B', 'D', 'input', 's'], # in keys($nodes))", n: "len(keys($nodes))"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> D -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {ran: ["A", "B", "D", "input", "s"], n: 5}],
+    [{a: true, b: false}, {ran: ["A", "D", "input", "s"], n: 4}],
+    [{a: false, b: true}, {ran: ["B", "D", "input", "s"], n: 4}],
+    [{a: false, b: false}, {ran: ["D", "input", "s"], n: 3}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Switches routing on `$nodes` of nodes on branches of an earlier switch, taken or not.
+// ---------------------------------------------------------------------------------------
+
+
+// `input -> s2` keeps s2 reachable when s1 routes nowhere.
+{
+  name: "a collect switch over $nodes of an earlier collect switch's branches",
+  graph: {
+    nodes: [
+      {switch: "s1", hit: "collect", when: ["x > 0", "y > 0"]},
+      {expression: "px", fields: {v: "x"}},
+      {expression: "py", fields: {v: "y"}},
+      {switch: "s2", hit: "collect", when: ["$nodes.px.v > 5", "$nodes.py.v > 5", "$nodes.px == null and $nodes.py == null", "$nodes.px != null and $nodes.py != null"]},
+      {expression: "bx", fields: {bigX: "$nodes.px.v"}},
+      {expression: "by", fields: {bigY: "$nodes.py.v"}},
+      {expression: "nn", fields: {none: "true"}},
+      {expression: "bo", fields: {both: "$nodes.px.v + $nodes.py.v"}},
+    ],
+    edges: ["input -> s1", "s1:0 -> px -> s2", "s1:1 -> py -> s2", "input -> s2", "s2:0 -> bx -> output", "s2:1 -> by -> output", "s2:2 -> nn -> output", "s2:3 -> bo -> output"],
+  },
+  cases: [
+    [{x: 0, y: 0}, {none: true}],
+    [{x: 0, y: 4}, {}],
+    [{x: 0, y: 8}, {bigY: 8}],
+    [{x: 3, y: 0}, {}],
+    [{x: 3, y: 4}, {both: 7}],
+    [{x: 3, y: 8}, {bigY: 8, both: 11}],
+    [{x: 9, y: 0}, {bigX: 9}],
+    [{x: 9, y: 4}, {bigX: 9, both: 13}],
+    [{x: 9, y: 8}, {bigX: 9, bigY: 8, both: 17}],
+    [{x: 6}, {bigX: 6}],
+    [{y: 7}, {bigY: 7}],
+  ],
+}
+
+{
+  name: "a table reads its input column from whichever branch node ran",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["route == 'a'", "route == 'b'", ""]},
+      {expression: "A", fields: {n: "15"}},
+      {expression: "B", fields: {n: "55"}},
+      {expression: "C", fields: {n: "$nodes.input.fallback ?? 0"}},
+      {table: "t", inputs: [{field: "$nodes.A.n ?? $nodes.B.n ?? $nodes.C.n", name: "src"}], outputs: ["tier"], rules: [[">= 50", "'high'"], [">= 10", "'mid'"], ["", "'low'"]]},
+    ],
+    edges: ["input -> s", "s:0 -> A -> t", "s:1 -> B -> t", "s:2 -> C -> t", "t -> output"],
+  },
+  cases: [
+    [{route: "a"}, {tier: "mid"}],
+    [{route: "b"}, {tier: "high"}],
+    [{route: "c", fallback: 99}, {tier: "high"}],
+    [{fallback: 3}, {tier: "low"}],
+    [{route: "c"}, {tier: "low"}],
+    [{route: "a", fallback: 99}, {tier: "mid"}],
+  ],
+}
+
+{
+  name: "a function node sees untaken branch nodes as undefined",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a", ""]},
+      {expression: "A", fields: {v: "1"}},
+      {expression: "B", fields: {v: "2"}},
+      {function: "f", source: """export const handler = async (input) => ({aType: typeof input.$nodes.A, bType: typeof input.$nodes.B, v: (input.$nodes.A ?? input.$nodes.B).v});"""},
+    ],
+    edges: ["input -> s", "s:0 -> A -> f", "s:1 -> B -> f", "f -> output"],
+  },
+  cases: [
+    [{a: true}, {aType: "object", bType: "undefined", v: 1}],
+    [{a: false}, {aType: "undefined", bType: "object", v: 2}],
+    [{}, {aType: "undefined", bType: "object", v: 2}],
+  ],
+}
+
+{
+  name: "custom node templates over taken and untaken branch nodes",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a", ""]},
+      {expression: "A", fields: {v: "1"}},
+      {expression: "B", fields: {v: "2"}},
+      {custom: "c", kind: "render", config: {msg: "A={{ $nodes.A.v }}", other: "B={{ $nodes.B.v }}"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> c", "s:1 -> B -> c", "c -> output"],
+  },
+  cases: [
+    [{a: true}, {msg: "A=1", other: "B=null"}, "question: a node that did not run renders as the text null inside a template, like a missing value (see 18)"],
+    [{a: false}, {msg: "A=null", other: "B=2"}, "question: a node that did not run renders as the text null inside a template, like a missing value (see 18)"],
+    [{}, {msg: "A=null", other: "B=2"}, "question: a node that did not run renders as the text null inside a template, like a missing value (see 18)"],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Whole node objects as values: the output of tables, loops, passThrough nodes and
+// sub-decisions read through `$nodes` and copied or compared.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "whole outputs of four node kinds copied by a later node",
+  graph: {
+    nodes: [
+      {table: "first", inputs: ["n"], outputs: ["band", "meta.src"], rules: [["> 5", "'hi'", "'t'"], ["", "'lo'", "'t'"]]},
+      {table: "coll", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'pos'"], ["> 5", "'big'"]]},
+      {expression: "loop", inputField: "items", executionMode: "loop", fields: {sq: "$root * $root"}},
+      {expression: "pt", passThrough: true, outputPath: "wrapped", fields: {m: "n * 10"}},
+      {expression: "snap", fields: {first: "$nodes.first", coll: "$nodes.coll", loop: "$nodes.loop", pt: "$nodes.pt"}},
+    ],
+    edges: ["input -> first -> snap", "input -> coll -> snap", "input -> loop -> snap", "input -> pt -> snap", "snap -> output"],
+  },
+  cases: [
+    [{n: 7, items: [1, 2]}, {first: {band: "hi", meta: {src: "t"}}, coll: [{k: "pos"}, {k: "big"}], loop: [{sq: 1}, {sq: 4}], pt: {n: 7, items: [1, 2], wrapped: {m: 70}}}],
+    [{n: 1, items: []}, {first: {band: "lo", meta: {src: "t"}}, coll: [{k: "pos"}], loop: [], pt: {n: 1, items: [], wrapped: {m: 10}}}],
+    [{n: -1, items: [3]}, {first: {band: "lo", meta: {src: "t"}}, coll: [], loop: [{sq: 9}], pt: {n: -1, items: [3], wrapped: {m: -10}}}],
+  ],
+}
+
+// Deep equality of node outputs; key order does not matter.
+{
+  name: "equality of whole node outputs",
+  graph: {
+    nodes: [
+      {expression: "A", fields: {x: "p", y: "q"}},
+      {expression: "B", fields: {y: "q", x: "p"}},
+      {expression: "C", fields: {x: "p"}},
+      {expression: "cmp", fields: {ab: "$nodes.A == $nodes.B", ac: "$nodes.A == $nodes.C", cx: "$nodes.C == {x: p}", nn: "$nodes.missing == $nodes.other"}},
+    ],
+    edges: ["input -> A -> cmp", "input -> B -> cmp", "input -> C -> cmp", "cmp -> output"],
+  },
+  cases: [
+    [{p: 1, q: 2}, {ab: true, ac: false, cx: true, nn: true}, "bug: == on objects is always false, even for equal node outputs (expression spec 03-equality)"],
+    [{p: "a", q: [1]}, {ab: true, ac: false, cx: true, nn: true}, "bug: == on objects is always false, even for equal node outputs (expression spec 03-equality)"],
+    [{p: true, q: "x"}, {ab: true, ac: false, cx: true, nn: true}, "bug: == on objects is always false, even for equal node outputs (expression spec 03-equality)"],
+  ],
+}
+
+{
+  name: "a sub-decision's whole result and its absence on an untaken branch",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "e", fields: {r: "x * 2", tag: "'c'"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {decision: "call", key: "child"},
+      {expression: "skip", fields: {skipped: "true"}},
+      {expression: "after", fields: {child: "$nodes.call ?? 'not called'", n: "len(keys($nodes.call ?? {}))"}},
+    ],
+    edges: ["input -> s", "s:0 -> call -> after", "s:1 -> skip -> after", "after -> output"],
+  },
+  cases: [
+    [{go: true, x: 2}, {child: {r: 4, tag: "c"}, n: 2}],
+    [{go: true, x: 0}, {child: {r: 0, tag: "c"}, n: 2}],
+    [{go: false, x: 2}, {child: "not called", n: 0}],
+    [{x: 2}, {child: "not called", n: 0}],
+  ],
+}
+
+{
+  name: "$nodes of a child whose switch routes nowhere is an empty object",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["x > 0"]},
+        {expression: "p", fields: {r: "'pos'"}},
+      ],
+      edges: ["input -> s", "s:0 -> p -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {isNull: "$nodes.call == null", count: "len(keys($nodes.call ?? {}))", r: "$nodes.call.r ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{x: 5}, {isNull: false, count: 1, r: "pos"}],
+    [{x: -5}, {isNull: false, count: 0, r: "none"}],
+    [{}, {isNull: false, count: 0, r: "none"}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// `$nodes.input` after transforms: it stays the request as sent, whatever passThrough, loops
+// writing back, outputPaths or sub-decisions did on the way.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "$nodes.input after a chain that overwrites, removes and nests keys",
+  graph: {
+    nodes: [
+      {expression: "over", passThrough: true, fields: {a: "a * 100", b: "null"}},
+      {expression: "nest", passThrough: true, outputPath: "c", fields: {inner: "true"}},
+      {expression: "drop", fields: {onlyA: "a", cNow: "c"}},
+      {expression: "look", fields: {nowA: "onlyA", origA: "$nodes.input.a", origB: "$nodes.input.b", origC: "$nodes.input.c", cNow: "cNow"}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2, c: 3}, {nowA: 100, origA: 1, origB: 2, origC: 3, cNow: {inner: true}}],
+    [{a: 2, c: {k: 1}}, {nowA: 200, origA: 2, origC: {k: 1}, cNow: {k: 1, inner: true}}],
+    [{a: 0, b: "x"}, {nowA: 0, origA: 0, origB: "x", cNow: {inner: true}}],
+  ],
+}
+
+// The second loop is passThrough-free and reads `$nodes.input` inside its body: the request,
+// not the incremented array its own input carries.
+{
+  name: "$nodes.input after a passThrough loop wrote back into the source array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {v: "v + 1", seen: "true"}},
+      {expression: "nest", passThrough: true, inputField: "items", outputPath: "second", executionMode: "loop", fields: {orig: "$nodes.input.items"}},
+      {expression: "look", fields: {now: "map(items, #.v)", orig: "map($nodes.input.items, #.v)", origSeen: "map($nodes.input.items, #.seen ?? false)", secondLen: "len(second)", inner: "second[0].orig ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {now: [2, 3], orig: [1, 2], origSeen: [false, false], secondLen: 2, inner: [{v: 1}, {v: 2}]}],
+    [{items: [{v: 0}]}, {now: [1], orig: [0], origSeen: [false], secondLen: 1, inner: [{v: 0}]}],
+    [{items: []}, {now: [], orig: [], origSeen: [], secondLen: 0, inner: "none"}],
+  ],
+}
+
+{
+  name: "$nodes.input inside a child is the child's input, after the parent transformed it",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "e", fields: {childX: "$nodes.input.x", childTag: "$nodes.input.tag"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {x: "x * 10", tag: "'pre'"}},
+      {decision: "call", key: "child"},
+      {expression: "after", passThrough: true, fields: {parentX: "$nodes.input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {childX: 10, childTag: "pre", parentX: 1}],
+    [{x: 0.5}, {childX: 5, childTag: "pre", parentX: 0.5}],
+  ],
+}
+
+{
+  name: "$nodes.input on every branch of a collect switch after a transform",
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {n: "n + 1"}},
+      {switch: "s", hit: "collect", when: ["n > 1", "$nodes.input.n > 1", ""]},
+      {expression: "A", fields: {a: "[n, $nodes.input.n]"}},
+      {expression: "B", fields: {b: "[n, $nodes.input.n]"}},
+      {expression: "C", fields: {c: "$nodes.input"}},
+    ],
+    edges: ["input -> pre -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{n: 5}, {a: [6, 5], b: [6, 5], c: {n: 5}}],
+    [{n: 1}, {a: [2, 1], c: {n: 1}}],
+    [{n: 0}, {c: {n: 0}}],
+    [{n: 1.5, extra: true}, {a: [2.5, 1.5], b: [2.5, 1.5], c: {n: 1.5, extra: true}}],
+  ],
+}
+
+{
+  name: "$nodes.input with a renamed input node is reached by its name",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "pre", fields: {v: "v * 2"}},
+      {expression: "look", fields: {byName: "$nodes.request.v", byInput: "$nodes.input.v ?? 'none'", now: "v"}},
+    ],
+  },
+  cases: [
+    [{v: 3}, {byName: 3, byInput: "none", now: 6}],
+    [{v: 0}, {byName: 0, byInput: "none", now: 0}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// `$nodes` inside loop bodies: expression, table and sub-decision loops reading nodes on
+// taken and untaken branches, and the loop node itself.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "an expression loop reads a branch node that may not have run",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["big", ""]},
+      {expression: "B", passThrough: true, fields: {mult: "10"}},
+      {expression: "S", passThrough: true, fields: {}},
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "$root * ($nodes.B.mult ?? 1)", bigRan: "$nodes.B != null"}},
+    ],
+    edges: ["input -> s", "s:0 -> B -> each", "s:1 -> S -> each", "each -> output"],
+  },
+  cases: [
+    [{big: true, items: [1, 2]}, {out: [{v: 10, bigRan: true}, {v: 20, bigRan: true}]}],
+    [{big: false, items: [1, 2]}, {out: [{v: 1, bigRan: false}, {v: 2, bigRan: false}]}],
+    [{items: [3]}, {out: [{v: 3, bigRan: false}]}],
+    [{big: true, items: []}, {out: []}],
+  ],
+}
+
+// `$nodes.each` after the loop is the loop node's output, here `{out: [...]}` because of the
+// outputPath.
+{
+  name: "a loop body cannot see its own node, earlier items or later nodes",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {self: "$nodes.each == null", later: "$nodes.after == null", v: "$root"}},
+      {expression: "after", passThrough: true, fields: {n: "len($nodes.each.out)"}},
+    ],
+  },
+  cases: [
+    [{items: [1, 2]}, {out: [{self: true, later: true, v: 1}, {self: true, later: true, v: 2}], n: 2}],
+    [{items: []}, {out: [], n: 0}],
+  ],
+}
+
+{
+  name: "a table loop compares items against whichever branch node set the limit",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["strict", ""]},
+      {expression: "st", fields: {lim: "5"}},
+      {expression: "lo", fields: {lim: "50"}},
+      {expression: "wrap", fields: {rows: "map($nodes.input.xs, {x: #})"}},
+      {table: "chk", inputField: "rows", outputPath: "res", executionMode: "loop", inputs: [{field: "x <= ($nodes.st.lim ?? $nodes.lo.lim)", name: "ok"}], outputs: ["ok"], rules: [["true", "true"], ["", "false"]]},
+    ],
+    edges: ["input -> s", "s:0 -> st -> wrap", "s:1 -> lo -> wrap", "wrap -> chk -> output"],
+  },
+  cases: [
+    [{strict: true, xs: [1, 6, 60]}, {res: [{ok: true}, {ok: false}, {ok: false}]}],
+    [{strict: false, xs: [1, 6, 60]}, {res: [{ok: true}, {ok: true}, {ok: false}]}],
+    [{xs: [50, 51]}, {res: [{ok: true}, {ok: false}]}],
+    [{strict: true, xs: []}, {res: []}],
+  ],
+}
+
+{
+  name: "sub-decision loop items read a parent branch node through the child input view",
+  decisions: {
+    child: {
+      nodes: [
+        {input: "item"},
+        {expression: "e", fields: {v: "n + ($nodes.item.$nodes.V.bonus ?? 0)", vipNode: "$nodes.item.$nodes.V != null"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["vip", ""]},
+      {expression: "V", passThrough: true, fields: {bonus: "100"}},
+      {expression: "N", passThrough: true, fields: {}},
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+    edges: ["input -> s", "s:0 -> V -> each", "s:1 -> N -> each", "each -> output"],
+  },
+  cases: [
+    [{vip: true, items: [{n: 1}, {n: 2}]}, {out: [{v: 101, vipNode: true}, {v: 102, vipNode: true}]}],
+    [{vip: false, items: [{n: 1}]}, {out: [{v: 1, vipNode: false}]}],
+    [{items: []}, {out: []}],
+    [{vip: true, items: [{n: -100}]}, {out: [{v: 0, vipNode: true}]}],
+  ],
+}
+
+{
+  name: "inside a looped child, $nodes of the child's own branches differ per item",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["k > 0", ""]},
+        {expression: "A", fields: {p: "'A'"}},
+        {expression: "B", fields: {p: "'B'"}},
+        {expression: "j", fields: {path: "$nodes.A.p ?? $nodes.B.p", aNull: "$nodes.A == null", bNull: "$nodes.B == null"}},
+      ],
+      edges: ["input -> s", "s:0 -> A -> j", "s:1 -> B -> j", "j -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{k: 1}, {k: -1}, {k: 2}]}, {out: [{path: "A", aNull: false, bNull: true}, {path: "B", aNull: true, bNull: false}, {path: "A", aNull: false, bNull: true}]}],
+    [{items: [{k: 0}]}, {out: [{path: "B", aNull: true, bNull: false}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+// `prices` without outputPath outputs the bare array, so `share` takes its items from
+// `$nodes.input`.
+{
+  name: "closures inside a loop body read $nodes of an earlier loop",
+  graph: {
+    nodes: [
+      {expression: "prices", inputField: "items", executionMode: "loop", fields: {p: "price * qty"}},
+      {expression: "share", inputField: "$nodes.input.items", outputPath: "shares", executionMode: "loop", fields: {share: "price * qty / sum(map($nodes.prices, #.p))", rank: "len(filter($nodes.prices, #.p > price * qty)) + 1"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 1, qty: 1}, {price: 3, qty: 1}]}, {shares: [{share: 0.25, rank: 2}, {share: 0.75, rank: 1}]}],
+    [{items: [{price: 2, qty: 5}]}, {shares: [{share: 1, rank: 1}]}],
+    [{items: []}, {shares: []}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Name collisions: node names equal to input keys, to field keys, to the input node's
+// default name, to other nodes, and to words with meaning in expressions.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a node named like an input key: the bare key reads the input, $nodes the node",
+  graph: {
+    nodes: [
+      {expression: "amount", passThrough: true, fields: {doubled: "amount * 2"}},
+      {expression: "after", fields: {key: "amount", node: "$nodes.amount.doubled", nodeObj: "$nodes.amount"}},
+    ],
+  },
+  cases: [
+    [{amount: 3}, {key: 3, node: 6, nodeObj: {amount: 3, doubled: 6}}],
+    [{amount: 0}, {key: 0, node: 0, nodeObj: {amount: 0, doubled: 0}}],
+  ],
+}
+
+{
+  name: "a field key equal to a node name does not shadow $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {v: "x + 1"}},
+      {expression: "after", fields: {calc: "'shadow'", read: "$nodes.calc.v", local: "$.calc"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {calc: "shadow", read: 2, local: "shadow"}],
+    [{x: -1}, {calc: "shadow", read: 0, local: "shadow"}],
+  ],
+}
+
+{
+  name: "a node named input next to an input node named request",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "input", fields: {fake: "true", x: "x * 2"}},
+      {expression: "after", fields: {viaInput: "$nodes.input", viaRequest: "$nodes.request.x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {viaInput: {fake: true, x: 2}, viaRequest: 1}],
+    [{x: 5}, {viaInput: {fake: true, x: 10}, viaRequest: 5}],
+  ],
+}
+
+// Names are not unique in raw JDM; on exclusive branches only one of the two runs.
+{
+  name: "two nodes with the same name on exclusive branches (raw JDM)",
+  graph: {raw: {nodes: [{id: "in", name: "input", type: "inputNode", content: {}}, {id: "sw", name: "s", type: "switchNode", content: {hitPolicy: "first", statements: [{id: "h0", condition: "a"}, {id: "h1", condition: ""}]}}, {id: "d1", name: "dup", type: "expressionNode", content: {expressions: [{id: "x", key: "v", value: "'first'"}]}}, {id: "d2", name: "dup", type: "expressionNode", content: {expressions: [{id: "x", key: "v", value: "'second'"}]}}, {id: "af", name: "after", type: "expressionNode", content: {expressions: [{id: "x", key: "seen", value: "$nodes.dup.v"}]}}, {id: "out", name: "output", type: "outputNode", content: {}}], edges: [{id: "e0", sourceId: "in", targetId: "sw"}, {id: "e1", sourceId: "sw", targetId: "d1", sourceHandle: "h0"}, {id: "e2", sourceId: "sw", targetId: "d2", sourceHandle: "h1"}, {id: "e3", sourceId: "d1", targetId: "af"}, {id: "e4", sourceId: "d2", targetId: "af"}, {id: "e5", sourceId: "af", targetId: "out"}]}},
+  cases: [
+    [{a: true}, {seen: "first"}],
+    [{a: false}, {seen: "second"}],
+  ],
+}
+
+{
+  name: "node names that are expression keywords or operators via bracket access",
+  graph: {
+    nodes: [
+      {expression: "true", fields: {v: "1"}},
+      {expression: "null", fields: {v: "2"}},
+      {expression: "and", fields: {v: "3"}},
+      {expression: "$", fields: {v: "4"}},
+      {expression: "after", fields: {t: "$nodes['true'].v", n: "$nodes['null'].v", a: "$nodes['and'].v", d: "$nodes['$'].v", dot: "$nodes.and.v"}},
+    ],
+    edges: ["input -> true -> after", "input -> null -> after", "input -> and -> after", "input -> $ -> after", "after -> output"],
+  },
+  cases: [
+    [{}, {t: 1, n: 2, a: 3, d: 4, dot: 3}],
+    [{v: 9}, {t: 1, n: 2, a: 3, d: 4, dot: 3}],
+  ],
+}
+
+{
+  name: "a node named after a field of its own output, read by the next switch",
+  graph: {
+    nodes: [
+      {expression: "flag", fields: {flag: "x > 0"}},
+      {switch: "s", hit: "collect", when: ["flag", "$nodes.flag.flag", "$nodes.flag == true"]},
+      {expression: "A", fields: {a: "true"}},
+      {expression: "B", fields: {b: "true"}},
+      {expression: "C", fields: {c: "true"}},
+    ],
+    edges: ["input -> flag -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{x: 1}, {a: true, b: true}],
+    [{x: 0}, {}],
+    [{flag: true, x: -1}, {}],
+  ],
+}
+
+{
+  name: "the request carrying a key named like a branch node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {expression: "A", fields: {v: "'node'"}},
+      {expression: "B", fields: {}},
+      {expression: "after", fields: {fromNodes: "$nodes.A.v ?? 'none'", fromInput: "$nodes.input.A.v ?? 'none'"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> after", "s:1 -> B -> after", "after -> output"],
+  },
+  cases: [
+    [{go: true, A: {v: "input"}}, {fromNodes: "node", fromInput: "input"}],
+    [{go: false, A: {v: "input"}}, {fromNodes: "none", fromInput: "input"}],
+    [{go: false}, {fromNodes: "none", fromInput: "none"}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Dynamic node names: the name read from `$nodes` comes from the request and differs per
+// case, including names of untaken branches and unknown names.
+// ---------------------------------------------------------------------------------------
+
+
+// A and B are not passThrough, so `after` reads the name from `$nodes.input`.
+{
+  name: "$nodes indexed by a name from the request",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a", ""]},
+      {expression: "A", fields: {v: "'a-out'"}},
+      {expression: "B", fields: {v: "'b-out'"}},
+      {expression: "after", fields: {got: "$nodes.input.pick == 'input' ? 'input' : ($nodes[$nodes.input.pick].v ?? 'missing')"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> after", "s:1 -> B -> after", "after -> output"],
+  },
+  cases: [
+    [{a: true, pick: "A"}, {got: "a-out"}],
+    [{a: true, pick: "B"}, {got: "missing"}],
+    [{a: false, pick: "B"}, {got: "b-out"}],
+    [{a: false, pick: "A"}, {got: "missing"}],
+    [{a: true, pick: "input"}, {got: "input"}],
+    [{a: true, pick: "zzz"}, {got: "missing"}],
+    [{a: true}, {got: "missing"}],
+    [{a: true, pick: 1}, {got: "missing"}],
+  ],
+}

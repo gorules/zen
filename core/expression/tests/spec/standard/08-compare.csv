@@ -1,0 +1,184 @@
+expression (string);input (json 5);output (json 5);note
+# isSame / isBefore / isAfter without a unit compare instants
+d('2023-10-15').isSame(d('2023-10-15'));;true
+d('2023-10-15').isSame(d('2023-10-15T00:00:00.001Z'));;false
+d('2023-10-15 02:00', 'Europe/Berlin').isSame(d('2023-10-15T00:00:00Z'));;true
+d('2023-10-15', 'Asia/Kathmandu').isSame(d('2023-10-14 18:15'));;true
+d('2023-10-15').isBefore(d('2023-10-15T00:00:00.001Z'));;true
+d('2023-10-15').isAfter(d('2023-10-14T23:59:59.999Z'));;true
+d('2023-10-15').isBefore(d('2023-10-15'));;false
+d('2023-10-15').isAfter(d('2023-10-15'));;false
+d('2023-10-15').isSameOrBefore(d('2023-10-15'));;true
+d('2023-10-15').isSameOrAfter(d('2023-10-15'));;true
+d('2023-10-15').isSameOrBefore(d('2023-10-14'));;false
+d('2023-10-15').isSameOrAfter(d('2023-10-16'));;false
+d('2023-10-15', 'Asia/Tokyo').isBefore(d('2023-10-15'));;true
+d('2023-10-15', 'America/New_York').isAfter(d('2023-10-15'));;true
+# comparison methods accept strings and timestamps for the other date
+d('2023-10-15').isBefore('2023-10-16');;true
+d('2023-10-15').isSame('2023-10-15');;true
+d('2023-10-15').isSame(1697328000000);;true
+d('2023-10-15').isAfter('2023-10-14 23:59:59');;true
+d('2023-10-15').isSame('2023-10-15 18:00', 'day');;true
+# invalid dates never compare true
+d('2023-10-15').isSame(d('foo'));;false
+d('2023-10-15').isBefore(d('foo'));;false
+d('2023-10-15').isAfter(d('foo'));;false
+d('2023-10-15').isSameOrBefore('foo');;false
+d('2023-10-15').isSameOrAfter(null);;false
+d('foo').isSame(d('foo'));;false
+d('foo').isBefore(d('2023-10-15'));;false
+d('foo').isSameOrAfter(d('2023-10-15'), 'day');;false
+# units: the other date is checked against this date's period
+d('2023-10-15 00:00').isSame(d('2023-10-15 23:59:59'), 'day');;true
+d('2023-10-15 00:00').isSame(d('2023-10-16'), 'day');;false
+d('2023-10-15 10:30:15').isSame(d('2023-10-15 10:30:59'), 'minute');;true
+d('2023-10-15 10:30:15').isSame(d('2023-10-15 10:31:00'), 'minute');;false
+d('2023-10-15 10:30:15').isSame(d('2023-10-15 10:59:59'), 'hour');;true
+d('2023-10-15 10:30:15').isSame(d('2023-10-15 11:00'), 'hour');;false
+d('2023-10-15T10:30:15.100Z').isSame(d('2023-10-15T10:30:15.900Z'), 'second');;true
+d('2023-10-15T10:30:15.100Z').isSame(d('2023-10-15T10:30:15.900Z'));;false
+d('2023-10-16').isSame(d('2023-10-22 23:59'), 'week');;true
+d('2023-10-16').isSame(d('2023-10-15'), 'week');;false
+d('2023-10-15').isSame(d('2023-10-09'), 'week');;true
+d('2023-10-15').isSame(d('2023-10-31'), 'month');;true
+d('2023-10-15').isSame(d('2023-11-01'), 'month');;false
+d('2023-10-15').isSame(d('2023-12-31 23:59:59'), 'quarter');;true
+d('2023-10-15').isSame(d('2023-09-30'), 'quarter');;false
+d('2023-10-15').isSame(d('2023-01-01'), 'year');;true
+d('2023-10-15').isSame(d('2024-01-01'), 'y');;false
+d('2023-10-15').isBefore(d('2023-10-16'), 'day');;true
+d('2023-10-15 00:00').isBefore(d('2023-10-15 23:00'), 'day');;false
+d('2023-10-15').isBefore(d('2023-10-22'), 'week');;true
+d('2023-10-15').isBefore(d('2023-10-16'), 'week');;true
+d('2023-10-14').isBefore(d('2023-10-15'), 'week');;false
+d('2023-10-15').isAfter(d('2023-10-14'), 'day');;true
+d('2023-10-15 23:59').isAfter(d('2023-10-15 00:00'), 'day');;false
+d('2023-10-16').isAfter(d('2023-10-15'), 'week');;true
+d('2023-10-15').isAfter(d('2023-10-09'), 'week');;false
+d('2023-10-15').isSameOrBefore(d('2023-10-15 00:00:01'), 'day');;true
+d('2023-10-15').isSameOrBefore(d('2023-10-14 23:59:59'), 'day');;false
+d('2023-10-15 23:00').isSameOrAfter(d('2023-10-15 01:00'), 'day');;true
+d('2023-10-15').isSameOrAfter(d('2023-10-16'), 'day');;false
+d('2023-10-15').isSameOrBefore(d('2024-02-01'), 'year');;true
+d('2023-10-15').isSameOrAfter(d('2023-01-01'), 'q');;true
+d('2023-10-15').isSame(d('2023-10-15'), 'ms');;!error
+d('2023-10-15').isBefore(d('2023-10-16'), 'D');;!error
+# units across zones use this date's zone
+d('2023-10-15', 'Europe/Berlin').isSame(d('2023-10-14 22:30'), 'day');;true
+d('2023-10-15', 'Europe/Berlin').isSame(d('2023-10-15 22:30'), 'day');;false
+d('2023-10-15T00:00:00Z').isSame(d('2023-10-14 23:00', 'America/New_York'), 'day');;true
+d('2023-10-14 23:00', 'America/New_York').isSame(d('2023-10-15T00:00:00Z'), 'day');;true
+d('2023-10-14 19:00', 'America/New_York').isSame(d('2023-10-15T04:00:00Z'), 'day');;false
+d('2023-10-15', 'Asia/Kathmandu').isSame(d('2023-10-15 18:14'), 'day');;true
+d('2023-10-15', 'Asia/Kathmandu').isSame(d('2023-10-15 18:15'), 'day');;false
+# operators on dates
+d('2023-10-15') == d('2023-10-15');;true
+d('2023-10-15') == d('2023-10-15 00:00:00');;true
+d('2023-10-15') == d(1697328000000);;true
+d('2023-10-15') == d('2023-10-16');;false
+d('2023-10-15') != d('2023-10-16');;true
+d('2023-10-15 02:00', 'Europe/Berlin') == d('2023-10-15');;true
+d('2023-10-15 02:00', 'Europe/Berlin') != d('2023-10-15');;false
+d('2023-10-15', 'Asia/Kolkata') == d('2023-10-14 18:30');;true
+d('2023-10-15T00:00:00.001Z') == d('2023-10-15');;false
+d('2023-10-15') < d('2023-10-15T00:00:00.001Z');;true
+d('2023-10-15', 'Asia/Tokyo') < d('2023-10-15');;true
+d('2023-10-15', 'America/New_York') > d('2023-10-15');;true
+d('2023-10-15') <= d('2023-10-15', 'UTC');;true
+d('2023-10-15') >= d('2023-10-15 02:00', 'Europe/Berlin');;true
+d('2023-10-15').endOf('day') > d('2023-10-15 23:59:59');;true
+d('2023-10-15') == '2023-10-15';;true
+d('2023-10-15') == null;;false
+d('2023-10-15') != null;;true
+d('2023-10-15') == 1697328000000;;false
+d('2023-10-15') < '2023-10-16';;true
+d('2023-10-15') < 1697328000001;;!error
+d('2023-10-15') < null;;!error
+# operators with invalid dates
+d('foo') == d('foo');;false;bug: two invalid dates compare equal with == although isSame reports false
+d('foo') == d('bar');;false;bug: two different invalid inputs compare equal
+d('foo') != d('bar');;true;bug: two invalid dates are reported equal
+d('foo') == d('2023-10-15');;false
+d('foo') == null;;false
+d('foo') < d('2023-10-15');;true;question: an invalid date orders before every valid date instead of failing or comparing false
+d('foo') > d('2023-10-15');;false
+d('2023-10-15') > d('foo');;true;question: every valid date orders after an invalid date
+# in / not in with lists of dates
+d('2023-10-15') in [d('2023-10-14'), d('2023-10-15')];;true
+d('2023-10-15') in [d('2023-10-14'), d('2023-10-16')];;false
+d('2023-10-15') in [d('2023-10-15 02:00', 'Europe/Berlin')];;true
+d('2023-10-15') in ['2023-10-15'];;true
+d('2023-10-15') in [];;false
+d('2023-10-15') not in [d('2023-10-14'), d('2023-10-16')];;true
+d('2023-10-15') not in [d('2023-10-15')];;false
+d('foo') in [d('bar')];;false
+d('2023-10-15') in [d('2023-10-14')..d('2023-10-16')];;true
+d('2023-10-15') in (d('2023-10-15')..d('2023-10-16')];;false
+d('2023-10-15') in [d('2023-10-15 02:00', 'Europe/Berlin')..d('2023-10-15')];;true
+d('2023-10-15') in [d('2023-10-15')..d('2023-10-15')];;true
+d('2023-10-15') in [d('2023-10-16')..d('2023-10-14')];;false
+d('2023-10-15') in [1..2];;false;question: a date tested against a number range is false rather than a type error (a string range is an error)
+d('2023-10-15') in ['a'..'b'];;!error
+# min / max of dates
+max([d('2023-10-15'), d('2023-10-15 02:00', 'Europe/Berlin'), d('2023-10-14')]);;'2023-10-15T02:00:00+02:00';question: on a tie between equal instants in different zones max returns the last one, so the rendered zone depends on list order
+min([d('2023-10-15'), d('2023-10-15 02:00', 'Europe/Berlin')]);;'2023-10-15T00:00:00Z'
+min([d('2023-10-15', 'Asia/Tokyo'), d('2023-10-15')]);;'2023-10-15T00:00:00+09:00'
+max([d('2023-10-15', 'Asia/Tokyo'), d('2023-10-15')]);;'2023-10-15T00:00:00Z'
+max([d('2023-10-15', 'America/New_York'), d('2023-10-15')]);;'2023-10-15T00:00:00-04:00'
+min([d('2023-10-15T00:00:00.001Z'), d('2023-10-15')]).timestamp();;1697328000000
+max([d('foo'), d('2023-10-15')]);;'2023-10-15T00:00:00Z'
+min([d('foo'), d('2023-10-15')]);;'Invalid date';question: min returns the invalid date because invalid dates order first
+max([]);;!error
+min([d('2023-10-15'), 1]);;!error
+min([d('2023-10-15'), '2023-10-01']);;!error
+# comparisons on rows
+d(a) == d(b);{a: '2023-10-15', b: '2023-10-15'};true
+d(a) == d(b);{a: '2023-10-15', b: '2023-10-15'};true
+d(a) == d(b);{a: '2023-10-15', b: '2023-10-15 00:00:00'};true
+d(a) == d(b);{a: '2023-10-15', b: '2023-10-16'};false
+d(a) == d(b);{a: '2023-10-15', b: 1697328000000};true
+d(a) == d(b);{a: '2023-10-15', b: 'x'};false
+d(a) == d(b);{a: 'x', b: 'y'};false;bug: two invalid dates compare equal
+d(a) == d(b);{a: '2023-10-15'};false
+d(a) < d(b);{a: '2023-10-15', b: '2023-10-16'};true
+d(a) < d(b);{a: '2023-10-16', b: '2023-10-15'};false
+d(a) < d(b);{a: '2023-10-15', b: '2023-10-15'};false
+d(a) < d(b);{a: '2023-10-15', b: '2023-10-15'};false
+d(a) < d(b);{a: '2024-02-29 23:59:59', b: '2024-03-01'};true
+d(a) <= d(b);{a: '2023-10-15', b: '2023-10-15'};true
+d(a) >= d(b);{a: '2023-10-14', b: '2023-10-15'};false
+d(a) > d(b);{a: 1697328000001, b: '2023-10-15'};true
+d(a).isBefore(d(b), 'day');{a: '2023-10-15 23:59', b: '2023-10-16 00:00'};true
+d(a).isBefore(d(b), 'day');{a: '2023-10-15 00:00', b: '2023-10-15 23:59'};false
+d(a).isBefore(d(b), 'day');{a: '2023-10-15 00:00', b: '2023-10-15 23:59'};false
+d(a).isBefore(d(b), 'day');{a: 'x', b: '2023-10-16'};false
+d(a).isBefore(d(b), 'day');{a: '2023-10-15'};false
+d(a).isSame(d(b), 'month');{a: '2024-02-01', b: '2024-02-29 23:59:59'};true
+d(a).isSame(d(b), 'month');{a: '2024-02-01', b: '2024-03-01'};false
+d(a).isSame(d(b), 'month');{a: '2024-02-01', b: '2024-03-01'};false
+d(a).isSame(d(b), 'month');{a: '2023-12-31', b: '2023-12-01'};true
+d(a).isSame(d(b), 'month');{a: null, b: null};false
+d(a).isSameOrAfter(d(b), 'week');{a: '2023-10-15', b: '2023-10-09'};true
+d(a).isSameOrAfter(d(b), 'week');{a: '2023-10-15', b: '2023-10-16'};false
+d(a).isSameOrAfter(d(b), 'week');{a: '2023-10-16', b: '2023-10-15'};true
+d(a).isSameOrAfter(d(b), 'week');{a: '2023-10-16', b: '2023-10-15'};true
+d(a).isSameOrAfter(d(b), 'week');{a: '2023-10-16', b: 'no'};false
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: '2023-10-15'};true
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: '2023-10-15'};true
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: '2023-10-31'};true
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: '2023-10-31 00:00:01'};false
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: '2023-09-30 23:59:59'};false
+d(s) in [d('2023-10-01')..d('2023-10-31')];{s: 'bad'};false;question: an invalid date is simply outside every range rather than an error
+d(s) in [d('2023-10-01')..d('2023-10-31')];{};false
+d(s, 'UTC') > d('2025-03-20');{s: '2025-03-20T10:15:30Z'};true
+d(s, 'UTC') > d('2025-03-20');{s: '2025-03-19'};false
+d(s, 'UTC') > d('2025-03-20');{s: '2025-03-19'};false
+d(s, 'UTC') > d('2025-03-20');{s: '2025-03-20'};false
+d(s, 'UTC') > d('2025-03-20');{s: 1742428800001};true
+max(map(xs, d(#)));{xs: ['2023-01-15', '2023-03-20', '2023-02-10']};'2023-03-20T00:00:00Z'
+min(map(xs, d(#)));{xs: ['2023-01-15', '2023-03-20', '2023-02-10']};'2023-01-15T00:00:00Z'
+min(map(xs, d(#)));{xs: ['2024-02-29', '2024-02-29']};'2024-02-29T00:00:00Z'
+min(map(xs, d(#)));{xs: []};!error
+count(xs, d(#) < d('2023-06-01'));{xs: ['2023-01-15', '2023-07-20', '2023-02-10']};2
+filter(xs, d(#).isSame(d('2023-10-01'), 'month'));{xs: ['2023-10-15', '2023-11-01', '2023-10-31 23:59']};['2023-10-15', '2023-10-31 23:59']

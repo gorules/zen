@@ -1,0 +1,837 @@
+// Sub-decision topologies: several decision nodes calling the same child, children calling
+// grandchildren, sibling sub-decisions on parallel branches merged at a join, children made of
+// switches and tables, and deep chains close to the depth limit.
+//
+// Every decision node evaluates its child independently: calls share no state, whether they
+// name the same key or not. Depth counts nesting only (root 0, a graph at depth 10 is refused);
+// siblings and sequential calls do not add depth.
+
+// --- The same child from several nodes ------------------------------------------------------------
+{
+  name: "same child called twice in sequence feeds its own result back",
+  decisions: {
+    inc: {nodes: [{expression: "e", fields: {n: "(n ?? 0) + 1", calls: "(calls ?? 0) + 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "first", key: "inc"},
+      {decision: "second", key: "inc"},
+    ],
+  },
+  cases: [
+    [{n: 0}, {n: 2, calls: 2}],
+    [{n: 10, calls: 5}, {n: 12, calls: 7}],
+    [{}, {n: 2, calls: 2}],
+  ],
+}
+
+{
+  name: "same child called three times in sequence with passThrough",
+  decisions: {
+    double: {nodes: [{expression: "e", passThrough: true, fields: {v: "v * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "double"},
+      {decision: "b", key: "double", passThrough: true},
+      {decision: "c", key: "double", outputPath: "last"},
+    ],
+  },
+  cases: [
+    [{v: 1, id: "x"}, {last: {v: 8, id: "x"}}],
+    [{v: 0.5}, {last: {v: 4}}],
+    [{v: -1}, {last: {v: -8}}],
+  ],
+}
+
+{
+  name: "same child on three parallel branches with different inputs",
+  decisions: {
+    grade: {nodes: [{table: "t", inputs: ["score"], outputs: ["grade"], rules: [[">= 90", "'A'"], [">= 70", "'B'"], ["", "'C'"]]}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "math", key: "grade", inputField: "math", outputPath: "grades.math"},
+      {decision: "art", key: "grade", inputField: "art", outputPath: "grades.art"},
+      {decision: "music", key: "grade", inputField: "music", outputPath: "grades.music"},
+    ],
+    edges: ["input -> math -> output", "input -> art -> output", "input -> music -> output"],
+  },
+  cases: [
+    [{math: {score: 95}, art: {score: 75}, music: {score: 10}}, {grades: {math: {grade: "A"}, art: {grade: "B"}, music: {grade: "C"}}}],
+    [{math: {score: 70}, art: {score: 90}, music: {score: 89.99}}, {grades: {math: {grade: "B"}, art: {grade: "A"}, music: {grade: "B"}}}],
+    [{}, {grades: {math: {grade: "C"}, art: {grade: "C"}, music: {grade: "C"}}}],
+  ],
+}
+
+{
+  name: "same child in a loop and a single call",
+  decisions: {
+    norm: {nodes: [{expression: "e", fields: {v: "trim(lower(s))"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "one", key: "norm", inputField: "title", outputPath: "title"},
+      {decision: "many", key: "norm", inputField: "tags", outputPath: "tags", executionMode: "loop"},
+    ],
+    edges: ["input -> one -> output", "input -> many -> output"],
+  },
+  cases: [
+    [{title: {s: "  Hello "}, tags: [{s: "A"}, {s: " b "}]}, {title: {v: "hello"}, tags: [{v: "a"}, {v: "b"}]}],
+    [{title: {s: "X"}, tags: []}, {title: {v: "x"}, tags: []}],
+  ],
+}
+
+{
+  name: "same child on both switch branches",
+  decisions: {
+    label: {nodes: [{expression: "e", fields: {label: "prefix + ':' + string(n)"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n >= 0", ""]},
+      {expression: "pos", fields: {prefix: "'pos'", n: "n"}},
+      {expression: "neg", fields: {prefix: "'neg'", n: "-n"}},
+      {decision: "lp", key: "label"},
+      {decision: "ln", key: "label"},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> lp -> output", "s:1 -> neg -> ln -> output"],
+  },
+  cases: [
+    [{n: 3}, {label: "pos:3"}],
+    [{n: -4}, {label: "neg:4"}],
+    [{n: 0}, {label: "pos:0"}],
+  ],
+}
+
+{
+  name: "same child reached by a collect switch on every taken branch",
+  decisions: {
+    mark: {nodes: [{expression: "e", fields: {seen: "true"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {decision: "ma", key: "mark", outputPath: "a"},
+      {decision: "mb", key: "mark", outputPath: "b"},
+      {decision: "mc", key: "mark", outputPath: "c"},
+    ],
+    edges: ["input -> s", "s:0 -> ma -> output", "s:1 -> mb -> output", "s:2 -> mc -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {a: {seen: true}, b: {seen: true}, c: {seen: true}}],
+    [{a: true, b: false, c: true}, {a: {seen: true}, c: {seen: true}}],
+    [{a: false, b: false, c: false}, {}],
+  ],
+}
+
+// --- Children calling grandchildren ---------------------------------------------------------------
+{
+  name: "child composes two grandchildren in sequence",
+  decisions: {
+    pricing: {nodes: [
+      {decision: "base", key: "base", outputPath: "base"},
+      {decision: "tax", key: "tax", inputField: "base", outputPath: "tax", passThrough: true},
+      {expression: "sum", passThrough: true, fields: {total: "base.amount + tax.amount"}},
+    ]},
+    base: {nodes: [{expression: "e", fields: {amount: "price * qty"}}]},
+    tax: {nodes: [{expression: "e", fields: {amount: "amount * 0.25"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "pricing", outputPath: "pricing"}],
+  },
+  cases: [
+    [{price: 10, qty: 2}, {pricing: {base: {amount: 20}, tax: {amount: 5}, total: 25}}],
+    [{price: 4, qty: 1}, {pricing: {base: {amount: 4}, tax: {amount: 1}, total: 5}}],
+    [{price: 0, qty: 9}, {pricing: {base: {amount: 0}, tax: {amount: 0}, total: 0}}],
+  ],
+}
+
+{
+  name: "child fans out to two grandchildren and joins them",
+  decisions: {
+    profile: {
+      nodes: [
+        {decision: "risk", key: "risk", outputPath: "risk"},
+        {decision: "value", key: "value", outputPath: "value"},
+        {expression: "combine", fields: {segment: "risk.level == 'low' and value.tier == 'high' ? 'prime' : 'standard'"}},
+      ],
+      edges: ["input -> risk -> combine", "input -> value -> combine", "combine -> output"],
+    },
+    risk: {nodes: [{table: "t", inputs: ["defaults"], outputs: ["level"], rules: [["0", "'low'"], ["", "'high'"]]}]},
+    value: {nodes: [{table: "t", inputs: ["spend"], outputs: ["tier"], rules: [[">= 1000", "'high'"], ["", "'low'"]]}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "profile"}],
+  },
+  cases: [
+    [{defaults: 0, spend: 5000}, {segment: "prime"}],
+    [{defaults: 1, spend: 5000}, {segment: "standard"}],
+    [{defaults: 0, spend: 10}, {segment: "standard"}],
+    [{spend: 5000}, {segment: "standard"}],
+  ],
+}
+
+{
+  name: "grandchild result passes up through two outputPaths",
+  decisions: {
+    mid: {nodes: [{decision: "leaf", key: "leaf", outputPath: "leaf", passThrough: true}]},
+    leaf: {nodes: [{expression: "e", fields: {depth: "2", v: "v + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "mid", outputPath: "mid", passThrough: true}],
+  },
+  cases: [
+    [{v: 1}, {v: 1, mid: {v: 1, leaf: {depth: 2, v: 2}}}],
+    [{v: -1, mid: {old: 1}}, {v: -1, mid: {old: 1, v: -1, mid: {old: 1}, leaf: {depth: 2, v: 0}}}],
+  ],
+}
+
+{
+  name: "grandchild selected by a switch in the child",
+  decisions: {
+    router: {
+      nodes: [
+        {switch: "s", when: ["kind == 'person'", "kind == 'company'", ""]},
+        {decision: "p", key: "person"},
+        {decision: "c", key: "company"},
+        {expression: "u", fields: {result: "'unknown'"}},
+      ],
+      edges: ["input -> s", "s:0 -> p -> output", "s:1 -> c -> output", "s:2 -> u -> output"],
+    },
+    person: {nodes: [{expression: "e", fields: {result: "first + ' ' + last"}}]},
+    company: {nodes: [{expression: "e", fields: {result: "upper(name)"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "router"}],
+  },
+  cases: [
+    [{kind: "person", first: "Ann", last: "Lee"}, {result: "Ann Lee"}],
+    [{kind: "company", name: "acme"}, {result: "ACME"}],
+    [{kind: "robot"}, {result: "unknown"}],
+    [{}, {result: "unknown"}],
+  ],
+}
+
+{
+  name: "grandchild missing only on an untaken child branch",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["legacy", ""]},
+        {decision: "old", key: "removed"},
+        {decision: "new", key: "current"},
+      ],
+      edges: ["input -> s", "s:0 -> old -> output", "s:1 -> new -> output"],
+    },
+    current: {nodes: [{expression: "e", fields: {version: "2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{legacy: false}, {version: 2}],
+    [{}, {version: 2}],
+    [{legacy: true}, "!error"],
+  ],
+}
+
+{
+  name: "grandchild error stops the child before its later nodes",
+  decisions: {
+    child: {nodes: [
+      {decision: "check", key: "check", passThrough: true},
+      {expression: "after", fields: {reached: "true"}},
+    ]},
+    check: {
+      nodes: [
+        {switch: "s", when: ["amount <= limit", ""]},
+        {expression: "ok", fields: {checked: "true"}},
+        {custom: "no", kind: "fail", config: {message: "over limit"}},
+      ],
+      edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> no -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{amount: 5, limit: 10}, {reached: true}],
+    [{amount: 10, limit: 10}, {reached: true}],
+    [{amount: 11, limit: 10}, "!error: over limit"],
+  ],
+}
+
+// --- Sibling sub-decisions joined -----------------------------------------------------------------
+{
+  name: "siblings with disjoint keys merge at the output",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {l: "x + 1"}}]},
+    right: {nodes: [{expression: "e", fields: {r: "x - 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {l: 2, r: 0}],
+    [{x: 0.5}, {l: 1.5, r: -0.5}],
+  ],
+}
+
+{
+  name: "siblings joined at an expression node",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {l: "x + 1"}}]},
+    right: {nodes: [{expression: "e", fields: {r: "x - 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+      {expression: "join", fields: {product: "l * r", sawX: "x != null"}},
+    ],
+    edges: ["input -> a -> join", "input -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 3}, {product: 8, sawX: false}],
+    [{x: 1}, {product: 0, sawX: false}],
+    [{x: -2}, {product: 3, sawX: false}],
+  ],
+}
+
+{
+  name: "siblings writing the same key collide at the join",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {winner: "'left'", l: "true"}}]},
+    right: {nodes: [{expression: "e", fields: {winner: "'right'", r: "true"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+      {expression: "join", passThrough: true, fields: {joined: "true"}},
+    ],
+    edges: ["input -> a -> join", "input -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{}, {winner: "left", l: true, r: true, joined: true}, "question: at a join the first-listed branch wins a shared key (incoming data merges in reverse edge order); nothing in the graph makes the precedence visible"],
+    [{winner: "input"}, {winner: "left", l: true, r: true, joined: true}, "question: at a join the first-listed branch wins a shared key (incoming data merges in reverse edge order); nothing in the graph makes the precedence visible"],
+  ],
+}
+
+{
+  name: "siblings writing nested keys deep-merge at the join",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {"report.left": "x * 2", "report.shared.a": "1"}}]},
+    right: {nodes: [{expression: "e", fields: {"report.right": "x * 3", "report.shared.b": "2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+      {expression: "join", fields: {report: "report"}},
+    ],
+    edges: ["input -> a -> join", "input -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 1}, {report: {left: 2, right: 3, shared: {a: 1, b: 2}}}],
+    [{x: 0}, {report: {left: 0, right: 0, shared: {a: 1, b: 2}}}],
+  ],
+}
+
+{
+  name: "siblings under different outputPaths assemble one object",
+  decisions: {
+    credit: {nodes: [{table: "t", inputs: ["score"], outputs: ["ok"], rules: [[">= 600", "true"], ["", "false"]]}]},
+    fraud: {nodes: [{table: "t", inputs: ["flags"], outputs: ["ok"], rules: [["0", "true"], ["", "false"]]}]},
+    kyc: {nodes: [{expression: "e", fields: {ok: "verified == true"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "c", key: "credit", outputPath: "checks.credit"},
+      {decision: "f", key: "fraud", outputPath: "checks.fraud"},
+      {decision: "k", key: "kyc", outputPath: "checks.kyc"},
+      {expression: "verdict", passThrough: true, fields: {approved: "checks.credit.ok and checks.fraud.ok and checks.kyc.ok"}},
+    ],
+    edges: ["input -> c -> verdict", "input -> f -> verdict", "input -> k -> verdict", "verdict -> output"],
+  },
+  cases: [
+    [{score: 700, flags: 0, verified: true}, {checks: {credit: {ok: true}, fraud: {ok: true}, kyc: {ok: true}}, approved: true}],
+    [{score: 500, flags: 0, verified: true}, {checks: {credit: {ok: false}, fraud: {ok: true}, kyc: {ok: true}}, approved: false}],
+    [{score: 700, flags: 2, verified: false}, {checks: {credit: {ok: true}, fraud: {ok: false}, kyc: {ok: false}}, approved: false}],
+    [{score: 700, flags: 0}, {checks: {credit: {ok: true}, fraud: {ok: true}, kyc: {ok: false}}, approved: false}],
+  ],
+}
+
+{
+  name: "sibling sub-decision and a plain branch at the join",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {fromChild: "x * 10"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "c", key: "child"},
+      {expression: "local", passThrough: true, fields: {fromLocal: "x + 1"}},
+      {expression: "join", fields: {sum: "fromChild + fromLocal", x: "x"}},
+    ],
+    edges: ["input -> c -> join", "input -> local -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 1}, {sum: 12, x: 1}],
+    [{x: 0}, {sum: 1, x: 0}],
+  ],
+}
+
+{
+  name: "one sibling failing fails the graph",
+  decisions: {
+    ok: {nodes: [{expression: "e", fields: {ok: "true"}}]},
+    bad: {nodes: [{expression: "e", fields: {v: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "ok"},
+      {decision: "b", key: "bad"},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{n: 2}, {ok: true, v: 4}],
+    [{n: "x"}, "!error"],
+  ],
+}
+
+{
+  name: "sibling on an untaken branch does not run",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {side: "'left'", v: "n * 2"}}]},
+    right: {nodes: [{expression: "e", fields: {side: "'right'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n != null", ""]},
+      {decision: "a", key: "left"},
+      {decision: "b", key: "right"},
+      {expression: "join", passThrough: true, fields: {done: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> join", "s:1 -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 2}, {side: "left", v: 4, done: true}],
+    [{}, {side: "right", done: true}],
+  ],
+}
+
+{
+  name: "siblings returning arrays at a join",
+  decisions: {
+    evens: {nodes: [{expression: "e", inputField: "filter(xs, # % 2 == 0)", executionMode: "loop", fields: {even: "$root"}}]},
+    odds: {nodes: [{expression: "e", inputField: "filter(xs, # % 2 == 1)", executionMode: "loop", fields: {odd: "$root"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "evens", outputPath: "evens"},
+      {decision: "b", key: "odds", outputPath: "odds"},
+      {expression: "join", fields: {e: "len(evens)", o: "len(odds)"}},
+    ],
+    edges: ["input -> a -> join", "input -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{xs: [1, 2, 3, 4, 5]}, {e: 2, o: 3}],
+    [{xs: []}, {e: 0, o: 0}],
+  ],
+}
+
+{
+  name: "siblings returning top-level arrays without outputPath",
+  decisions: {
+    a: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {a: "$root"}}]},
+    b: {nodes: [{expression: "e", fields: {b: "true"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "na", key: "a"},
+      {decision: "nb", key: "b"},
+    ],
+    edges: ["input -> na -> output", "input -> nb -> output"],
+  },
+  cases: [
+    [{xs: [1]}, [{a: 1}], "question: at the output an array result and an object result meet; the array wins and the object branch is dropped"],
+    [{xs: []}, [], "question: at the output an array result and an object result meet; the array wins and the object branch is dropped"],
+  ],
+}
+
+// --- Children with switches and tables -----------------------------------------------------------
+{
+  name: "child with a switch feeding two tables",
+  decisions: {
+    quote: {
+      nodes: [
+        {switch: "s", when: ["type == 'car'", ""]},
+        {table: "car", inputs: ["age"], outputs: ["premium"], rules: [["< 25", "900"], ["< 65", "500"], ["", "700"]]},
+        {table: "home", inputs: ["value"], outputs: ["premium"], rules: [["> 500000", "1200"], ["", "400"]]},
+      ],
+      edges: ["input -> s", "s:0 -> car -> output", "s:1 -> home -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "quote", outputPath: "quote", passThrough: true}],
+  },
+  cases: [
+    [{type: "car", age: 20}, {type: "car", age: 20, quote: {premium: 900}}],
+    [{type: "car", age: 40}, {type: "car", age: 40, quote: {premium: 500}}],
+    [{type: "car", age: 70}, {type: "car", age: 70, quote: {premium: 700}}],
+    [{type: "home", value: 600000}, {type: "home", value: 600000, quote: {premium: 1200}}],
+    [{value: 1}, {value: 1, quote: {premium: 400}}],
+  ],
+}
+
+{
+  name: "child with a table then a switch on its result",
+  decisions: {
+    flow: {
+      nodes: [
+        {table: "tier", passThrough: true, inputs: ["points"], outputs: ["tier"], rules: [[">= 100", "'gold'"], ["", "'basic'"]]},
+        {switch: "s", when: ["tier == 'gold'", ""]},
+        {expression: "gold", fields: {perk: "'lounge'", tier: "tier"}},
+        {expression: "basic", fields: {perk: "'none'", tier: "tier"}},
+      ],
+      edges: ["input -> tier -> s", "s:0 -> gold -> output", "s:1 -> basic -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "flow"}],
+  },
+  cases: [
+    [{points: 150}, {perk: "lounge", tier: "gold"}],
+    [{points: 99}, {perk: "none", tier: "basic"}],
+    [{}, {perk: "none", tier: "basic"}],
+  ],
+}
+
+{
+  name: "child with a collect table feeding an expression",
+  decisions: {
+    fees: {nodes: [
+      {table: "t", hit: "collect", inputs: ["international", "express"], outputs: ["fee"], rules: [
+        ["true", "", "5"],
+        ["", "true", "10"],
+        ["", "", "1"],
+      ]},
+      {expression: "sum", inputField: "{rows: $root}", fields: {fees: "sum(map(rows, #.fee))", count: "len(rows)"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "fees", outputPath: "fees"}],
+  },
+  cases: [
+    [{international: true, express: true}, {fees: {fees: 16, count: 3}}],
+    [{international: false, express: true}, {fees: {fees: 11, count: 2}}],
+    [{}, {fees: {fees: 1, count: 1}}],
+  ],
+}
+
+{
+  name: "child with a collect switch and a table on each branch",
+  decisions: {
+    flags: {
+      nodes: [
+        {switch: "s", hit: "collect", when: ["age != null", "income != null"]},
+        {table: "ageT", inputs: ["age"], outputs: ["ageBand"], rules: [["< 30", "'young'"], ["", "'older'"]]},
+        {table: "incT", inputs: ["income"], outputs: ["incomeBand"], rules: [["> 100", "'high'"], ["", "'low'"]]},
+      ],
+      edges: ["input -> s", "s:0 -> ageT -> output", "s:1 -> incT -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "flags"}],
+  },
+  cases: [
+    [{age: 20, income: 500}, {ageBand: "young", incomeBand: "high"}],
+    [{age: 50}, {ageBand: "older"}],
+    [{income: 5}, {incomeBand: "low"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "parent switch on a child's table result",
+  decisions: {
+    classify: {nodes: [{table: "t", inputs: ["amount"], outputs: ["band"], rules: [["> 1000", "'high'"], ["", "'low'"]]}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "cls", key: "classify", passThrough: true},
+      {switch: "s", when: ["band == 'high'", ""]},
+      {expression: "review", fields: {action: "'review'", amount: "amount"}},
+      {expression: "auto", fields: {action: "'auto'"}},
+    ],
+    edges: ["input -> cls -> s", "s:0 -> review -> output", "s:1 -> auto -> output"],
+  },
+  cases: [
+    [{amount: 5000}, {action: "review", amount: 5000}],
+    [{amount: 10}, {action: "auto"}],
+    [{amount: 1000}, {action: "auto"}],
+  ],
+}
+
+// --- Deep chains near the depth limit ---------------------------------------------------------------
+// The root runs at depth 0. Nine nested children (depth 1-9) run; a tenth (depth 10) is refused.
+{
+  name: "nine nested levels each adding one",
+  decisions: {
+    l1: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l2"}]},
+    l2: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l3"}]},
+    l3: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l4"}]},
+    l4: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l5"}]},
+    l5: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l6"}]},
+    l6: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l7"}]},
+    l7: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l8"}]},
+    l8: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1"}}, {decision: "d", key: "l9"}]},
+    l9: {nodes: [{expression: "e", passThrough: true, fields: {n: "n + 1", bottom: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d", key: "l1"}],
+  },
+  cases: [
+    [{n: 0}, {n: 9, bottom: true}],
+    [{n: 100, keep: "x"}, {n: 109, bottom: true, keep: "x"}],
+    [{n: "a"}, "!error"],
+  ],
+}
+
+{
+  name: "ten nested levels exceed the depth limit",
+  decisions: {
+    l1: {nodes: [{decision: "d", key: "l2"}]},
+    l2: {nodes: [{decision: "d", key: "l3"}]},
+    l3: {nodes: [{decision: "d", key: "l4"}]},
+    l4: {nodes: [{decision: "d", key: "l5"}]},
+    l5: {nodes: [{decision: "d", key: "l6"}]},
+    l6: {nodes: [{decision: "d", key: "l7"}]},
+    l7: {nodes: [{decision: "d", key: "l8"}]},
+    l8: {nodes: [{decision: "d", key: "l9"}]},
+    l9: {nodes: [{decision: "d", key: "l10"}]},
+    l10: {nodes: [{expression: "e", fields: {reached: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d", key: "l1"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{x: 1}, "!error"],
+  ],
+}
+
+{
+  name: "depth limit only on the branch that goes deep",
+  decisions: {
+    l1: {nodes: [{decision: "d", key: "l2"}]},
+    l2: {nodes: [{decision: "d", key: "l3"}]},
+    l3: {nodes: [{decision: "d", key: "l4"}]},
+    l4: {nodes: [{decision: "d", key: "l5"}]},
+    l5: {nodes: [{decision: "d", key: "l6"}]},
+    l6: {nodes: [{decision: "d", key: "l7"}]},
+    l7: {nodes: [{decision: "d", key: "l8"}]},
+    l8: {nodes: [{decision: "d", key: "l9"}]},
+    l9: {nodes: [{decision: "d", key: "l10"}]},
+    l10: {nodes: [{expression: "e", fields: {path: "'deep'"}}]},
+    shallow: {nodes: [{expression: "e", fields: {path: "'shallow'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["deep", ""]},
+      {decision: "deepCall", key: "l1"},
+      {decision: "shallowCall", key: "shallow"},
+    ],
+    edges: ["input -> s", "s:0 -> deepCall -> output", "s:1 -> shallowCall -> output"],
+  },
+  cases: [
+    [{deep: false}, {path: "shallow"}],
+    [{}, {path: "shallow"}],
+    [{deep: true}, "!error"],
+  ],
+}
+
+{
+  name: "siblings and sequential calls do not add depth",
+  decisions: {
+    l1: {nodes: [{decision: "d", key: "l2"}]},
+    l2: {nodes: [{decision: "d", key: "l3"}]},
+    l3: {nodes: [{decision: "d", key: "l4"}]},
+    l4: {nodes: [{decision: "d", key: "l5"}]},
+    l5: {nodes: [{decision: "d", key: "l6"}]},
+    l6: {nodes: [{decision: "d", key: "l7"}]},
+    l7: {nodes: [{decision: "d", key: "l8"}]},
+    l8: {
+      nodes: [
+        {decision: "x", key: "leaf", outputPath: "x"},
+        {decision: "y", key: "leaf", outputPath: "y"},
+        {decision: "z", key: "leaf", inputField: "x", outputPath: "z"},
+      ],
+      edges: ["input -> x -> z -> output", "input -> y -> output"],
+    },
+    leaf: {nodes: [{expression: "e", fields: {v: "(v ?? 0) + 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "l1", outputPath: "a"},
+      {decision: "b", key: "l1", outputPath: "b"},
+      {decision: "c", key: "l1", inputField: "a.z", outputPath: "c"},
+    ],
+    edges: ["input -> a -> c -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{v: 1}, {b: {z: {v: 3}, y: {v: 2}}, c: {z: {v: 5}, y: {v: 4}}}],
+    [{}, {b: {z: {v: 2}, y: {v: 1}}, c: {z: {v: 4}, y: {v: 3}}}],
+    [{v: -2}, {b: {z: {v: 0}, y: {v: -1}}, c: {z: {v: 2}, y: {v: 1}}}],
+  ],
+}
+
+{
+  name: "a loop at depth nine",
+  decisions: {
+    l1: {nodes: [{decision: "d", key: "l2"}]},
+    l2: {nodes: [{decision: "d", key: "l3"}]},
+    l3: {nodes: [{decision: "d", key: "l4"}]},
+    l4: {nodes: [{decision: "d", key: "l5"}]},
+    l5: {nodes: [{decision: "d", key: "l6"}]},
+    l6: {nodes: [{decision: "d", key: "l7"}]},
+    l7: {nodes: [{decision: "d", key: "l8"}]},
+    l8: {nodes: [{decision: "d", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}]},
+    item: {nodes: [{expression: "e", fields: {sq: "n * n"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d", key: "l1"}],
+  },
+  cases: [
+    [{items: [{n: 2}, {n: 3}]}, {out: [{sq: 4}, {sq: 9}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "a loop of children at the depth limit fails only when it has items",
+  decisions: {
+    l1: {nodes: [{decision: "d", key: "l2"}]},
+    l2: {nodes: [{decision: "d", key: "l3"}]},
+    l3: {nodes: [{decision: "d", key: "l4"}]},
+    l4: {nodes: [{decision: "d", key: "l5"}]},
+    l5: {nodes: [{decision: "d", key: "l6"}]},
+    l6: {nodes: [{decision: "d", key: "l7"}]},
+    l7: {nodes: [{decision: "d", key: "l8"}]},
+    l8: {nodes: [{decision: "d", key: "l9"}]},
+    l9: {nodes: [{decision: "d", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}]},
+    item: {nodes: [{expression: "e", fields: {sq: "n * n"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d", key: "l1"}],
+  },
+  cases: [
+    [{items: []}, {out: []}],
+    [{items: [{n: 2}]}, "!error"],
+  ],
+}
+
+{
+  name: "recursion over a list stops one call short of the limit",
+  decisions: {
+    walk: {
+      nodes: [
+        {switch: "s", when: ["len(rest) > 0", ""]},
+        {expression: "step", fields: {rest: "rest[1:]", out: "flatten([out ?? [], [upper(rest[0])]])"}},
+        {decision: "again", key: "walk"},
+        {expression: "end", fields: {out: "out ?? []"}},
+      ],
+      edges: ["input -> s", "s:0 -> step -> again -> output", "s:1 -> end -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "walk"}],
+  },
+  cases: [
+    [{rest: []}, {out: []}],
+    [{rest: ["a", "b"]}, {out: ["A", "B"]}],
+    [{rest: ["a", "b", "c", "d", "e", "f", "g", "h"]}, {out: ["A", "B", "C", "D", "E", "F", "G", "H"]}],
+    [{rest: ["a", "b", "c", "d", "e", "f", "g", "h", "i"]}, "!error"],
+  ],
+}
+
+{
+  name: "depth error inside one sibling fails the whole graph",
+  decisions: {
+    forever: {nodes: [{decision: "again", key: "forever"}]},
+    fine: {nodes: [{expression: "e", fields: {fine: "true"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "a", key: "fine"},
+      {decision: "b", key: "forever"},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, "!error"],
+    [{x: 1}, "!error"],
+  ],
+}
+
+// --- Realistic chains ------------------------------------------------------------------------------
+{
+  name: "loan pipeline of shared children",
+  decisions: {
+    validate: {nodes: [
+      {input: "in", schema: {type: "object", required: ["amount", "income"], properties: {amount: {type: "number"}, income: {type: "number"}}}},
+      {expression: "e", passThrough: true, fields: {valid: "amount > 0 and income > 0"}},
+    ]},
+    ratio: {nodes: [{expression: "e", passThrough: true, fields: {dti: "round(amount / income * 100)"}}]},
+    decide: {
+      nodes: [
+        {switch: "s", when: ["not valid", "dti <= 30", "dti <= 50", ""]},
+        {expression: "invalid", fields: {decision: "'invalid'"}},
+        {expression: "approve", fields: {decision: "'approve'"}},
+        {table: "manual", inputs: ["income"], outputs: ["decision"], rules: [[">= 100000", "'approve'"], ["", "'refer'"]]},
+        {expression: "decline", fields: {decision: "'decline'"}},
+      ],
+      edges: ["input -> s", "s:0 -> invalid -> output", "s:1 -> approve -> output", "s:2 -> manual -> output", "s:3 -> decline -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "v", key: "validate"},
+      {decision: "r", key: "ratio"},
+      {decision: "d", key: "decide", outputPath: "result", passThrough: true},
+    ],
+  },
+  cases: [
+    [{amount: 20, income: 100}, {amount: 20, income: 100, valid: true, dti: 20, result: {decision: "approve"}}],
+    [{amount: 40, income: 100}, {amount: 40, income: 100, valid: true, dti: 40, result: {decision: "refer"}}],
+    [{amount: 40000, income: 100000}, {amount: 40000, income: 100000, valid: true, dti: 40, result: {decision: "approve"}}],
+    [{amount: 90, income: 100}, {amount: 90, income: 100, valid: true, dti: 90, result: {decision: "decline"}}],
+    [{amount: 0, income: 100}, {amount: 0, income: 100, valid: false, dti: 0, result: {decision: "invalid"}}],
+    [{amount: 10}, "!error"],
+  ],
+}
+
+{
+  name: "order with per-line child and per-order grandchild",
+  decisions: {
+    order: {nodes: [
+      {decision: "lines", key: "line", inputField: "lines", outputPath: "lines", executionMode: "loop"},
+      {decision: "totals", key: "totals"},
+    ]},
+    line: {nodes: [{expression: "e", fields: {amount: "price * qty"}}]},
+    totals: {nodes: [{expression: "e", fields: {count: "len(lines)", total: "sum(map(lines, #.amount))"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "order", inputField: "order", outputPath: "summary", passThrough: true}],
+  },
+  cases: [
+    [{order: {lines: [{price: 2, qty: 3}, {price: 1.5, qty: 2}]}}, {order: {lines: [{price: 2, qty: 3}, {price: 1.5, qty: 2}]}, summary: {count: 2, total: 9}}],
+    [{order: {lines: []}}, {order: {lines: []}, summary: {count: 0, total: 0}}],
+  ],
+}

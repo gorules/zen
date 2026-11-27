@@ -1,0 +1,419 @@
+// Realistic telco and energy decisions: plan recommendation by projecting each catalog plan in a
+// loop expression, tiered energy billing with a net-metering switch and a collect table whose
+// cells compute the kWh per tier, outage prioritisation with collected points and a collect
+// switch fanning out notifications, tariff selection through a sub-decision per tariff that
+// switches on the tariff kind, data allowance with rollover and dated add-ons (evaluation time is
+// fixed at Thursday 2025-03-20T10:15:30Z), and roaming charges from a loop zone table. Each suite
+// is one decision exercised across main paths, boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Plan recommendation: a pass-through expression supplies the catalog, a loop expression costs
+// every plan against the usage read through `$nodes`, the cheapest plan wins (catalog order on a
+// tie), lines get a multi-line discount and a budget gate splits the answer.
+{
+  name: "plan recommendation: projected cost per plan, multi-line discount and budget",
+  graph: {
+    nodes: [
+      {input: "customer"},
+      {expression: "catalog", passThrough: true, fields: {
+        plans: "[{id: 'lite', price: 15, dataGb: 5, minutes: 300, overagePerGb: 10}, {id: 'plus', price: 30, dataGb: 20, minutes: 1000, overagePerGb: 8}, {id: 'max', price: 45, dataGb: 100, minutes: 99999, overagePerGb: 5}]",
+      }},
+      {expression: "cost", executionMode: "loop", inputField: "plans", outputPath: "costed", fields: {
+        id: "id",
+        dataOver: "max([0, ceil($nodes.customer.usage.dataGb - dataGb)])",
+        minuteOver: "max([0, $nodes.customer.usage.minutes - minutes])",
+        cost: "price + $.dataOver * overagePerGb + $.minuteOver * 0.05",
+      }},
+      {expression: "pick", passThrough: true, fields: {
+        cheapest: "min(map(costed, #.cost))",
+        best: "filter(costed, #.cost == $.cheapest)[0]",
+        lineDiscount: "(lines ?? 1) >= 3 ? 0.1 : 0",
+        monthly: "round($.best.cost * (lines ?? 1) * (1 - $.lineDiscount), 2)",
+      }},
+      {switch: "budgetGate", when: ["budget != null and monthly > budget", ""]},
+      {expression: "overBudget", fields: {recommendation: "best.id", monthly: "monthly", status: "'over budget'", shortfall: "monthly - budget"}},
+      {table: "verdict", inputs: ["best.dataOver + best.minuteOver"], outputs: ["recommendation", "monthly", "status"], rules: [
+        ["0", "best.id", "monthly", "'fits'"],
+        ["", "best.id", "monthly", "'fits with overage'"],
+      ]},
+      {output: "offer"},
+    ],
+    edges: [
+      "customer -> catalog -> cost -> pick",
+      "catalog -> pick -> budgetGate",
+      "budgetGate:0 -> overBudget -> offer",
+      "budgetGate:1 -> verdict -> offer",
+    ],
+  },
+  cases: [
+    [{usage: {dataGb: 3, minutes: 200}, budget: 20}, {recommendation: "lite", monthly: 15, status: "fits"}],
+    [{usage: {dataGb: 6, minutes: 200}, budget: 40}, {recommendation: "lite", monthly: 25, status: "fits with overage"}],
+    [{usage: {dataGb: 6.2, minutes: 200}, budget: 40}, {recommendation: "plus", monthly: 30, status: "fits"}],
+    [{usage: {dataGb: 5, minutes: 300}, budget: 40}, {recommendation: "lite", monthly: 15, status: "fits"}],
+    [{usage: {dataGb: 5.01, minutes: 300}, budget: 40}, {recommendation: "lite", monthly: 25, status: "fits with overage"}],
+    [{usage: {dataGb: 20, minutes: 1200}, budget: 60}, {recommendation: "plus", monthly: 40, status: "fits with overage"}],
+    [{usage: {dataGb: 50, minutes: 500}, budget: 60}, {recommendation: "max", monthly: 45, status: "fits"}],
+    // lite and plus both cost 30: the first plan in catalog order wins.
+    [{usage: {dataGb: 4, minutes: 600}, budget: 60}, {recommendation: "lite", monthly: 30, status: "fits with overage"}],
+    [{usage: {dataGb: 0, minutes: 0}, budget: 15}, {recommendation: "lite", monthly: 15, status: "fits"}],
+    [{usage: {dataGb: 3, minutes: 200}, lines: 3, budget: 50}, {recommendation: "lite", monthly: 40.5, status: "fits"}],
+    [{usage: {dataGb: 3, minutes: 200}, lines: 2, budget: 50}, {recommendation: "lite", monthly: 30, status: "fits"}],
+    [{usage: {dataGb: 50, minutes: 500}, lines: 4, budget: 150}, {recommendation: "max", monthly: 162, status: "over budget", shortfall: 12}],
+    [{usage: {dataGb: 3, minutes: 200}, budget: 10}, {recommendation: "lite", monthly: 15, status: "over budget", shortfall: 5}],
+    [{usage: {dataGb: 3, minutes: 200}}, {recommendation: "lite", monthly: 15, status: "fits"}],
+    [{usage: {dataGb: 1000, minutes: 100}, budget: 100}, {recommendation: "max", monthly: 4545, status: "over budget", shortfall: 4445}],
+    // The loop reads the usage through `$nodes`; missing or mistyped usage fails the loop.
+    [{usage: {minutes: 200}, budget: 20}, "!error"],
+    [{usage: {dataGb: 3, minutes: "200"}, budget: 20}, "!error"],
+    [{budget: 20}, "!error"],
+    // A string budget makes the gate condition error, so it is false and the verdict decides.
+    [{usage: {dataGb: 3, minutes: 200}, budget: "10"}, {recommendation: "lite", monthly: 15, status: "fits"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Energy bill: net consumption after solar export, a credit branch when the customer exported
+// more than imported, otherwise a collect table writes one row per tier crossed (tier sizes scale
+// with the billing days), class and region tables add the fixed charge, discount and tax.
+{
+  name: "energy bill: net metering, tiered kWh by billing days, discount and tax",
+  graph: {
+    nodes: [
+      {input: "meter"},
+      {expression: "net", passThrough: true, fields: {
+        "bill.netKwh": "usage.importKwh - (usage.exportKwh ?? 0)",
+        "bill.days": "days ?? 30",
+      }},
+      {switch: "netGate", when: ["bill.netKwh < 0", ""]},
+      {expression: "credit", fields: {status: "'credit'", creditKwh: "abs(bill.netKwh)", creditAmount: "round(abs(bill.netKwh) * 0.08, 2)"}},
+      {table: "tiers", hit: "collect", outputPath: "tiers", passThrough: true, inputs: ["bill.netKwh"], outputs: ["tier", "kwh", "rate"], rules: [
+        ["> 0", "1", "min([bill.netKwh, bill.days * 10])", "0.12"],
+        ["> bill.days * 10", "2", "min([bill.netKwh, bill.days * 20]) - bill.days * 10", "0.18"],
+        ["> bill.days * 20", "3", "bill.netKwh - bill.days * 20", "0.25"],
+      ]},
+      {table: "rateClass", passThrough: true, inputs: ["account.class", "account.lowIncome"], outputs: ["adj.fixed", "adj.discount"], rules: [
+        ["'residential'", "true", "5", "0.3"],
+        ["'residential'", "", "12", "0"],
+        ["'business'", "", "25", "0"],
+      ]},
+      {table: "tax", passThrough: true, inputs: ["account.region"], outputs: ["adj.taxRate"], rules: [
+        ["'north'", "0.05"],
+        ["'south'", "0.07"],
+        ["", "0.06"],
+      ]},
+      {expression: "total", fields: {
+        status: "'charge'",
+        tiersUsed: "len(tiers)",
+        energy: "round(sum(map(tiers, #.kwh * #.rate)), 2)",
+        discount: "round($.energy * adj.discount, 2)",
+        subtotal: "$.energy - $.discount + adj.fixed",
+        tax: "round($.subtotal * adj.taxRate, 2)",
+        total: "$.subtotal + $.tax",
+      }},
+      {output: "invoice"},
+    ],
+    edges: [
+      "meter -> net -> netGate",
+      "netGate:0 -> credit -> invoice",
+      "netGate:1 -> tiers -> rateClass -> tax -> total -> invoice",
+    ],
+  },
+  cases: [
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 250}}, {status: "charge", tiersUsed: 1, energy: 30, discount: 0, subtotal: 42, tax: 2.1, total: 44.1}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 450}}, {status: "charge", tiersUsed: 2, energy: 63, discount: 0, subtotal: 75, tax: 3.75, total: 78.75}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 800}}, {status: "charge", tiersUsed: 3, energy: 140, discount: 0, subtotal: 152, tax: 7.6, total: 159.6}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 300}}, {status: "charge", tiersUsed: 1, energy: 36, discount: 0, subtotal: 48, tax: 2.4, total: 50.4}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 300.5}}, {status: "charge", tiersUsed: 2, energy: 36.09, discount: 0, subtotal: 48.09, tax: 2.4, total: 50.49}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 600}}, {status: "charge", tiersUsed: 2, energy: 90, discount: 0, subtotal: 102, tax: 5.1, total: 107.1}],
+    [{account: {class: "residential", region: "north", lowIncome: true}, usage: {importKwh: 450}}, {status: "charge", tiersUsed: 2, energy: 63, discount: 18.9, subtotal: 49.1, tax: 2.46, total: 51.56}],
+    [{account: {class: "residential", region: "north", lowIncome: false}, usage: {importKwh: 450}}, {status: "charge", tiersUsed: 2, energy: 63, discount: 0, subtotal: 75, tax: 3.75, total: 78.75}],
+    [{account: {class: "business", region: "south"}, usage: {importKwh: 800}, days: 31}, {status: "charge", tiersUsed: 3, energy: 138, discount: 0, subtotal: 163, tax: 11.41, total: 174.41}],
+    [{account: {class: "residential", region: "east"}, usage: {importKwh: 250}}, {status: "charge", tiersUsed: 1, energy: 30, discount: 0, subtotal: 42, tax: 2.52, total: 44.52}],
+    [{account: {class: "residential"}, usage: {importKwh: 250}}, {status: "charge", tiersUsed: 1, energy: 30, discount: 0, subtotal: 42, tax: 2.52, total: 44.52}],
+    // Solar export nets against import; exporting more turns the bill into a credit.
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 400, exportKwh: 150}}, {status: "charge", tiersUsed: 1, energy: 30, discount: 0, subtotal: 42, tax: 2.1, total: 44.1}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 100, exportKwh: 250}}, {status: "credit", creditKwh: 150, creditAmount: 12}],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 0, exportKwh: 12.5}}, {status: "credit", creditKwh: 12.5, creditAmount: 1}],
+    // Zero net consumption crosses no tier: the collect table writes an empty list.
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 200, exportKwh: 200}}, {status: "charge", tiersUsed: 0, energy: 0, discount: 0, subtotal: 12, tax: 0.6, total: 12.6}],
+    // Zero billing days collapse the first two tiers to zero kWh; every kWh lands in tier 3.
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: 50}, days: 0}, {status: "charge", tiersUsed: 3, energy: 12.5, discount: 0, subtotal: 24.5, tax: 1.23, total: 25.73}],
+    // No customer class means no fixed charge or discount and the total fails; a missing or
+    // string import fails the net step.
+    [{account: {region: "north"}, usage: {importKwh: 250}}, "!error"],
+    [{account: {class: "residential", region: "north"}, usage: {exportKwh: 10}}, "!error"],
+    [{account: {class: "residential", region: "north"}, usage: {importKwh: "250"}}, "!error"],
+    [{account: {class: "residential", region: "north"}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Outage priority: column-less rules collect `points[]` and `reasons[]` (the catch-all adds a
+// zero point and no reason), the score bands into a priority with a restoration target, and a
+// collect switch fans out to every notification that applies; the default branch carries the
+// priority and all branches meet at a summary. Conditions that error count as not matching, so
+// bad or missing fields drop their rule silently.
+{
+  name: "outage priority: collected points, priority band and fan-out notifications",
+  graph: {
+    nodes: [
+      {input: "outage"},
+      {table: "score", passThrough: true, inputs: [null], outputs: ["points[]", "reasons[]"], rules: [
+        ["outage.customers >= 10000", "40", "'large outage'"],
+        ["outage.customers >= 1000 and outage.customers < 10000", "20", "'medium outage'"],
+        ["'hospital' in outage.critical", "50", "'hospital affected'"],
+        ["'water' in outage.critical or 'telecom' in outage.critical", "25", "'critical infrastructure'"],
+        ["outage.medicalBaseline > 0", "15 + min([outage.medicalBaseline, 10])", "'medical baseline customers'"],
+        ["outage.weather in ['heat', 'freeze']", "20", "'extreme temperature'"],
+        ["outage.durationH > 4", "10", "'extended duration'"],
+        ["", "0", ""],
+      ]},
+      {expression: "total", passThrough: true, fields: {score: "sum(points)"}},
+      {table: "priority", passThrough: true, inputs: ["score"], outputs: ["priority", "targetH"], rules: [
+        [">= 80", "'P1'", "2"],
+        ["[40..80)", "'P2'", "4"],
+        ["[15..40)", "'P3'", "8"],
+        ["", "'P4'", "24"],
+      ]},
+      {switch: "notify", hit: "collect", when: [
+        "outage.customers >= 5000",
+        "'hospital' in outage.critical",
+        "outage.customers >= 20000 or priority == 'P1'",
+        "outage.medicalBaseline > 0",
+        "",
+      ]},
+      {expression: "regulator", fields: {"notices.regulator": "true"}},
+      {expression: "hospital", fields: {"notices.hospital": "true"}},
+      {expression: "press", fields: {"notices.press": "true"}},
+      {expression: "medical", fields: {"notices.medicalCalls": "outage.medicalBaseline"}},
+      {expression: "base", fields: {priority: "priority", targetH: "targetH", score: "score", reasons: "reasons"}},
+      {expression: "summary", fields: {priority: "priority", targetH: "targetH", score: "score", reasons: "reasons", notices: "notices ?? {}"}},
+      {output: "dispatch"},
+    ],
+    edges: [
+      "outage -> score -> total -> priority -> notify",
+      "notify:0 -> regulator -> summary",
+      "notify:1 -> hospital -> summary",
+      "notify:2 -> press -> summary",
+      "notify:3 -> medical -> summary",
+      "notify:4 -> base -> summary",
+      "summary -> dispatch",
+    ],
+  },
+  cases: [
+    [{outage: {customers: 500, durationH: 2, critical: [], medicalBaseline: 0, weather: "clear"}}, {priority: "P4", targetH: 24, score: 0, reasons: [], notices: {}}],
+    [{outage: {customers: 12000, durationH: 6, critical: ["hospital"], medicalBaseline: 3, weather: "heat"}}, {priority: "P1", targetH: 2, score: 138, reasons: ["large outage", "hospital affected", "medical baseline customers", "extreme temperature", "extended duration"], notices: {regulator: true, hospital: true, press: true, medicalCalls: 3}}],
+    [{outage: {customers: 1000, durationH: 4, critical: ["water"], medicalBaseline: 0, weather: "clear"}}, {priority: "P2", targetH: 4, score: 45, reasons: ["medium outage", "critical infrastructure"], notices: {}}],
+    [{outage: {customers: 9999, durationH: 1, critical: [], medicalBaseline: 20, weather: "freeze"}}, {priority: "P2", targetH: 4, score: 65, reasons: ["medium outage", "medical baseline customers", "extreme temperature"], notices: {regulator: true, medicalCalls: 20}}],
+    [{outage: {customers: 25000, durationH: 1, critical: [], medicalBaseline: 0, weather: "clear"}}, {priority: "P2", targetH: 4, score: 40, reasons: ["large outage"], notices: {regulator: true, press: true}}],
+    [{outage: {customers: 999, durationH: 5, critical: [], medicalBaseline: 0, weather: "rain"}}, {priority: "P4", targetH: 24, score: 10, reasons: ["extended duration"], notices: {}}],
+    [{outage: {customers: 999, durationH: 1, critical: [], medicalBaseline: 1, weather: "rain"}}, {priority: "P3", targetH: 8, score: 16, reasons: ["medical baseline customers"], notices: {medicalCalls: 1}}],
+    [{outage: {customers: 2000, durationH: 5, critical: ["hospital"], medicalBaseline: 0, weather: "clear"}}, {priority: "P1", targetH: 2, score: 80, reasons: ["medium outage", "hospital affected", "extended duration"], notices: {hospital: true, press: true}}],
+    [{outage: {customers: 4999, durationH: 4, critical: ["telecom", "school"], medicalBaseline: 0, weather: "clear"}}, {priority: "P2", targetH: 4, score: 45, reasons: ["medium outage", "critical infrastructure"], notices: {}}],
+    [{outage: {customers: 5000, durationH: 0.5, critical: [], medicalBaseline: 0, weather: "clear"}}, {priority: "P3", targetH: 8, score: 20, reasons: ["medium outage"], notices: {regulator: true}}],
+    [{outage: {customers: 10, durationH: 1, critical: [], medicalBaseline: 0, weather: "heat"}}, {priority: "P3", targetH: 8, score: 20, reasons: ["extreme temperature"], notices: {}}],
+    // Missing critical facilities: both `in` rules and the hospital branch error and are skipped.
+    [{outage: {customers: 100, durationH: 1, medicalBaseline: 0, weather: "clear"}}, {priority: "P4", targetH: 24, score: 0, reasons: [], notices: {}}],
+    // Missing customer count: only the size rules and the size-based notices drop out.
+    [{outage: {durationH: 1, critical: ["hospital"]}}, {priority: "P2", targetH: 4, score: 50, reasons: ["hospital affected"], notices: {hospital: true}}],
+    // Strings where numbers are expected fail their rules instead of erroring the decision.
+    [{outage: {customers: "12000", durationH: "6", critical: [], medicalBaseline: "3", weather: "heat"}}, {priority: "P3", targetH: 8, score: 20, reasons: ["extreme temperature"], notices: {}}],
+    [{}, {priority: "P4", targetH: 24, score: 0, reasons: [], notices: {}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tariff selection: an expression pairs each catalog tariff with the usage, a sub-decision runs
+// per pair in loop mode (a switch on the tariff kind into flat, tiered and time-of-use formulas,
+// joined into the annual cost with the standing charge), then the cheapest priceable tariff is
+// compared with the current one. Unknown tariff kinds price to nothing and are left out.
+{
+  name: "tariff selection: per-tariff sub-decision with a kind switch, saving and advice",
+  decisions: {
+    annualCost: {
+      nodes: [
+        {input: "quote"},
+        {switch: "kind", when: ["tariff.kind == 'flat'", "tariff.kind == 'tiered'", "tariff.kind == 'tou'", ""]},
+        {expression: "flat", passThrough: true, fields: {energy: "usage.annualKwh * tariff.rate"}},
+        {expression: "tiered", passThrough: true, fields: {energy: "min([usage.annualKwh, tariff.threshold]) * tariff.rate1 + max([0, usage.annualKwh - tariff.threshold]) * tariff.rate2"}},
+        {expression: "tou", passThrough: true, fields: {energy: "usage.annualKwh * usage.peakShare * tariff.peak + usage.annualKwh * (1 - usage.peakShare) * tariff.offPeak"}},
+        {expression: "unsupported", passThrough: true, fields: {note: "'unsupported kind ' + tariff.kind"}},
+        {expression: "cost", fields: {id: "tariff.id", annual: "energy == null ? null : round(energy + tariff.standing * 365, 2)"}},
+        {output: "priced"},
+      ],
+      edges: [
+        "quote -> kind",
+        "kind:0 -> flat -> cost",
+        "kind:1 -> tiered -> cost",
+        "kind:2 -> tou -> cost",
+        "kind:3 -> unsupported -> cost",
+        "cost -> priced",
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "household"},
+      {expression: "pairs", fields: {
+        rows: "map([{id: 'flat-std', kind: 'flat', rate: 0.15, standing: 0.4}, {id: 'tiered-eco', kind: 'tiered', threshold: 3000, rate1: 0.12, rate2: 0.2, standing: 0.3}, {id: 'tou-smart', kind: 'tou', peak: 0.25, offPeak: 0.09, standing: 0.45}, {id: 'legacy-x', kind: 'block', standing: 0.5}], {tariff: #, usage: usage})",
+      }},
+      {decision: "price", key: "annualCost", executionMode: "loop", inputField: "rows", outputPath: "quotes"},
+      {expression: "pick", passThrough: true, fields: {
+        valid: "filter(quotes, #.annual != null)",
+        cheapest: "min(map($.valid, #.annual))",
+        best: "filter($.valid, #.annual == $.cheapest)[0]",
+        current: "filter($.valid, #.id == currentTariff)[0]",
+        saving: "$.current == null ? null : round($.current.annual - $.best.annual, 2)",
+      }},
+      {table: "advice", passThrough: true, inputs: ["saving"], outputs: ["advice"], rules: [
+        ["null", "'no current tariff on record'"],
+        ["> 100", "'switch'"],
+        ["> 0", "'consider switching'"],
+        ["", "'stay'"],
+      ]},
+      {expression: "answer", fields: {best: "best.id", bestAnnual: "best.annual", saving: "saving", advice: "advice", priced: "len(valid)"}},
+      {output: "recommendation"},
+    ],
+    edges: [
+      "household -> pairs -> price -> pick",
+      "household -> pick -> advice -> answer -> recommendation",
+    ],
+  },
+  cases: [
+    [{usage: {annualKwh: 3000, peakShare: 0.4}, currentTariff: "flat-std"}, {best: "tiered-eco", bestAnnual: 469.5, saving: 126.5, advice: "switch", priced: 3}],
+    [{usage: {annualKwh: 3000, peakShare: 0.1}, currentTariff: "tiered-eco"}, {best: "tiered-eco", bestAnnual: 469.5, saving: 0, advice: "stay", priced: 3}],
+    [{usage: {annualKwh: 6000, peakShare: 0.1}, currentTariff: "flat-std"}, {best: "tou-smart", bestAnnual: 800.25, saving: 245.75, advice: "switch", priced: 3}],
+    [{usage: {annualKwh: 6000, peakShare: 0.5}, currentTariff: "tiered-eco"}, {best: "flat-std", bestAnnual: 1046, saving: 23.5, advice: "consider switching", priced: 3}],
+    [{usage: {annualKwh: 3000, peakShare: 0.4}, currentTariff: "tou-smart"}, {best: "tiered-eco", bestAnnual: 469.5, saving: 156.75, advice: "switch", priced: 3}],
+    [{usage: {annualKwh: 1500, peakShare: 0.4}, currentTariff: "flat-std"}, {best: "tiered-eco", bestAnnual: 289.5, saving: 81.5, advice: "consider switching", priced: 3}],
+    [{usage: {annualKwh: 1500, peakShare: 0}, currentTariff: "tou-smart"}, {best: "tiered-eco", bestAnnual: 289.5, saving: 9.75, advice: "consider switching", priced: 3}],
+    [{usage: {annualKwh: 10000, peakShare: 0.2}, currentTariff: "tiered-eco"}, {best: "tou-smart", bestAnnual: 1384.25, saving: 485.25, advice: "switch", priced: 3}],
+    [{usage: {annualKwh: 4000, peakShare: 1}, currentTariff: "tou-smart"}, {best: "tiered-eco", bestAnnual: 669.5, saving: 494.75, advice: "switch", priced: 3}],
+    // No usage at all: only the standing charges remain.
+    [{usage: {annualKwh: 0, peakShare: 0.5}, currentTariff: "flat-std"}, {best: "tiered-eco", bestAnnual: 109.5, saving: 36.5, advice: "consider switching", priced: 3}],
+    // Without a current tariff, or with one that cannot be priced, the saving is null (and
+    // dropped from the answer).
+    [{usage: {annualKwh: 3000, peakShare: 0.4}}, {best: "tiered-eco", bestAnnual: 469.5, advice: "no current tariff on record", priced: 3}],
+    [{usage: {annualKwh: 3000, peakShare: 0.4}, currentTariff: "legacy-x"}, {best: "tiered-eco", bestAnnual: 469.5, advice: "no current tariff on record", priced: 3}],
+    [{usage: {annualKwh: 3000, peakShare: 0.4}, currentTariff: "FLAT-STD"}, {best: "tiered-eco", bestAnnual: 469.5, advice: "no current tariff on record", priced: 3}],
+    // The time-of-use formula needs the peak share; any bad usage value fails the sub-decision.
+    [{usage: {annualKwh: 3000}, currentTariff: "flat-std"}, "!error"],
+    [{usage: {annualKwh: "3000", peakShare: 0.4}, currentTariff: "flat-std"}, "!error"],
+    [{currentTariff: "flat-std"}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Data allowance: plan allowances, rollover capped per plan, add-ons that have not expired yet,
+// the cycle day and percentage used, then a column-less first-hit table decides the line state.
+// Null speeds and notifications are dropped from the result.
+{
+  name: "data allowance: rollover cap, dated add-ons, throttling and usage alerts",
+  graph: {
+    nodes: [
+      {input: "line"},
+      {table: "allowance", passThrough: true, inputs: ["line.plan"], outputs: ["allow.baseGb", "allow.rolloverCap", "allow.throttleKbps", "allow.hardCap"], rules: [
+        ["'basic'", "5", "0", "128", "true"],
+        ["'standard'", "15", "15", "512", "false"],
+        ["'premium'", "50", "50", "1024", "false"],
+        ["'unlimited'", "100", "0", "1024", "false"],
+      ]},
+      {expression: "balance", passThrough: true, fields: {
+        "calc.activeAddonGb": "sum(map(filter(addons ?? [], d(#.expires).isAfter(d())), #.gb))",
+        "calc.rolloverGb": "min([rollover.balanceGb ?? 0, allow.rolloverCap])",
+        "calc.totalGb": "allow.baseGb + $.calc.rolloverGb + $.calc.activeAddonGb",
+        "calc.remainingGb": "round($.calc.totalGb - line.usedGb, 2)",
+        "calc.cycleDay": "d().diff(d(line.cycleStart), 'day') + 1",
+        "calc.pctUsed": "round(line.usedGb / $.calc.totalGb * 100)",
+      }},
+      {table: "state", inputs: [null], outputs: ["state", "speedKbps", "notify"], rules: [
+        ["calc.remainingGb <= 0 and allow.hardCap", "'blocked'", "0", "'data exhausted, buy an add-on'"],
+        ["calc.remainingGb <= 0", "'throttled'", "allow.throttleKbps", "'speed reduced to ' + string(allow.throttleKbps) + ' kbps'"],
+        ["calc.pctUsed >= 90", "'full speed'", "null", "'90% used'"],
+        ["calc.pctUsed >= 75 and calc.cycleDay < 15", "'full speed'", "null", "'75% used early in the cycle'"],
+        ["", "'full speed'", "null", "null"],
+      ]},
+      {expression: "result", fields: {
+        state: "state",
+        speedKbps: "speedKbps",
+        notify: "notify",
+        remainingGb: "$nodes.balance.calc.remainingGb",
+        totalGb: "$nodes.balance.calc.totalGb",
+        cycleDay: "$nodes.balance.calc.cycleDay",
+      }},
+      {output: "status"},
+    ],
+  },
+  cases: [
+    [{line: {plan: "standard", usedGb: 10, cycleStart: "2025-03-10"}, rollover: {balanceGb: 5}, addons: []}, {state: "full speed", remainingGb: 10, totalGb: 20, cycleDay: 11}],
+    [{line: {plan: "standard", usedGb: 16, cycleStart: "2025-03-10"}, rollover: {balanceGb: 5}, addons: []}, {state: "full speed", notify: "75% used early in the cycle", remainingGb: 4, totalGb: 20, cycleDay: 11}],
+    [{line: {plan: "standard", usedGb: 16, cycleStart: "2025-03-01"}, rollover: {balanceGb: 5}, addons: []}, {state: "full speed", remainingGb: 4, totalGb: 20, cycleDay: 20}],
+    [{line: {plan: "standard", usedGb: 18, cycleStart: "2025-03-01"}, rollover: {balanceGb: 5}}, {state: "full speed", notify: "90% used", remainingGb: 2, totalGb: 20, cycleDay: 20}],
+    [{line: {plan: "standard", usedGb: 20, cycleStart: "2025-03-01"}, rollover: {balanceGb: 5}}, {state: "throttled", speedKbps: 512, notify: "speed reduced to 512 kbps", remainingGb: 0, totalGb: 20, cycleDay: 20}],
+    [{line: {plan: "standard", usedGb: 30.75, cycleStart: "2025-03-01"}, rollover: {balanceGb: 20}}, {state: "throttled", speedKbps: 512, notify: "speed reduced to 512 kbps", remainingGb: -0.75, totalGb: 30, cycleDay: 20}],
+    [{line: {plan: "basic", usedGb: 5.5, cycleStart: "2025-03-01"}, rollover: {balanceGb: 3}}, {state: "blocked", speedKbps: 0, notify: "data exhausted, buy an add-on", remainingGb: -0.5, totalGb: 5, cycleDay: 20}],
+    [{line: {plan: "basic", usedGb: 5.5, cycleStart: "2025-03-05"}, addons: [{gb: 2, expires: "2025-03-31"}]}, {state: "full speed", remainingGb: 1.5, totalGb: 7, cycleDay: 16}],
+    [{line: {plan: "basic", usedGb: 5.5, cycleStart: "2025-03-05"}, addons: [{gb: 2, expires: "2025-03-19"}]}, {state: "blocked", speedKbps: 0, notify: "data exhausted, buy an add-on", remainingGb: -0.5, totalGb: 5, cycleDay: 16}],
+    [{line: {plan: "basic", usedGb: 5.5, cycleStart: "2025-03-05"}, addons: [{gb: 2, expires: "2025-03-20T10:15:30Z"}, {gb: 1, expires: "2025-03-20T10:15:31Z"}]}, {state: "full speed", notify: "90% used", remainingGb: 0.5, totalGb: 6, cycleDay: 16}],
+    [{line: {plan: "premium", usedGb: 30, cycleStart: "2025-03-20"}, rollover: {balanceGb: 80}}, {state: "full speed", remainingGb: 70, totalGb: 100, cycleDay: 1}],
+    [{line: {plan: "unlimited", usedGb: 100, cycleStart: "2025-02-25"}, rollover: {balanceGb: 40}}, {state: "throttled", speedKbps: 1024, notify: "speed reduced to 1024 kbps", remainingGb: 0, totalGb: 100, cycleDay: 24}],
+    // An add-on without an expiry is an invalid date and never active.
+    [{line: {plan: "basic", usedGb: 1, cycleStart: "2025-03-10"}, addons: [{gb: 2}]}, {state: "full speed", remainingGb: 4, totalGb: 5, cycleDay: 11}],
+    // Unknown plans have no allowance, string add-on sizes do not sum, and a missing usage or
+    // cycle start fails the arithmetic.
+    [{line: {plan: "kids", usedGb: 1, cycleStart: "2025-03-10"}}, "!error"],
+    [{line: {plan: "basic", usedGb: 1, cycleStart: "2025-03-10"}, addons: [{gb: "2", expires: "2025-03-31"}]}, "!error"],
+    [{line: {plan: "basic", cycleStart: "2025-03-10"}}, "!error"],
+    [{line: {plan: "basic", usedGb: 1}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Roaming: a loop table rates each daily session by destination zone (echoing the volumes with
+// defaults), an expression joined with the request totals pay-as-you-go and the day-pass price,
+// and a first-hit table picks the billing mode with the spend cap read from the request.
+{
+  name: "roaming: zone rates per session, day pass and spend cap",
+  graph: {
+    nodes: [
+      {input: "trip"},
+      {table: "zone", executionMode: "loop", inputField: "sessions", outputPath: "rated", inputs: ["country"], outputs: ["zone", "mbRate", "minRate", "mb", "minutes"], rules: [
+        ["'FR', 'DE', 'ES', 'IT'", "'eu'", "0", "0", "mb ?? 0", "minutes ?? 0"],
+        ["'US', 'CA'", "'na'", "0.01", "0.15", "mb ?? 0", "minutes ?? 0"],
+        ["'CH', 'NO'", "'europe-other'", "0.005", "0.1", "mb ?? 0", "minutes ?? 0"],
+        ["", "'world'", "0.02", "0.5", "mb ?? 0", "minutes ?? 0"],
+      ]},
+      {expression: "charges", passThrough: true, fields: {
+        payg: "round(sum(map(rated, #.mb * #.mbRate + #.minutes * #.minRate)), 2)",
+        roamingDays: "count(rated, #.zone != 'eu')",
+        passCost: "$.roamingDays * 10",
+      }},
+      {table: "bill", passThrough: true, inputs: ["hasPass", "payg"], outputs: ["billing", "amount"], rules: [
+        ["true", "", "'day pass'", "passCost"],
+        ["", "> spendCap", "'capped'", "spendCap"],
+        ["", "", "'pay as you go'", "payg"],
+      ]},
+      {expression: "notice", fields: {billing: "billing", amount: "amount", days: "roamingDays", message: "billing == 'capped' ? 'roaming data suspended at the spend cap' : null"}},
+      {output: "charge"},
+    ],
+    edges: ["trip -> zone -> charges", "trip -> charges -> bill -> notice -> charge"],
+  },
+  cases: [
+    [{sessions: [{country: "FR", mb: 500, minutes: 30}], spendCap: 50}, {billing: "pay as you go", amount: 0, days: 0}],
+    [{sessions: [{country: "US", mb: 300, minutes: 10}], spendCap: 50}, {billing: "pay as you go", amount: 4.5, days: 1}],
+    [{sessions: [{country: "US", mb: 1000, minutes: 60}, {country: "CA", mb: 500, minutes: 0}], spendCap: 50}, {billing: "pay as you go", amount: 24, days: 2}],
+    [{sessions: [{country: "US", mb: 1000, minutes: 60}, {country: "CA", mb: 500, minutes: 0}], spendCap: 50, hasPass: true}, {billing: "day pass", amount: 20, days: 2}],
+    [{sessions: [{country: "US", mb: 1000, minutes: 60}, {country: "FR", mb: 500, minutes: 0}], spendCap: 50, hasPass: true}, {billing: "day pass", amount: 10, days: 1}],
+    [{sessions: [{country: "JP", mb: 2000, minutes: 30}], spendCap: 50}, {billing: "capped", amount: 50, days: 1, message: "roaming data suspended at the spend cap"}],
+    [{sessions: [{country: "JP", mb: 2000, minutes: 30}], spendCap: 100}, {billing: "pay as you go", amount: 55, days: 1}],
+    [{sessions: [{country: "JP", mb: 2000, minutes: 20}], spendCap: 50}, {billing: "pay as you go", amount: 50, days: 1}],
+    [{sessions: [{country: "CH", mb: 1000, minutes: 10}, {country: "NO", mb: 333, minutes: 3}], spendCap: 50}, {billing: "pay as you go", amount: 7.97, days: 2}],
+    [{sessions: [], spendCap: 50}, {billing: "pay as you go", amount: 0, days: 0}],
+    // Missing country rates as world; missing volumes default to zero inside the loop.
+    [{sessions: [{mb: 100}, {country: "US"}], spendCap: 50}, {billing: "pay as you go", amount: 2, days: 2}],
+    // Without a spend cap the cap cell fails against null and pay-as-you-go applies.
+    [{sessions: [{country: "JP", mb: 2000, minutes: 30}]}, {billing: "pay as you go", amount: 55, days: 1}],
+    [{sessions: [{country: "JP", mb: 2000, minutes: 30}], hasPass: "yes", spendCap: 50}, {billing: "capped", amount: 50, days: 1, message: "roaming data suspended at the spend cap"}],
+    [{sessions: [{country: "US", mb: "300", minutes: 10}], spendCap: 50}, "!error"],
+  ],
+}

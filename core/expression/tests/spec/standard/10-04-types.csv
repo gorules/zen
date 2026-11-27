@@ -1,0 +1,201 @@
+expression (string);input (json 5);output (json 5);note
+# type: argument 1 is any
+# type (literal)
+type(null);;'null'
+type(true);;'bool'
+type(false);;'bool'
+type(0);;'number'
+type(-1);;'number'
+type(1.5);;'number'
+type(79228162514264337593543950335);;'number'
+type('');;'string'
+type('abc');;'string'
+type('12.5');;'string'
+type('żółw');;'string'
+type([]);;'array'
+type([1, 2]);;'array'
+type(['a']);;'array'
+type([[1]]);;'array'
+type({});;'object'
+type({a: 1});;'object'
+type(d('2024-01-01'));;'date'
+type([1..3]);;'interval'
+# type (input)
+type(x);{x: null};'null'
+type(x);{x: true};'bool'
+type(x);{x: false};'bool'
+type(x);{x: 0};'number'
+type(x);{x: -1};'number'
+type(x);{x: 1.5};'number'
+type(x);{x: 79228162514264337593543950335};'number'
+type(x);{x: ''};'string'
+type(x);{x: 'abc'};'string'
+type(x);{x: '12.5'};'string'
+type(x);{x: 'żółw'};'string'
+type(x);{x: []};'array'
+type(x);{x: [1, 2]};'array'
+type(x);{x: ['a']};'array'
+type(x);{x: [[1]]};'array'
+type(x);{x: {}};'object'
+type(x);{x: {a: 1}};'object'
+type(x);{};'null'
+# string: argument 1 is any
+# string (literal)
+string(null);;'null'
+string(true);;'true'
+string(false);;'false'
+string(0);;'0'
+string(-1);;'-1'
+string(1.5);;'1.5'
+string(79228162514264337593543950335);;'79228162514264337593543950335'
+string('');;''
+string('abc');;'abc'
+string('12.5');;'12.5'
+string('żółw');;'żółw'
+string([]);;!error;question: arrays have no string form
+string([1, 2]);;!error;question: arrays have no string form
+string(['a']);;!error;question: arrays have no string form
+string([[1]]);;!error;question: arrays have no string form
+string({});;!error;question: objects have no string form
+string({a: 1});;!error;question: objects have no string form
+string(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+string([1..3]);;!error;question: intervals have a string form as output values but string() rejects them
+# string (input)
+string(x);{x: null};'null'
+string(x);{x: true};'true'
+string(x);{x: false};'false'
+string(x);{x: 0};'0'
+string(x);{x: -1};'-1'
+string(x);{x: 1.5};'1.5'
+string(x);{x: 79228162514264337593543950335};'79228162514264337593543950335'
+string(x);{x: ''};''
+string(x);{x: 'abc'};'abc'
+string(x);{x: '12.5'};'12.5'
+string(x);{x: 'żółw'};'żółw'
+string(x);{x: []};!error;question: arrays have no string form
+string(x);{x: [1, 2]};!error;question: arrays have no string form
+string(x);{x: ['a']};!error;question: arrays have no string form
+string(x);{x: [[1]]};!error;question: arrays have no string form
+string(x);{x: {}};!error;question: objects have no string form
+string(x);{x: {a: 1}};!error;question: objects have no string form
+string(x);{};'null'
+# bool: argument 1 is any
+# bool (literal)
+bool(null);;false
+bool(true);;true
+bool(false);;false
+bool(0);;false
+bool(-1);;true
+bool(1.5);;true
+bool(79228162514264337593543950335);;true
+bool('');;false;bug: empty string converts to true (non-true/false strings return s.is_empty(), inverted)
+bool('abc');;true;bug: non-empty string converts to false (inverted is_empty)
+bool('12.5');;true;bug: non-empty string converts to false (inverted is_empty)
+bool('żółw');;true;bug: non-empty string converts to false (inverted is_empty)
+bool([]);;true
+bool([1, 2]);;true
+bool(['a']);;true
+bool([[1]]);;true
+bool({});;true
+bool({a: 1});;true
+bool(d('2024-01-01'));;true
+bool([1..3]);;true
+# bool (input)
+bool(x);{x: null};false
+bool(x);{x: true};true
+bool(x);{x: false};false
+bool(x);{x: 0};false
+bool(x);{x: -1};true
+bool(x);{x: 1.5};true
+bool(x);{x: 79228162514264337593543950335};true
+bool(x);{x: ''};false;bug: empty string converts to true (non-true/false strings return s.is_empty(), inverted)
+bool(x);{x: 'abc'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(x);{x: '12.5'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(x);{x: 'żółw'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(x);{x: []};true
+bool(x);{x: [1, 2]};true
+bool(x);{x: ['a']};true
+bool(x);{x: [[1]]};true
+bool(x);{x: {}};true
+bool(x);{x: {a: 1}};true
+bool(x);{};false
+# isNumeric: argument 1 is any
+# isNumeric (literal)
+isNumeric(null);;false
+isNumeric(true);;false;question: number(true) converts to 1 but isNumeric(true) is false
+isNumeric(false);;false;question: number(false) converts to 0 but isNumeric(false) is false
+isNumeric(0);;true
+isNumeric(-1);;true
+isNumeric(1.5);;true
+isNumeric(79228162514264337593543950335);;true
+isNumeric('');;false
+isNumeric('abc');;false
+isNumeric('12.5');;true
+isNumeric('żółw');;false
+isNumeric([]);;false
+isNumeric([1, 2]);;false
+isNumeric(['a']);;false
+isNumeric([[1]]);;false
+isNumeric({});;false
+isNumeric({a: 1});;false
+isNumeric(d('2024-01-01'));;false
+isNumeric([1..3]);;false
+# isNumeric (input)
+isNumeric(x);{x: null};false
+isNumeric(x);{x: true};false;question: number(true) converts to 1 but isNumeric(true) is false
+isNumeric(x);{x: false};false;question: number(false) converts to 0 but isNumeric(false) is false
+isNumeric(x);{x: 0};true
+isNumeric(x);{x: -1};true
+isNumeric(x);{x: 1.5};true
+isNumeric(x);{x: 79228162514264337593543950335};true
+isNumeric(x);{x: ''};false
+isNumeric(x);{x: 'abc'};false
+isNumeric(x);{x: '12.5'};true
+isNumeric(x);{x: 'żółw'};false
+isNumeric(x);{x: []};false
+isNumeric(x);{x: [1, 2]};false
+isNumeric(x);{x: ['a']};false
+isNumeric(x);{x: [[1]]};false
+isNumeric(x);{x: {}};false
+isNumeric(x);{x: {a: 1}};false
+isNumeric(x);{};false
+# number: argument 1 is any
+# number (literal)
+number(null);;!error;"question: null does not convert; could be null or 0"
+number(true);;1
+number(false);;0
+number(0);;0
+number(-1);;-1
+number(1.5);;1.5
+number(79228162514264337593543950335);;79228162514264337593543950335
+number('');;!error
+number('abc');;!error
+number('12.5');;12.5
+number('żółw');;!error
+number([]);;!error
+number([1, 2]);;!error
+number(['a']);;!error
+number([[1]]);;!error
+number({});;!error
+number({a: 1});;!error
+number(d('2024-01-01'));;!error
+number([1..3]);;!error
+# number (input)
+number(x);{x: null};!error;"question: null does not convert; could be null or 0"
+number(x);{x: true};1
+number(x);{x: false};0
+number(x);{x: 0};0
+number(x);{x: -1};-1
+number(x);{x: 1.5};1.5
+number(x);{x: 79228162514264337593543950335};79228162514264337593543950335
+number(x);{x: ''};!error
+number(x);{x: 'abc'};!error
+number(x);{x: '12.5'};12.5
+number(x);{x: 'żółw'};!error
+number(x);{x: []};!error
+number(x);{x: [1, 2]};!error
+number(x);{x: ['a']};!error
+number(x);{x: [[1]]};!error
+number(x);{x: {}};!error
+number(x);{x: {a: 1}};!error
+number(x);{};!error;"question: null does not convert; could be null or 0"

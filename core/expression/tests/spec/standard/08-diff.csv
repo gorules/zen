@@ -1,0 +1,113 @@
+expression (string);input (json 5);output (json 5);note
+# diff without a unit is milliseconds, first minus second
+d('2023-10-15').diff(d('2023-10-14'));;86400000
+d('2023-10-14').diff(d('2023-10-15'));;-86400000
+d('2023-10-15T00:00:00.500Z').diff(d('2023-10-15'));;500
+d('2023-10-15').diff(d('2023-10-15'));;0
+d('2023-10-15').diff(d('2023-10-15', 'Asia/Tokyo'));;32400000
+# diff with a unit truncates toward zero
+d('2023-10-15 12:00').diff(d('2023-10-15 10:30'), 'hour');;1
+d('2023-10-15 10:30').diff(d('2023-10-15 12:00'), 'hour');;-1
+d('2023-10-15 12:00').diff(d('2023-10-15 10:30'), 'minute');;90
+d('2023-10-15 12:00').diff(d('2023-10-15 10:30'), 'second');;5400
+d('2023-10-15T00:00:00.999Z').diff(d('2023-10-15'), 'second');;0
+d('2023-10-15').diff(d('2023-10-15T00:00:00.999Z'), 'second');;0
+d('2023-10-15T00:00:01.999Z').diff(d('2023-10-15'), 's');;1
+d('2023-10-15 00:00:59').diff(d('2023-10-15'), 'm');;0
+d('2023-10-16 11:59').diff(d('2023-10-15 12:00'), 'day');;0
+d('2023-10-16 12:00').diff(d('2023-10-15 12:00'), 'day');;1
+d('2023-10-15 12:00').diff(d('2023-10-16 11:59'), 'day');;0
+d('2023-10-14 12:00').diff(d('2023-10-16 11:59'), 'day');;-1
+d('2023-10-28').diff(d('2023-10-15'), 'week');;1
+d('2023-10-29').diff(d('2023-10-15'), 'w');;2
+d('2023-10-15').diff(d('2023-10-28'), 'w');;-1
+# diff in all unit spellings
+d('2024-10-15').diff(d('2023-10-15'), 'seconds');;31622400
+d('2024-10-15').diff(d('2023-10-15'), 'mins');;527040
+d('2024-10-15').diff(d('2023-10-15'), 'hrs');;8784
+d('2024-10-15').diff(d('2023-10-15'), 'days');;366
+d('2024-10-15').diff(d('2023-10-15'), 'weeks');;52
+d('2024-10-15').diff(d('2023-10-15'), 'months');;12
+d('2024-10-15').diff(d('2023-10-15'), 'mo');;12
+d('2024-10-15').diff(d('2023-10-15'), 'M');;12
+d('2024-10-15').diff(d('2023-10-15'), 'm');;527040
+d('2024-10-15').diff(d('2023-10-15'), 'qtr');;4
+d('2024-10-15').diff(d('2023-10-15'), 'quarters');;4
+d('2024-10-15').diff(d('2023-10-15'), 'years');;1
+d('2024-10-15').diff(d('2023-10-15'), 'y');;1
+d('2024-10-15').diff(d('2023-10-15'), 'ms');;!error
+d('2024-10-15').diff(d('2023-10-15'), 'D');;!error
+d('2024-10-15').diff(d('2023-10-15'), '');;!error
+# calendar units: whole months, month ends count as a whole month
+d('2023-02-15').diff(d('2023-01-31'), 'month');;0
+d('2023-02-28').diff(d('2023-01-31'), 'month');;1
+d('2023-03-30').diff(d('2023-01-31'), 'month');;1
+d('2023-03-31').diff(d('2023-01-31'), 'month');;2
+d('2024-03-31').diff(d('2024-02-29'), 'month');;1
+d('2024-01-31').diff(d('2024-02-29'), 'month');;-1
+d('2023-01-31').diff(d('2023-03-30'), 'month');;-1
+d('2023-11-14').diff(d('2023-10-15'), 'month');;0
+d('2023-11-15').diff(d('2023-10-15'), 'month');;1
+d('2023-11-15').diff(d('2023-10-15 00:00:01'), 'month');;0
+d('2023-10-15').diff(d('2023-11-15'), 'month');;-1
+d('2023-10-15').diff(d('2023-11-14'), 'month');;0
+d('2024-01-15').diff(d('2023-10-15'), 'quarter');;1
+d('2024-01-14').diff(d('2023-10-15'), 'quarter');;0
+d('2023-10-15').diff(d('2024-01-15'), 'q');;-1
+d('2024-10-14').diff(d('2023-10-15'), 'year');;0
+d('2024-10-15').diff(d('2023-10-15'), 'year');;1
+d('2025-02-28').diff(d('2024-02-29'), 'year');;1
+d('2024-02-29').diff(d('2025-02-28'), 'year');;-1
+d('2028-02-29').diff(d('2024-02-29'), 'year');;4
+d('2023-10-15').diff(d('2013-10-16'), 'year');;9
+d('1900-03-01').diff(d('2000-03-01'), 'y');;-100
+# diff accepts strings and dates, invalid values give null
+d('2023-10-15').diff('2023-10-10', 'day');;5
+d('2023-10-15').diff('2023-10-10 12:00', 'hour');;108
+d('2023-10-15').diff(1697241600000, 'day');;1
+d('2023-10-15').diff('garbage', 'day');;null
+d('2023-10-15').diff(null, 'day');;null
+d('foo').diff(d('2023-10-15'), 'day');;null
+d('foo').diff(d('foo'));;null
+# diff across zones and DST
+d('2025-03-31', 'Europe/Berlin').diff(d('2025-03-30', 'Europe/Berlin'), 'hour');;23
+d('2025-03-31', 'Europe/Berlin').diff(d('2025-03-30', 'Europe/Berlin'), 'day');;1
+d('2025-10-27', 'Europe/Berlin').diff(d('2025-10-26', 'Europe/Berlin'), 'hour');;25
+d('2025-10-27', 'Europe/Berlin').diff(d('2025-10-26', 'Europe/Berlin'), 'day');;1
+d('2025-04-06', 'Europe/Berlin').diff(d('2025-03-30', 'Europe/Berlin'), 'week');;1
+d('2025-03-10', 'America/New_York').diff(d('2025-03-09', 'America/New_York'), 'h');;23
+d('2025-11-03', 'America/New_York').diff(d('2025-11-02', 'America/New_York'), 'h');;25
+d('2025-11-03', 'America/New_York').diff(d('2025-11-02', 'America/New_York'), 'd');;1
+d('2025-10-06', 'Australia/Lord_Howe').diff(d('2025-10-05', 'Australia/Lord_Howe'), 'm');;1410
+d('2023-10-15', 'Asia/Tokyo').diff(d('2023-10-15'), 'hour');;-9
+d('2023-10-15', 'Asia/Tokyo').diff(d('2023-10-15'), 'day');;0;question: day and week diffs subtract the offset difference, so two local midnights in different zones are 0 days apart though 9 hours apart
+d('2023-10-16', 'Asia/Tokyo').diff(d('2023-10-15 20:00'), 'day');;0;question: day diffs compare wall clocks across zones (wall clocks +4h apart, instants -5h apart)
+# diff on rows
+d(a).diff(d(b), 'day');{a: '2023-10-15', b: '2023-10-10'};5
+d(a).diff(d(b), 'day');{a: '2023-10-15', b: '2023-10-10'};5
+d(a).diff(d(b), 'day');{a: '2024-03-01', b: '2024-02-28'};2
+d(a).diff(d(b), 'day');{a: '2023-03-01', b: '2023-02-28'};1
+d(a).diff(d(b), 'day');{a: '2023-10-10', b: '2023-10-15 12:00'};-5
+d(a).diff(d(b), 'day');{a: 'x', b: '2023-10-15'};null
+d(a).diff(d(b), 'day');{a: '2023-10-15'};null
+d(a).diff(d(b), 'day');{};null
+d(a).diff(d(b), 'month');{a: '2023-02-28', b: '2023-01-31'};1
+d(a).diff(d(b), 'month');{a: '2023-02-27', b: '2023-01-31'};0
+d(a).diff(d(b), 'month');{a: '2024-02-29', b: '2023-02-28'};12
+d(a).diff(d(b), 'month');{a: '2024-02-29', b: '2023-02-28'};12
+d(a).diff(d(b), 'month');{a: '2023-01-01', b: '2023-12-31'};-11
+d(a).diff(d(b), 'year');{a: '2024-02-29', b: '2023-02-28'};1
+d(a).diff(d(b), 'year');{a: '2023-02-28', b: '2024-02-29'};-1
+d(a).diff(d(b), 'year');{a: '2000-01-01', b: '1900-01-01'};100
+d(a).diff(d(b));{a: '2023-10-15', b: '2023-10-15'};0
+d(a).diff(d(b));{a: '2023-10-15 00:00:01', b: '2023-10-15'};1000
+d(a).diff(d(b));{a: 0, b: 1000};-1000
+d(a).diff(d(b), u);{a: '2023-10-15 12:00', b: '2023-10-15', u: 'h'};12
+d(a).diff(d(b), u);{a: '2023-10-15 12:00', b: '2023-10-15', u: 'm'};720
+d(a).diff(d(b), u);{a: '2023-10-15 12:00', b: '2023-10-15', u: 'd'};0
+d(a).diff(d(b), u);{a: '2023-10-15 12:00', b: '2023-10-15', u: 'x'};!error
+d(a, 'Europe/Berlin').diff(d(b, 'Europe/Berlin'), 'h');{a: '2025-03-31', b: '2025-03-30'};23
+d(a, 'Europe/Berlin').diff(d(b, 'Europe/Berlin'), 'h');{a: '2025-10-27', b: '2025-10-26'};25
+d(a, 'Europe/Berlin').diff(d(b, 'Europe/Berlin'), 'h');{a: '2025-06-02', b: '2025-06-01'};24
+d(a, 'Europe/Berlin').diff(d(b, 'Europe/Berlin'), 'h');{a: '2025-06-02', b: '2025-06-01'};24
+d(a, 'Europe/Berlin').diff(d(b, 'Europe/Berlin'), 'h');{a: '2025-03-30 02:30', b: '2025-03-30'};2

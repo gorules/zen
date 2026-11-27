@@ -1,0 +1,129 @@
+expression (string);input (json 5);output (json 5);note
+# Billable weight: actual versus dimensional
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 40, w: 30, h: 20, kg: 3};5
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 40, w: 30, h: 20, kg: 5};5
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 40, w: 30, h: 21, kg: 1};5.5
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 10, w: 10, h: 10, kg: 0.1};0.5
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 120, w: 80, h: 100, kg: 150};192
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 60.5, w: 40.2, h: 33.3, kg: 12};16.5
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 40, w: 30, h: null, kg: 3};!error
+max([kg, ceil(l * w * h / 5000 * 2) / 2]);{l: 40, w: 30, h: 20};!error
+sum(map(parcels, max([#.kg, #.l * #.w * #.h / 5000])));{parcels: [{id: 'P000', l: 10, w: 10, h: 5, kg: 0.5}, {id: 'P001', l: 15, w: 14, h: 15, kg: 1.25}, {id: 'P002', l: 20, w: 18, h: 25, kg: 3}, {id: 'P003', l: 25, w: 22, h: 5, kg: 12.8}, {id: 'P004', l: 30, w: 26, h: 15, kg: 22}, {id: 'P005', l: 35, w: 10, h: 25, kg: 0.5}, {id: 'P006', l: 40, w: 14, h: 5, kg: 1.25}, {id: 'P007', l: 10, w: 18, h: 15, kg: 3}]};45.55
+sum(map(parcels, max([#.kg, #.l * #.w * #.h / 5000])));{parcels: [{id: 'P000', l: 10, w: 10, h: 5, kg: 0.5}, {id: 'P001', l: 15, w: 14, h: 15, kg: 1.25}, {id: 'P002', l: 20, w: 18, h: 25, kg: 3}, {id: 'P003', l: 25, w: 22, h: 5, kg: 12.8}, {id: 'P004', l: 30, w: 26, h: 15, kg: 22}, {id: 'P005', l: 35, w: 10, h: 25, kg: 0.5}, {id: 'P006', l: 40, w: 14, h: 5, kg: 1.25}, {id: 'P007', l: 10, w: 18, h: 15, kg: 3}, {id: 'P008', l: 15, w: 22, h: 25, kg: 12.8}, {id: 'P009', l: 20, w: 26, h: 5, kg: 22}, {id: 'P010', l: 25, w: 10, h: 15, kg: 0.5}, {id: 'P011', l: 30, w: 14, h: 25, kg: 1.25}, {id: 'P012', l: 35, w: 18, h: 5, kg: 3}, {id: 'P013', l: 40, w: 22, h: 15, kg: 12.8}, {id: 'P014', l: 10, w: 26, h: 25, kg: 22}, {id: 'P015', l: 15, w: 10, h: 5, kg: 0.5}, {id: 'P016', l: 20, w: 14, h: 15, kg: 1.25}, {id: 'P017', l: 25, w: 18, h: 25, kg: 3}, {id: 'P018', l: 30, w: 22, h: 5, kg: 12.8}, {id: 'P019', l: 35, w: 26, h: 15, kg: 22}, {id: 'P020', l: 40, w: 10, h: 25, kg: 0.5}, {id: 'P021', l: 10, w: 14, h: 5, kg: 1.25}, {id: 'P022', l: 15, w: 18, h: 15, kg: 3}, {id: 'P023', l: 20, w: 22, h: 25, kg: 12.8}, {id: 'P024', l: 25, w: 26, h: 5, kg: 22}, {id: 'P025', l: 30, w: 10, h: 15, kg: 0.5}, {id: 'P026', l: 35, w: 14, h: 25, kg: 1.25}, {id: 'P027', l: 40, w: 18, h: 5, kg: 3}, {id: 'P028', l: 10, w: 22, h: 15, kg: 12.8}, {id: 'P029', l: 15, w: 26, h: 25, kg: 22}, {id: 'P030', l: 20, w: 10, h: 5, kg: 0.5}, {id: 'P031', l: 25, w: 14, h: 15, kg: 1.25}, {id: 'P032', l: 30, w: 18, h: 25, kg: 3}, {id: 'P033', l: 35, w: 22, h: 5, kg: 12.8}, {id: 'P034', l: 40, w: 26, h: 15, kg: 22}, {id: 'P035', l: 10, w: 10, h: 25, kg: 0.5}, {id: 'P036', l: 15, w: 14, h: 5, kg: 1.25}, {id: 'P037', l: 20, w: 18, h: 15, kg: 3}, {id: 'P038', l: 25, w: 22, h: 25, kg: 12.8}, {id: 'P039', l: 30, w: 26, h: 5, kg: 22}]};321.85
+sum(map(parcels, max([#.kg, #.l * #.w * #.h / 5000])));{parcels: []};0
+sum(map(parcels, max([#.kg, #.l * #.w * #.h / 5000])));{parcels: [{l: 50, w: 50, h: 50, kg: 20}]};25
+sum(map(parcels, max([#.kg, #.l * #.w * #.h / 5000])));{parcels: [{l: 50, w: 50, h: 50}]};!error
+map(filter(parcels, #.kg > 20 or max([#.l, #.w, #.h]) > 120), #.id);{parcels: [{id: 'P000', l: 10, w: 10, h: 5, kg: 0.5}, {id: 'P001', l: 15, w: 14, h: 15, kg: 1.25}, {id: 'P002', l: 20, w: 18, h: 25, kg: 3}, {id: 'P003', l: 25, w: 22, h: 5, kg: 12.8}, {id: 'P004', l: 30, w: 26, h: 15, kg: 22}, {id: 'P005', l: 35, w: 10, h: 25, kg: 0.5}, {id: 'P006', l: 40, w: 14, h: 5, kg: 1.25}, {id: 'P007', l: 10, w: 18, h: 15, kg: 3}, {id: 'P008', l: 15, w: 22, h: 25, kg: 12.8}, {id: 'P009', l: 20, w: 26, h: 5, kg: 22}, {id: 'P010', l: 25, w: 10, h: 15, kg: 0.5}, {id: 'P011', l: 30, w: 14, h: 25, kg: 1.25}]};['P004', 'P009']
+map(filter(parcels, #.kg > 20 or max([#.l, #.w, #.h]) > 120), #.id);{parcels: [{id: 'X', l: 121, w: 1, h: 1, kg: 1}, {id: 'Y', l: 120, w: 120, h: 120, kg: 20}]};['X']
+map(filter(parcels, #.kg > 20 or max([#.l, #.w, #.h]) > 120), #.id);{parcels: []};[]
+# Zone rating tables
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 1, kg: 0.4};5.10
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 1, kg: 1};5.10
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 1, kg: 1.01};6.25
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 3, kg: 7.5};15.85
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 4, kg: 30};42.80
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 8, kg: 2};13.15
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 2, kg: 0};6.35
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: null, kg: 1};12.00
+round((({'1': 5.10, '2': 6.35, '3': 7.80, '4': 9.45})[string(zone)] ?? 12.00) + max([0, ceil(kg) - 1]) * 1.15, 2);{zone: 2, kg: null};!error
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: '94105'};'west'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: '02139'};'east'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: '10001'};'east'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: '60601'};'central'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: '2'};'central'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: 'SW1A 1AA'};'unknown'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: ''};'unknown'
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: 94105};!error
+startsWith(zip, '9') ? 'west' : startsWith(zip, '0') or startsWith(zip, '1') ? 'east' : matches(zip, '^[2-8]') ? 'central' : 'unknown';{zip: null};!error
+# Delivery SLA with calendar days
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-19 09:59'};'on-time'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-19 10:00'};'on-time'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-19 10:01'};'late'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-20 10:00'};'late'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-20 10:59'};'late'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: '2025-03-20 11:00'};'breach'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2024-12-30 16:00', slaDays: 3, deliveredAt: '2025-01-02 15:00'};'on-time'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2024-02-27 12:00', slaDays: 2, deliveredAt: '2024-02-29 12:00'};'on-time'
+"promise = d(shippedAt).add(slaDays, 'day'); d(deliveredAt) <= promise ? 'on-time' : d(deliveredAt).diff(promise, 'hour') <= 24 ? 'late' : 'breach'";{shippedAt: '2025-03-17 10:00', slaDays: 2, deliveredAt: null};'on-time';question: an invalid date orders before every valid date, so a missing delivery date counts as on time
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-17', n: 1};'2025-03-18 Tue'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-17', n: 4};'2025-03-21 Fri'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-17', n: 5};'2025-03-24 Mon'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-20', n: 1};'2025-03-21 Fri'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-20', n: 2};'2025-03-24 Mon'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-21', n: 1};'2025-03-24 Mon'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-21', n: 10};'2025-04-04 Fri'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-12-29', n: 3};'2026-01-01 Thu'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-02-26', n: 3};'2025-03-03 Mon'
+"wd = d(start).weekday(); d(start).add(floor(n / 5) * 7 + n % 5 + (wd - 1 + n % 5 > 4 ? 2 : 0), 'day').format('%Y-%m-%d %a')";{start: '2025-03-17', n: 0};'2025-03-17 Mon'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2025-03-21'};'2025-03-21'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2025-03-22'};'2025-03-24'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2025-03-23'};'2025-03-24'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2025-05-31'};'2025-06-02'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2025-12-27'};'2025-12-29'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: '2026-02-28'};'2026-03-02'
+d(eta).weekday() >= 6 ? d(eta).add(8 - d(eta).weekday(), 'day').format('%Y-%m-%d') : d(eta).format('%Y-%m-%d');{eta: 'tbd'};!error
+# Cut-off times in the warehouse time zone
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-03-19T17:59:00Z', tz: 'America/New_York', cutoffHour: 14};'same-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-03-19T18:00:00Z', tz: 'America/New_York', cutoffHour: 14};'next-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-01-15T18:59:00Z', tz: 'America/New_York', cutoffHour: 14};'same-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-01-15T19:00:00Z', tz: 'America/New_York', cutoffHour: 14};'next-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-03-19T02:00:00Z', tz: 'Asia/Tokyo', cutoffHour: 12};'same-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-03-19T03:00:00Z', tz: 'Asia/Tokyo', cutoffHour: 12};'next-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-03-19T13:30:00Z', tz: 'Europe/London', cutoffHour: 14};'same-day'
+d(orderedAt).tz(tz).hour() < cutoffHour ? 'same-day' : 'next-day';{orderedAt: '2025-06-19T13:30:00Z', tz: 'Europe/London', cutoffHour: 14};'next-day'
+d(pickupAt).tz(tz).format('%Y-%m-%d %H:%M');{pickupAt: '2025-03-19T23:30:00Z', tz: 'Asia/Kolkata'};'2025-03-20 05:00'
+d(pickupAt).tz(tz).format('%Y-%m-%d %H:%M');{pickupAt: '2025-12-31T23:30:00Z', tz: 'Europe/Berlin'};'2026-01-01 00:30'
+d(pickupAt).tz(tz).format('%Y-%m-%d %H:%M');{pickupAt: '2025-01-01T03:00:00Z', tz: 'America/Los_Angeles'};'2024-12-31 19:00'
+d(pickupAt).tz(tz).format('%Y-%m-%d %H:%M');{pickupAt: '2025-07-01T03:00:00Z', tz: 'America/Los_Angeles'};'2025-06-30 20:00'
+d(pickupAt).tz(tz).format('%Y-%m-%d %H:%M');{pickupAt: '2024-02-29T20:00:00Z', tz: 'Pacific/Auckland'};'2024-03-01 09:00'
+# Transit time and dwell statistics
+map(legs, d(#.arrived).diff(d(#.departed), 'hour'));{legs: [{departed: '2025-03-01 08:00', arrived: '2025-03-01 17:30'}, {departed: '2025-03-01 20:00', arrived: '2025-03-03 06:00'}]};[9, 34]
+map(legs, d(#.arrived).diff(d(#.departed), 'hour'));{legs: []};[]
+map(legs, d(#.arrived).diff(d(#.departed), 'hour'));{legs: [{departed: '2024-12-31 22:00', arrived: '2025-01-01 01:59'}]};[3]
+map(legs, d(#.arrived).diff(d(#.departed), 'hour'));{legs: [{departed: '2025-03-01 08:00', arrived: '2025-03-01 07:00'}]};[-1]
+map(legs, d(#.arrived).diff(d(#.departed), 'hour'));{legs: [{departed: '2025-03-01 08:00'}]};[null]
+sum(map(legs, d(#.arrived).diff(d(#.departed), 'minute'))) / 60;{legs: [{departed: '2025-03-01 08:00', arrived: '2025-03-01 17:30'}, {departed: '2025-03-01 20:00', arrived: '2025-03-03 06:15'}]};43.75
+sum(map(legs, d(#.arrived).diff(d(#.departed), 'minute'))) / 60;{legs: []};0
+sum(map(legs, d(#.arrived).diff(d(#.departed), 'minute'))) / 60;{legs: [{departed: '2025-03-01 08:00', arrived: '2025-03-01 08:45'}]};0.75
+sum(map(legs, d(#.arrived).diff(d(#.departed), 'minute'))) / 60;{legs: [{departed: '2025-03-01 08:00', arrived: 'x'}]};!error
+"scans = map(events, d(#.at)); max(map(events, d(#.at).timestamp())) - min(map(events, d(#.at).timestamp())) > 72 * 3600000 ? 'stuck' : 'moving'";{events: [{at: '2025-03-01 00:00'}, {at: '2025-03-04 00:00'}]};'moving'
+"scans = map(events, d(#.at)); max(map(events, d(#.at).timestamp())) - min(map(events, d(#.at).timestamp())) > 72 * 3600000 ? 'stuck' : 'moving'";{events: [{at: '2025-03-01 00:00'}, {at: '2025-03-04 00:00:01'}]};'stuck'
+"scans = map(events, d(#.at)); max(map(events, d(#.at).timestamp())) - min(map(events, d(#.at).timestamp())) > 72 * 3600000 ? 'stuck' : 'moving'";{events: [{at: '2025-03-04 00:00'}, {at: '2025-03-01 00:00'}, {at: '2025-03-05 12:00'}]};'stuck'
+"scans = map(events, d(#.at)); max(map(events, d(#.at).timestamp())) - min(map(events, d(#.at).timestamp())) > 72 * 3600000 ? 'stuck' : 'moving'";{events: [{at: '2025-03-01 00:00'}]};'moving'
+"scans = map(events, d(#.at)); max(map(events, d(#.at).timestamp())) - min(map(events, d(#.at).timestamp())) > 72 * 3600000 ? 'stuck' : 'moving'";{events: []};!error
+# Fuel surcharge and accessorials
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 100, dieselPrice: 3.00, residential: false};100.00
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 100, dieselPrice: 3.859, residential: true};109.55
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 250.50, dieselPrice: 4.25, residential: false, liftgate: true};351.16
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 100, dieselPrice: 2.5, residential: true, liftgate: false};105.25
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 100, dieselPrice: 3.01, residential: null};!error
+round(base * (1 + max([0, dieselPrice - 3.00]) * 0.05) + (residential ? 5.25 : 0) + (liftgate ?? false ? 85 : 0), 2);{base: 100, dieselPrice: null, residential: false};!error
+# Route planning over stops
+{stops: len(stops), km: sum(map(stops, #.km)), late: map(filter(stops, #.eta > #.windowEnd), #.name), avgKm: round(avg(map(stops, #.km)), 1)};{stops: [{name: 'A', km: 12.4, eta: 9.5, windowEnd: 10}, {name: 'B', km: 7.1, eta: 11, windowEnd: 10.5}, {name: 'Zürich HB', km: 30, eta: 12, windowEnd: 12}]};{stops: 3, km: 49.5, late: ['B'], avgKm: 16.5}
+{stops: len(stops), km: sum(map(stops, #.km)), late: map(filter(stops, #.eta > #.windowEnd), #.name), avgKm: round(avg(map(stops, #.km)), 1)};{stops: [{name: 'solo', km: 5, eta: 1, windowEnd: 0}]};{stops: 1, km: 5, late: ['solo'], avgKm: 5}
+{stops: len(stops), km: sum(map(stops, #.km)), late: map(filter(stops, #.eta > #.windowEnd), #.name), avgKm: round(avg(map(stops, #.km)), 1)};{stops: []};!error
+{stops: len(stops), km: sum(map(stops, #.km)), late: map(filter(stops, #.eta > #.windowEnd), #.name), avgKm: round(avg(map(stops, #.km)), 1)};{stops: [{name: 'x', km: 1, eta: null, windowEnd: 2}]};!error
+map(stops as s, `${s.seq}. ${upper(s.city)} (${s.windowStart}-${s.windowEnd})`);{stops: [{seq: 1, city: 'Kraków', windowStart: '08:00', windowEnd: '10:00'}, {seq: 2, city: 'Łódź', windowStart: '13:00', windowEnd: '15:30'}]};['1. KRAKÓW (08:00-10:00)', '2. ŁÓDŹ (13:00-15:30)']
+map(stops as s, `${s.seq}. ${upper(s.city)} (${s.windowStart}-${s.windowEnd})`);{stops: []};[]
+map(stops as s, `${s.seq}. ${upper(s.city)} (${s.windowStart}-${s.windowEnd})`);{stops: [{seq: 1, city: 'x'}]};['1. X (null-null)']
+map(stops as s, `${s.seq}. ${upper(s.city)} (${s.windowStart}-${s.windowEnd})`);{stops: [{seq: 1, city: null}]};!error
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 26, maxKg: 20000, stops: [{palletCount: 10, kg: 8000}, {palletCount: 16, kg: 12000}]};true
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 26, maxKg: 20000, stops: [{palletCount: 10, kg: 8000}, {palletCount: 17, kg: 1}]};false
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 26, maxKg: 20000, stops: [{palletCount: 10, kg: 8000}, {palletCount: 16, kg: 12000.01}]};false
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 52, maxKg: 40000, stops: [{palletCount: 27, kg: 1}]};false
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 26, maxKg: 20000, stops: []};true
+all(stops, #.palletCount <= 26) and sum(map(stops, #.palletCount)) <= truckCapacity and sum(map(stops, #.kg)) <= maxKg;{truckCapacity: 26, maxKg: 20000, stops: [{palletCount: 10}]};!error
+# Tracking numbers
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '1Z999AA10123456784'};'UPS'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '1z999aa10123456784'};'unknown'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '123456789012'};'FedEx'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '123456789012345'};'FedEx'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '1234567890123'};'unknown'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: '9400111899223856927581'};'USPS'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: ''};'unknown'
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: 123456789012};!error
+matches(tracking, '^1Z[0-9A-Z]{16}$') ? 'UPS' : matches(tracking, '^[0-9]{12}$') or matches(tracking, '^[0-9]{15}$') ? 'FedEx' : matches(tracking, '^9[0-9]{21}$') ? 'USPS' : 'unknown';{tracking: null};!error
+upper(trim(carrier)) + '-' + extract(tracking, '([0-9]{4})$')[1];{carrier: ' dhl ', tracking: 'JD014600003828'};'DHL-3828'
+upper(trim(carrier)) + '-' + extract(tracking, '([0-9]{4})$')[1];{carrier: 'ups', tracking: '1Z999AA10123456784'};'UPS-6784'
+upper(trim(carrier)) + '-' + extract(tracking, '([0-9]{4})$')[1];{carrier: 'fedex', tracking: 'ABC'};!error
+upper(trim(carrier)) + '-' + extract(tracking, '([0-9]{4})$')[1];{carrier: null, tracking: '1234'};!error

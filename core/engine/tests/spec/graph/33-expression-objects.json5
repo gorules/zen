@@ -1,0 +1,523 @@
+// Object and array values built in expression nodes: object literals as field values, nested
+// literals mixing request paths and computed values, computed keys, merge/mergeDeep as the
+// language's spread, arrays of objects, and object outputs consumed by later nodes (expression
+// nodes, tables, switches, loops) through dotted reads. Literal syntax itself is in the expression
+// spec; these suites pin how built values flow through the graph and the result merge.
+
+// ---------------------------------------------------------------------------
+// Object literals as field values.
+{
+  name: "an object literal of request values",
+  graph: {nodes: [{expression: "calc", fields: {customer: "{name: name, age: age, adult: age >= 18}"}}]},
+  cases: [
+    [{name: "ann", age: 30}, {customer: {name: "ann", age: 30, adult: true}}],
+    [{name: "bob", age: 17}, {customer: {name: "bob", age: 17, adult: false}}],
+    [{name: "", age: 18.5}, {customer: {name: "", age: 18.5, adult: true}}],
+  ],
+}
+
+{
+  name: "an object literal keeps null members for missing inputs",
+  graph: {nodes: [{expression: "calc", fields: {customer: "{name: name, email: email}"}}]},
+  cases: [
+    [{name: "ann", email: "a@x"}, {customer: {name: "ann", email: "a@x"}}],
+    [{name: "ann"}, {customer: {name: "ann", email: null}}],
+    [{}, {customer: {name: null, email: null}}],
+    [{email: null, name: 1}, {customer: {name: 1, email: null}}],
+  ],
+}
+
+{
+  name: "a nested object literal mixing paths and computed values",
+  graph: {nodes: [{expression: "calc", fields: {quote: "{customer: {id: customer.id, tier: customer.tier ?? 'basic'}, pricing: {net: price * qty, gross: price * qty * (1 + tax), currency: 'EUR'}}"}}]},
+  cases: [
+    [
+      {customer: {id: 7, tier: "gold"}, price: 10, qty: 2, tax: 0.2},
+      {quote: {customer: {id: 7, tier: "gold"}, pricing: {net: 20, gross: 24, currency: "EUR"}}},
+    ],
+    [
+      {customer: {id: 8}, price: 0.1, qty: 3, tax: 0},
+      {quote: {customer: {id: 8, tier: "basic"}, pricing: {net: 0.3, gross: 0.3, currency: "EUR"}}},
+    ],
+    [
+      {customer: {}, price: 1, qty: 1, tax: 0.5},
+      {quote: {customer: {id: null, tier: "basic"}, pricing: {net: 1, gross: 1.5, currency: "EUR"}}},
+    ],
+  ],
+}
+
+{
+  name: "an object literal with a member read on a missing parent",
+  graph: {nodes: [{expression: "calc", fields: {o: "{city: address.city, zip: address.zip}"}}]},
+  cases: [
+    [{address: {city: "Berlin", zip: "10115"}}, {o: {city: "Berlin", zip: "10115"}}],
+    [{address: {}}, {o: {city: null, zip: null}}],
+    [{}, {o: {city: null, zip: null}}],
+    [{address: null}, {o: {city: null, zip: null}}],
+  ],
+}
+
+{
+  name: "an object literal holding arrays, dates and booleans",
+  graph: {nodes: [{expression: "calc", fields: {o: "{tags: tags, first: tags[0], since: d(since), active: active == true}"}}]},
+  cases: [
+    [{tags: ["a", "b"], since: "2024-01-01", active: true}, {o: {tags: ["a", "b"], first: "a", since: "2024-01-01T00:00:00Z", active: true}}],
+    [{tags: [], since: "2020-02-29", active: false}, {o: {tags: [], first: null, since: "2020-02-29T00:00:00Z", active: false}}],
+    [{tags: ["x"], since: "2023-12-31T10:00:00Z"}, {o: {tags: ["x"], first: "x", since: "2023-12-31T10:00:00Z", active: false}}],
+  ],
+}
+
+{
+  name: "an empty object literal and an object of empties",
+  graph: {nodes: [{expression: "calc", fields: {e: "{}", o: "{a: {}, b: [], c: ''}"}}]},
+  cases: [
+    [{}, {e: {}, o: {a: {}, b: [], c: ""}}],
+    [{e: 1, o: 2}, {e: {}, o: {a: {}, b: [], c: ""}}],
+  ],
+}
+
+{
+  name: "a duplicate key inside one object literal",
+  graph: {nodes: [{expression: "calc", fields: {o: "{a: 1, a: x}"}}]},
+  cases: [
+    [{x: 2}, {o: {a: 1}}, "question: the expression spec records that duplicate literal keys keep the first value; JS/JSON5 keep the last"],
+    [{}, {o: {a: 1}}, "question: the expression spec records that duplicate literal keys keep the first value; JS/JSON5 keep the last"],
+  ],
+}
+
+{
+  name: "quoted keys with spaces and symbols",
+  graph: {nodes: [{expression: "calc", fields: {o: "{'full name': name, 'a.b': 1, 'x-y': 2}"}}]},
+  cases: [
+    [{name: "ann"}, {o: {"full name": "ann", "a.b": 1, "x-y": 2}}],
+    [{}, {o: {"full name": null, "a.b": 1, "x-y": 2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Computed keys.
+{
+  name: "a computed key from a request string",
+  graph: {nodes: [{expression: "calc", fields: {o: "{[key]: value}"}}]},
+  cases: [
+    [{key: "a", value: 1}, {o: {a: 1}}],
+    [{key: "b c", value: "x"}, {o: {"b c": "x"}}],
+    [{key: "", value: true}, {o: {"": true}}],
+    [{key: "n", value: null}, {o: {n: null}}],
+  ],
+}
+
+{
+  name: "a computed key built from a template",
+  graph: {nodes: [{expression: "calc", fields: {o: "{[`${prefix}_${id}`]: score}"}}]},
+  cases: [
+    [{prefix: "user", id: 1, score: 9}, {o: {user_1: 9}}],
+    [{prefix: "acct", id: "x", score: 0}, {o: {acct_x: 0}}],
+  ],
+}
+
+{
+  name: "a computed key that is not a string is stringified",
+  graph: {nodes: [{expression: "calc", fields: {o: "{[key]: 1}"}}]},
+  cases: [
+    [{key: "ok"}, {o: {ok: 1}}],
+    [{key: 5}, {o: {"5": 1}}],
+    [{key: 1.50}, {o: {"1.50": 1}}],
+    [{key: true}, {o: {"true": 1}}],
+    [{key: null}, {o: {"null": 1}}, "question: a null computed key becomes the string 'null' (as in the expression spec)"],
+    [{}, {o: {"null": 1}}, "question: a missing computed key reads null and becomes the string 'null'"],
+    [{key: [1]}, "!error"],
+  ],
+}
+
+{
+  name: "an object built from pairs with merge over map",
+  graph: {nodes: [{expression: "calc", fields: {byId: "merge(map(items, {[#.id]: #.value}))"}}]},
+  cases: [
+    [{items: [{id: "a", value: 1}, {id: "b", value: 2}]}, {byId: {a: 1, b: 2}}],
+    [{items: [{id: "a", value: 1}, {id: "a", value: 3}]}, {byId: {a: 3}}],
+    [{items: []}, {byId: {}}],
+    [{items: [{id: "x", value: {deep: true}}]}, {byId: {x: {deep: true}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// merge and mergeDeep as spread: combining request objects with computed members.
+{
+  name: "merge spreads a request object and overrides members",
+  graph: {nodes: [{expression: "calc", fields: {customer: "merge([customer, {tier: 'gold', score: customer.score + 1}])"}}]},
+  cases: [
+    [{customer: {name: "ann", score: 1}}, {customer: {name: "ann", score: 2, tier: "gold"}}],
+    [{customer: {name: "bob", score: 0, tier: "basic"}}, {customer: {name: "bob", score: 1, tier: "gold"}}],
+    [{customer: {score: -1, extra: [1]}}, {customer: {score: 0, tier: "gold", extra: [1]}}],
+  ],
+}
+
+{
+  name: "merge with a missing request object",
+  graph: {nodes: [{expression: "calc", fields: {o: "merge([base, {added: true}])"}}]},
+  cases: [
+    [{base: {a: 1}}, {o: {a: 1, added: true}}],
+    [{base: {}}, {o: {added: true}}],
+    [{}, {o: {added: true}}],
+    [{base: null}, {o: {added: true}}],
+    [{base: 5}, "!error"],
+  ],
+}
+
+{
+  name: "merge is shallow, mergeDeep is recursive",
+  graph: {nodes: [{expression: "calc", fields: {shallow: "merge([a, b])", deep: "mergeDeep([a, b])"}}]},
+  cases: [
+    [{a: {x: {p: 1}}, b: {x: {q: 2}}}, {shallow: {x: {q: 2}}, deep: {x: {p: 1, q: 2}}}],
+    [{a: {x: 1}, b: {y: 2}}, {shallow: {x: 1, y: 2}, deep: {x: 1, y: 2}}],
+    [{a: {l: [1]}, b: {l: [2]}}, {shallow: {l: [2]}, deep: {l: [1, 2]}}],
+    [{a: {}, b: {}}, {shallow: {}, deep: {}}],
+  ],
+}
+
+{
+  name: "a null member in a merge keeps the key",
+  graph: {nodes: [{expression: "calc", fields: {o: "merge([a, {gone: null}])"}}]},
+  cases: [
+    [{a: {gone: 1, kept: 2}}, {o: {gone: null, kept: 2}}],
+    [{a: {}}, {o: {gone: null}}],
+  ],
+}
+
+{
+  name: "merge of the request root",
+  graph: {nodes: [{expression: "calc", fields: {all: "merge([$root, {extra: 1}])"}}]},
+  cases: [
+    [{a: 1}, {all: {a: 1, extra: 1}}],
+    [{}, {all: {extra: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Arrays of objects.
+{
+  name: "an array literal of object literals",
+  graph: {nodes: [{expression: "calc", fields: {rows: "[{k: 'a', v: a}, {k: 'b', v: b}]"}}]},
+  cases: [
+    [{a: 1, b: 2}, {rows: [{k: "a", v: 1}, {k: "b", v: 2}]}],
+    [{a: "x"}, {rows: [{k: "a", v: "x"}, {k: "b", v: null}]}],
+    [{}, {rows: [{k: "a", v: null}, {k: "b", v: null}]}],
+  ],
+}
+
+{
+  name: "an array of objects mapped from request objects",
+  graph: {nodes: [{expression: "calc", fields: {summary: "map(people, {name: upper(#.name), adult: #.age >= 18})"}}]},
+  cases: [
+    [{people: [{name: "ann", age: 30}, {name: "bob", age: 12}]}, {summary: [{name: "ANN", adult: true}, {name: "BOB", adult: false}]}],
+    [{people: []}, {summary: []}],
+    [{people: [{name: "c", age: 18}]}, {summary: [{name: "C", adult: true}]}],
+  ],
+}
+
+{
+  name: "an array of objects carrying their index",
+  graph: {nodes: [{expression: "calc", fields: {rows: "map([0..len(xs) - 1], {i: #, v: xs[#]})"}}]},
+  cases: [
+    [{xs: ["a", "b"]}, {rows: [{i: 0, v: "a"}, {i: 1, v: "b"}]}],
+    [{xs: [true]}, {rows: [{i: 0, v: true}]}],
+  ],
+}
+
+{
+  name: "nested arrays of objects inside an object",
+  graph: {nodes: [{expression: "calc", fields: {report: "{groups: map(groups, {name: #.name, members: map(#.members, {id: #})}), count: len(groups)}"}}]},
+  cases: [
+    [
+      {groups: [{name: "a", members: [1, 2]}, {name: "b", members: []}]},
+      {report: {groups: [{name: "a", members: [{id: 1}, {id: 2}]}, {name: "b", members: []}], count: 2}},
+    ],
+    [{groups: []}, {report: {groups: [], count: 0}}],
+  ],
+}
+
+{
+  name: "an array literal mixing scalars, objects, arrays and nulls",
+  graph: {nodes: [{expression: "calc", fields: {l: "[n, {n: n}, [n], null, 'x']"}}]},
+  cases: [
+    [{n: 1}, {l: [1, {n: 1}, [1], null, "x"]}],
+    [{}, {l: [null, {n: null}, [null], null, "x"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Reading built objects back within the node via `$`.
+{
+  name: "a later field reads a member of an earlier object field",
+  graph: {nodes: [{expression: "calc", fields: {
+    totals: "{net: price * qty, tax: price * qty * rate}",
+    gross: "$.totals.net + $.totals.tax",
+    label: "`${$.totals.net} + ${$.totals.tax}`",
+  }}]},
+  cases: [
+    [{price: 10, qty: 2, rate: 0.1}, {totals: {net: 20, tax: 2}, gross: 22, label: "20 + 2.0"}],
+    [{price: 1, qty: 0, rate: 0.2}, {totals: {net: 0, tax: 0}, gross: 0, label: "0 + 0"}],
+  ],
+}
+
+{
+  name: "a later field indexes an earlier array of objects",
+  graph: {nodes: [{expression: "calc", fields: {
+    rows: "map(xs, {v: #})",
+    first: "$.rows[0].v",
+    last: "$.rows[len($.rows) - 1].v",
+  }}]},
+  cases: [
+    [{xs: [3, 4, 5]}, {rows: [{v: 3}, {v: 4}, {v: 5}], first: 3, last: 5}],
+    [{xs: ["a"]}, {rows: [{v: "a"}], first: "a", last: "a"}],
+  ],
+}
+
+{
+  name: "keys and values of an object built earlier",
+  graph: {nodes: [{expression: "calc", fields: {o: "{x: a, y: b}", n: "len(keys($.o))", sum: "sum(values($.o))"}}]},
+  cases: [
+    [{a: 1, b: 2}, {o: {x: 1, y: 2}, n: 2, sum: 3}],
+    [{a: 0.1, b: 0.2}, {o: {x: 0.1, y: 0.2}, n: 2, sum: 0.3}],
+  ],
+}
+
+{
+  name: "a dotted key extends an object literal field and a later field reads both",
+  graph: {nodes: [{expression: "calc", fields: [
+    ["o", "{a: a}"],
+    ["o.b", "b"],
+    ["both", "$.o.a + $.o.b"],
+  ]}]},
+  cases: [
+    [{a: 1, b: 2}, {o: {a: 1, b: 2}, both: 3}],
+    [{a: 0.5, b: 0.5}, {o: {a: 0.5, b: 0.5}, both: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Object outputs consumed downstream through dotted reads.
+{
+  name: "a downstream expression reads members of an upstream object",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {customer: "{name: name, score: score * 10}"}},
+      {expression: "use", fields: {greeting: "'hi ' + customer.name", high: "customer.score > 50"}},
+    ],
+  },
+  cases: [
+    [{name: "ann", score: 6}, {greeting: "hi ann", high: true}],
+    [{name: "bob", score: 5}, {greeting: "hi bob", high: false}],
+    [{name: "", score: 0}, {greeting: "hi ", high: false}],
+  ],
+}
+
+{
+  name: "a downstream read of a null member of an upstream object",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {o: "{a: a, b: b}"}},
+      {expression: "use", fields: {aNull: "o.a == null", hasA: "'a' in keys(o)", b: "o.b"}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, {aNull: false, hasA: true, b: 2}],
+    [{b: 2}, {aNull: true, hasA: true, b: 2}],
+    [{}, {aNull: true, hasA: true}],
+  ],
+}
+
+{
+  name: "deep dotted reads three levels into an upstream object",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {a: "{b: {c: {d: v, e: [v, v]}}}"}},
+      {expression: "use", fields: {d: "a.b.c.d", e1: "a.b.c.e[1]", missing: "a.b.x.y"}},
+    ],
+  },
+  cases: [
+    [{v: 1}, {d: 1, e1: 1}],
+    [{v: "s"}, {d: "s", e1: "s"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a downstream node reads an upstream object through $nodes",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {o: "{total: price * qty}"}},
+      {expression: "mid", fields: {unrelated: "1"}},
+      {expression: "use", fields: {total: "$nodes.build.o.total", whole: "$nodes.build"}},
+    ],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {total: 6, whole: {o: {total: 6}}}],
+    [{price: 0.5, qty: 2}, {total: 1, whole: {o: {total: 1}}}],
+  ],
+}
+
+{
+  name: "a table reads dotted members of an upstream object",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {applicant: "{age: age, income: income, ratio: debt / income}"}},
+      {table: "score", inputs: ["applicant.age", "applicant.ratio"], outputs: ["band"], rules: [
+        ["< 18", "", "'reject'"],
+        ["", "> 0.5", "'high'"],
+        ["", "", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 17, income: 100, debt: 0}, {band: "reject"}],
+    [{age: 30, income: 100, debt: 60}, {band: "high"}],
+    [{age: 30, income: 100, debt: 50}, {band: "ok"}],
+    [{age: 40, income: 1, debt: 0}, {band: "ok"}],
+  ],
+}
+
+{
+  name: "a table outputs into dotted keys and a later node reads the object",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier"], outputs: ["offer.rate", "offer.label"], rules: [
+        ["'gold'", "0.2", "'Gold'"],
+        ["", "0", "'Standard'"],
+      ]},
+      {expression: "use", fields: {text: "offer.label + ': ' + string(offer.rate * 100) + '%'", offer: "offer"}},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, {text: "Gold: 20.0%", offer: {rate: 0.2, label: "Gold"}}],
+    [{tier: "silver"}, {text: "Standard: 0%", offer: {rate: 0, label: "Standard"}}],
+  ],
+}
+
+{
+  name: "a switch condition reads a member of an upstream object",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {risk: "{score: a + b, flagged: a > 5}"}},
+      {switch: "route", when: ["risk.flagged", "risk.score > 3", ""]},
+      {expression: "flag", fields: {route: "'flag'"}},
+      {expression: "review", fields: {route: "'review'"}},
+      {expression: "pass", fields: {route: "'pass'"}},
+    ],
+    edges: ["input -> build -> route", "route:0 -> flag -> output", "route:1 -> review -> output", "route:2 -> pass -> output"],
+  },
+  cases: [
+    [{a: 6, b: 0}, {route: "flag"}],
+    [{a: 2, b: 2}, {route: "review"}],
+    [{a: 1, b: 1}, {route: "pass"}],
+  ],
+}
+
+{
+  name: "an inputField points at an object built upstream",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {ctx: "{x: a * 2, y: a * 3}"}},
+      {expression: "use", inputField: "ctx", fields: {sum: "x + y"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {sum: 5}],
+    [{a: 0.1}, {sum: 0.5}],
+    [{a: 0}, {sum: 0}],
+  ],
+}
+
+{
+  name: "a loop over an array of objects built upstream",
+  graph: {
+    nodes: [
+      {expression: "build", fields: {lines: "map(items, {net: #.price * #.qty, rate: rate})"}},
+      {expression: "line", executionMode: "loop", inputField: "lines", outputPath: "taxed", fields: {gross: "net * (1 + rate)"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 10, qty: 1}, {price: 5, qty: 2}], rate: 0.2}, {taxed: [{gross: 12}, {gross: 12}]}],
+    [{items: [], rate: 0.2}, {taxed: []}],
+    [{items: [{price: 1, qty: 1}], rate: 0}, {taxed: [{gross: 1}]}],
+  ],
+}
+
+{
+  name: "a sub-decision receives an object built upstream",
+  decisions: {
+    child: {nodes: [{expression: "calc", fields: {area: "shape.w * shape.h", kind: "shape.w == shape.h ? 'square' : 'rect'"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "build", fields: {shape: "{w: w, h: h}"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{w: 2, h: 2}, {area: 4, kind: "square"}],
+    [{w: 2, h: 3}, {area: 6, kind: "rect"}],
+    [{w: 0.5, h: 4}, {area: 2, kind: "rect"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Objects in the result merge and under pass-through.
+{
+  name: "object fields from parallel branches deep-merge in the result",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {profile: "{name: name}"}},
+      {expression: "b", fields: {profile: "{score: score, flags: {vip: score > 90}}"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{name: "ann", score: 95}, {profile: {name: "ann", score: 95, flags: {vip: true}}}],
+    [{name: "bob", score: 10}, {profile: {name: "bob", score: 10, flags: {vip: false}}}],
+  ],
+}
+
+{
+  name: "an object field merges into an input object under pass-through",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {customer: "{tier: customer.score > 50 ? 'gold' : 'basic', meta: {checked: true}}"}}]},
+  cases: [
+    [{customer: {name: "ann", score: 80}}, {customer: {name: "ann", score: 80, tier: "gold", meta: {checked: true}}}],
+    [{customer: {name: "bob", score: 10, meta: {src: "x"}}}, {customer: {name: "bob", score: 10, tier: "basic", meta: {src: "x", checked: true}}}],
+  ],
+}
+
+{
+  name: "a null member of an object literal deletes the input key under pass-through (merge-patch)",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {customer: "{email: null, seen: true}"}}]},
+  cases: [
+    [{customer: {email: "a@x", name: "ann"}}, {customer: {name: "ann", seen: true}}],
+    [{customer: {name: "ann"}}, {customer: {name: "ann", seen: true}}],
+    [{}, {customer: {email: null, seen: true}}],
+  ],
+}
+
+{
+  name: "an array of objects replaces an input array under pass-through",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {items: "map(items, {id: #.id})"}}]},
+  cases: [
+    [{items: [{id: 1, junk: true}, {id: 2, junk: false}]}, {items: [{id: 1}, {id: 2}]}],
+    [{items: []}, {items: []}],
+  ],
+}
+
+{
+  name: "an object output of a node chain accumulated by dotted keys and literals",
+  graph: {
+    nodes: [
+      {expression: "one", passThrough: true, fields: {acc: "{a: 1}"}},
+      {expression: "two", passThrough: true, fields: {"acc.b": "acc.a + 1"}},
+      {expression: "three", passThrough: true, fields: {acc: "merge([acc, {c: acc.b + 1}])"}},
+    ],
+  },
+  cases: [
+    [{}, {acc: {a: 1, b: 2, c: 3}}],
+    [{acc: {z: 0}}, {acc: {z: 0, a: 1, b: 2, c: 3}}],
+  ],
+}

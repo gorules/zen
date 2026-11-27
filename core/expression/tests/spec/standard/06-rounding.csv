@@ -1,0 +1,229 @@
+expression (string);input (json 5);output (json 5);note
+# abs
+abs(-5);;5
+abs(5);;5
+abs(0);;0
+abs(-0.5);;0.5
+string(abs(-1.50));;'1.50'
+string(abs(1.50));;'1.50'
+string(abs(-0.0));;'0.0'
+string(abs(0));;'0'
+abs(-79228162514264337593543950335);;79228162514264337593543950335
+abs(79228162514264337593543950335);;79228162514264337593543950335
+abs(-0.0000000000000000000000000001);;0.0000000000000000000000000001
+abs(-9223372036854775808);;9223372036854775808
+abs(-9223372036854775807);;9223372036854775807
+abs(-1e3);;1000
+abs(3 - 10);;7
+abs(-(2.5));;2.5
+abs(null);;!error
+abs('5');;!error
+abs('-5');;!error
+abs(true);;!error
+abs([1]);;!error
+abs({});;!error
+abs();;!error
+abs(1, 2);;!error
+abs(d('2024-01-01'));;!error
+# round: no precision, ties away from zero
+round(0);;0
+round(0.4);;0
+round(0.5);;1
+round(0.6);;1
+round(1.5);;2
+round(2.5);;3
+round(3.5);;4
+round(4.5);;5
+round(-0.4);;0
+round(-0.5);;-1
+round(-0.6);;-1
+round(-1.5);;-2
+round(-2.5);;-3
+round(-3.5);;-4
+round(7.49999999999999999999);;7
+round(7.50000000000000000001);;8
+round(-7.49999999999999999999);;-7
+round(0.4999999999999999999999999999);;0
+round(0.5000000000000000000000000000);;1
+round(123456789.5);;123456790
+round(1e3);;1000
+round(-1e-3);;0
+round(9223372036854775807);;9223372036854775807
+round(9223372036854775806.5);;9223372036854775807
+round(9223372036854775807.5);;9223372036854775808
+round(-9223372036854775808.5);;-9223372036854775809
+round(79228162514264337593543950335);;79228162514264337593543950335
+round(-79228162514264337593543950335);;-79228162514264337593543950335
+round(7922816251426433759354395033.5);;7922816251426433759354395034
+round(0.0000000000000000000000000001);;0
+# round: result scale
+string(round(2.5));;'3'
+string(round(2.4));;'2'
+string(round(2));;'2'
+string(round(2.00));;'2'
+string(round(-0.4));;'0'
+string(round(-0.5));;'-1'
+string(round(-0.04, 1));;'0.0'
+string(round(-0.0));;'0';bug: rounding negative zero keeps the sign and prints '-0'
+string(round(1.005, 2));;'1.01'
+string(round(1.004, 2));;'1.00'
+string(round(1.10, 2));;'1.10'
+string(round(1.1, 2));;'1.1'
+string(round(1, 2));;'1'
+string(round(1.23456, 3));;'1.235'
+string(round(1.2, 0));;'1'
+string(round(0.125, 2));;'0.13'
+string(round(0.135, 2));;'0.14'
+string(round(-0.125, 2));;'-0.13'
+string(round(2.675, 2));;'2.68'
+string(round(1.45, 1));;'1.5'
+string(round(1.55, 1));;'1.6'
+string(round(1.95, 1));;'2.0'
+string(round(9.995, 2));;'10.00'
+string(round(-9.995, 2));;'-10.00'
+string(round(99.5));;'100'
+# round: precision argument
+round(7.444, 0);;7
+round(7.444, 1);;7.4
+round(7.444, 2);;7.44
+round(7.444, 3);;7.444
+round(7.444, 4);;7.444
+round(7.555, 1);;7.6
+round(7.555, 2);;7.56
+round(-7.555, 2);;-7.56
+round(-7.545, 2);;-7.55
+round(1.25, 1);;1.3
+round(1.35, 1);;1.4
+round(-1.25, 1);;-1.3
+round(-1.35, 1);;-1.4
+round(4.567, 2);;4.57
+round(0.0000000000000000000000000005, 27);;0.000000000000000000000000001
+round(0.0000000000000000000000000004, 27);;0
+round(1.5, 28);;1.5
+string(round(1.5, 28));;'1.5'
+round(1.5, 29);;1.5
+round(1.5, 100);;1.5
+string(round(1.5, 100));;'1.5'
+round(1.5, 4294967295);;1.5
+round(1.5, 4294967296);;!error;question: precision beyond u32 is rejected while 4294967295 is accepted
+round(3.14159, 1 + 1);;3.14
+round(1.5, -1);;!error;question: negative precision (round to tens) is rejected; could mean round(15, -1) = 20
+round(15, -1);;!error;question: negative precision (round to tens) is rejected; could mean round(15, -1) = 20
+round(1.55, 1.5);;1.6;question: fractional precision is silently truncated to an integer instead of being rejected
+round(1.55, 1.9);;1.6;question: fractional precision is silently truncated to an integer instead of being rejected
+round(1.5, 0.5);;2;question: fractional precision is silently truncated to an integer instead of being rejected
+round(1.5, null);;!error;question: null precision fails; could mean the default precision 0
+round(1.5, '1');;!error
+round(1.5, true);;!error
+round(null);;!error
+round(null, 2);;!error
+round('1.5');;!error
+round('1.5', 1);;!error
+round(true);;!error
+round([1.5]);;!error
+round({});;!error
+round();;!error
+round(1, 2, 3);;!error
+round(d('2024-01-01'));;!error
+# trunc
+trunc(0);;0
+trunc(0.9);;0
+trunc(-0.9);;0
+trunc(4.9);;4
+trunc(-4.9);;-4
+trunc(7.999, 0);;7
+trunc(7.999, 1);;7.9
+trunc(7.999, 2);;7.99
+trunc(-7.999, 2);;-7.99
+trunc(7.999, 3);;7.999
+trunc(7.999, 10);;7.999
+trunc(7.999, 100);;7.999
+trunc(9223372036854775807.9);;9223372036854775807
+trunc(-9223372036854775808.9);;-9223372036854775808
+trunc(79228162514264337593543950335);;79228162514264337593543950335
+trunc(7922816251426433759354395033.3);;7922816251426433759354395033
+7922816251426433759354395033.9;;!error
+trunc(0.0000000000000000000000000001, 28);;0.0000000000000000000000000001
+trunc(0.0000000000000000000000000001, 27);;0
+string(trunc(2.50));;'2'
+string(trunc(2.59, 1));;'2.5'
+string(trunc(2.50, 1));;'2.5'
+string(trunc(2.500, 2));;'2.50'
+string(trunc(2, 2));;'2.00';question: trunc pads the result to the requested scale while round(1, 2) keeps scale '1'
+string(trunc(2.5, 2));;'2.50';question: trunc pads the result to the requested scale while round(1.1, 2) keeps '1.1'
+string(trunc(-0.5));;'0';bug: truncating a negative fraction yields negative zero; round(-0.4) prints '0'
+string(trunc(-0.05, 1));;'0.0';bug: truncating a negative fraction yields negative zero; round(-0.04, 1) prints '0.0'
+string(trunc(-1.5));;'-1'
+trunc(1.5, -1);;!error;question: negative precision is rejected like round
+trunc(1.59, 1.5);;1.5;question: fractional precision is silently truncated to an integer instead of being rejected
+trunc(1.5, null);;!error
+trunc(null);;!error
+trunc('1.5');;!error
+trunc(true);;!error
+trunc([1.5]);;!error
+trunc();;!error
+trunc(1, 2, 3);;!error
+# floor
+floor(4.9);;4
+floor(4.1);;4
+floor(4);;4
+floor(-4.1);;-5
+floor(-4.9);;-5
+floor(-4);;-4
+floor(0.5);;0
+floor(-0.5);;-1
+floor(-0.0000000000000000000000000001);;-1
+floor(0.9999999999999999999999999999);;0
+floor(9223372036854775807.5);;9223372036854775807
+floor(-9223372036854775808.5);;-9223372036854775809
+floor(79228162514264337593543950335);;79228162514264337593543950335
+floor(-79228162514264337593543950335);;-79228162514264337593543950335
+floor(-7922816251426433759354395033.5);;-7922816251426433759354395034
+string(floor(-0.5));;'-1'
+string(floor(0.5));;'0'
+string(floor(4.50));;'4'
+string(floor(4.00));;'4'
+string(floor(-4.00));;'-4'
+floor(4.55, 1);;!error;question: floor accepts no precision argument unlike round and trunc
+floor(null);;!error
+floor('4.5');;!error
+floor(true);;!error
+floor([4.5]);;!error
+floor();;!error
+# ceil
+ceil(4.1);;5
+ceil(4.9);;5
+ceil(4);;4
+ceil(-4.1);;-4
+ceil(-4.9);;-4
+ceil(0.5);;1
+ceil(-0.5);;0
+ceil(0.0000000000000000000000000001);;1
+ceil(-0.9999999999999999999999999999);;0
+ceil(9223372036854775806.5);;9223372036854775807
+ceil(9223372036854775807.5);;9223372036854775808
+ceil(79228162514264337593543950335);;79228162514264337593543950335
+ceil(7922816251426433759354395033.5);;7922816251426433759354395034
+string(ceil(4.1));;'5'
+string(ceil(4.00));;'4'
+string(ceil(-0.5));;'0';bug: ceil of a negative fraction yields negative zero '-0'; round(-0.4) prints '0'
+string(ceil(-0.0000000000000000000000000001));;'0';bug: ceil of a negative fraction yields negative zero '-0'
+ceil(-0.5) == 0;;true
+ceil(4.11, 1);;!error;question: ceil accepts no precision argument unlike round and trunc
+ceil(null);;!error
+ceil('4.5');;!error
+ceil(false);;!error
+ceil([4.5]);;!error
+ceil();;!error
+# combinations
+floor(-2.5) + ceil(-2.5);;-5
+round(2.5) - trunc(2.5);;1
+abs(floor(-2.5));;3
+round(10 / 3, 2);;3.33
+string(round(10 / 3, 2));;'3.33'
+round(2 / 3, 5);;0.66667
+string(round(1 / 3 * 3, 2));;'1.00'
+round(1 / 3 * 3);;1
+round(0.1 + 0.2, 1) == 0.3;;true
+string(round(1.23 * 100) / 100);;'1.23'
+round(abs(-2.5));;3

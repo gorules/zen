@@ -1,0 +1,629 @@
+expression (string);input (json 5);output (json 5);note
+# date inputs: text forms
+x;{x: date('2024-03-15')};'2024-03-15'
+x;{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+x;{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+x;{x: date('20240315')};'20240315'
+x;{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+x;{x: '2024-03-15'};'2024-03-15'
+x;{x: 'abc'};'abc'
+x;{x: null};null
+x;{};null
+string(x);{x: date('2024-03-15')};'2024-03-15'
+string(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+string(x);{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+string(x);{x: date('20240315')};'20240315'
+string(x);{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+string(x);{x: '2024-03-15'};'2024-03-15'
+string(x);{x: 'abc'};'abc'
+string(x);{x: null};'null'
+string(x);{};'null'
+x + '';{x: date('2024-03-15')};'2024-03-15'
+x + '';{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+x + '';{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+x + '';{x: date('20240315')};'20240315'
+x + '';{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+x + '';{x: '2024-03-15'};'2024-03-15'
+x + '';{x: 'abc'};'abc'
+x + '';{x: null};!error
+x + '';{};!error
+'on ' + x;{x: date('2024-03-15')};'on 2024-03-15'
+'on ' + x;{x: date('2024-03-15T10:30:00+02:00')};'on 2024-03-15T10:30:00+02:00'
+'on ' + x;{x: date('2024-03-15 10:30')};'on 2024-03-15 10:30'
+'on ' + x;{x: date('20240315')};'on 20240315'
+'on ' + x;{x: date('2024-03-15T23:30:00Z')};'on 2024-03-15T23:30:00Z'
+'on ' + x;{x: '2024-03-15'};'on 2024-03-15'
+'on ' + x;{x: 'abc'};'on abc'
+'on ' + x;{x: null};!error
+'on ' + x;{};!error
+`${x}`;{x: date('2024-03-15')};'2024-03-15'
+`${x}`;{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+`${x}`;{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+`${x}`;{x: date('20240315')};'20240315'
+`${x}`;{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+`${x}`;{x: '2024-03-15'};'2024-03-15'
+`${x}`;{x: 'abc'};'abc'
+`${x}`;{x: null};'null'
+`${x}`;{};'null'
+`<${x}>`;{x: date('2024-03-15')};'<2024-03-15>'
+`<${x}>`;{x: date('2024-03-15T10:30:00+02:00')};'<2024-03-15T10:30:00+02:00>'
+`<${x}>`;{x: date('2024-03-15 10:30')};'<2024-03-15 10:30>'
+`<${x}>`;{x: date('20240315')};'<20240315>'
+`<${x}>`;{x: date('2024-03-15T23:30:00Z')};'<2024-03-15T23:30:00Z>'
+`<${x}>`;{x: '2024-03-15'};'<2024-03-15>'
+`<${x}>`;{x: 'abc'};'<abc>'
+`<${x}>`;{x: null};'<null>'
+`<${x}>`;{};'<null>'
+len(x);{x: date('2024-03-15')};10
+len(x);{x: date('2024-03-15T10:30:00+02:00')};25
+len(x);{x: date('2024-03-15 10:30')};16
+len(x);{x: date('20240315')};8
+len(x);{x: date('2024-03-15T23:30:00Z')};20
+len(x);{x: '2024-03-15'};10
+len(x);{x: 'abc'};3
+len(x);{x: null};!error
+len(x);{};!error
+upper(x);{x: date('2024-03-15')};'2024-03-15'
+upper(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+upper(x);{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+upper(x);{x: date('20240315')};'20240315'
+upper(x);{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+upper(x);{x: '2024-03-15'};'2024-03-15'
+upper(x);{x: 'abc'};'ABC'
+upper(x);{x: null};!error
+upper(x);{};!error
+lower(x);{x: date('2024-03-15')};'2024-03-15'
+lower(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15t10:30:00+02:00'
+lower(x);{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+lower(x);{x: date('20240315')};'20240315'
+lower(x);{x: date('2024-03-15T23:30:00Z')};'2024-03-15t23:30:00z'
+lower(x);{x: '2024-03-15'};'2024-03-15'
+lower(x);{x: 'abc'};'abc'
+lower(x);{x: null};!error
+lower(x);{};!error
+trim(x);{x: date('2024-03-15')};'2024-03-15'
+trim(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+trim(x);{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+trim(x);{x: date('20240315')};'20240315'
+trim(x);{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+trim(x);{x: '2024-03-15'};'2024-03-15'
+trim(x);{x: 'abc'};'abc'
+trim(x);{x: null};!error
+trim(x);{};!error
+x[0];{x: date('2024-03-15')};'2'
+x[0];{x: date('2024-03-15T10:30:00+02:00')};'2'
+x[0];{x: date('2024-03-15 10:30')};'2'
+x[0];{x: date('20240315')};'2'
+x[0];{x: date('2024-03-15T23:30:00Z')};'2'
+x[0];{x: '2024-03-15'};'2'
+x[0];{x: 'abc'};'a'
+x[0];{x: null};null
+x[0];{};null
+x[0:3];{x: date('2024-03-15')};'2024'
+x[0:3];{x: date('2024-03-15T10:30:00+02:00')};'2024'
+x[0:3];{x: date('2024-03-15 10:30')};'2024'
+x[0:3];{x: date('20240315')};'2024'
+x[0:3];{x: date('2024-03-15T23:30:00Z')};'2024'
+x[0:3];{x: '2024-03-15'};'2024'
+x[0:3];{x: 'abc'};!error
+x[0:3];{x: null};!error
+x[0:3];{};!error
+x[5:6];{x: date('2024-03-15')};'03'
+x[5:6];{x: date('2024-03-15T10:30:00+02:00')};'03'
+x[5:6];{x: date('2024-03-15 10:30')};'03'
+x[5:6];{x: date('20240315')};'31'
+x[5:6];{x: date('2024-03-15T23:30:00Z')};'03'
+x[5:6];{x: '2024-03-15'};'03'
+x[5:6];{x: 'abc'};!error
+x[5:6];{x: null};!error
+x[5:6];{};!error
+startsWith(x, '2024');{x: date('2024-03-15')};true
+startsWith(x, '2024');{x: date('2024-03-15T10:30:00+02:00')};true
+startsWith(x, '2024');{x: date('2024-03-15 10:30')};true
+startsWith(x, '2024');{x: date('20240315')};true
+startsWith(x, '2024');{x: date('2024-03-15T23:30:00Z')};true
+startsWith(x, '2024');{x: '2024-03-15'};true
+startsWith(x, '2024');{x: 'abc'};false
+startsWith(x, '2024');{x: null};!error
+startsWith(x, '2024');{};!error
+endsWith(x, '00');{x: date('2024-03-15')};false
+endsWith(x, '00');{x: date('2024-03-15T10:30:00+02:00')};true
+endsWith(x, '00');{x: date('2024-03-15 10:30')};false
+endsWith(x, '00');{x: date('20240315')};false
+endsWith(x, '00');{x: date('2024-03-15T23:30:00Z')};false
+endsWith(x, '00');{x: '2024-03-15'};false
+endsWith(x, '00');{x: 'abc'};false
+endsWith(x, '00');{x: null};!error
+endsWith(x, '00');{};!error
+endsWith('prefix-2024-03-15', x);{x: date('2024-03-15')};true
+endsWith('prefix-2024-03-15', x);{x: date('2024-03-15T10:30:00+02:00')};false
+endsWith('prefix-2024-03-15', x);{x: date('2024-03-15 10:30')};false
+endsWith('prefix-2024-03-15', x);{x: date('20240315')};false
+endsWith('prefix-2024-03-15', x);{x: date('2024-03-15T23:30:00Z')};false
+endsWith('prefix-2024-03-15', x);{x: '2024-03-15'};true
+endsWith('prefix-2024-03-15', x);{x: 'abc'};false
+endsWith('prefix-2024-03-15', x);{x: null};!error
+endsWith('prefix-2024-03-15', x);{};!error
+contains(x, 'T');{x: date('2024-03-15')};false
+contains(x, 'T');{x: date('2024-03-15T10:30:00+02:00')};true
+contains(x, 'T');{x: date('2024-03-15 10:30')};false
+contains(x, 'T');{x: date('20240315')};false
+contains(x, 'T');{x: date('2024-03-15T23:30:00Z')};true
+contains(x, 'T');{x: '2024-03-15'};false
+contains(x, 'T');{x: 'abc'};false
+contains(x, 'T');{x: null};!error
+contains(x, 'T');{};!error
+contains('on 2024-03-15', x);{x: date('2024-03-15')};true
+contains('on 2024-03-15', x);{x: date('2024-03-15T10:30:00+02:00')};false
+contains('on 2024-03-15', x);{x: date('2024-03-15 10:30')};false
+contains('on 2024-03-15', x);{x: date('20240315')};false
+contains('on 2024-03-15', x);{x: date('2024-03-15T23:30:00Z')};false
+contains('on 2024-03-15', x);{x: '2024-03-15'};true
+contains('on 2024-03-15', x);{x: 'abc'};false
+contains('on 2024-03-15', x);{x: null};!error
+contains('on 2024-03-15', x);{};!error
+split(x, '-');{x: date('2024-03-15')};['2024', '03', '15']
+split(x, '-');{x: date('2024-03-15T10:30:00+02:00')};['2024', '03', '15T10:30:00+02:00']
+split(x, '-');{x: date('2024-03-15 10:30')};['2024', '03', '15 10:30']
+split(x, '-');{x: date('20240315')};['20240315']
+split(x, '-');{x: date('2024-03-15T23:30:00Z')};['2024', '03', '15T23:30:00Z']
+split(x, '-');{x: '2024-03-15'};['2024', '03', '15']
+split(x, '-');{x: 'abc'};['abc']
+split(x, '-');{x: null};!error
+split(x, '-');{};!error
+matches(x, '^2024');{x: date('2024-03-15')};true
+matches(x, '^2024');{x: date('2024-03-15T10:30:00+02:00')};true
+matches(x, '^2024');{x: date('2024-03-15 10:30')};true
+matches(x, '^2024');{x: date('20240315')};true
+matches(x, '^2024');{x: date('2024-03-15T23:30:00Z')};true
+matches(x, '^2024');{x: '2024-03-15'};true
+matches(x, '^2024');{x: 'abc'};false
+matches(x, '^2024');{x: null};!error
+matches(x, '^2024');{};!error
+extract(x, '(\d{4})');{x: date('2024-03-15')};['2024', '2024']
+extract(x, '(\d{4})');{x: date('2024-03-15T10:30:00+02:00')};['2024', '2024']
+extract(x, '(\d{4})');{x: date('2024-03-15 10:30')};['2024', '2024']
+extract(x, '(\d{4})');{x: date('20240315')};['2024', '2024']
+extract(x, '(\d{4})');{x: date('2024-03-15T23:30:00Z')};['2024', '2024']
+extract(x, '(\d{4})');{x: '2024-03-15'};['2024', '2024']
+extract(x, '(\d{4})');{x: 'abc'};[]
+extract(x, '(\d{4})');{x: null};!error
+extract(x, '(\d{4})');{};!error
+fuzzyMatch(x, '2024-03-15');{x: date('2024-03-15')};1
+fuzzyMatch(x, '2024-03-15');{x: date('2024-03-15T10:30:00+02:00')};0.4
+fuzzyMatch(x, '2024-03-15');{x: date('2024-03-15 10:30')};0.625
+fuzzyMatch(x, '2024-03-15');{x: date('20240315')};0.8
+fuzzyMatch(x, '2024-03-15');{x: date('2024-03-15T23:30:00Z')};0.5
+fuzzyMatch(x, '2024-03-15');{x: '2024-03-15'};1
+fuzzyMatch(x, '2024-03-15');{x: 'abc'};0
+fuzzyMatch(x, '2024-03-15');{x: null};!error
+fuzzyMatch(x, '2024-03-15');{};!error
+bool(x);{x: date('2024-03-15')};true;bug: a date input converts through its source text, and non-empty text converts to false (inverted is_empty)
+bool(x);{x: date('2024-03-15T10:30:00+02:00')};true;bug: a date input converts through its source text, and non-empty text converts to false (inverted is_empty)
+bool(x);{x: date('2024-03-15 10:30')};true;bug: a date input converts through its source text, and non-empty text converts to false (inverted is_empty)
+bool(x);{x: date('20240315')};true;bug: a date input converts through its source text, and non-empty text converts to false (inverted is_empty)
+bool(x);{x: date('2024-03-15T23:30:00Z')};true;bug: a date input converts through its source text, and non-empty text converts to false (inverted is_empty)
+bool(x);{x: '2024-03-15'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(x);{x: 'abc'};true;bug: non-empty string converts to false (inverted is_empty)
+bool(x);{x: null};false
+bool(x);{};false
+number(x);{x: date('2024-03-15')};!error
+number(x);{x: date('2024-03-15T10:30:00+02:00')};!error
+number(x);{x: date('2024-03-15 10:30')};!error
+number(x);{x: date('20240315')};!error
+number(x);{x: date('2024-03-15T23:30:00Z')};!error
+number(x);{x: '2024-03-15'};!error
+number(x);{x: 'abc'};!error
+number(x);{x: null};!error
+number(x);{};!error
+isNumeric(x);{x: date('2024-03-15')};false
+isNumeric(x);{x: date('2024-03-15T10:30:00+02:00')};false
+isNumeric(x);{x: date('2024-03-15 10:30')};false
+isNumeric(x);{x: date('20240315')};false
+isNumeric(x);{x: date('2024-03-15T23:30:00Z')};false
+isNumeric(x);{x: '2024-03-15'};false
+isNumeric(x);{x: 'abc'};false
+isNumeric(x);{x: null};false
+isNumeric(x);{};false
+type(x);{x: date('2024-03-15')};'date'
+type(x);{x: date('2024-03-15T10:30:00+02:00')};'date'
+type(x);{x: date('2024-03-15 10:30')};'date'
+type(x);{x: date('20240315')};'date'
+type(x);{x: date('2024-03-15T23:30:00Z')};'date'
+type(x);{x: '2024-03-15'};'string'
+type(x);{x: 'abc'};'string'
+type(x);{x: null};'null'
+type(x);{};'null'
+# date inputs: comparisons
+x == '2024-03-15';{x: date('2024-03-15')};true
+x == '2024-03-15';{x: date('2024-03-15T10:30:00+02:00')};false
+x == '2024-03-15';{x: date('2024-03-15 10:30')};false
+x == '2024-03-15';{x: date('20240315')};true
+x == '2024-03-15';{x: date('2024-03-15T23:30:00Z')};false
+x == '2024-03-15';{x: '2024-03-15'};true
+x == '2024-03-15';{x: 'abc'};false
+x == '2024-03-15';{x: null};false
+x == '2024-03-15';{};false
+'2024-03-15' == x;{x: date('2024-03-15')};true
+'2024-03-15' == x;{x: date('2024-03-15T10:30:00+02:00')};false
+'2024-03-15' == x;{x: date('2024-03-15 10:30')};false
+'2024-03-15' == x;{x: date('20240315')};true
+'2024-03-15' == x;{x: date('2024-03-15T23:30:00Z')};false
+'2024-03-15' == x;{x: '2024-03-15'};true
+'2024-03-15' == x;{x: 'abc'};false
+'2024-03-15' == x;{x: null};false
+'2024-03-15' == x;{};false
+x == '2024-03-15T00:00:00Z';{x: date('2024-03-15')};true
+x == '2024-03-15T00:00:00Z';{x: date('2024-03-15T10:30:00+02:00')};false
+x == '2024-03-15T00:00:00Z';{x: date('2024-03-15 10:30')};false
+x == '2024-03-15T00:00:00Z';{x: date('20240315')};true
+x == '2024-03-15T00:00:00Z';{x: date('2024-03-15T23:30:00Z')};false
+x == '2024-03-15T00:00:00Z';{x: '2024-03-15'};false
+x == '2024-03-15T00:00:00Z';{x: 'abc'};false
+x == '2024-03-15T00:00:00Z';{x: null};false
+x == '2024-03-15T00:00:00Z';{};false
+x == d('2024-03-15');{x: date('2024-03-15')};true
+x == d('2024-03-15');{x: date('2024-03-15T10:30:00+02:00')};false
+x == d('2024-03-15');{x: date('2024-03-15 10:30')};false
+x == d('2024-03-15');{x: date('20240315')};true
+x == d('2024-03-15');{x: date('2024-03-15T23:30:00Z')};false
+x == d('2024-03-15');{x: '2024-03-15'};true
+x == d('2024-03-15');{x: 'abc'};false
+x == d('2024-03-15');{x: null};false
+x == d('2024-03-15');{};false
+x != '2024-03-15';{x: date('2024-03-15')};false
+x != '2024-03-15';{x: date('2024-03-15T10:30:00+02:00')};true
+x != '2024-03-15';{x: date('2024-03-15 10:30')};true
+x != '2024-03-15';{x: date('20240315')};false
+x != '2024-03-15';{x: date('2024-03-15T23:30:00Z')};true
+x != '2024-03-15';{x: '2024-03-15'};false
+x != '2024-03-15';{x: 'abc'};true
+x != '2024-03-15';{x: null};true
+x != '2024-03-15';{};true
+x == x;{x: date('2024-03-15')};true
+x == x;{x: date('2024-03-15T10:30:00+02:00')};true
+x == x;{x: date('2024-03-15 10:30')};true
+x == x;{x: date('20240315')};true
+x == x;{x: date('2024-03-15T23:30:00Z')};true
+x == x;{x: '2024-03-15'};true
+x == x;{x: 'abc'};true
+x == x;{x: null};true
+x == x;{};true
+x > '2024-03-14';{x: date('2024-03-15')};true
+x > '2024-03-14';{x: date('2024-03-15T10:30:00+02:00')};true
+x > '2024-03-14';{x: date('2024-03-15 10:30')};true
+x > '2024-03-14';{x: date('20240315')};true
+x > '2024-03-14';{x: date('2024-03-15T23:30:00Z')};true
+x > '2024-03-14';{x: '2024-03-15'};!error
+x > '2024-03-14';{x: 'abc'};!error
+x > '2024-03-14';{x: null};!error
+x > '2024-03-14';{};!error
+x >= '2024-03-15';{x: date('2024-03-15')};true
+x >= '2024-03-15';{x: date('2024-03-15T10:30:00+02:00')};true
+x >= '2024-03-15';{x: date('2024-03-15 10:30')};true
+x >= '2024-03-15';{x: date('20240315')};true
+x >= '2024-03-15';{x: date('2024-03-15T23:30:00Z')};true
+x >= '2024-03-15';{x: '2024-03-15'};!error
+x >= '2024-03-15';{x: 'abc'};!error
+x >= '2024-03-15';{x: null};!error
+x >= '2024-03-15';{};!error
+'2024-03-16' > x;{x: date('2024-03-15')};true
+'2024-03-16' > x;{x: date('2024-03-15T10:30:00+02:00')};true
+'2024-03-16' > x;{x: date('2024-03-15 10:30')};true
+'2024-03-16' > x;{x: date('20240315')};true
+'2024-03-16' > x;{x: date('2024-03-15T23:30:00Z')};true
+'2024-03-16' > x;{x: '2024-03-15'};!error
+'2024-03-16' > x;{x: 'abc'};!error
+'2024-03-16' > x;{x: null};!error
+'2024-03-16' > x;{};!error
+x < d('2024-03-16');{x: date('2024-03-15')};true
+x < d('2024-03-16');{x: date('2024-03-15T10:30:00+02:00')};true
+x < d('2024-03-16');{x: date('2024-03-15 10:30')};true
+x < d('2024-03-16');{x: date('20240315')};true
+x < d('2024-03-16');{x: date('2024-03-15T23:30:00Z')};true
+x < d('2024-03-16');{x: '2024-03-15'};true
+x < d('2024-03-16');{x: 'abc'};!error
+x < d('2024-03-16');{x: null};!error
+x < d('2024-03-16');{};!error
+x > 'abc';{x: date('2024-03-15')};!error
+x > 'abc';{x: date('2024-03-15T10:30:00+02:00')};!error
+x > 'abc';{x: date('2024-03-15 10:30')};!error
+x > 'abc';{x: date('20240315')};!error
+x > 'abc';{x: date('2024-03-15T23:30:00Z')};!error
+x > 'abc';{x: '2024-03-15'};!error
+x > 'abc';{x: 'abc'};!error
+x > 'abc';{x: null};!error
+x > 'abc';{};!error
+x in ['2024-03-15', '2024-03-16'];{x: date('2024-03-15')};true
+x in ['2024-03-15', '2024-03-16'];{x: date('2024-03-15T10:30:00+02:00')};false
+x in ['2024-03-15', '2024-03-16'];{x: date('2024-03-15 10:30')};false
+x in ['2024-03-15', '2024-03-16'];{x: date('20240315')};true
+x in ['2024-03-15', '2024-03-16'];{x: date('2024-03-15T23:30:00Z')};false
+x in ['2024-03-15', '2024-03-16'];{x: '2024-03-15'};true
+x in ['2024-03-15', '2024-03-16'];{x: 'abc'};false
+x in ['2024-03-15', '2024-03-16'];{x: null};false
+x in ['2024-03-15', '2024-03-16'];{};false
+x in [d('2024-03-15')];{x: date('2024-03-15')};true
+x in [d('2024-03-15')];{x: date('2024-03-15T10:30:00+02:00')};false
+x in [d('2024-03-15')];{x: date('2024-03-15 10:30')};false
+x in [d('2024-03-15')];{x: date('20240315')};true
+x in [d('2024-03-15')];{x: date('2024-03-15T23:30:00Z')};false
+x in [d('2024-03-15')];{x: '2024-03-15'};true
+x in [d('2024-03-15')];{x: 'abc'};false
+x in [d('2024-03-15')];{x: null};false
+x in [d('2024-03-15')];{};false
+'2024-03-15' in [x];{x: date('2024-03-15')};true
+'2024-03-15' in [x];{x: date('2024-03-15T10:30:00+02:00')};false
+'2024-03-15' in [x];{x: date('2024-03-15 10:30')};false
+'2024-03-15' in [x];{x: date('20240315')};true
+'2024-03-15' in [x];{x: date('2024-03-15T23:30:00Z')};false
+'2024-03-15' in [x];{x: '2024-03-15'};true
+'2024-03-15' in [x];{x: 'abc'};false
+'2024-03-15' in [x];{x: null};false
+'2024-03-15' in [x];{};false
+x not in ['2024-03-15'];{x: date('2024-03-15')};false
+x not in ['2024-03-15'];{x: date('2024-03-15T10:30:00+02:00')};true
+x not in ['2024-03-15'];{x: date('2024-03-15 10:30')};true
+x not in ['2024-03-15'];{x: date('20240315')};false
+x not in ['2024-03-15'];{x: date('2024-03-15T23:30:00Z')};true
+x not in ['2024-03-15'];{x: '2024-03-15'};false
+x not in ['2024-03-15'];{x: 'abc'};true
+x not in ['2024-03-15'];{x: null};true
+x not in ['2024-03-15'];{};true
+contains([x], '2024-03-15');{x: date('2024-03-15')};true
+contains([x], '2024-03-15');{x: date('2024-03-15T10:30:00+02:00')};false
+contains([x], '2024-03-15');{x: date('2024-03-15 10:30')};false
+contains([x], '2024-03-15');{x: date('20240315')};true
+contains([x], '2024-03-15');{x: date('2024-03-15T23:30:00Z')};false
+contains([x], '2024-03-15');{x: '2024-03-15'};true
+contains([x], '2024-03-15');{x: 'abc'};false
+contains([x], '2024-03-15');{x: null};false
+contains([x], '2024-03-15');{};false
+contains(['2024-03-15'], x);{x: date('2024-03-15')};true
+contains(['2024-03-15'], x);{x: date('2024-03-15T10:30:00+02:00')};false
+contains(['2024-03-15'], x);{x: date('2024-03-15 10:30')};false
+contains(['2024-03-15'], x);{x: date('20240315')};true
+contains(['2024-03-15'], x);{x: date('2024-03-15T23:30:00Z')};false
+contains(['2024-03-15'], x);{x: '2024-03-15'};true
+contains(['2024-03-15'], x);{x: 'abc'};false
+contains(['2024-03-15'], x);{x: null};false
+contains(['2024-03-15'], x);{};false
+contains([x], d('2024-03-15'));{x: date('2024-03-15')};true
+contains([x], d('2024-03-15'));{x: date('2024-03-15T10:30:00+02:00')};false
+contains([x], d('2024-03-15'));{x: date('2024-03-15 10:30')};false
+contains([x], d('2024-03-15'));{x: date('20240315')};true
+contains([x], d('2024-03-15'));{x: date('2024-03-15T23:30:00Z')};false
+contains([x], d('2024-03-15'));{x: '2024-03-15'};true
+contains([x], d('2024-03-15'));{x: 'abc'};false
+contains([x], d('2024-03-15'));{x: null};false
+contains([x], d('2024-03-15'));{};false
+x in [d('2024-03-10')..d('2024-03-20')];{x: date('2024-03-15')};true
+x in [d('2024-03-10')..d('2024-03-20')];{x: date('2024-03-15T10:30:00+02:00')};true
+x in [d('2024-03-10')..d('2024-03-20')];{x: date('2024-03-15 10:30')};true
+x in [d('2024-03-10')..d('2024-03-20')];{x: date('20240315')};true
+x in [d('2024-03-10')..d('2024-03-20')];{x: date('2024-03-15T23:30:00Z')};true
+x in [d('2024-03-10')..d('2024-03-20')];{x: '2024-03-15'};!error
+x in [d('2024-03-10')..d('2024-03-20')];{x: 'abc'};!error
+x in [d('2024-03-10')..d('2024-03-20')];{x: null};!error
+x in [d('2024-03-10')..d('2024-03-20')];{};!error
+x == 1710460800000;{x: date('2024-03-15')};false
+x == 1710460800000;{x: date('2024-03-15T10:30:00+02:00')};false
+x == 1710460800000;{x: date('2024-03-15 10:30')};false
+x == 1710460800000;{x: date('20240315')};false
+x == 1710460800000;{x: date('2024-03-15T23:30:00Z')};false
+x == 1710460800000;{x: '2024-03-15'};false
+x == 1710460800000;{x: 'abc'};false
+x == 1710460800000;{x: null};false
+x == 1710460800000;{};false
+x ?? 'none';{x: date('2024-03-15')};'2024-03-15'
+x ?? 'none';{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+x ?? 'none';{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+x ?? 'none';{x: date('20240315')};'20240315'
+x ?? 'none';{x: date('2024-03-15T23:30:00Z')};'2024-03-15T23:30:00Z'
+x ?? 'none';{x: '2024-03-15'};'2024-03-15'
+x ?? 'none';{x: 'abc'};'abc'
+x ?? 'none';{x: null};'none'
+x ?? 'none';{};'none'
+# date inputs: date use
+d(x);{x: date('2024-03-15')};'2024-03-15T00:00:00Z'
+d(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T08:30:00Z'
+d(x);{x: date('2024-03-15 10:30')};'2024-03-15T10:30:00Z'
+d(x);{x: '2024-03-15'};'2024-03-15T00:00:00Z'
+d(x);{x: null};'Invalid date'
+d(x).year();{x: date('2024-03-15')};2024
+d(x).year();{x: date('2024-03-15T10:30:00+02:00')};2024
+d(x).year();{x: date('2024-03-15 10:30')};2024
+d(x).year();{x: '2024-03-15'};2024
+d(x).year();{x: null};null
+d(x, 'Europe/Berlin');{x: date('2024-03-15')};'2024-03-15T00:00:00+01:00'
+d(x, 'Europe/Berlin');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T09:30:00+01:00'
+d(x, 'Europe/Berlin');{x: date('2024-03-15 10:30')};'2024-03-15T10:30:00+01:00'
+d(x, 'Europe/Berlin');{x: '2024-03-15'};'2024-03-15T00:00:00+01:00'
+d(x, 'Europe/Berlin');{x: null};'Invalid date'
+d(x, 'America/New_York').hour();{x: date('2024-03-15')};0
+d(x, 'America/New_York').hour();{x: date('2024-03-15T10:30:00+02:00')};4
+d(x, 'America/New_York').hour();{x: date('2024-03-15 10:30')};10
+d(x, 'America/New_York').hour();{x: '2024-03-15'};0
+d(x, 'America/New_York').hour();{x: null};null
+d(x, 'UTC');{x: date('2024-03-15')};'2024-03-15T00:00:00Z'
+d(x, 'UTC');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T08:30:00Z'
+d(x, 'UTC');{x: date('2024-03-15 10:30')};'2024-03-15T10:30:00Z'
+d(x, 'UTC');{x: '2024-03-15'};'2024-03-15T00:00:00Z'
+d(x, 'UTC');{x: null};'Invalid date'
+d(x).add(1, 'd');{x: date('2024-03-15')};'2024-03-16T00:00:00Z'
+d(x).add(1, 'd');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-16T08:30:00Z'
+d(x).add(1, 'd');{x: date('2024-03-15 10:30')};'2024-03-16T10:30:00Z'
+d(x).add(1, 'd');{x: '2024-03-15'};'2024-03-16T00:00:00Z'
+d(x).add(1, 'd');{x: null};'Invalid date'
+d(x).startOf('month');{x: date('2024-03-15')};'2024-03-01T00:00:00Z'
+d(x).startOf('month');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-01T00:00:00Z'
+d(x).startOf('month');{x: date('2024-03-15 10:30')};'2024-03-01T00:00:00Z'
+d(x).startOf('month');{x: '2024-03-15'};'2024-03-01T00:00:00Z'
+d(x).startOf('month');{x: null};'Invalid date'
+x.year();{x: date('2024-03-15')};2024
+x.year();{x: date('2024-03-15T10:30:00+02:00')};2024
+x.year();{x: date('2024-03-15 10:30')};2024
+x.year();{x: '2024-03-15'};!error
+x.year();{x: null};!error
+x.month();{x: date('2024-03-15')};3
+x.month();{x: date('2024-03-15T10:30:00+02:00')};3
+x.month();{x: date('2024-03-15 10:30')};3
+x.month();{x: '2024-03-15'};!error
+x.month();{x: null};!error
+x.hour();{x: date('2024-03-15')};0
+x.hour();{x: date('2024-03-15T10:30:00+02:00')};8
+x.hour();{x: date('2024-03-15 10:30')};10
+x.hour();{x: '2024-03-15'};!error
+x.hour();{x: null};!error
+x.add(1, 'd');{x: date('2024-03-15')};'2024-03-16T00:00:00Z'
+x.add(1, 'd');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-16T08:30:00Z'
+x.add(1, 'd');{x: date('2024-03-15 10:30')};'2024-03-16T10:30:00Z'
+x.add(1, 'd');{x: '2024-03-15'};!error
+x.add(1, 'd');{x: null};!error
+x.format('%Y/%m/%d');{x: date('2024-03-15')};'2024/03/15'
+x.format('%Y/%m/%d');{x: date('2024-03-15T10:30:00+02:00')};'2024/03/15'
+x.format('%Y/%m/%d');{x: date('2024-03-15 10:30')};'2024/03/15'
+x.format('%Y/%m/%d');{x: '2024-03-15'};!error
+x.format('%Y/%m/%d');{x: null};!error
+x.tz('Asia/Tokyo');{x: date('2024-03-15')};'2024-03-15T09:00:00+09:00'
+x.tz('Asia/Tokyo');{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T17:30:00+09:00'
+x.tz('Asia/Tokyo');{x: date('2024-03-15 10:30')};'2024-03-15T19:30:00+09:00'
+x.tz('Asia/Tokyo');{x: '2024-03-15'};!error
+x.tz('Asia/Tokyo');{x: null};!error
+x.diff('2024-03-01', 'd');{x: date('2024-03-15')};14
+x.diff('2024-03-01', 'd');{x: date('2024-03-15T10:30:00+02:00')};14
+x.diff('2024-03-01', 'd');{x: date('2024-03-15 10:30')};14
+x.diff('2024-03-01', 'd');{x: '2024-03-15'};!error
+x.diff('2024-03-01', 'd');{x: null};!error
+x.isAfter(d('2024-01-01'));{x: date('2024-03-15')};true
+x.isAfter(d('2024-01-01'));{x: date('2024-03-15T10:30:00+02:00')};true
+x.isAfter(d('2024-01-01'));{x: date('2024-03-15 10:30')};true
+x.isAfter(d('2024-01-01'));{x: '2024-03-15'};!error
+x.isAfter(d('2024-01-01'));{x: null};!error
+x.isSame('2024-03-15', 'day');{x: date('2024-03-15')};true
+x.isSame('2024-03-15', 'day');{x: date('2024-03-15T10:30:00+02:00')};true
+x.isSame('2024-03-15', 'day');{x: date('2024-03-15 10:30')};true
+x.isSame('2024-03-15', 'day');{x: '2024-03-15'};!error
+x.isSame('2024-03-15', 'day');{x: null};!error
+d('2024-03-20').diff(x, 'd');{x: date('2024-03-15')};5
+d('2024-03-20').diff(x, 'd');{x: date('2024-03-15T10:30:00+02:00')};4
+d('2024-03-20').diff(x, 'd');{x: date('2024-03-15 10:30')};4
+d('2024-03-20').diff(x, 'd');{x: '2024-03-15'};5
+d('2024-03-20').diff(x, 'd');{x: null};null
+d('2024-03-15').isSame(x);{x: date('2024-03-15')};true
+d('2024-03-15').isSame(x);{x: date('2024-03-15T10:30:00+02:00')};false
+d('2024-03-15').isSame(x);{x: date('2024-03-15 10:30')};false
+d('2024-03-15').isSame(x);{x: '2024-03-15'};true
+d('2024-03-15').isSame(x);{x: null};false
+d(x).isValid();{x: date('2024-03-15')};true
+d(x).isValid();{x: date('2024-03-15T10:30:00+02:00')};true
+d(x).isValid();{x: date('2024-03-15 10:30')};true
+d(x).isValid();{x: '2024-03-15'};true
+d(x).isValid();{x: null};false
+x.isValid();{x: date('2024-03-15')};true
+x.isValid();{x: date('2024-03-15T10:30:00+02:00')};true
+x.isValid();{x: date('2024-03-15 10:30')};true
+x.isValid();{x: '2024-03-15'};!error
+x.isValid();{x: null};!error
+# date inputs: legacy functions
+year(x);{x: date('2024-03-15')};2024
+year(x);{x: date('2024-03-15T10:30:00+02:00')};2024
+year(x);{x: date('2024-03-15 10:30')};2024
+year(x);{x: '2024-03-15'};2024
+year(x);{x: null};!error
+monthOfYear(x);{x: date('2024-03-15')};3
+monthOfYear(x);{x: date('2024-03-15T10:30:00+02:00')};3
+monthOfYear(x);{x: date('2024-03-15 10:30')};3
+monthOfYear(x);{x: '2024-03-15'};3
+monthOfYear(x);{x: null};!error
+dayOfMonth(x);{x: date('2024-03-15')};15
+dayOfMonth(x);{x: date('2024-03-15T10:30:00+02:00')};15
+dayOfMonth(x);{x: date('2024-03-15 10:30')};15
+dayOfMonth(x);{x: '2024-03-15'};15
+dayOfMonth(x);{x: null};!error
+dateString(x);{x: date('2024-03-15')};'2024-03-15 00:00:00'
+dateString(x);{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15 08:30:00'
+dateString(x);{x: date('2024-03-15 10:30')};'2024-03-15 10:30:00'
+dateString(x);{x: '2024-03-15'};'2024-03-15 00:00:00'
+dateString(x);{x: null};!error
+time(x);{x: date('2024-03-15')};0
+time(x);{x: date('2024-03-15T10:30:00+02:00')};30600
+time(x);{x: date('2024-03-15 10:30')};37800
+time(x);{x: '2024-03-15'};!error
+time(x);{x: null};!error
+date(x);{x: date('2024-03-15')};1710460800
+date(x);{x: date('2024-03-15T10:30:00+02:00')};1710491400
+date(x);{x: date('2024-03-15 10:30')};1710498600
+date(x);{x: '2024-03-15'};1710460800
+date(x);{x: null};!error
+startOf(x, 'day');{x: date('2024-03-15')};1710460800
+startOf(x, 'day');{x: date('2024-03-15T10:30:00+02:00')};1710460800
+startOf(x, 'day');{x: date('2024-03-15 10:30')};1710460800
+startOf(x, 'day');{x: '2024-03-15'};1710460800
+startOf(x, 'day');{x: null};!error
+weekdayString(x);{x: date('2024-03-15')};'Fri'
+weekdayString(x);{x: date('2024-03-15T10:30:00+02:00')};'Fri'
+weekdayString(x);{x: date('2024-03-15 10:30')};'Fri'
+weekdayString(x);{x: '2024-03-15'};'Fri'
+weekdayString(x);{x: null};!error
+# date inputs: containers
+[x];{x: date('2024-03-15')};['2024-03-15']
+[x];{x: date('2024-03-15T10:30:00+02:00')};['2024-03-15T10:30:00+02:00']
+[x];{x: date('2024-03-15 10:30')};['2024-03-15 10:30']
+[x];{x: '2024-03-15'};['2024-03-15']
+[x];{x: null};[null]
+{v: x};{x: date('2024-03-15')};{v: '2024-03-15'}
+{v: x};{x: date('2024-03-15T10:30:00+02:00')};{v: '2024-03-15T10:30:00+02:00'}
+{v: x};{x: date('2024-03-15 10:30')};{v: '2024-03-15 10:30'}
+{v: x};{x: '2024-03-15'};{v: '2024-03-15'}
+{v: x};{x: null};{v: null}
+[x, 1][0];{x: date('2024-03-15')};'2024-03-15'
+[x, 1][0];{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+[x, 1][0];{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+[x, 1][0];{x: '2024-03-15'};'2024-03-15'
+[x, 1][0];{x: null};null
+({a: x}).a;{x: date('2024-03-15')};'2024-03-15'
+({a: x}).a;{x: date('2024-03-15T10:30:00+02:00')};'2024-03-15T10:30:00+02:00'
+({a: x}).a;{x: date('2024-03-15 10:30')};'2024-03-15 10:30'
+({a: x}).a;{x: '2024-03-15'};'2024-03-15'
+({a: x}).a;{x: null};null
+x in {a: 1};{x: date('2024-03-15')};false
+x in {a: 1};{x: date('2024-03-15T10:30:00+02:00')};false
+x in {a: 1};{x: date('2024-03-15 10:30')};false
+x in {a: 1};{x: '2024-03-15'};false
+x in {a: 1};{x: null};!error
+({'2024-03-15': 1})[x];{x: date('2024-03-15')};1
+({'2024-03-15': 1})[x];{x: date('2024-03-15T10:30:00+02:00')};null
+({'2024-03-15': 1})[x];{x: date('2024-03-15 10:30')};null
+({'2024-03-15': 1})[x];{x: '2024-03-15'};1
+({'2024-03-15': 1})[x];{x: null};null
+map([x, x], # + '');{x: date('2024-03-15')};['2024-03-15', '2024-03-15']
+map([x, x], # + '');{x: date('2024-03-15T10:30:00+02:00')};['2024-03-15T10:30:00+02:00', '2024-03-15T10:30:00+02:00']
+map([x, x], # + '');{x: date('2024-03-15 10:30')};['2024-03-15 10:30', '2024-03-15 10:30']
+map([x, x], # + '');{x: '2024-03-15'};['2024-03-15', '2024-03-15']
+map([x, x], # + '');{x: null};!error
+filter([x], # == '2024-03-15');{x: date('2024-03-15')};['2024-03-15']
+filter([x], # == '2024-03-15');{x: date('2024-03-15T10:30:00+02:00')};[]
+filter([x], # == '2024-03-15');{x: date('2024-03-15 10:30')};[]
+filter([x], # == '2024-03-15');{x: '2024-03-15'};['2024-03-15']
+filter([x], # == '2024-03-15');{x: null};[]
+len(filter([x, '2024-03-15'], # >= '2024-03-01'));{x: date('2024-03-15')};!error
+len(filter([x, '2024-03-15'], # >= '2024-03-01'));{x: date('2024-03-15T10:30:00+02:00')};!error
+len(filter([x, '2024-03-15'], # >= '2024-03-01'));{x: date('2024-03-15 10:30')};!error
+len(filter([x, '2024-03-15'], # >= '2024-03-01'));{x: '2024-03-15'};!error
+len(filter([x, '2024-03-15'], # >= '2024-03-01'));{x: null};!error
+map([x], d(#).day());{x: date('2024-03-15')};[15]
+map([x], d(#).day());{x: date('2024-03-15T10:30:00+02:00')};[15]
+map([x], d(#).day());{x: date('2024-03-15 10:30')};[15]
+map([x], d(#).day());{x: '2024-03-15'};[15]
+map([x], d(#).day());{x: null};[null]
+some([x], # > '2024-01-01');{x: date('2024-03-15')};true
+some([x], # > '2024-01-01');{x: date('2024-03-15T10:30:00+02:00')};true
+some([x], # > '2024-01-01');{x: date('2024-03-15 10:30')};true
+some([x], # > '2024-01-01');{x: '2024-03-15'};!error
+some([x], # > '2024-01-01');{x: null};!error
+count([x, x], string(#) == '2024-03-15');{x: date('2024-03-15')};2
+count([x, x], string(#) == '2024-03-15');{x: date('2024-03-15T10:30:00+02:00')};0
+count([x, x], string(#) == '2024-03-15');{x: date('2024-03-15 10:30')};0
+count([x, x], string(#) == '2024-03-15');{x: '2024-03-15'};2
+count([x, x], string(#) == '2024-03-15');{x: null};0

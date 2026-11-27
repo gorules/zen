@@ -1,0 +1,241 @@
+expression (string);input (json 5);output (json 5);note
+# diff to the fixed anchor 2024-02-29 12:00 in UTC
+d(s).diff(d('2024-02-29 12:00'), 'second');{s: '2024-05-31 06:07:08'};7927628
+d(s).diff(d('2024-02-29 12:00'), 'second');{s: '2025-08-31 18:00'};47455200
+d(s).diff(d('2024-02-29 12:00'), 'second');{s: '2023-02-28 00:00:01'};-31665599
+d(s).diff(d('2024-02-29 12:00'), 'second');{s: '2024-12-30 00:00:00'};26308800
+d(s).diff(d('2024-02-29 12:00'), 'second');{s: null};null
+d(s).diff(d('2024-02-29 12:00'), 'minute');{s: '2024-07-31 13:14:15'};220394
+d(s).diff(d('2024-02-29 12:00'), 'minute');{s: '2025-01-01'};441360
+d(s).diff(d('2024-02-29 12:00'), 'minute');{s: '2024-09-30 21:45'};308745
+d(s).diff(d('2024-02-29 12:00'), 'minute');{s: '2024-01-31 10:20:30'};-41859
+d(s).diff(d('2024-02-29 12:00'), 'minute');{};null
+d(s).diff(d('2024-02-29 12:00'), 'hour');{s: '2023-12-31 23:30:15'};-1428
+d(s).diff(d('2024-02-29 12:00'), 'hour');{s: '2024-03-31'};732
+d(s).diff(d('2024-02-29 12:00'), 'hour');{s: '2025-06-30 12:00'};11688
+d(s).diff(d('2024-02-29 12:00'), 'hour');{s: '2025-03-16 08:45:00'};9140
+d(s).diff(d('2024-02-29 12:00'), 'hour');{s: 'nope'};null
+d(s).diff(d('2024-02-29 12:00'), 'day');{s: '2024-05-31 06:07:08'};91
+d(s).diff(d('2024-02-29 12:00'), 'day');{s: '2025-08-31 18:00'};549
+d(s).diff(d('2024-02-29 12:00'), 'day');{s: '2023-02-28 00:00:01'};-366
+d(s).diff(d('2024-02-29 12:00'), 'day');{s: '2024-12-30 00:00:00'};304
+d(s).diff(d('2024-02-29 12:00'), 'day');{s: 1700000000123};-106
+d(s).diff(d('2024-02-29 12:00'), 'week');{s: '2024-07-31 13:14:15'};21
+d(s).diff(d('2024-02-29 12:00'), 'week');{s: '2025-01-01'};43
+d(s).diff(d('2024-02-29 12:00'), 'week');{s: '2024-09-30 21:45'};30
+d(s).diff(d('2024-02-29 12:00'), 'week');{s: '2024-01-31 10:20:30'};-4
+d(s).diff(d('2024-02-29 12:00'), 'week');{s: true};null
+d(s).diff(d('2024-02-29 12:00'), 'month');{s: '2023-12-31 23:30:15'};-1
+d(s).diff(d('2024-02-29 12:00'), 'month');{s: '2024-03-31'};0
+d(s).diff(d('2024-02-29 12:00'), 'month');{s: '2025-06-30 12:00'};16
+d(s).diff(d('2024-02-29 12:00'), 'month');{s: '2025-03-16 08:45:00'};12
+d(s).diff(d('2024-02-29 12:00'), 'month');{s: '2023-02-30'};null
+d(s).diff(d('2024-02-29 12:00'), 'quarter');{s: '2024-05-31 06:07:08'};0
+d(s).diff(d('2024-02-29 12:00'), 'quarter');{s: '2025-08-31 18:00'};6
+d(s).diff(d('2024-02-29 12:00'), 'quarter');{s: '2023-02-28 00:00:01'};-4
+d(s).diff(d('2024-02-29 12:00'), 'quarter');{s: '2024-12-30 00:00:00'};3
+d(s).diff(d('2024-02-29 12:00'), 'quarter');{s: 1735689599999};3
+d(s).diff(d('2024-02-29 12:00'), 'year');{s: '2024-07-31 13:14:15'};0
+d(s).diff(d('2024-02-29 12:00'), 'year');{s: '2025-01-01'};0
+d(s).diff(d('2024-02-29 12:00'), 'year');{s: '2024-09-30 21:45'};0
+d(s).diff(d('2024-02-29 12:00'), 'year');{s: '2024-01-31 10:20:30'};0
+d(s).diff(d('2024-02-29 12:00'), 'year');{s: ''};null
+d('2024-02-29 12:00').diff(d(s), 'month');{s: '2023-12-31 23:30:15'};1
+d('2024-02-29 12:00').diff(d(s), 'month');{s: '2024-03-31'};0
+d('2024-02-29 12:00').diff(d(s), 'month');{s: '2025-06-30 12:00'};-16
+d('2024-02-29 12:00').diff(d(s), 'month');{s: '2025-03-16 08:45:00'};-12
+d(s).diff(d('2024-02-29 12:00'));{s: '2024-05-31 06:07:08'};7927628000
+d(s).diff(d('2024-02-29 12:00'));{s: '2025-08-31 18:00'};47455200000
+d(s).diff(d('2024-02-29 12:00'));{s: '2023-02-28 00:00:01'};-31665599000
+# diff to the fixed anchor 2024-01-01 in Etc/GMT+5
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'second');{s: '2025-11-30 23:59:59'};60479999
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'second');{s: '2024-07-31 13:14:15'};18364455
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'second');{s: '2025-01-01'};31622400
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'second');{s: '2024-09-30 21:45'};23665500
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'second');{s: null};null
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'minute');{s: '2024-02-29 23:59:59'};86399
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'minute');{s: '2023-12-31 23:30:15'};-29
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'minute');{s: '2024-03-31'};129600
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'minute');{s: '2025-06-30 12:00'};786960
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'minute');{};null
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'hour');{s: '2025-03-17'};10584
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'hour');{s: '2024-05-31 06:07:08'};3630
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'hour');{s: '2025-08-31 18:00'};14610
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'hour');{s: '2023-02-28 00:00:01'};-7367
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'hour');{s: 'nope'};null
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'day');{s: '2025-11-30 23:59:59'};699
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'day');{s: '2024-07-31 13:14:15'};212
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'day');{s: '2025-01-01'};366
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'day');{s: '2024-09-30 21:45'};273
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'day');{s: 1700000000123};-47
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'week');{s: '2024-02-29 23:59:59'};8
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'week');{s: '2023-12-31 23:30:15'};0
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'week');{s: '2024-03-31'};12
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'week');{s: '2025-06-30 12:00'};78
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'week');{s: true};null
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'month');{s: '2025-03-17'};14
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'month');{s: '2024-05-31 06:07:08'};4
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'month');{s: '2025-08-31 18:00'};19
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'month');{s: '2023-02-28 00:00:01'};-10
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'month');{s: '2023-02-30'};null
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'quarter');{s: '2025-11-30 23:59:59'};7
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'quarter');{s: '2024-07-31 13:14:15'};2
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'quarter');{s: '2025-01-01'};4
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'quarter');{s: '2024-09-30 21:45'};2
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'quarter');{s: 1735689599999};3
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'year');{s: '2024-02-29 23:59:59'};0
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'year');{s: '2023-12-31 23:30:15'};0
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'year');{s: '2024-03-31'};0
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'year');{s: '2025-06-30 12:00'};1
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'), 'year');{s: ''};null
+d('2024-01-01', 'Etc/GMT+5').diff(d(s, 'Etc/GMT+5'), 'month');{s: '2025-03-17'};-14
+d('2024-01-01', 'Etc/GMT+5').diff(d(s, 'Etc/GMT+5'), 'month');{s: '2024-05-31 06:07:08'};-4
+d('2024-01-01', 'Etc/GMT+5').diff(d(s, 'Etc/GMT+5'), 'month');{s: '2025-08-31 18:00'};-19
+d('2024-01-01', 'Etc/GMT+5').diff(d(s, 'Etc/GMT+5'), 'month');{s: '2023-02-28 00:00:01'};10
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'));{s: '2025-11-30 23:59:59'};60479999000
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'));{s: '2024-07-31 13:14:15'};18364455000
+d(s, 'Etc/GMT+5').diff(d('2024-01-01', 'Etc/GMT+5'));{s: '2025-01-01'};31622400000
+# diff to the fixed anchor 2025-01-15 09:30 in Europe/Berlin
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'second');{s: '2025-03-29 12:00'};6316200
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'second');{s: '2025-03-30 01:30'};6364800
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'second');{s: '2025-10-27 00:30'};24591600
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'second');{s: '2024-01-31 10:20:30'};-30236970
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'second');{s: null};null
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'minute');{s: '2025-10-25 23:30'};408300
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'minute');{s: '2025-03-30 03:00'};106110
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'minute');{s: '2025-03-29 12:00'};105270
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'minute');{s: '2023-12-31 23:30:15'};-547799
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'minute');{};null
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'hour');{s: '2025-10-26 04:00'};6810
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'hour');{s: '2025-03-30 12:00'};1777
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'hour');{s: '2025-10-25 23:30'};6805
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'hour');{s: '2025-06-30 12:00'};3985
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'hour');{s: 'nope'};null
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'day');{s: '2025-10-27 00:30'};284
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'day');{s: '2025-10-26 12:00'};284
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'day');{s: '2025-10-26 04:00'};283
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'day');{s: '2025-03-17'};60
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'day');{s: 1700000000123};-427
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'week');{s: '2025-03-29 12:00'};10
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'week');{s: '2025-03-30 01:30'};10
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'week');{s: '2025-10-27 00:30'};40
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'week');{s: '2025-08-31 18:00'};32
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'week');{s: true};null
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'month');{s: '2025-10-25 23:30'};9
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'month');{s: '2025-03-30 03:00'};2
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'month');{s: '2025-03-29 12:00'};2
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'month');{s: '2024-12-30 00:00:00'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'month');{s: '2023-02-30'};null
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'quarter');{s: '2025-10-26 04:00'};3
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'quarter');{s: '2025-03-30 12:00'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'quarter');{s: '2025-10-25 23:30'};3
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'quarter');{s: '2024-07-31 13:14:15'};-1
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'quarter');{s: 1735689599999};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'year');{s: '2025-10-27 00:30'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'year');{s: '2025-10-26 12:00'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'year');{s: '2025-10-26 04:00'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'year');{s: '2024-09-30 21:45'};0
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'), 'year');{s: ''};null
+d('2025-01-15 09:30', 'Europe/Berlin').diff(d(s, 'Europe/Berlin'), 'month');{s: '2025-03-29 12:00'};-2
+d('2025-01-15 09:30', 'Europe/Berlin').diff(d(s, 'Europe/Berlin'), 'month');{s: '2025-03-30 01:30'};-2
+d('2025-01-15 09:30', 'Europe/Berlin').diff(d(s, 'Europe/Berlin'), 'month');{s: '2025-10-27 00:30'};-9
+d('2025-01-15 09:30', 'Europe/Berlin').diff(d(s, 'Europe/Berlin'), 'month');{s: '2024-02-29 23:59:59'};10
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'));{s: '2025-10-25 23:30'};24498000000
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'));{s: '2025-03-30 03:00'};6366600000
+d(s, 'Europe/Berlin').diff(d('2025-01-15 09:30', 'Europe/Berlin'));{s: '2025-03-29 12:00'};6316200000
+# diff to the fixed anchor 2025-06-01 00:00 in America/New_York
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'second');{s: '2025-03-09 03:15'};-7245900
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'second');{s: '2025-11-02 00:15'};13306500
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'second');{s: '2025-11-02 12:00'};13352400
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'second');{s: '2025-06-30 12:00'};2548800
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'second');{s: null};null
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'minute');{s: '2025-03-10 00:30'};-119490
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'minute');{s: '2025-03-08 23:30'};-120930
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'minute');{s: '2025-03-09 03:15'};-120765
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'minute');{s: '2025-03-17'};-109440
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'minute');{};null
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'hour');{s: '2025-03-09 12:00'};-2004
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'hour');{s: '2025-11-01 18:00'};3690
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'hour');{s: '2025-03-10 00:30'};-1991
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'hour');{s: '2025-08-31 18:00'};2202
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'hour');{s: 'nope'};null
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'day');{s: '2025-11-02 12:00'};154
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'day');{s: '2025-11-02 03:00'};154
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'day');{s: '2025-03-09 12:00'};-83
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'day');{s: '2024-12-30 00:00:00'};-153
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'day');{s: 1700000000123};-564
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'week');{s: '2025-03-09 03:15'};-11
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'week');{s: '2025-11-02 00:15'};22
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'week');{s: '2025-11-02 12:00'};22
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'week');{s: '2024-07-31 13:14:15'};-43
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'week');{s: true};null
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'month');{s: '2025-03-10 00:30'};-2
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'month');{s: '2025-03-08 23:30'};-2
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'month');{s: '2025-03-09 03:15'};-2
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'month');{s: '2024-09-30 21:45'};-8
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'month');{s: '2023-02-30'};null
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'quarter');{s: '2025-03-09 12:00'};0
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'quarter');{s: '2025-11-01 18:00'};1
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'quarter');{s: '2025-03-10 00:30'};0
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'quarter');{s: '2024-02-29 23:59:59'};-5
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'quarter');{s: 1735689599999};-1
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'year');{s: '2025-11-02 12:00'};0
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'year');{s: '2025-11-02 03:00'};0
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'year');{s: '2025-03-09 12:00'};0
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'year');{s: '2024-03-31'};-1
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'), 'year');{s: ''};null
+d('2025-06-01 00:00', 'America/New_York').diff(d(s, 'America/New_York'), 'month');{s: '2025-03-09 03:15'};2
+d('2025-06-01 00:00', 'America/New_York').diff(d(s, 'America/New_York'), 'month');{s: '2025-11-02 00:15'};-5
+d('2025-06-01 00:00', 'America/New_York').diff(d(s, 'America/New_York'), 'month');{s: '2025-11-02 12:00'};-5
+d('2025-06-01 00:00', 'America/New_York').diff(d(s, 'America/New_York'), 'month');{s: '2025-03-16 08:45:00'};2
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'));{s: '2025-03-10 00:30'};-7169400000
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'));{s: '2025-03-08 23:30'};-7255800000
+d(s, 'America/New_York').diff(d('2025-06-01 00:00', 'America/New_York'));{s: '2025-03-09 03:15'};-7245900000
+# diff to the fixed anchor 2023-12-31 23:59:59 in Asia/Kolkata
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'second');{s: '2025-08-31 18:00'};52596001
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'second');{s: '2023-02-28 00:00:01'};-26524798
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'second');{s: '2024-12-30 00:00:00'};31449601
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'second');{s: '2025-11-30 23:59:59'};60480000
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'second');{s: null};null
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'minute');{s: '2025-01-01'};527040
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'minute');{s: '2024-09-30 21:45'};394425
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'minute');{s: '2024-01-31 10:20:30'};43820
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'minute');{s: '2024-02-29 23:59:59'};86400
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'minute');{};null
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'hour');{s: '2024-03-31'};2160
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'hour');{s: '2025-06-30 12:00'};13116
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'hour');{s: '2025-03-16 08:45:00'};10568
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'hour');{s: '2025-03-17'};10584
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'hour');{s: 'nope'};null
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'day');{s: '2025-08-31 18:00'};608
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'day');{s: '2023-02-28 00:00:01'};-306
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'day');{s: '2024-12-30 00:00:00'};364
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'day');{s: '2025-11-30 23:59:59'};700
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'day');{s: 1700000000123};-46
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'week');{s: '2025-01-01'};52
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'week');{s: '2024-09-30 21:45'};39
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'week');{s: '2024-01-31 10:20:30'};4
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'week');{s: '2024-02-29 23:59:59'};8
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'week');{s: true};null
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'month');{s: '2024-03-31'};2
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'month');{s: '2025-06-30 12:00'};17
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'month');{s: '2025-03-16 08:45:00'};14
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'month');{s: '2025-03-17'};14
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'month');{s: '2023-02-30'};null
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'quarter');{s: '2025-08-31 18:00'};6
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'quarter');{s: '2023-02-28 00:00:01'};-3
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'quarter');{s: '2024-12-30 00:00:00'};3
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'quarter');{s: '2025-11-30 23:59:59'};7
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'quarter');{s: 1735689599999};4
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'year');{s: '2025-01-01'};1
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'year');{s: '2024-09-30 21:45'};0
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'year');{s: '2024-01-31 10:20:30'};0
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'year');{s: '2024-02-29 23:59:59'};0
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'), 'year');{s: ''};null
+d('2023-12-31 23:59:59', 'Asia/Kolkata').diff(d(s, 'Asia/Kolkata'), 'month');{s: '2024-03-31'};-2
+d('2023-12-31 23:59:59', 'Asia/Kolkata').diff(d(s, 'Asia/Kolkata'), 'month');{s: '2025-06-30 12:00'};-17
+d('2023-12-31 23:59:59', 'Asia/Kolkata').diff(d(s, 'Asia/Kolkata'), 'month');{s: '2025-03-16 08:45:00'};-14
+d('2023-12-31 23:59:59', 'Asia/Kolkata').diff(d(s, 'Asia/Kolkata'), 'month');{s: '2025-03-17'};-14
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'));{s: '2025-08-31 18:00'};52596001000
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'));{s: '2023-02-28 00:00:01'};-26524798000
+d(s, 'Asia/Kolkata').diff(d('2023-12-31 23:59:59', 'Asia/Kolkata'));{s: '2024-12-30 00:00:00'};31449601000

@@ -1,0 +1,525 @@
+// Values through policies: dates, exact decimals, strings, booleans and enums, then realistic
+// multi-block policies. Evaluation time is fixed at 2025-03-20T10:15:30Z (UTC).
+
+// --- Dates ------------------------------------------------------------------------------------
+// A `date` property accepts date strings; an input date is kept as its source text in the
+// output, a computed date is written in its full form.
+
+{
+  name: "a date input passes through unchanged",
+  policy: {
+    models: {customer: {dob: "date"}},
+    blocks: [{expression: "customer.dobCopy", value: "customer.dob"}],
+  },
+  cases: [
+    [{customer: {dob: "1990-05-01"}}, {customer: {dob: "1990-05-01", dobCopy: "1990-05-01"}}],
+    [{customer: {dob: "1990-05-01T10:00:00Z"}}, {customer: {dob: "1990-05-01T10:00:00Z", dobCopy: "1990-05-01T10:00:00Z"}}],
+    [{customer: {dob: date('2000-02-29')}}, {customer: {dob: "2000-02-29", dobCopy: "2000-02-29"}}],
+    [{customer: {dob: "not a date"}}, "!error: InputValidationFailed"],
+    [{customer: {dob: 12345}}, "!error: InputValidationFailed"],
+    [{customer: {dob: true}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "age from a date of birth",
+  policy: {
+    models: {customer: {dob: "date"}},
+    blocks: [
+      {expression: "customer.age", value: "d().diff(customer.dob, 'year')"},
+      {expression: "customer.adult", value: "customer.age >= 18"},
+    ],
+  },
+  cases: [
+    [{customer: {dob: "1990-05-01"}}, {customer: {dob: "1990-05-01", age: 34, adult: true}}],
+    [{customer: {dob: "2007-03-20"}}, {customer: {dob: "2007-03-20", age: 18, adult: true}}],
+    [{customer: {dob: "2007-03-21"}}, {customer: {dob: "2007-03-21", age: 17, adult: false}}],
+    [{customer: {dob: "2025-01-01"}}, {customer: {dob: "2025-01-01", age: 0, adult: false}}],
+    [{customer: {dob: "1925-03-20"}}, {customer: {dob: "1925-03-20", age: 100, adult: true}}],
+  ],
+}
+
+{
+  name: "date arithmetic and parts",
+  policy: {
+    models: {customer: {dob: "date"}},
+    blocks: [
+      {expression: "customer.nextYear", value: "customer.dob.add(1, 'year')"},
+      {expression: "customer.year", value: "customer.dob.year()"},
+      {expression: "customer.month", value: "customer.dob.month()"},
+      {expression: "customer.str", value: "customer.dob.format('%Y-%m-%d')"},
+    ],
+  },
+  cases: [
+    [{customer: {dob: "1990-05-01"}}, {customer: {dob: "1990-05-01", nextYear: "1991-05-01T00:00:00Z", year: 1990, month: 5, str: "1990-05-01"}}],
+    [{customer: {dob: "1990-05-01T10:00:00Z"}}, {customer: {dob: "1990-05-01T10:00:00Z", nextYear: "1991-05-01T10:00:00Z", year: 1990, month: 5, str: "1990-05-01"}}],
+    [{customer: {dob: "2024-01-31"}}, {customer: {dob: "2024-01-31", nextYear: "2025-01-31T00:00:00Z", year: 2024, month: 1, str: "2024-01-31"}}],
+    [{customer: {dob: "1999-12-31"}}, {customer: {dob: "1999-12-31", nextYear: "2000-12-31T00:00:00Z", year: 1999, month: 12, str: "1999-12-31"}}],
+  ],
+}
+
+{
+  name: "comparing dates",
+  policy: {
+    models: {contract: {start: "date", end: "date"}},
+    blocks: [
+      {expression: "contract.active", value: "d().isAfter(contract.start) and d().isBefore(contract.end)"},
+      {expression: "contract.days", value: "contract.end.diff(contract.start, 'day')"},
+      {expression: "contract.ordered", value: "contract.start < contract.end"},
+    ],
+  },
+  cases: [
+    [{contract: {start: "2025-01-01", end: "2025-12-31"}}, {contract: {start: "2025-01-01", end: "2025-12-31", active: true, days: 364, ordered: true}}],
+    [{contract: {start: "2024-01-01", end: "2025-01-01"}}, {contract: {start: "2024-01-01", end: "2025-01-01", active: false, days: 366, ordered: true}}],
+    [{contract: {start: "2026-01-01", end: "2025-01-01"}}, {contract: {start: "2026-01-01", end: "2025-01-01", active: false, days: -365, ordered: false}}],
+    [{contract: {start: "2025-03-20", end: "2025-03-21"}}, {contract: {start: "2025-03-20", end: "2025-03-21", active: true, days: 1, ordered: true}}],
+  ],
+}
+
+{
+  name: "optional dates",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {customer: {joined: "date?"}},
+    blocks: [
+      {expression: "customer.isMember", value: "customer.joined != null"},
+      {expression: "customer.tenureYears", value: "customer.joined == null ? 0 : d().diff(customer.joined, 'year')"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {isMember: false, tenureYears: 0}}],
+    [{customer: {joined: null}}, {customer: {joined: null, isMember: false, tenureYears: 0}}],
+    [{customer: {joined: "2020-01-01"}}, {customer: {joined: "2020-01-01", isMember: true, tenureYears: 5}}],
+    [{customer: {joined: "2025-03-01"}}, {customer: {joined: "2025-03-01", isMember: true, tenureYears: 0}}],
+    [{customer: {joined: "2020-13-01"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a table over a date column",
+  policy: {
+    models: {claim: {filed: "date"}},
+    blocks: [{table: "t", inputs: ["claim.filed"], outputs: ["claim.period"], rules: [
+      ["< d('2025-01-01')", "'old'"],
+      ["< d('2025-03-01')", "'recent'"],
+      ["", "'current'"],
+    ]}],
+  },
+  cases: [
+    [{claim: {filed: "2024-06-01"}}, {claim: {filed: "2024-06-01", period: "old"}}],
+    [{claim: {filed: "2025-01-01"}}, {claim: {filed: "2025-01-01", period: "recent"}}],
+    [{claim: {filed: "2025-02-28T23:59:59Z"}}, {claim: {filed: "2025-02-28T23:59:59Z", period: "recent"}}],
+    [{claim: {filed: "2025-03-01"}}, {claim: {filed: "2025-03-01", period: "current"}}],
+    [{claim: {filed: "2030-01-01"}}, {claim: {filed: "2030-01-01", period: "current"}}],
+  ],
+}
+
+{
+  name: "per-instance date reads",
+  policy: {
+    models: {customer: {payments: "payment[]"}, payment: {due: "date", amount: "number"}},
+    blocks: [
+      {expression: "payment.overdue", value: "payment.due < d()"},
+      {expression: "customer.overdueTotal", value: "sum(map(filter(customer.payments, #.due < d()), #.amount))"},
+    ],
+  },
+  cases: [
+    [{customer: {payments: []}}, {customer: {payments: [], overdueTotal: 0}}],
+    [
+      {customer: {payments: [{due: "2025-01-01", amount: 10}, {due: "2025-12-01", amount: 5}]}},
+      {customer: {payments: [{due: "2025-01-01", amount: 10, overdue: true}, {due: "2025-12-01", amount: 5, overdue: false}], overdueTotal: 10}},
+    ],
+    [
+      {customer: {payments: [{due: "2025-03-20T10:15:29Z", amount: 1.5}, {due: "2025-03-20T10:15:31Z", amount: 2}]}},
+      {customer: {payments: [{due: "2025-03-20T10:15:29Z", amount: 1.5, overdue: true}, {due: "2025-03-20T10:15:31Z", amount: 2, overdue: false}], overdueTotal: 1.5}},
+    ],
+  ],
+}
+
+// --- Exact decimals ------------------------------------------------------------------------------
+
+{
+  name: "money arithmetic is exact",
+  policy: {
+    models: {o: {price: "number", qty: "number"}},
+    blocks: [
+      {expression: "o.total", value: "o.price * o.qty"},
+      {expression: "o.tax", value: "round(o.total * 0.21, 2)"},
+      {expression: "o.gross", value: "o.total + o.tax"},
+    ],
+  },
+  cases: [
+    [{o: {price: 19.99, qty: 3}}, {o: {price: 19.99, qty: 3, total: 59.97, tax: 12.59, gross: 72.56}}],
+    [{o: {price: 0.1, qty: 3}}, {o: {price: 0.1, qty: 3, total: 0.3, tax: 0.06, gross: 0.36}}],
+    [{o: {price: 0.1, qty: 0}}, {o: {price: 0.1, qty: 0, total: 0, tax: 0, gross: 0}}],
+    [{o: {price: 1e3, qty: -2}}, {o: {price: 1000, qty: -2, total: -2000, tax: -420, gross: -2420}}],
+    [{o: {price: 0.005, qty: 1}}, {o: {price: 0.005, qty: 1, total: 0.005, tax: 0, gross: 0.005}}],
+    [{o: {price: 123456789.12, qty: 100}}, {o: {price: 123456789.12, qty: 100, total: 12345678912, tax: 2592592571.52, gross: 14938271483.52}}],
+  ],
+}
+
+{
+  name: "division keeps full decimal precision",
+  policy: {
+    models: {o: {amount: "number"}},
+    blocks: [
+      {expression: "o.third", value: "o.amount / 3"},
+      {expression: "o.rounded", value: "round(o.amount / 3, 2)"},
+      {expression: "o.sum", value: "0.1 + 0.2"},
+    ],
+  },
+  cases: [
+    [{o: {amount: 1}}, {o: {amount: 1, third: 0.3333333333333333333333333333, rounded: 0.33, sum: 0.3}}],
+    [{o: {amount: 20}}, {o: {amount: 20, third: 6.6666666666666666666666666667, rounded: 6.67, sum: 0.3}}],
+    [{o: {amount: 0}}, {o: {amount: 0, third: 0, rounded: 0, sum: 0.3}}],
+    [{o: {amount: -3}}, {o: {amount: -3, third: -1, rounded: -1, sum: 0.3}}],
+  ],
+}
+
+{
+  name: "decimal inputs compare by value in tables",
+  policy: {
+    models: {o: {rate: "number"}},
+    blocks: [{table: "t", inputs: ["o.rate"], outputs: ["o.band"], rules: [["[0..0.1)", "'low'"], ["[0.1..0.25]", "'mid'"], ["> 0.25", "'high'"], ["", "'neg'"]]}],
+  },
+  cases: [
+    [{o: {rate: 0}}, {o: {rate: 0, band: "low"}}],
+    [{o: {rate: 0.0999999}}, {o: {rate: 0.0999999, band: "low"}}],
+    [{o: {rate: 0.1}}, {o: {rate: 0.1, band: "mid"}}],
+    [{o: {rate: 0.10}}, {o: {rate: 0.1, band: "mid"}}],
+    [{o: {rate: 0.25}}, {o: {rate: 0.25, band: "mid"}}],
+    [{o: {rate: 0.2500001}}, {o: {rate: 0.2500001, band: "high"}}],
+    [{o: {rate: -0.01}}, {o: {rate: -0.01, band: "neg"}}],
+  ],
+}
+
+{
+  name: "aggregates over decimal arrays",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [
+      {expression: "cart.sum", value: "sum(cart.prices)"},
+      {expression: "cart.avg", value: "len(cart.prices) == 0 ? 0 : avg(cart.prices)"},
+      {expression: "cart.max", value: "len(cart.prices) == 0 ? 0 : max(cart.prices)"},
+    ],
+  },
+  cases: [
+    [{cart: {prices: [0.1, 0.2, 0.3]}}, {cart: {prices: [0.1, 0.2, 0.3], sum: 0.6, avg: 0.2, max: 0.3}}],
+    [{cart: {prices: [10]}}, {cart: {prices: [10], sum: 10, avg: 10, max: 10}}],
+    [{cart: {prices: []}}, {cart: {prices: [], sum: 0, avg: 0, max: 0}}],
+    [{cart: {prices: [-1.5, 1.5]}}, {cart: {prices: [-1.5, 1.5], sum: 0, avg: 0, max: 1.5}}],
+  ],
+}
+
+// --- Strings, booleans, enums ------------------------------------------------------------------
+
+{
+  name: "string operations",
+  policy: {
+    models: {u: {first: "string", last: "string"}},
+    blocks: [
+      {expression: "u.full", value: "u.first + ' ' + u.last"},
+      {expression: "u.upper", value: "upper(u.full)"},
+      {expression: "u.tpl", value: "`${u.last}, ${u.first}`"},
+      {expression: "u.long", value: "len(u.full) > 10"},
+    ],
+  },
+  cases: [
+    [{u: {first: "Ada", last: "Lovelace"}}, {u: {first: "Ada", last: "Lovelace", full: "Ada Lovelace", upper: "ADA LOVELACE", tpl: "Lovelace, Ada", long: true}}],
+    [{u: {first: "Bo", last: "Li"}}, {u: {first: "Bo", last: "Li", full: "Bo Li", upper: "BO LI", tpl: "Li, Bo", long: false}}],
+    [{u: {first: "Zoë", last: "Ek"}}, {u: {first: "Zoë", last: "Ek", full: "Zoë Ek", upper: "ZOË EK", tpl: "Ek, Zoë", long: false}}],
+    [{u: {first: "", last: ""}}, {u: {first: "", last: "", full: " ", upper: " ", tpl: ", ", long: false}}],
+  ],
+}
+
+{
+  name: "boolean logic over flags",
+  policy: {
+    models: {u: {vip: "boolean", blocked: "boolean", verified: "boolean"}},
+    blocks: [
+      {expression: "u.canBuy", value: "u.verified and not u.blocked"},
+      {expression: "u.priority", value: "u.vip or u.verified"},
+      {expression: "u.mismatch", value: "u.vip != u.verified"},
+    ],
+  },
+  cases: [
+    [{u: {vip: true, blocked: false, verified: true}}, {u: {vip: true, blocked: false, verified: true, canBuy: true, priority: true, mismatch: false}}],
+    [{u: {vip: false, blocked: true, verified: true}}, {u: {vip: false, blocked: true, verified: true, canBuy: false, priority: true, mismatch: true}}],
+    [{u: {vip: false, blocked: false, verified: false}}, {u: {vip: false, blocked: false, verified: false, canBuy: false, priority: false, mismatch: false}}],
+    [{u: {vip: true, blocked: true, verified: false}}, {u: {vip: true, blocked: true, verified: false, canBuy: false, priority: true, mismatch: true}}],
+    [{u: {vip: "true", blocked: false, verified: true}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "enum properties in matches and membership tests",
+  policy: {
+    models: {u: {tier: "string(bronze|silver|gold)", tags: "string[]"}},
+    blocks: [
+      {match: "u.rank", arms: [["u.tier == 'gold'", "3"], ["u.tier == 'silver'", "2"], ["u.tier == 'bronze'", "1"]]},
+      {expression: "u.premium", value: "u.tier in ['silver', 'gold']"},
+      {expression: "u.tagged", value: "'vip' in u.tags"},
+    ],
+  },
+  cases: [
+    [{u: {tier: "gold", tags: ["vip"]}}, {u: {tier: "gold", tags: ["vip"], rank: 3, premium: true, tagged: true}}],
+    [{u: {tier: "silver", tags: []}}, {u: {tier: "silver", tags: [], rank: 2, premium: true, tagged: false}}],
+    [{u: {tier: "bronze", tags: ["a", "vip"]}}, {u: {tier: "bronze", tags: ["a", "vip"], rank: 1, premium: false, tagged: true}}],
+    [{u: {tier: "platinum", tags: []}}, "!error: InputValidationFailed"],
+    [{u: {tier: "gold", tags: [1]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "dictionaries validate string values",
+  policy: {
+    dictionaries: {country: ["NO", "SE", ["DK", "Denmark"]]},
+    models: {u: {country: "country"}},
+    blocks: [{expression: "u.nordic", value: "u.country in ['NO', 'SE', 'DK']"}],
+  },
+  cases: [
+    [{u: {country: "NO"}}, {u: {country: "NO", nordic: true}}],
+    [{u: {country: "DK"}}, {u: {country: "DK", nordic: true}}],
+    [{u: {country: "Denmark"}}, "!error: InputValidationFailed"],
+    [{u: {country: "US"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "computed values of mixed types",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {u: {n: "number"}},
+    blocks: [
+      {expression: "u.obj", value: "{double: u.n * 2, label: string(u.n), positive: u.n > 0}"},
+      {expression: "u.list", value: "[u.n, u.n + 1, 'x', null, true]"},
+      {expression: "u.nested", value: "u.obj.double + 1"},
+    ],
+  },
+  cases: [
+    [{u: {n: 2}}, {u: {n: 2, obj: {double: 4, label: "2", positive: true}, list: [2, 3, "x", null, true], nested: 5}}],
+    [{u: {n: -0.5}}, {u: {n: -0.5, obj: {double: -1, label: "-0.5", positive: false}, list: [-0.5, 0.5, "x", null, true], nested: 0}}],
+  ],
+}
+
+// --- Realistic: loan eligibility ----------------------------------------------------------------
+
+{
+  name: "loan eligibility",
+  policy: {
+    models: {
+      applicant: {age: "number", income: "number", debts: "number", score: "number", employment: "string(employed|self|unemployed)", country: "string"},
+    },
+    blocks: [
+      {expression: "applicant.dti", value: "applicant.income == 0 ? 1 : round(applicant.debts / applicant.income, 4)"},
+      {match: "applicant.risk", arms: [
+        ["applicant.score >= 750 and applicant.dti < 0.3", "'low'"],
+        ["applicant.score >= 650 and applicant.dti < 0.45", "'medium'"],
+        ["", "'high'"],
+      ]},
+      {assertion: "applicant.basicEligible", conditions: ["applicant.age >= 18", "applicant.age <= 75", "applicant.employment != 'unemployed'", "applicant.country in ['NO', 'SE', 'DK']"]},
+      {table: "limits", inputs: ["applicant.risk", "applicant.employment"], outputs: ["applicant.maxLoan"], rules: [
+        ["'low'", "'employed'", "applicant.income * 5"],
+        ["'low'", "'self'", "applicant.income * 3"],
+        ["'medium'", "'employed'", "applicant.income * 3"],
+        ["'medium'", "", "applicant.income * 2"],
+        ["", "", "0"],
+      ]},
+      {expression: "applicant.decision", value: "not applicant.basicEligible ? 'reject' : applicant.maxLoan > 0 ? 'approve' : 'refer'"},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {age: 35, income: 100000, debts: 20000, score: 800, employment: "employed", country: "NO"}},
+      {applicant: {age: 35, income: 100000, debts: 20000, score: 800, employment: "employed", country: "NO", dti: 0.2, risk: "low", basicEligible: true, maxLoan: 500000, decision: "approve"}},
+    ],
+    [
+      {applicant: {age: 35, income: 100000, debts: 20000, score: 800, employment: "self", country: "SE"}},
+      {applicant: {age: 35, income: 100000, debts: 20000, score: 800, employment: "self", country: "SE", dti: 0.2, risk: "low", basicEligible: true, maxLoan: 300000, decision: "approve"}},
+    ],
+    [
+      {applicant: {age: 40, income: 60000, debts: 24000, score: 700, employment: "self", country: "DK"}},
+      {applicant: {age: 40, income: 60000, debts: 24000, score: 700, employment: "self", country: "DK", dti: 0.4, risk: "medium", basicEligible: true, maxLoan: 120000, decision: "approve"}},
+    ],
+    [
+      {applicant: {age: 40, income: 60000, debts: 30000, score: 700, employment: "employed", country: "NO"}},
+      {applicant: {age: 40, income: 60000, debts: 30000, score: 700, employment: "employed", country: "NO", dti: 0.5, risk: "high", basicEligible: true, maxLoan: 0, decision: "refer"}},
+    ],
+    [
+      {applicant: {age: 17, income: 10000, debts: 0, score: 800, employment: "employed", country: "NO"}},
+      {applicant: {age: 17, income: 10000, debts: 0, score: 800, employment: "employed", country: "NO", dti: 0, risk: "low", basicEligible: false, maxLoan: 50000, decision: "reject"}},
+    ],
+    [
+      {applicant: {age: 30, income: 0, debts: 0, score: 800, employment: "unemployed", country: "NO"}},
+      {applicant: {age: 30, income: 0, debts: 0, score: 800, employment: "unemployed", country: "NO", dti: 1, risk: "high", basicEligible: false, maxLoan: 0, decision: "reject"}},
+    ],
+    [
+      {applicant: {age: 50, income: 90000, debts: 9000, score: 760, employment: "employed", country: "US"}},
+      {applicant: {age: 50, income: 90000, debts: 9000, score: 760, employment: "employed", country: "US", dti: 0.1, risk: "low", basicEligible: false, maxLoan: 450000, decision: "reject"}},
+    ],
+    [
+      {applicant: {age: 75, income: 30000, debts: 8999.99, score: 750, employment: "employed", country: "SE"}},
+      {applicant: {age: 75, income: 30000, debts: 8999.99, score: 750, employment: "employed", country: "SE", dti: 0.3, risk: "medium", basicEligible: true, maxLoan: 90000, decision: "approve"}},
+    ],
+    [
+      {applicant: {age: 76, income: 30000, debts: 0, score: 650, employment: "self", country: "SE"}},
+      {applicant: {age: 76, income: 30000, debts: 0, score: 650, employment: "self", country: "SE", dti: 0, risk: "medium", basicEligible: false, maxLoan: 60000, decision: "reject"}},
+    ],
+    [{applicant: {age: 30, income: 1, debts: 0, score: 700, employment: "retired", country: "NO"}}, "!error: InputValidationFailed"],
+    [{applicant: {age: 30, income: 1, debts: 0, employment: "employed", country: "NO"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "loan eligibility with goals",
+  policy: {
+    models: {
+      applicant: {age: "number", income: "number", debts: "number", score: "number"},
+    },
+    blocks: [
+      {expression: "applicant.dti", value: "round(applicant.debts / applicant.income, 4)"},
+      {match: "applicant.risk", arms: [["applicant.score >= 750 and applicant.dti < 0.3", "'low'"], ["", "'high'"]]},
+      {assertion: "applicant.adult", conditions: ["applicant.age >= 18"]},
+    ],
+  },
+  cases: [
+    {input: {applicant: {income: 1000, debts: 100, score: 800}}, goals: ["applicant.risk"], output: {applicant: {income: 1000, debts: 100, score: 800, dti: 0.1, risk: "low"}}},
+    {input: {applicant: {income: 1000, debts: 500}}, goals: ["applicant.dti"], output: {applicant: {income: 1000, debts: 500, dti: 0.5}}},
+    {input: {applicant: {age: 16}}, goals: ["applicant.adult"], output: {applicant: {age: 16, adult: false}}},
+    {input: {applicant: {age: 16, income: 3, debts: 1, score: 1}}, output: {applicant: {age: 16, income: 3, debts: 1, score: 1, dti: 0.3333, risk: "high", adult: false}}},
+  ],
+}
+
+// --- Realistic: order pricing -------------------------------------------------------------------
+
+{
+  name: "order pricing with line items, discounts and tax",
+  policy: {
+    models: {
+      order: {items: "item[]", country: "string(NO|SE|DE)", coupon: "string?", member: "boolean"},
+      item: {sku: "string", price: "number", qty: "number"},
+    },
+    blocks: [
+      {expression: "item.lineTotal", value: "item.price * item.qty"},
+      {expression: "order.subtotal", value: "sum(map(order.items, #.price * #.qty))"},
+      {table: "discount", inputs: ["order.member", "order.subtotal"], outputs: ["order.discountRate"], rules: [
+        ["true", ">= 1000", "0.15"],
+        ["true", "", "0.05"],
+        ["", ">= 1000", "0.1"],
+        ["", "", "0"],
+      ]},
+      {match: "order.couponOff", arms: [["order.coupon == 'TEN'", "10"], ["order.coupon == 'FIFTY'", "50"], ["", "0"]]},
+      {expression: "order.net", value: "max([order.subtotal * (1 - order.discountRate) - order.couponOff, 0])"},
+      {match: "order.taxRate", arms: [["order.country == 'NO'", "0.25"], ["order.country == 'SE'", "0.25"], ["order.country == 'DE'", "0.19"]]},
+      {expression: "order.tax", value: "round(order.net * order.taxRate, 2)"},
+      {expression: "order.total", value: "order.net + order.tax"},
+    ],
+  },
+  cases: [
+    [
+      {order: {items: [{sku: "a", price: 100, qty: 2}], country: "NO", member: false}},
+      {order: {items: [{sku: "a", price: 100, qty: 2, lineTotal: 200}], country: "NO", member: false, subtotal: 200, discountRate: 0, couponOff: 0, net: 200, taxRate: 0.25, tax: 50, total: 250}},
+    ],
+    [
+      {order: {items: [{sku: "a", price: 100, qty: 2}], country: "DE", member: true, coupon: "TEN"}},
+      {order: {items: [{sku: "a", price: 100, qty: 2, lineTotal: 200}], country: "DE", member: true, coupon: "TEN", subtotal: 200, discountRate: 0.05, couponOff: 10, net: 180, taxRate: 0.19, tax: 34.2, total: 214.2}},
+    ],
+    [
+      {order: {items: [{sku: "a", price: 600, qty: 1}, {sku: "b", price: 200, qty: 2}], country: "SE", member: true}},
+      {order: {items: [{sku: "a", price: 600, qty: 1, lineTotal: 600}, {sku: "b", price: 200, qty: 2, lineTotal: 400}], country: "SE", member: true, subtotal: 1000, discountRate: 0.15, couponOff: 0, net: 850, taxRate: 0.25, tax: 212.5, total: 1062.5}},
+    ],
+    [
+      {order: {items: [{sku: "a", price: 999.99, qty: 1}], country: "NO", member: false, coupon: "FIFTY"}},
+      {order: {items: [{sku: "a", price: 999.99, qty: 1, lineTotal: 999.99}], country: "NO", member: false, coupon: "FIFTY", subtotal: 999.99, discountRate: 0, couponOff: 50, net: 949.99, taxRate: 0.25, tax: 237.5, total: 1187.49}},
+    ],
+    [
+      {order: {items: [{sku: "a", price: 20, qty: 1}], country: "DE", member: false, coupon: "FIFTY"}},
+      {order: {items: [{sku: "a", price: 20, qty: 1, lineTotal: 20}], country: "DE", member: false, coupon: "FIFTY", subtotal: 20, discountRate: 0, couponOff: 50, net: 0, taxRate: 0.19, tax: 0, total: 0}},
+    ],
+    [
+      {order: {items: [], country: "NO", member: true, coupon: null}},
+      {order: {items: [], country: "NO", member: true, coupon: null, subtotal: 0, discountRate: 0.05, couponOff: 0, net: 0, taxRate: 0.25, tax: 0, total: 0}},
+    ],
+    [
+      {order: {items: [{sku: "a", price: 0.33, qty: 3}, {sku: "b", price: 0.01, qty: 1}], country: "SE", member: false, coupon: "UNKNOWN"}},
+      {order: {items: [{sku: "a", price: 0.33, qty: 3, lineTotal: 0.99}, {sku: "b", price: 0.01, qty: 1, lineTotal: 0.01}], country: "SE", member: false, coupon: "UNKNOWN", subtotal: 1, discountRate: 0, couponOff: 0, net: 1, taxRate: 0.25, tax: 0.25, total: 1.25}},
+    ],
+    [{order: {items: [{sku: "a", price: "1", qty: 1}], country: "NO", member: false}}, "!error: InputValidationFailed"],
+    [{order: {items: [], country: "US", member: false}}, "!error: InputValidationFailed"],
+    [{order: {items: [], country: "NO"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Realistic: insurance premium -----------------------------------------------------------------
+
+{
+  name: "insurance premium from a driver profile",
+  policy: {
+    models: {
+      driver: {dob: "date", licensed: "date", claims: "claim[]", vehicle: "vehicle"},
+      claim: {date: "date", amount: "number"},
+      vehicle: {value: "number", kind: "string(car|van|bike)"},
+    },
+    blocks: [
+      {expression: "driver.age", value: "d().diff(driver.dob, 'year')"},
+      {expression: "driver.experience", value: "d().diff(driver.licensed, 'year')"},
+      {expression: "driver.recentClaims", value: "count(driver.claims, d().diff(#.date, 'year') < 3)"},
+      {table: "base", inputs: ["driver.vehicle.kind"], outputs: ["driver.baseRate"], rules: [["'car'", "0.03"], ["'van'", "0.04"], ["'bike'", "0.05"]]},
+      {match: "driver.ageFactor", arms: [["driver.age < 25", "1.5"], ["driver.age >= 70", "1.3"], ["", "1"]]},
+      {match: "driver.claimFactor", arms: [["driver.recentClaims == 0", "0.9"], ["driver.recentClaims == 1", "1.2"], ["", "1.6"]]},
+      {expression: "driver.premium", value: "round(driver.vehicle.value * driver.baseRate * driver.ageFactor * driver.claimFactor * (driver.experience < 2 ? 1.25 : 1), 2)"},
+    ],
+  },
+  cases: [
+    [
+      {driver: {dob: "1980-01-01", licensed: "2000-01-01", claims: [], vehicle: {value: 20000, kind: "car"}}},
+      {driver: {dob: "1980-01-01", licensed: "2000-01-01", claims: [], vehicle: {value: 20000, kind: "car"}, age: 45, experience: 25, recentClaims: 0, baseRate: 0.03, ageFactor: 1, claimFactor: 0.9, premium: 540}},
+    ],
+    [
+      {driver: {dob: "2003-06-01", licensed: "2024-01-01", claims: [{date: "2024-12-01", amount: 500}], vehicle: {value: 10000, kind: "bike"}}},
+      {driver: {dob: "2003-06-01", licensed: "2024-01-01", claims: [{date: "2024-12-01", amount: 500}], vehicle: {value: 10000, kind: "bike"}, age: 21, experience: 1, recentClaims: 1, baseRate: 0.05, ageFactor: 1.5, claimFactor: 1.2, premium: 1125}},
+    ],
+    [
+      {driver: {dob: "1950-01-01", licensed: "1970-01-01", claims: [{date: "2020-01-01", amount: 1}, {date: "2023-01-01", amount: 2}, {date: "2024-01-01", amount: 3}], vehicle: {value: 30000, kind: "van"}}},
+      {driver: {dob: "1950-01-01", licensed: "1970-01-01", claims: [{date: "2020-01-01", amount: 1}, {date: "2023-01-01", amount: 2}, {date: "2024-01-01", amount: 3}], vehicle: {value: 30000, kind: "van"}, age: 75, experience: 55, recentClaims: 2, baseRate: 0.04, ageFactor: 1.3, claimFactor: 1.6, premium: 2496}},
+    ],
+    [{driver: {dob: "1980-01-01", licensed: "2000-01-01", claims: [], vehicle: {value: 1, kind: "truck"}}}, "!error: InputValidationFailed"],
+    [{driver: {dob: "1980-01-01", licensed: "2000-01-01", claims: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Realistic: subscription billing with globals ------------------------------------------------
+
+{
+  name: "subscription billing with global settings",
+  policy: {
+    globals: {platform: {vatRate: "number", trialDays: "number"}},
+    models: {sub: {started: "date", seats: "number", plan: "string(basic|pro|enterprise)", annual: "boolean"}},
+    blocks: [
+      {expression: "sub.inTrial", value: "d().diff(sub.started, 'day') < trialDays"},
+      {table: "prices", inputs: ["sub.plan"], outputs: ["sub.seatPrice"], rules: [["'basic'", "5"], ["'pro'", "12"], ["'enterprise'", "30"]]},
+      {expression: "sub.monthly", value: "sub.inTrial ? 0 : sub.seats * sub.seatPrice * (sub.annual ? 0.8 : 1)"},
+      {expression: "sub.vat", value: "round(sub.monthly * vatRate, 2)"},
+      {expression: "sub.invoice", value: "sub.monthly + sub.vat"},
+    ],
+  },
+  cases: [
+    [
+      {vatRate: 0.25, trialDays: 14, sub: {started: "2025-03-10", seats: 10, plan: "pro", annual: false}},
+      {vatRate: 0.25, trialDays: 14, sub: {started: "2025-03-10", seats: 10, plan: "pro", annual: false, inTrial: true, seatPrice: 12, monthly: 0, vat: 0, invoice: 0}},
+    ],
+    [
+      {vatRate: 0.25, trialDays: 14, sub: {started: "2025-01-01", seats: 10, plan: "pro", annual: false}},
+      {vatRate: 0.25, trialDays: 14, sub: {started: "2025-01-01", seats: 10, plan: "pro", annual: false, inTrial: false, seatPrice: 12, monthly: 120, vat: 30, invoice: 150}},
+    ],
+    [
+      {vatRate: 0.19, trialDays: 0, sub: {started: "2025-03-20", seats: 3, plan: "enterprise", annual: true}},
+      {vatRate: 0.19, trialDays: 0, sub: {started: "2025-03-20", seats: 3, plan: "enterprise", annual: true, inTrial: false, seatPrice: 30, monthly: 72, vat: 13.68, invoice: 85.68}},
+    ],
+    [
+      {vatRate: 0, trialDays: 30, sub: {started: "2024-01-01", seats: 1, plan: "basic", annual: true}},
+      {vatRate: 0, trialDays: 30, sub: {started: "2024-01-01", seats: 1, plan: "basic", annual: true, inTrial: false, seatPrice: 5, monthly: 4, vat: 0, invoice: 4}},
+    ],
+    [{trialDays: 30, sub: {started: "2024-01-01", seats: 1, plan: "basic", annual: true}}, "!error: MissingRequiredInputs"],
+  ],
+}

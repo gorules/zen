@@ -1,0 +1,782 @@
+// Data flow across the sub-decision boundary: what a child receives (the decision node's merged
+// input, after inputField), what it sees through `$`, `$root` and `$nodes`, what comes back (the
+// merge of the child's ending nodes) and how that lands next to the parent's own keys. Also
+// functions and custom nodes running inside children.
+//
+// The child is a separate graph: its `$nodes` holds its own nodes only; the parent's nodes are
+// reachable through the child's input node entry (`$nodes.<child input>.$nodes`, see 15).
+
+// --- What the child receives ---------------------------------------------------------------------
+{
+  name: "child receives the output of the node before it, not the request",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {got: "v", raw: "raw"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {v: "raw * 2"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{raw: 1}, {got: 2}],
+    [{raw: 0}, {got: 0}],
+    [{raw: -2.5}, {got: -5}],
+  ],
+}
+
+{
+  name: "child receives the merged input of a join",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {sum: "a + b", keys: "filter(keys($root), not startsWith(#, '$'))"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "pa", fields: {a: "x + 1"}},
+      {expression: "pb", fields: {b: "x + 2"}},
+      {decision: "call", key: "child"},
+    ],
+    edges: ["input -> pa -> call", "input -> pb -> call", "call -> output"],
+  },
+  cases: [
+    [{x: 0}, {sum: 3, keys: ["b", "a"]}, "question: the child's root key order follows the join's merge order (later edge first), not edge order"],
+    [{x: 10}, {sum: 23, keys: ["b", "a"]}, "question: the child's root key order follows the join's merge order (later edge first), not edge order"],
+  ],
+}
+
+{
+  name: "child $root is its input object",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {root: "$root", n: "len(filter(keys($root), not startsWith(#, '$')))"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "out"}],
+  },
+  cases: [
+    [{sub: {a: 1}}, {out: {root: {a: 1}, n: 1}}],
+    [{sub: {}}, {out: {root: {}, n: 0}}],
+    [{sub: {a: {b: [1]}, c: "x"}}, {out: {root: {a: {b: [1]}, c: "x"}, n: 2}}],
+  ],
+}
+
+{
+  name: "child input keeps every value type",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {types: "map(['s', 'n', 'b', 'a', 'o', 'z'], type($root[#]))"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{s: "x", n: 1.5, b: false, a: [1], o: {k: 1}, z: null}, {out: {types: ["string", "number", "bool", "array", "object", "null"]}}],
+    [{}, {out: {types: ["null", "null", "null", "null", "null", "null"]}}],
+  ],
+}
+
+{
+  name: "child request with a date and nested arrays",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {year: "d(when).year()", total: "sum(flatten(groups))"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{when: "2024-02-29", groups: [[1, 2], [3]]}, {out: {year: 2024, total: 6}}],
+    [{when: "1999-12-31T23:59:59Z", groups: []}, {out: {year: 1999, total: 0}}],
+  ],
+}
+
+{
+  name: "child input node with a schema receives the inputField selection",
+  decisions: {
+    child: {nodes: [
+      {input: "req", schema: {type: "object", required: ["id"], properties: {id: {type: "string"}}}},
+      {expression: "e", fields: {id: "$nodes.req.id", same: "$nodes.req.id == id"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "customer", outputPath: "out"}],
+  },
+  cases: [
+    [{customer: {id: "c1"}}, {out: {id: "c1", same: true}}],
+    [{customer: {id: "c2", extra: 1}, id: 9}, {out: {id: "c2", same: true}}],
+    [{customer: {id: 1}}, "!error"],
+  ],
+}
+
+// --- What comes back --------------------------------------------------------------------------------
+{
+  name: "only the child's ending nodes come back",
+  decisions: {
+    child: {nodes: [
+      {expression: "step1", fields: {internal: "x + 1"}},
+      {expression: "step2", fields: {result: "internal * 2"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1}, {result: 4}],
+    [{x: -1}, {result: 0}],
+  ],
+}
+
+{
+  name: "child pass-through chain returns the parent's input plus its keys",
+  decisions: {
+    child: {nodes: [
+      {expression: "a", passThrough: true, fields: {fromA: "1"}},
+      {expression: "b", passThrough: true, fields: {fromB: "2"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1}, {x: 1, fromA: 1, fromB: 2}],
+    [{fromA: "old"}, {fromA: 1, fromB: 2}],
+    [{}, {fromA: 1, fromB: 2}],
+  ],
+}
+
+{
+  name: "child output node joins several branches",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "a", fields: {"r.a": "x"}},
+        {expression: "b", fields: {"r.b": "x * 2"}},
+        {expression: "c", fields: {c: "true"}},
+      ],
+      edges: ["input -> a -> output", "input -> b -> output", "input -> c -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "res"}],
+  },
+  cases: [
+    [{x: 1}, {res: {r: {a: 1, b: 2}, c: true}}],
+    [{x: 0}, {res: {r: {a: 0, b: 0}, c: true}}],
+  ],
+}
+
+{
+  name: "child with a dangling branch drops it from the result",
+  decisions: {
+    child: {raw: {
+      nodes: [
+        {id: "i", name: "in", type: "inputNode", content: {}},
+        {id: "a", name: "main", type: "expressionNode", content: {expressions: [{id: "x1", key: "main", value: "true"}], passThrough: false}},
+        {id: "b", name: "side", type: "expressionNode", content: {expressions: [{id: "x2", key: "side", value: "true"}], passThrough: false}},
+        {id: "o", name: "out", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e1", sourceId: "i", targetId: "a"},
+        {id: "e2", sourceId: "a", targetId: "o"},
+        {id: "e3", sourceId: "i", targetId: "b"},
+      ],
+    }},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, {main: true}, "question: the child stops at its output node; a side branch that never reaches the output is not part of the result"],
+    [{x: 1}, {main: true}, "question: the child stops at its output node; a side branch that never reaches the output is not part of the result"],
+  ],
+}
+
+{
+  name: "parent $nodes of the decision node includes its transforms",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {r: "v * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", outputPath: "res", passThrough: true},
+      {expression: "after", fields: {node: "$nodes.call", r: "$nodes.call.res.r"}},
+    ],
+  },
+  cases: [
+    [{v: 1}, {node: {v: 1, res: {r: 2}}, r: 2}],
+    [{v: 0, k: "x"}, {node: {v: 0, k: "x", res: {r: 0}}, r: 0}],
+  ],
+}
+
+{
+  name: "parent $nodes of a looping decision node is the array",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {r: "v + 1"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "items", executionMode: "loop"},
+      {expression: "after", fields: {n: "len($nodes.call)", first: "$nodes.call[0].r"}},
+    ],
+    edges: ["input -> call", "input -> after -> output", "call -> after"],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {n: 2, first: 2}],
+    [{items: [{v: 9}]}, {n: 1, first: 10}],
+  ],
+}
+
+{
+  name: "parent reads $nodes.input after a child changed the same keys",
+  decisions: {
+    child: {nodes: [{expression: "e", passThrough: true, fields: {"a.b": "a.b + 1", n: "n * 10"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {now: "a.b", n: "n", origB: "$nodes.input.a.b", origN: "$nodes.input.n"}},
+    ],
+  },
+  cases: [
+    [{a: {b: 1}, n: 2}, {now: 2, n: 20, origB: 1, origN: 2}],
+    [{a: {b: -1, c: 3}, n: 0}, {now: 0, n: 0, origB: -1, origN: 0}],
+  ],
+}
+
+// --- Key collisions between child output and parent ----------------------------------------------------
+{
+  name: "child key replaces a parent key of another type",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "'child'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{v: 1}, {v: "child"}],
+    [{v: {deep: true}}, {v: "child"}],
+    [{v: [1, 2]}, {v: "child"}],
+    [{v: null}, {v: "child"}],
+  ],
+}
+
+{
+  name: "child object merges into a parent object of the same name",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {"cfg.mode": "'strict'", "cfg.limits.max": "10"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{cfg: {mode: "lax", name: "x"}}, {cfg: {mode: "strict", name: "x", limits: {max: 10}}}],
+    [{cfg: {limits: {min: 1, max: 99}}}, {cfg: {mode: "strict", limits: {min: 1, max: 10}}}],
+    [{cfg: "flat"}, {cfg: {mode: "strict", limits: {max: 10}}}],
+    [{}, {cfg: {mode: "strict", limits: {max: 10}}}],
+  ],
+}
+
+{
+  name: "child keys collide with a parallel parent branch at the output",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {status: "'child'", c: "true"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "local", fields: {status: "'local'", l: "true"}},
+    ],
+    edges: ["input -> call -> output", "input -> local -> output"],
+  },
+  cases: [
+    [{}, {status: "child", c: true, l: true}, "question: at the output fan-in the first-listed branch wins a shared key (the child here); nothing in the graph makes the precedence visible"],
+    [{status: "req"}, {status: "child", c: true, l: true}, "question: at the output fan-in the first-listed branch wins a shared key (the child here); nothing in the graph makes the precedence visible"],
+  ],
+}
+
+{
+  name: "child key collides with an outputPath segment",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {res: "'flat'"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {decision: "nested", key: "child", outputPath: "res.inner"},
+    ],
+    edges: ["input -> call -> output", "input -> nested -> output"],
+  },
+  cases: [
+    [{}, {res: "flat"}, "question: a scalar from the first branch and an object from the second meet at the output; the scalar wins because the second branch is merged first"],
+  ],
+}
+
+{
+  name: "child returning a $nodes key",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "echo"}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", outputPath: "out"},
+      {expression: "after", fields: {keys: "keys($nodes.call.out)"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {keys: ["x", "$nodes"]}, "question: an echo custom node inside the child forwards its `$nodes` map as a regular key, which survives the child's result and reaches the parent (see 15)"],
+  ],
+}
+
+{
+  name: "child $nodes key dropped from the final result",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "echo"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{x: 1}, {out: {x: 1}}],
+    [{}, {out: {}}],
+  ],
+}
+
+{
+  name: "child result with the same key as the decision node name",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {call: "'value'"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {field: "call", node: "$nodes.call.call"}},
+    ],
+  },
+  cases: [
+    [{}, {field: "value", node: "value"}],
+    [{call: 1}, {field: "value", node: "value"}],
+  ],
+}
+
+// --- The child's own $nodes ------------------------------------------------------------------------------
+{
+  name: "child node names shadow nothing in the parent",
+  decisions: {
+    child: {nodes: [
+      {expression: "calc", fields: {v: "x * 100"}},
+      {expression: "read", fields: {mine: "$nodes.calc.v"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "calc", passThrough: true, fields: {v: "x + 1"}},
+      {decision: "call", key: "child", passThrough: true},
+      {expression: "read", fields: {parentCalc: "$nodes.calc.v", childRead: "mine"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {parentCalc: 2, childRead: 100}],
+    [{x: 0}, {parentCalc: 1, childRead: 0}],
+  ],
+}
+
+{
+  name: "child $nodes.input is the child's own input",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {childInput: "$nodes.input", hasParentKey: "$nodes.input.top != null"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "out"}],
+  },
+  cases: [
+    [{top: 1, sub: {a: 1}}, {out: {childInput: {a: 1}, hasParentKey: false}}],
+    [{top: 1, sub: {}}, {out: {childInput: {}, hasParentKey: false}}],
+  ],
+}
+
+{
+  name: "child $nodes in a loop belongs to the current item",
+  decisions: {
+    child: {nodes: [
+      {expression: "first", fields: {v: "n * 2"}},
+      {expression: "second", fields: {v: "$nodes.first.v + $nodes.input.n", item: "$nodes.input"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, {out: [{v: 3, item: {n: 1}}, {v: 6, item: {n: 2}}]}],
+    [{items: [{n: 0}]}, {out: [{v: 0, item: {n: 0}}]}],
+  ],
+}
+
+{
+  name: "child $nodes of an untaken branch is null per item",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["flag", ""]},
+        {expression: "yes", fields: {y: "true"}},
+        {expression: "no", fields: {n: "true"}},
+        {expression: "end", fields: {ranYes: "$nodes.yes != null", ranNo: "$nodes.no != null"}},
+      ],
+      edges: ["input -> s", "s:0 -> yes -> end", "s:1 -> no -> end", "end -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{flag: true}, {flag: false}, {flag: true}]}, {out: [{ranYes: true, ranNo: false}, {ranYes: false, ranNo: true}, {ranYes: true, ranNo: false}]}],
+    [{items: [{}]}, {out: [{ranYes: false, ranNo: true}]}],
+  ],
+}
+
+{
+  name: "child keys($nodes) lists only the child's nodes",
+  decisions: {
+    child: {nodes: [
+      {expression: "a", passThrough: true, fields: {a: "1"}},
+      {expression: "b", fields: {n: "len(keys($nodes))", a: "'a' in keys($nodes)", input: "'input' in keys($nodes)", parent: "'parentOnly' in keys($nodes)"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "parentOnly", passThrough: true, fields: {p: "1"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{}, {n: 2, a: true, input: true, parent: false}],
+    [{x: 1}, {n: 2, a: true, input: true, parent: false}],
+  ],
+}
+
+{
+  name: "child table reading its own $nodes",
+  decisions: {
+    child: {nodes: [
+      {expression: "limits", fields: {max: "cap ?? 100"}},
+      {table: "t", inputs: ["$nodes.input.amount"], outputs: ["ok"], rules: [["<= $nodes.limits.max", "true"], ["", "false"]]},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "check"}],
+  },
+  cases: [
+    [{amount: 50}, {check: {ok: true}}],
+    [{amount: 150}, {check: {ok: false}}],
+    [{amount: 150, cap: 200}, {check: {ok: true}}],
+    [{amount: 100}, {check: {ok: true}}],
+  ],
+}
+
+{
+  name: "child switch reading its own $nodes",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "score", passThrough: true, fields: {s: "a + b"}},
+        {switch: "sw", when: ["$nodes.score.s > 10", ""]},
+        {expression: "hi", fields: {r: "'hi'"}},
+        {expression: "lo", fields: {r: "'lo'"}},
+      ],
+      edges: ["input -> score -> sw", "sw:0 -> hi -> output", "sw:1 -> lo -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 5, b: 6}, {r: "hi"}],
+    [{a: 5, b: 5}, {r: "lo"}],
+    [{a: 0, b: 0}, {r: "lo"}],
+  ],
+}
+
+{
+  name: "child reads a parent node through its input node in a loop and a single call",
+  decisions: {
+    child: {nodes: [
+      {input: "in"},
+      {expression: "e", fields: {v: "n * ($nodes.in.$nodes.cfg.k ?? 1)"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "cfg", passThrough: true, fields: {k: "k ?? 3"}},
+      {decision: "one", key: "child", inputField: "single", outputPath: "single"},
+      {decision: "many", key: "child", inputField: "items", outputPath: "items", executionMode: "loop"},
+    ],
+    edges: ["input -> cfg", "cfg -> one -> output", "cfg -> many -> output"],
+  },
+  cases: [
+    [{single: {n: 2}, items: [{n: 1}, {n: 4}]}, {single: {v: 6}, items: [{v: 3}, {v: 12}]}],
+    [{k: 10, single: {n: 1}, items: []}, {single: {v: 10}, items: []}],
+  ],
+}
+
+// --- Functions inside children ---------------------------------------------------------------------------
+{
+  name: "v2 function in a child computes from the child input",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => ({
+  names: input.people.map((p) => p.name.toUpperCase()),
+  count: input.people.length,
+});"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out", passThrough: true}],
+  },
+  cases: [
+    [{people: [{name: "ann"}, {name: "bo"}]}, {people: [{name: "ann"}, {name: "bo"}], out: {names: ["ANN", "BO"], count: 2}}],
+    [{people: []}, {people: [], out: {names: [], count: 0}}],
+  ],
+}
+
+{
+  name: "v2 function in a child reads the child's $nodes",
+  decisions: {
+    child: {nodes: [
+      {expression: "calc", fields: {t: "a * b"}},
+      {function: "f", source: """export const handler = async (input) => ({t: input.$nodes.calc.t, a: input.$nodes.input.a, nodes: Object.keys(input.$nodes).sort()});"""},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "outer", passThrough: true, fields: {o: "1"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{a: 2, b: 3}, {t: 6, a: 2, nodes: ["calc", "input"]}],
+    [{a: 0, b: 3}, {t: 0, a: 0, nodes: ["calc", "input"]}],
+  ],
+}
+
+{
+  name: "v2 function in a child throwing fails the parent",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => {
+  if (input.n < 0) throw new Error('negative input');
+  return {sqrt: Math.sqrt(input.n)};
+};"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{n: 9}, {out: {sqrt: 3}}],
+    [{n: 0}, {out: {sqrt: 0}}],
+    [{n: -1}, "!error: negative input"],
+  ],
+}
+
+{
+  name: "v2 function in a looped child",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => ({id: input.id, slug: String(input.title).toLowerCase().replace(/\s+/g, '-')});"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "posts", outputPath: "posts", executionMode: "loop"}],
+  },
+  cases: [
+    [{posts: [{id: 1, title: "Hello World"}, {id: 2, title: "A  B"}]}, {posts: [{id: 1, slug: "hello-world"}, {id: 2, slug: "a-b"}]}],
+    [{posts: []}, {posts: []}],
+  ],
+}
+
+{
+  name: "v2 function in a child returning an array",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => input.xs.map((x) => ({x2: x * 2}));"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{xs: [1, 2]}, {out: [{x2: 2}, {x2: 4}]}],
+    [{xs: []}, {out: []}],
+  ],
+}
+
+{
+  name: "v2 function in a child mutating its input does not change the parent",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => {
+  input.data.v = 'changed';
+  input.data.list.push(99);
+  return {done: true};
+};"""}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", passThrough: true},
+      {expression: "after", fields: {v: "data.v", list: "data.list", done: "done"}},
+    ],
+  },
+  cases: [
+    [{data: {v: "orig", list: [1]}}, {v: "orig", list: [1], done: true}],
+    [{data: {v: 1, list: []}}, {v: 1, list: [], done: true}],
+  ],
+}
+
+{
+  name: "v1 function in a child",
+  decisions: {
+    child: {nodes: [{functionV1: "f", source: """const handler = (input) => ({total: input.items.reduce((s, i) => s + i.price, 0)});"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "cart", outputPath: "cart", passThrough: true}],
+  },
+  cases: [
+    [{cart: {items: [{price: 2}, {price: 3}]}}, {cart: {items: [{price: 2}, {price: 3}], total: 5}}],
+    [{cart: {items: []}}, {cart: {items: [], total: 0}}],
+  ],
+}
+
+{
+  name: "function result passes through a child then a parent expression",
+  decisions: {
+    child: {nodes: [
+      {function: "f", source: """export const handler = async (input) => ({score: input.a * 2 + 1, tag: input.a > 2 ? 'big' : 'small'});"""},
+      {expression: "e", passThrough: true, fields: {final: "score * 10"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", outputPath: "res"},
+      {expression: "after", fields: {final: "res.final", tag: "res.tag"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {final: 30, tag: "small"}],
+    [{a: 3}, {final: 70, tag: "big"}],
+  ],
+}
+
+// --- Custom nodes inside children --------------------------------------------------------------------------
+{
+  name: "custom render in a child sees the child's input",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "render", config: {line: "{{ name }} owes {{ amount }}"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "invoice", outputPath: "msg"}],
+  },
+  cases: [
+    [{invoice: {name: "ann", amount: 5}, name: "outer"}, {msg: {line: "ann owes 5"}}],
+    [{invoice: {name: "bo", amount: 0.5}}, {msg: {line: "bo owes 0.5"}}],
+  ],
+}
+
+{
+  name: "custom render in a child reads the child's $nodes",
+  decisions: {
+    child: {nodes: [
+      {expression: "calc", fields: {v: "x * 3"}},
+      {custom: "c", kind: "render", config: {line: "{{ $nodes.calc.v }}/{{ $nodes.input.x }}"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 2}, {line: "6/2"}],
+    [{x: 0}, {line: "0/0"}],
+  ],
+}
+
+{
+  name: "custom config node in a child returns its config",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "config", config: {version: 3, flags: ["a", "b"]}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "cfg", passThrough: true}],
+  },
+  cases: [
+    [{x: 1}, {x: 1, cfg: {version: 3, flags: ["a", "b"]}}],
+    [{cfg: {old: true}}, {cfg: {old: true, version: 3, flags: ["a", "b"]}}],
+  ],
+}
+
+{
+  name: "custom echo in a child returns the child input",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "echo"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "copy", passThrough: true}],
+  },
+  cases: [
+    [{sub: {a: 1}}, {sub: {a: 1}, copy: {a: 1}}],
+    [{sub: {}}, {sub: {}, copy: {}}],
+  ],
+}
+
+{
+  name: "custom fail in a looped child stops at the failing item",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["valid", ""]},
+        {custom: "ok", kind: "render", config: {msg: "item {{ id }}"}},
+        {custom: "bad", kind: "fail", config: {message: "invalid item"}},
+      ],
+      edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> bad -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{valid: true, id: 1}, {valid: true, id: 2}]}, {out: [{msg: "item 1"}, {msg: "item 2"}]}],
+    [{items: [{valid: true, id: 1}, {valid: false, id: 2}]}, "!error: invalid item"],
+    [{items: []}, {out: []}],
+  ],
+}
+
+// --- Realistic data flow ------------------------------------------------------------------------------------
+{
+  name: "enrich in a child, decide in the parent",
+  decisions: {
+    enrich: {nodes: [
+      {table: "region", inputs: ["country"], outputs: ["region"], rules: [["'DE','FR','IT'", "'EU'"], ["'US','CA'", "'NA'"], ["", "'ROW'"]]},
+      {function: "f", source: """export const handler = async (input) => ({region: input.region, local: input.$nodes.input.lang === 'de'});"""},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "enrich", key: "enrich", inputField: "customer", outputPath: "customer", passThrough: true},
+      {switch: "s", when: ["customer.region == 'EU'", ""]},
+      {expression: "eu", fields: {vat: "true", local: "customer.local"}},
+      {expression: "other", fields: {vat: "false"}},
+    ],
+    edges: ["input -> enrich -> s", "s:0 -> eu -> output", "s:1 -> other -> output"],
+  },
+  cases: [
+    [{customer: {country: "DE", lang: "de"}}, {vat: true, local: true}],
+    [{customer: {country: "FR", lang: "fr"}}, {vat: true, local: false}],
+    [{customer: {country: "US"}}, {vat: false}],
+    [{customer: {}}, {vat: false}],
+  ],
+}
+
+{
+  name: "child result feeds a parent table and a second child",
+  decisions: {
+    score: {nodes: [{expression: "e", fields: {score: "round(income / 1000) - debts"}}]},
+    label: {nodes: [{expression: "e", fields: {label: "band + '-' + string(score)"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "s", key: "score", passThrough: true},
+      {table: "band", passThrough: true, inputs: ["score"], outputs: ["band"], rules: [[">= 50", "'A'"], [">= 20", "'B'"], ["", "'C'"]]},
+      {decision: "l", key: "label"},
+    ],
+  },
+  cases: [
+    [{income: 80000, debts: 10}, {label: "A-70"}],
+    [{income: 30000, debts: 5}, {label: "B-25"}],
+    [{income: 1000, debts: 5}, {label: "C--4"}],
+  ],
+}

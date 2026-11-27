@@ -1,0 +1,666 @@
+// Transform attributes in single execution mode: `inputField` and `outputPath`.
+//
+// `inputField` is an expression evaluated against the node's input; its value becomes the
+// node's environment instead of the whole input. `outputPath` is a dotted path the node's
+// result is written under. `passThrough` always overlays onto the node's full input, not
+// onto the inputField selection. The three attributes apply to expression, table and
+// decision nodes. Empty strings mean "not set".
+
+// ---------------------------------------------------------------------------------------
+// inputField selects a nested object as the node's environment.
+
+{
+  name: "inputField scopes an expression node to a nested object",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", fields: {name: "name", upper: "upper(name)"}}],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {name: "ann", upper: "ANN"}],
+    [{customer: {name: "bob", age: 3}, name: "outer"}, {name: "bob", upper: "BOB"}],
+    [{customer: {name: ""}}, {name: "", upper: ""}],
+  ],
+}
+
+{
+  name: "fields outside the inputField selection are not visible",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", fields: {flag: "flag ?? 'unseen'", viaRoot: "$root.flag ?? 'unseen'"}}],
+  },
+  cases: [
+    [{customer: {}, flag: true}, {flag: "unseen", viaRoot: "unseen"}],
+    [{customer: {flag: false}, flag: true}, {flag: false, viaRoot: false}],
+  ],
+}
+
+{
+  name: "dotted inputField selects a deeply nested object",
+  graph: {
+    nodes: [{expression: "a", inputField: "a.b.c", fields: {n: "v * 2"}}],
+  },
+  cases: [
+    [{a: {b: {c: {v: 3}}}}, {n: 6}],
+    [{a: {b: {c: {v: 0}, d: 1}}}, {n: 0}],
+    [{a: {b: {c: {v: -1.5}}}}, {n: -3}],
+  ],
+}
+
+{
+  name: "inputField is an expression: indexing",
+  graph: {
+    nodes: [{expression: "a", inputField: "items[0]", fields: {first: "v"}}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {first: 1}],
+    [{items: [{v: "x"}]}, {first: "x"}],
+    [{items: []}, {}],
+  ],
+}
+
+{
+  name: "inputField is an expression: an object literal builds the environment",
+  graph: {
+    nodes: [{expression: "a", inputField: "{x: price * 2, y: qty}", fields: {total: "x * y"}}],
+  },
+  cases: [
+    [{price: 5, qty: 3}, {total: 30}],
+    [{price: 0.5, qty: 4}, {total: 4}],
+  ],
+}
+
+{
+  name: "inputField is an expression: a conditional picks one of two objects",
+  graph: {
+    nodes: [{expression: "a", inputField: "useB == true ? b : a", fields: {v: "v"}}],
+  },
+  cases: [
+    [{useB: true, a: {v: "a"}, b: {v: "b"}}, {v: "b"}],
+    [{useB: false, a: {v: "a"}, b: {v: "b"}}, {v: "a"}],
+    [{a: {v: "a"}, b: {v: "b"}}, {v: "a"}],
+  ],
+}
+
+{
+  name: "inputField can read $nodes",
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {x: "1"}},
+      {expression: "a", inputField: "$nodes.input.payload", fields: {v: "v"}},
+    ],
+  },
+  cases: [
+    [{payload: {v: 7}}, {v: 7}],
+    [{payload: {v: "s"}}, {v: "s"}],
+  ],
+}
+
+{
+  name: "$ inside an inputField-scoped expression node refers to the node's own fields",
+  graph: {
+    nodes: [{expression: "a", inputField: "c", fields: [["x", "v + 1"], ["y", "$.x * 2"], ["z", "$.v ?? 'none'"]]}],
+  },
+  cases: [
+    [{c: {v: 1}}, {x: 2, y: 4, z: "none"}],
+    [{c: {v: 10}}, {x: 11, y: 22, z: "none"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// inputField resolving to null, a missing key, or a non-object.
+
+{
+  name: "inputField resolving to null or a missing key gives a null environment",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", fields: {name: "name ?? 'anon'", isNull: "name == null"}}],
+  },
+  cases: [
+    [{customer: null}, {name: "anon", isNull: true}],
+    [{}, {name: "anon", isNull: true}],
+    [{customer: {}}, {name: "anon", isNull: true}],
+    [{customer: {name: "x"}}, {name: "x", isNull: false}],
+  ],
+}
+
+{
+  name: "inputField resolving to a primitive: reading a field fails",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", fields: {name: "name"}}],
+  },
+  cases: [
+    [{customer: 5}, "!error", "question: a field read on a number environment errors while the same read on a null environment yields null"],
+    [{customer: "s"}, "!error", "question: a field read on a string environment errors while the same read on a null environment yields null"],
+    [{customer: true}, "!error", "question: a field read on a boolean environment errors while the same read on a null environment yields null"],
+    [{customer: [1, 2]}, "!error", "question: a field read on an array environment errors while the same read on a null environment yields null"],
+  ],
+}
+
+{
+  name: "inputField resolving to a primitive: fields not reading the environment succeed",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", fields: {c: "'const'", n: "1 + 1"}}],
+  },
+  cases: [
+    [{customer: 5}, {c: "const", n: 2}],
+    [{customer: "s"}, {c: "const", n: 2}],
+    [{customer: [1]}, {c: "const", n: 2}],
+    [{customer: null}, {c: "const", n: 2}],
+  ],
+}
+
+{
+  name: "inputField resolving to an array of objects is not iterated in single mode",
+  graph: {
+    nodes: [{expression: "a", inputField: "items", fields: {count: "len($root)"}}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {count: 2}],
+    [{items: []}, {count: 0}],
+  ],
+}
+
+{
+  name: "an inputField with a syntax error fails the node",
+  graph: {
+    nodes: [{expression: "a", inputField: "a +", fields: {n: "1"}}],
+  },
+  cases: [
+    [{a: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "an inputField that fails at runtime fails the node",
+  graph: {
+    nodes: [{expression: "a", inputField: "x + y", fields: {n: "1"}}],
+  },
+  cases: [
+    [{x: 1, y: "s"}, "!error"],
+    [{x: 1, y: 2}, {n: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// outputPath writes the node's result under a dotted path.
+
+{
+  name: "outputPath with a single segment",
+  graph: {
+    nodes: [{expression: "a", outputPath: "result", fields: {n: "v + 1", s: "'x'"}}],
+  },
+  cases: [
+    [{v: 1}, {result: {n: 2, s: "x"}}],
+    [{v: 0, result: "old"}, {result: {n: 1, s: "x"}}],
+  ],
+}
+
+{
+  name: "outputPath with nested segments and dotted field keys",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res.deep", fields: {n: "v", "m.k": "v * 2"}}],
+  },
+  cases: [
+    [{v: 1}, {res: {deep: {n: 1, m: {k: 2}}}}],
+    [{v: -3}, {res: {deep: {n: -3, m: {k: -6}}}}],
+  ],
+}
+
+{
+  name: "outputPath on a node producing an empty object",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", fields: [["", "1"]]}],
+  },
+  cases: [
+    [{v: 1}, {res: {}}],
+    [{}, {res: {}}],
+  ],
+}
+
+{
+  name: "outputPath with a null result field keeps the null nested",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", fields: {n: "missing", m: "1"}}],
+  },
+  cases: [
+    [{}, {res: {n: null, m: 1}}],
+    [{missing: 2}, {res: {n: 2, m: 1}}],
+  ],
+}
+
+{
+  name: "outputPath segments that look like indexes are object keys",
+  graph: {
+    nodes: [{expression: "a", outputPath: "items.0", fields: {v: "1"}}],
+  },
+  cases: [
+    [{}, {items: {"0": {v: 1}}}],
+    [{items: [{v: 0}]}, {items: {"0": {v: 1}}}],
+  ],
+}
+
+{
+  name: "a node downstream reads through the outputPath",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "calc", fields: {total: "price * qty"}},
+      {expression: "b", fields: {label: "'total ' + string(calc.total)"}},
+    ],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {label: "total 6"}],
+    [{price: 0, qty: 9}, {label: "total 0"}],
+  ],
+}
+
+{
+  name: "two branches with different output paths merge side by side",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "left", fields: {v: "x + 1"}},
+      {expression: "b", outputPath: "right", fields: {v: "x + 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 0}, {left: {v: 1}, right: {v: 2}}],
+    [{x: 10}, {left: {v: 11}, right: {v: 12}}],
+  ],
+}
+
+{
+  name: "two branches sharing an output path prefix deep-merge",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "res.a", fields: {v: "1"}},
+      {expression: "b", outputPath: "res.b", fields: {v: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {res: {a: {v: 1}, b: {v: 2}}}],
+    [{res: 1}, {res: {a: {v: 1}, b: {v: 2}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// outputPath combined with passThrough.
+
+{
+  name: "outputPath with pass-through adds the result next to the input",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", passThrough: true, fields: {n: "v * 10"}}],
+  },
+  cases: [
+    [{v: 1}, {v: 1, res: {n: 10}}],
+    [{v: 2, other: [1]}, {v: 2, other: [1], res: {n: 20}}],
+  ],
+}
+
+{
+  name: "outputPath with pass-through deep-merges into an existing input object",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", passThrough: true, fields: {n: "v"}}],
+  },
+  cases: [
+    [{v: 1, res: {old: 1, n: 0}}, {v: 1, res: {old: 1, n: 1}}],
+    [{v: 1, res: {deep: {x: 1}}}, {v: 1, res: {deep: {x: 1}, n: 1}}],
+  ],
+}
+
+{
+  name: "outputPath with pass-through replaces a non-object at the path",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", passThrough: true, fields: {n: "v"}}],
+  },
+  cases: [
+    [{v: 1, res: 5}, {v: 1, res: {n: 1}}],
+    [{v: 1, res: "s"}, {v: 1, res: {n: 1}}],
+    [{v: 1, res: [1, 2]}, {v: 1, res: {n: 1}}],
+    [{v: 1, res: null}, {v: 1, res: {n: 1}}],
+  ],
+}
+
+{
+  name: "nested outputPath with pass-through keeps sibling keys at every level",
+  graph: {
+    nodes: [{expression: "a", outputPath: "a.b", passThrough: true, fields: {c: "1"}}],
+  },
+  cases: [
+    [{a: {x: 1, b: {y: 2}}}, {a: {x: 1, b: {y: 2, c: 1}}}],
+    [{a: {x: 1}}, {a: {x: 1, b: {c: 1}}}],
+    [{}, {a: {b: {c: 1}}}],
+  ],
+}
+
+{
+  name: "outputPath with pass-through and a null field deletes the key under the path",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", passThrough: true, fields: {gone: "null", kept: "1"}}],
+  },
+  cases: [
+    [{res: {gone: "x", other: 2}}, {res: {other: 2, kept: 1}}],
+    [{}, {res: {gone: null, kept: 1}}, "question: when the path is new, the nested null is materialized instead of omitted"],
+  ],
+}
+
+{
+  name: "outputPath with pass-through where the path equals an input key read by the node",
+  graph: {
+    nodes: [{expression: "a", outputPath: "counter", passThrough: true, fields: {value: "counter.value + 1"}}],
+  },
+  cases: [
+    [{counter: {value: 1, step: 1}}, {counter: {value: 2, step: 1}}],
+    [{counter: {value: 0}}, {counter: {value: 1}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// inputField combined with passThrough and outputPath.
+
+{
+  name: "inputField with pass-through overlays onto the full input, not the selection",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", passThrough: true, fields: {greeting: "'hi ' + name"}}],
+  },
+  cases: [
+    [{customer: {name: "x"}, flag: true}, {customer: {name: "x"}, flag: true, greeting: "hi x"}],
+    [{customer: {name: "y"}}, {customer: {name: "y"}, greeting: "hi y"}],
+  ],
+}
+
+{
+  name: "inputField with pass-through and a null-environment field",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", passThrough: true, fields: {name: "name"}}],
+  },
+  cases: [
+    [{customer: null, name: "outer"}, {}, "question: the scoped field reads null and that null deletes the outer input key with the same name"],
+    [{customer: {name: "inner"}, name: "outer"}, {customer: {name: "inner"}, name: "inner"}],
+  ],
+}
+
+{
+  name: "inputField and outputPath write a result back next to its source",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", outputPath: "customerResult", fields: {adult: "age >= 18"}}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customerResult: {adult: true}}],
+    [{customer: {age: 10}, x: 1}, {customerResult: {adult: false}}],
+  ],
+}
+
+{
+  name: "inputField, outputPath and pass-through enrich the selected object in place",
+  graph: {
+    nodes: [{expression: "a", inputField: "customer", outputPath: "customer", passThrough: true, fields: {adult: "age >= 18"}}],
+  },
+  cases: [
+    [{customer: {age: 20, name: "a"}}, {customer: {age: 20, name: "a", adult: true}}],
+    [{customer: {age: 10}, other: 1}, {customer: {age: 10, adult: false}, other: 1}],
+  ],
+}
+
+{
+  name: "inputField and outputPath on different nested paths",
+  graph: {
+    nodes: [{expression: "a", inputField: "req.body", outputPath: "res.body", passThrough: true, fields: {echo: "msg"}}],
+  },
+  cases: [
+    [{req: {body: {msg: "hi"}}}, {req: {body: {msg: "hi"}}, res: {body: {echo: "hi"}}}],
+    [{req: {body: {msg: "a"}}, res: {status: 200}}, {req: {body: {msg: "a"}}, res: {status: 200, body: {echo: "a"}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Decision tables with inputField and outputPath.
+
+{
+  name: "table with inputField matches against the selected object",
+  graph: {
+    nodes: [{table: "t", inputField: "applicant", inputs: ["age"], outputs: ["tier"], rules: [
+      ["> 18", "'adult'"],
+      ["", "'minor'"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {age: 20}}, {tier: "adult"}],
+    [{applicant: {age: 5}, age: 99}, {tier: "minor"}],
+    [{applicant: null}, {tier: "minor"}],
+    [{age: 40}, {tier: "minor"}],
+  ],
+}
+
+{
+  name: "table with inputField and outputPath",
+  graph: {
+    nodes: [{table: "t", inputField: "c", outputPath: "out", inputs: ["age"], outputs: ["tier"], rules: [
+      ["> 18", "'a'"],
+      ["", "'m'"],
+    ]}],
+  },
+  cases: [
+    [{c: {age: 20}}, {out: {tier: "a"}}],
+    [{c: null}, {out: {tier: "m"}}],
+    [{}, {out: {tier: "m"}}],
+  ],
+}
+
+{
+  name: "unmatched table with an outputPath writes a null that is dropped at the top level",
+  graph: {
+    nodes: [{table: "t", outputPath: "out", inputs: ["age"], outputs: ["tier"], rules: [["> 18", "'a'"]]}],
+  },
+  cases: [
+    [{age: 20}, {out: {tier: "a"}}],
+    [{age: 2}, {}],
+  ],
+}
+
+{
+  name: "unmatched table with a nested outputPath leaves a nested null",
+  graph: {
+    nodes: [{table: "t", outputPath: "res.out", inputs: ["age"], outputs: ["tier"], rules: [["> 18", "'a'"]]}],
+  },
+  cases: [
+    [{age: 20}, {res: {out: {tier: "a"}}}],
+    [{age: 2}, {res: {out: null}}, "question: an unmatched table under a nested path yields an explicit null, under a top-level path nothing"],
+  ],
+}
+
+{
+  name: "unmatched table with outputPath and pass-through keeps the input",
+  graph: {
+    nodes: [{table: "t", outputPath: "out", passThrough: true, inputs: ["age"], outputs: ["tier"], rules: [["> 18", "'a'"]]}],
+  },
+  cases: [
+    [{age: 20}, {age: 20, out: {tier: "a"}}],
+    [{age: 2}, {age: 2}],
+    [{age: 2, out: {tier: "old"}}, {age: 2}, "question: no matching rule deletes the existing value at the output path (null overlay)"],
+  ],
+}
+
+{
+  name: "collect table with outputPath nests the rows array",
+  graph: {
+    nodes: [{table: "t", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["v"], rules: [
+      ["> 0", "1"],
+      ["", "2"],
+    ]}],
+  },
+  cases: [
+    [{n: 1}, {rows: [{v: 1}, {v: 2}]}],
+    [{n: 0}, {rows: [{v: 2}]}],
+  ],
+}
+
+{
+  name: "collect table with inputField and outputPath",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "order", outputPath: "order.discounts", passThrough: true, inputs: ["total", "vip"], outputs: ["pct"], rules: [
+      ["> 100", "", "5"],
+      ["", "true", "10"],
+    ]}],
+  },
+  cases: [
+    [{order: {total: 200, vip: true}}, {order: {total: 200, vip: true, discounts: [{pct: 5}, {pct: 10}]}}],
+    [{order: {total: 50, vip: false}}, {order: {total: 50, vip: false, discounts: []}}],
+    [{order: {total: 150}}, {order: {total: 150, discounts: [{pct: 5}]}}],
+  ],
+}
+
+{
+  name: "table input columns with dotted fields relative to the inputField",
+  graph: {
+    nodes: [{table: "t", inputField: "data", outputPath: "result", inputs: ["person.age", "person.country"], outputs: ["eligible"], rules: [
+      [">= 18", "'US'", "true"],
+      ["", "", "false"],
+    ]}],
+  },
+  cases: [
+    [{data: {person: {age: 20, country: "US"}}}, {result: {eligible: true}}],
+    [{data: {person: {age: 20, country: "DE"}}}, {result: {eligible: false}}],
+    [{data: {}}, {result: {eligible: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Decision nodes with inputField and outputPath.
+
+{
+  name: "decision node with inputField passes the selection as the sub-decision input",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2", sawZ: "z != null"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: {x: 4}, z: 1}, {y: 8, sawZ: false}],
+    [{sub: {x: 0, z: 1}}, {y: 0, sawZ: true}],
+  ],
+}
+
+{
+  name: "decision node with inputField, outputPath and pass-through",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "r", passThrough: true}],
+  },
+  cases: [
+    [{sub: {x: 4}, z: 1}, {r: {y: 8}, sub: {x: 4}, z: 1}],
+    [{sub: {x: 1}, r: {old: true}}, {r: {old: true, y: 2}, sub: {x: 1}}],
+  ],
+}
+
+{
+  name: "decision node with inputField resolving to a non-object",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: 3}, "!error", "question: a field read on a number environment errors while the same read on a null environment yields null"],
+  ],
+}
+
+{
+  name: "decision node with inputField resolving to null",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {y: "x ?? 'none'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: null}, {y: "none"}],
+    [{}, {y: "none"}],
+    [{sub: {x: 1}}, {y: 1}],
+  ],
+}
+
+{
+  name: "decision node with outputPath only",
+  decisions: {
+    child: {nodes: [{expression: "e", passThrough: true, fields: {seen: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "child.result"}],
+  },
+  cases: [
+    [{a: 1}, {child: {result: {a: 1, seen: true}}}],
+    [{}, {child: {result: {seen: true}}}],
+  ],
+}
+
+{
+  name: "decision node with inputField whose sub-decision passes the selection through",
+  decisions: {
+    child: {nodes: [{expression: "e", passThrough: true, fields: {checked: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "item", outputPath: "item", passThrough: true}],
+  },
+  cases: [
+    [{item: {id: 1}, other: "x"}, {item: {id: 1, checked: true}, other: "x"}],
+    [{item: {}}, {item: {checked: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Empty attribute strings mean "not set".
+
+{
+  name: "empty inputField and outputPath strings are ignored",
+  graph: {
+    nodes: [{expression: "a", inputField: "", outputPath: "", fields: {n: "v"}}],
+  },
+  cases: [
+    [{v: 1}, {n: 1}],
+    [{v: "s", w: 2}, {n: "s"}],
+  ],
+}
+
+{
+  name: "empty attribute strings with pass-through",
+  graph: {
+    nodes: [{expression: "a", inputField: "", outputPath: "", passThrough: true, fields: {n: "v"}}],
+  },
+  cases: [
+    [{v: 1}, {v: 1, n: 1}],
+    [{v: "s", w: 2}, {v: "s", w: 2, n: "s"}],
+  ],
+}
+
+{
+  name: "explicit single execution mode behaves like the default",
+  graph: {
+    nodes: [{expression: "a", executionMode: "single", inputField: "items", outputPath: "out", fields: {n: "len($root)"}}],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {out: {n: 3}}],
+    [{items: []}, {out: {n: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Transform attributes at a join.
+
+{
+  name: "inputField at a join selects from the merged parents",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "pick", fields: {from: "'a'"}},
+      {expression: "b", fields: {other: "1"}},
+      {expression: "j", inputField: "pick", outputPath: "picked", fields: {from: "from"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{}, {picked: {from: "a"}}],
+    [{pick: {from: "input"}}, {picked: {from: "a"}}],
+  ],
+}

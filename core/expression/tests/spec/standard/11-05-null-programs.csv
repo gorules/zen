@@ -1,0 +1,314 @@
+expression (string);input (json 5);output (json 5);note
+# An assignment of null keeps the key, and later reads see null
+"y = x.a; y";{};null
+"y = x.a; y";{x: {a: 3}};3
+"y = x.a; y";{x: 5};null
+y = x.a;{};{y: null}
+"y = x.a; y ?? 'none'";{};'none'
+"y = x.a; y ?? 'none'";{x: {a: false}};false
+"y = x.a; y + 1";{};!error
+"y = x.a; y + 1";{x: {a: 1}};2
+"y = x.a; y == null";{x: {}};true
+"y = x.a; y.b.c";{x: {a: 1}};null
+"y = null; $root";{y: 1};{y: null}
+"y = x ?? 0; y + 1";{x: null};1
+"y = x ?? 0; y + 1";{x: 4};5
+"y = x ?? 0; y + 1";{x: 'a'};!error
+"y = x / 0; y";{x: 1};null
+"y = x / 0; y ?? 'div0'";{x: 1};'div0'
+"y = x / 0; y + 1";{x: 1};!error
+"y = x / z; y ?? 0";{x: 1, z: 0};0
+"y = x / z; y ?? 0";{x: 1, z: 4};0.25
+"y = x / z; y ?? 0";{x: 1};!error
+"y = [x, x.a]; y";{};[null, null]
+"y = {v: x}; y.v ?? 'd'";{};'d'
+"y = {v: x}; y";{};{v: null}
+# An error after assignments aborts the whole program
+"x = 1; 1 + {}";{};!error
+"x = 1; y = x + {}; x";{};!error
+"x = 1 + {}; 2";{};!error
+"x = 1; y = null; y + 1";{};!error
+"x = 1; y = null; y ?? x";{};1
+"x = 1; y = 2; upper(y)";{};!error
+"x = a; x.b = 1; x";{a: null};{b: 1}
+"x = a * 2; x";{a: null};!error
+"x = a * 2; x";{a: 3};6
+"x = a * 2; x";{};!error
+"x = a ?? 1; y = x * 2; y";{};2
+"x = a ?? 1; y = x * 2; y";{a: 5};10
+"x = a ?? 1; y = x * 2; y";{a: 'q'};!error
+"x = true ? 1 : 1 + {}; x";{};1
+"x = false and 1 + {}; x";{};false
+"x = null ?? 3; x";{};3
+"x = [1 + {}]; 1";{};!error
+"x = map([1, 2], # / 0); x";{};[null, null]
+"x = map([1, 2], # / 0); x[0] ?? 'z'";{};'z'
+# Dotted assignment into null, missing and non-object values
+"a.b = 1; a";{a: null};{b: 1}
+"a.b = 1; a";{};{b: 1}
+"a.b = 1; a";{a: 5};{b: 1}
+"a.b = 1; a";{a: {c: null}};{c: null, b: 1}
+"a.b = 1; a";{a: {b: null}};{b: 1}
+"x = a.b; a.b = 7; x";{a: null};null
+"x = a.b; a.b = 7; x";{};null
+"x = a.b; a.b = 7; x";{a: {b: null}};null
+"x = a.b; a.b = 7; x";{a: {b: 2}};2
+"a.n = (a.n ?? 0) + 1; a.n";{a: null};1
+"a.n = (a.n ?? 0) + 1; a.n";{};1
+"a.n = (a.n ?? 0) + 1; a.n";{a: {n: null}};1
+"a.n = (a.n ?? 0) + 1; a.n";{a: {n: 4}};5
+"a.n = (a.n ?? 0) + 1; a.n";{a: {n: 'x'}};!error
+"a.n = a.n + 1; a.n";{a: null};!error
+"a.n = a.n + 1; a.n";{a: {n: 4}};5
+"a.n = a.n + 1; a.n";{};!error
+# A null inside array and object literals is kept, an error is not
+[a, b.c, a ?? 0];{a: 1, b: {c: 2}};[1, 2, 1]
+[a, b.c, a ?? 0];{a: null, b: null};[null, null, 0]
+[a, b.c, a ?? 0];{};[null, null, 0]
+[a, b.c, a ?? 0];{a: 'x', b: 5};['x', null, 'x']
+{a: a, c: b.c};{a: 1, b: {c: 2}};{a: 1, c: 2}
+{a: a, c: b.c};{a: null, b: null};{a: null, c: null}
+{a: a, c: b.c};{};{a: null, c: null}
+{a: a, c: b.c};{a: 'x', b: 5};{a: 'x', c: null}
+[a, b.c + 1];{a: 1, b: {c: 2}};[1, 3]
+[a, b.c + 1];{a: null, b: null};!error
+[a, b.c + 1];{};!error
+[a, b.c + 1];{a: 'x', b: 5};!error
+{x: a, y: a * 2};{a: 1, b: {c: 2}};{x: 1, y: 2}
+{x: a, y: a * 2};{a: null, b: null};!error
+{x: a, y: a * 2};{};!error
+{x: a, y: a * 2};{a: 'x', b: 5};!error
+len([a, b, c]);{a: 1, b: {c: 2}};3
+len([a, b, c]);{a: null, b: null};3
+len([a, b, c]);{};3
+len([a, b, c]);{a: 'x', b: 5};3
+[a, b][1].c;{a: 1, b: {c: 2}};2
+[a, b][1].c;{a: null, b: null};null
+[a, b][1].c;{};null
+[a, b][1].c;{a: 'x', b: 5};null
+{k: a}.k ?? 9;{a: 1, b: {c: 2}};1;bug: postfix access works on a parenthesized object literal but not a bare one
+{k: a}.k ?? 9;{a: null, b: null};9;bug: postfix access works on a parenthesized object literal but not a bare one
+{k: a}.k ?? 9;{};9;bug: postfix access works on a parenthesized object literal but not a bare one
+{k: a}.k ?? 9;{a: 'x', b: 5};'x';bug: postfix access works on a parenthesized object literal but not a bare one
+({k: a}).k ?? 9;{a: 1, b: {c: 2}};1
+({k: a}).k ?? 9;{a: null, b: null};9
+({k: a}).k ?? 9;{};9
+({k: a}).k ?? 9;{a: 'x', b: 5};'x'
+[[a]][0][0] ?? 9;{a: 1, b: {c: 2}};1
+[[a]][0][0] ?? 9;{a: null, b: null};9
+[[a]][0][0] ?? 9;{};9
+[[a]][0][0] ?? 9;{a: 'x', b: 5};'x'
+{[a]: 1};{a: 'k'};{k: 1}
+{[a]: 1};{a: null};{null: 1};question: a null computed key becomes the string 'null'
+{[a]: 1};{};{null: 1};question: a null computed key becomes the string 'null'
+{[a]: 1};{a: 2};{'2': 1}
+# Templates interpolate null as the text null and fail on errors inside an interpolation
+`${n} (${age})`;{n: 'Ann', age: 30};'Ann (30)'
+`${n} (${age})`;{n: 'Ann', age: null};'Ann (null)'
+`${n} (${age})`;{n: 'Ann'};'Ann (null)'
+`${n} (${age})`;{};'null (null)'
+`${n} (${age})`;{n: ['A'], age: 1};!error
+`${n} (${age})`;{n: 'Ann', age: 2.50};'Ann (2.50)'
+`${n ?? '?'} (${age ?? '-'})`;{n: 'Ann', age: 30};'Ann (30)'
+`${n ?? '?'} (${age ?? '-'})`;{n: 'Ann', age: null};'Ann (-)'
+`${n ?? '?'} (${age ?? '-'})`;{n: 'Ann'};'Ann (-)'
+`${n ?? '?'} (${age ?? '-'})`;{};'? (-)'
+`${n ?? '?'} (${age ?? '-'})`;{n: ['A'], age: 1};!error
+`${n ?? '?'} (${age ?? '-'})`;{n: 'Ann', age: 2.50};'Ann (2.50)'
+`${n} is ${age + 1}`;{n: 'Ann', age: 30};'Ann is 31'
+`${n} is ${age + 1}`;{n: 'Ann', age: null};!error
+`${n} is ${age + 1}`;{n: 'Ann'};!error
+`${n} is ${age + 1}`;{};!error
+`${n} is ${age + 1}`;{n: ['A'], age: 1};!error
+`${n} is ${age + 1}`;{n: 'Ann', age: 2.50};'Ann is 3.50'
+`${age == null ? 'unknown' : age}`;{n: 'Ann', age: 30};'30'
+`${age == null ? 'unknown' : age}`;{n: 'Ann', age: null};'unknown'
+`${age == null ? 'unknown' : age}`;{n: 'Ann'};'unknown'
+`${age == null ? 'unknown' : age}`;{};'unknown'
+`${age == null ? 'unknown' : age}`;{n: ['A'], age: 1};'1'
+`${age == null ? 'unknown' : age}`;{n: 'Ann', age: 2.50};'2.50'
+`${upper(n)}`;{n: 'Ann', age: 30};'ANN'
+`${upper(n)}`;{n: 'Ann', age: null};'ANN'
+`${upper(n)}`;{n: 'Ann'};'ANN'
+`${upper(n)}`;{};!error
+`${upper(n)}`;{n: ['A'], age: 1};!error
+`${upper(n)}`;{n: 'Ann', age: 2.50};'ANN'
+`${type(age)}`;{n: 'Ann', age: 30};'number'
+`${type(age)}`;{n: 'Ann', age: null};'null'
+`${type(age)}`;{n: 'Ann'};'null'
+`${type(age)}`;{};'null'
+`${type(age)}`;{n: ['A'], age: 1};'number'
+`${type(age)}`;{n: 'Ann', age: 2.50};'number'
+`${age / 0}`;{n: 'Ann', age: 30};'null'
+`${age / 0}`;{n: 'Ann', age: null};!error
+`${age / 0}`;{n: 'Ann'};!error
+`${age / 0}`;{};!error
+`${age / 0}`;{n: ['A'], age: 1};'null'
+`${age / 0}`;{n: 'Ann', age: 2.50};'null'
+`${n}` == 'null';{n: 'Ann', age: 30};false
+`${n}` == 'null';{n: 'Ann', age: null};false
+`${n}` == 'null';{n: 'Ann'};false
+`${n}` == 'null';{};true
+`${n}` == 'null';{n: ['A'], age: 1};!error
+`${n}` == 'null';{n: 'Ann', age: 2.50};false
+# String concatenation with null is an error; string() and templates are the null-safe forms
+s + t;{s: 'a', t: 'b'};'ab'
+s + t;{s: 'a', t: null};!error
+s + t;{s: 'a'};!error
+s + t;{t: 'b'};!error
+s + t;{s: 'a', t: 1};!error
+s + (t ?? '');{s: 'a', t: 'b'};'ab'
+s + (t ?? '');{s: 'a', t: null};'a'
+s + (t ?? '');{s: 'a'};'a'
+s + (t ?? '');{t: 'b'};!error
+s + (t ?? '');{s: 'a', t: 1};!error
+(s ?? '') + (t ?? '');{s: 'a', t: 'b'};'ab'
+(s ?? '') + (t ?? '');{s: 'a', t: null};'a'
+(s ?? '') + (t ?? '');{s: 'a'};'a'
+(s ?? '') + (t ?? '');{t: 'b'};'b'
+(s ?? '') + (t ?? '');{s: 'a', t: 1};!error
+s + string(t);{s: 'a', t: 'b'};'ab'
+s + string(t);{s: 'a', t: null};'anull'
+s + string(t);{s: 'a'};'anull'
+s + string(t);{t: 'b'};!error
+s + string(t);{s: 'a', t: 1};'a1'
+`${s}${t}`;{s: 'a', t: 'b'};'ab'
+`${s}${t}`;{s: 'a', t: null};'anull'
+`${s}${t}`;{s: 'a'};'anull'
+`${s}${t}`;{t: 'b'};'nullb'
+`${s}${t}`;{s: 'a', t: 1};'a1'
+t == null ? s : s + t;{s: 'a', t: 'b'};'ab'
+t == null ? s : s + t;{s: 'a', t: null};'a'
+t == null ? s : s + t;{s: 'a'};'a'
+t == null ? s : s + t;{t: 'b'};!error
+t == null ? s : s + t;{s: 'a', t: 1};!error
+# Member access chains mixing computed keys, indexes and nulls
+m[k][i].v;{m: {x: [{v: 1}]}, k: 'x', i: 0};1
+m[k][i].v;{m: {x: [{v: 1}]}, k: 'y', i: 0};null
+m[k][i].v;{m: {x: [{v: 1}]}, k: null, i: 0};null
+m[k][i].v;{m: {x: [{v: 1}]}, k: 'x', i: 1};null
+m[k][i].v;{m: {x: [{v: 1}]}, k: 'x'};null
+m[k][i].v;{m: {x: [null]}, k: 'x', i: 0};null
+m[k][i].v;{m: null, k: 'x', i: 0};null
+m[k][i].v;{};null
+m[k][i].v ?? -1;{m: {x: [{v: 1}]}, k: 'x', i: 0};1
+m[k][i].v ?? -1;{m: {x: [{v: 1}]}, k: 'y', i: 0};-1
+m[k][i].v ?? -1;{m: {x: [{v: 1}]}, k: null, i: 0};-1
+m[k][i].v ?? -1;{m: {x: [{v: 1}]}, k: 'x', i: 1};-1
+m[k][i].v ?? -1;{m: {x: [{v: 1}]}, k: 'x'};-1
+m[k][i].v ?? -1;{m: {x: [null]}, k: 'x', i: 0};-1
+m[k][i].v ?? -1;{m: null, k: 'x', i: 0};-1
+m[k][i].v ?? -1;{};-1
+m[k][i].v + 1;{m: {x: [{v: 1}]}, k: 'x', i: 0};2
+m[k][i].v + 1;{m: {x: [{v: 1}]}, k: 'y', i: 0};!error
+m[k][i].v + 1;{m: {x: [{v: 1}]}, k: null, i: 0};!error
+m[k][i].v + 1;{m: {x: [{v: 1}]}, k: 'x', i: 1};!error
+m[k][i].v + 1;{m: {x: [{v: 1}]}, k: 'x'};!error
+m[k][i].v + 1;{m: {x: [null]}, k: 'x', i: 0};!error
+m[k][i].v + 1;{m: null, k: 'x', i: 0};!error
+m[k][i].v + 1;{};!error
+m[k ?? 'x'][i ?? 0].v;{m: {x: [{v: 1}]}, k: 'x', i: 0};1
+m[k ?? 'x'][i ?? 0].v;{m: {x: [{v: 1}]}, k: 'y', i: 0};null
+m[k ?? 'x'][i ?? 0].v;{m: {x: [{v: 1}]}, k: null, i: 0};1
+m[k ?? 'x'][i ?? 0].v;{m: {x: [{v: 1}]}, k: 'x', i: 1};null
+m[k ?? 'x'][i ?? 0].v;{m: {x: [{v: 1}]}, k: 'x'};1
+m[k ?? 'x'][i ?? 0].v;{m: {x: [null]}, k: 'x', i: 0};null
+m[k ?? 'x'][i ?? 0].v;{m: null, k: 'x', i: 0};null
+m[k ?? 'x'][i ?? 0].v;{};null
+m[k][i];{m: {x: [{v: 1}]}, k: 'x', i: 0};{v: 1}
+m[k][i];{m: {x: [{v: 1}]}, k: 'y', i: 0};null
+m[k][i];{m: {x: [{v: 1}]}, k: null, i: 0};null
+m[k][i];{m: {x: [{v: 1}]}, k: 'x', i: 1};null
+m[k][i];{m: {x: [{v: 1}]}, k: 'x'};null
+m[k][i];{m: {x: [null]}, k: 'x', i: 0};null
+m[k][i];{m: null, k: 'x', i: 0};null
+m[k][i];{};null
+# Slices of null are errors while indexes of null are null
+xs[0];{xs: [1, 2, 3]};1
+xs[0];{xs: null};null
+xs[0];{};null
+xs[0];{xs: 'abc'};'a'
+xs[0:1];{xs: [1, 2, 3]};[1, 2]
+xs[0:1];{xs: null};!error;question: slicing null errors while indexing null yields null
+xs[0:1];{};!error;question: slicing null errors while indexing null yields null
+xs[0:1];{xs: 'abc'};'ab'
+(xs ?? [0, 0])[0:1];{xs: [1, 2, 3]};[1, 2]
+(xs ?? [0, 0])[0:1];{xs: null};[0, 0]
+(xs ?? [0, 0])[0:1];{};[0, 0]
+(xs ?? [0, 0])[0:1];{xs: 'abc'};'ab'
+xs[0:1] ?? [];{xs: [1, 2, 3]};[1, 2]
+xs[0:1] ?? [];{xs: null};!error;question: slicing null errors while indexing null yields null
+xs[0:1] ?? [];{};!error;question: slicing null errors while indexing null yields null
+xs[0:1] ?? [];{xs: 'abc'};'ab'
+# A division-by-zero null reaching other operators and functions
+(x / y) ^ 2;{x: 1, y: 0};!error
+2 ^ (x / y);{x: 1, y: 0};!error
+(x / y) % 2;{x: 1, y: 0};!error
+abs(x / y);{x: 1, y: 0};!error
+abs(x / y);{x: -1, y: 2};0.5
+len([x / y]);{x: 1, y: 0};1
+[x / y] == [null];{x: 1, y: 0};true;bug: == on arrays/objects is always false, even for a value compared with itself (Variable itself itself implements deep equality)
+(x / y) in [null, 0];{x: 1, y: 0};true
+(x / y) in [null, 0];{x: 0, y: 1};true
+(x / y) in [null, 0];{x: 1, y: 1};false
+count([1 / 0, 2 / 0, 1 / 1], # == null);;2
+filter([1, 0, 2], 1 / # > 0);;!error
+filter([1, 0, 2], (1 / #) != null);;[1, 2]
+map([1, 0, 2], (1 / #) ?? 'inf');;[1, 'inf', 0.5]
+some([0, 1], 1 / # > 0);;!error
+some([1, 0], 1 / # > 0);;true
+max(map([1, 0, 4], (8 / #) ?? 0));;8
+# Coalesced defaults feeding functions
+max([x ?? 0, y ?? 0]);{y: 3};3
+max([x ?? 0, y ?? 0]);{x: -1, y: null};0
+max([x ?? 0, y ?? 0]);{x: 'a'};!error
+min(map(xs, # ?? 99));{xs: [null, 5]};5
+min(map(xs, # ?? 99));{xs: [null]};99
+min(map(xs, # ?? 99));{xs: []};!error
+median(map(xs, # ?? 0));{xs: [null, 5, 1]};1
+mode(xs ?? [1]);{};1
+avg(xs ?? [1, 2]);{};1.5
+avg(xs ?? [1, 2]);{xs: null};1.5
+avg(xs ?? [1, 2]);{xs: [4]};4
+fuzzyMatch(s ?? '', 'a');{};0
+extract(s ?? '', '(a)');{};[]
+extract(s ?? '', '(a)');{s: 'xa'};['a', 'a']
+d(x ?? 0).year();{};1970
+string(x ?? null);{};'null'
+bool(x ?? 'true');{};true
+bool(x ?? 'true');{x: false};false
+(x ?? 1) ^ (y ?? 2);{};1
+(x ?? 1) ^ (y ?? 2);{x: 3};9
+not (x ?? true);{};false
+not (x ?? true);{x: false};true
+-(x ?? 1);{};-1
+-(x ?? 1);{x: null};-1
+-(x ?? 1);{x: 2};-2
+`${(x ?? [])[0]}`;{};'null'
+`${len(x ?? '')}`;{};'0'
+`${len(x ?? '')}`;{x: 'abc'};'3'
+# Reassigning null and extending null in a program
+"x = null; x.y.z";{};null
+"x = null; x[0]";{};null
+"x = null; x[0:1]";{};!error
+"x = {}; x.a.b = 1; x";{};{a: {b: 1}}
+"x.a = null; x.a.b = 1; x";{};{a: {b: 1}}
+"x.a = 1; x.a = null; x";{};{a: null}
+"x.a = 1; x.a = null; x.a ?? 'gone'";{};'gone'
+"x = 1; x = null; x ?? 2";{};2
+"x = 1; x = x / 0; x";{};null
+"x = [1, null]; x[1] ?? x[0]";{};1
+"x = m[k]; x ?? 'nokey'";{m: {a: 1}, k: 'a'};1
+"x = m[k]; x ?? 'nokey'";{m: {a: 1}, k: 'b'};'nokey'
+"x = m[k]; x ?? 'nokey'";{m: {a: 1}};'nokey'
+"x = m[k]; x ?? 'nokey'";{k: 'a'};'nokey'
+# $root reads follow the same null rules
+$root.a.b ?? 1;{a: null};1
+$root.a.b ?? 1;{a: {b: 0}};0
+$root.a.b + 1;{};!error
+$root[k] ?? 'd';{};'d'
+$root[k] ?? 'd';{k: null};'d'
+$root[k] ?? 'd';{k: 'k'};'k'
+$root.xs[0].a ?? -1;{xs: [{a: 3}]};3
+$root.xs[0].a ?? -1;{xs: []};-1
+$root.xs[0].a ?? -1;{xs: null};-1

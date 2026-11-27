@@ -1,10 +1,14 @@
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any, Optional, TypedDict, Literal, TypeAlias, Union
 
 
 class DecisionEvaluateOptions(TypedDict, total=False):
     max_depth: int
-    trace: bool
+    trace: Union[bool, Literal["v1", "legacy"]]
+    now: Union[int, str, datetime]
+    timezone: str
+    seed: Union[int, str]
 
 
 class EvaluateResponse(TypedDict):
@@ -39,6 +43,7 @@ ZenLoaderCallback: TypeAlias = Callable[[str], Union[str, dict, ZenDecisionConte
 class ZenEngineOptions(TypedDict, total=False):
     loader: Union[ZenLoaderCallback, ZenLoaderConfig]
     customHandler: Callable
+    version: Literal[1, 2]
 
 
 class EvaluateBatchRequest(TypedDict):

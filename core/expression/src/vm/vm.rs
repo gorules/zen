@@ -28,6 +28,7 @@ pub struct LoopScope {
 pub struct VM {
     scopes: Vec<LoopScope>,
     stack: Vec<Variable>,
+    now: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl VM {
@@ -35,12 +36,18 @@ impl VM {
         Self {
             scopes: Default::default(),
             stack: Default::default(),
+            now: None,
         }
+    }
+
+    pub fn set_now(&mut self, now: Option<chrono::DateTime<chrono::Utc>>) {
+        self.now = now;
     }
 
     pub fn run(&mut self, bytecode: &[Opcode], scope: &Scope) -> VMResult<Variable> {
         self.stack.clear();
         self.scopes.clear();
+        let _pinned = crate::vm::date::PinnedNow::enter(self.now);
 
         let s = VMInner::new(bytecode, &mut self.stack, &mut self.scopes).run(scope);
         Ok(s?)
@@ -687,7 +694,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     let str_capacity = parts
                         .iter()
-                        .fold(separator.len() * (parts.len() - 1), |acc, s| acc + s.len());
+                        .fold(separator.len() * parts.len().saturating_sub(1), |acc, s| {
+                            acc + s.len()
+                        });
 
                     let mut s = StdString::with_capacity(str_capacity);
                     let mut it = parts.into_iter().peekable();

@@ -1,0 +1,138 @@
+expression (string);input (json 5);output (json 5);note
+# Name validation
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'Ana'};true
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: ' Zoë Ødegaard '};true
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'Jean-Luc Picard'};true
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'R2D2'};false
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'J. R. R. Tolkien'};true
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'Ö'};false;bug: len counts UTF-8 bytes instead of characters
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: '山田太郎'};true
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: 'Anna_Maria'};false
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: ''};false
+len(trim(name)) >= 2 and matches(trim(name), '^[\p{L} .-]+$');{name: null};!error
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'Ana'};true
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: ' Li '};true
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'X'};false
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'Ö'};false;bug: len counts UTF-8 bytes instead of characters
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'O\'Brien-Smith'};true
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'R2D2'};false
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'user_1'};false
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: '   '};false
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 'Nguyễn Văn A'};true
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: null};!error
+len(trim(name)) >= 2 and not matches(name, '[0-9_@#$%]');{name: 42};!error
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: 'Jo'};'too-short'
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: 'Joe'};'ok'
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'};'ok'
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'};'too-long'
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: '李明'};'too-short';bug: len counts UTF-8 bytes instead of characters
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: 'éééééééééééééééééééééééééééééééééééééééé'};'ok';bug: len counts UTF-8 bytes instead of characters
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: ''};'too-short'
+len(fullName) > 70 ? 'too-long' : len(fullName) < 3 ? 'too-short' : 'ok';{fullName: null};!error
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: 'mary jane watson'};['M', 'J', 'W']
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: ' Ada Lovelace '};['A', 'L']
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: 'Prince'};['P']
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: 'élodie durand'};['É', 'D'];bug: string indexing uses UTF-8 byte offsets instead of characters
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: 'a  b'};!error
+map(split(trim(fullName), ' '), upper(#[0]));{fullName: ''};!error
+# Email and phone formats
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'jane.doe@example.com'};true
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: ' JANE@EXAMPLE.CO.UK '};true
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'jane@localhost'};false
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'jane@@example.com'};false
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'a+tag@sub.example.io'};true
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'jane doe@example.com'};false
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: '@example.com'};false
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: 'x@y.z'};false
+matches(lower(trim(email)), '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$');{email: null};!error
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '+14155552671'};'e164'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '+4915112345678'};'e164'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '+0123456789'};'needs-normalizing'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '(415) 555-2671'};'needs-normalizing'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '555-2671'};'needs-normalizing'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '555-26'};'invalid'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '+1 415 555 2671'};'needs-normalizing'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: 'call me'};'invalid'
+matches(phone, '^\+[1-9][0-9]{7,14}$') ? 'e164' : matches(phone, '^[0-9 ()+-]{7,20}$') ? 'needs-normalizing' : 'invalid';{phone: '+1234567890123456'};'needs-normalizing'
+# Age and document validity
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '2007-03-20', country: 'DE'};true
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '2007-03-21', country: 'DE'};false
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '2004-03-20', country: 'US'};true
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '2004-03-21', country: 'US'};false
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '2007-02-28', country: 'GB'};true
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: '1950-01-01'};true
+d().diff(d(dob), 'year') >= (country == 'US' ? 21 : 18);{dob: 'n/a', country: 'DE'};!error
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2030-01-01'};'valid'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2025-06-20 10:15:31'};'valid'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2025-06-20 10:15:30'};'expiring-soon'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2025-06-20'};'expiring-soon'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2025-03-20 10:15:31'};'expiring-soon'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2025-03-20'};'expired'
+d(expiresOn) > d().add(3, 'month') ? 'valid' : d(expiresOn) > d() ? 'expiring-soon' : 'expired';{expiresOn: '2020-12-31'};'expired'
+{age: d(asOf).diff(d(dob), 'year'), adult: d(asOf).diff(d(dob), 'year') >= 18, birthday: d(dob).format('%d.%m.')};{dob: '2000-02-29', asOf: '2018-02-28'};{age: 18, adult: true, birthday: '29.02.'}
+{age: d(asOf).diff(d(dob), 'year'), adult: d(asOf).diff(d(dob), 'year') >= 18, birthday: d(dob).format('%d.%m.')};{dob: '2000-02-29', asOf: '2018-03-01'};{age: 18, adult: true, birthday: '29.02.'}
+{age: d(asOf).diff(d(dob), 'year'), adult: d(asOf).diff(d(dob), 'year') >= 18, birthday: d(dob).format('%d.%m.')};{dob: '1999-12-31', asOf: '2017-12-31'};{age: 18, adult: true, birthday: '31.12.'}
+{age: d(asOf).diff(d(dob), 'year'), adult: d(asOf).diff(d(dob), 'year') >= 18, birthday: d(dob).format('%d.%m.')};{dob: '1999-12-31', asOf: '2017-12-30'};{age: 17, adult: false, birthday: '31.12.'}
+{age: d(asOf).diff(d(dob), 'year'), adult: d(asOf).diff(d(dob), 'year') >= 18, birthday: d(dob).format('%d.%m.')};{dob: '2010-06-15', asOf: '2025-03-20'};{age: 14, adult: false, birthday: '15.06.'}
+# Masking identifiers
+'***-**-' + ssn[len(ssn) - 4:];{ssn: '123-45-6789'};'***-**-6789'
+'***-**-' + ssn[len(ssn) - 4:];{ssn: '123456789'};'***-**-6789'
+'***-**-' + ssn[len(ssn) - 4:];{ssn: '6789'};'***-**-6789'
+'***-**-' + ssn[len(ssn) - 4:];{ssn: null};!error
+'**** **** **** ' + card[len(card) - 4:];{card: '4111111111111111'};'**** **** **** 1111'
+'**** **** **** ' + card[len(card) - 4:];{card: '378282246310005'};'**** **** **** 0005'
+'**** **** **** ' + card[len(card) - 4:];{card: '5555555555554444'};'**** **** **** 4444'
+'**** **** **** ' + card[len(card) - 4:];{card: '1234'};'**** **** **** 1234'
+`${upper(email[0])}***@${split(email, '@')[1]}`;{email: 'jane.doe@example.com'};'J***@example.com'
+`${upper(email[0])}***@${split(email, '@')[1]}`;{email: 'x@y.io'};'X***@y.io'
+`${upper(email[0])}***@${split(email, '@')[1]}`;{email: 'no-at'};'N***@null'
+`${upper(email[0])}***@${split(email, '@')[1]}`;{email: 'élise@exemple.fr'};'É***@exemple.fr';bug: string indexing uses UTF-8 byte offsets instead of characters
+# Luhn checksum over card numbers
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '4111111111111111'};true
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '4111111111111112'};false
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '79927398713'};true
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '79927398710'};false
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '378282246310005'};true
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '6011111111111117'};true
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '0'};true
+sum(map([0..len(s)), # % 2 == 1 ? (number(s[len(s) - 1 - #]) * 2 > 9 ? number(s[len(s) - 1 - #]) * 2 - 9 : number(s[len(s) - 1 - #]) * 2) : number(s[len(s) - 1 - #]))) % 10 == 0;{s: '4111-1111'};!error
+# IBAN shape checks
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'DE89370400440532013000'};true
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: ' de89370400440532013000 '};true
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'DE8937040044053201300'};false
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'NL91ABNA0417164300'};true
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'GB29NWBK60161331926819'};true
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'XX29NWBK60161331926819'};false
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: 'DE89 3704 0044 0532 0130 00'};false
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: ''};false
+"s = upper(trim(iban)); parts = extract(s, '^([A-Z]{2})[0-9]{2}[A-Z0-9]+$'); len(parts) == 2 and len(s) == ({DE: 22, FR: 27, GB: 22, NL: 18, ES: 24})[parts[1]]";{iban: null};!error
+# Address completeness with dynamic keys
+filter(['line1', 'city', 'postcode', 'country'], trim(address[#] ?? '') == '');{address: {line1: '1 Main St', city: 'Springfield', postcode: '12345', country: 'US'}};[]
+filter(['line1', 'city', 'postcode', 'country'], trim(address[#] ?? '') == '');{address: {line1: '1 Main St', city: ' ', country: 'US'}};['city', 'postcode']
+filter(['line1', 'city', 'postcode', 'country'], trim(address[#] ?? '') == '');{address: {}};['line1', 'city', 'postcode', 'country']
+filter(['line1', 'city', 'postcode', 'country'], trim(address[#] ?? '') == '');{address: null};['line1', 'city', 'postcode', 'country']
+filter(['line1', 'city', 'postcode', 'country'], trim(address[#] ?? '') == '');{address: {line1: 'x', city: 'y', postcode: 12345, country: 'US'}};!error
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'US', address: {line1: 'a', city: 'b', country: 'US', postcode: '94105'}};true
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'US', address: {line1: 'a', city: 'b', country: 'US'}};false
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'CA', address: {line1: 'a', city: 'b', country: 'CA', postcode: 'K1A 0B1'}};true
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'FR', address: {line1: 'a', city: 'b', country: 'FR'}};true
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'FR', address: {line1: 'a', country: 'FR'}};false
+all(['line1', 'city', 'country'], (address[#] ?? '') != '') and (country in ['US', 'CA'] ? matches(address.postcode ?? '', '^[0-9A-Z -]{5,7}$') : true);{country: 'US', address: {line1: 'a', city: 'b', country: 'US', postcode: '9410'}};false
+# Screening outcome objects
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'DE'};{status: 'clear', hits: []}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'DE', pep: true};{status: 'enhanced-due-diligence', hits: ['pep']}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'IR'};{status: 'enhanced-due-diligence', hits: ['country']}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'US', sanctionsHit: true, pep: true};{status: 'reject', hits: ['sanctions', 'pep']}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'KP', sanctionsHit: false, pep: false};{status: 'enhanced-due-diligence', hits: ['country']}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: null, pep: null};{status: 'clear', hits: []}
+"hits = filter(['sanctions', 'pep', 'country'], # == 'sanctions' ? sanctionsHit ?? false : # == 'pep' ? pep ?? false : country in ['IR', 'KP', 'SY', 'CU']); {status: len(hits) == 0 ? 'clear' : contains(hits, 'sanctions') ? 'reject' : 'enhanced-due-diligence', hits: hits}";{country: 'DE', pep: 'yes'};!error
+`KYC ${upper(level)}: ${first} ${upper(last)}, born ${d(dob).format('%Y-%m-%d')}, ${len(docs)} document(s)`;{level: 'basic', first: 'Sam', last: 'Hill', dob: '1990-01-02', docs: ['passport']};'KYC BASIC: Sam HILL, born 1990-01-02, 1 document(s)'
+`KYC ${upper(level)}: ${first} ${upper(last)}, born ${d(dob).format('%Y-%m-%d')}, ${len(docs)} document(s)`;{level: 'full', first: 'Łucja', last: 'Wąs', dob: '1985-12-31', docs: []};'KYC FULL: Łucja WĄS, born 1985-12-31, 0 document(s)'
+`KYC ${upper(level)}: ${first} ${upper(last)}, born ${d(dob).format('%Y-%m-%d')}, ${len(docs)} document(s)`;{level: 'full', first: 'A', last: 'B', dob: 'x', docs: []};'KYC FULL: A B, born Invalid date, 0 document(s)'
+`KYC ${upper(level)}: ${first} ${upper(last)}, born ${d(dob).format('%Y-%m-%d')}, ${len(docs)} document(s)`;{level: null, first: 'A', last: 'B', dob: '1990-01-01', docs: []};!error
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'John', last: 'Smith', dob: '1980-01-01'}, b: {first: 'JOHN ', last: 'smith', dob: '1980-01-01'}};true
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'John', last: 'Smith', dob: '1980-01-01'}, b: {first: 'Jon', last: 'Smith', dob: '1980-01-01'}};false
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'John', last: 'Smith', dob: '1980-01-01'}, b: {first: 'John', last: 'Smith', dob: '1980-01-02'}};false
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'ÉMILE', last: 'ZOLA', dob: '1840-04-02'}, b: {first: 'émile', last: 'zola', dob: '1840-04-02'}};true
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'x', last: 'y'}, b: {first: 'x', last: 'y'}};true
+lower(trim(a.first)) == lower(trim(b.first)) and lower(trim(a.last)) == lower(trim(b.last)) and a.dob == b.dob;{a: {first: 'x', last: null}, b: {first: 'x', last: 'y'}};!error

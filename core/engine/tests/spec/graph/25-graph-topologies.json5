@@ -1,0 +1,892 @@
+// Graph topologies: diamonds, wide fan-outs, long chains, dead ends and nodes reachable by
+// several paths through switches. A node runs once, after all its parents have run, with
+// the merge of its parents' outputs (the first declared edge into it wins conflicts).
+// The walk stops at the first output node it reaches; the result merges every visited
+// leaf. Switches prune the edges of untaken branches and every node left without parents.
+
+// ---------------------------------------------------------------------------------------
+// Diamonds with different apexes, middles and depths.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a diamond with a table and an expression in the middle",
+  graph: {
+    nodes: [
+      {expression: "top", fields: {amount: "qty * price", tier: "tier"}},
+      {table: "rate", inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.1"],
+        ["'silver'", "0.05"],
+        ["", "0"],
+      ]},
+      {expression: "ship", fields: {shipping: "amount >= 100 ? 0 : 9"}},
+      {expression: "bottom", fields: {shipping: "shipping", rate: "rate"}},
+    ],
+    edges: ["input -> top", "top -> rate -> bottom", "top -> ship -> bottom", "bottom -> output"],
+  },
+  cases: [
+    [{qty: 2, price: 50, tier: "gold"}, {shipping: 0, rate: 0.1}],
+    [{qty: 1, price: 50, tier: "silver"}, {shipping: 9, rate: 0.05}],
+    [{qty: 1, price: 50}, {shipping: 9, rate: 0}],
+    [{qty: 0, price: 0, tier: "gold"}, {shipping: 9, rate: 0.1}],
+  ],
+}
+
+{
+  name: "a diamond with arms of different lengths",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "x"}},
+      {expression: "short", fields: {s: "v + 1"}},
+      {expression: "l1", fields: {l: "v * 2"}},
+      {expression: "l2", fields: {l: "l * 2"}},
+      {expression: "l3", fields: {l: "l * 2"}},
+      {expression: "join", fields: {s: "s", l: "l"}},
+    ],
+    edges: ["input -> a", "a -> short -> join", "a -> l1 -> l2 -> l3 -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 1}, {s: 2, l: 8}],
+    [{x: 0}, {s: 1, l: 0}],
+    [{x: -2.5}, {s: -1.5, l: -20}],
+  ],
+}
+
+{
+  name: "a three-armed diamond whose arms rewrite the same key",
+  graph: {
+    nodes: [
+      {expression: "top", passThrough: true, fields: {v: "1"}},
+      {expression: "a", passThrough: true, fields: {v: "v + 10", a: "true"}},
+      {expression: "b", passThrough: true, fields: {v: "v + 20", b: "true"}},
+      {expression: "c", passThrough: true, fields: {v: "v + 30", c: "true"}},
+      {expression: "join", passThrough: true, fields: {seen: "v"}},
+    ],
+    edges: ["input -> top", "top -> a", "top -> b", "top -> c", "b -> join", "c -> join", "a -> join", "join -> output"],
+  },
+  cases: [
+    [{}, {v: 21, a: true, b: true, c: true, seen: 21}],
+    [{v: 100, x: 1}, {v: 21, x: 1, a: true, b: true, c: true, seen: 21}],
+  ],
+}
+
+{
+  name: "a diamond whose apex is a switch taking both arms (collect)",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n < 100"]},
+      {expression: "lo", fields: {lo: "n"}},
+      {expression: "hi", fields: {hi: "100 - n"}},
+      {expression: "join", fields: {span: "(lo ?? 0) + (hi ?? 0)", both: "lo != null and hi != null"}},
+    ],
+    edges: ["input -> s", "s:0 -> lo -> join", "s:1 -> hi -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 30}, {span: 100, both: true}],
+    [{n: 200}, {span: 200, both: false}],
+    [{n: -5}, {span: 105, both: false}],
+    [{n: 0}, {span: 100, both: false}],
+  ],
+}
+
+{
+  name: "a diamond whose apex is the input and whose bottom is the output",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {a: "x + 1"}},
+      {expression: "b", fields: {b: "x + 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {a: 2, b: 3}],
+    [{x: 1.5}, {a: 2.5, b: 3.5}],
+  ],
+}
+
+{
+  name: "stacked diamonds: the bottom of one is the apex of the next",
+  graph: {
+    nodes: [
+      {expression: "a1", fields: {p: "x + 1"}},
+      {expression: "b1", fields: {q: "x * 2"}},
+      {expression: "m1", fields: {v: "p + q"}},
+      {expression: "a2", fields: {p: "v + 1"}},
+      {expression: "b2", fields: {q: "v * 2"}},
+      {expression: "m2", fields: {v: "p + q"}},
+      {expression: "a3", fields: {p: "v + 1"}},
+      {expression: "b3", fields: {q: "v * 2"}},
+      {expression: "m3", fields: {v: "p + q"}},
+    ],
+    edges: [
+      "input -> a1 -> m1", "input -> b1 -> m1",
+      "m1 -> a2 -> m2", "m1 -> b2 -> m2",
+      "m2 -> a3 -> m3", "m2 -> b3 -> m3",
+      "m3 -> output",
+    ],
+  },
+  cases: [
+    [{x: 0}, {v: 13}],
+    [{x: 1}, {v: 40}],
+    [{x: -1}, {v: -14}],
+  ],
+}
+
+{
+  name: "a diamond whose arms are sub-decisions",
+  decisions: {
+    left: {nodes: [{expression: "e", fields: {l: "x * 2"}}]},
+    right: {nodes: [{expression: "e", fields: {r: "x * 3"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "top", fields: {x: "x + 1"}},
+      {decision: "dl", key: "left"},
+      {decision: "dr", key: "right"},
+      {expression: "join", fields: {sum: "l + r"}},
+    ],
+    edges: ["input -> top", "top -> dl -> join", "top -> dr -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 0}, {sum: 5}],
+    [{x: 1}, {sum: 10}],
+  ],
+}
+
+{
+  name: "a diamond with one arm erroring fails the graph",
+  graph: {
+    nodes: [
+      {expression: "top", passThrough: true, fields: {}},
+      {expression: "ok", fields: {ok: "true"}},
+      {expression: "bad", fields: {bad: "date(d) > date('2020-01-01')"}},
+      {expression: "join", fields: {ok: "ok", bad: "bad"}},
+    ],
+    edges: ["input -> top", "top -> ok -> join", "top -> bad -> join", "join -> output"],
+  },
+  cases: [
+    [{d: "2021-01-01"}, {ok: true, bad: true}],
+    [{d: "2019-01-01"}, {ok: true, bad: false}],
+    [{d: "not a date"}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Wide fan-outs: six or more nodes in parallel from one parent, meeting at the output or
+// at a join node.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "six parallel nodes with disjoint keys meet at the output",
+  graph: {
+    nodes: [
+      {expression: "n1", fields: {sum: "a + b"}},
+      {expression: "n2", fields: {diff: "a - b"}},
+      {expression: "n3", fields: {prod: "a * b"}},
+      {expression: "n4", fields: {max: "max([a, b])"}},
+      {expression: "n5", fields: {min: "min([a, b])"}},
+      {expression: "n6", fields: {eq: "a == b"}},
+    ],
+    edges: [
+      "input -> n1 -> output", "input -> n2 -> output", "input -> n3 -> output",
+      "input -> n4 -> output", "input -> n5 -> output", "input -> n6 -> output",
+    ],
+  },
+  cases: [
+    [{a: 3, b: 2}, {sum: 5, diff: 1, prod: 6, max: 3, min: 2, eq: false}],
+    [{a: 2, b: 2}, {sum: 4, diff: 0, prod: 4, max: 2, min: 2, eq: true}],
+    [{a: -1, b: 0.5}, {sum: -0.5, diff: -1.5, prod: -0.5, max: 0.5, min: -1, eq: false}],
+  ],
+}
+
+{
+  name: "eight parallel nodes of mixed kinds meet at a join",
+  graph: {
+    nodes: [
+      {expression: "e1", fields: {e1: "v + 1"}},
+      {expression: "e2", fields: {e2: "v + 2"}},
+      {table: "t1", inputs: ["v"], outputs: ["t1"], rules: [["> 0", "'pos'"], ["", "'non'"]]},
+      {table: "t2", inputs: ["v"], outputs: ["t2"], rules: [["0", "'zero'"]]},
+      {function: "f1", source: """export const handler = async (input) => ({ f1: typeof input.v });"""},
+      {custom: "c1", kind: "config", config: {c1: "static"}},
+      {custom: "c2", kind: "render", config: {c2: "v={{ v }}"}},
+      {expression: "e3", outputPath: "nested", fields: {e3: "v * 3"}},
+      {expression: "join", passThrough: true, fields: {hasT2: "t2 != null"}},
+    ],
+    edges: [
+      "input -> e1 -> join", "input -> e2 -> join", "input -> t1 -> join", "input -> t2 -> join",
+      "input -> f1 -> join", "input -> c1 -> join", "input -> c2 -> join", "input -> e3 -> join",
+      "join -> output",
+    ],
+  },
+  cases: [
+    [{v: 1}, {e1: 2, e2: 3, t1: "pos", f1: "number", c1: "static", c2: "v=1", nested: {e3: 3}, hasT2: false}],
+    [{v: 0}, {e1: 1, e2: 2, t1: "non", t2: "zero", f1: "number", c1: "static", c2: "v=0", nested: {e3: 0}, hasT2: true}],
+  ],
+}
+
+{
+  name: "twelve parallel nodes writing the same key: the first declared edge into the output wins",
+  graph: {
+    nodes: [
+      {expression: "p01", fields: {w: "1", p01: "true"}},
+      {expression: "p02", fields: {w: "2", p02: "true"}},
+      {expression: "p03", fields: {w: "3", p03: "true"}},
+      {expression: "p04", fields: {w: "4", p04: "true"}},
+      {expression: "p05", fields: {w: "5", p05: "true"}},
+      {expression: "p06", fields: {w: "6", p06: "true"}},
+      {expression: "p07", fields: {w: "7", p07: "true"}},
+      {expression: "p08", fields: {w: "8", p08: "true"}},
+      {expression: "p09", fields: {w: "9", p09: "true"}},
+      {expression: "p10", fields: {w: "10", p10: "true"}},
+      {expression: "p11", fields: {w: "11", p11: "true"}},
+      {expression: "p12", fields: {w: "12", p12: "true"}},
+    ],
+    edges: [
+      "input -> p01", "input -> p02", "input -> p03", "input -> p04", "input -> p05", "input -> p06",
+      "input -> p07", "input -> p08", "input -> p09", "input -> p10", "input -> p11", "input -> p12",
+      "p07 -> output", "p01 -> output", "p02 -> output", "p03 -> output", "p04 -> output", "p05 -> output",
+      "p06 -> output", "p08 -> output", "p09 -> output", "p10 -> output", "p11 -> output", "p12 -> output",
+    ],
+  },
+  cases: [
+    [{}, {w: 7, p01: true, p02: true, p03: true, p04: true, p05: true, p06: true, p07: true, p08: true, p09: true, p10: true, p11: true, p12: true}],
+  ],
+}
+
+{
+  name: "a wide fan-out where some parallel nodes produce nothing",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: ["a"], outputs: ["a1"], rules: [["> 0", "true"]]},
+      {table: "t2", inputs: ["b"], outputs: ["b1"], rules: [["> 0", "true"]]},
+      {table: "t3", inputs: ["c"], outputs: ["c1"], rules: [["> 0", "true"]]},
+      {table: "t4", inputs: ["d"], outputs: ["d1"], rules: [["> 0", "true"]]},
+      {table: "t5", inputs: ["e"], outputs: ["e1"], rules: [["> 0", "true"]]},
+      {table: "t6", inputs: ["f"], outputs: ["f1"], rules: [["> 0", "true"]]},
+      {expression: "count", fields: {hits: "len(filter([a1, b1, c1, d1, e1, f1], # == true))"}},
+    ],
+    edges: [
+      "input -> t1 -> count", "input -> t2 -> count", "input -> t3 -> count",
+      "input -> t4 -> count", "input -> t5 -> count", "input -> t6 -> count",
+      "count -> output",
+    ],
+  },
+  cases: [
+    [{a: 1, b: 1, c: 1, d: 1, e: 1, f: 1}, {hits: 6}],
+    [{a: 1, c: 1, e: 1}, {hits: 3}],
+    [{}, {hits: 0}],
+  ],
+}
+
+{
+  name: "a fan-out from a mid-graph node, each child read through $nodes by the join",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {v: "x * 10"}},
+      {expression: "c1", fields: {r: "v + 1"}},
+      {expression: "c2", fields: {r: "v + 2"}},
+      {expression: "c3", fields: {r: "v + 3"}},
+      {expression: "c4", fields: {r: "v + 4"}},
+      {expression: "c5", fields: {r: "v + 5"}},
+      {expression: "c6", fields: {r: "v + 6"}},
+      {expression: "join", fields: {
+        all: "[$nodes.c1.r, $nodes.c2.r, $nodes.c3.r, $nodes.c4.r, $nodes.c5.r, $nodes.c6.r]",
+        merged: "r",
+      }},
+    ],
+    edges: [
+      "input -> base",
+      "base -> c1 -> join", "base -> c2 -> join", "base -> c3 -> join",
+      "base -> c4 -> join", "base -> c5 -> join", "base -> c6 -> join",
+      "join -> output",
+    ],
+  },
+  cases: [
+    [{x: 1}, {all: [11, 12, 13, 14, 15, 16], merged: 11}],
+    [{x: 0}, {all: [1, 2, 3, 4, 5, 6], merged: 1}],
+  ],
+}
+
+{
+  name: "a wide fan-out where one parallel node fails fails the graph",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {a: "1"}},
+      {expression: "b", fields: {b: "2"}},
+      {expression: "c", fields: {c: "3"}},
+      {custom: "boom", kind: "fail", config: {message: "parallel failure"}},
+      {expression: "d", fields: {d: "4"}},
+      {expression: "e", fields: {e: "5"}},
+    ],
+    edges: [
+      "input -> a -> output", "input -> b -> output", "input -> c -> output",
+      "input -> boom -> output", "input -> d -> output", "input -> e -> output",
+    ],
+  },
+  cases: [
+    [{}, "!error"],
+    [{x: 1}, "!error"],
+  ],
+}
+
+{
+  name: "a fan-out into six chains of two meeting at the output",
+  graph: {
+    nodes: [
+      {expression: "a1", fields: {v: "x + 1"}}, {expression: "a2", fields: {a: "v * 2"}},
+      {expression: "b1", fields: {v: "x + 2"}}, {expression: "b2", fields: {b: "v * 2"}},
+      {expression: "c1", fields: {v: "x + 3"}}, {expression: "c2", fields: {c: "v * 2"}},
+      {expression: "d1", fields: {v: "x + 4"}}, {expression: "d2", fields: {d: "v * 2"}},
+      {expression: "e1", fields: {v: "x + 5"}}, {expression: "e2", fields: {e: "v * 2"}},
+      {expression: "f1", fields: {v: "x + 6"}}, {expression: "f2", fields: {f: "v * 2"}},
+    ],
+    edges: [
+      "input -> a1 -> a2 -> output", "input -> b1 -> b2 -> output", "input -> c1 -> c2 -> output",
+      "input -> d1 -> d2 -> output", "input -> e1 -> e2 -> output", "input -> f1 -> f2 -> output",
+    ],
+  },
+  cases: [
+    [{x: 0}, {a: 2, b: 4, c: 6, d: 8, e: 10, f: 12}],
+    [{x: 1}, {a: 4, b: 6, c: 8, d: 10, e: 12, f: 14}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Long chains: ten or more nodes in a row. Each node only sees its parent's output.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a chain of ten pass-through nodes accumulates every key",
+  graph: {
+    nodes: [
+      {expression: "k01", passThrough: true, fields: {n: "n + 1", k01: "n"}},
+      {expression: "k02", passThrough: true, fields: {n: "n + 1", k02: "n"}},
+      {expression: "k03", passThrough: true, fields: {n: "n + 1", k03: "n"}},
+      {expression: "k04", passThrough: true, fields: {n: "n + 1", k04: "n"}},
+      {expression: "k05", passThrough: true, fields: {n: "n + 1", k05: "n"}},
+      {expression: "k06", passThrough: true, fields: {n: "n + 1", k06: "n"}},
+      {expression: "k07", passThrough: true, fields: {n: "n + 1", k07: "n"}},
+      {expression: "k08", passThrough: true, fields: {n: "n + 1", k08: "n"}},
+      {expression: "k09", passThrough: true, fields: {n: "n + 1", k09: "n"}},
+      {expression: "k10", passThrough: true, fields: {n: "n + 1", k10: "n"}},
+    ],
+  },
+  cases: [
+    [{n: 0}, {n: 10, k01: 0, k02: 1, k03: 2, k04: 3, k05: 4, k06: 5, k07: 6, k08: 7, k09: 8, k10: 9}],
+    [{n: 100}, {n: 110, k01: 100, k02: 101, k03: 102, k04: 103, k05: 104, k06: 105, k07: 106, k08: 107, k09: 108, k10: 109}],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a chain of twelve non-pass-through nodes keeps only the last output",
+  graph: {
+    nodes: [
+      {expression: "s01", fields: {v: "v * 2"}},
+      {expression: "s02", fields: {v: "v + 1"}},
+      {expression: "s03", fields: {v: "v * 2"}},
+      {expression: "s04", fields: {v: "v + 1"}},
+      {expression: "s05", fields: {v: "v * 2"}},
+      {expression: "s06", fields: {v: "v + 1"}},
+      {expression: "s07", fields: {v: "v * 2"}},
+      {expression: "s08", fields: {v: "v + 1"}},
+      {expression: "s09", fields: {v: "v * 2"}},
+      {expression: "s10", fields: {v: "v + 1"}},
+      {expression: "s11", fields: {v: "v * 2"}},
+      {expression: "s12", fields: {v: "v + 1", origin: "$nodes.input.v"}},
+    ],
+  },
+  cases: [
+    [{v: 0, other: 1}, {v: 63, origin: 0}],
+    [{v: 1, other: 1}, {v: 127, origin: 1}],
+    [{v: -1}, {v: -1, origin: -1}],
+  ],
+}
+
+{
+  name: "a chain alternating tables and expressions",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: ["income"], outputs: ["bracket"], rules: [[">= 100000", "3"], [">= 40000", "2"], ["", "1"]]},
+      {expression: "e1", passThrough: true, fields: {rate: "bracket * 0.1"}},
+      {table: "t2", passThrough: true, inputs: ["bracket"], outputs: ["label"], rules: [["3", "'high'"], ["2", "'mid'"], ["", "'low'"]]},
+      {expression: "e2", passThrough: true, fields: {pct: "string(bracket * 10) + '%'"}},
+      {table: "t3", passThrough: true, inputs: ["label"], outputs: ["review"], rules: [["'high'", "true"], ["", "false"]]},
+      {expression: "e3", passThrough: true, fields: {summary: "label + ' ' + pct"}},
+      {table: "t4", passThrough: true, inputs: ["review"], outputs: ["queue"], rules: [["true", "'manual'"], ["", "'auto'"]]},
+      {expression: "e4", passThrough: true, fields: {done: "true"}},
+      {table: "t5", passThrough: true, inputs: ["queue"], outputs: ["sla"], rules: [["'manual'", "48"], ["", "1"]]},
+      {expression: "e5", fields: {summary: "summary", queue: "queue", sla: "sla", done: "done"}},
+    ],
+  },
+  cases: [
+    [{income: 150000}, {summary: "high 30%", queue: "manual", sla: 48, done: true}],
+    [{income: 50000}, {summary: "mid 20%", queue: "auto", sla: 1, done: true}],
+    [{income: 0}, {summary: "low 10%", queue: "auto", sla: 1, done: true}],
+    [{}, {summary: "low 10%", queue: "auto", sla: 1, done: true}],
+  ],
+}
+
+{
+  name: "a long chain where a mid node drops the original input",
+  graph: {
+    nodes: [
+      {expression: "c01", passThrough: true, fields: {a: "1"}},
+      {expression: "c02", passThrough: true, fields: {b: "2"}},
+      {expression: "c03", passThrough: true, fields: {c: "3"}},
+      {expression: "c04", passThrough: true, fields: {d: "4"}},
+      {expression: "c05", fields: {sum: "a + b + c + d"}},
+      {expression: "c06", passThrough: true, fields: {e: "5"}},
+      {expression: "c07", passThrough: true, fields: {f: "6"}},
+      {expression: "c08", passThrough: true, fields: {g: "7"}},
+      {expression: "c09", passThrough: true, fields: {h: "8"}},
+      {expression: "c10", passThrough: true, fields: {lost: "a == null and x == null"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {sum: 10, e: 5, f: 6, g: 7, h: 8, lost: true}],
+    [{}, {sum: 10, e: 5, f: 6, g: 7, h: 8, lost: true}],
+  ],
+}
+
+{
+  name: "a fifteen-node chain where each node reads the previous one through $nodes",
+  graph: {
+    nodes: [
+      {expression: "n01", fields: {v: "$nodes.input.v + 1"}},
+      {expression: "n02", fields: {v: "$nodes.n01.v + 1"}},
+      {expression: "n03", fields: {v: "$nodes.n02.v + 1"}},
+      {expression: "n04", fields: {v: "$nodes.n03.v + 1"}},
+      {expression: "n05", fields: {v: "$nodes.n04.v + 1"}},
+      {expression: "n06", fields: {v: "$nodes.n05.v + 1"}},
+      {expression: "n07", fields: {v: "$nodes.n06.v + 1"}},
+      {expression: "n08", fields: {v: "$nodes.n07.v + 1"}},
+      {expression: "n09", fields: {v: "$nodes.n08.v + 1"}},
+      {expression: "n10", fields: {v: "$nodes.n09.v + 1"}},
+      {expression: "n11", fields: {v: "$nodes.n10.v + 1"}},
+      {expression: "n12", fields: {v: "$nodes.n11.v + 1"}},
+      {expression: "n13", fields: {v: "$nodes.n12.v + 1"}},
+      {expression: "n14", fields: {v: "$nodes.n13.v + 1"}},
+      {expression: "n15", fields: {v: "$nodes.n14.v + 1", first: "$nodes.n01.v", mid: "$nodes.n08.v"}},
+    ],
+  },
+  cases: [
+    [{v: 0}, {v: 15, first: 1, mid: 8}],
+    [{v: -15}, {v: 0, first: -14, mid: -7}],
+  ],
+}
+
+{
+  name: "a chain of ten switches, each gate passing the input on",
+  graph: {
+    nodes: [
+      {switch: "g1", when: ["n >= 1", ""]},
+      {switch: "g2", when: ["n >= 2", ""]},
+      {switch: "g3", when: ["n >= 3", ""]},
+      {switch: "g4", when: ["n >= 4", ""]},
+      {switch: "g5", when: ["n >= 5", ""]},
+      {switch: "g6", when: ["n >= 6", ""]},
+      {switch: "g7", when: ["n >= 7", ""]},
+      {switch: "g8", when: ["n >= 8", ""]},
+      {switch: "g9", when: ["n >= 9", ""]},
+      {switch: "g10", when: ["n >= 10", ""]},
+      {expression: "stop", fields: {passed: "min([max([n ?? 0, 0]), 10])"}},
+      {expression: "all", fields: {passed: "10", all: "true"}},
+    ],
+    edges: [
+      "input -> g1",
+      "g1:0 -> g2", "g2:0 -> g3", "g3:0 -> g4", "g4:0 -> g5", "g5:0 -> g6",
+      "g6:0 -> g7", "g7:0 -> g8", "g8:0 -> g9", "g9:0 -> g10", "g10:0 -> all -> output",
+      "g1:1 -> stop", "g2:1 -> stop", "g3:1 -> stop", "g4:1 -> stop", "g5:1 -> stop",
+      "g6:1 -> stop", "g7:1 -> stop", "g8:1 -> stop", "g9:1 -> stop", "g10:1 -> stop",
+      "stop -> output",
+    ],
+  },
+  cases: [
+    [{n: 0}, {passed: 0}],
+    [{n: 1}, {passed: 1}],
+    [{n: 5}, {passed: 5}],
+    [{n: 9.5}, {passed: 9.5}],
+    [{n: 10}, {passed: 10, all: true}],
+    [{n: 1000}, {passed: 10, all: true}],
+    [{}, {passed: 0}],
+  ],
+}
+
+{
+  name: "a long chain with an error at the end",
+  graph: {
+    nodes: [
+      {expression: "x1", passThrough: true, fields: {a: "1"}},
+      {expression: "x2", passThrough: true, fields: {b: "2"}},
+      {expression: "x3", passThrough: true, fields: {c: "3"}},
+      {expression: "x4", passThrough: true, fields: {d: "4"}},
+      {expression: "x5", passThrough: true, fields: {e: "5"}},
+      {expression: "x6", passThrough: true, fields: {f: "6"}},
+      {expression: "x7", passThrough: true, fields: {g: "7"}},
+      {expression: "x8", passThrough: true, fields: {h: "8"}},
+      {expression: "x9", passThrough: true, fields: {i: "9"}},
+      {expression: "x10", passThrough: true, fields: {j: "upper(name)"}},
+    ],
+  },
+  cases: [
+    [{name: "ok"}, {name: "ok", a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, j: "OK"}],
+    [{name: 5}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Dead ends: leaves other than the output node. A graph without an output node merges all
+// its leaves; with an output node, a leaf contributes only if it ran before the output.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a graph without an output node merges several dead ends",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "in", name: "input", type: "inputNode", content: {}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "1", key: "a", value: "x + 1"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "1", key: "b", value: "x + 2"}]}},
+        {id: "c", name: "c", type: "expressionNode", content: {expressions: [{id: "1", key: "c", value: "x + 3"}]}},
+        {id: "c2", name: "c2", type: "expressionNode", content: {expressions: [{id: "1", key: "c2", value: "c * 10"}]}},
+      ],
+      edges: [
+        {id: "e1", sourceId: "in", targetId: "a"},
+        {id: "e2", sourceId: "in", targetId: "b"},
+        {id: "e3", sourceId: "in", targetId: "c"},
+        {id: "e4", sourceId: "c", targetId: "c2"},
+      ],
+    },
+  },
+  cases: [
+    [{x: 0}, {a: 1, b: 2, c2: 30}],
+    [{x: 1}, {a: 2, b: 3, c2: 40}],
+  ],
+}
+
+{
+  name: "a graph without an output node: dead ends writing the same key",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "in", name: "input", type: "inputNode", content: {}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "1", key: "k", value: "'a'"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "1", key: "k", value: "'b'"}]}},
+        {id: "c", name: "c", type: "expressionNode", content: {expressions: [{id: "1", key: "k", value: "'c'"}]}},
+      ],
+      edges: [
+        {id: "e1", sourceId: "in", targetId: "a"},
+        {id: "e2", sourceId: "in", targetId: "b"},
+        {id: "e3", sourceId: "in", targetId: "c"},
+      ],
+    },
+  },
+  cases: [
+    [{}, {k: "c"}, "question: with no output node the leaves merge in node order, so the last declared node wins, unlike a join where the first declared edge wins"],
+  ],
+}
+
+{
+  name: "a graph whose only node is the input returns the input",
+  graph: {
+    raw: {
+      nodes: [{id: "in", name: "input", type: "inputNode", content: {}}],
+      edges: [],
+    },
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "dead ends declared after the output path do not contribute",
+  graph: {
+    nodes: [
+      {expression: "d1", fields: {d1: "1"}},
+      {expression: "d2", fields: {d2: "2"}},
+      {expression: "main", fields: {main: "true"}},
+    ],
+    edges: ["input -> main -> output", "input -> d1", "input -> d2"],
+  },
+  cases: [
+    [{}, {main: true}],
+  ],
+}
+
+{
+  name: "dead ends declared before the output path contribute",
+  graph: {
+    nodes: [
+      {expression: "d1", fields: {d1: "1"}},
+      {expression: "d2", fields: {d2: "2"}},
+      {expression: "main", fields: {main: "true"}},
+    ],
+    edges: ["input -> d1", "input -> d2", "input -> main -> output"],
+  },
+  cases: [
+    [{}, {main: true, d1: 1, d2: 2}, "question: whether a leaf that never reaches the output node contributes depends on edge declaration order"],
+  ],
+}
+
+{
+  name: "a failing dead end visited before the output fails the graph",
+  graph: {
+    nodes: [
+      {custom: "boom", kind: "fail", config: {message: "dead end failed"}},
+      {expression: "main", fields: {main: "true"}},
+    ],
+    edges: ["input -> boom", "input -> main -> output"],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a failing dead end visited after the output never runs",
+  graph: {
+    nodes: [
+      {custom: "boom", kind: "fail", config: {message: "dead end failed"}},
+      {expression: "main", fields: {main: "true"}},
+    ],
+    edges: ["input -> main -> output", "input -> boom"],
+  },
+  cases: [
+    [{}, {main: true}],
+  ],
+}
+
+{
+  name: "dead ends at the end of switch branches",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a", "b", ""]},
+      {expression: "da", fields: {da: "true"}},
+      {expression: "db", fields: {db: "true"}},
+      {expression: "def", fields: {def: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> da", "s:1 -> db", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{a: true}, {da: true}],
+    [{b: true}, {db: true}],
+    [{}, {def: true}],
+  ],
+}
+
+{
+  name: "dead ends at the end of collect switch branches all merge",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "da", fields: {da: "true"}},
+      {expression: "db", fields: {db: "true"}},
+      {expression: "dc", fields: {dc: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> da", "s:1 -> db", "s:2 -> dc"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {da: true, db: true, dc: true}],
+    [{b: true}, {db: true}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a dead end hanging off a mid-chain node",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "x + 1"}},
+      {expression: "dead", fields: {dead: "v"}},
+      {expression: "b", fields: {w: "v * 2"}},
+    ],
+    edges: ["input -> a -> b -> output", "a -> dead"],
+  },
+  cases: [
+    [{x: 1}, {w: 4}],
+  ],
+}
+
+{
+  name: "a dead end hanging off a mid-chain node, declared first",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "x + 1"}},
+      {expression: "dead", fields: {dead: "v"}},
+      {expression: "b", fields: {w: "v * 2"}},
+    ],
+    edges: ["a -> dead", "input -> a -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {w: 4, dead: 2}, "question: whether a leaf that never reaches the output node contributes depends on edge declaration order"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Nodes reachable by two paths whose switch outcomes differ: the node runs when at least
+// one path survives, and sees only what the surviving paths produced.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a node reachable directly from one branch and through a node from another",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["direct", ""]},
+      {expression: "prep", fields: {prepared: "true", v: "v * 2"}},
+      {expression: "target", fields: {v: "v", prepared: "prepared ?? false"}},
+    ],
+    edges: ["input -> s", "s:0 -> target", "s:1 -> prep -> target", "target -> output"],
+  },
+  cases: [
+    [{direct: true, v: 5}, {v: 5, prepared: false}],
+    [{direct: false, v: 5}, {v: 10, prepared: true}],
+    [{v: 1}, {v: 2, prepared: true}],
+  ],
+}
+
+{
+  name: "a node reachable from two switches in sequence",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["a", ""]},
+      {expression: "mid", passThrough: true, fields: {mid: "true"}},
+      {switch: "s2", when: ["b", ""]},
+      {expression: "target", fields: {hit: "true", mid: "mid ?? false"}},
+      {expression: "miss", fields: {hit: "false"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> target", "s1:1 -> mid -> s2",
+      "s2:0 -> target", "s2:1 -> miss -> output",
+      "target -> output",
+    ],
+  },
+  cases: [
+    [{a: true}, {hit: true, mid: false}],
+    [{a: false, b: true}, {hit: true, mid: true}],
+    [{a: false, b: false}, {hit: false}],
+    [{}, {hit: false}],
+  ],
+}
+
+{
+  name: "a node fed by two independent switches: runs when either routes to it",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["a", ""]},
+      {switch: "s2", when: ["b", ""]},
+      {expression: "fromA", fields: {fromA: "true"}},
+      {expression: "fromB", fields: {fromB: "true"}},
+      {expression: "target", fields: {a: "fromA ?? false", b: "fromB ?? false"}},
+      {expression: "noA", fields: {noA: "true"}},
+      {expression: "noB", fields: {noB: "true"}},
+    ],
+    edges: [
+      "input -> s1", "input -> s2",
+      "s1:0 -> fromA -> target", "s1:1 -> noA -> output",
+      "s2:0 -> fromB -> target", "s2:1 -> noB -> output",
+      "target -> output",
+    ],
+  },
+  cases: [
+    [{a: true, b: true}, {a: true, b: true}],
+    [{a: true, b: false}, {a: true, b: false, noB: true}],
+    [{a: false, b: true}, {a: false, b: true, noA: true}],
+    [{a: false, b: false}, {noA: true, noB: true}],
+  ],
+}
+
+{
+  name: "a node reachable by both branches of a collect switch at different depths",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["near", "far"]},
+      {expression: "f1", fields: {far1: "true"}},
+      {expression: "f2", passThrough: true, fields: {far2: "true"}},
+      {expression: "target", passThrough: true, fields: {done: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> target", "s:1 -> f1 -> f2 -> target", "target -> output"],
+  },
+  cases: [
+    [{near: true, far: true}, {near: true, far: true, far1: true, far2: true, done: true}],
+    [{near: true}, {near: true, done: true}],
+    [{far: true}, {far1: true, far2: true, done: true}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a node behind a pruned branch and a live branch of nested switches",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["x > 0", ""]},
+      {switch: "inner", when: ["y > 0", ""]},
+      {expression: "pp", fields: {tag: "'pp'"}},
+      {expression: "pn", fields: {tag: "'pn'"}},
+      {expression: "neg", fields: {tag: "'neg'"}},
+      {expression: "shared", fields: {tag: "tag", shared: "true"}},
+    ],
+    edges: [
+      "input -> outer", "outer:0 -> inner", "outer:1 -> neg -> shared",
+      "inner:0 -> pp -> shared", "inner:1 -> pn -> output",
+      "shared -> output",
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, {tag: "pp", shared: true}],
+    [{x: 1, y: 0}, {tag: "pn"}],
+    [{x: 0, y: 1}, {tag: "neg", shared: true}],
+  ],
+}
+
+{
+  name: "the output reachable only through pruned branches yields the visited leaves",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go"]},
+      {expression: "on", fields: {on: "true"}},
+      {expression: "side", fields: {side: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> on -> output", "input -> side"],
+  },
+  cases: [
+    [{go: true}, {on: true}],
+    [{go: false}, {side: true}],
+  ],
+}
+
+{
+  name: "a node upstream of a switch that routes nowhere is pruned from the result",
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {pre: "true", n: "n"}},
+      {switch: "s", when: ["n > 0"]},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "side", fields: {side: "true"}},
+    ],
+    edges: ["input -> pre -> s", "s:0 -> pos -> output", "input -> side -> output"],
+  },
+  cases: [
+    [{n: 1}, {pos: true, side: true}],
+    [{n: 0}, {side: true}],
+  ],
+}
+
+{
+  name: "a shared parent of a pruned branch and a live path still feeds the live path",
+  graph: {
+    nodes: [
+      {expression: "shared", fields: {v: "x * 2"}},
+      {switch: "s", when: ["v > 200"]},
+      {expression: "big", fields: {big: "true"}},
+      {expression: "live", fields: {v: "v"}},
+    ],
+    edges: ["input -> shared", "shared -> s", "s:0 -> big -> output", "shared -> live -> output"],
+  },
+  cases: [
+    [{x: 101}, {big: true, v: 202}],
+    [{x: 1}, {v: 2}],
+  ],
+}

@@ -1,0 +1,302 @@
+expression (string);input (json 5);output (json 5);note
+# Closures read variables computed by earlier statements
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: [1, 2, 3]};[3]
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: [2, 4, 6, 8]};[6, 8]
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: [5]};[]
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: [0.5, 1.5]};[1.5]
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: []};!error
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: [1, null]};!error
+"threshold = avg(list); above = filter(list, # > threshold); above";{list: null};!error
+"threshold = avg(list); above = filter(list, # > threshold); above";{};!error
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: [1, 2, 3]};'1 of 3 above 2'
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: [2, 4, 6, 8]};'2 of 4 above 5'
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: [5]};'0 of 1 above 5'
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: [0.5, 1.5]};'1 of 2 above 1.0'
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: []};!error
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: [1, null]};!error
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{list: null};!error
+"threshold = avg(list); above = filter(list, # > threshold); `${len(above)} of ${len(list)} above ${threshold}`";{};!error
+"threshold = avg(list); above = filter(list, # > threshold)";{list: [1, 2, 3]};{threshold: 2, above: [3]}
+"threshold = avg(list); above = filter(list, # > threshold)";{list: [2, 4, 6, 8]};{threshold: 5, above: [6, 8]}
+"threshold = avg(list); above = filter(list, # > threshold)";{list: [5]};{threshold: 5, above: []}
+"threshold = avg(list); above = filter(list, # > threshold)";{list: [0.5, 1.5]};{threshold: 1.0, above: [1.5]}
+"threshold = avg(list); above = filter(list, # > threshold)";{list: []};!error
+"threshold = avg(list); above = filter(list, # > threshold)";{list: [1, null]};!error
+"threshold = avg(list); above = filter(list, # > threshold)";{list: null};!error
+"threshold = avg(list); above = filter(list, # > threshold)";{};!error
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: [1, 2, 3]};[0, 0.5, 1]
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: [2, 4, 6, 8]};[0, 0.333333333333333333333333333333333333333333333333333333333333, 0.666666666666666666666666666666666666666666666666666666666667, 1]
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: [5]};[null]
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: [0.5, 1.5]};[0, 1]
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: []};!error
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: [1, null]};!error
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{list: null};!error
+"lo = min(list); hi = max(list); map(list, (# - lo) / (hi - lo))";{};!error
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: [1, 2, 3]};[0, 0.5, 1]
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: [2, 4, 6, 8]};[0, 0.333333333333333333333333333333333333333333333333333333333333, 0.666666666666666666666666666666666666666666666666666666666667, 1]
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: [5]};[0]
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: [0.5, 1.5]};[0, 1]
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: []};!error
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: [1, null]};!error
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{list: null};!error
+"lo = min(list); hi = max(list); span = hi - lo; map(list, span == 0 ? 0 : (# - lo) / span)";{};!error
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: [1, 2, 3]};[-3, 0, 3]
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: [2, 4, 6, 8]};[-12, -4, 4, 12]
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: [5]};[0]
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: [0.5, 1.5]};[-1.0, 1.0]
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: []};[]
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: [1, null]};!error
+"n = len(list); total = sum(list); map(list, # * n - total)";{list: null};!error
+"n = len(list); total = sum(list); map(list, # * n - total)";{};!error
+"first = list[0]; map(list, # - first)";{list: [1, 2, 3]};[0, 1, 2]
+"first = list[0]; map(list, # - first)";{list: [2, 4, 6, 8]};[0, 2, 4, 6]
+"first = list[0]; map(list, # - first)";{list: [5]};[0]
+"first = list[0]; map(list, # - first)";{list: [0.5, 1.5]};[0.0, 1.0]
+"first = list[0]; map(list, # - first)";{list: []};[]
+"first = list[0]; map(list, # - first)";{list: [1, null]};!error
+"first = list[0]; map(list, # - first)";{list: null};!error
+"first = list[0]; map(list, # - first)";{};!error
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: [1, 2, 3]};[1, [2, 3]]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: [2, 4, 6, 8]};[2, [4, 6, 8]]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: [5]};[5, []]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: [0.5, 1.5]};[0.5, [1.5]]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: []};[0, []]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: [1, null]};[1, [null]]
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{list: null};!error
+"first = list[0] ?? 0; rest = filter(list, # != first); [first, rest]";{};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{price: 10}, {price: 9.99}], pct: 10};{prices: [11.0, 10.99], total: 21.99}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{price: 100}], pct: 0};{prices: [100], total: 100}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{price: 0.05}], pct: 50};{prices: [0.08], total: 0.08}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [], pct: 20};{prices: [], total: 0}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{price: 1}], pct: null};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{price: null}], pct: 1};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); {prices: prices, total: sum(prices)}";{items: [{}], pct: 1};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{price: 10}, {price: 9.99}], pct: 10};{factor: 1.1, prices: [11.0, 10.99], total: 21.99}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{price: 100}], pct: 0};{factor: 1, prices: [100], total: 100}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{price: 0.05}], pct: 50};{factor: 1.5, prices: [0.08], total: 0.08}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [], pct: 20};{factor: 1.2, prices: [], total: 0}
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{price: 1}], pct: null};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{price: null}], pct: 1};!error
+"factor = 1 + pct / 100; prices = map(items, round(#.price * factor, 2)); total = sum(prices)";{items: [{}], pct: 1};!error
+# Variables inside templates inside closures
+"unit = u; map(list, `${#}${unit}`)";{list: [1, 2], u: 'kg'};['1kg', '2kg']
+"unit = u; map(list, `${#}${unit}`)";{list: [0.50], u: ''};['0.50']
+"unit = u; map(list, `${#}${unit}`)";{list: [], u: 'm'};[]
+"unit = u; map(list, `${#}${unit}`)";{list: [3], u: null};['3null']
+"unit = u; map(list, `${#}${unit}`)";{list: [3]};['3null']
+"unit = u; map(list, `${#}${unit}`)";{list: [3], u: 5};['35']
+"unit = u; map(list, `${#}${unit}`)";{list: ['a', true], u: '!'};['a!', 'true!']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [1, 2], u: 'kg'};['1 kg', '2 kg']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [0.50], u: ''};['0.50 ']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [], u: 'm'};[]
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [3], u: null};['3 pcs']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [3]};['3 pcs']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: [3], u: 5};['3 5']
+"unit = u ?? 'pcs'; labels = map(list, `${#} ${unit}`); labels";{list: ['a', true], u: '!'};['a !', 'true !']
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [1, 2], u: 'kg'};'2 kg: some'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [0.50], u: ''};'1 : some'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [], u: 'm'};'0 m: none'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [3], u: null};'1 pcs: some'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [3]};'1 pcs: some'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: [3], u: 5};'1 5: some'
+"unit = u ?? 'pcs'; n = len(list); `${n} ${unit}: ${n > 0 ? 'some' : 'none'}`";{list: ['a', true], u: '!'};'2 !: some'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: 'Ann', score: 75};'Ann: pass (75)'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: 'Bo', score: 50};'Bo: pass (50)'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: 'Cy', score: 49.99};'Cy: fail (49.99)'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: null, score: 90};'null: pass (90)'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{score: 10};'null: fail (10)'
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: 'Di', score: null};!error
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`; msg";{name: 'Ed', score: 'high'};!error
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: 'Ann', score: 75};{label: 'pass', msg: 'Ann: pass (75)'}
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: 'Bo', score: 50};{label: 'pass', msg: 'Bo: pass (50)'}
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: 'Cy', score: 49.99};{label: 'fail', msg: 'Cy: fail (49.99)'}
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: null, score: 90};{label: 'pass', msg: 'null: pass (90)'}
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{score: 10};{label: 'fail', msg: 'null: fail (10)'}
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: 'Di', score: null};!error
+"label = score >= 50 ? 'pass' : 'fail'; msg = `${name}: ${label} (${score})`";{name: 'Ed', score: 'high'};!error
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: 'Ann', score: 75};'[PASS]'
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: 'Bo', score: 50};'[PASS]'
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: 'Cy', score: 49.99};'[FAIL]'
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: null, score: 90};'[PASS]'
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{score: 10};'[FAIL]'
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: 'Di', score: null};!error
+"label = score >= 50 ? 'pass' : 'fail'; label = upper(label); `[${label}]`";{name: 'Ed', score: 'high'};!error
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: 'Ann', score: 75};'<Ann><Ann>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: 'Bo', score: 50};'<Bo><Bo>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: 'Cy', score: 49.99};'<Cy><Cy>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: null, score: 90};'<someone><someone>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{score: 10};'<someone><someone>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: 'Di', score: null};'<Di><Di>'
+"who = name ?? 'someone'; tag = `<${who}>`; tag = tag + tag; tag";{name: 'Ed', score: 'high'};'<Ed><Ed>'
+# Ternaries select values computed by earlier statements
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [1, 5, 9], cut: 5};['lo', 'hi', 'hi']
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [], cut: 0};[]
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [0, -1], cut: 0};['hi', 'lo']
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [2], cut: null};!error
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [2]};!error
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [2], cut: '1'};!error
+"cut = cut; map(list, # >= cut ? 'hi' : 'lo')";{list: [4.99, 5], cut: 5};['lo', 'hi']
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [1, 5, 9], cut: 5};[5, 9]
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [], cut: 0};[]
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [0, -1], cut: 0};[-1]
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [2], cut: null};[2]
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [2]};[2]
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [2], cut: '1'};!error
+"c = cut ?? 0; hi = filter(list, # >= c); lo = filter(list, # < c); len(hi) > len(lo) ? hi : lo";{list: [4.99, 5], cut: 5};[4.99]
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [1, 5, 9], cut: 5};1
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [], cut: 0};0
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [0, -1], cut: 0};2
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [2], cut: null};0
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [2]};0
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [2], cut: '1'};!error
+"c = cut ?? 0; asc = c > 0; r = asc ? filter(list, # > c) : filter(list, # <= c); len(r)";{list: [4.99, 5], cut: 5};0
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [1, 5, 9], cut: 5};'found'
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [], cut: 0};'below'
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [0, -1], cut: 0};'found'
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [2], cut: null};'mixed'
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [2]};'mixed'
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [2], cut: '1'};!error
+"c = cut ?? 0; pick = some(list, # == c) ? 'found' : none(list, # > c) ? 'below' : 'mixed'; pick";{list: [4.99, 5], cut: 5};'found'
+# Grouping and cross-referencing lists through variables
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: [{g: 'x', v: 1}, {g: 'y', v: 2}, {g: 'x', v: 3}]};[4, 2]
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: []};[0, 0]
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: [{g: 'z', v: 5}]};[0, 0]
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: [{g: 'x', v: 0.1}, {g: 'x', v: 0.2}]};[0.3, 0]
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: [{g: 'y'}]};!error
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: [{g: 'x', v: 'a'}]};!error
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); totals";{rows: null};!error
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: [{g: 'x', v: 1}, {g: 'y', v: 2}, {g: 'x', v: 3}]};{x: 4, y: 2}
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: []};{x: 0, y: 0}
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: [{g: 'z', v: 5}]};{x: 0, y: 0}
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: [{g: 'x', v: 0.1}, {g: 'x', v: 0.2}]};{x: 0.3, y: 0}
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: [{g: 'y'}]};!error
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: [{g: 'x', v: 'a'}]};!error
+"groups = ['x', 'y']; totals = map(groups as g, sum(map(filter(rows, #.g == g), #.v))); {x: totals[0], y: totals[1]}";{rows: null};!error
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: [{g: 'x', v: 1}, {g: 'y', v: 2}, {g: 'x', v: 3}]};[[2, 1], 0]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: []};[[0, 0], 0]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: [{g: 'z', v: 5}]};[[0, 0], 1]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: [{g: 'x', v: 0.1}, {g: 'x', v: 0.2}]};[[2, 0], 0]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: [{g: 'y'}]};[[0, 1], 0]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: [{g: 'x', v: 'a'}]};[[1, 0], 0]
+"groups = ['x', 'y']; counts = map(groups as g, count(rows, #.g == g)); other = len(rows) - sum(counts); [counts, other]";{rows: null};!error
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [{id: 1}, {id: 2}], b: [{id: 2, v: 'two'}, {id: 3, v: 'three'}]};['two']
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [], b: [{id: 1, v: 'x'}]};[]
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [{id: 'k'}], b: [{id: 'k', v: 1}, {id: 'k', v: 2}]};[1, 2]
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [{id: null}], b: [{v: 'missing id'}]};['missing id']
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [{id: 1}], b: []};[]
+"ids = map(a, #.id); matches = filter(b, #.id in ids); map(matches, #.v)";{a: [{id: 1}], b: null};!error
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [{id: 1}, {id: 2}], b: [{id: 2, v: 'two'}, {id: 3, v: 'three'}]};1
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [], b: [{id: 1, v: 'x'}]};1
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [{id: 'k'}], b: [{id: 'k', v: 1}, {id: 'k', v: 2}]};0
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [{id: null}], b: [{v: 'missing id'}]};0
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [{id: 1}], b: []};0
+"ids = map(a, #.id); missing = filter(b, not (#.id in ids)); len(missing)";{a: [{id: 1}], b: null};!error
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [{id: 1}, {id: 2}], b: [{id: 2, v: 'two'}, {id: 3, v: 'three'}]};[false, true]
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [], b: [{id: 1, v: 'x'}]};[false, false]
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [{id: 'k'}], b: [{id: 'k', v: 1}, {id: 'k', v: 2}]};[true, true]
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [{id: null}], b: [{v: 'missing id'}]};[true, true]
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [{id: 1}], b: []};[true, false]
+"ids = map(a, #.id); allKnown = all(b, #.id in ids); anyKnown = some(b, #.id in ids); [allKnown, anyKnown]";{a: [{id: 1}], b: null};!error
+# Closures with aliases combining several top-level variables
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [1, 5, 10], r: [2, 8]};[5]
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [], r: [0, 1]};[]
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [3, 3], r: [3]};[3, 3]
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [1], r: []};!error
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [1, 2], r: [null]};!error
+"lo = min(r); hi = max(r); filter(list as x, x >= lo and x <= hi)";{list: [2.5], r: [2, 3]};[2.5]
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [1, 5, 10], r: [2, 8]};{inside: 1, outside: 2}
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [], r: [0, 1]};{inside: 0, outside: 0}
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [3, 3], r: [3]};{inside: 2, outside: 0}
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [1], r: []};!error
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [1, 2], r: [null]};!error
+"lo = min(r); hi = max(r); inside = count(list as x, x >= lo and x <= hi); outside = len(list) - inside; {inside: inside, outside: outside}";{list: [2.5], r: [2, 3]};{inside: 1, outside: 0}
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [1, 5, 10], r: [2, 8]};[2, 5, 8]
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [], r: [0, 1]};[]
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [3, 3], r: [3]};[3, 3]
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [1], r: []};!error
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [1, 2], r: [null]};!error
+"lo = min(r); hi = max(r); map(list as x, x < lo ? lo : x > hi ? hi : x)";{list: [2.5], r: [2, 3]};[2.5]
+"m = mult; map(groups, map(#, # * m))";{groups: [[1, 2], [3]], mult: 2};[[2, 4], [6]]
+"m = mult; map(groups, map(#, # * m))";{groups: [], mult: 2};[]
+"m = mult; map(groups, map(#, # * m))";{groups: [[]], mult: 2};[[]]
+"m = mult; map(groups, map(#, # * m))";{groups: [[1]], mult: null};!error
+"m = mult; map(groups, map(#, # * m))";{groups: [[1]]};!error
+"m = mult; map(groups, map(#, # * m))";{groups: [[0.5, 1]], mult: 0.5};[[0.25, 0.5]]
+"m = mult; map(groups, map(#, # * m))";{groups: [1], mult: 1};!error
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [[1, 2], [3]], mult: 2};[[6, 6], 12]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [], mult: 2};[[], 0]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [[]], mult: 2};[[0], 0]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [[1]], mult: null};[[1], 1]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [[1]]};[[1], 1]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [[0.5, 1]], mult: 0.5};[[0.75], 0.75]
+"m = mult ?? 1; sums = map(groups, sum(#) * m); total = sum(sums); [sums, total]";{groups: [1], mult: 1};!error
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [[1, 2], [3]], mult: 2};[2, 4, 6]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [], mult: 2};[]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [[]], mult: 2};[]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [[1]], mult: null};[1]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [[1]]};[1]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [[0.5, 1]], mult: 0.5};[0.25, 0.5]
+"m = mult ?? 1; flat = flatMap(groups, map(#, # * m)); flat";{groups: [1], mult: 1};!error
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [[1, 2], [3]], mult: 2};2
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [], mult: 2};0
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [[]], mult: 2};0
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [[1]], mult: null};0
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [[1]]};0
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [[0.5, 1]], mult: 0.5};0
+"m = mult ?? 1; big = filter(groups, sum(#) * m > 2); len(big)";{groups: [1], mult: 1};!error
+# Object literals inside closures reading top-level variables
+"tax = r; map(items, {n: #.n, gross: #.net * (1 + tax)})";{items: [{n: 'a', net: 10}, {n: 'b', net: 2.5}], r: 0.2};[{n: 'a', gross: 12.0}, {n: 'b', gross: 3.00}]
+"tax = r; map(items, {n: #.n, gross: #.net * (1 + tax)})";{items: [], r: 0};[]
+"tax = r; map(items, {n: #.n, gross: #.net * (1 + tax)})";{items: [{n: 'c', net: 1}], r: null};!error
+"tax = r; map(items, {n: #.n, gross: #.net * (1 + tax)})";{items: [{n: 'c', net: 1}]};!error
+"tax = r; map(items, {n: #.n, gross: #.net * (1 + tax)})";{items: [{n: 'c'}], r: 1};!error
+"tax = r ?? 0; rows = map(items, {n: #.n, gross: #.net * (1 + tax)}); {rows: rows, sum: sum(map(rows, #.gross))}";{items: [{n: 'a', net: 10}, {n: 'b', net: 2.5}], r: 0.2};{rows: [{n: 'a', gross: 12.0}, {n: 'b', gross: 3.00}], sum: 15.00}
+"tax = r ?? 0; rows = map(items, {n: #.n, gross: #.net * (1 + tax)}); {rows: rows, sum: sum(map(rows, #.gross))}";{items: [], r: 0};{rows: [], sum: 0}
+"tax = r ?? 0; rows = map(items, {n: #.n, gross: #.net * (1 + tax)}); {rows: rows, sum: sum(map(rows, #.gross))}";{items: [{n: 'c', net: 1}], r: null};{rows: [{n: 'c', gross: 1}], sum: 1}
+"tax = r ?? 0; rows = map(items, {n: #.n, gross: #.net * (1 + tax)}); {rows: rows, sum: sum(map(rows, #.gross))}";{items: [{n: 'c', net: 1}]};{rows: [{n: 'c', gross: 1}], sum: 1}
+"tax = r ?? 0; rows = map(items, {n: #.n, gross: #.net * (1 + tax)}); {rows: rows, sum: sum(map(rows, #.gross))}";{items: [{n: 'c'}], r: 1};!error
+"tax = r ?? 0; names = map(items, #.n); out.names = names; out.rate = tax; out";{items: [{n: 'a', net: 10}, {n: 'b', net: 2.5}], r: 0.2};{names: ['a', 'b'], rate: 0.2}
+"tax = r ?? 0; names = map(items, #.n); out.names = names; out.rate = tax; out";{items: [], r: 0};{names: [], rate: 0}
+"tax = r ?? 0; names = map(items, #.n); out.names = names; out.rate = tax; out";{items: [{n: 'c', net: 1}], r: null};{names: ['c'], rate: 0}
+"tax = r ?? 0; names = map(items, #.n); out.names = names; out.rate = tax; out";{items: [{n: 'c', net: 1}]};{names: ['c'], rate: 0}
+"tax = r ?? 0; names = map(items, #.n); out.names = names; out.rate = tax; out";{items: [{n: 'c'}], r: 1};{names: ['c'], rate: 1}
+# Dynamic keys held in variables
+"k = key; vals = map(rows, #[k]); vals";{rows: [{a: 1, b: 2}, {a: 3}], key: 'a'};[1, 3]
+"k = key; vals = map(rows, #[k]); vals";{rows: [{a: 1, b: 2}, {a: 3}], key: 'b'};[2, null]
+"k = key; vals = map(rows, #[k]); vals";{rows: [{a: 1}], key: 'z'};[null]
+"k = key; vals = map(rows, #[k]); vals";{rows: [], key: 'a'};[]
+"k = key; vals = map(rows, #[k]); vals";{rows: [{a: 1}], key: null};[null]
+"k = key; vals = map(rows, #[k]); vals";{rows: [{a: 1}]};[null]
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [{a: 1, b: 2}, {a: 3}], key: 'a'};4
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [{a: 1, b: 2}, {a: 3}], key: 'b'};2
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [{a: 1}], key: 'z'};0
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [], key: 'a'};0
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [{a: 1}], key: null};0
+"k = key; vals = map(rows, #[k] ?? 0); sum(vals)";{rows: [{a: 1}]};0
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [{a: 1, b: 2}, {a: 3}], key: 'a'};2
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [{a: 1, b: 2}, {a: 3}], key: 'b'};1
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [{a: 1}], key: 'z'};0
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [], key: 'a'};0
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [{a: 1}], key: null};1
+"k = key ?? 'a'; has = filter(rows, #[k] != null); len(has)";{rows: [{a: 1}]};1
+# Variables with the same name as element fields
+"qty = qty ?? 0; map(list, #.qty + qty)";{list: [{qty: 2, price: 3}, {qty: 1, price: 10}], qty: 5, price: 100};[7, 6]
+"qty = qty ?? 0; map(list, #.qty + qty)";{list: [], qty: 1, price: 1};[]
+"qty = qty ?? 0; map(list, #.qty + qty)";{list: [{qty: 0, price: 1}], qty: null, price: 1};[0]
+"qty = qty ?? 0; map(list, #.qty + qty)";{list: [{qty: 1}], qty: 1, price: 2};[2]
+"price = 1; map(list, #.price * price)";{list: [{qty: 2, price: 3}, {qty: 1, price: 10}], qty: 5, price: 100};[3, 10]
+"price = 1; map(list, #.price * price)";{list: [], qty: 1, price: 1};[]
+"price = 1; map(list, #.price * price)";{list: [{qty: 0, price: 1}], qty: null, price: 1};[1]
+"price = 1; map(list, #.price * price)";{list: [{qty: 1}], qty: 1, price: 2};!error
+"price = 1; map(list as price, price.qty)";{list: [{qty: 2, price: 3}, {qty: 1, price: 10}], qty: 5, price: 100};[2, 1]
+"price = 1; map(list as price, price.qty)";{list: [], qty: 1, price: 1};[]
+"price = 1; map(list as price, price.qty)";{list: [{qty: 0, price: 1}], qty: null, price: 1};[0]
+"price = 1; map(list as price, price.qty)";{list: [{qty: 1}], qty: 1, price: 2};[1]
+"price = 1; r = map(list as price, price.qty); [r, price]";{list: [{qty: 2, price: 3}, {qty: 1, price: 10}], qty: 5, price: 100};[[2, 1], 1]
+"price = 1; r = map(list as price, price.qty); [r, price]";{list: [], qty: 1, price: 1};[[], 1]
+"price = 1; r = map(list as price, price.qty); [r, price]";{list: [{qty: 0, price: 1}], qty: null, price: 1};[[0], 1]
+"price = 1; r = map(list as price, price.qty); [r, price]";{list: [{qty: 1}], qty: 1, price: 2};[[1], 1]
+"qty = sum(map(list, #.qty)); price = sum(map(list, #.qty * (#.price ?? 0))); price / qty";{list: [{qty: 2, price: 3}, {qty: 1, price: 10}], qty: 5, price: 100};5.33333333333333333333333333333333333333333333333333333333333
+"qty = sum(map(list, #.qty)); price = sum(map(list, #.qty * (#.price ?? 0))); price / qty";{list: [], qty: 1, price: 1};null
+"qty = sum(map(list, #.qty)); price = sum(map(list, #.qty * (#.price ?? 0))); price / qty";{list: [{qty: 0, price: 1}], qty: null, price: 1};null
+"qty = sum(map(list, #.qty)); price = sum(map(list, #.qty * (#.price ?? 0))); price / qty";{list: [{qty: 1}], qty: 1, price: 2};0

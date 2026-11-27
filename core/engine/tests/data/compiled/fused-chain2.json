@@ -1,0 +1,146 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request"
+  },
+  {
+   "id": "t2",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Loc",
+   "content": {
+    "hitPolicy": "first",
+    "passThrough": true,
+    "inputs": [
+     {
+      "id": "t2i0",
+      "name": "customer.location.state",
+      "field": "customer.location.state"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t2o0",
+      "name": "elig.loc.ok",
+      "field": "elig.loc.ok"
+     },
+     {
+      "id": "t2o1",
+      "name": "elig.loc.reason",
+      "field": "elig.loc.reason"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t2r0",
+      "t2i0": "contains(['FL', 'LA', 'TX'], $)",
+      "t2o0": "false",
+      "t2o1": "'risk'"
+     },
+     {
+      "_id": "t2r1",
+      "t2i0": "!contains(['US', 'CA', 'UK'], $)",
+      "t2o0": "false",
+      "t2o1": "'unsupported'"
+     },
+     {
+      "_id": "t2r2",
+      "t2i0": "",
+      "t2o0": "true",
+      "t2o1": "'fine'"
+     }
+    ]
+   }
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Final",
+   "content": {
+    "passThrough": true,
+    "expressions": [
+     {
+      "id": "x",
+      "key": "ok",
+      "value": "elig.loc.ok"
+     }
+    ]
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "t2",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "t2",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x2",
+   "sourceId": "e1",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "customer": {
+     "age": 45,
+     "location": {
+      "state": "CA",
+      "city": "SF"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 10,
+     "location": {
+      "state": "TX"
+     }
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 80,
+     "location": {
+      "state": "DE"
+     }
+    }
+   }
+  }
+ ]
+}

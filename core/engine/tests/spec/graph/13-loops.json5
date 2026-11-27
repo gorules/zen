@@ -1,0 +1,811 @@
+// Loop execution mode: expression, table and decision nodes with executionMode "loop" run once
+// per element of the array selected by inputField (or of the node input itself), and produce
+// an array of per-item results, in item order.
+
+// --- Expression nodes over arrays of objects --------------------------------------------------
+// Each item becomes the expression environment; the node output is the array of item results.
+{
+  name: "expression loop over items maps each object",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", executionMode: "loop", fields: {total: "price * qty"}}],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 1.5, qty: 2}]}, [{total: 6}, {total: 3}]],
+    [{items: [{price: 10, qty: 0}]}, [{total: 0}]],
+    [{items: [{price: 0.1, qty: 3}, {price: 4, qty: 0.25}, {price: 7, qty: 1}]}, [{total: 0.3}, {total: 1}, {total: 7}]],
+  ],
+}
+
+{
+  name: "expression loop with outputPath collects results under a key",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "results", executionMode: "loop", fields: {total: "price * qty"}}],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 1, qty: 1}]}, {results: [{total: 6}, {total: 1}]}],
+    [{items: [{price: 5, qty: 2}]}, {results: [{total: 10}]}],
+    [{items: []}, {results: []}],
+  ],
+}
+
+{
+  name: "expression loop with dotted outputPath nests the result array",
+  graph: {
+    nodes: [{expression: "each", inputField: "order.lines", outputPath: "summary.lines", executionMode: "loop", fields: {sku: "upper(sku)"}}],
+  },
+  cases: [
+    [{order: {lines: [{sku: "a1"}, {sku: "b2"}]}}, {summary: {lines: [{sku: "A1"}, {sku: "B2"}]}}],
+    [{order: {lines: [{sku: "x"}]}}, {summary: {lines: [{sku: "X"}]}}],
+    [{order: {lines: []}}, {summary: {lines: []}}],
+  ],
+}
+
+{
+  name: "expression loop with several fields and nested keys per item",
+  graph: {
+    nodes: [{expression: "each", inputField: "people", outputPath: "out", executionMode: "loop", fields: {
+      "name.full": "first + ' ' + last",
+      "flags.adult": "age >= 18",
+      "age": "age",
+    }}],
+  },
+  cases: [
+    [
+      {people: [{first: "Ann", last: "Lee", age: 30}, {first: "Bo", last: "Ng", age: 9}]},
+      {out: [{name: {full: "Ann Lee"}, flags: {adult: true}, age: 30}, {name: {full: "Bo Ng"}, flags: {adult: false}, age: 9}]},
+    ],
+    [{people: [{first: "C", last: "D", age: 18}]}, {out: [{name: {full: "C D"}, flags: {adult: true}, age: 18}]}],
+  ],
+}
+
+// --- Empty arrays -------------------------------------------------------------------------------
+// An empty array runs the body zero times and yields an empty array, with or without outputPath.
+{
+  name: "expression loop over an empty array yields an empty array",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", executionMode: "loop", fields: {v: "x + 1"}}],
+  },
+  cases: [
+    [{items: []}, []],
+    [{items: [{x: 1}]}, [{v: 2}]],
+    [{items: [], other: 5}, []],
+  ],
+}
+
+{
+  name: "empty loop output reaches the output node next to other branches",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "mapped", executionMode: "loop", fields: {v: "x * 10"}},
+      {expression: "count", fields: {n: "len(items)"}},
+    ],
+    edges: ["input -> each -> output", "input -> count -> output"],
+  },
+  cases: [
+    [{items: []}, {mapped: [], n: 0}],
+    [{items: [{x: 1}, {x: 2}]}, {mapped: [{v: 10}, {v: 20}], n: 2}],
+    [{items: [{x: -1}]}, {mapped: [{v: -10}], n: 1}],
+  ],
+}
+
+// --- Non-array loop inputs --------------------------------------------------------------------
+// A loop needs an array: a missing field, null, an object, a string or a number is an error.
+{
+  name: "expression loop over a non-array is an error",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "1"}}],
+  },
+  cases: [
+    [{items: [{}]}, {out: [{v: 1}]}],
+    [{}, "!error"],
+    [{items: null}, "!error"],
+    [{items: {a: 1}}, "!error"],
+    [{items: "abc"}, "!error"],
+    [{items: 3}, "!error"],
+    [{items: true}, "!error"],
+  ],
+}
+
+{
+  name: "loop without inputField iterates the node input, which is an object",
+  graph: {
+    nodes: [{expression: "each", executionMode: "loop", fields: {v: "1"}}],
+  },
+  cases: [
+    [{items: [1, 2]}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "inputField that fails to evaluate is an error",
+  graph: {
+    nodes: [{expression: "each", inputField: "items[", outputPath: "out", executionMode: "loop", fields: {v: "1"}}],
+  },
+  cases: [
+    [{items: [1]}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+// --- inputField as an expression ----------------------------------------------------------------
+// inputField is an expression evaluated against the node input, not only a path.
+{
+  name: "inputField may be a filter expression",
+  graph: {
+    nodes: [{expression: "each", inputField: "filter(items, #.active)", outputPath: "out", executionMode: "loop", fields: {id: "id"}}],
+  },
+  cases: [
+    [{items: [{id: 1, active: true}, {id: 2, active: false}, {id: 3, active: true}]}, {out: [{id: 1}, {id: 3}]}],
+    [{items: [{id: 1, active: false}]}, {out: []}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "inputField may build the array from a range",
+  graph: {
+    nodes: [{expression: "each", inputField: "map([1..n], {k: #})", outputPath: "out", executionMode: "loop", fields: {sq: "k * k"}}],
+  },
+  cases: [
+    [{n: 3}, {out: [{sq: 1}, {sq: 4}, {sq: 9}]}],
+    [{n: 1}, {out: [{sq: 1}]}],
+  ],
+}
+
+{
+  name: "inputField may concatenate arrays",
+  graph: {
+    nodes: [{expression: "each", inputField: "flatten([a, b])", outputPath: "out", executionMode: "loop", fields: {v: "v"}}],
+  },
+  cases: [
+    [{a: [{v: 1}], b: [{v: 2}, {v: 3}]}, {out: [{v: 1}, {v: 2}, {v: 3}]}],
+    [{a: [], b: []}, {out: []}],
+  ],
+}
+
+// --- Scalar and null items --------------------------------------------------------------------
+// A scalar item becomes the whole environment; it is reachable through `$root`. Reading a field
+// off a scalar environment is an expression error (see the expression spec), which fails the node.
+{
+  name: "loop over scalar items reads them through $root",
+  graph: {
+    nodes: [{expression: "each", inputField: "nums", outputPath: "out", executionMode: "loop", fields: {doubled: "$root * 2"}}],
+  },
+  cases: [
+    [{nums: [1, 2, 3]}, {out: [{doubled: 2}, {doubled: 4}, {doubled: 6}]}],
+    [{nums: [0.5]}, {out: [{doubled: 1}]}],
+    [{nums: []}, {out: []}],
+  ],
+}
+
+{
+  name: "loop over strings",
+  graph: {
+    nodes: [{expression: "each", inputField: "tags", outputPath: "out", executionMode: "loop", fields: {tag: "upper($root)", n: "len($root)"}}],
+  },
+  cases: [
+    [{tags: ["a", "bc"]}, {out: [{tag: "A", n: 1}, {tag: "BC", n: 2}]}],
+    [{tags: [""]}, {out: [{tag: "", n: 0}]}],
+  ],
+}
+
+{
+  name: "field reads on scalar items fail the node",
+  graph: {
+    nodes: [{expression: "each", inputField: "nums", outputPath: "out", executionMode: "loop", fields: {x: "x", has: "x != null"}}],
+  },
+  cases: [
+    [{nums: [1, "a"]}, "!error", "question: an identifier on a non-object root errors while $root.x is null (expression spec 17-04 / standard row 177)"],
+    [{nums: [{x: 2}, 3]}, "!error", "question: an identifier on a non-object root errors while $root.x is null (expression spec 17-04 / standard row 177)"],
+    [{nums: [{x: 2}, {}]}, {out: [{x: 2, has: true}, {x: null, has: false}]}],
+  ],
+}
+
+{
+  name: "null items run the body with a null environment",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "x ?? 'none'", isNull: "$root == null"}}],
+  },
+  cases: [
+    [{items: [null]}, {out: [{v: "none", isNull: true}]}],
+    [{items: [{x: 1}, null, {x: 3}]}, {out: [{v: 1, isNull: false}, {v: "none", isNull: true}, {v: 3, isNull: false}]}],
+    [{items: [{}, {x: null}]}, {out: [{v: "none", isNull: false}, {v: "none", isNull: false}]}],
+  ],
+}
+
+{
+  name: "loop over nested arrays",
+  graph: {
+    nodes: [{expression: "each", inputField: "rows", outputPath: "out", executionMode: "loop", fields: {sum: "sum($root)", n: "len($root)"}}],
+  },
+  cases: [
+    [{rows: [[1, 2], [3], []]}, {out: [{sum: 3, n: 2}, {sum: 3, n: 1}, {sum: 0, n: 0}]}],
+    [{rows: [[10]]}, {out: [{sum: 10, n: 1}]}],
+  ],
+}
+
+{
+  name: "an item error fails the whole node",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "a + b"}}],
+  },
+  cases: [
+    [{items: [{a: 1, b: 2}, {a: 3, b: 4}]}, {out: [{v: 3}, {v: 7}]}],
+    [{items: [{a: 1, b: 2}, {a: "x", b: 4}]}, "!error"],
+    [{items: [{a: "x", b: 1}]}, "!error"],
+  ],
+}
+
+// --- `$` inside loops --------------------------------------------------------------------------
+// `$` is the object built so far for the current item; it starts empty for every item.
+{
+  name: "$ refers to earlier fields of the same item",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {
+      base: "price * qty",
+      tax: "$.base * 0.1",
+      total: "$.base + $.tax",
+    }}],
+  },
+  cases: [
+    [{items: [{price: 10, qty: 2}, {price: 5, qty: 1}]}, {out: [{base: 20, tax: 2, total: 22}, {base: 5, tax: 0.5, total: 5.5}]}],
+    [{items: [{price: 0, qty: 9}]}, {out: [{base: 0, tax: 0, total: 0}]}],
+  ],
+}
+
+{
+  name: "$ does not leak between items",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {
+      seen: "$.marker ?? 'fresh'",
+      marker: "'set'",
+    }}],
+  },
+  cases: [
+    [{items: [{}, {}, {}]}, {out: [{seen: "fresh", marker: "set"}, {seen: "fresh", marker: "set"}, {seen: "fresh", marker: "set"}]}],
+    [{items: [{marker: "x"}]}, {out: [{seen: "fresh", marker: "set"}]}],
+  ],
+}
+
+{
+  name: "$ with nested keys in a loop",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {
+      "a.b": "v + 1",
+      "c": "$.a.b * 2",
+    }}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{a: {b: 2}, c: 4}, {a: {b: 3}, c: 6}]}],
+  ],
+}
+
+// --- Outer context inside loops ---------------------------------------------------------------
+// The item replaces the environment: fields of the node input outside the item are not visible
+// unless reached through $nodes.
+{
+  name: "outer input fields are not in scope inside the loop",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {rate: "rate ?? 'missing'"}}],
+  },
+  cases: [
+    [{rate: 2, items: [{}]}, {out: [{rate: "missing"}]}],
+    [{rate: 2, items: [{rate: 5}]}, {out: [{rate: 5}]}],
+  ],
+}
+
+{
+  name: "outer input fields through $nodes inside the loop",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {scaled: "v * $nodes.input.rate"}}],
+  },
+  cases: [
+    [{rate: 2, items: [{v: 1}, {v: 3}]}, {out: [{scaled: 2}, {scaled: 6}]}],
+    [{rate: 0.5, items: [{v: 4}]}, {out: [{scaled: 2}]}],
+    [{rate: 10, items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "loop body reads a previous node through $nodes",
+  graph: {
+    nodes: [
+      {expression: "config", fields: {factor: "factor ?? 1"}},
+      {expression: "each", inputField: "$nodes.input.items", outputPath: "out", executionMode: "loop", fields: {v: "v * $nodes.config.factor"}},
+    ],
+  },
+  cases: [
+    [{factor: 3, items: [{v: 1}, {v: 2}]}, {out: [{v: 3}, {v: 6}]}],
+    [{items: [{v: 5}]}, {out: [{v: 5}]}],
+  ],
+}
+
+// --- passThrough with loops -------------------------------------------------------------------
+// passThrough in a loop merges each item into its result, and then the node input into the
+// final output.
+{
+  name: "loop with passThrough and outputPath keeps the input and merges items",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {total: "price * qty"}}],
+  },
+  cases: [
+    [
+      {customer: "c1", items: [{price: 2, qty: 3}, {price: 1, qty: 4}]},
+      {customer: "c1", items: [{price: 2, qty: 3, total: 6}, {price: 1, qty: 4, total: 4}]},
+    ],
+    [{customer: "c2", items: []}, {customer: "c2", items: []}],
+  ],
+}
+
+{
+  name: "loop with passThrough writing to a different path",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "priced", executionMode: "loop", passThrough: true, fields: {total: "price"}}],
+  },
+  cases: [
+    [{items: [{price: 2}]}, {items: [{price: 2}], priced: [{price: 2, total: 2}]}],
+    [{items: [{price: 2, total: 9}]}, {items: [{price: 2, total: 9}], priced: [{price: 2, total: 2}]}],
+    [{items: [], x: 1}, {items: [], x: 1, priced: []}],
+  ],
+}
+
+{
+  name: "loop result overrides item fields of the same name",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", passThrough: true, fields: {v: "v * 10", "meta.seen": "true"}}],
+  },
+  cases: [
+    [{items: [{v: 1, meta: {id: 7}}]}, {items: [{v: 1, meta: {id: 7}}], out: [{v: 10, meta: {id: 7, seen: true}}]}],
+    [{items: [{v: 2}]}, {items: [{v: 2}], out: [{v: 20, meta: {seen: true}}]}],
+  ],
+}
+
+{
+  name: "loop with passThrough and no outputPath",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", executionMode: "loop", passThrough: true, fields: {v: "1"}}],
+  },
+  cases: [
+    [{items: [{a: 1}]}, [{a: 1, v: 1}], "question: the node input merged with the result array yields the array itself (items merged with their results), the outer input is dropped"],
+    [{x: 1, items: [{a: 2}, {}]}, [{a: 2, v: 1}, {v: 1}], "question: the node input merged with the result array yields the array itself (items merged with their results), the outer input is dropped"],
+  ],
+}
+
+{
+  name: "loop passThrough over scalar items",
+  graph: {
+    nodes: [{expression: "each", inputField: "nums", outputPath: "out", executionMode: "loop", passThrough: true, fields: {d: "$root * 2"}}],
+  },
+  cases: [
+    [{nums: [1, 2]}, {nums: [1, 2], out: [{d: 2}, {d: 4}]}],
+  ],
+}
+
+// --- Downstream of loops -----------------------------------------------------------------------
+{
+  name: "a node after a loop aggregates its results",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {total: "price * qty"}},
+      {expression: "sum", fields: {grand: "sum(map(lines, #.total))", count: "len(lines)"}},
+    ],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 1, qty: 4}]}, {grand: 10, count: 2}],
+    [{items: []}, {grand: 0, count: 0}],
+    [{items: [{price: 0.1, qty: 1}, {price: 0.2, qty: 1}]}, {grand: 0.3, count: 2}],
+  ],
+}
+
+{
+  name: "loop output without outputPath feeds a non-object to the next node",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", executionMode: "loop", fields: {v: "x"}},
+      {expression: "after", fields: {n: "len($root)", first: "$root[0].v"}},
+    ],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {n: 2, first: 1}],
+    [{items: [{x: 9}]}, {n: 1, first: 9}],
+  ],
+}
+
+{
+  name: "two loops in parallel merge at the output",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "xs", outputPath: "as", executionMode: "loop", fields: {v: "$root + 1"}},
+      {expression: "b", inputField: "ys", outputPath: "bs", executionMode: "loop", fields: {v: "$root * 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{xs: [1, 2], ys: [3]}, {as: [{v: 2}, {v: 3}], bs: [{v: 6}]}],
+    [{xs: [], ys: []}, {as: [], bs: []}],
+  ],
+}
+
+{
+  name: "two loops writing the same outputPath merge index-wise",
+  graph: {
+    nodes: [
+      {expression: "a", inputField: "xs", outputPath: "out", executionMode: "loop", fields: {a: "$root"}},
+      {expression: "b", inputField: "xs", outputPath: "out", executionMode: "loop", fields: {b: "$root * 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{xs: [1, 2]}, {out: [{a: 1}, {a: 2}]}, "question: two branches writing the same array path: the first branch's array is kept whole, the second is dropped (not merged per index, not replaced)"],
+    [{xs: [3]}, {out: [{a: 3}]}, "question: two branches writing the same array path: the first branch's array is kept whole, the second is dropped (not merged per index, not replaced)"],
+  ],
+}
+
+{
+  name: "a loop feeding a second loop",
+  graph: {
+    nodes: [
+      {expression: "first", inputField: "items", outputPath: "stage1", executionMode: "loop", fields: {v: "x + 1"}},
+      {expression: "second", inputField: "stage1", outputPath: "stage2", executionMode: "loop", fields: {w: "v * 10"}},
+    ],
+  },
+  cases: [
+    [{items: [{x: 1}, {x: 2}]}, {stage2: [{w: 20}, {w: 30}]}],
+    [{items: []}, {stage2: []}],
+  ],
+}
+
+{
+  name: "switch routes before a loop",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["len(items) > 0", ""]},
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {v: "x"}},
+      {expression: "none", fields: {out: "'empty'"}},
+    ],
+    edges: ["input -> route", "route:0 -> each -> output", "route:1 -> none -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}]}, {out: [{v: 1}]}],
+    [{items: []}, {out: "empty"}],
+    [{items: [{x: "a"}, {x: null}]}, {out: [{v: "a"}, {v: null}]}],
+  ],
+}
+
+// --- Decision tables in loop mode -------------------------------------------------------------
+// The table is evaluated against each item; a first-hit table yields the matched outputs (or
+// an empty object), a collect table yields an array per item.
+{
+  name: "first-hit table per item",
+  graph: {
+    nodes: [{table: "grade", inputField: "students", outputPath: "grades", executionMode: "loop", inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+      [">= 50", "'B'"],
+      ["", "'F'"],
+    ]}],
+  },
+  cases: [
+    [{students: [{score: 95}, {score: 60}, {score: 10}]}, {grades: [{grade: "A"}, {grade: "B"}, {grade: "F"}]}],
+    [{students: []}, {grades: []}],
+    [{students: [{score: 90}]}, {grades: [{grade: "A"}]}],
+  ],
+}
+
+{
+  name: "first-hit table per item with no match yields null",
+  graph: {
+    nodes: [{table: "grade", inputField: "students", outputPath: "grades", executionMode: "loop", inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+    ]}],
+  },
+  cases: [
+    [{students: [{score: 95}, {score: 10}]}, {grades: [{grade: "A"}, null]}, "question: a non-matching first-hit table outputs null; in single mode the graph merge hides it as {}, in a loop the null lands in the result array"],
+    [{students: [{score: 1}]}, {grades: [null]}, "question: a non-matching first-hit table outputs null; in single mode the graph merge hides it as {}, in a loop the null lands in the result array"],
+    [{students: [{}]}, {grades: [null]}, "question: a non-matching first-hit table outputs null; in single mode the graph merge hides it as {}, in a loop the null lands in the result array"],
+    [{students: [{score: 99}]}, {grades: [{grade: "A"}]}],
+  ],
+}
+
+{
+  name: "collect table per item yields an array per item",
+  graph: {
+    nodes: [{table: "tags", hit: "collect", inputField: "items", outputPath: "tags", executionMode: "loop", inputs: ["v"], outputs: ["tag"], rules: [
+      ["> 0", "'positive'"],
+      ["> 10", "'big'"],
+      ["< 0", "'negative'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 20}, {v: -1}, {v: 0}]}, {tags: [[{tag: "positive"}, {tag: "big"}], [{tag: "negative"}], []]}],
+    [{items: [{v: 5}]}, {tags: [[{tag: "positive"}]]}],
+    [{items: []}, {tags: []}],
+  ],
+}
+
+{
+  name: "table loop with passThrough merges each item with its row",
+  graph: {
+    nodes: [{table: "rate", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["kind"], outputs: ["rate"], rules: [
+      ["'a'", "0.1"],
+      ["", "0"],
+    ]}],
+  },
+  cases: [
+    [{id: 1, items: [{kind: "a"}, {kind: "b"}]}, {id: 1, items: [{kind: "a", rate: 0.1}, {kind: "b", rate: 0}]}],
+    [{id: 2, items: []}, {id: 2, items: []}],
+  ],
+}
+
+{
+  name: "table loop over scalars uses $root as the input field",
+  graph: {
+    nodes: [{table: "sign", inputField: "nums", outputPath: "out", executionMode: "loop", inputs: ["$root"], outputs: ["sign"], rules: [
+      ["> 0", "'+'"],
+      ["< 0", "'-'"],
+      ["", "'0'"],
+    ]}],
+  },
+  cases: [
+    [{nums: [3, -2, 0]}, {out: [{sign: "+"}, {sign: "-"}, {sign: "0"}]}],
+    [{nums: []}, {out: []}],
+  ],
+}
+
+{
+  name: "table loop over a non-array is an error",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["r"], rules: [["", "1"]]}],
+  },
+  cases: [
+    [{items: [{}]}, {out: [{r: 1}]}],
+    [{items: {v: 1}}, "!error"],
+    [{}, "!error"],
+    [{items: null}, "!error"],
+  ],
+}
+
+{
+  name: "table loop output cells read the item",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["kind"], outputs: ["label", "doubled"], rules: [
+      ["'x'", "'X:' + name", "n * 2"],
+      ["", "name", "n"],
+    ]}],
+  },
+  cases: [
+    [{items: [{kind: "x", name: "a", n: 2}, {kind: "y", name: "b", n: 3}]}, {out: [{label: "X:a", doubled: 4}, {label: "b", doubled: 3}]}],
+  ],
+}
+
+{
+  name: "table loop on a nested input field",
+  graph: {
+    nodes: [{table: "t", inputField: "order.lines", outputPath: "order.rated", executionMode: "loop", inputs: ["product.type"], outputs: ["vat"], rules: [
+      ["'food'", "0.05"],
+      ["", "0.2"],
+    ]}],
+  },
+  cases: [
+    [{order: {lines: [{product: {type: "food"}}, {product: {type: "tv"}}, {product: null}]}}, {order: {rated: [{vat: 0.05}, {vat: 0.2}, {vat: 0.2}]}}],
+    [{order: {lines: []}}, {order: {rated: []}}],
+  ],
+}
+
+// --- Decision nodes in loop mode --------------------------------------------------------------
+// Each item is evaluated by the sub-decision; results are collected in order.
+{
+  name: "sub-decision per item",
+  decisions: {
+    price: {nodes: [{expression: "calc", fields: {total: "price * qty"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "price", inputField: "items", outputPath: "lines", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 4, qty: 1}]}, {lines: [{total: 6}, {total: 4}]}],
+    [{items: []}, {lines: []}],
+    [{items: [{price: 0.5, qty: 2}]}, {lines: [{total: 1}]}],
+  ],
+}
+
+{
+  name: "sub-decision per item with a table and switch inside",
+  decisions: {
+    classify: {
+      nodes: [
+        {switch: "s", when: ["amount > 1000", ""]},
+        {expression: "big", fields: {kind: "'big'", review: "true"}},
+        {table: "small", inputs: ["amount"], outputs: ["kind"], rules: [["< 10", "'tiny'"], ["", "'small'"]]},
+      ],
+      edges: ["input -> s", "s:0 -> big -> output", "s:1 -> small -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "classify", inputField: "txs", outputPath: "kinds", executionMode: "loop"}],
+  },
+  cases: [
+    [{txs: [{amount: 5000}, {amount: 5}, {amount: 50}]}, {kinds: [{kind: "big", review: true}, {kind: "tiny"}, {kind: "small"}]}],
+    [{txs: [{amount: 50}, {amount: 5000}]}, {kinds: [{kind: "small"}, {kind: "big", review: true}]}],
+    [{txs: []}, {kinds: []}],
+  ],
+}
+
+{
+  name: "sub-decision loop with passThrough",
+  decisions: {
+    flag: {nodes: [{expression: "f", fields: {flagged: "score < 0.5"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "flag", inputField: "users", outputPath: "users", executionMode: "loop", passThrough: true}],
+  },
+  cases: [
+    [{batch: 1, users: [{id: "a", score: 0.2}, {id: "b", score: 0.9}]}, {batch: 1, users: [{id: "a", score: 0.2, flagged: true}, {id: "b", score: 0.9, flagged: false}]}],
+    [{batch: 2, users: []}, {batch: 2, users: []}],
+  ],
+}
+
+{
+  name: "sub-decision loop over a non-array is an error",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{}, {}]}, {out: [{v: 1}, {v: 1}]}],
+    [{items: {}}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "sub-decision loop: an item failing in the child fails the parent",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "a + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{a: 1}, {a: 2}]}, {out: [{v: 2}, {v: 3}]}],
+    [{items: [{a: 1}, {a: "x"}]}, "!error"],
+  ],
+}
+
+{
+  name: "sub-decision loop over scalar items",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {sq: "$root * $root"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "nums", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{nums: [2, 3]}, "!error", "question: the child's first node sees {} because graph-edge merging drops non-object values, so a scalar item never reaches the child's nodes"],
+    [{nums: []}, {out: []}],
+  ],
+}
+
+{
+  name: "sub-decision state does not leak between items",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["kind == 'a'", ""]},
+        {expression: "a", fields: {fromA: "true"}},
+        {expression: "b", fields: {fromB: "true"}},
+      ],
+      edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{kind: "a"}, {kind: "b"}, {kind: "a"}]}, {out: [{fromA: true}, {fromB: true}, {fromA: true}]}],
+    [{items: [{kind: "b"}, {kind: "a"}]}, {out: [{fromB: true}, {fromA: true}]}],
+  ],
+}
+
+// --- Nested loops ------------------------------------------------------------------------------
+// A loop over outer items calls a sub-decision that itself loops over the inner items.
+{
+  name: "nested loops through a sub-decision",
+  decisions: {
+    order: {nodes: [
+      {expression: "lines", inputField: "lines", outputPath: "lines", executionMode: "loop", fields: {total: "price * qty"}},
+      {expression: "sum", fields: {total: "sum(map(lines, #.total))", lines: "lines"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "orders", key: "order", inputField: "orders", outputPath: "orders", executionMode: "loop"}],
+  },
+  cases: [
+    [
+      {orders: [{lines: [{price: 2, qty: 1}, {price: 3, qty: 2}]}, {lines: []}]},
+      {orders: [{total: 8, lines: [{total: 2}, {total: 6}]}, {total: 0, lines: []}]},
+    ],
+    [{orders: []}, {orders: []}],
+    [{orders: [{lines: [{price: 1, qty: 1}]}]}, {orders: [{total: 1, lines: [{total: 1}]}]}],
+  ],
+}
+
+{
+  name: "nested sub-decision loops two levels deep",
+  decisions: {
+    cell: {nodes: [{expression: "c", fields: {v: "n * 10"}}]},
+    row: {nodes: [{decision: "cells", key: "cell", inputField: "cells", outputPath: "cells", executionMode: "loop"}]},
+  },
+  graph: {
+    nodes: [{decision: "rows", key: "row", inputField: "rows", outputPath: "rows", executionMode: "loop"}],
+  },
+  cases: [
+    [{rows: [{cells: [{n: 1}, {n: 2}]}, {cells: [{n: 3}]}]}, {rows: [{cells: [{v: 10}, {v: 20}]}, {cells: [{v: 30}]}]}],
+    [{rows: [{cells: []}]}, {rows: [{cells: []}]}],
+    [{rows: []}, {rows: []}],
+  ],
+}
+
+{
+  name: "inner loop error bubbles through the outer loop",
+  decisions: {
+    inner: {nodes: [{expression: "e", inputField: "xs", outputPath: "xs", executionMode: "loop", fields: {v: "$root + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "outer", key: "inner", inputField: "groups", outputPath: "groups", executionMode: "loop"}],
+  },
+  cases: [
+    [{groups: [{xs: [1]}, {xs: [2, 3]}]}, {groups: [{xs: [{v: 2}]}, {xs: [{v: 3}, {v: 4}]}]}],
+    [{groups: [{xs: [1]}, {xs: "nope"}]}, "!error"],
+    [{groups: [{xs: [1, "a"]}]}, "!error"],
+  ],
+}
+
+// --- Single mode and explicit modes -------------------------------------------------------------
+// executionMode "single" (the default) treats the selected value as one input, even an array.
+{
+  name: "single mode with inputField evaluates once against the selected value",
+  graph: {
+    nodes: [{expression: "e", inputField: "customer", outputPath: "out", executionMode: "single", fields: {n: "name"}}],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {out: {n: "ann"}}],
+    [{customer: {}}, {out: {n: null}}],
+    [{}, {out: {n: null}}],
+  ],
+}
+
+{
+  name: "single mode over an array input does not iterate",
+  graph: {
+    nodes: [{expression: "e", inputField: "items", outputPath: "out", executionMode: "single", fields: {n: "len($root)"}}],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {out: {n: 3}}],
+    [{items: []}, {out: {n: 0}}],
+  ],
+}
+
+// --- Larger loops --------------------------------------------------------------------------------
+{
+  name: "loop preserves order over many items",
+  graph: {
+    nodes: [{expression: "each", inputField: "map([1..20], {i: #})", outputPath: "out", executionMode: "loop", fields: {i: "i"}}],
+    edges: ["input -> each -> output"],
+  },
+  cases: [
+    [{}, {out: [{i: 1}, {i: 2}, {i: 3}, {i: 4}, {i: 5}, {i: 6}, {i: 7}, {i: 8}, {i: 9}, {i: 10}, {i: 11}, {i: 12}, {i: 13}, {i: 14}, {i: 15}, {i: 16}, {i: 17}, {i: 18}, {i: 19}, {i: 20}]}],
+  ],
+}
+
+{
+  name: "loop items with mixed shapes",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {t: "type($root)"}}],
+  },
+  cases: [
+    [{items: [1, "a", true, null, [1], {x: 1}]}, {out: [{t: "number"}, {t: "string"}, {t: "bool"}, {t: "null"}, {t: "array"}, {t: "object"}]}],
+  ],
+}

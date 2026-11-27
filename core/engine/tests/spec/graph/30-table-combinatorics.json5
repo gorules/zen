@@ -1,0 +1,647 @@
+// Decision tables, multi-column combinatorics.
+//
+// A rule matches only when every one of its input cells passes for the same input. These
+// suites pin down conjunction across columns (values that each appear in some rule but never
+// together), where wildcards sit and how that interacts with rule order, cells that read
+// several input fields at once, and output cells computed from several inputs. Small tables
+// (under eight rules) are evaluated row by row; the larger variants also exercise the
+// per-column equality index intersecting its columns.
+
+// --- Columns that match individually but not together --------------------------------------
+// Every value of the input appears in some rule, but no single rule accepts the combination.
+
+{
+  name: "combinations: two columns, a cross pairing matches no rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["p", "q"], outputs: ["r"], rules: [
+        ["'A'", "'x'", "'Ax'"],
+        ["'B'", "'y'", "'By'"],
+        ["'C'", "'z'", "'Cz'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{p: "A", q: "x"}, {r: "Ax"}],
+    [{p: "B", q: "y"}, {r: "By"}],
+    [{p: "A", q: "y"}, {}],
+    [{p: "B", q: "x"}, {}],
+    [{p: "C", q: "x"}, {}],
+    [{p: "A"}, {}],
+    [{q: "x"}, {}],
+  ],
+}
+
+{
+  name: "combinations: the same cross pairing in a collect table",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["p", "q"], outputs: ["r"], rules: [
+        ["'A'", "'x'", "'Ax'"],
+        ["'B'", "'y'", "'By'"],
+        ["'C'", "'z'", "'Cz'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{p: "A", q: "x"}, [{r: "Ax"}]],
+    [{p: "A", q: "y"}, []],
+    [{p: "C", q: "z"}, [{r: "Cz"}]],
+    [{p: "C", q: null}, []],
+  ],
+}
+
+{
+  name: "combinations: a 3x3 grid with three holes, large enough to be indexed",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["p", "q"], outputs: ["r"], rules: [
+        ["'A'", "'x'", "'Ax'"],
+        ["'A'", "'z'", "'Az'"],
+        ["'B'", "'x'", "'Bx'"],
+        ["'B'", "'y'", "'By'"],
+        ["'C'", "'y'", "'Cy'"],
+        ["'C'", "'z'", "'Cz'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{p: "A", q: "x"}, {r: "Ax"}],
+    [{p: "A", q: "y"}, {}],
+    [{p: "A", q: "z"}, {r: "Az"}],
+    [{p: "B", q: "x"}, {r: "Bx"}],
+    [{p: "B", q: "y"}, {r: "By"}],
+    [{p: "B", q: "z"}, {}],
+    [{p: "C", q: "x"}, {}],
+    [{p: "C", q: "y"}, {r: "Cy"}],
+    [{p: "C", q: "z"}, {r: "Cz"}],
+    [{p: "A", q: "w"}, {}],
+    [{p: "D", q: "x"}, {}],
+  ],
+}
+
+{
+  name: "combinations: three boolean columns, each rule needs one false",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["true", "true", "false", "'ab'"],
+        ["false", "true", "true", "'bc'"],
+        ["true", "false", "true", "'ac'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: true, b: true, c: false}, {r: "ab"}],
+    [{a: false, b: true, c: true}, {r: "bc"}],
+    [{a: true, b: false, c: true}, {r: "ac"}],
+    [{a: true, b: true, c: true}, {}],
+    [{a: false, b: false, c: false}, {}],
+    [{a: true, b: true}, {}],
+  ],
+}
+
+{
+  name: "combinations: an indexed column matches but a range column vetoes",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code", "amount"], outputs: ["r"], rules: [
+        ["'c0'", "[0..9]", "'c0'"],
+        ["'c1'", "[10..19]", "'c1'"],
+        ["'c2'", "[20..29]", "'c2'"],
+        ["'c3'", "[30..39]", "'c3'"],
+        ["'c4'", "[40..49]", "'c4'"],
+        ["'c5'", "[50..59]", "'c5'"],
+        ["'c6'", "[60..69]", "'c6'"],
+        ["'c7'", "[70..79]", "'c7'"],
+        ["'c8'", "[80..89]", "'c8'"],
+        ["'c9'", "[90..99]", "'c9'"],
+        ["", "> 1000", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "c3", amount: 35}, {r: "c3"}],
+    [{code: "c3", amount: 45}, {}],
+    [{code: "c4", amount: 45}, {r: "c4"}],
+    [{code: "c0", amount: 0}, {r: "c0"}],
+    [{code: "c9", amount: 99}, {r: "c9"}],
+    [{code: "c9", amount: 2000}, {r: "big"}],
+    [{code: "c9"}, {}],
+    [{amount: 35}, {}],
+  ],
+}
+
+{
+  name: "combinations: two indexed columns of different types intersect",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n", "s"], outputs: ["r"], rules: [
+        ["0", "'a'", "'0a'"],
+        ["0", "'b'", "'0b'"],
+        ["1", "'a'", "'1a'"],
+        ["1", "'b'", "'1b'"],
+        ["2", "'a'", "'2a'"],
+        ["2", "'b'", "'2b'"],
+        ["0", "", "'0*'"],
+        ["", "'a'", "'*a'"],
+        ["", "", "'**'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0, s: "a"}, {r: "0a"}],
+    [{n: 2, s: "b"}, {r: "2b"}],
+    [{n: 0, s: "c"}, {r: "0*"}],
+    [{n: 3, s: "a"}, {r: "*a"}],
+    [{n: 3, s: "b"}, {r: "**"}],
+    [{n: "0", s: "a"}, {r: "*a"}],
+    [{n: 1, s: 1}, {r: "**"}],
+  ],
+}
+
+// --- Wildcard placement --------------------------------------------------------------------
+// Wildcards in different positions combined with rule order: first hit picks the first rule in
+// order, not the most specific one, so tables list specific rules first by convention.
+
+{
+  name: "wildcards: all eight wildcard patterns over three columns, most specific first",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["'a'", "'b'", "'c'", "'abc'"],
+        ["'a'", "'b'", "", "'ab*'"],
+        ["'a'", "", "'c'", "'a*c'"],
+        ["", "'b'", "'c'", "'*bc'"],
+        ["'a'", "", "", "'a**'"],
+        ["", "'b'", "", "'*b*'"],
+        ["", "", "'c'", "'**c'"],
+        ["", "", "", "'***'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: "a", b: "b", c: "c"}, {r: "abc"}],
+    [{a: "a", b: "b", c: "x"}, {r: "ab*"}],
+    [{a: "a", b: "x", c: "c"}, {r: "a*c"}],
+    [{a: "x", b: "b", c: "c"}, {r: "*bc"}],
+    [{a: "a"}, {r: "a**"}],
+    [{c: "c"}, {r: "**c"}],
+    [{a: "x", b: "x", c: "x"}, {r: "***"}],
+    [{}, {r: "***"}],
+  ],
+}
+
+{
+  name: "wildcards: the same patterns, most general first, always hit the all-wildcard rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["", "", "", "'***'"],
+        ["", "", "'c'", "'**c'"],
+        ["", "'b'", "", "'*b*'"],
+        ["'a'", "", "", "'a**'"],
+        ["", "'b'", "'c'", "'*bc'"],
+        ["'a'", "", "'c'", "'a*c'"],
+        ["'a'", "'b'", "", "'ab*'"],
+        ["'a'", "'b'", "'c'", "'abc'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: "a", b: "b", c: "c"}, {r: "***"}],
+    [{a: "a", b: "b", c: "x"}, {r: "***"}],
+    [{a: "a", b: "x", c: "c"}, {r: "***"}],
+    [{a: "x", b: "b", c: "c"}, {r: "***"}],
+  ],
+}
+
+{
+  name: "wildcards: the eight patterns in a collect table list every applicable pattern in order",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["'a'", "'b'", "'c'", "'abc'"],
+        ["'a'", "'b'", "", "'ab*'"],
+        ["'a'", "", "'c'", "'a*c'"],
+        ["", "'b'", "'c'", "'*bc'"],
+        ["'a'", "", "", "'a**'"],
+        ["", "'b'", "", "'*b*'"],
+        ["", "", "'c'", "'**c'"],
+        ["", "", "", "'***'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: "a", b: "b", c: "c"}, [{r: "abc"}, {r: "ab*"}, {r: "a*c"}, {r: "*bc"}, {r: "a**"}, {r: "*b*"}, {r: "**c"}, {r: "***"}]],
+    [{a: "a", b: "b", c: "x"}, [{r: "ab*"}, {r: "a**"}, {r: "*b*"}, {r: "***"}]],
+    [{a: "a", b: "x", c: "c"}, [{r: "a*c"}, {r: "a**"}, {r: "**c"}, {r: "***"}]],
+    [{a: "x", b: "b", c: "c"}, [{r: "*bc"}, {r: "*b*"}, {r: "**c"}, {r: "***"}]],
+    [{a: "a"}, [{r: "a**"}, {r: "***"}]],
+    [{c: "c"}, [{r: "**c"}, {r: "***"}]],
+    [{a: "x", b: "x", c: "x"}, [{r: "***"}]],
+    [{}, [{r: "***"}]],
+  ],
+}
+
+{
+  name: "wildcards: single-column rules placed before the full match shadow it",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b", "c"], outputs: ["r"], rules: [
+        ["", "'b'", "", "'*b*'"],
+        ["'a'", "", "", "'a**'"],
+        ["", "", "'c'", "'**c'"],
+        ["'a'", "'b'", "'c'", "'abc'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: "a", b: "b", c: "c"}, {r: "*b*"}],
+    [{a: "a", b: "x", c: "c"}, {r: "a**"}],
+    [{a: "x", b: "x", c: "c"}, {r: "**c"}],
+    [{a: "x", b: "x", c: "x"}, {}],
+  ],
+}
+
+{
+  name: "wildcards: a wildcard column between two constrained ones",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country", "plan", "seats"], outputs: ["price"], rules: [
+        ["'US'", "", "> 100", "8"],
+        ["'US'", "'pro'", "", "12"],
+        ["", "'pro'", "> 100", "10"],
+        ["'US'", "", "", "15"],
+        ["", "", "> 100", "11"],
+        ["", "", "", "20"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", plan: "pro", seats: 500}, {price: 8}],
+    [{country: "US", plan: "pro", seats: 5}, {price: 12}],
+    [{country: "DE", plan: "pro", seats: 500}, {price: 10}],
+    [{country: "US", plan: "basic", seats: 5}, {price: 15}],
+    [{country: "DE", plan: "basic", seats: 500}, {price: 11}],
+    [{country: "DE", plan: "basic", seats: 5}, {price: 20}],
+    [{country: "US"}, {price: 15}],
+    [{seats: 101}, {price: 11}],
+  ],
+}
+
+{
+  name: "wildcards: per-column `[]` collects from rules matched through different wildcard patterns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", "b"], outputs: ["first", "via[]"], rules: [
+        ["'a'", "'b'", "'ab'", "'ab'"],
+        ["'a'", "", "'a*'", "'a*'"],
+        ["", "'b'", "'*b'", "'*b'"],
+        ["", "", "'**'", "'**'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: "a", b: "b"}, {first: "ab", via: ["ab", "a*", "*b", "**"]}],
+    [{a: "a", b: "x"}, {first: "a*", via: ["a*", "**"]}],
+    [{a: "x", b: "b"}, {first: "*b", via: ["*b", "**"]}],
+    [{}, {first: "**", via: ["**"]}],
+  ],
+}
+
+// --- Order sensitivity ---------------------------------------------------------------------
+// Reordering rules changes first-hit results and collect order, never the collected set.
+
+{
+  name: "order: overlapping rectangles over two range columns, rules A, B, C, first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x", "y"], outputs: ["r"], rules: [
+        ["[0..10]", "[0..10]", "'A'"],
+        ["[5..15]", "[5..15]", "'B'"],
+        ["[0..15]", "[8..9]", "'C'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, {r: "A"}],
+    [{x: 7, y: 7}, {r: "A"}],
+    [{x: 12, y: 12}, {r: "B"}],
+    [{x: 12, y: 8}, {r: "B"}],
+    [{x: 7, y: 8}, {r: "A"}],
+    [{x: 16, y: 1}, {}],
+    [{x: 10, y: 5}, {r: "A"}],
+  ],
+}
+
+{
+  name: "order: overlapping rectangles, rules A, B, C, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x", "y"], outputs: ["r"], rules: [
+        ["[0..10]", "[0..10]", "'A'"],
+        ["[5..15]", "[5..15]", "'B'"],
+        ["[0..15]", "[8..9]", "'C'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, [{r: "A"}]],
+    [{x: 7, y: 7}, [{r: "A"}, {r: "B"}]],
+    [{x: 12, y: 12}, [{r: "B"}]],
+    [{x: 12, y: 8}, [{r: "B"}, {r: "C"}]],
+    [{x: 7, y: 8}, [{r: "A"}, {r: "B"}, {r: "C"}]],
+    [{x: 16, y: 1}, []],
+    [{x: 10, y: 5}, [{r: "A"}, {r: "B"}]],
+  ],
+}
+
+{
+  name: "order: overlapping rectangles over two range columns, rules C, B, A, first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x", "y"], outputs: ["r"], rules: [
+        ["[0..15]", "[8..9]", "'C'"],
+        ["[5..15]", "[5..15]", "'B'"],
+        ["[0..10]", "[0..10]", "'A'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, {r: "A"}],
+    [{x: 7, y: 7}, {r: "B"}],
+    [{x: 12, y: 12}, {r: "B"}],
+    [{x: 12, y: 8}, {r: "C"}],
+    [{x: 7, y: 8}, {r: "C"}],
+    [{x: 16, y: 1}, {}],
+    [{x: 10, y: 5}, {r: "B"}],
+  ],
+}
+
+{
+  name: "order: overlapping rectangles, rules C, B, A, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x", "y"], outputs: ["r"], rules: [
+        ["[0..15]", "[8..9]", "'C'"],
+        ["[5..15]", "[5..15]", "'B'"],
+        ["[0..10]", "[0..10]", "'A'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1}, [{r: "A"}]],
+    [{x: 7, y: 7}, [{r: "B"}, {r: "A"}]],
+    [{x: 12, y: 12}, [{r: "B"}]],
+    [{x: 12, y: 8}, [{r: "C"}, {r: "B"}]],
+    [{x: 7, y: 8}, [{r: "C"}, {r: "B"}, {r: "A"}]],
+    [{x: 16, y: 1}, []],
+    [{x: 10, y: 5}, [{r: "B"}, {r: "A"}]],
+  ],
+}
+
+{
+  name: "order: an earlier rule whose cell errors for this input type is skipped, not fatal",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v", "w"], outputs: ["r"], rules: [
+        ["len($) > 2", "> 0", "'long-positive'"],
+        ["> 2", "len($) > 2", "'big-long'"],
+        ["", "", "'default'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "abc", w: 1}, {r: "long-positive"}],
+    [{v: 5, w: "xyz"}, {r: "big-long"}],
+    [{v: 5, w: 1}, {r: "default"}],
+    [{v: "abc", w: "xyz"}, {r: "default"}],
+    [{}, {r: "default"}],
+  ],
+}
+
+// --- Cells reading several input fields ----------------------------------------------------
+// Cells may reference any input field next to `$`, so one cell can relate several fields.
+
+{
+  name: "multi-field cells: `$` compared with sibling fields",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["age", "income"], outputs: ["r"], rules: [
+        [">= minAge", "", "'old-enough'"],
+        ["[minAge..maxAge]", "", "'in-band'"],
+        ["", "> expenses * 2", "'solvent'"],
+        ["$ >= minAge and $ <= maxAge", "$ > expenses", "'both'"],
+        ["", "$ == base + bonus", "'exact'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 30, minAge: 18, maxAge: 65, income: 5000, expenses: 2000, base: 4000, bonus: 1000}, [{r: "old-enough"}, {r: "in-band"}, {r: "solvent"}, {r: "both"}, {r: "exact"}]],
+    [{age: 70, minAge: 18, maxAge: 65, income: 3000, expenses: 2000}, [{r: "old-enough"}]],
+    [{age: 18, minAge: 18, maxAge: 18, income: 100, expenses: 100, base: 50, bonus: 50}, [{r: "old-enough"}, {r: "in-band"}, {r: "exact"}]],
+    [{age: 30, income: 5000}, []],
+  ],
+}
+
+{
+  name: "multi-field cells: a field-less column relating several fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null, "kind"], outputs: ["r"], rules: [
+        ["a > b and b > c", "'x'", "'desc-x'"],
+        ["a > b and b > c", "", "'desc'"],
+        ["a == b and b == c", "", "'flat'"],
+        ["a < b and b < c", "", "'asc'"],
+        ["", "", "'mixed'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 3, b: 2, c: 1, kind: "x"}, {r: "desc-x"}],
+    [{a: 3, b: 2, c: 1, kind: "y"}, {r: "desc"}],
+    [{a: 1, b: 1, c: 1}, {r: "flat"}],
+    [{a: 1, b: 2, c: 3}, {r: "asc"}],
+    [{a: 1, b: 3, c: 2}, {r: "mixed"}],
+    [{a: 1, b: 2}, {r: "mixed"}],
+    [{a: "a", b: "b", c: "c"}, {r: "mixed"}],
+  ],
+}
+
+{
+  name: "multi-field cells: a cell compares its column with another column's field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["from", "to"], outputs: ["r"], rules: [
+        ["", "== from", "'same'"],
+        ["< to", "", "'forward'"],
+        ["> to", "", "'backward'"],
+        ["", "", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{from: 1, to: 1}, {r: "same"}],
+    [{from: 1, to: 2}, {r: "forward"}],
+    [{from: 3, to: 2}, {r: "backward"}],
+    [{from: "a", to: "a"}, {r: "same"}],
+    [{from: 1}, {r: "unknown"}],
+    [{from: null, to: null}, {r: "same"}],
+    [{}, {r: "same"}],
+  ],
+}
+
+{
+  name: "multi-field cells: cells reading nested objects and arrays of the input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["role", "amount"], outputs: ["r"], rules: [
+        ["in policy.admins", "", "'admin'"],
+        ["", "<= max(policy.limits)", "'within'"],
+        ["", "", "'denied'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{role: "root", amount: 1000000.0, policy: {admins: ["root", "ops"], limits: [10, 50]}}, {r: "admin"}],
+    [{role: "user", amount: 50, policy: {admins: ["root"], limits: [10, 50]}}, {r: "within"}],
+    [{role: "user", amount: 51, policy: {admins: ["root"], limits: [10, 50]}}, {r: "denied"}],
+    [{role: "user", amount: 5, policy: {admins: [], limits: []}}, {r: "denied"}],
+    [{role: "user", amount: 5}, {r: "denied"}],
+  ],
+}
+
+{
+  name: "multi-field cells: input fields that combine several inputs",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["qty * price", "country + '-' + plan", "[a, b]"], outputs: ["r"], rules: [
+        ["> 1000", "'US-pro'", "", "'big-us-pro'"],
+        ["> 1000", "", "", "'big'"],
+        ["", "'DE-basic', 'DE-pro'", "", "'de'"],
+        ["", "", "contains($, 7)", "'has-seven'"],
+        ["", "", "len($) == 2", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{qty: 10, price: 200, country: "US", plan: "pro"}, {r: "big-us-pro"}],
+    [{qty: 10, price: 200, country: "US", plan: "basic"}, {r: "big"}],
+    [{qty: 1, price: 2, country: "DE", plan: "pro"}, {r: "de"}],
+    [{qty: 1, price: 2, country: "FR", plan: "pro", a: 7}, {r: "has-seven"}],
+    [{qty: 1, price: 2, country: "FR", plan: "pro", b: 7}, {r: "has-seven"}],
+    [{qty: 1, price: 2, country: "FR", plan: "pro"}, {r: "other"}],
+  ],
+}
+
+// --- Outputs computed from several inputs --------------------------------------------------
+// Output cells are full expressions over the node input, so one output can combine many fields.
+
+{
+  name: "multi-input outputs: arithmetic, templates, objects and arrays",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["total", "label", "pair", "box", "biggest"], rules: [
+        ["'sum'", "a + b + c", "`${first} ${last}`", "[a, b]", "{x: a, y: b}", "max([a, b, c])"],
+        ["'mul'", "a * b * c", "first + '/' + last", "[b, a]", "{x: b}", "a > b ? a : b"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "sum", a: 1, b: 2, c: 3, first: "Ann", last: "Lee"}, {total: 6, label: "Ann Lee", pair: [1, 2], box: {x: 1, y: 2}, biggest: 3}],
+    [{kind: "mul", a: 2, b: 5, c: 0.5, first: "x", last: "y"}, {total: 5, label: "x/y", pair: [5, 2], box: {x: 5}, biggest: 5}],
+    [{kind: "sum", a: 0.1, b: 0.2, c: 0, first: "A", last: "B"}, {total: 0.3, label: "A B", pair: [0.1, 0.2], box: {x: 0.1, y: 0.2}, biggest: 0.2}],
+    [{kind: "other", a: 1}, {}],
+  ],
+}
+
+{
+  name: "multi-input outputs: an output that fails for one combination skips that rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["ratio"], rules: [
+        ["'div'", "round(a / b, 2)"],
+        ["", "'n/a'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "div", a: 1, b: 4}, {ratio: 0.25}],
+    [{kind: "div", a: 2, b: 3}, {ratio: 0.67}],
+    [{kind: "div", a: "x", b: 3}, {ratio: "n/a"}],
+    [{kind: "other", a: 1, b: 4}, {ratio: "n/a"}],
+  ],
+}
+
+{
+  name: "multi-input outputs: collect rows each compute from several inputs",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["amount"], outputs: ["fee", "note"], rules: [
+        ["> 0", "amount * rate", "'percent'"],
+        ["> threshold", "flat", "`over ${threshold}`"],
+        ["", "amount * rate + flat", "'combined'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 200, rate: 0.01, flat: 5, threshold: 100}, [{fee: 2, note: "percent"}, {fee: 5, note: "over 100"}, {fee: 7, note: "combined"}]],
+    [{amount: 50, rate: 0.02, flat: 1, threshold: 100}, [{fee: 1, note: "percent"}, {fee: 2, note: "combined"}]],
+    [{amount: 0, rate: 0.02, flat: 1, threshold: 100}, [{fee: 1, note: "combined"}]],
+  ],
+}
+
+{
+  name: "multi-input outputs: outputs mixing the input with an upstream node through $nodes",
+  graph: {
+    nodes: [
+      {expression: "prep", passThrough: true, fields: {base: "price * qty"}},
+      {table: "t", inputs: ["tier"], outputs: ["due", "saved"], rules: [
+        ["'gold'", "base * 0.8", "base - base * 0.8"],
+        ["", "base", "$nodes.prep.base - base"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", price: 10, qty: 3}, {due: 24, saved: 6}],
+    [{tier: "basic", price: 10, qty: 3}, {due: 30, saved: 0}],
+    [{tier: "gold", price: 2.5, qty: 4}, {due: 8, saved: 2}],
+  ],
+}
+
+// --- Realistic combinations ----------------------------------------------------------------
+
+{
+  name: "realistic: a 13-rule premium table over age band, region and smoker status",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age", "region", "smoker"], outputs: ["premium", "rated"], rules: [
+        ["< 25", "'urban'", "true", "base * 1.6 * 1.2 * 1.5", "'young/urban/true'"],
+        ["< 25", "'urban'", "false", "base * 1.6 * 1.2 * 1", "'young/urban/false'"],
+        ["< 25", "'rural'", "true", "base * 1.6 * 0.9 * 1.5", "'young/rural/true'"],
+        ["< 25", "'rural'", "false", "base * 1.6 * 0.9 * 1", "'young/rural/false'"],
+        ["[25..60)", "'urban'", "true", "base * 1 * 1.2 * 1.5", "'adult/urban/true'"],
+        ["[25..60)", "'urban'", "false", "base * 1 * 1.2 * 1", "'adult/urban/false'"],
+        ["[25..60)", "'rural'", "true", "base * 1 * 0.9 * 1.5", "'adult/rural/true'"],
+        ["[25..60)", "'rural'", "false", "base * 1 * 0.9 * 1", "'adult/rural/false'"],
+        [">= 60", "'urban'", "true", "base * 1.3 * 1.2 * 1.5", "'senior/urban/true'"],
+        [">= 60", "'urban'", "false", "base * 1.3 * 1.2 * 1", "'senior/urban/false'"],
+        [">= 60", "'rural'", "true", "base * 1.3 * 0.9 * 1.5", "'senior/rural/true'"],
+        [">= 60", "'rural'", "false", "base * 1.3 * 0.9 * 1", "'senior/rural/false'"],
+        ["", "", "", "null", "'unrated'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 20, region: "urban", smoker: true, base: 100}, {premium: 288.000, rated: "young/urban/true"}],
+    [{age: 30, region: "rural", smoker: false, base: 100}, {premium: 90.0, rated: "adult/rural/false"}],
+    [{age: 60, region: "urban", smoker: false, base: 100}, {premium: 156.00, rated: "senior/urban/false"}],
+    [{age: 59, region: "rural", smoker: true, base: 100}, {premium: 135.00, rated: "adult/rural/true"}],
+    [{age: 24, region: "rural", smoker: false, base: 100}, {premium: 144.00, rated: "young/rural/false"}],
+    [{age: 30, region: "suburb", smoker: false, base: 100}, {rated: "unrated"}],
+    [{age: 30, region: "urban", smoker: "no", base: 100}, {rated: "unrated"}],
+    [{region: "urban", smoker: true, base: 100}, {rated: "unrated"}],
+    [{age: 30, region: "urban", smoker: true}, {rated: "unrated"}],
+  ],
+}

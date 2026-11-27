@@ -1,0 +1,126 @@
+expression (string);input (json 5);output (json 5);note
+# split: single-character separator
+split('a,b,c', ',');;['a', 'b', 'c']
+split('hello1,hello2,hello3', ',');;['hello1', 'hello2', 'hello3']
+split('a', ',');;['a']
+split('', ',');;['']
+split(',', ',');;['', '']
+split(',a,', ',');;['', 'a', '']
+split('a,,b', ',');;['a', '', 'b']
+split(',,', ',');;['', '', '']
+split('a b  c', ' ');;['a', 'b', '', 'c']
+split('abc', 'B');;['abc']
+split('aBc', 'B');;['a', 'c']
+# split: separators are literal, not regex
+split('a.b', '.');;['a', 'b']
+split('a|b', '|');;['a', 'b']
+split('a*b', '*');;['a', 'b']
+split('a1b2c', '\d');;['a1b2c']
+split('a\db', '\d');;['a', 'b']
+# split: multi-character separator
+split('a::b::c', '::');;['a', 'b', 'c']
+split('a:::b', '::');;['a', ':b']
+split('::a::', '::');;['', 'a', '']
+split('aaa', 'aa');;['', 'a']
+split('a, b, c', ', ');;['a', 'b', 'c']
+split('abc', 'abc');;['', '']
+split('ab', 'abc');;['ab']
+# split: empty separator
+split('abc', '');;['a', 'b', 'c'];bug: empty separator yields leading and trailing empty strings (got ['', 'a', 'b', 'c', ''])
+split('a,b', '');;['a', ',', 'b'];bug: empty separator yields leading and trailing empty strings
+split('äö', '');;['ä', 'ö'];bug: empty separator yields leading and trailing empty strings
+split('', '');;[];bug: splitting an empty string into characters yields ['', '']
+# split: unicode
+split('ÄxÖ', 'x');;['Ä', 'Ö']
+split('日,本', ',');;['日', '本']
+split('a😀b', '😀');;['a', 'b']
+split('straße', 'ß');;['stra', 'e']
+split('STRASSE', 'ß');;['STRASSE']
+# split: input rows
+split(s, ',');{s: 'a,b'};['a', 'b']
+split(s, ',');{s: 'a,b'};['a', 'b']
+split(s, ',');{s: ''};['']
+split(s, ',');{s: ','};['', '']
+split(s, ',');{s: 'x'};['x']
+split(s, ',');{s: 'ä,ö,ü'};['ä', 'ö', 'ü']
+split(s, ',');{s: ' a , b '};[' a ', ' b ']
+split(s, ',');{s: null};!error
+split(s, ',');{};!error
+split(s, ',');{s: 5};!error
+split(s, ',');{s: ['a,b']};!error
+split(s, t);{s: 'a\tb', t: '\t'};['a', 'b']
+split(s, t);{s: 'l1\nl2\n', t: '\n'};['l1', 'l2', '']
+split(s, t);{s: 'l1\r\nl2', t: '\n'};['l1\r', 'l2']
+split(s, t);{s: 'a b', t: ' '};['a', 'b']
+split(s, t);{s: 'a\u00a0b', t: ' '};['a\u00a0b']
+split(s, t);{s: 'a,b', t: null};!error
+split(s, t);{s: 'a1b', t: 1};!error
+len(split(s, ','));{s: 'a,b,c'};3
+len(split(s, ','));{s: ''};1
+len(split(s, ','));{s: 'abc'};1
+map(split(s, ','), trim(#));{s: ' a , b ,c'};['a', 'b', 'c']
+map(split('123,456,789', ','), number(#));;[123, 456, 789]
+split(s, ',')[1];{s: 'a,b'};'b'
+split(s, ',')[5];{s: 'a,b'};null
+# split: bad arguments
+split('a');;!error
+split('a', ',', 1);;!error
+split();;!error
+split(1, ',');;!error
+split('a1b', 1);;!error
+split(null, ',');;!error
+split('a', null);;!error
+split(true, 'r');;!error
+# fuzzyMatch: strings
+fuzzyMatch('hello', 'hello');;1
+fuzzyMatch('world', 'hello');;0.2
+fuzzyMatch('abc', 'abd');;0.666666666666667;question: score is an f64 rounded to 15 significant digits, not an exact decimal
+fuzzyMatch('', '');;1
+fuzzyMatch('a', '');;0
+fuzzyMatch('', 'abc');;0
+fuzzyMatch('abc', 'ABC');;0
+fuzzyMatch('abc', 'xyz');;0
+fuzzyMatch('ab', 'ba');;0.5
+fuzzyMatch('abcd', 'abdc');;0.75
+fuzzyMatch('abcd', 'abc');;0.75
+fuzzyMatch('kitten', 'sitting');;0.571428571428571
+fuzzyMatch('ä', 'a');;0
+fuzzyMatch('äb', 'ab');;0.5
+fuzzyMatch('日本', '日本語');;0.666666666666667
+fuzzyMatch('straße', 'strasse');;0.714285714285714
+fuzzyMatch('hello', 'helo') > 0.7;;true
+round(fuzzyMatch('abc', 'abd'), 2);;0.67
+string(fuzzyMatch('world', 'hello'));;'0.2'
+string(fuzzyMatch('hello', 'hello'));;'1'
+type(fuzzyMatch('a', 'b'));;'number'
+# fuzzyMatch: arrays
+fuzzyMatch(['hello', 'world'], 'hello');;[1, 0.2]
+fuzzyMatch([], 'a');;[]
+fuzzyMatch([''], '');;[1]
+fuzzyMatch(['ab', 'ba', 'xy'], 'ab');;[1, 0.5, 0]
+fuzzyMatch(['a', 1], 'a');;!error
+fuzzyMatch(['a', null], 'a');;!error
+fuzzyMatch([['a']], 'a');;!error
+# fuzzyMatch: input rows
+fuzzyMatch(s, 'kitten');{s: 'kitten'};1
+fuzzyMatch(s, 'kitten');{s: 'kitten'};1
+fuzzyMatch(s, 'kitten');{s: 'sitten'};0.833333333333333
+fuzzyMatch(s, 'kitten');{s: ''};0
+fuzzyMatch(s, 'kitten');{s: 'KITTEN'};0
+fuzzyMatch(s, 'kitten');{s: 'kittén'};0.833333333333333
+fuzzyMatch(s, 'kitten');{s: ['kitten', 'mitten']};[1, 0.833333333333333]
+fuzzyMatch(s, 'kitten');{s: null};!error
+fuzzyMatch(s, 'kitten');{};!error
+fuzzyMatch(s, 'kitten');{s: 1};!error
+fuzzyMatch(s, t);{s: 'abc', t: 'abc'};1
+fuzzyMatch(s, t);{s: 'abc', t: null};!error
+fuzzyMatch(s, t);{s: 'abc', t: ['abc']};!error
+# fuzzyMatch: bad arguments
+fuzzyMatch('a');;!error
+fuzzyMatch();;!error
+fuzzyMatch('a', 'b', 'c');;!error
+fuzzyMatch(1, 'a');;!error
+fuzzyMatch(null, 'a');;!error
+fuzzyMatch('a', null);;!error
+fuzzyMatch('a', 1);;!error
+fuzzyMatch({a: 'a'}, 'a');;!error

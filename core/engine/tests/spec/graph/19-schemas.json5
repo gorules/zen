@@ -1,0 +1,756 @@
+// Input and output node JSON schemas. A schema on the input node validates the request before any
+// node runs; a schema on the output node validates the merged result after the last node. Validation
+// failures are node errors (`NodeError`) carrying `path: message`. A field declared with
+// `format: date` or `format: date-time` becomes a date value on the input node, so downstream nodes
+// see a date and the result renders it back as its source text.
+
+// ---------------------------------------------------------------------------------------------
+// Required fields on the input node.
+{
+  name: "input schema: required fields must be present",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["age", "name"], properties: {age: {type: "number"}, name: {type: "string"}}}},
+      {expression: "calc", fields: {older: "age + 1", greeting: "'hi ' + name"}},
+    ],
+  },
+  cases: [
+    [{age: 30, name: "ann"}, {older: 31, greeting: "hi ann"}],
+    [{age: 0, name: ""}, {older: 1, greeting: "hi "}],
+    [{age: 30}, "!error: NodeError"],
+    [{name: "ann"}, "!error: NodeError"],
+    [{}, "!error: NodeError"],
+    [{age: 30, name: "ann", extra: true}, {older: 31, greeting: "hi ann"}],
+  ],
+}
+
+{
+  name: "input schema: the error names the missing property",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["customerId"], properties: {customerId: {type: "string"}}}},
+    ],
+  },
+  cases: [
+    [{customerId: "c-1"}, {customerId: "c-1"}],
+    [{}, "!error: customerId"],
+    [{customerid: "c-1"}, "!error: customerId"],
+  ],
+}
+
+{
+  name: "input schema: a required field that is null fails a non-nullable type",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["score"], properties: {score: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{score: 1}, {score: 1}],
+    [{score: null}, "!error: NodeError"],
+    [{score: "1"}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: an optional null field validates, and the result drops null-valued keys",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {nickname: {type: "string"}, age: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{nickname: "al", age: 3}, {nickname: "al", age: 3}],
+    [{nickname: null, age: 3}, {age: 3}],
+    [{age: null}, {}],
+    [{}, {}],
+    [{nickname: 5}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: nullable via a type list",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["limit"], properties: {limit: {type: ["number", "null"]}}}},
+      {expression: "calc", fields: {limit: "limit ?? 100"}},
+    ],
+  },
+  cases: [
+    [{limit: 5}, {limit: 5}],
+    [{limit: null}, {limit: 100}],
+    [{}, "!error: NodeError"],
+    [{limit: "5"}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Primitive types.
+{
+  name: "input schema: primitive types are checked",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        properties: {s: {type: "string"}, n: {type: "number"}, i: {type: "integer"}, b: {type: "boolean"}, o: {type: "object"}, a: {type: "array"}},
+      }},
+    ],
+  },
+  cases: [
+    [{s: "x", n: 1.5, i: 2, b: false, o: {}, a: []}, {s: "x", n: 1.5, i: 2, b: false, o: {}, a: []}],
+    [{s: 1}, "!error: NodeError"],
+    [{n: "1"}, "!error: NodeError"],
+    [{n: true}, "!error: NodeError"],
+    [{i: 2.5}, "!error: NodeError"],
+    [{i: 2.0}, {i: 2}],
+    [{b: "true"}, "!error: NodeError"],
+    [{b: 0}, "!error: NodeError"],
+    [{o: []}, "!error: NodeError"],
+    [{a: {}}, "!error: NodeError"],
+    [{n: -0.000001}, {n: -0.000001}],
+    [{n: 12345678901234567890123456}, {n: 12345678901234567890123456}],
+  ],
+}
+
+{
+  name: "input schema: numeric bounds",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        pct: {type: "number", minimum: 0, maximum: 100},
+        qty: {type: "integer", exclusiveMinimum: 0},
+        step: {type: "number", multipleOf: 0.5},
+      }}},
+    ],
+  },
+  cases: [
+    [{pct: 0}, {pct: 0}],
+    [{pct: 100}, {pct: 100}],
+    [{pct: 100.01}, "!error: NodeError"],
+    [{pct: -1}, "!error: NodeError"],
+    [{qty: 1}, {qty: 1}],
+    [{qty: 0}, "!error: NodeError"],
+    [{step: 2.5}, {step: 2.5}],
+    [{step: 2.25}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: string length and pattern",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        code: {type: "string", minLength: 2, maxLength: 4},
+        sku: {type: "string", pattern: "^[A-Z]{3}-[0-9]+$"},
+      }}},
+    ],
+  },
+  cases: [
+    [{code: "ab"}, {code: "ab"}],
+    [{code: "abcd"}, {code: "abcd"}],
+    [{code: "a"}, "!error: NodeError"],
+    [{code: "abcde"}, "!error: NodeError"],
+    [{code: "ßü"}, {code: "ßü"}],
+    [{sku: "ABC-12"}, {sku: "ABC-12"}],
+    [{sku: "abc-12"}, "!error: NodeError"],
+    [{sku: "ABC-"}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enums and const.
+{
+  name: "input schema: enum restricts values",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["tier"], properties: {tier: {type: "string", enum: ["gold", "silver", "bronze"]}}}},
+      {table: "discount", inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.2"],
+        ["'silver'", "0.1"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, {rate: 0.2}],
+    [{tier: "silver"}, {rate: 0.1}],
+    [{tier: "bronze"}, {rate: 0}],
+    [{tier: "platinum"}, "!error: NodeError"],
+    [{tier: "Gold"}, "!error: NodeError"],
+    [{tier: null}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: mixed-type enum and const",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {level: {enum: [1, 2, "max", null]}, version: {const: "v2"}}}},
+    ],
+  },
+  cases: [
+    [{level: 1}, {level: 1}],
+    [{level: "max"}, {level: "max"}],
+    [{level: null}, {}],
+    [{level: 3}, "!error: NodeError"],
+    [{level: "1"}, "!error: NodeError"],
+    [{version: "v2"}, {version: "v2"}],
+    [{version: "v1"}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Nested objects.
+{
+  name: "input schema: nested object properties",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        required: ["customer"],
+        properties: {customer: {type: "object", required: ["address"], properties: {
+          address: {type: "object", required: ["country"], properties: {country: {type: "string", minLength: 2}}},
+        }}},
+      }},
+      {expression: "calc", fields: {country: "customer.address.country"}},
+    ],
+  },
+  cases: [
+    [{customer: {address: {country: "DE"}}}, {country: "DE"}],
+    [{customer: {address: {country: "D"}}}, "!error: /customer/address/country"],
+    [{customer: {address: {}}}, "!error: NodeError"],
+    [{customer: {}}, "!error: NodeError"],
+    [{customer: null}, "!error: NodeError"],
+    [{customer: "DE"}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: dotted keys are literal property names, not paths",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["a.b"]}},
+    ],
+  },
+  cases: [
+    [{"a.b": 1}, {"a.b": 1}],
+    [{a: {b: 1}}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arrays.
+{
+  name: "input schema: array items are validated",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        scores: {type: "array", items: {type: "number"}, minItems: 1, maxItems: 3},
+      }}},
+      {expression: "calc", fields: {total: "sum(scores ?? [])"}},
+    ],
+  },
+  cases: [
+    [{scores: [1, 2, 3]}, {total: 6}],
+    [{scores: [1]}, {total: 1}],
+    [{scores: []}, "!error: NodeError"],
+    [{scores: [1, 2, 3, 4]}, "!error: NodeError"],
+    [{scores: [1, "2"]}, "!error: /scores/1"],
+    [{scores: [1, null]}, "!error: NodeError"],
+    [{}, {total: 0}],
+  ],
+}
+
+{
+  name: "input schema: arrays of objects with required members",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["lines"], properties: {
+        lines: {type: "array", items: {type: "object", required: ["qty", "price"], properties: {qty: {type: "integer", minimum: 1}, price: {type: "number"}}}},
+      }}},
+      {expression: "calc", fields: {total: "sum(map(lines, #.qty * #.price))"}},
+    ],
+  },
+  cases: [
+    [{lines: [{qty: 2, price: 1.5}, {qty: 1, price: 10}]}, {total: 13}],
+    [{lines: []}, {total: 0}],
+    [{lines: [{qty: 0, price: 1}]}, "!error: /lines/0/qty"],
+    [{lines: [{qty: 1, price: 1}, {qty: 1}]}, "!error: /lines/1"],
+    [{lines: {qty: 1, price: 1}}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: uniqueItems and contains",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        tags: {type: "array", uniqueItems: true, items: {type: "string"}},
+        flags: {type: "array", contains: {const: "primary"}},
+      }}},
+    ],
+  },
+  cases: [
+    [{tags: ["a", "b"]}, {tags: ["a", "b"]}],
+    [{tags: ["a", "a"]}, "!error: NodeError"],
+    [{flags: ["x", "primary"]}, {flags: ["x", "primary"]}],
+    [{flags: ["x"]}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// additionalProperties.
+// A null-valued unknown key is accepted: validation retries with null-valued keys removed, so null
+// counts as absent for every keyword (required excepted, see above).
+{
+  name: "input schema: additionalProperties false rejects unknown keys",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", additionalProperties: false, properties: {a: {type: "number"}, b: {type: "string"}}}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: "x"}, {a: 1, b: "x"}],
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{a: 1, c: 2}, "!error: NodeError"],
+    [{c: null}, {}],
+    [{c: null, d: 1}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: additionalProperties with a schema types the extra keys",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {id: {type: "string"}}, additionalProperties: {type: "number"}}},
+      {expression: "calc", fields: {sum: "(p ?? 0) + (q ?? 0)"}},
+    ],
+  },
+  cases: [
+    [{id: "x", p: 1, q: 2}, {sum: 3}],
+    [{id: "x", p: 1.5}, {sum: 1.5}],
+    [{id: "x"}, {sum: 0}],
+    [{id: "x", p: "1"}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Combinators.
+{
+  name: "input schema: oneOf / anyOf branches",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["payment"], properties: {payment: {oneOf: [
+        {type: "object", required: ["card"], properties: {card: {type: "string"}}},
+        {type: "object", required: ["iban"], properties: {iban: {type: "string"}}},
+      ]}}}},
+      {expression: "calc", fields: {method: "payment.card != null ? 'card' : 'iban'"}},
+    ],
+  },
+  cases: [
+    [{payment: {card: "4111"}}, {method: "card"}],
+    [{payment: {iban: "DE00"}}, {method: "iban"}],
+    [{payment: {card: "4111", iban: "DE00"}}, "!error: NodeError"],
+    [{payment: {}}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: if/then conditional requirement",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        properties: {kind: {type: "string"}, vat: {type: "string"}},
+        if: {properties: {kind: {const: "business"}}, required: ["kind"]},
+        then: {required: ["vat"]},
+      }},
+    ],
+  },
+  cases: [
+    [{kind: "private"}, {kind: "private"}],
+    [{kind: "business", vat: "DE1"}, {kind: "business", vat: "DE1"}],
+    [{kind: "business"}, "!error: NodeError"],
+    [{}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Schema root shapes and degenerate schemas.
+{
+  name: "input schema: an empty schema accepts anything",
+  graph: {
+    nodes: [{input: "request", schema: {}}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{a: [null, {b: "x"}]}, {a: [null, {b: "x"}]}],
+  ],
+}
+
+{
+  name: "input schema: a schema given as a string is parsed",
+  graph: {
+    nodes: [{input: "request", schema: '{"type":"object","required":["x"]}'}],
+  },
+  cases: [
+    [{x: 1}, {x: 1}],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: an empty string schema means no schema",
+  graph: {
+    nodes: [{input: "request", schema: ""}],
+  },
+  cases: [
+    [{x: 1}, {x: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "input schema: a root type other than object rejects every request",
+  graph: {
+    nodes: [{input: "request", schema: {type: "array"}}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+    [{a: []}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: the walk stops on failure, no node after the input runs",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["x"]}},
+      {custom: "boom", kind: "fail", config: {message: "should not run"}},
+    ],
+  },
+  cases: [
+    [{}, "!error: required"],
+    [{x: 1}, "!error: should not run"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates declared in the input schema become date values.
+{
+  name: "input schema: format date-time produces a date value",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {at: {type: "string", format: "date-time"}}}},
+      {expression: "calc", fields: {year: "year(at)", plusDay: "at.add(1, 'd')", same: "at", kind: "type(at)"}},
+    ],
+  },
+  cases: [
+    [{at: "2024-02-28T12:00:00Z"}, {year: 2024, plusDay: "2024-02-29T12:00:00Z", same: "2024-02-28T12:00:00Z", kind: "date"}],
+    [{at: "2025-03-20T10:15:30Z"}, {year: 2025, plusDay: "2025-03-21T10:15:30Z", same: "2025-03-20T10:15:30Z", kind: "date"}],
+  ],
+}
+
+{
+  name: "input schema: a declared date passes through unchanged as its source text",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}, at: {type: "string", format: "date-time"}}}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {day: "2024-01-31"}],
+    [{at: "2024-01-31T08:00:00+02:00"}, {at: "2024-01-31T08:00:00+02:00"}],
+    [{day: "2024-01-31", other: "2024-01-31"}, {day: "2024-01-31", other: "2024-01-31"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "input schema: a declared date compares as a date",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["start", "end"], properties: {start: {type: "string", format: "date"}, end: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {ordered: "start < end", days: "end.diff(start, 'day')"}},
+    ],
+  },
+  cases: [
+    [{start: "2024-01-01", end: "2024-03-01"}, {ordered: true, days: 60}],
+    [{start: "2024-03-01", end: "2024-01-01"}, {ordered: false, days: -60}],
+    [{start: "2025-03-20", end: "2025-03-20"}, {ordered: false, days: 0}],
+  ],
+}
+
+{
+  name: "input schema: a nullable date field stays null",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {due: {anyOf: [{type: "string", format: "date"}, {type: "null"}]}}}},
+      {expression: "calc", fields: {kind: "type(due)", has: "due != null"}},
+    ],
+  },
+  cases: [
+    [{due: "2024-05-01"}, {kind: "date", has: true}],
+    [{due: null}, {kind: "null", has: false}],
+    [{}, {kind: "null", has: false}],
+  ],
+}
+
+{
+  name: "input schema: dates inside nested objects and arrays",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        order: {type: "object", properties: {placed: {type: "string", format: "date"}}},
+        payments: {type: "array", items: {type: "object", properties: {on: {type: "string", format: "date"}}}},
+      }}},
+      {expression: "calc", fields: {placedYear: "year(order.placed)", payYears: "map(payments, year(#.on))"}},
+    ],
+  },
+  cases: [
+    [{order: {placed: "2023-06-01"}, payments: [{on: "2023-07-01"}, {on: "2024-01-15"}]}, {placedYear: 2023, payYears: [2023, 2024]}],
+    [{order: {placed: "2020-02-29"}, payments: []}, {placedYear: 2020, payYears: []}],
+  ],
+}
+
+{
+  name: "input schema: an undeclared date-looking string stays a string",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string"}}}},
+      {expression: "calc", fields: {kind: "type(day)"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "string"}],
+  ],
+}
+
+{
+  name: "input schema: an invalid date string fails the format",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {day: "2024-01-31"}],
+    [{day: "2024-02-30"}, "!error: NodeError"],
+    [{day: "31.01.2024"}, "!error: NodeError"],
+    [{day: "not a date"}, "!error: NodeError"],
+    [{day: 20240131}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema: a date value given as input is accepted by a date-time field",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {at: {type: "string", format: "date-time"}}}},
+      {expression: "calc", fields: {month: "at.month()"}},
+    ],
+  },
+  cases: [
+    [{at: date("2024-07-04T00:00:00Z")}, {month: 7}],
+  ],
+}
+
+{
+  name: "input schema: dates feed a decision table",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["signup"], properties: {signup: {type: "string", format: "date"}}}},
+      {table: "cohort", inputs: ["signup"], outputs: ["cohort"], rules: [
+        ["< d('2024-01-01')", "'legacy'"],
+        ["[d('2024-01-01')..d('2024-12-31')]", "'2024'"],
+        ["", "'new'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{signup: "2023-12-31"}, {cohort: "legacy"}],
+    [{signup: "2024-01-01"}, {cohort: "2024"}],
+    [{signup: "2024-12-31"}, {cohort: "2024"}],
+    [{signup: "2025-01-01"}, {cohort: "new"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Output schemas validate the merged result.
+{
+  name: "output schema: success when the result conforms",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a + b", label: "a > b ? 'a' : 'b'"}},
+      {output: "response", schema: {type: "object", required: ["total", "label"], properties: {total: {type: "number", minimum: 0}, label: {enum: ["a", "b"]}}}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3, label: "b"}],
+    [{a: 5, b: 2}, {total: 7, label: "a"}],
+    [{a: -5, b: 2}, "!error: /total"],
+    [{a: 0, b: 0}, {total: 0, label: "b"}],
+  ],
+}
+
+{
+  name: "output schema: a missing computed field fails required",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["price"], rules: [
+        ["'a'", "10"],
+        ["'b'", "20"],
+      ]},
+      {output: "response", schema: {type: "object", required: ["price"]}},
+    ],
+  },
+  cases: [
+    [{kind: "a"}, {price: 10}],
+    [{kind: "b"}, {price: 20}],
+    [{kind: "c"}, "!error: price"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "output schema: type mismatch in the produced value",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {count: "len(items)"}},
+      {output: "response", schema: {type: "object", properties: {count: {type: "string"}}}},
+    ],
+  },
+  cases: [
+    [{items: [1]}, "!error: NodeError"],
+    [{items: "ab"}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "output schema: additionalProperties false catches pass-through leaks",
+  graph: {
+    nodes: [
+      {expression: "calc", passThrough: true, fields: {score: "x * 10"}},
+      {output: "response", schema: {type: "object", additionalProperties: false, properties: {score: {type: "number"}, x: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {x: 1, score: 10}],
+    [{x: 1, secret: "s"}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "output schema: optional null fields are tolerated",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {note: "comment", n: "1"}},
+      {output: "response", schema: {type: "object", properties: {note: {type: "string"}, n: {type: "number"}}}},
+    ],
+  },
+  cases: [
+    [{comment: "hi"}, {note: "hi", n: 1}],
+    [{}, {n: 1}],
+    [{comment: 7}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "output schema: format date-time does not turn output strings into dates",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {at: "'2024-01-01T00:00:00Z'"}},
+      {output: "response", schema: {type: "object", properties: {at: {type: "string", format: "date-time"}}}},
+    ],
+  },
+  cases: [
+    [{}, {at: "2024-01-01T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "output schema: a date value produced by an expression satisfies format date-time",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {at: "d('2024-01-01T00:00:00Z')"}},
+      {output: "response", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+    ],
+  },
+  cases: [
+    [{}, {at: "2024-01-01T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "both schemas: input and output validate independently",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["qty"], properties: {qty: {type: "integer"}}}},
+      {expression: "calc", fields: {total: "qty * 2.5"}},
+      {output: "response", schema: {type: "object", properties: {total: {type: "integer"}}}},
+    ],
+  },
+  cases: [
+    [{qty: 2}, {total: 5}],
+    [{qty: 4}, {total: 10}],
+    [{qty: 1}, "!error: /total"],
+    [{qty: 1.5}, "!error: /qty"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "output schema on a sub-decision fails the parent",
+  decisions: {
+    child: {nodes: [
+      {expression: "calc", fields: {y: "x * 2"}},
+      {output: "response", schema: {type: "object", properties: {y: {type: "number", maximum: 10}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1}, {y: 2}],
+    [{x: 5}, {y: 10}],
+    [{x: 6}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema of a sub-decision validates what the parent sends",
+  decisions: {
+    child: {nodes: [
+      {input: "request", schema: {type: "object", required: ["x"], properties: {x: {type: "number"}, d: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {kind: "type(d)", x: "x"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1, d: "2024-01-01"}, {kind: "date", x: 1}],
+    [{x: 1}, {kind: "null", x: 1}],
+    [{y: 1}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "input schema with loop mode: each item is validated by the sub-decision",
+  decisions: {
+    child: {nodes: [
+      {input: "request", schema: {type: "object", required: ["v"], properties: {v: {type: "number"}}}},
+      {expression: "calc", fields: {w: "v + 1"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", executionMode: "loop", outputPath: "out"}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{w: 2}, {w: 3}]}],
+    [{items: []}, {out: []}],
+    [{items: [{v: 1}, {}]}, "!error: NodeError"],
+  ],
+}

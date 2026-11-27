@@ -1,0 +1,539 @@
+expression (string);input (json 5);output (json 5);note
+# One enum value, written as a literal, a shorthand and an explicit comparison
+'gold';{$: 'gold'};true
+'gold';{$: 'Gold'};false
+'gold';{$: 'GOLD'};false
+'gold';{$: ' gold'};false
+'gold';{$: 'gold '};false
+'gold';{$: 'platinum'};false
+'gold';{$: 'silver'};false
+'gold';{$: ''};false
+'gold';{$: null};false
+'gold';{};false
+'gold';{$: 1};false
+'gold';{$: true};false
+'gold';{$: ['gold']};false
+$ == 'gold';{$: 'gold'};true
+$ == 'gold';{$: 'Gold'};false
+$ == 'gold';{$: 'GOLD'};false
+$ == 'gold';{$: ' gold'};false
+$ == 'gold';{$: 'gold '};false
+$ == 'gold';{$: 'platinum'};false
+$ == 'gold';{$: 'silver'};false
+$ == 'gold';{$: ''};false
+$ == 'gold';{$: null};false
+$ == 'gold';{};false
+$ == 'gold';{$: 1};false
+$ == 'gold';{$: true};false
+$ == 'gold';{$: ['gold']};false
+"""gold""";{$: 'gold'};true
+"""gold""";{$: 'Gold'};false
+"""gold""";{$: 'GOLD'};false
+"""gold""";{$: ' gold'};false
+"""gold""";{$: 'gold '};false
+"""gold""";{$: 'platinum'};false
+"""gold""";{$: 'silver'};false
+"""gold""";{$: ''};false
+"""gold""";{$: null};false
+"""gold""";{};false
+"""gold""";{$: 1};false
+"""gold""";{$: true};false
+"""gold""";{$: ['gold']};false
+`gold`;{$: 'gold'};true
+`gold`;{$: 'Gold'};false
+`gold`;{$: 'GOLD'};false
+`gold`;{$: ' gold'};false
+`gold`;{$: 'gold '};false
+`gold`;{$: 'platinum'};false
+`gold`;{$: 'silver'};false
+`gold`;{$: ''};false
+`gold`;{$: null};false
+`gold`;{};false
+`gold`;{$: 1};false
+`gold`;{$: true};false
+`gold`;{$: ['gold']};false
+!= 'gold';{$: 'gold'};false
+!= 'gold';{$: 'Gold'};true
+!= 'gold';{$: 'GOLD'};true
+!= 'gold';{$: ' gold'};true
+!= 'gold';{$: 'gold '};true
+!= 'gold';{$: 'platinum'};true
+!= 'gold';{$: 'silver'};true
+!= 'gold';{$: ''};true
+!= 'gold';{$: null};true
+!= 'gold';{};true
+!= 'gold';{$: 1};true
+!= 'gold';{$: true};true
+!= 'gold';{$: ['gold']};true
+# Several enum values
+'gold', 'platinum';{$: 'gold'};true
+'gold', 'platinum';{$: 'Gold'};false
+'gold', 'platinum';{$: 'GOLD'};false
+'gold', 'platinum';{$: ' gold'};false
+'gold', 'platinum';{$: 'gold '};false
+'gold', 'platinum';{$: 'platinum'};true
+'gold', 'platinum';{$: 'silver'};false
+'gold', 'platinum';{$: ''};false
+'gold', 'platinum';{$: null};false
+'gold', 'platinum';{};false
+'gold', 'platinum';{$: 1};false
+'gold', 'platinum';{$: true};false
+'gold', 'platinum';{$: ['gold']};false
+'gold' or 'platinum';{$: 'gold'};true
+'gold' or 'platinum';{$: 'Gold'};false
+'gold' or 'platinum';{$: 'GOLD'};false
+'gold' or 'platinum';{$: ' gold'};false
+'gold' or 'platinum';{$: 'gold '};false
+'gold' or 'platinum';{$: 'platinum'};true
+'gold' or 'platinum';{$: 'silver'};false
+'gold' or 'platinum';{$: ''};false
+'gold' or 'platinum';{$: null};false
+'gold' or 'platinum';{};false
+'gold' or 'platinum';{$: 1};false
+'gold' or 'platinum';{$: true};false
+'gold' or 'platinum';{$: ['gold']};false
+$ == 'gold' or $ == 'platinum';{$: 'gold'};true
+$ == 'gold' or $ == 'platinum';{$: 'Gold'};false
+$ == 'gold' or $ == 'platinum';{$: 'GOLD'};false
+$ == 'gold' or $ == 'platinum';{$: ' gold'};false
+$ == 'gold' or $ == 'platinum';{$: 'gold '};false
+$ == 'gold' or $ == 'platinum';{$: 'platinum'};true
+$ == 'gold' or $ == 'platinum';{$: 'silver'};false
+$ == 'gold' or $ == 'platinum';{$: ''};false
+$ == 'gold' or $ == 'platinum';{$: null};false
+$ == 'gold' or $ == 'platinum';{};false
+$ == 'gold' or $ == 'platinum';{$: 1};false
+$ == 'gold' or $ == 'platinum';{$: true};false
+$ == 'gold' or $ == 'platinum';{$: ['gold']};false
+'platinum', 'gold';{$: 'gold'};true
+'platinum', 'gold';{$: 'Gold'};false
+'platinum', 'gold';{$: 'GOLD'};false
+'platinum', 'gold';{$: ' gold'};false
+'platinum', 'gold';{$: 'gold '};false
+'platinum', 'gold';{$: 'platinum'};true
+'platinum', 'gold';{$: 'silver'};false
+'platinum', 'gold';{$: ''};false
+'platinum', 'gold';{$: null};false
+'platinum', 'gold';{};false
+'platinum', 'gold';{$: 1};false
+'platinum', 'gold';{$: true};false
+'platinum', 'gold';{$: ['gold']};false
+$ in ['gold', 'platinum'];{$: 'gold'};true
+$ in ['gold', 'platinum'];{$: 'Gold'};false
+$ in ['gold', 'platinum'];{$: 'GOLD'};false
+$ in ['gold', 'platinum'];{$: ' gold'};false
+$ in ['gold', 'platinum'];{$: 'gold '};false
+$ in ['gold', 'platinum'];{$: 'platinum'};true
+$ in ['gold', 'platinum'];{$: 'silver'};false
+$ in ['gold', 'platinum'];{$: ''};false
+$ in ['gold', 'platinum'];{$: null};false
+$ in ['gold', 'platinum'];{};false
+$ in ['gold', 'platinum'];{$: 1};false
+$ in ['gold', 'platinum'];{$: true};false
+$ in ['gold', 'platinum'];{$: ['gold']};false;bug: membership of an array $ errors (Opcode In: Unsupported type) instead of the false that deep equality implies
+in ['gold', 'platinum'];{$: 'gold'};true
+in ['gold', 'platinum'];{$: 'Gold'};false
+in ['gold', 'platinum'];{$: 'GOLD'};false
+in ['gold', 'platinum'];{$: ' gold'};false
+in ['gold', 'platinum'];{$: 'gold '};false
+in ['gold', 'platinum'];{$: 'platinum'};true
+in ['gold', 'platinum'];{$: 'silver'};false
+in ['gold', 'platinum'];{$: ''};false
+in ['gold', 'platinum'];{$: null};false
+in ['gold', 'platinum'];{};false
+in ['gold', 'platinum'];{$: 1};false
+in ['gold', 'platinum'];{$: true};false
+in ['gold', 'platinum'];{$: ['gold']};false;bug: membership of an array $ errors (Opcode In: Unsupported type) instead of the false that deep equality implies
+$ not in ['gold', 'platinum'];{$: 'gold'};false
+$ not in ['gold', 'platinum'];{$: 'Gold'};true
+$ not in ['gold', 'platinum'];{$: 'GOLD'};true
+$ not in ['gold', 'platinum'];{$: ' gold'};true
+$ not in ['gold', 'platinum'];{$: 'gold '};true
+$ not in ['gold', 'platinum'];{$: 'platinum'};false
+$ not in ['gold', 'platinum'];{$: 'silver'};true
+$ not in ['gold', 'platinum'];{$: ''};true
+$ not in ['gold', 'platinum'];{$: null};true
+$ not in ['gold', 'platinum'];{};true
+$ not in ['gold', 'platinum'];{$: 1};true
+$ not in ['gold', 'platinum'];{$: true};true
+$ not in ['gold', 'platinum'];{$: ['gold']};true;bug: membership of an array $ errors (Opcode In: Unsupported type) instead of the false that deep equality implies
+not in ['gold', 'platinum'];{$: 'gold'};false
+not in ['gold', 'platinum'];{$: 'Gold'};true
+not in ['gold', 'platinum'];{$: 'GOLD'};true
+not in ['gold', 'platinum'];{$: ' gold'};true
+not in ['gold', 'platinum'];{$: 'gold '};true
+not in ['gold', 'platinum'];{$: 'platinum'};false
+not in ['gold', 'platinum'];{$: 'silver'};true
+not in ['gold', 'platinum'];{$: ''};true
+not in ['gold', 'platinum'];{$: null};true
+not in ['gold', 'platinum'];{};true
+not in ['gold', 'platinum'];{$: 1};true
+not in ['gold', 'platinum'];{$: true};true
+not in ['gold', 'platinum'];{$: ['gold']};true;bug: membership of an array $ errors (Opcode In: Unsupported type) instead of the false that deep equality implies
+not ($ in ['gold', 'platinum']);{$: 'gold'};false
+not ($ in ['gold', 'platinum']);{$: 'Gold'};true
+not ($ in ['gold', 'platinum']);{$: 'GOLD'};true
+not ($ in ['gold', 'platinum']);{$: ' gold'};true
+not ($ in ['gold', 'platinum']);{$: 'gold '};true
+not ($ in ['gold', 'platinum']);{$: 'platinum'};false
+not ($ in ['gold', 'platinum']);{$: 'silver'};true
+not ($ in ['gold', 'platinum']);{$: ''};true
+not ($ in ['gold', 'platinum']);{$: null};true
+not ($ in ['gold', 'platinum']);{};true
+not ($ in ['gold', 'platinum']);{$: 1};true
+not ($ in ['gold', 'platinum']);{$: true};true
+not ($ in ['gold', 'platinum']);{$: ['gold']};true;bug: membership of an array $ errors (Opcode In: Unsupported type) instead of the false that deep equality implies
+# Case-insensitive cells normalise $ first
+lower($) == 'gold';{$: 'gold'};true
+lower($) == 'gold';{$: 'Gold'};true
+lower($) == 'gold';{$: 'GOLD'};true
+lower($) == 'gold';{$: ' gold'};false
+lower($) == 'gold';{$: 'gold '};false
+lower($) == 'gold';{$: 'platinum'};false
+lower($) == 'gold';{$: 'silver'};false
+lower($) == 'gold';{$: ''};false
+lower($) == 'gold';{$: null};!error
+lower($) == 'gold';{};!error
+lower($) == 'gold';{$: 1};!error
+lower($) == 'gold';{$: true};!error
+lower($) == 'gold';{$: ['gold']};!error
+upper($) == 'GOLD';{$: 'gold'};true
+upper($) == 'GOLD';{$: 'Gold'};true
+upper($) == 'GOLD';{$: 'GOLD'};true
+upper($) == 'GOLD';{$: ' gold'};false
+upper($) == 'GOLD';{$: 'gold '};false
+upper($) == 'GOLD';{$: 'platinum'};false
+upper($) == 'GOLD';{$: 'silver'};false
+upper($) == 'GOLD';{$: ''};false
+upper($) == 'GOLD';{$: null};!error
+upper($) == 'GOLD';{};!error
+upper($) == 'GOLD';{$: 1};!error
+upper($) == 'GOLD';{$: true};!error
+upper($) == 'GOLD';{$: ['gold']};!error
+lower($) in ['gold', 'platinum'];{$: 'gold'};true
+lower($) in ['gold', 'platinum'];{$: 'Gold'};true
+lower($) in ['gold', 'platinum'];{$: 'GOLD'};true
+lower($) in ['gold', 'platinum'];{$: ' gold'};false
+lower($) in ['gold', 'platinum'];{$: 'gold '};false
+lower($) in ['gold', 'platinum'];{$: 'platinum'};true
+lower($) in ['gold', 'platinum'];{$: 'silver'};false
+lower($) in ['gold', 'platinum'];{$: ''};false
+lower($) in ['gold', 'platinum'];{$: null};!error
+lower($) in ['gold', 'platinum'];{};!error
+lower($) in ['gold', 'platinum'];{$: 1};!error
+lower($) in ['gold', 'platinum'];{$: true};!error
+lower($) in ['gold', 'platinum'];{$: ['gold']};!error
+lower(trim($)) == 'gold';{$: 'gold'};true
+lower(trim($)) == 'gold';{$: 'Gold'};true
+lower(trim($)) == 'gold';{$: 'GOLD'};true
+lower(trim($)) == 'gold';{$: ' gold'};true
+lower(trim($)) == 'gold';{$: 'gold '};true
+lower(trim($)) == 'gold';{$: 'platinum'};false
+lower(trim($)) == 'gold';{$: 'silver'};false
+lower(trim($)) == 'gold';{$: ''};false
+lower(trim($)) == 'gold';{$: null};!error
+lower(trim($)) == 'gold';{};!error
+lower(trim($)) == 'gold';{$: 1};!error
+lower(trim($)) == 'gold';{$: true};!error
+lower(trim($)) == 'gold';{$: ['gold']};!error
+trim($) == 'gold';{$: 'gold'};true
+trim($) == 'gold';{$: 'Gold'};false
+trim($) == 'gold';{$: 'GOLD'};false
+trim($) == 'gold';{$: ' gold'};true
+trim($) == 'gold';{$: 'gold '};true
+trim($) == 'gold';{$: 'platinum'};false
+trim($) == 'gold';{$: 'silver'};false
+trim($) == 'gold';{$: ''};false
+trim($) == 'gold';{$: null};!error
+trim($) == 'gold';{};!error
+trim($) == 'gold';{$: 1};!error
+trim($) == 'gold';{$: true};!error
+trim($) == 'gold';{$: ['gold']};!error
+# Country codes
+'GB', 'IE';{$: 'GB'};true
+'GB', 'IE';{$: 'gb'};false
+'GB', 'IE';{$: 'Gb'};false
+'GB', 'IE';{$: 'IE'};true
+'GB', 'IE';{$: 'FR'};false
+'GB', 'IE';{$: 'GBR'};false
+'GB', 'IE';{$: 'G'};false
+'GB', 'IE';{$: ''};false
+'GB', 'IE';{$: 'UK'};false
+'GB', 'IE';{$: null};false
+'GB', 'IE';{};false
+'GB', 'IE';{$: 44};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'GB'};true
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'gb'};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'Gb'};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'IE'};true
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'FR'};true
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'GBR'};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'G'};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: ''};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 'UK'};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: null};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{};false
+'GB', 'IE', 'FR', 'DE', 'ES', 'IT', 'NL', 'BE';{$: 44};false
+not in ['GB', 'IE'];{$: 'GB'};false
+not in ['GB', 'IE'];{$: 'gb'};true
+not in ['GB', 'IE'];{$: 'Gb'};true
+not in ['GB', 'IE'];{$: 'IE'};false
+not in ['GB', 'IE'];{$: 'FR'};true
+not in ['GB', 'IE'];{$: 'GBR'};true
+not in ['GB', 'IE'];{$: 'G'};true
+not in ['GB', 'IE'];{$: ''};true
+not in ['GB', 'IE'];{$: 'UK'};true
+not in ['GB', 'IE'];{$: null};true
+not in ['GB', 'IE'];{};true
+not in ['GB', 'IE'];{$: 44};true
+upper($) in ['GB', 'IE'];{$: 'GB'};true
+upper($) in ['GB', 'IE'];{$: 'gb'};true
+upper($) in ['GB', 'IE'];{$: 'Gb'};true
+upper($) in ['GB', 'IE'];{$: 'IE'};true
+upper($) in ['GB', 'IE'];{$: 'FR'};false
+upper($) in ['GB', 'IE'];{$: 'GBR'};false
+upper($) in ['GB', 'IE'];{$: 'G'};false
+upper($) in ['GB', 'IE'];{$: ''};false
+upper($) in ['GB', 'IE'];{$: 'UK'};false
+upper($) in ['GB', 'IE'];{$: null};!error
+upper($) in ['GB', 'IE'];{};!error
+upper($) in ['GB', 'IE'];{$: 44};!error
+len($) == 2;{$: 'GB'};true
+len($) == 2;{$: 'gb'};true
+len($) == 2;{$: 'Gb'};true
+len($) == 2;{$: 'IE'};true
+len($) == 2;{$: 'FR'};true
+len($) == 2;{$: 'GBR'};false
+len($) == 2;{$: 'G'};false
+len($) == 2;{$: ''};false
+len($) == 2;{$: 'UK'};true
+len($) == 2;{$: null};!error
+len($) == 2;{};!error
+len($) == 2;{$: 44};!error
+# Values with spaces, punctuation and non-ASCII letters
+'New York', 'Los Angeles';{$: 'New York'};true
+'New York', 'Los Angeles';{$: 'new york'};false
+'New York', 'Los Angeles';{$: 'NewYork'};false
+'New York', 'Los Angeles';{$: 'New  York'};false
+'New York', 'Los Angeles';{$: 'Zürich'};false
+'New York', 'Los Angeles';{$: 'Zurich'};false
+'New York', 'Los Angeles';{$: 'A&B'};false
+'New York', 'Los Angeles';{$: 'a,b'};false
+'New York', 'Los Angeles';{$: '50%'};false
+'New York', 'Los Angeles';{$: 'O\'Brien'};false
+'New York', 'Los Angeles';"{$: 'say ""hi""'}";false
+'New York', 'Los Angeles';{$: null};false
+'Zürich';{$: 'New York'};false
+'Zürich';{$: 'new york'};false
+'Zürich';{$: 'NewYork'};false
+'Zürich';{$: 'New  York'};false
+'Zürich';{$: 'Zürich'};true
+'Zürich';{$: 'Zurich'};false
+'Zürich';{$: 'A&B'};false
+'Zürich';{$: 'a,b'};false
+'Zürich';{$: '50%'};false
+'Zürich';{$: 'O\'Brien'};false
+'Zürich';"{$: 'say ""hi""'}";false
+'Zürich';{$: null};false
+'A&B', '50%';{$: 'New York'};false
+'A&B', '50%';{$: 'new york'};false
+'A&B', '50%';{$: 'NewYork'};false
+'A&B', '50%';{$: 'New  York'};false
+'A&B', '50%';{$: 'Zürich'};false
+'A&B', '50%';{$: 'Zurich'};false
+'A&B', '50%';{$: 'A&B'};true
+'A&B', '50%';{$: 'a,b'};false
+'A&B', '50%';{$: '50%'};true
+'A&B', '50%';{$: 'O\'Brien'};false
+'A&B', '50%';"{$: 'say ""hi""'}";false
+'A&B', '50%';{$: null};false
+'a,b';{$: 'New York'};false
+'a,b';{$: 'new york'};false
+'a,b';{$: 'NewYork'};false
+'a,b';{$: 'New  York'};false
+'a,b';{$: 'Zürich'};false
+'a,b';{$: 'Zurich'};false
+'a,b';{$: 'A&B'};false
+'a,b';{$: 'a,b'};true
+'a,b';{$: '50%'};false
+'a,b';{$: 'O\'Brien'};false
+'a,b';"{$: 'say ""hi""'}";false
+'a,b';{$: null};false
+'a', 'b';{$: 'New York'};false
+'a', 'b';{$: 'new york'};false
+'a', 'b';{$: 'NewYork'};false
+'a', 'b';{$: 'New  York'};false
+'a', 'b';{$: 'Zürich'};false
+'a', 'b';{$: 'Zurich'};false
+'a', 'b';{$: 'A&B'};false
+'a', 'b';{$: 'a,b'};false
+'a', 'b';{$: '50%'};false
+'a', 'b';{$: 'O\'Brien'};false
+'a', 'b';"{$: 'say ""hi""'}";false
+'a', 'b';{$: null};false
+"""O'Brien""";{$: 'New York'};false
+"""O'Brien""";{$: 'new york'};false
+"""O'Brien""";{$: 'NewYork'};false
+"""O'Brien""";{$: 'New  York'};false
+"""O'Brien""";{$: 'Zürich'};false
+"""O'Brien""";{$: 'Zurich'};false
+"""O'Brien""";{$: 'A&B'};false
+"""O'Brien""";{$: 'a,b'};false
+"""O'Brien""";{$: '50%'};false
+"""O'Brien""";{$: 'O\'Brien'};true
+"""O'Brien""";"{$: 'say ""hi""'}";false
+"""O'Brien""";{$: null};false
+'O\'Brien';{$: 'O\'Brien'};!error;"question: string literals have no escape sequences, so a quote cannot be escaped inside single quotes; use double quotes"
+'O\'Brien';{$: null};!error
+"'say ""hi""'";{$: 'New York'};false
+"'say ""hi""'";{$: 'new york'};false
+"'say ""hi""'";{$: 'NewYork'};false
+"'say ""hi""'";{$: 'New  York'};false
+"'say ""hi""'";{$: 'Zürich'};false
+"'say ""hi""'";{$: 'Zurich'};false
+"'say ""hi""'";{$: 'A&B'};false
+"'say ""hi""'";{$: 'a,b'};false
+"'say ""hi""'";{$: '50%'};false
+"'say ""hi""'";{$: 'O\'Brien'};false
+"'say ""hi""'";"{$: 'say ""hi""'}";true
+"'say ""hi""'";{$: null};false
+'\u005A\u00FCrich';{$: 'Zürich'};false;question: string literals have no escape sequences, so a \u escape in a cell never matches the character
+'\u005A\u00FCrich';{$: 'Zurich'};false
+'\u005A\u00FCrich';{$: '\\u005A\\u00FCrich'};true
+'\u005A\u00FCrich';{$: null};false
+# Empty-string and null cells
+'';{$: ''};true
+'';{$: ' '};false
+'';{$: 'x'};false
+'';{$: null};false
+'';{};false
+'';{$: 0};false
+'';{$: false};false
+'';{$: []};false
+'', null;{$: ''};true
+'', null;{$: ' '};false
+'', null;{$: 'x'};false
+'', null;{$: null};true
+'', null;{};true
+'', null;{$: 0};false
+'', null;{$: false};false
+'', null;{$: []};false
+null;{$: ''};false
+null;{$: ' '};false
+null;{$: 'x'};false
+null;{$: null};true
+null;{};true
+null;{$: 0};false
+null;{$: false};false
+null;{$: []};false
+!= '';{$: ''};false
+!= '';{$: ' '};true
+!= '';{$: 'x'};true
+!= '';{$: null};true
+!= '';{};true
+!= '';{$: 0};true
+!= '';{$: false};true
+!= '';{$: []};true
+!= '' and != null;{$: ''};false
+!= '' and != null;{$: ' '};true
+!= '' and != null;{$: 'x'};true
+!= '' and != null;{$: null};false
+!= '' and != null;{};false
+!= '' and != null;{$: 0};true
+!= '' and != null;{$: false};true
+!= '' and != null;{$: []};true
+$ == '' or $ == null;{$: ''};true
+$ == '' or $ == null;{$: ' '};false
+$ == '' or $ == null;{$: 'x'};false
+$ == '' or $ == null;{$: null};true
+$ == '' or $ == null;{};true
+$ == '' or $ == null;{$: 0};false
+$ == '' or $ == null;{$: false};false
+$ == '' or $ == null;{$: []};false
+# Enum values that look like other types
+'1';{$: '1'};true
+'1';{$: 1};false
+'1';{$: 'true'};false
+'1';{$: true};false
+'1';{$: 'null'};false
+'1';{$: null};false
+'1';{$: '1.0'};false
+'1';{$: 1.0};false
+'1';{};false
+'true';{$: '1'};false
+'true';{$: 1};false
+'true';{$: 'true'};true
+'true';{$: true};false
+'true';{$: 'null'};false
+'true';{$: null};false
+'true';{$: '1.0'};false
+'true';{$: 1.0};false
+'true';{};false
+'null';{$: '1'};false
+'null';{$: 1};false
+'null';{$: 'true'};false
+'null';{$: true};false
+'null';{$: 'null'};true
+'null';{$: null};false
+'null';{$: '1.0'};false
+'null';{$: 1.0};false
+'null';{};false
+'1', 1;{$: '1'};true
+'1', 1;{$: 1};true
+'1', 1;{$: 'true'};false
+'1', 1;{$: true};false
+'1', 1;{$: 'null'};false
+'1', 1;{$: null};false
+'1', 1;{$: '1.0'};false
+'1', 1;{$: 1.0};true
+'1', 1;{};false
+'true', true;{$: '1'};false
+'true', true;{$: 1};false
+'true', true;{$: 'true'};true
+'true', true;{$: true};true
+'true', true;{$: 'null'};false
+'true', true;{$: null};false
+'true', true;{$: '1.0'};false
+'true', true;{$: 1.0};false
+'true', true;{};false
+# Status codes: an enum column of a first-hit table
+'APPROVED';{$: 'APPROVED'};true
+'APPROVED';{$: 'approved'};false
+'APPROVED';{$: 'PENDING'};false
+'APPROVED';{$: 'REJECTED'};false
+'APPROVED';{$: 'REVIEW'};false
+'APPROVED';{$: 'PENDING_REVIEW'};false
+'APPROVED';{$: ''};false
+'APPROVED';{$: null};false
+'APPROVED';{};false
+'APPROVED';{$: 0};false
+'PENDING', 'REVIEW';{$: 'APPROVED'};false
+'PENDING', 'REVIEW';{$: 'approved'};false
+'PENDING', 'REVIEW';{$: 'PENDING'};true
+'PENDING', 'REVIEW';{$: 'REJECTED'};false
+'PENDING', 'REVIEW';{$: 'REVIEW'};true
+'PENDING', 'REVIEW';{$: 'PENDING_REVIEW'};false
+'PENDING', 'REVIEW';{$: ''};false
+'PENDING', 'REVIEW';{$: null};false
+'PENDING', 'REVIEW';{};false
+'PENDING', 'REVIEW';{$: 0};false
+'REJECTED';{$: 'APPROVED'};false
+'REJECTED';{$: 'approved'};false
+'REJECTED';{$: 'PENDING'};false
+'REJECTED';{$: 'REJECTED'};true
+'REJECTED';{$: 'REVIEW'};false
+'REJECTED';{$: 'PENDING_REVIEW'};false
+'REJECTED';{$: ''};false
+'REJECTED';{$: null};false
+'REJECTED';{};false
+'REJECTED';{$: 0};false
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'APPROVED'};false
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'approved'};true
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'PENDING'};false
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'REJECTED'};false
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'REVIEW'};false
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 'PENDING_REVIEW'};true
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: ''};true
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: null};true
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{};true
+not in ['APPROVED', 'PENDING', 'REVIEW', 'REJECTED'];{$: 0};true

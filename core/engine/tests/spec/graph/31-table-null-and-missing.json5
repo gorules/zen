@@ -1,0 +1,574 @@
+// Decision tables, null, missing and falsy inputs.
+//
+// Each suite runs the same cells against a missing field, null, the empty string, 0 and false
+// (plus "a", 1 and true as controls). Intended semantics: a missing field reads as null;
+// equality never coerces between types, so 0, false, "" and null are four different values;
+// comparisons and ranges only match numbers; `!=` and `not in` match every value that is not
+// equal, including null; an empty cell matches everything. The matrix is repeated for first
+// hit and collect, with and without passThrough, small (row by row) and large (indexed).
+
+// --- Equality cells ------------------------------------------------------------------------
+// Literal equality: each falsy value matches only its own literal; `null` matches null and missing.
+
+{
+  name: "falsy: literal equality cells, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["'a'", "'str-a'"],
+        ["''", "'str-empty'"],
+        ["0", "'num-zero'"],
+        ["false", "'bool-false'"],
+        ["null", "'null'"],
+        ["'0'", "'str-zero'"],
+        ["'false'", "'str-false'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "null"}]],
+    [{v: null}, [{r: "null"}]],
+    [{v: ""}, [{r: "str-empty"}]],
+    [{v: 0}, [{r: "num-zero"}]],
+    [{v: false}, [{r: "bool-false"}]],
+    [{v: "a"}, [{r: "str-a"}]],
+    [{v: 1}, []],
+    [{v: true}, []],
+  ],
+}
+
+{
+  name: "falsy: literal equality cells, first hit with a trailing wildcard",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["'a'", "'str-a'"],
+        ["''", "'str-empty'"],
+        ["0", "'num-zero'"],
+        ["false", "'bool-false'"],
+        ["null", "'null'"],
+        ["'0'", "'str-zero'"],
+        ["'false'", "'str-false'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "null"}],
+    [{v: null}, {r: "null"}],
+    [{v: ""}, {r: "str-empty"}],
+    [{v: 0}, {r: "num-zero"}],
+    [{v: false}, {r: "bool-false"}],
+    [{v: "a"}, {r: "str-a"}],
+    [{v: 1}, {r: "any"}],
+    [{v: true}, {r: "any"}],
+  ],
+}
+
+// --- Negated cells -------------------------------------------------------------------------
+// `!=` and `not in` are plain negations: they match null and missing too.
+
+{
+  name: "falsy: negated equality and `not in` cells, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["!= 'a'", "'ne-a'"],
+        ["!= ''", "'ne-empty'"],
+        ["!= 0", "'ne-zero'"],
+        ["!= false", "'ne-false'"],
+        ["!= null", "'ne-null'"],
+        ["not in ['a', '']", "'not-in-strings'"],
+        ["not in [0, false]", "'not-in-falsy'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "not-in-strings"}, {r: "not-in-falsy"}]],
+    [{v: null}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "not-in-strings"}, {r: "not-in-falsy"}]],
+    [{v: ""}, [{r: "ne-a"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "ne-null"}, {r: "not-in-falsy"}]],
+    [{v: 0}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-false"}, {r: "ne-null"}, {r: "not-in-strings"}]],
+    [{v: false}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-null"}, {r: "not-in-strings"}]],
+    [{v: "a"}, [{r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "ne-null"}, {r: "not-in-falsy"}]],
+    [{v: 1}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "ne-null"}, {r: "not-in-strings"}, {r: "not-in-falsy"}]],
+    [{v: true}, [{r: "ne-a"}, {r: "ne-empty"}, {r: "ne-zero"}, {r: "ne-false"}, {r: "ne-null"}, {r: "not-in-strings"}, {r: "not-in-falsy"}]],
+  ],
+}
+
+// --- Comparison and range cells ------------------------------------------------------------
+// Only numbers order: null, missing, strings and booleans never satisfy a comparison or range.
+
+{
+  name: "falsy: comparison and interval cells, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 0", "'gt0'"],
+        [">= 0", "'ge0'"],
+        ["< 1", "'lt1'"],
+        ["<= 0", "'le0'"],
+        ["[0..10]", "'closed'"],
+        ["(0..10]", "'open-left'"],
+        ["[-1..0]", "'ends-at-zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, []],
+    [{v: null}, []],
+    [{v: ""}, []],
+    [{v: 0}, [{r: "ge0"}, {r: "lt1"}, {r: "le0"}, {r: "closed"}, {r: "ends-at-zero"}]],
+    [{v: false}, []],
+    [{v: "a"}, []],
+    [{v: 1}, [{r: "gt0"}, {r: "ge0"}, {r: "closed"}, {r: "open-left"}]],
+    [{v: true}, []],
+  ],
+}
+
+{
+  name: "falsy: a comparison cell before a wildcard, first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["< 1", "'below-one'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "other"}],
+    [{v: null}, {r: "other"}],
+    [{v: ""}, {r: "other"}],
+    [{v: 0}, {r: "below-one"}],
+    [{v: false}, {r: "other"}],
+    [{v: "a"}, {r: "other"}],
+    [{v: 1}, {r: "other"}],
+    [{v: true}, {r: "other"}],
+  ],
+}
+
+// --- List cells ----------------------------------------------------------------------------
+// Comma lists and `in` arrays are disjunctions of equalities, so they can name falsy values and null.
+
+{
+  name: "falsy: comma lists and `in` arrays naming falsy values, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["'a', ''", "'strs'"],
+        ["0, 1", "'nums'"],
+        ["true, false", "'bools'"],
+        ["'', null", "'empty-or-null'"],
+        ["in [0, false, '', null]", "'any-falsy'"],
+        ["in []", "'empty-array'"],
+        ["in ['', 0]", "'empty-or-zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "empty-or-null"}, {r: "any-falsy"}]],
+    [{v: null}, [{r: "empty-or-null"}, {r: "any-falsy"}]],
+    [{v: ""}, [{r: "strs"}, {r: "empty-or-null"}, {r: "any-falsy"}, {r: "empty-or-zero"}]],
+    [{v: 0}, [{r: "nums"}, {r: "any-falsy"}, {r: "empty-or-zero"}]],
+    [{v: false}, [{r: "bools"}, {r: "any-falsy"}]],
+    [{v: "a"}, [{r: "strs"}]],
+    [{v: 1}, [{r: "nums"}]],
+    [{v: true}, [{r: "bools"}]],
+  ],
+}
+
+// --- Expression cells ----------------------------------------------------------------------
+// Cells written as expressions over `$`; a cell that errors for a type does not match.
+
+{
+  name: "falsy: expression cells over `$`, collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["$ == null", "'is-null'"],
+        ["($ ?? 'd') == 'd'", "'coalesced'"],
+        ["len($ ?? '') == 0", "'len-zero'"],
+        ["$ == false or $ == null", "'false-or-null'"],
+        ["type($) == 'null'", "'type-null'"],
+        ["isNumeric($)", "'numeric'"],
+        ["$ ? true : false", "'truthy'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "is-null"}, {r: "coalesced"}, {r: "len-zero"}, {r: "false-or-null"}, {r: "type-null"}]],
+    [{v: null}, [{r: "is-null"}, {r: "coalesced"}, {r: "len-zero"}, {r: "false-or-null"}, {r: "type-null"}]],
+    [{v: ""}, [{r: "len-zero"}]],
+    [{v: 0}, [{r: "numeric"}]],
+    [{v: false}, [{r: "false-or-null"}, {r: "truthy"}], "question: `$ ? true : false` is not a boolean test in a cell; unary mode compares `$` with the ternary's value, so false matches because `false == (false ? true : false)`, while a reader expects a truthiness test"],
+    [{v: "a"}, []],
+    [{v: 1}, [{r: "numeric"}]],
+    [{v: true}, [{r: "truthy"}]],
+  ],
+}
+
+{
+  name: "falsy: field-less cells reading the field by name",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [null], outputs: ["r"], rules: [
+        ["v == null", "'is-null'"],
+        ["v == ''", "'is-empty'"],
+        ["v == 0", "'is-zero'"],
+        ["v == false", "'is-false'"],
+        ["v", "'bare'"],
+        ["not v", "'negated'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "is-null"}]],
+    [{v: null}, [{r: "is-null"}]],
+    [{v: ""}, [{r: "is-empty"}]],
+    [{v: 0}, [{r: "is-zero"}]],
+    [{v: false}, [{r: "is-false"}, {r: "negated"}]],
+    [{v: "a"}, []],
+    [{v: 1}, []],
+    [{v: true}, [{r: "bare"}]],
+  ],
+}
+
+// --- Empty cells ---------------------------------------------------------------------------
+// An empty cell is a wildcard: it matches every value, including missing.
+
+{
+  name: "falsy: empty cells in every column match any combination of falsy values",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v", "w", "x"], outputs: ["r"], rules: [
+        ["", "", "", "'wild'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "wild"}],
+    [{v: null, w: "", x: 0}, {r: "wild"}],
+    [{v: false, w: null}, {r: "wild"}],
+    [{v: "a", w: 1, x: true}, {r: "wild"}],
+  ],
+}
+
+{
+  name: "falsy: a constrained column next to empty ones decides alone",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v", "w"], outputs: ["r"], rules: [
+        ["null", "", "'v-null'"],
+        ["", "null", "'w-null'"],
+        ["''", "0", "'empty-zero'"],
+        ["false", "", "'v-false'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "v-null"}, {r: "w-null"}]],
+    [{v: null, w: 0}, [{r: "v-null"}]],
+    [{v: "", w: 0}, [{r: "empty-zero"}]],
+    [{v: "", w: false}, []],
+    [{v: false}, [{r: "w-null"}, {r: "v-false"}]],
+    [{v: 0, w: ""}, []],
+  ],
+}
+
+// --- Large (indexed) tables with falsy keys ------------------------------------------------
+// The same distinctions with eight or more rules, where literal cells go through the equality
+// index: 0, false, "", "0", "false", null and "null" must stay apart.
+
+{
+  name: "falsy: an indexed collect table keyed by every falsy literal",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["''", "'str-empty'"],
+        ["0", "'num-zero'"],
+        ["false", "'bool-false'"],
+        ["'0'", "'str-zero'"],
+        ["'false'", "'str-false'"],
+        ["null", "'null'"],
+        ["'null'", "'str-null'"],
+        ["0.0", "'num-zero-decimal'"],
+        ["'a'", "'str-a'"],
+        ["1", "'num-one'"],
+        ["true", "'bool-true'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{r: "null"}]],
+    [{v: null}, [{r: "null"}]],
+    [{v: ""}, [{r: "str-empty"}]],
+    [{v: 0}, [{r: "num-zero"}, {r: "num-zero-decimal"}]],
+    [{v: false}, [{r: "bool-false"}]],
+    [{v: "a"}, [{r: "str-a"}]],
+    [{v: 1}, [{r: "num-one"}]],
+    [{v: true}, [{r: "bool-true"}]],
+  ],
+}
+
+{
+  name: "falsy: the indexed table under first hit with a trailing wildcard",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["''", "'str-empty'"],
+        ["0", "'num-zero'"],
+        ["false", "'bool-false'"],
+        ["'0'", "'str-zero'"],
+        ["'false'", "'str-false'"],
+        ["null", "'null'"],
+        ["'null'", "'str-null'"],
+        ["0.0", "'num-zero-decimal'"],
+        ["'a'", "'str-a'"],
+        ["1", "'num-one'"],
+        ["true", "'bool-true'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "null"}],
+    [{v: null}, {r: "null"}],
+    [{v: ""}, {r: "str-empty"}],
+    [{v: 0}, {r: "num-zero"}],
+    [{v: false}, {r: "bool-false"}],
+    [{v: "a"}, {r: "str-a"}],
+    [{v: 1}, {r: "num-one"}],
+    [{v: true}, {r: "bool-true"}],
+    [{v: "0"}, {r: "str-zero"}],
+    [{v: "false"}, {r: "str-false"}],
+    [{v: "null"}, {r: "str-null"}],
+    [{v: 0.00}, {r: "num-zero"}],
+    [{v: []}, {r: "any"}],
+    [{v: {}}, {r: "any"}],
+  ],
+}
+
+{
+  name: "falsy: an indexed table with two falsy-keyed columns intersects them",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v", "w"], outputs: ["r"], rules: [
+        ["''", "0", "'e0'"],
+        ["''", "false", "'ef'"],
+        ["0", "''", "'0e'"],
+        ["0", "false", "'0f'"],
+        ["false", "''", "'fe'"],
+        ["false", "0", "'f0'"],
+        ["null", "null", "'nn'"],
+        ["''", "", "'e*'"],
+        ["", "0", "'*0'"],
+        ["", "", "'**'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "", w: 0}, {r: "e0"}],
+    [{v: "", w: false}, {r: "ef"}],
+    [{v: 0, w: ""}, {r: "0e"}],
+    [{v: false, w: 0}, {r: "f0"}],
+    [{}, {r: "nn"}],
+    [{v: null}, {r: "nn"}],
+    [{v: "", w: null}, {r: "e*"}],
+    [{v: null, w: 0}, {r: "*0"}],
+    [{v: 0, w: 0}, {r: "*0"}],
+    [{v: false, w: false}, {r: "**"}],
+  ],
+}
+
+// --- passThrough with falsy inputs ---------------------------------------------------------
+// passThrough merges the outputs into the input: a falsy input field survives no match, an output
+// overrides it, and a null output removes it. Top-level null input fields are dropped from the
+// graph result like any top-level null (see 11-pass-through).
+
+{
+  name: "falsy: first hit with passThrough, matched and unmatched falsy inputs",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["v"], outputs: ["r"], rules: [
+        ["null", "'was-null'"],
+        ["''", "'was-empty'"],
+        ["0", "'was-zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "was-null"}],
+    [{v: null}, {r: "was-null"}],
+    [{v: ""}, {v: "", r: "was-empty"}],
+    [{v: 0}, {v: 0, r: "was-zero"}],
+    [{v: false}, {v: false}],
+    [{v: false, r: ""}, {v: false, r: ""}],
+    [{v: 0, r: null}, {v: 0, r: "was-zero"}],
+  ],
+}
+
+{
+  name: "falsy: passThrough where the output rewrites the falsy field itself",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["v"], outputs: ["v"], rules: [
+        ["null", "'filled'"],
+        ["''", "null"],
+        ["0", "false"],
+        ["false", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {v: "filled"}],
+    [{v: null}, {v: "filled"}],
+    [{v: "", k: 1}, {k: 1}],
+    [{v: 0}, {v: false}],
+    [{v: false}, {v: 0}],
+    [{v: "a"}, {v: "a"}],
+  ],
+}
+
+{
+  name: "falsy: collect with passThrough and outputPath over falsy inputs",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "hits", inputs: ["v"], outputs: ["r"], rules: [
+        ["null", "'null'"],
+        ["!= null", "'set'"],
+        ["", "v"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {hits: [{r: "null"}, {r: null}]}],
+    [{v: null}, {hits: [{r: "null"}, {r: null}]}],
+    [{v: ""}, {v: "", hits: [{r: "set"}, {r: ""}]}],
+    [{v: 0}, {v: 0, hits: [{r: "set"}, {r: 0}]}],
+    [{v: false}, {v: false, hits: [{r: "set"}, {r: false}]}],
+  ],
+}
+
+// --- Falsy output values -------------------------------------------------------------------
+// Outputs that evaluate to "", 0 or false are written; only a top-level null is dropped.
+
+{
+  name: "falsy: output cells echoing falsy inputs, first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["out", "nested.out", "kind"], rules: [
+        ["", "v", "v", "type(v)"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {nested: {out: null}, kind: "null"}],
+    [{v: null}, {nested: {out: null}, kind: "null"}],
+    [{v: ""}, {out: "", nested: {out: ""}, kind: "string"}],
+    [{v: 0}, {out: 0, nested: {out: 0}, kind: "number"}],
+    [{v: false}, {out: false, nested: {out: false}, kind: "bool"}],
+  ],
+}
+
+{
+  name: "falsy: output cells defaulting falsy inputs with `??` and `or`",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["coalesced", "ternary"], rules: [
+        ["v ?? 'default'", "v == null ? 'none' : v"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {coalesced: "default", ternary: "none"}],
+    [{v: null}, {coalesced: "default", ternary: "none"}],
+    [{v: ""}, {coalesced: "", ternary: ""}],
+    [{v: 0}, {coalesced: 0, ternary: 0}],
+    [{v: false}, {coalesced: false, ternary: false}],
+  ],
+}
+
+{
+  name: "falsy: a `[]` column gathers falsy values but not skipped empty cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["vals[]"], rules: [
+        ["", "''"],
+        ["", "0"],
+        ["", "false"],
+        ["", "null"],
+        ["", ""],
+        ["'x'", "'only-x'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {vals: ["", 0, false, null]}],
+    [{k: "x"}, {vals: ["", 0, false, null, "only-x"]}],
+    [{k: null}, {vals: ["", 0, false, null]}],
+  ],
+}
+
+// --- Nested and scoped access with falsy parents -------------------------------------------
+// A dotted field through a falsy or missing parent reads as null.
+
+{
+  name: "falsy: dotted fields through falsy, empty and missing parents",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a.b"], outputs: ["r"], rules: [
+        ["null", "'null'"],
+        ["", "'value'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: "null"}],
+    [{a: null}, {r: "null"}],
+    [{a: ""}, {r: "null"}],
+    [{a: 0}, {r: "null"}],
+    [{a: false}, {r: "null"}],
+    [{a: []}, {r: "null"}],
+    [{a: {}}, {r: "null"}],
+    [{a: {b: 0}}, {r: "value"}],
+    [{a: {b: false}}, {r: "value"}],
+  ],
+}
+
+{
+  name: "falsy: inputField pointing at a missing, null or empty object",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "obj", inputs: ["v"], outputs: ["r"], rules: [
+        ["null", "'v-null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{obj: {v: 1}}, {r: "other"}],
+    [{obj: {v: null}}, {r: "v-null"}],
+    [{obj: {}}, {r: "v-null"}],
+    [{obj: null}, {r: "v-null"}],
+    [{}, {r: "v-null"}],
+  ],
+}
+
+{
+  name: "falsy: loop mode over items holding null, missing and falsy fields",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", executionMode: "loop", outputPath: "out", inputs: ["v"], outputs: ["r"], rules: [
+        ["null", "'null'"],
+        ["''", "'empty'"],
+        ["0", "'zero'"],
+        ["false", "'false'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{v: null}, {}, {v: ""}, {v: 0}, {v: false}, {v: 1}]}, {out: [{r: "null"}, {r: "null"}, {r: "empty"}, {r: "zero"}, {r: "false"}, null]}],
+    [{items: [{v: 0}]}, {out: [{r: "zero"}]}],
+    [{items: []}, {out: []}],
+  ],
+}

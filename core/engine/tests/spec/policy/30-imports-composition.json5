@@ -1,0 +1,829 @@
+// Composition across imports. Chapter 13 pins the basics of one unit (single imports, chains,
+// diamonds, missing and circular imports). This chapter composes larger units: data models
+// assembled from several policies, computed properties threaded through three or more
+// policies, conflicting writers and declarations across imports, and dictionaries and globals
+// that live in an imported policy but are used elsewhere in the unit.
+
+// --- Shared models: one entity assembled from several policies ---------------------------------
+
+// Three policies each declare a slice of `customer`; the importer sees the union and every
+// slice is validated.
+{
+  name: "an entity assembled from three imported slices",
+  policy: {
+    imports: ["identity", "finance", "contact"],
+    blocks: [{expression: "customer.summary", value: "customer.name + ':' + string(customer.income) + ':' + customer.email"}],
+  },
+  policies: {
+    identity: {models: {customer: {name: "string"}}, blocks: []},
+    finance: {models: {customer: {income: "number"}}, blocks: []},
+    contact: {models: {customer: {email: "string"}}, blocks: []},
+  },
+  cases: [
+    [{customer: {name: "a", income: 10, email: "a@x"}}, {customer: {name: "a", income: 10, email: "a@x", summary: "a:10:a@x"}}],
+    [{customer: {name: "", income: 0, email: ""}}, {customer: {name: "", income: 0, email: "", summary: ":0:"}}],
+    [{customer: {name: "a", income: "10", email: "a@x"}}, "!error: InputValidationFailed"],
+    [{customer: {name: 1, income: 10, email: "a@x"}}, "!error: InputValidationFailed"],
+    [{customer: {name: "a", income: 10, email: false}}, "!error: InputValidationFailed"],
+    [{customer: {name: "a", income: 10}}, "!error: MissingRequiredInputs"],
+    [{customer: {income: 10}}, "!error: missing: [\"customer.email\", \"customer.name\"]"],
+  ],
+}
+
+// A slice declared only in a policy deep in the chain still validates input for the root.
+{
+  name: "a model slice declared three imports deep validates the root's input",
+  policy: {
+    imports: ["l1"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  policies: {
+    l1: {imports: ["l2"], blocks: []},
+    l2: {imports: ["l3"], blocks: []},
+    l3: {models: {customer: {vip: "boolean", tags: "string[]"}}, blocks: []},
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, next: 2}}],
+    [{customer: {age: 1, vip: true, tags: ["a"]}}, {customer: {age: 1, vip: true, tags: ["a"], next: 2}}],
+    [{customer: {age: 1, vip: "yes"}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1, tags: "a"}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1, tags: [1]}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1, tags: []}}, {customer: {age: 1, tags: [], next: 2}}],
+  ],
+}
+
+// The same property declared identically in every member is one property.
+{
+  name: "an identical property declared in every member merges without conflict",
+  policy: {
+    imports: ["a", "b"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "order.total", value: "order.fromA + order.fromB"}],
+  },
+  policies: {
+    a: {models: {order: {amount: "number"}}, blocks: [{expression: "order.fromA", value: "order.amount * 2"}]},
+    b: {models: {order: {amount: "number"}}, blocks: [{expression: "order.fromB", value: "order.amount + 1"}]},
+  },
+  cases: [
+    [{order: {amount: 3}}, {order: {amount: 3, fromA: 6, fromB: 4, total: 10}}],
+    [{order: {amount: 0}}, {order: {amount: 0, fromA: 0, fromB: 1, total: 1}}],
+    [{order: {amount: -0.5}}, {order: {amount: -0.5, fromA: -1, fromB: 0.5, total: -0.5}}],
+    [{order: {amount: "3"}}, "!error: InputValidationFailed"],
+    [{order: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// A relationship declared in one policy, its target entity declared in another, and the
+// per-member blocks living in a third.
+{
+  name: "a relationship and its target entity come from different imports",
+  policy: {
+    imports: ["owner", "companyModel", "companyRules"],
+    blocks: [{expression: "customer.bigNames", value: "map(filter(customer.companies, #.big), #.name)"}],
+  },
+  policies: {
+    owner: {models: {customer: {companies: "company[]"}}, blocks: []},
+    companyModel: {models: {company: {name: "string", revenue: "number"}}, blocks: []},
+    companyRules: {imports: ["companyModel"], blocks: [{expression: "company.big", value: "company.revenue >= 100"}]},
+  },
+  cases: [
+    [{customer: {companies: [{name: "a", revenue: 5}, {name: "b", revenue: 100}]}}, {customer: {bigNames: ["b"], companies: [{name: "a", revenue: 5, big: false}, {name: "b", revenue: 100, big: true}]}}],
+    [{customer: {companies: []}}, {customer: {bigNames: [], companies: []}}],
+    [{customer: {companies: [{name: "c", revenue: 1000}]}}, {customer: {bigNames: ["c"], companies: [{name: "c", revenue: 1000, big: true}]}}],
+    [{customer: {companies: [{name: "c", revenue: "1000"}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{name: 5, revenue: 1}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A reference property declared in an import resolves an id against the pool of an entity
+// declared in the importer.
+{
+  name: "a reference declared in an import targets an entity of the importer",
+  policy: {
+    imports: ["orders"],
+    models: {product: {id: "string", price: "number"}},
+    blocks: [{expression: "order.cost", value: "order.qty * order.item.price"}],
+  },
+  policies: {
+    orders: {models: {order: {qty: "number", item: "&product"}}, blocks: []},
+  },
+  cases: [
+    {
+      input: {product: [{id: "p1", price: 10}, {id: "p2", price: 2.5}], order: {qty: 3, item: "p2"}},
+      output: {product: [{id: "p1", price: 10}, {id: "p2", price: 2.5}], order: {qty: 3, item: {id: "p2", price: 2.5}, cost: 7.5}},
+    },
+    {
+      input: {product: [{id: "p1", price: 10}], order: {qty: 0, item: "p1"}},
+      output: {product: [{id: "p1", price: 10}], order: {qty: 0, item: {id: "p1", price: 10}, cost: 0}},
+    },
+    {input: {product: [{id: "p1", price: 10}], order: {qty: 1, item: "p9"}}, output: "!error: InputValidationFailed"},
+    {input: {product: [{id: "p1", price: 10}], order: {qty: 1, item: 5}}, output: "!error: InputValidationFailed"},
+    {input: {order: {qty: 1, item: "p1"}}, output: "!error: InputValidationFailed"},
+  ],
+}
+
+// --- Shared models: conflicting declarations ---------------------------------------------------
+
+{
+  name: "a property declared with different types in two imports",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["a", "b"],
+    blocks: [{expression: "customer.copy", value: "customer.code"}],
+  },
+  policies: {
+    a: {models: {customer: {code: "string"}}, blocks: []},
+    b: {models: {customer: {code: "number"}}, blocks: []},
+  },
+  cases: [
+    {input: {customer: {code: "x"}}, output: {customer: {code: "x", copy: "x"}}, note: "question: DataModelCollision is an error diagnostic; the declaration from the policy path that sorts first validates"},
+    {input: {customer: {code: 5}}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; the declaration from the policy path that sorts first validates"},
+  ],
+}
+
+{
+  name: "a property required in one import and optional in another",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["strict", "loose"],
+    blocks: [{expression: "customer.label", value: "customer.nick ?? 'none'"}],
+  },
+  policies: {
+    strict: {models: {customer: {nick: "string"}}, blocks: []},
+    loose: {models: {customer: {nick: "string?"}}, blocks: []},
+  },
+  cases: [
+    {input: {customer: {nick: "a"}}, output: {customer: {nick: "a", label: "a"}}},
+    {input: {customer: {}}, output: {customer: {label: "none"}}, note: "question: DataModelCollision is an error diagnostic; the optional declaration from 'loose' (sorts first) wins over the required one"},
+    {input: {customer: {nick: 1}}, output: "!error: InputValidationFailed"},
+  ],
+}
+
+{
+  name: "a property declared as an array in one import and a scalar in another",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["one", "many"],
+    blocks: [{expression: "customer.n", value: "1"}],
+  },
+  policies: {
+    one: {models: {customer: {tag: "string"}}, blocks: []},
+    many: {models: {customer: {tag: "string[]"}}, blocks: []},
+  },
+  cases: [
+    {input: {customer: {tag: "a"}}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; the array declaration from 'many' (sorts first) validates, not the first import"},
+    {input: {customer: {tag: ["a"]}}, output: {customer: {tag: ["a"], n: 1}}, note: "question: DataModelCollision is an error diagnostic; the array declaration from 'many' (sorts first) validates, not the first import"},
+    {input: {customer: {}}, output: {customer: {n: 1}}},
+  ],
+}
+
+{
+  name: "enum values declared differently in two imports",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["a", "b"],
+    blocks: [{expression: "customer.isA", value: "customer.tier == 'a'"}],
+  },
+  policies: {
+    a: {models: {customer: {tier: "string(a|b)"}}, blocks: []},
+    b: {models: {customer: {tier: "string(a|c)"}}, blocks: []},
+  },
+  cases: [
+    {input: {customer: {tier: "a"}}, output: {customer: {tier: "a", isA: true}}},
+    {input: {customer: {tier: "b"}}, output: {customer: {tier: "b", isA: false}}, note: "question: DataModelCollision is an error diagnostic; the enum of 'a' (sorts first) validates, the values are not merged"},
+    {input: {customer: {tier: "c"}}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; the enum of 'a' (sorts first) validates, the values are not merged"},
+  ],
+}
+
+// An entity name in one import colliding with a global property name in another.
+{
+  name: "an entity named like a global property of another import",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["entities", "settings"],
+    blocks: [{expression: "out", value: "1"}],
+  },
+  policies: {
+    entities: {models: {rate: {value: "number"}}, blocks: []},
+    settings: {globals: {platform: {rate: "number"}}, blocks: []},
+  },
+  cases: [
+    {input: {rate: 5}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; `rate` validates as the entity"},
+    {input: {rate: {value: 5}}, output: {rate: {value: 5}, out: 1}, note: "question: DataModelCollision is an error diagnostic; `rate` validates as the entity and the global declaration is ignored"},
+  ],
+}
+
+// --- Computed chains across three or more policies ---------------------------------------------
+
+{
+  name: "a five-policy chain, each level adding one computed property",
+  policy: {
+    imports: ["p4"],
+    blocks: [{expression: "o.p5", value: "o.p4 + 1"}],
+  },
+  policies: {
+    p4: {imports: ["p3"], blocks: [{expression: "o.p4", value: "o.p3 * 2"}]},
+    p3: {imports: ["p2"], blocks: [{expression: "o.p3", value: "o.p2 - 3"}]},
+    p2: {imports: ["p1"], blocks: [{expression: "o.p2", value: "o.p1 / 2"}]},
+    p1: {models: {o: {x: "number"}}, blocks: [{expression: "o.p1", value: "o.x * 10"}]},
+  },
+  cases: [
+    [{o: {x: 1}}, {o: {x: 1, p1: 10, p2: 5, p3: 2, p4: 4, p5: 5}}],
+    [{o: {x: 0}}, {o: {x: 0, p1: 0, p2: 0, p3: -3, p4: -6, p5: -5}}],
+    [{o: {x: 0.3}}, {o: {x: 0.3, p1: 3, p2: 1.5, p3: -1.5, p4: -3, p5: -2}}],
+    [{o: {x: -2}}, {o: {x: -2, p1: -20, p2: -10, p3: -13, p4: -26, p5: -25}}],
+    [{o: {}}, "!error: MissingRequiredInputs"],
+    [{o: {x: "1"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// The chain runs backwards: the root writes the base value and the deepest import consumes the
+// value computed by its importers. Reads resolve across the unit regardless of import direction.
+{
+  name: "a chain whose data flows against the import direction",
+  policy: {
+    imports: ["mid"],
+    models: {o: {x: "number"}},
+    blocks: [{expression: "o.a", value: "o.x + 1"}],
+  },
+  policies: {
+    mid: {imports: ["leaf"], blocks: [{expression: "o.b", value: "o.a * 2"}]},
+    leaf: {blocks: [{expression: "o.c", value: "o.b * 3"}]},
+  },
+  cases: [
+    [{o: {x: 1}}, {o: {x: 1, a: 2, b: 4, c: 12}}],
+    [{o: {x: -1}}, {o: {x: -1, a: 0, b: 0, c: 0}}],
+    [{o: {x: 0.5}}, {o: {x: 0.5, a: 1.5, b: 3, c: 9}}],
+    [{o: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Each policy in the chain uses a different block kind.
+{
+  name: "a chain of table, match, assertion and expression in four policies",
+  policy: {
+    imports: ["decide"],
+    blocks: [{expression: "loan.message", value: "loan.approved ? 'approved at ' + string(loan.rate) : 'declined (' + loan.risk + ')'"}],
+  },
+  policies: {
+    decide: {imports: ["rate"], blocks: [{assertion: "loan.approved", conditions: ["loan.risk != 'high'", "loan.rate < 0.2"]}]},
+    rate: {imports: ["risk"], blocks: [{match: "loan.rate", arms: [["loan.risk == 'low'", "0.05"], ["loan.risk == 'medium'", "0.1"], ["", "0.25"]]}]},
+    risk: {
+      models: {loan: {score: "number", amount: "number"}},
+      blocks: [{table: "riskTable", inputs: ["loan.score", "loan.amount"], outputs: ["loan.risk"], rules: [
+        [">= 700", "< 100000", "'low'"],
+        [">= 600", "", "'medium'"],
+        ["", "", "'high'"],
+      ]}],
+    },
+  },
+  cases: [
+    [{loan: {score: 750, amount: 5000}}, {loan: {score: 750, amount: 5000, risk: "low", rate: 0.05, approved: true, message: "approved at 0.05"}}],
+    [{loan: {score: 750, amount: 200000}}, {loan: {score: 750, amount: 200000, risk: "medium", rate: 0.1, approved: true, message: "approved at 0.1"}}],
+    [{loan: {score: 650, amount: 1}}, {loan: {score: 650, amount: 1, risk: "medium", rate: 0.1, approved: true, message: "approved at 0.1"}}],
+    [{loan: {score: 500, amount: 1}}, {loan: {score: 500, amount: 1, risk: "high", rate: 0.25, approved: false, message: "declined (high)"}}],
+    [{loan: {score: 700, amount: 100000}}, {loan: {score: 700, amount: 100000, risk: "medium", rate: 0.1, approved: true, message: "approved at 0.1"}}],
+    [{loan: {score: 700}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Per-member computed values chained through three policies, aggregated by the root.
+{
+  name: "per-member values chained across three policies and aggregated at the root",
+  policy: {
+    imports: ["net"],
+    blocks: [
+      {expression: "invoice.total", value: "sum(map(invoice.lines, #.net))"},
+      {expression: "invoice.count", value: "len(invoice.lines)"},
+    ],
+  },
+  policies: {
+    net: {imports: ["gross"], blocks: [{expression: "line.net", value: "line.gross - line.discount"}]},
+    gross: {imports: ["model"], blocks: [
+      {expression: "line.gross", value: "line.qty * line.price"},
+      {expression: "line.discount", value: "line.gross > 100 ? line.gross * 0.1 : 0"},
+    ]},
+    model: {models: {invoice: {lines: "line[]"}, line: {qty: "number", price: "number"}}, blocks: []},
+  },
+  cases: [
+    [
+      {invoice: {lines: [{qty: 2, price: 10}, {qty: 1, price: 200}]}},
+      {invoice: {total: 200, count: 2, lines: [{qty: 2, price: 10, gross: 20, discount: 0, net: 20}, {qty: 1, price: 200, gross: 200, discount: 20, net: 180}]}},
+    ],
+    [{invoice: {lines: []}}, {invoice: {total: 0, count: 0, lines: []}}],
+    [
+      {invoice: {lines: [{qty: 0, price: 1000}]}},
+      {invoice: {total: 0, count: 1, lines: [{qty: 0, price: 1000, gross: 0, discount: 0, net: 0}]}},
+    ],
+    [
+      {invoice: {lines: [{qty: 3, price: 33.34}]}},
+      {invoice: {total: 90.018, count: 1, lines: [{qty: 3, price: 33.34, gross: 100.02, discount: 10.002, net: 90.018}]}},
+    ],
+    [{invoice: {lines: [{qty: 1}]}}, "!error: ExpressionFailed"],
+    [{invoice: {lines: [{qty: 1, price: "1"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// An aggregate computed in one policy flows back into per-member blocks of another.
+{
+  name: "an aggregate from one import feeds per-member shares in another",
+  policy: {
+    imports: ["share"],
+    blocks: [{expression: "team.check", value: "sum(map(team.members, #.share))"}],
+  },
+  policies: {
+    share: {imports: ["totals"], blocks: [{expression: "member.share", value: "team.total == 0 ? 0 : member.points / team.total"}]},
+    totals: {
+      models: {team: {members: "member[]"}, member: {points: "number"}},
+      blocks: [{expression: "team.total", value: "sum(map(team.members, #.points))"}],
+    },
+  },
+  cases: [
+    [{team: {members: [{points: 1}, {points: 3}]}}, {team: {total: 4, check: 1, members: [{points: 1, share: 0.25}, {points: 3, share: 0.75}]}}],
+    [{team: {members: [{points: 0}, {points: 0}]}}, {team: {total: 0, check: 0, members: [{points: 0, share: 0}, {points: 0, share: 0}]}}],
+    [{team: {members: []}}, {team: {total: 0, check: 0, members: []}}],
+    [{team: {members: [{points: 5}]}}, {team: {total: 5, check: 1, members: [{points: 5, share: 1}]}}],
+  ],
+}
+
+// Nested computed write paths built up by three different policies.
+{
+  name: "a nested result object assembled by three policies",
+  policy: {
+    imports: ["taxes", "fees"],
+    blocks: [{expression: "result.summary.grand", value: "result.lines.net + result.lines.tax + result.lines.fee"}],
+  },
+  policies: {
+    taxes: {imports: ["base"], blocks: [{expression: "result.lines.tax", value: "result.lines.net * 0.2"}]},
+    fees: {imports: ["base"], blocks: [{expression: "result.lines.fee", value: "result.lines.net > 100 ? 0 : 5"}]},
+    base: {models: {order: {amount: "number"}}, blocks: [{expression: "result.lines.net", value: "order.amount"}]},
+  },
+  cases: [
+    [{order: {amount: 100}}, {order: {amount: 100}, result: {lines: {net: 100, tax: 20, fee: 5}, summary: {grand: 125}}}],
+    [{order: {amount: 200}}, {order: {amount: 200}, result: {lines: {net: 200, tax: 40, fee: 0}, summary: {grand: 240}}}],
+    [{order: {amount: 0}}, {order: {amount: 0}, result: {lines: {net: 0, tax: 0, fee: 5}, summary: {grand: 5}}}],
+    [{order: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// A diamond whose two branches are themselves chains, joined at the root.
+{
+  name: "a deep diamond: two two-level branches over one base",
+  policy: {
+    imports: ["left2", "right2"],
+    blocks: [{expression: "x.join", value: "x.l2 + ':' + x.r2"}],
+  },
+  policies: {
+    left2: {imports: ["left1"], blocks: [{expression: "x.l2", value: "upper(x.l1)"}]},
+    left1: {imports: ["base"], blocks: [{expression: "x.l1", value: "x.word + 'l'"}]},
+    right2: {imports: ["right1"], blocks: [{expression: "x.r2", value: "string(x.r1 * 2)"}]},
+    right1: {imports: ["base"], blocks: [{expression: "x.r1", value: "len(x.word)"}]},
+    base: {models: {x: {name: "string"}}, blocks: [{expression: "x.word", value: "trim(x.name)"}]},
+  },
+  cases: [
+    [{x: {name: " ab "}}, {x: {name: " ab ", word: "ab", l1: "abl", l2: "ABL", r1: 2, r2: "4", join: "ABL:4"}}],
+    [{x: {name: ""}}, {x: {name: "", word: "", l1: "l", l2: "L", r1: 0, r2: "0", join: "L:0"}}],
+    [{x: {name: "Zed"}}, {x: {name: "Zed", word: "Zed", l1: "Zedl", l2: "ZEDL", r1: 3, r2: "6", join: "ZEDL:6"}}],
+    [{x: {name: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Every policy of a chain contributes a terminal write that nobody reads; all of them run.
+{
+  name: "terminal writes at every level of a chain all run",
+  policy: {
+    imports: ["mid"],
+    blocks: [
+      {expression: "c.rootOnly", value: "c.v * 1000"},
+      {expression: "c.uses", value: "c.midValue + c.baseValue"},
+    ],
+  },
+  policies: {
+    mid: {imports: ["base"], blocks: [
+      {expression: "c.midValue", value: "c.v * 10"},
+      {expression: "c.midOnly", value: "c.v > 0"},
+    ]},
+    base: {models: {c: {v: "number"}}, blocks: [
+      {expression: "c.baseValue", value: "c.v"},
+      {expression: "c.baseOnly", value: "'base'"},
+    ]},
+  },
+  cases: [
+    [{c: {v: 1}}, {c: {v: 1, baseValue: 1, baseOnly: "base", midValue: 10, midOnly: true, rootOnly: 1000, uses: 11}}],
+    [{c: {v: 0}}, {c: {v: 0, baseValue: 0, baseOnly: "base", midValue: 0, midOnly: false, rootOnly: 0, uses: 0}}],
+    [{c: {v: -1}}, {c: {v: -1, baseValue: -1, baseOnly: "base", midValue: -10, midOnly: false, rootOnly: -1000, uses: -11}}],
+  ],
+}
+
+// --- Duplicate writers across imports ----------------------------------------------------------
+
+{
+  name: "two sibling imports writing the same property",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    imports: ["a", "b"],
+    models: {c: {v: "number"}},
+    blocks: [{expression: "c.read", value: "c.score + 1"}],
+  },
+  policies: {
+    a: {blocks: [{expression: "c.score", value: "c.v * 2"}]},
+    b: {blocks: [{expression: "c.score", value: "c.v * 3"}]},
+  },
+  cases: [
+    {input: {c: {v: 1}}, output: {c: {v: 1, score: 2, read: 3}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from the policy path that sorts first"},
+    {input: {c: {v: 10}}, output: {c: {v: 10, score: 20, read: 21}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from the policy path that sorts first"},
+  ],
+}
+
+// Swapping the import order of the two writers does not change which writer is kept.
+{
+  name: "two sibling imports writing the same property, imported in the other order",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    imports: ["b", "a"],
+    models: {c: {v: "number"}},
+    blocks: [{expression: "c.read", value: "c.score + 1"}],
+  },
+  policies: {
+    a: {blocks: [{expression: "c.score", value: "c.v * 2"}]},
+    b: {blocks: [{expression: "c.score", value: "c.v * 3"}]},
+  },
+  cases: [
+    {input: {c: {v: 1}}, output: {c: {v: 1, score: 2, read: 3}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from the policy path that sorts first"},
+    {input: {c: {v: 10}}, output: {c: {v: 10, score: 20, read: 21}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from the policy path that sorts first"},
+  ],
+}
+
+{
+  name: "a writer deep in a chain duplicated by the root",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    imports: ["mid"],
+    blocks: [{expression: "c.flag", value: "'root'"}],
+  },
+  policies: {
+    mid: {imports: ["leaf"], blocks: [{expression: "c.copy", value: "c.flag"}]},
+    leaf: {models: {c: {v: "number"}}, blocks: [{expression: "c.flag", value: "'leaf'"}]},
+  },
+  cases: [
+    {input: {c: {v: 1}}, output: {c: {v: 1, flag: "leaf", copy: "leaf"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the deepest import's writer and drops the root's"},
+  ],
+}
+
+{
+  name: "a table in one import and an expression in another writing the same property",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    imports: ["byTable", "byExpr"],
+    blocks: [],
+  },
+  policies: {
+    byTable: {models: {c: {age: "number"}}, blocks: [{table: "t", inputs: ["c.age"], outputs: ["c.band"], rules: [[">= 18", "'adult'"], ["", "'minor'"]]}]},
+    byExpr: {models: {c: {age: "number"}}, blocks: [{expression: "c.band", value: "'expr'"}]},
+  },
+  cases: [
+    {input: {c: {age: 20}}, output: {c: {age: 20, band: "expr"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from 'byExpr' (sorts first)"},
+    {input: {c: {age: 5}}, output: {c: {age: 5, band: "expr"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the writer from 'byExpr' (sorts first)"},
+  ],
+}
+
+// Writers of different nested leaves under one object never conflict.
+{
+  name: "sibling imports writing different leaves of one nested object",
+  policy: {
+    imports: ["a", "b", "c"],
+    models: {o: {n: "number"}},
+    blocks: [{expression: "o.total", value: "o.parts.a + o.parts.b + o.parts.c"}],
+  },
+  policies: {
+    a: {blocks: [{expression: "o.parts.a", value: "o.n"}]},
+    b: {blocks: [{expression: "o.parts.b", value: "o.n * 2"}]},
+    c: {blocks: [{expression: "o.parts.c", value: "o.n * 3"}]},
+  },
+  cases: [
+    [{o: {n: 1}}, {o: {n: 1, parts: {a: 1, b: 2, c: 3}, total: 6}}],
+    [{o: {n: 0}}, {o: {n: 0, parts: {a: 0, b: 0, c: 0}, total: 0}}],
+    [{o: {n: -2.5}}, {o: {n: -2.5, parts: {a: -2.5, b: -5, c: -7.5}, total: -15}}],
+  ],
+}
+
+// One import writes a whole object while another writes into it.
+{
+  name: "a whole-object write in one import and a nested write in another",
+  diagnostics: ["PARTIAL_OBJECT_WRITE"],
+  policy: {
+    imports: ["whole", "part"],
+    models: {o: {n: "number"}},
+    blocks: [],
+  },
+  policies: {
+    whole: {blocks: [{expression: "o.box", value: "{a: o.n}"}]},
+    part: {blocks: [{expression: "o.box.b", value: "o.n + 1"}]},
+  },
+  cases: [
+    {input: {o: {n: 1}}, output: {o: {n: 1, box: {b: 2}}}, note: "question: PartialObjectWrite is an error diagnostic ('the whole-object write overwrites the nested writes'), yet the nested write wins and the whole object's `a` is lost"},
+  ],
+}
+
+// --- Input overrides across imports ------------------------------------------------------------
+
+{
+  name: "an import writes a property the importer declares as input",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    imports: ["writer"],
+    models: {c: {age: "number", band: "string"}},
+    blocks: [{expression: "c.label", value: "c.band + '!'"}],
+  },
+  policies: {
+    writer: {blocks: [{expression: "c.band", value: "c.age >= 18 ? 'adult' : 'minor'"}]},
+  },
+  cases: [
+    {input: {c: {age: 30, band: "given"}}, output: {c: {age: 30, band: "given", label: "given!"}}, note: "question: InputOverride is an error diagnostic; the input value wins and the imported write is dropped"},
+    {input: {c: {age: 30}}, output: "!error: MissingRequiredInputs", note: "question: InputOverride is an error diagnostic; the declared property is required input even though an import writes it"},
+  ],
+}
+
+{
+  name: "the importer writes a property a deep import declares as input",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    imports: ["mid"],
+    blocks: [{expression: "c.score", value: "c.points * 2"}],
+  },
+  policies: {
+    mid: {imports: ["leaf"], blocks: [{expression: "c.doubled", value: "c.score + 1"}]},
+    leaf: {models: {c: {points: "number", score: "number"}}, blocks: []},
+  },
+  cases: [
+    {input: {c: {points: 5, score: 1}}, output: {c: {points: 5, score: 1, doubled: 2}}, note: "question: InputOverride is an error diagnostic; the input value wins over the root's write"},
+    {input: {c: {points: 5}}, output: "!error: MissingRequiredInputs", note: "question: InputOverride is an error diagnostic; the declared property is required input"},
+  ],
+}
+
+// --- Globals from imports -------------------------------------------------------------------
+
+// A global model split across two imports; every part validates and both are readable.
+{
+  name: "a global model split across two imports",
+  policy: {
+    imports: ["rates", "limits"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "order.charge", value: "min([order.amount * taxRate, maxCharge])"}],
+  },
+  policies: {
+    rates: {globals: {platform: {taxRate: "number"}}, blocks: []},
+    limits: {globals: {platform: {maxCharge: "number"}}, blocks: []},
+  },
+  cases: [
+    [{taxRate: 0.1, maxCharge: 50, order: {amount: 100}}, {taxRate: 0.1, maxCharge: 50, order: {amount: 100, charge: 10}}],
+    [{taxRate: 0.1, maxCharge: 5, order: {amount: 100}}, {taxRate: 0.1, maxCharge: 5, order: {amount: 100, charge: 5}}],
+    [{taxRate: 0, maxCharge: 0, order: {amount: 0}}, {taxRate: 0, maxCharge: 0, order: {amount: 0, charge: 0}}],
+    [{taxRate: "0.1", maxCharge: 5, order: {amount: 1}}, "!error: InputValidationFailed"],
+    [{taxRate: 0.1, maxCharge: true, order: {amount: 1}}, "!error: InputValidationFailed"],
+    [{taxRate: 0.1, order: {amount: 1}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// A global computed in one import, read by entity blocks in another import and by the root.
+{
+  name: "a global computed in one import feeds blocks in two other policies",
+  policy: {
+    imports: ["rate", "orders"],
+    blocks: [{expression: "summary", value: "order.net > 85 ? 'high' : 'low'"}],
+  },
+  policies: {
+    rate: {globals: {settings: {baseRate: "number", promo: "boolean"}}, blocks: [{expression: "effectiveRate", value: "promo ? baseRate / 2 : baseRate"}]},
+    orders: {models: {order: {amount: "number"}}, blocks: [{expression: "order.net", value: "order.amount * (1 - effectiveRate)"}]},
+  },
+  cases: [
+    [{baseRate: 0.2, promo: false, order: {amount: 100}}, {baseRate: 0.2, promo: false, effectiveRate: 0.2, order: {amount: 100, net: 80}, summary: "low"}],
+    [{baseRate: 0.2, promo: true, order: {amount: 100}}, {baseRate: 0.2, promo: true, effectiveRate: 0.1, order: {amount: 100, net: 90}, summary: "high"}],
+    [{baseRate: 0, promo: true, order: {amount: 7}}, {baseRate: 0, promo: true, effectiveRate: 0, order: {amount: 7, net: 7}, summary: "low"}],
+    [{baseRate: 0.2, order: {amount: 100}}, "!error: MissingRequiredInputs"],
+    [{baseRate: 0.2, promo: "no", order: {amount: 100}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A global array of entities declared in one import; per-member blocks in another.
+{
+  name: "a global relationship from one import with member blocks in another",
+  policy: {
+    imports: ["catalog", "flags"],
+    blocks: [{expression: "cheapCount", value: "count(products, #.cheap)"}],
+  },
+  policies: {
+    catalog: {globals: {store: {products: "product[]"}}, models: {product: {price: "number"}}, blocks: []},
+    flags: {imports: ["catalog"], blocks: [{expression: "product.cheap", value: "product.price < 10"}]},
+  },
+  cases: [
+    [{products: [{price: 5}, {price: 50}]}, {products: [{price: 5, cheap: true}, {price: 50, cheap: false}], cheapCount: 1}],
+    [{products: []}, {products: [], cheapCount: 0}],
+    [{products: [{price: 9.99}, {price: 10}, {price: 0}]}, {products: [{price: 9.99, cheap: true}, {price: 10, cheap: false}, {price: 0, cheap: true}], cheapCount: 2}],
+    [{products: [{price: "5"}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// An optional global from an import, defaulted by the importer.
+{
+  name: "an optional global declared in an import",
+  policy: {
+    imports: ["settings"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "order.total", value: "order.amount + (shipping ?? 0)"}],
+  },
+  policies: {
+    settings: {globals: {platform: {shipping: "number?"}}, blocks: []},
+  },
+  cases: [
+    [{order: {amount: 10}}, {order: {amount: 10, total: 10}}],
+    [{shipping: null, order: {amount: 10}}, {shipping: null, order: {amount: 10, total: 10}}],
+    [{shipping: 4.5, order: {amount: 10}}, {shipping: 4.5, order: {amount: 10, total: 14.5}}],
+    [{shipping: "4", order: {amount: 10}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A global declared twice with the same type in two imports merges.
+{
+  name: "the same global declared identically in two imports",
+  policy: {
+    imports: ["a", "b"],
+    blocks: [{expression: "both", value: "fromA + fromB"}],
+  },
+  policies: {
+    a: {globals: {cfg: {factor: "number"}}, blocks: [{expression: "fromA", value: "factor * 2"}]},
+    b: {globals: {cfg: {factor: "number"}}, blocks: [{expression: "fromB", value: "factor + 1"}]},
+  },
+  cases: [
+    [{factor: 2}, {factor: 2, fromA: 4, fromB: 3, both: 7}],
+    [{factor: 0}, {factor: 0, fromA: 0, fromB: 1, both: 1}],
+    [{factor: "2"}, "!error: InputValidationFailed"],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "the same global declared with different types in two imports",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["a", "b"],
+    blocks: [{expression: "copy", value: "mode"}],
+  },
+  policies: {
+    a: {globals: {cfg: {mode: "string"}}, blocks: []},
+    b: {globals: {cfg: {mode: "boolean"}}, blocks: []},
+  },
+  cases: [
+    {input: {mode: "x"}, output: {mode: "x", copy: "x"}, note: "question: DataModelCollision is an error diagnostic; the declaration from the policy path that sorts first validates"},
+    {input: {mode: true}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; the declaration from the policy path that sorts first validates"},
+  ],
+}
+
+// --- Dictionaries from imports -----------------------------------------------------------------
+
+// A dictionary declared deep in a chain types a property declared by the root.
+{
+  name: "a dictionary from a deep import types the root's property",
+  policy: {
+    imports: ["mid"],
+    models: {account: {status: "status"}},
+    blocks: [{expression: "account.open", value: "account.status == 'A'"}],
+  },
+  policies: {
+    mid: {imports: ["dicts"], blocks: []},
+    dicts: {dictionaries: {status: [["A", "Active"], ["C", "Closed"]]}, blocks: []},
+  },
+  cases: [
+    [{account: {status: "A"}}, {account: {status: "A", open: true}}],
+    [{account: {status: "C"}}, {account: {status: "C", open: false}}],
+    [{account: {status: "Active"}}, "!error: InputValidationFailed"],
+    [{account: {status: "X"}}, "!error: InputValidationFailed"],
+    [{account: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// One dictionary used by properties declared in two different imports.
+{
+  name: "one dictionary types properties declared in two imports",
+  policy: {
+    imports: ["buyer", "seller", "dicts"],
+    blocks: [{expression: "deal.sameRegion", value: "buyer.region == seller.region"}],
+  },
+  policies: {
+    buyer: {models: {buyer: {region: "region"}}, blocks: []},
+    seller: {models: {seller: {region: "region"}}, blocks: []},
+    dicts: {dictionaries: {region: ["EU", "US", "APAC"]}, blocks: []},
+  },
+  cases: [
+    [{buyer: {region: "EU"}, seller: {region: "EU"}}, {buyer: {region: "EU"}, seller: {region: "EU"}, deal: {sameRegion: true}}],
+    [{buyer: {region: "EU"}, seller: {region: "US"}}, {buyer: {region: "EU"}, seller: {region: "US"}, deal: {sameRegion: false}}],
+    [{buyer: {region: "EU"}, seller: {region: "LATAM"}}, "!error: InputValidationFailed"],
+    [{buyer: {region: "eu"}, seller: {region: "EU"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A dictionary-typed global declared in an import, with a table over it in another.
+{
+  name: "a dictionary-typed global from an import drives a table in another",
+  policy: {
+    imports: ["setup", "pricing"],
+    blocks: [],
+  },
+  policies: {
+    setup: {dictionaries: {planKind: ["free", "pro", "team"]}, globals: {account: {plan: "planKind"}}, blocks: []},
+    pricing: {imports: ["setup"], blocks: [{table: "prices", inputs: ["plan"], outputs: ["price"], rules: [["'free'", "0"], ["'pro'", "10"], ["", "25"]]}]},
+  },
+  cases: [
+    [{plan: "free"}, {plan: "free", price: 0}],
+    [{plan: "pro"}, {plan: "pro", price: 10}],
+    [{plan: "team"}, {plan: "team", price: 25}],
+    [{plan: "enterprise"}, "!error: InputValidationFailed"],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "the same dictionary declared in two imports",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["a", "b"],
+    models: {c: {tier: "tier"}},
+    blocks: [{expression: "c.copy", value: "c.tier"}],
+  },
+  policies: {
+    a: {dictionaries: {tier: ["gold", "silver"]}, blocks: []},
+    b: {dictionaries: {tier: ["gold", "bronze"]}, blocks: []},
+  },
+  cases: [
+    {input: {c: {tier: "gold"}}, output: {c: {tier: "gold", copy: "gold"}}},
+    {input: {c: {tier: "silver"}}, output: {c: {tier: "silver", copy: "silver"}}, note: "question: DataModelCollision is an error diagnostic; the dictionary from 'a' (sorts first) validates"},
+    {input: {c: {tier: "bronze"}}, output: "!error: InputValidationFailed", note: "question: DataModelCollision is an error diagnostic; the dictionary from 'a' (sorts first) validates"},
+  ],
+}
+
+{
+  name: "a dictionary in one import named like an entity in another",
+  diagnostics: ["DATA_MODEL_COLLISION"],
+  policy: {
+    imports: ["dicts", "models"],
+    blocks: [{expression: "x", value: "1"}],
+  },
+  policies: {
+    dicts: {dictionaries: {status: ["A", "B"]}, blocks: []},
+    models: {models: {status: {code: "string"}}, blocks: []},
+  },
+  cases: [
+    {input: {}, output: {x: 1}},
+    {input: {status: {code: "A"}}, output: {status: {code: "A"}, x: 1}},
+  ],
+}
+
+// --- Realistic multi-policy workspace ------------------------------------------------------------
+
+{
+  name: "a shared schema, two rule packs and an orchestrator",
+  policy: {
+    imports: ["eligibility", "pricing"],
+    blocks: [{match: "application.decision", arms: [
+      ["not application.eligible", "'reject'"],
+      ["application.premium > applicant.budget", "'refer'"],
+      ["", "'accept'"],
+    ]}],
+  },
+  policies: {
+    schema: {
+      dictionaries: {region: ["north", "south"]},
+      globals: {platform: {surcharge: "number"}},
+      models: {applicant: {age: "number", region: "region", budget: "number"}, application: {coverage: "number"}},
+      blocks: [],
+    },
+    eligibility: {imports: ["schema"], blocks: [
+      {assertion: "application.eligible", conditions: ["applicant.age >= 18", "applicant.age <= 75", "application.coverage > 0"]},
+    ]},
+    pricing: {imports: ["schema"], blocks: [
+      {table: "base", inputs: ["applicant.region"], outputs: ["application.baseRate"], rules: [["'north'", "0.01"], ["", "0.02"]]},
+      {expression: "application.premium", value: "application.coverage * application.baseRate + surcharge"},
+    ]},
+  },
+  cases: [
+    [
+      {surcharge: 5, applicant: {age: 30, region: "north", budget: 200}, application: {coverage: 10000}},
+      {surcharge: 5, applicant: {age: 30, region: "north", budget: 200}, application: {coverage: 10000, eligible: true, baseRate: 0.01, premium: 105, decision: "accept"}},
+    ],
+    [
+      {surcharge: 5, applicant: {age: 30, region: "south", budget: 200}, application: {coverage: 10000}},
+      {surcharge: 5, applicant: {age: 30, region: "south", budget: 200}, application: {coverage: 10000, eligible: true, baseRate: 0.02, premium: 205, decision: "refer"}},
+    ],
+    [
+      {surcharge: 0, applicant: {age: 80, region: "north", budget: 1000}, application: {coverage: 1}},
+      {surcharge: 0, applicant: {age: 80, region: "north", budget: 1000}, application: {coverage: 1, eligible: false, baseRate: 0.01, premium: 0.01, decision: "reject"}},
+    ],
+    [
+      {surcharge: 0, applicant: {age: 18, region: "south", budget: 0}, application: {coverage: 0}},
+      {surcharge: 0, applicant: {age: 18, region: "south", budget: 0}, application: {coverage: 0, eligible: false, baseRate: 0.02, premium: 0, decision: "reject"}},
+    ],
+    [{surcharge: 0, applicant: {age: 18, region: "west", budget: 0}, application: {coverage: 1}}, "!error: InputValidationFailed"],
+    [{applicant: {age: 18, region: "north", budget: 0}, application: {coverage: 1}}, "!error: MissingRequiredInputs"],
+  ],
+}

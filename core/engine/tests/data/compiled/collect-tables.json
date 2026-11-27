@@ -1,0 +1,476 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request"
+  },
+  {
+   "id": "t1",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Tags",
+   "content": {
+    "hitPolicy": "first",
+    "passThrough": true,
+    "inputs": [
+     {
+      "id": "t1i0",
+      "name": "customer.age",
+      "field": "customer.age"
+     },
+     {
+      "id": "t1i1",
+      "name": "customer.country",
+      "field": "customer.country"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t1o0",
+      "name": "customer.tier",
+      "field": "customer.tier"
+     },
+     {
+      "id": "t1o1",
+      "name": "customer.tags[]",
+      "field": "customer.tags[]"
+     },
+     {
+      "id": "t1o2",
+      "name": "flags[]",
+      "field": "flags[]"
+     },
+     {
+      "id": "t1o3",
+      "name": "customer.bonus",
+      "field": "customer.bonus"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t1r0",
+      "t1i0": ">= 65",
+      "t1i1": "'US'",
+      "t1o0": "'senior'",
+      "t1o1": "'senior-discount'",
+      "t1o2": "['a', 'b']",
+      "t1o3": "customer.age * 2"
+     },
+     {
+      "_id": "t1r1",
+      "t1i0": ">= 18",
+      "t1i1": "",
+      "t1o0": "'standard'",
+      "t1o1": "customer.country + '-adult'",
+      "t1o2": "",
+      "t1o3": ""
+     },
+     {
+      "_id": "t1r2",
+      "t1i0": ">= 21",
+      "t1i1": "",
+      "t1o0": "'unused'",
+      "t1o1": "'age-verified'",
+      "t1o2": "[customer.age]",
+      "t1o3": "customer.age / customer.divisor"
+     },
+     {
+      "_id": "t1r3",
+      "t1i0": "",
+      "t1i1": "'DE', 'FR'",
+      "t1o0": "'eu'",
+      "t1o1": "customer.age > 30 ? 'old' : 'young'",
+      "t1o2": "",
+      "t1o3": ""
+     },
+     {
+      "_id": "t1r4",
+      "t1i0": "",
+      "t1i1": "",
+      "t1o0": "",
+      "t1o1": "'customer'",
+      "t1o2": "['z']",
+      "t1o3": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "t2",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Summary",
+   "content": {
+    "hitPolicy": "first",
+    "passThrough": false,
+    "inputs": [
+     {
+      "id": "t2i0",
+      "name": "customer.country",
+      "field": "customer.country"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t2o0",
+      "name": "summary.level",
+      "field": "summary.level"
+     },
+     {
+      "id": "t2o1",
+      "name": "summary.tags[]",
+      "field": "summary.tags[]"
+     },
+     {
+      "id": "t2o2",
+      "name": "summary.codes[]",
+      "field": "summary.codes[]"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t2r0",
+      "t2i0": "'US'",
+      "t2o0": "'domestic'",
+      "t2o1": "customer.country",
+      "t2o2": "1"
+     },
+     {
+      "_id": "t2r1",
+      "t2i0": "'DE'",
+      "t2o0": "",
+      "t2o1": "'any'",
+      "t2o2": "customer.age"
+     },
+     {
+      "_id": "t2r2",
+      "t2i0": "'DE', 'US'",
+      "t2o0": "'late'",
+      "t2o1": "'second'",
+      "t2o2": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "t3",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Lists",
+   "content": {
+    "hitPolicy": "first",
+    "passThrough": true,
+    "inputs": [
+     {
+      "id": "t3i0",
+      "name": "customer.age",
+      "field": "customer.age"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t3o0",
+      "name": "lists.items[]",
+      "field": "lists.items[]"
+     },
+     {
+      "id": "t3o1",
+      "name": "lists.count",
+      "field": "lists.count"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t3r0",
+      "t3i0": "< 30",
+      "t3o0": "'young'",
+      "t3o1": "1"
+     },
+     {
+      "_id": "t3r1",
+      "t3i0": "< 50",
+      "t3o0": "'mid'",
+      "t3o1": "2"
+     },
+     {
+      "_id": "t3r2",
+      "t3i0": "",
+      "t3o0": "['x', customer.country]",
+      "t3o1": ""
+     }
+    ]
+   }
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Reads",
+   "content": {
+    "passThrough": true,
+    "expressions": [
+     {
+      "id": "x1",
+      "key": "tagCount",
+      "value": "len(customer.tags ?? [])"
+     },
+     {
+      "id": "x2",
+      "key": "firstFlag",
+      "value": "flags[0]"
+     },
+     {
+      "id": "x3",
+      "key": "joined",
+      "value": "map(customer.tags ?? [], # + '!')"
+     }
+    ]
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  },
+  {
+   "id": "t4",
+   "type": "decisionTableNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Refs",
+   "content": {
+    "hitPolicy": "first",
+    "passThrough": true,
+    "inputs": [
+     {
+      "id": "t4i0",
+      "name": "customer.age",
+      "field": "customer.age"
+     },
+     {
+      "id": "t4i1",
+      "name": "customer.country",
+      "field": "customer.country"
+     },
+     {
+      "id": "t4i2",
+      "name": "customer",
+      "field": "customer"
+     }
+    ],
+    "outputs": [
+     {
+      "id": "t4o0",
+      "name": "refs.rule",
+      "field": "refs.rule"
+     },
+     {
+      "id": "t4o1",
+      "name": "refs.value",
+      "field": "refs.value"
+     }
+    ],
+    "rules": [
+     {
+      "_id": "t4r0",
+      "t4i0": "$ > customer.divisor * 10",
+      "t4i1": "some(['DE', 'FR'], # == $)",
+      "t4i2": "",
+      "t4o0": "'scaled'",
+      "t4o1": "customer.age - customer.divisor"
+     },
+     {
+      "_id": "t4r1",
+      "t4i0": "$ + 1 > 20 and $ < 60",
+      "t4i1": "len($) == 2",
+      "t4i2": "",
+      "t4o0": "'mid'",
+      "t4o1": "len(customer.country)"
+     },
+     {
+      "_id": "t4r2",
+      "t4i0": "",
+      "t4i1": "$ != 'US' and $ != customer.country",
+      "t4i2": "",
+      "t4o0": "'never'",
+      "t4o1": "1"
+     },
+     {
+      "_id": "t4r3",
+      "t4i0": "",
+      "t4i1": "",
+      "t4i2": "$.age > 60",
+      "t4o0": "'object'",
+      "t4o1": "customer.age"
+     },
+     {
+      "_id": "t4r4",
+      "t4i0": "> 5 and < 15",
+      "t4i1": "",
+      "t4i2": "",
+      "t4o0": "'band'",
+      "t4o1": "customer.age * 2"
+     },
+     {
+      "_id": "t4r5",
+      "t4i0": "",
+      "t4i1": "",
+      "t4i2": "",
+      "t4o0": "'fallback'",
+      "t4o1": "customer.missing"
+     }
+    ]
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "t1",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "t1",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x2",
+   "sourceId": "e1",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x3",
+   "sourceId": "in",
+   "targetId": "t2",
+   "type": "edge"
+  },
+  {
+   "id": "x4",
+   "sourceId": "t2",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x5",
+   "sourceId": "in",
+   "targetId": "t3",
+   "type": "edge"
+  },
+  {
+   "id": "x6",
+   "sourceId": "t3",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x10",
+   "sourceId": "in",
+   "targetId": "t4",
+   "type": "edge"
+  },
+  {
+   "id": "x11",
+   "sourceId": "t4",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "customer": {
+     "age": 70,
+     "country": "US",
+     "divisor": 2
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 19,
+     "country": "DE",
+     "divisor": 0
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 25
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 10,
+     "country": "FR"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 45,
+     "country": "US",
+     "divisor": 3
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": "old",
+     "country": "DE"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "country": "PL"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 66,
+     "country": "FR",
+     "divisor": 1
+    }
+   }
+  },
+  {
+   "input": {}
+  }
+ ]
+}

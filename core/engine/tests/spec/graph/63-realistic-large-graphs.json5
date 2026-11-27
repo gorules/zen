@@ -1,0 +1,681 @@
+// Large realistic decisions (20 to 40 nodes counting sub-decisions) that mix every node kind in
+// one graph: loops over expressions, tables and sub-decisions, nested sub-decisions, function
+// nodes in the middle of the flow, first-hit and collect switches, fan-outs from one switch
+// branch into parallel nodes that join again, custom nodes (config, render and fail), `$nodes`
+// reads and pass-through chains. Evaluation time is fixed at Thursday 2025-03-20T10:15:30Z. Each
+// suite walks the main paths, the knock-out branches, boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Mortgage origination: borrower aggregates, a per-borrower sub-decision in loop mode with
+// pass-through, a knock-out switch whose two branches share a custom render letter, a fan-out of
+// pricing, mortgage insurance and escrow that joins in an amortization function, an underwriting
+// table with first-hit `decision` and collected `conditions[]`, and a collect switch whose
+// branches build the result object that a summary node reads.
+{
+  name: "mortgage origination: knock-outs, pricing fan-out, amortization and underwriting",
+  decisions: {
+    borrower: {
+      nodes: [
+        {table: "check", inputs: [null], outputs: ["ok", "reason"], rules: [
+          ["age < 18", "false", "name + ': under 18'"],
+          ["not (residency in ['citizen', 'permanent', 'visa'])", "false", "name + ': residency not eligible'"],
+          ["score < 620", "false", "name + ': credit score below 620'"],
+          ["", "true", "'ok'"],
+        ]},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "application"},
+      {expression: "normalize", passThrough: true, fields: {
+        "app.income": "sum(map(borrowers, #.income))",
+        "app.debts": "sum(map(borrowers, #.monthlyDebt ?? 0))",
+        "app.minScore": "min(map(borrowers, #.score))",
+        "app.ltv": "round(loan.amount / property.value * 100, 2)",
+      }},
+      {decision: "borrowerCheck", key: "borrower", executionMode: "loop", passThrough: true, inputField: "borrowers", outputPath: "borrowerResults"},
+      {switch: "knockout", when: ["some(borrowerResults, not #.ok)", "app.ltv > 97", ""]},
+      {expression: "koBorrower", fields: {decision: "'declined'", reason: "filter(borrowerResults, not #.ok)[0].reason"}},
+      {expression: "koLtv", fields: {decision: "'declined'", reason: "'LTV ' + string(app.ltv) + '% above 97%'"}},
+      {custom: "koLetter", kind: "render", config: {decision: "{{ decision }}", letter: "Your application was declined: {{ reason }}"}},
+      {table: "pricing", passThrough: true, inputs: ["app.minScore", "app.ltv"], outputs: ["rate"], rules: [
+        [">= 760", "<= 80", "6.25"],
+        [">= 760", "", "6.5"],
+        ["[700..760)", "<= 80", "6.75"],
+        ["[700..760)", "", "7"],
+        ["[620..700)", "", "7.75"],
+      ]},
+      {table: "pmi", inputs: ["app.ltv"], outputs: ["pmiRate"], rules: [
+        ["<= 80", "0"],
+        ["(80..90]", "0.5"],
+        ["(90..95]", "0.75"],
+        ["", "1"],
+      ]},
+      {expression: "escrow", fields: {taxIns: "round((property.taxAnnual + property.insuranceAnnual) / 12, 2)"}},
+      {function: "amortize", source: """
+export const handler = async (input) => {
+  const r = input.rate / 100 / 12;
+  const n = input.loan.termYears * 12;
+  const p = input.loan.amount;
+  const pi = r === 0 ? p / n : (p * r) / (1 - Math.pow(1 + r, -n));
+  const pmiMonthly = Math.round((p * input.pmiRate) / 100 / 12 * 100) / 100;
+  const housing = Math.round((pi + input.taxIns + pmiMonthly) * 100) / 100;
+  const monthlyIncome = input.app.income / 12;
+  return {
+    rate: input.rate,
+    principalInterest: Math.round(pi * 100) / 100,
+    pmiMonthly,
+    housing,
+    frontDti: Math.round((housing / monthlyIncome) * 1000) / 10,
+    backDti: Math.round(((housing + input.app.debts) / monthlyIncome) * 1000) / 10,
+  };
+};
+"""},
+      {table: "underwriting", passThrough: true, inputs: [null], outputs: ["decision", "conditions[]"], rules: [
+        ["backDti > 50", "'declined'", "'DTI above 50%'"],
+        ["backDti > 43", "'refer'", "'DTI above 43%: manual review'"],
+        ["frontDti > 31", "'approve'", "'housing ratio above 31%: verify reserves'"],
+        ["pmiMonthly > 0", "'approve'", "'mortgage insurance required'"],
+        ["", "'approve'", ""],
+      ]},
+      {switch: "outcome", hit: "collect", when: [
+        "decision == 'approve'",
+        "decision == 'refer'",
+        "decision == 'declined'",
+        "len(conditions) > 0",
+        "",
+      ]},
+      {expression: "approved", fields: {"result.decision": "'approved'", "result.rate": "rate", "result.payment": "housing"}},
+      {expression: "referred", fields: {"result.decision": "'referred'", "result.payment": "housing"}},
+      {expression: "declined", fields: {"result.decision": "'declined'"}},
+      {expression: "withConditions", fields: {"result.conditions": "conditions"}},
+      {expression: "audit", fields: {"audit.frontDti": "frontDti", "audit.backDti": "backDti"}},
+      {expression: "summary", fields: {
+        decision: "result.decision",
+        rate: "result.rate",
+        payment: "result.payment",
+        conditions: "result.conditions ?? []",
+        dti: "audit",
+      }},
+      {output: "offer"},
+    ],
+    edges: [
+      "application -> normalize -> borrowerCheck -> knockout",
+      "knockout:0 -> koBorrower -> koLetter",
+      "knockout:1 -> koLtv -> koLetter",
+      "koLetter -> offer",
+      "knockout:2 -> pricing -> amortize",
+      "knockout:2 -> pmi -> amortize",
+      "knockout:2 -> escrow -> amortize",
+      "amortize -> underwriting -> outcome",
+      "outcome:0 -> approved -> summary",
+      "outcome:1 -> referred -> summary",
+      "outcome:2 -> declined -> summary",
+      "outcome:3 -> withConditions -> summary",
+      "outcome:4 -> audit -> summary",
+      "summary -> offer",
+    ],
+  },
+  cases: [
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 120000, monthlyDebt: 500}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "approved", rate: 6.25, payment: 3062.87, conditions: [], dti: {frontDti: 30.6, backDti: 35.6}}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 120000, monthlyDebt: 500}], loan: {amount: 450000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "approved", rate: 6.5, payment: 3631.81, conditions: ["housing ratio above 31%: verify reserves", "mortgage insurance required"], dti: {frontDti: 36.3, backDti: 41.3}}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 120000, monthlyDebt: 500}, {name: "ben", age: 41, residency: "permanent", score: 650, income: 30000, monthlyDebt: 400}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "approved", rate: 7.75, payment: 3465.65, conditions: [], dti: {frontDti: 27.7, backDti: 34.9}}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 95000, monthlyDebt: 500}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "referred", payment: 3062.87, conditions: ["DTI above 43%: manual review", "housing ratio above 31%: verify reserves"], dti: {frontDti: 38.7, backDti: 45}}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 60000, monthlyDebt: 500}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", conditions: ["DTI above 50%", "DTI above 43%: manual review", "housing ratio above 31%: verify reserves"], dti: {frontDti: 61.3, backDti: 71.3}}],
+    [{borrowers: [{name: "ana", age: 35, residency: "visa", score: 790, income: 140000}], loan: {amount: 475000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "approved", rate: 6.5, payment: 3899.2, conditions: ["housing ratio above 31%: verify reserves", "mortgage insurance required"], dti: {frontDti: 33.4, backDti: 33.4}}],
+    [{borrowers: [{name: "cy", age: 50, residency: "citizen", score: 720, income: 90000, monthlyDebt: 1200}], loan: {amount: 300000, termYears: 15}, property: {value: 400000, taxAnnual: 4200, insuranceAnnual: 1200}}, {decision: "declined", conditions: ["DTI above 50%", "DTI above 43%: manual review", "housing ratio above 31%: verify reserves"], dti: {frontDti: 41.4, backDti: 57.4}}],
+    // LTV exactly 97 passes the knock-out and lands in the top insurance band.
+    [{borrowers: [{name: "dee", age: 29, residency: "citizen", score: 710, income: 130000, monthlyDebt: 300}], loan: {amount: 485000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "approved", rate: 7, payment: 4230.89, conditions: ["housing ratio above 31%: verify reserves", "mortgage insurance required"], dti: {frontDti: 39.1, backDti: 41.8}}],
+    // Knock-outs share the rendered letter; `string` keeps the decimal scale of the rounded LTV.
+    [{borrowers: [{name: "dee", age: 29, residency: "citizen", score: 710, income: 130000}], loan: {amount: 486000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: LTV 97.20% above 97%"}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 120000}, {name: "cy", age: 17, residency: "citizen", score: 700, income: 0}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: cy: under 18"}],
+    [{borrowers: [{name: "ana", age: 35, residency: "tourist", score: 780, income: 120000}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: ana: residency not eligible"}],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 600, income: 120000}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: ana: credit score below 620"}],
+    [{borrowers: [{name: "ana", age: 16, residency: "tourist", score: 500, income: 1}, {name: "bo", age: 15, residency: "citizen", score: 800, income: 1}], loan: {amount: 400000, termYears: 30}, property: {value: 300000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: ana: under 18"}],
+    // A borrower without a residency: `null in [...]` is false, so the residency rule fires.
+    [{borrowers: [{name: "ana", age: 35, score: 780, income: 120000}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, {decision: "declined", letter: "Your application was declined: ana: residency not eligible"}],
+    // A zero property value divides to null and fails the rounding; a string income fails the sum.
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: 120000}], loan: {amount: 400000, termYears: 30}, property: {value: 0, taxAnnual: 6000, insuranceAnnual: 1200}}, "!error"],
+    [{borrowers: [{name: "ana", age: 35, residency: "citizen", score: 780, income: "120000"}], loan: {amount: 400000, termYears: 30}, property: {value: 500000, taxAnnual: 6000, insuranceAnnual: 1200}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Order fulfillment: a custom config node supplies the warehouse network, a loop expression
+// prices the lines, a function allocates each line to a warehouse (same region first) or
+// backorders it, a stock gate holds or cancels, the proceed branch fans out to shipping method,
+// shipping cost and express surcharge tables that join in the totals, a collect switch adds the
+// notes, and a custom render node writes the confirmation message that joins the summary.
+{
+  name: "order fulfillment: config network, allocation function, shipping fan-out and notes",
+  graph: {
+    nodes: [
+      {input: "order"},
+      {custom: "settings", kind: "config", config: {
+        warehouses: [
+          {id: "east", region: "east", stock: {A: 10, B: 0, C: 5}},
+          {id: "west", region: "west", stock: {A: 2, B: 8, C: 0}},
+        ],
+        freeShippingOver: 50,
+        expressSurcharge: 15,
+      }},
+      {expression: "lines", executionMode: "loop", inputField: "items", outputPath: "lines", fields: {
+        sku: "sku",
+        qty: "qty",
+        lineTotal: "round(qty * price, 2)",
+      }},
+      {function: "allocate", source: """
+export const handler = async (input) => {
+  const warehouses = input.warehouses ?? [];
+  const region = input.region;
+  const ordered = [...warehouses].sort((a, b) => (a.region === region ? 0 : 1) - (b.region === region ? 0 : 1));
+  const stock = Object.fromEntries(warehouses.map((w) => [w.id, { ...w.stock }]));
+  const allocations = [];
+  const backorders = [];
+  for (const line of input.lines ?? []) {
+    const w = ordered.find((x) => (stock[x.id][line.sku] ?? 0) >= line.qty);
+    if (w) {
+      stock[w.id][line.sku] -= line.qty;
+      allocations.push({ sku: line.sku, qty: line.qty, warehouse: w.id });
+    } else {
+      backorders.push({ sku: line.sku, qty: line.qty });
+    }
+  }
+  const allocated = new Set(allocations.map((a) => a.sku));
+  const subtotal = (input.lines ?? []).filter((l) => allocated.has(l.sku)).reduce((s, l) => s + l.lineTotal, 0);
+  return {
+    allocations,
+    backorders,
+    warehousesUsed: [...new Set(allocations.map((a) => a.warehouse))],
+    subtotal: Math.round(subtotal * 100) / 100,
+    speed: input.speed ?? 'standard',
+    allowPartial: input.allowPartial === true,
+    settings: { freeShippingOver: input.freeShippingOver, expressSurcharge: input.expressSurcharge },
+  };
+};
+"""},
+      {switch: "stockGate", when: ["len(backorders) > 0 and not allowPartial", "len(allocations) == 0", ""]},
+      {expression: "hold", fields: {status: "'on hold'", backordered: "map(backorders, #.sku)"}},
+      {expression: "cancelled", fields: {status: "'cancelled'", reason: "'nothing in stock'"}},
+      {table: "shippingMethod", passThrough: true, inputs: ["speed", "len(warehousesUsed)"], outputs: ["ship.method", "ship.days"], rules: [
+        ["'express'", "1", "'air'", "1"],
+        ["'express'", "", "'air'", "2"],
+        ["", "1", "'ground'", "4"],
+        ["", "", "'ground'", "6"],
+      ]},
+      {table: "shippingCost", inputs: ["subtotal"], outputs: ["ship.cost"], rules: [
+        [">= settings.freeShippingOver", "0"],
+        ["", "round(5.99 * len(warehousesUsed), 2)"],
+      ]},
+      {expression: "surcharge", fields: {"ship.express": "speed == 'express' ? settings.expressSurcharge : 0"}},
+      {expression: "totals", passThrough: true, fields: {
+        shipping: "ship.cost + ship.express",
+        total: "round(subtotal + $.shipping, 2)",
+      }},
+      {switch: "notes", hit: "collect", when: ["len(warehousesUsed) > 1", "len(backorders) > 0", "total >= 500", ""]},
+      {expression: "splitNote", fields: {"notes.split": "true"}},
+      {expression: "backorderNote", fields: {"notes.backordered": "map(backorders, #.sku)"}},
+      {expression: "reviewNote", fields: {"notes.fraudReview": "true"}},
+      {expression: "baseNote", fields: {status: "'confirmed'", total: "total", shipping: "shipping", method: "ship.method", days: "ship.days"}},
+      {expression: "summary", fields: {status: "status", total: "total", shipping: "shipping", method: "method", days: "days", notes: "notes ?? {}"}},
+      {custom: "confirmation", kind: "render", config: {message: "Order {{ status }}: {{ total }} via {{ method }}"}},
+      {expression: "envelope", passThrough: true, fields: {message: "message"}},
+      {output: "fulfillment"},
+    ],
+    edges: [
+      "order -> settings -> allocate",
+      "order -> lines -> allocate",
+      "order -> allocate -> stockGate",
+      "stockGate:0 -> hold -> fulfillment",
+      "stockGate:1 -> cancelled -> fulfillment",
+      "stockGate:2 -> shippingMethod -> totals",
+      "stockGate:2 -> shippingCost -> totals",
+      "stockGate:2 -> surcharge -> totals",
+      "totals -> notes",
+      "notes:0 -> splitNote -> summary",
+      "notes:1 -> backorderNote -> summary",
+      "notes:2 -> reviewNote -> summary",
+      "notes:3 -> baseNote -> summary",
+      "summary -> envelope",
+      "summary -> confirmation -> envelope",
+      "envelope -> fulfillment",
+    ],
+  },
+  cases: [
+    [{region: "east", items: [{sku: "A", qty: 2, price: 10}]}, {status: "confirmed", total: 25.99, shipping: 5.99, method: "ground", days: 4, notes: {}, message: "Order confirmed: 25.99 via ground"}],
+    [{region: "east", items: [{sku: "A", qty: 2, price: 10}, {sku: "B", qty: 1, price: 40}]}, {status: "confirmed", total: 60, shipping: 0, method: "ground", days: 6, notes: {split: true}, message: "Order confirmed: 60 via ground"}],
+    [{region: "east", speed: "express", items: [{sku: "A", qty: 2, price: 10}]}, {status: "confirmed", total: 40.99, shipping: 20.99, method: "air", days: 1, notes: {}, message: "Order confirmed: 40.99 via air"}],
+    [{region: "east", speed: "express", items: [{sku: "A", qty: 2, price: 10}, {sku: "B", qty: 1, price: 40}]}, {status: "confirmed", total: 75, shipping: 15, method: "air", days: 2, notes: {split: true}, message: "Order confirmed: 75 via air"}],
+    [{region: "west", items: [{sku: "A", qty: 2, price: 10}, {sku: "B", qty: 1, price: 40}]}, {status: "confirmed", total: 60, shipping: 0, method: "ground", days: 4, notes: {}, message: "Order confirmed: 60 via ground"}],
+    [{region: "west", items: [{sku: "A", qty: 3, price: 10}]}, {status: "confirmed", total: 35.99, shipping: 5.99, method: "ground", days: 4, notes: {}, message: "Order confirmed: 35.99 via ground"}],
+    [{region: "east", items: [{sku: "A", qty: 3, price: 19.99}, {sku: "B", qty: 1, price: 12.5}]}, {status: "confirmed", total: 72.47, shipping: 0, method: "ground", days: 6, notes: {split: true}, message: "Order confirmed: 72.47 via ground"}],
+    [{region: "east", items: [{sku: "A", qty: 2, price: 24.99}]}, {status: "confirmed", total: 55.97, shipping: 5.99, method: "ground", days: 4, notes: {}, message: "Order confirmed: 55.97 via ground"}],
+    [{region: "east", items: [{sku: "A", qty: 2, price: 25}]}, {status: "confirmed", total: 50, shipping: 0, method: "ground", days: 4, notes: {}, message: "Order confirmed: 50 via ground"}],
+    [{region: "east", items: [{sku: "A", qty: 10, price: 60}]}, {status: "confirmed", total: 600, shipping: 0, method: "ground", days: 4, notes: {fraudReview: true}, message: "Order confirmed: 600 via ground"}],
+    // Without a region no warehouse is preferred and the network order decides.
+    [{items: [{sku: "A", qty: 1, price: 10}]}, {status: "confirmed", total: 15.99, shipping: 5.99, method: "ground", days: 4, notes: {}, message: "Order confirmed: 15.99 via ground"}],
+    // Stock gates: hold without partial shipment, ship the rest with it, cancel when nothing ships.
+    [{region: "east", items: [{sku: "C", qty: 6, price: 10}]}, {status: "on hold", backordered: ["C"]}],
+    [{region: "east", items: [{sku: "A", qty: 8, price: 10}, {sku: "A", qty: 4, price: 10}]}, {status: "on hold", backordered: ["A"]}],
+    [{region: "east", allowPartial: true, items: [{sku: "C", qty: 6, price: 10}, {sku: "A", qty: 1, price: 10}]}, {status: "confirmed", total: 15.99, shipping: 5.99, method: "ground", days: 4, notes: {backordered: ["C"]}, message: "Order confirmed: 15.99 via ground"}],
+    [{region: "east", allowPartial: true, items: [{sku: "C", qty: 6, price: 10}]}, {status: "cancelled", reason: "nothing in stock"}],
+    [{region: "east", items: []}, {status: "cancelled", reason: "nothing in stock"}],
+    [{region: "east", items: [{sku: "Z", qty: 1, price: 10}]}, {status: "on hold", backordered: ["Z"]}],
+    // A line without a price fails the pricing loop.
+    [{region: "east", items: [{sku: "A", qty: 1}]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Transaction monitoring: sanctioned customers are refused by a custom fail node; otherwise a
+// per-transaction sub-decision (a switch on the type into cash and wire tables) scores each
+// transaction in loop mode, an aggregate joins the scores with the request, a function measures
+// counterparty and daily velocity, a collect table under `patterns` adds pattern points, and the
+// risk band drives a collect switch of filings and actions that meet at a summary.
+{
+  name: "transaction monitoring: sanctions fail node, per-transaction scoring and filings",
+  decisions: {
+    txScore: {
+      nodes: [
+        {input: "tx"},
+        {switch: "byType", when: ["type == 'cash'", "type == 'wire'", ""]},
+        {table: "cash", passThrough: true, inputs: ["amount"], outputs: ["points", "flag"], rules: [
+          [">= 10000", "50", "'ctr threshold'"],
+          ["[9000..10000)", "30", "'near threshold'"],
+          ["", "0", "null"],
+        ]},
+        {table: "wire", passThrough: true, inputs: ["country"], outputs: ["points", "flag"], rules: [
+          ["'IR', 'KP', 'SY'", "100", "'prohibited jurisdiction'"],
+          ["'PA', 'KY', 'VG'", "25", "'offshore jurisdiction'"],
+          ["", "5", "null"],
+        ]},
+        {expression: "other", passThrough: true, fields: {points: "0"}},
+        {expression: "result", fields: {id: "id", points: "points", flag: "flag"}},
+        {output: "scored"},
+      ],
+      edges: [
+        "tx -> byType",
+        "byType:0 -> cash -> result",
+        "byType:1 -> wire -> result",
+        "byType:2 -> other -> result",
+        "result -> scored",
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "batch"},
+      {switch: "screen", when: ["customer.sanctioned == true", ""]},
+      {custom: "blocked", kind: "fail", config: {message: "sanctioned party: batch blocked"}},
+      {table: "countryRisk", passThrough: true, inputs: ["customer.country"], outputs: ["custRisk.country"], rules: [
+        ["'IR', 'KP', 'SY'", "'prohibited'"],
+        ["'PA', 'KY', 'VG'", "'high'"],
+        ["", "'standard'"],
+      ]},
+      {decision: "scoreTx", key: "txScore", executionMode: "loop", inputField: "transactions", outputPath: "scored"},
+      {expression: "aggregate", passThrough: true, fields: {
+        totalCash: "sum(map(filter(transactions, #.type == 'cash'), #.amount))",
+        nearThreshold: "count(scored, #.flag == 'near threshold')",
+        txPoints: "sum(map(scored, #.points))",
+        flags: "filter(map(scored, #.flag), # != null)",
+        ctrRequired: "some(scored, #.flag == 'ctr threshold') or $.totalCash > 10000",
+      }},
+      {function: "velocity", source: """
+export const handler = async (input) => {
+  const txs = input.transactions ?? [];
+  const byCounterparty = {};
+  const byDay = {};
+  for (const t of txs) {
+    byCounterparty[t.counterparty] = (byCounterparty[t.counterparty] ?? 0) + t.amount;
+    const day = String(t.date).slice(0, 10);
+    byDay[day] = (byDay[day] ?? 0) + 1;
+  }
+  const top = Object.entries(byCounterparty).sort((a, b) => b[1] - a[1])[0];
+  return {
+    counterparties: Object.keys(byCounterparty).length,
+    topCounterparty: top ? top[0] : null,
+    maxDailyCount: Math.max(0, ...Object.values(byDay)),
+  };
+};
+"""},
+      {table: "patterns", hit: "collect", passThrough: true, outputPath: "patterns", inputs: [null], outputs: ["rule", "points"], rules: [
+        ["nearThreshold >= 2", "'structuring'", "40"],
+        ["maxDailyCount >= 5", "'high velocity'", "20"],
+        ["custRisk.country == 'prohibited'", "'prohibited residence'", "100"],
+        ["custRisk.country == 'high'", "'offshore residence'", "15"],
+        ["customer.risk == 'high'", "'high risk customer'", "20"],
+      ]},
+      {expression: "risk", passThrough: true, fields: {score: "txPoints + sum(map(patterns, #.points))"}},
+      {table: "band", passThrough: true, inputs: ["score"], outputs: ["level"], rules: [
+        [">= 100", "'critical'"],
+        ["[50..100)", "'high'"],
+        ["[20..50)", "'medium'"],
+        ["", "'low'"],
+      ]},
+      {switch: "actions", hit: "collect", when: [
+        "ctrRequired",
+        "level in ['critical', 'high']",
+        "level == 'critical'",
+        "level == 'medium' or len(patterns) > 0",
+        "",
+      ]},
+      {expression: "ctr", fields: {"filings.ctr": "true"}},
+      {expression: "sar", fields: {"filings.sar": "true"}},
+      {expression: "freeze", fields: {"actions.freeze": "true"}},
+      {expression: "review", fields: {"actions.review": "true"}},
+      {expression: "base", fields: {level: "level", score: "score", flags: "flags", patterns: "map(patterns, #.rule)", top: "topCounterparty"}},
+      {expression: "summary", fields: {
+        level: "level",
+        score: "score",
+        flags: "flags",
+        patterns: "patterns",
+        top: "top",
+        filings: "filings ?? {}",
+        actions: "actions ?? {}",
+      }},
+      {output: "report"},
+    ],
+    edges: [
+      "batch -> screen",
+      "screen:0 -> blocked -> report",
+      "screen:1 -> countryRisk -> scoreTx -> aggregate",
+      "countryRisk -> aggregate -> patterns",
+      "countryRisk -> velocity -> patterns",
+      "patterns -> risk -> band -> actions",
+      "actions:0 -> ctr -> summary",
+      "actions:1 -> sar -> summary",
+      "actions:2 -> freeze -> summary",
+      "actions:3 -> review -> summary",
+      "actions:4 -> base -> summary",
+      "summary -> report",
+    ],
+  },
+  cases: [
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: 500, counterparty: "shop", date: "2025-03-01"}]}, {level: "low", score: 0, flags: [], patterns: [], top: "shop", filings: {}, actions: {}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: 9500, counterparty: "bank", date: "2025-03-01"}, {id: "t2", type: "cash", amount: 9800, counterparty: "bank", date: "2025-03-02"}]}, {level: "critical", score: 100, flags: ["near threshold", "near threshold"], patterns: ["structuring"], top: "bank", filings: {ctr: true, sar: true}, actions: {freeze: true, review: true}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: 10000, counterparty: "bank", date: "2025-03-01"}]}, {level: "high", score: 50, flags: ["ctr threshold"], patterns: [], top: "bank", filings: {ctr: true, sar: true}, actions: {}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: 9000, counterparty: "bank", date: "2025-03-01"}]}, {level: "medium", score: 30, flags: ["near threshold"], patterns: [], top: "bank", filings: {}, actions: {review: true}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: 4000, counterparty: "a", date: "2025-03-01"}, {id: "t2", type: "cash", amount: 4000, counterparty: "b", date: "2025-03-02"}, {id: "t3", type: "cash", amount: 4500, counterparty: "b", date: "2025-03-03"}]}, {level: "low", score: 0, flags: [], patterns: [], top: "b", filings: {ctr: true}, actions: {}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "wire", amount: 3000, country: "KY", counterparty: "fund", date: "2025-03-01"}]}, {level: "medium", score: 25, flags: ["offshore jurisdiction"], patterns: [], top: "fund", filings: {}, actions: {review: true}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "wire", amount: 1000, country: "IR", counterparty: "x", date: "2025-03-01"}]}, {level: "critical", score: 100, flags: ["prohibited jurisdiction"], patterns: [], top: "x", filings: {sar: true}, actions: {freeze: true}}],
+    [{customer: {risk: "low", country: "PA"}, transactions: [{id: "t1", type: "card", amount: 100, counterparty: "cafe", date: "2025-03-01"}]}, {level: "low", score: 15, flags: [], patterns: ["offshore residence"], top: "cafe", filings: {}, actions: {review: true}}],
+    [{customer: {risk: "high", country: "US"}, transactions: [{id: "t1", type: "wire", amount: 1000, country: "US", counterparty: "llc", date: "2025-03-01"}]}, {level: "medium", score: 25, flags: [], patterns: ["high risk customer"], top: "llc", filings: {}, actions: {review: true}}],
+    [{customer: {risk: "low", country: "IR"}, transactions: [{id: "t1", type: "card", amount: 20, counterparty: "kiosk", date: "2025-03-01"}]}, {level: "critical", score: 100, flags: [], patterns: ["prohibited residence"], top: "kiosk", filings: {sar: true}, actions: {freeze: true, review: true}}],
+    // Velocity: five transactions on one day add the pattern, four do not; the biggest
+    // counterparty by total amount is reported.
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "card", amount: 10, counterparty: "a", date: "2025-03-05T08:00:00Z"}, {id: "t2", type: "card", amount: 70, counterparty: "b", date: "2025-03-05T09:00:00Z"}, {id: "t3", type: "card", amount: 10, counterparty: "a", date: "2025-03-05T10:00:00Z"}, {id: "t4", type: "card", amount: 10, counterparty: "a", date: "2025-03-05T11:00:00Z"}, {id: "t5", type: "card", amount: 50, counterparty: "a", date: "2025-03-05T12:00:00Z"}]}, {level: "medium", score: 20, flags: [], patterns: ["high velocity"], top: "a", filings: {}, actions: {review: true}}],
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "card", amount: 10, counterparty: "a", date: "2025-03-05T08:00:00Z"}, {id: "t2", type: "card", amount: 70, counterparty: "b", date: "2025-03-05T09:00:00Z"}, {id: "t3", type: "card", amount: 10, counterparty: "a", date: "2025-03-05T10:00:00Z"}, {id: "t4", type: "card", amount: 10, counterparty: "a", date: "2025-03-06T11:00:00Z"}]}, {level: "low", score: 0, flags: [], patterns: [], top: "b", filings: {}, actions: {}}],
+    // An empty batch has no top counterparty (null, dropped from the summary).
+    [{customer: {risk: "low", country: "US"}, transactions: []}, {level: "low", score: 0, flags: [], patterns: [], filings: {}, actions: {}}],
+    // A transaction without a type is scored by the default branch.
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", amount: 25000, counterparty: "x", date: "2025-03-01"}]}, {level: "low", score: 0, flags: [], patterns: [], top: "x", filings: {}, actions: {}}],
+    // The sanctions gate fails the whole decision through the custom node.
+    [{customer: {risk: "low", country: "US", sanctioned: true}, transactions: [{id: "t1", type: "cash", amount: 500, counterparty: "shop", date: "2025-03-01"}]}, "!error: sanctioned party: batch blocked"],
+    [{customer: {risk: "low", country: "US", sanctioned: true}, transactions: []}, "!error: sanctioned party: batch blocked"],
+    // A string cash amount passes the scoring tables (their cells fail) but not the cash total.
+    [{customer: {risk: "low", country: "US"}, transactions: [{id: "t1", type: "cash", amount: "9500", counterparty: "bank", date: "2025-03-01"}]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Flight disruption: route facts, a first-hit eligibility switch whose four branches all write
+// `comp.*` and join again, per-passenger rows priced by a sub-decision in loop mode that itself
+// calls a care sub-decision (a collect switch of meal, hotel and assistance entitlements), and a
+// rebooking function that orders passengers by assistance, cabin and name; the summary joins the
+// loop, the function and the shared parent.
+{
+  name: "flight disruption: compensation, nested care sub-decision and rebooking priority",
+  decisions: {
+    care: {
+      nodes: [
+        {input: "row"},
+        {switch: "entitlements", hit: "collect", when: ["delayH >= 2", "delayH >= 5", "pax.needsAssistance == true", ""]},
+        {expression: "meal", fields: {"care.meal": "band == 'long' ? 30 : 15"}},
+        {expression: "hotel", fields: {"care.hotel": "true"}},
+        {expression: "assist", fields: {"care.assistance": "true"}},
+        {expression: "screened", fields: {"care.screened": "true"}},
+        {expression: "careOut", fields: {care: "care"}},
+        {output: "careResult"},
+      ],
+      edges: [
+        "row -> entitlements",
+        "entitlements:0 -> meal -> careOut",
+        "entitlements:1 -> hotel -> careOut",
+        "entitlements:2 -> assist -> careOut",
+        "entitlements:3 -> screened -> careOut",
+        "careOut -> careResult",
+      ],
+    },
+    passenger: {
+      nodes: [
+        {input: "row"},
+        {table: "adjust", passThrough: true, inputs: ["pax.age"], outputs: ["amount"], rules: [
+          ["< 2", "0"],
+          ["", "base"],
+        ]},
+        {decision: "careCall", key: "care"},
+        {expression: "out", fields: {name: "pax.name", amount: "amount", care: "care"}},
+        {output: "paxResult"},
+      ],
+      edges: ["row -> adjust -> out", "row -> careCall -> out", "out -> paxResult"],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "disruption"},
+      {expression: "facts", passThrough: true, fields: {
+        "f.euFlight": "flight.departureCountry in ['DE', 'FR', 'ES', 'IT', 'NL'] or flight.arrivalCountry in ['DE', 'FR', 'ES', 'IT', 'NL']",
+        "f.band": "flight.distanceKm <= 1500 ? 'short' : (flight.distanceKm <= 3500 ? 'medium' : 'long')",
+        "f.delayH": "flight.delayMin / 60",
+      }},
+      {switch: "eligibility", when: [
+        "not f.euFlight",
+        "flight.cause in ['weather', 'strike-atc', 'security']",
+        "flight.cancelled == true and noticeDays >= 14",
+        "",
+      ]},
+      {expression: "notCovered", passThrough: true, fields: {"comp.base": "0", "comp.reason": "'outside EU scope'"}},
+      {expression: "extraordinary", passThrough: true, fields: {"comp.base": "0", "comp.reason": "'extraordinary circumstances'"}},
+      {expression: "noticed", passThrough: true, fields: {"comp.base": "0", "comp.reason": "'cancelled with notice'"}},
+      {table: "compBase", passThrough: true, inputs: ["flight.cancelled", "f.band", "f.delayH"], outputs: ["comp.base"], rules: [
+        ["true", "'short'", "", "250"],
+        ["true", "'medium'", "", "400"],
+        ["true", "'long'", "", "600"],
+        ["", "'short'", ">= 3", "250"],
+        ["", "'medium'", ">= 3", "400"],
+        ["", "'long'", ">= 4", "600"],
+        ["", "'long'", ">= 3", "300"],
+        ["", "", "", "0"],
+      ]},
+      {expression: "compReason", passThrough: true, fields: {"comp.reason": "comp.base > 0 ? 'compensation due' : 'delay below threshold'"}},
+      {expression: "perPax", passThrough: true, fields: {rows: "map(passengers ?? [], {pax: #, base: comp.base, delayH: f.delayH, band: f.band})"}},
+      {decision: "paxComp", key: "passenger", executionMode: "loop", inputField: "rows", outputPath: "paxResults"},
+      {function: "rebook", source: """
+export const handler = async (input) => {
+  const seats = input.seats ?? 0;
+  const priority = (p) => (p.needsAssistance === true ? 0 : 2) + (p.ticketClass === 'business' ? 0 : 1);
+  const pax = [...(input.passengers ?? [])].sort((a, b) => priority(a) - priority(b) || a.name.localeCompare(b.name));
+  return { rebooked: pax.slice(0, seats).map((p) => p.name), waitlisted: pax.slice(seats).map((p) => p.name) };
+};
+"""},
+      {expression: "summary", fields: {
+        reason: "comp.reason",
+        totalComp: "sum(map(paxResults, #.amount))",
+        passengers: "paxResults",
+        rebooked: "rebooked",
+        waitlisted: "waitlisted",
+      }},
+      {output: "resolution"},
+    ],
+    edges: [
+      "disruption -> facts -> eligibility",
+      "eligibility:0 -> notCovered -> perPax",
+      "eligibility:1 -> extraordinary -> perPax",
+      "eligibility:2 -> noticed -> perPax",
+      "eligibility:3 -> compBase -> compReason -> perPax",
+      "perPax -> paxComp -> summary",
+      "perPax -> rebook -> summary",
+      "perPax -> summary -> resolution",
+    ],
+  },
+  cases: [
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 200, cause: "technical"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}, {name: "bob", ticketClass: "business", age: 45}]}, {reason: "compensation due", totalComp: 800, passengers: [{name: "ann", amount: 400, care: {meal: 15, screened: true}}, {name: "bob", amount: 400, care: {meal: 15, screened: true}}], rebooked: ["bob", "ann"], waitlisted: []}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 170, cause: "technical"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}, {name: "bob", ticketClass: "business", age: 45}]}, {reason: "delay below threshold", totalComp: 0, passengers: [{name: "ann", amount: 0, care: {meal: 15, screened: true}}, {name: "bob", amount: 0, care: {meal: 15, screened: true}}], rebooked: ["bob", "ann"], waitlisted: []}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 400, cause: "weather"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "extraordinary circumstances", totalComp: 0, passengers: [{name: "ann", amount: 0, care: {meal: 15, hotel: true, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 0, cancelled: true}, noticeDays: 20, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "cancelled with notice", totalComp: 0, passengers: [{name: "ann", amount: 0, care: {screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 0, cancelled: true}, noticeDays: 14, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "cancelled with notice", totalComp: 0, passengers: [{name: "ann", amount: 0, care: {screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "FR", arrivalCountry: "IT", distanceKm: 1000, delayMin: 0, cancelled: true}, noticeDays: 13, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "compensation due", totalComp: 250, passengers: [{name: "ann", amount: 250, care: {screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "US", arrivalCountry: "CA", distanceKm: 800, delayMin: 300, cause: "technical"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "outside EU scope", totalComp: 0, passengers: [{name: "ann", amount: 0, care: {meal: 15, hotel: true, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "US", arrivalCountry: "NL", distanceKm: 6000, delayMin: 210, cause: "crew"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "compensation due", totalComp: 300, passengers: [{name: "ann", amount: 300, care: {meal: 30, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "US", arrivalCountry: "NL", distanceKm: 6000, delayMin: 240, cause: "crew"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "compensation due", totalComp: 600, passengers: [{name: "ann", amount: 600, care: {meal: 30, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    // Distance band edges: 1500 km is short, 3500 km medium.
+    [{flight: {departureCountry: "DE", arrivalCountry: "IT", distanceKm: 1500, delayMin: 180, cause: "technical"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "compensation due", totalComp: 250, passengers: [{name: "ann", amount: 250, care: {meal: 15, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "IT", distanceKm: 3500, delayMin: 180, cause: "technical"}, seats: 5, passengers: [{name: "ann", ticketClass: "economy", age: 30}]}, {reason: "compensation due", totalComp: 400, passengers: [{name: "ann", amount: 400, care: {meal: 15, screened: true}}], rebooked: ["ann"], waitlisted: []}],
+    // Infants get no compensation; assistance comes first in rebooking, then business, then name.
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 200, cause: "technical"}, seats: 2, passengers: [{name: "ann", ticketClass: "economy", age: 30}, {name: "bob", ticketClass: "business", age: 45}, {name: "cat", ticketClass: "economy", age: 70, needsAssistance: true}, {name: "dot", ticketClass: "economy", age: 1}]}, {reason: "compensation due", totalComp: 1200, passengers: [{name: "ann", amount: 400, care: {meal: 15, screened: true}}, {name: "bob", amount: 400, care: {meal: 15, screened: true}}, {name: "cat", amount: 400, care: {meal: 15, assistance: true, screened: true}}, {name: "dot", amount: 0, care: {meal: 15, screened: true}}], rebooked: ["cat", "bob"], waitlisted: ["ann", "dot"]}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 0, cause: "technical"}, passengers: [{name: "bob", ticketClass: "economy"}, {name: "ann", ticketClass: "economy"}]}, {reason: "delay below threshold", totalComp: 0, passengers: [{name: "bob", amount: 0, care: {screened: true}}, {name: "ann", amount: 0, care: {screened: true}}], rebooked: [], waitlisted: ["ann", "bob"]}],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 200, cause: "technical"}, seats: 5, passengers: []}, {reason: "compensation due", totalComp: 0, passengers: [], rebooked: [], waitlisted: []}],
+    // A missing delay fails the facts node; two nameless passengers in the same cabin make the
+    // rebooking comparator call a method on undefined.
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, cause: "technical"}, seats: 5, passengers: [{name: "ann"}]}, "!error"],
+    [{flight: {departureCountry: "DE", arrivalCountry: "ES", distanceKm: 1800, delayMin: 0, cause: "technical"}, seats: 5, passengers: [{ticketClass: "economy"}, {ticketClass: "economy"}]}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// SaaS month-end billing: the plan catalog fans out to prorated seats (seat-days from dated
+// changes), collected API overage tiers and storage, joined with a loop table pricing add-ons;
+// a function applies unexpired credits earliest-expiring first, a tax sub-decision runs under
+// `tax`, the invoice reads the dunning state through `$nodes`, the four dunning branches meet in a
+// custom echo node, and a custom render memo joins the final invoice. The period is March 2025
+// (30 days between the boundary dates). The memo template keeps each number's decimal scale, as
+// `string` does, so values that went through `round(x, 2)` can render with trailing zeros.
+{
+  name: "saas billing: proration, overage tiers, credits function, tax sub-decision, dunning",
+  decisions: {
+    salesTax: {
+      nodes: [
+        {table: "rate", passThrough: true, inputs: ["region", "taxExempt"], outputs: ["rate"], rules: [
+          ["", "true", "0"],
+          ["'CA'", "", "0.0725"],
+          ["'NY'", "", "0.08875"],
+          ["'EU'", "", "0.2"],
+          ["", "", "0"],
+        ]},
+        {expression: "amount", fields: {rate: "rate", amount: "round(taxable * rate, 2)"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "account"},
+      {table: "planCatalog", passThrough: true, inputs: ["plan"], outputs: ["price.seat", "included.apiCalls", "included.storageGb"], rules: [
+        ["'starter'", "10", "100000", "10"],
+        ["'team'", "25", "1000000", "100"],
+        ["'enterprise'", "40", "10000000", "1000"],
+      ]},
+      {expression: "seatsCalc", passThrough: true, fields: {
+        "calc.periodDays": "d(periodEnd).diff(d(periodStart), 'day')",
+        "calc.seatDays": "seats.start * $.calc.periodDays + sum(map(seats.changes ?? [], #.delta * d(periodEnd).diff(d(#.date), 'day')))",
+        "calc.seatCharge": "round($.calc.seatDays * price.seat / $.calc.periodDays, 2)",
+      }},
+      {table: "apiTiers", hit: "collect", passThrough: true, outputPath: "apiTiers", inputs: ["usage.apiCalls - included.apiCalls"], outputs: ["calls", "rate"], rules: [
+        ["> 0", "min([usage.apiCalls - included.apiCalls, 1000000])", "0.001"],
+        ["> 1000000", "usage.apiCalls - included.apiCalls - 1000000", "0.0005"],
+      ]},
+      {expression: "storage", passThrough: true, fields: {"calc.storage": "max([0, ceil(usage.storageGb - included.storageGb)]) * 0.1"}},
+      {table: "addonPrice", executionMode: "loop", inputField: "addons", outputPath: "addonLines", inputs: ["code"], outputs: ["code", "amount"], rules: [
+        ["'sso'", "code", "(qty ?? 1) * 50"],
+        ["'audit'", "code", "100"],
+        ["", "code", "0"],
+      ]},
+      {expression: "subtotal", passThrough: true, fields: {
+        "calc.usage": "round(sum(map(apiTiers, #.calls * #.rate)), 2)",
+        "calc.addons": "sum(map(addonLines, #.amount))",
+        "calc.subtotal": "calc.seatCharge + $.calc.usage + calc.storage + $.calc.addons",
+      }},
+      {function: "applyCredits", source: """
+export const handler = async (input) => {
+  const end = input.periodEnd;
+  const usable = (input.credits ?? [])
+    .filter((c) => !c.expires || c.expires >= end)
+    .sort((a, b) => String(a.expires ?? '9999').localeCompare(String(b.expires ?? '9999')));
+  let due = input.calc.subtotal;
+  let applied = 0;
+  for (const c of usable) {
+    const take = Math.min(c.amount, due);
+    applied += take;
+    due -= take;
+  }
+  return {
+    creditsApplied: Math.round(applied * 100) / 100,
+    taxable: Math.round(due * 100) / 100,
+    region: input.region,
+    taxExempt: input.taxExempt === true,
+  };
+};
+"""},
+      {decision: "tax", key: "salesTax", outputPath: "tax"},
+      {expression: "invoice", fields: {
+        seatCharge: "calc.seatCharge",
+        usage: "calc.usage",
+        storage: "calc.storage",
+        addons: "calc.addons",
+        credits: "creditsApplied",
+        tax: "tax.amount",
+        total: "round(taxable + tax.amount, 2)",
+      }},
+      {switch: "dunning", when: ["$nodes.account.paymentFailures >= 3", "$nodes.account.paymentFailures >= 1", "total == 0", ""]},
+      {expression: "suspend", passThrough: true, fields: {status: "'suspended'"}},
+      {expression: "retry", passThrough: true, fields: {status: "'retry'"}},
+      {expression: "nothingDue", passThrough: true, fields: {status: "'paid by credit'"}},
+      {expression: "charge", passThrough: true, fields: {status: "'charged'"}},
+      {custom: "statusJoin", kind: "echo"},
+      {custom: "memo", kind: "render", config: {memo: "{{ status }}: {{ total }} ({{ seatCharge }} seats, {{ usage }} usage)"}},
+      {expression: "final", passThrough: true, fields: {memo: "memo"}},
+      {output: "bill"},
+    ],
+    edges: [
+      "account -> planCatalog -> seatsCalc -> subtotal",
+      "planCatalog -> apiTiers -> subtotal",
+      "planCatalog -> storage -> subtotal",
+      "account -> addonPrice -> subtotal",
+      "subtotal -> applyCredits -> tax -> invoice",
+      "subtotal -> invoice",
+      "applyCredits -> invoice -> dunning",
+      "dunning:0 -> suspend -> statusJoin",
+      "dunning:1 -> retry -> statusJoin",
+      "dunning:2 -> nothingDue -> statusJoin",
+      "dunning:3 -> charge -> statusJoin",
+      "statusJoin -> final",
+      "statusJoin -> memo -> final",
+      "final -> bill",
+    ],
+  },
+  cases: [
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 500000, storageGb: 50}, addons: [], region: "CA"}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 0, tax: 18.13, total: 268.13, status: "charged", memo: "charged: 268.13 (250 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10, changes: [{date: "2025-03-16", delta: 5}]}, usage: {apiCalls: 500000, storageGb: 50}, addons: [], region: "EU"}, {seatCharge: 312.5, usage: 0, storage: 0, addons: 0, credits: 0, tax: 62.5, total: 375, status: "charged", memo: "charged: 375.00 (312.50 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10, changes: [{date: "2025-03-21", delta: -2}]}, usage: {apiCalls: 500000, storageGb: 50}, addons: [], region: "CA"}, {seatCharge: 233.33, usage: 0, storage: 0, addons: 0, credits: 0, tax: 16.92, total: 250.25, status: "charged", memo: "charged: 250.25 (233.33 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10, changes: [{date: "2025-03-16", delta: 5}, {date: "2025-03-21", delta: -2}]}, usage: {apiCalls: 500000, storageGb: 50}, addons: []}, {seatCharge: 295.83, usage: 0, storage: 0, addons: 0, credits: 0, tax: 0, total: 295.83, status: "charged", memo: "charged: 295.83 (295.83 seats, 0 usage)"}],
+    // API overage tiers: none at the allowance, one tier, both tiers.
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 4}, usage: {apiCalls: 1000000, storageGb: 50}, addons: []}, {seatCharge: 100, usage: 0, storage: 0, addons: 0, credits: 0, tax: 0, total: 100, status: "charged", memo: "charged: 100 (100 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 4}, usage: {apiCalls: 1500000, storageGb: 50}, addons: []}, {seatCharge: 100, usage: 500, storage: 0, addons: 0, credits: 0, tax: 0, total: 600, status: "charged", memo: "charged: 600 (100 seats, 500.00 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 4}, usage: {apiCalls: 2500000, storageGb: 100.5}, addons: []}, {seatCharge: 100, usage: 1250, storage: 0.1, addons: 0, credits: 0, tax: 0, total: 1350.1, status: "charged", memo: "charged: 1350.1 (100 seats, 1250.00 usage)"}],
+    [{plan: "starter", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 3}, usage: {apiCalls: 150000, storageGb: 12.2}, addons: [], region: "NY"}, {seatCharge: 30, usage: 50, storage: 0.3, addons: 0, credits: 0, tax: 7.13, total: 87.43, status: "charged", memo: "charged: 87.43 (30 seats, 50.00 usage)"}],
+    // Add-ons: SSO per quantity (one when missing), a flat audit fee, unknown codes free.
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 4}, usage: {apiCalls: 0, storageGb: 0}, addons: [{code: "sso", qty: 10}, {code: "audit"}, {code: "beta"}, {code: "sso"}]}, {seatCharge: 100, usage: 0, storage: 0, addons: 650, credits: 0, tax: 0, total: 750, status: "charged", memo: "charged: 750 (100 seats, 0 usage)"}],
+    // Credits: unexpired ones apply before tax, expired ones are ignored, a credit larger than the
+    // invoice leaves nothing due.
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], region: "CA", credits: [{amount: 100, expires: "2025-12-31"}]}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 100, tax: 10.88, total: 160.88, status: "charged", memo: "charged: 160.88 (250 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], region: "CA", credits: [{amount: 100, expires: "2025-03-30"}]}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 0, tax: 18.13, total: 268.13, status: "charged", memo: "charged: 268.13 (250 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], region: "CA", credits: [{amount: 200}, {amount: 100, expires: "2025-04-30"}]}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 250, tax: 0, total: 0, status: "paid by credit", memo: "paid by credit: 0 (250 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], region: "EU", taxExempt: true}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 0, tax: 0, total: 250, status: "charged", memo: "charged: 250 (250 seats, 0 usage)"}],
+    // Dunning reads the failure count from the request through `$nodes`, before the zero check.
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], paymentFailures: 1}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 0, tax: 0, total: 250, status: "retry", memo: "retry: 250 (250 seats, 0 usage)"}],
+    [{plan: "team", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: [], paymentFailures: 3, credits: [{amount: 1000}]}, {seatCharge: 250, usage: 0, storage: 0, addons: 0, credits: 250, tax: 0, total: 0, status: "suspended", memo: "suspended: 0 (250 seats, 0 usage)"}],
+    // Unknown plans have no seat price; a missing period start makes the period length null.
+    [{plan: "free", periodStart: "2025-03-01", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: []}, "!error"],
+    [{plan: "team", periodEnd: "2025-03-31", seats: {start: 10}, usage: {apiCalls: 0, storageGb: 0}, addons: []}, "!error"],
+  ],
+}

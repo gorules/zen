@@ -1,0 +1,147 @@
+expression (string);input (json 5);output (json 5);note
+# Plain template strings
+``;;''
+`a`;;'a'
+`hello world`;;'hello world'
+` `;;' '
+type(`a`);;'string'
+`a` == 'a';;true
+`it's`;;'it\'s'
+"`say ""hi""`";;"'say ""hi""'"
+`1 + 1`;;'1 + 1'
+`[1..5]`;;'[1..5]'
+`é😀`;;'é😀'
+`$`;;'$'
+`$$`;;'$$'
+`{`;;'{'
+`}`;;'}'
+`{}`;;'{}'
+`$ {1}`;;'$ {1}'
+`${`;;!error
+# Interpolation of literals of every type
+`${1}`;;'1'
+`${0}`;;'0'
+`${-1}`;;'-1'
+`${1.50}`;;'1.50'
+`${-0.5}`;;'-0.5'
+`${1e3}`;;'1000'
+`${1_000}`;;'1000'
+`${0.1 + 0.2}`;;'0.3'
+`${1 / 3}`;;'0.3333333333333333333333333333'
+`${79228162514264337593543950335}`;;'79228162514264337593543950335'
+`${0.0000000000000000000000000001}`;;'0.0000000000000000000000000001'
+`${'x'}`;;'x'
+`${''}`;;''
+"`${""x""}`";;'x'
+`${'é😀'}`;;'é😀'
+`${true}`;;'true'
+`${false}`;;'false'
+`${null}`;;'null'
+`${[]}`;;!error
+`${[1, 2]}`;;!error
+`${ {} }`;;!error
+`${[1..5]}`;;!error
+`${d('2024-01-01')}`;;'2024-01-01T00:00:00Z'
+`${d('2024-01-01').format('%Y-%m-%d')}`;;'2024-01-01'
+`${string(1)}`;;'1'
+`${len('abc')}`;;'3'
+`${[1, 2][0]}`;;'1'
+`${1 > 0}`;;'true'
+`${1 == 2}`;;'false'
+`${null ?? 'd'}`;;'d'
+`${true ? 'y' : 'n'}`;;'y'
+# Surrounding text and multiple interpolations
+`a${1}`;;'a1'
+`${1}a`;;'1a'
+`a${1}b`;;'a1b'
+`${1}${2}`;;'12'
+`${1}${2}${3}`;;'123'
+`a${1}b${'x'}c${true}d`;;'a1bxctrued'
+`${1} ${2}`;;'1 2'
+` ${1} `;;' 1 '
+`$${1}`;;'$1'
+`${1}$`;;'1$'
+`${1}}`;;'1}'
+`{${1}}`;;'{1}'
+`é${1}ü`;;'é1ü'
+`😀${'😀'}😀`;;'😀😀😀'
+# Whitespace inside interpolations
+`${ 1 }`;;'1'
+`${	1	}`;;'1'
+` ${ 1 + 1 } `;;' 2 '
+"`${
+1 + 1
+}`";;'2'
+"`a
+${1}
+b`";;'a\n1\nb'
+# Quotes and braces as string values inside interpolations
+`${'`'}`;;'`'
+`${'}'}`;;'}'
+`${'{'}`;;'{'
+`a${'}'}b`;;'a}b'
+`${'${'}`;;'${'
+`${'${x}'}`;;'${x}'
+# Nested braces and nested templates inside interpolations
+`${keys({a: 1})[0]}`;;'a';bug: the first } inside an interpolation ends it, so object literals cannot be used
+`${values({a: 1})[0]}`;;'1';bug: the first } inside an interpolation ends it, so object literals cannot be used
+`${`in`}`;;'in';bug: a template nested in an interpolation fails to parse
+`${`in${1}`}`;;'in1';bug: a template nested in an interpolation fails to parse
+`${'a' + `b${'c'}`}`;;'abc';bug: a template nested in an interpolation fails to parse
+# No escape sequences in templates
+`\n`;;'\\n';question: template literals have no escape sequences
+`\${1}`;;'\\1';question: there is no way to write a literal ${ in a template
+`\``;;!error;question: a backtick cannot be escaped inside a template
+# Malformed templates
+`abc;;!error;bug: an unterminated template is accepted as if closed
+`a${1}b;;!error;bug: an unterminated template is accepted as if closed
+`${1`;;!error
+`${1;;!error
+`${}`;;!error
+`${1 +}`;;!error
+`${1 2}`;;!error
+`a` `b`;;!error
+`a` + `b`;;'ab'
+`a` + 1;;!error
+# Templates in literals
+[`a`, `b${1}`];;['a', 'b1']
+{k: `v${1}`};;{k: 'v1'}
+{[`k${1}`]: 1};;{k1: 1}
+# Interpolating input values of every type
+`${x}`;{x: 1};'1'
+`${x}`;{x: 1.500};'1.500'
+`${x}`;{x: -0.25};'-0.25'
+`${x}`;{x: 0};'0'
+`${x}`;{x: 'str'};'str'
+`${x}`;{x: ''};''
+`${x}`;{x: 'é😀'};'é😀'
+`${x}`;{x: true};'true'
+`${x}`;{x: false};'false'
+`${x}`;{x: null};'null'
+`${x}`;{};'null'
+`${x}`;{x: [1]};!error
+`${x}`;{x: []};!error
+`${x}`;{x: {a: 1}};!error
+`${x}`;{x: {}};!error
+`v=${x}!`;{x: 5};'v=5!'
+`v=${x}!`;{x: 'a'};'v=a!'
+`v=${x}!`;{x: null};'v=null!'
+`v=${x}!`;{};'v=null!'
+`v=${x}!`;{x: false};'v=false!'
+`v=${x}!`;{x: 12345678901234567890.123};'v=12345678901234567890.123!'
+`${a}-${b}`;{a: 1, b: 2};'1-2'
+`${a}-${b}`;{a: 'x', b: null};'x-null'
+`${a}-${b}`;{a: true};'true-null'
+`${a}-${b}`;{};'null-null'
+`${a}-${b}`;{a: 0.10, b: -0};'0.10-0'
+`${u.name} is ${u.age}`;{u: {name: 'Ann', age: 30}};'Ann is 30'
+`${u.name} is ${u.age}`;{u: {name: 'Bo'}};'Bo is null'
+`${u.name} is ${u.age}`;{u: null};'null is null'
+`${u.name} is ${u.age}`;{};'null is null'
+`${u.name} is ${u.age}`;{u: {name: 1.0, age: '30'}};'1.0 is 30'
+`${x + 1}`;{x: 1};'2'
+`${x + 1}`;{x: 0.5};'1.5'
+`${x + 1}`;{x: -1};'0'
+`${x + 1}`;{x: null};!error
+`${x + 1}`;{};!error
+`${x + 1}`;{x: 'a'};!error

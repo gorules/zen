@@ -10,3 +10,10 @@ zen-expression = { path = "../../core/expression" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+rust_decimal = { workspace = true }
+zstd = "0.13"
+mimalloc = { version = "0.1.52", optional = true }
+
+[features]
+base = []
+mimalloc = ["dep:mimalloc"]

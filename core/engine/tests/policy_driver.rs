@@ -14,7 +14,10 @@ fn request(input: serde_json::Value, goals: Vec<&str>, trace: bool) -> EvaluateR
         policy_path: Arc::from("p"),
         input: Variable::from(input),
         goals: goals.into_iter().map(Arc::from).collect(),
-        trace,
+        trace: match trace {
+            true => zen_engine::trace::TraceFormat::Legacy,
+            false => zen_engine::trace::TraceFormat::Off,
+        },
     }
 }
 
@@ -23,6 +26,8 @@ fn executed_block_ids(ws: &PolicyWorkspace, req: &EvaluateRequest) -> Vec<String
     result
         .trace
         .expect("trace populated")
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .map(|e| e.block_id.to_string())
@@ -391,6 +396,8 @@ fn enhance_trace_tolerates_runtime_error_in_post_selection_match_arm() {
         .expect("enhance_trace must tolerate a post-selection arm error");
     let trace = enhanced.trace.expect("trace populated");
     let m = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "m")
@@ -468,6 +475,8 @@ fn enhance_trace_tolerates_runtime_error_in_post_selection_table_row() {
         .expect("enhance_trace must tolerate a post-selection row error");
     let trace = enhanced.trace.expect("trace populated");
     let dt = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -512,6 +521,8 @@ fn enhance_trace_tolerates_error_after_failed_column_in_unmatched_row() {
     );
     let trace = enhanced.trace.expect("trace populated");
     let dt = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -556,6 +567,8 @@ fn enhance_trace_tolerates_error_after_failed_column_in_collect_table() {
         .expect("enhance_trace must tolerate post-short-circuit errors in collect tables");
     let trace = enhanced.trace.expect("trace populated");
     let dt = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt")
@@ -693,6 +706,8 @@ fn trace_records_writes_and_reads_per_execution() {
 
     let by_id = |id: &str| {
         trace
+            .as_legacy()
+            .expect("legacy trace")
             .executions
             .iter()
             .find(|e| e.block_id.as_ref() == id)
@@ -759,6 +774,8 @@ fn collect_table_trace_records_final_array_write() {
     let trace = result.trace.expect("trace populated");
 
     let table = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .find(|e| e.block_id.as_ref() == "dt-collect")
@@ -808,6 +825,8 @@ fn iterated_trace_records_writes_and_reads_per_instance() {
     let trace = result.trace.expect("trace populated");
 
     let instances: Vec<_> = trace
+        .as_legacy()
+        .expect("legacy trace")
         .executions
         .iter()
         .filter(|e| e.block_id.as_ref() == "m-bonus")

@@ -1,0 +1,237 @@
+expression (string);input (json 5);output (json 5);note
+# map: element transformation, one result per element, order preserved
+map([1, 2, 3], # * 2);;[2, 4, 6]
+map([], # * 2);;[]
+map([7], # + 1);;[8]
+map([1, 2, 3], #);;[1, 2, 3]
+map([1, 2], 'x');;['x', 'x']
+map([1, 2], null);;[null, null]
+map([1, 2], 5);;[5, 5]
+map([1, 'a', true, null], #);;[1, 'a', true, null]
+map([1, 'a', true, null, [1], {a: 1}], type(#));;['number', 'string', 'bool', 'null', 'array', 'object']
+map([1, null, 3], # ?? 0);;[1, 0, 3]
+map([1, null, 3], # * 2);;!error
+map([1, 2, 3], # > 1 ? 'big' : 'small');;['small', 'big', 'big']
+map([1, 2, 3], # == 2 ? 'x' : null);;[null, 'x', null]
+map([0.1, 0.2], # + 0.1);;[0.2, 0.3]
+map([1.5, 2.25, -0.10], # * 2);;[3, 4.5, -0.2]
+map([1.5, 2.25, -0.10], string(# * 2));;['3.0', '4.50', '-0.20']
+map(['a', 'b', 'c'], # + '!');;['a!', 'b!', 'c!']
+map(['héllo', '日本', ''], upper(#));;['HÉLLO', '日本', '']
+map([true, false], not #);;[false, true]
+map([[1, 2], [], [3]], len(#));;[2, 0, 1]
+map([[1, 2], [3]], #);;[[1, 2], [3]]
+map([{a: 1}, {a: 2}], #);;[{a: 1}, {a: 2}]
+map([{a: 1}, {b: 2}], #.a);;[1, null]
+map([{a: {b: 1}}, {a: null}, {}], #.a.b);;[1, null, null]
+map([1, 2], [#, # * 10]);;[[1, 10], [2, 20]]
+map([1, 2], {v: #});;[{v: 1}, {v: 2}]
+map([1, 2], {v: #, [string(#)]: # * 2});;[{v: 1, '1': 2}, {v: 2, '2': 4}]
+map([1, 2], `n${#}`);;['n1', 'n2']
+map([d('2024-01-01'), d('2024-01-02')], #.day());;[1, 2]
+map([1, 0, 2], 1 / #);;[1, null, 0.5];question: division by zero inside a closure yields null (not an error); see operators chapter
+map([1, 2, 3], # % 2 == 0);;[false, true, false]
+# map: non-list first argument
+map(null, #);;!error;question: a null list is an error rather than an empty list
+map(5, #);;!error
+map('abc', #);;!error
+map(true, #);;!error
+map({a: 1}, #);;!error
+map(d('2024-01-01'), #);;!error
+# map: parse errors
+map([1, 2]);;!error
+map();;!error
+map([1, 2], #, 3);;!error
+map([1, 2], # , );;!error
+map([1, 2] as, #);;!error
+map([1, 2] as 1, #);;!error
+# map: element errors propagate
+map([1, 'a', 3], # * 2);;!error
+map([1, 2, 'a'], # * 2);;!error
+map(['a', 1], upper(#));;!error
+# filter: keeps elements whose predicate is true, preserves order and values
+filter([1, 2, 3, 4, 5], # > 3);;[4, 5]
+filter([], # > 3);;[]
+filter([4], # > 3);;[4]
+filter([1], # > 3);;[]
+filter([1, 2, 3], true);;[1, 2, 3]
+filter([1, 2, 3], false);;[]
+filter([true, false, true], #);;[true, true]
+filter([1, null, 3], # != null);;[1, 3]
+filter([1, 'a', true, null], # == 'a');;['a']
+filter([1, 'a', true, null], type(#) == 'number');;[1]
+filter([1.5, 2.25, -0.10], # < 2);;[1.5, -0.10]
+filter(['a', 'b', 'c', 'd'], # in ['a', 'c']);;['a', 'c']
+filter(['héllo', 'abc', 'hé'], startsWith(#, 'h'));;['héllo', 'hé']
+filter([{a: 1}, {a: null}, {}], #.a != null);;[{a: 1}]
+filter([{id: 1}, {id: 2}], #.id > 1);;[{id: 2}]
+filter([[1, 2], [3]], len(#) > 1);;[[1, 2]]
+filter([[1, 2], [3]], some(#, # > 2));;[[3]]
+filter([1, 2, 3], not (# == 2));;[1, 3]
+filter([1, 2, 3], !(# == 2));;[1, 3]
+filter([d('2024-01-01'), d('2024-03-02')], #.month() > 1);;['2024-03-02T00:00:00Z']
+# filter: predicate must be boolean
+filter([1, 2], 1);;!error
+filter([1, 2], 'yes');;!error
+filter([1, 2], null);;!error;question: a null predicate is an error, not treated as false
+filter([1, null, 3], #);;!error
+filter([1, 2], [#]);;!error
+filter([], 1);;[]
+# filter: non-list first argument and element errors
+filter(null, true);;!error
+filter(5, true);;!error
+filter('abc', true);;!error
+filter({a: 1}, true);;!error
+filter([1, 'a', 3], # > 1);;!error
+filter([1, 0, 2], 1 / # > 0);;!error
+# some: true when any element matches, stops at the first match
+some([1, 2, 3], # > 2);;true
+some([1, 2, 3], # > 3);;false
+some([], true);;false
+some([], # > 0);;false
+some([5], # > 3);;true
+some([1], # > 3);;false
+some(['a', 'b', 'c'], # == 'b');;true
+some(['a', 'b', 'c'], # == 'd');;false
+some([1, 'a', null], # == null);;true
+some([{a: 1}, {}], #.a == null);;true
+some([[1], [2, 3]], 3 in #);;true
+some([false, false], #);;false
+some([false, true], #);;true
+some([2, 'a'], # > 1);;true
+some(['a', 2], # > 1);;!error
+some([5, null], # > 3);;true
+some([1, null, 5], # > 3);;!error
+some([1, 2], 'a');;!error
+some([false, null], #);;!error;question: a null predicate result is an error, not falsy
+some(null, true);;!error
+some('abc', true);;!error
+some({a: 1}, true);;!error
+# all: true when every element matches, stops at the first failure
+all([1, 2, 3], # > 0);;true
+all([1, 2, 3], # > 1);;false
+all([], false);;true
+all([], # > 100);;true
+all([1], # > 0);;true
+all([0], # > 0);;false
+all(['a', 'b', 'c'], # in ['a', 'b', 'c', 'd']);;true
+all(['a', 'b', 'c'], # in ['a', 'b']);;false
+all([true, true], #);;true
+all([true, false], #);;false
+all([1, 2], # > 0 and # < 3);;true
+all([{a: 1}, {a: 2}], #.a > 0);;true
+all([{a: 1}, {}], #.a != null);;false
+all([0, 'a'], # > 0);;false
+all(['a', 0], # > 0);;!error
+all([1, 'a'], # > 0);;!error
+all([true, null], #);;!error;question: a null predicate result is an error, not falsy
+all([1, 2], 1);;!error
+all(null, true);;!error
+all(5, true);;!error
+# none: true when no element matches, stops at the first match
+none([1, 2, 3], # > 5);;true
+none([1, 2, 3], # > 2);;false
+none([], true);;true
+none([], # > 0);;true
+none([1], # == 1);;false
+none([1], # == 2);;true
+none(['a', 'b'], # == 'c');;true
+none([false, false], #);;true
+none([true, false], #);;false
+none([{a: 1}, {a: 2}], #.a > 5);;true
+none([5, 'a'], # > 1);;false
+none(['a', 5], # > 1);;!error
+none([1, 2], 'x');;!error
+none(null, true);;!error
+none({a: 1}, true);;!error
+# one: true when exactly one element matches
+one([1, 2, 3], # == 2);;true
+one([1, 2, 3], # == 5);;false
+one([1, 2, 3], # > 1);;false
+one([1, 2, 3], # > 0);;false
+one([], true);;false
+one([1], true);;true
+one([1], false);;false
+one([1, 1], # == 1);;false
+one(['a', 'b', 'c'], # == 'c');;true
+one([true, false], #);;true
+one([true, true], #);;false
+one([{a: 1}, {a: 2}, {}], #.a == 2);;true
+one([1, 1, 'a'], # == 1);;false
+one([1, 2, 'a'], # > 0);;!error;question: one() keeps evaluating after a second match, so a later erroring element fails the whole call
+one(['a', 1], # > 0);;!error
+one([1, 2], 1);;!error
+one(null, true);;!error
+one('abc', true);;!error
+# count: number of matching elements
+count([1, 2, 3, 4, 5, 2], # == 2);;2
+count([1, 2, 3], # > 5);;0
+count([], true);;0
+count([], # > 0);;0
+count([1], true);;1
+count([1, 2, 3], true);;3
+count([1, 2, 3], false);;0
+count([true, false, true], #);;2
+count([1, 'a', null, true], type(#) == 'string');;1
+count([{a: 1}, {a: 2}, {}], #.a != null);;2
+count([[1], [], [2, 3]], len(#) > 0);;2
+count(['héllo', 'hé', 'x'], contains(#, 'é'));;2
+count([1..10], # % 3 == 0);;3
+count([1, 2], 1);;!error
+count([1, 'a'], # > 0);;!error
+count([1], #);;!error
+count(null, true);;!error
+count({a: 1}, true);;!error
+# count agrees with len of filter and with len for an always-true predicate
+count([1, 2, 3, 4], # % 2 == 0) == len(filter([1, 2, 3, 4], # % 2 == 0));;true
+count([1, 2, 3], true) == len([1, 2, 3]);;true
+count([[1, 2, 3]], true);;1
+len([[1, 2, 3]]);;1
+# flatMap: map then flatten one level
+flatMap([[1, 2], [3, 4], [5, 6]], #);;[1, 2, 3, 4, 5, 6]
+flatMap([], #);;[]
+flatMap([[]], #);;[]
+flatMap([[], [1]], #);;[1]
+flatMap([1, 2], [#, # * 10]);;[1, 10, 2, 20]
+flatMap([1, 2], [#]);;[1, 2]
+flatMap([1, 2], #);;[1, 2]
+flatMap([1, [2, [3]]], #);;[1, 2, [3]]
+flatMap([[1], [2]], [#]);;[[1], [2]]
+flatMap([[1], null], #);;[1, null]
+flatMap([1, 2], []);;[]
+flatMap(['a', 'b'], [#, upper(#)]);;['a', 'A', 'b', 'B']
+flatMap([{t: ['a', 'b']}, {t: []}, {}], #.t);;['a', 'b', null]
+flatMap([{t: ['a', 'b']}, {t: []}, {}], #.t ?? []);;['a', 'b']
+flatMap([[1, 2], [3]], map(#, # + 1));;[2, 3, 4]
+flatMap(null, #);;!error
+flatMap('ab', #);;!error
+flatMap([1, 'a'], # * 2);;!error
+# intervals as closure sources
+map([0..3], #);;[0, 1, 2, 3]
+map((0..3], #);;[1, 2, 3]
+map([0..3), #);;[0, 1, 2]
+map((0..3), #);;[1, 2]
+map([1..1], #);;[1]
+map((1..1), #);;[]
+map([3..1], #);;[]
+map([-2..1], #);;[-2, -1, 0, 1]
+map([1..5], # * 2);;[2, 4, 6, 8, 10]
+filter([0..10], # % 2 == 0);;[0, 2, 4, 6, 8, 10]
+some([1..3], # == 2);;true
+all((0..5], # > 0);;true
+none([1..3), # == 3);;true
+one([1..3], # == 3);;true
+count((1..5), true);;3
+flatMap([1..2], [#, #]);;[1, 1, 2, 2]
+sum(map([1..4], #));;10
+map([a..b], #);{a: 1, b: 4};[1, 2, 3, 4]
+map((a..b), #);{a: 1, b: 4};[2, 3]
+map([a..b], #);{a: 'x', b: 4};!error
+map([a..b], #);{a: null, b: 4};!error
+map(['a'..'c'], #);;!error
+map([1.5..3], #);;[2, 3];bug: iterating [1.5..3] yields 1, which lies outside the interval (bound truncated)
+map([1..2.5), #);;[1, 2];bug: iterating [1..2.5) drops 2, which lies inside the interval (bound truncated before exclusion)
+map((0.5..2], #);;[1, 2]
+map([0..2], #) == [0, 1, 2];;false;question: array == compares by identity, so equal arrays are not equal (see equality chapter)
+1..5;;!error
+map(1..5, #);;!error

@@ -1,0 +1,864 @@
+// Decision tables over numbers: intervals, comparison cells and banded rule sets.
+//
+// Chapter 06 pins the unary shorthands one by one; this chapter covers how numeric cells behave
+// inside whole tables: exact boundaries between adjacent bands, gaps and overlaps resolved by
+// hit policy, negative and decimal bounds, numbers that arrive as strings, and tables large
+// enough (8 rules or more) to take the indexed path, where point cells are looked up and
+// ranges fall back to evaluation. The unary language itself is pinned in
+// core/expression/tests/spec/unary/04-intervals.csv.
+
+// --- Bracket forms at their exact boundaries -----------------------------------------------
+
+{
+  name: "ranges: closed bands that share a boundary resolve by rule order",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["band"], rules: [
+        ["[0..10]", "'low'"],
+        ["[10..20]", "'mid'"],
+        ["[20..30]", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, {band: "low"}],
+    [{n: 10}, {band: "low"}],
+    [{n: 10.0001}, {band: "mid"}],
+    [{n: 20}, {band: "mid"}],
+    [{n: 30}, {band: "high"}],
+    [{n: 30.0001}, {}],
+    [{n: -0.0001}, {}],
+  ],
+}
+
+{
+  name: "ranges: shared closed boundaries collect both bands",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["band"], rules: [
+        ["[0..10]", "'low'"],
+        ["[10..20]", "'mid'"],
+        ["[20..30]", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 10}, [{band: "low"}, {band: "mid"}]],
+    [{n: 20}, [{band: "mid"}, {band: "high"}]],
+    [{n: 15}, [{band: "mid"}]],
+    [{n: 31}, []],
+  ],
+}
+
+{
+  name: "ranges: half-open bands tile the line without overlap",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["band"], rules: [
+        ["[0..10)", "'a'"],
+        ["[10..20)", "'b'"],
+        ["[20..30)", "'c'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, [{band: "a"}]],
+    [{n: 9.9999}, [{band: "a"}]],
+    [{n: 10}, [{band: "b"}]],
+    [{n: 20}, [{band: "c"}]],
+    [{n: 29.999999}, [{band: "c"}]],
+    [{n: 30}, []],
+  ],
+}
+
+{
+  name: "ranges: left-open bands tile the line from the other side",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["band"], rules: [
+        ["(0..10]", "'a'"],
+        ["(10..20]", "'b'"],
+        ["", "'outside'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, {band: "outside"}],
+    [{n: 0.0000001}, {band: "a"}],
+    [{n: 10}, {band: "a"}],
+    [{n: 10.5}, {band: "b"}],
+    [{n: 20}, {band: "b"}],
+    [{n: 20.0000001}, {band: "outside"}],
+  ],
+}
+
+{
+  name: "ranges: open bands leave the shared boundary unmatched",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["band"], rules: [
+        ["(0..10)", "'a'"],
+        ["(10..20)", "'b'"],
+        ["", "'gap'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5}, {band: "a"}],
+    [{n: 10}, {band: "gap"}],
+    [{n: 10.0}, {band: "gap"}],
+    [{n: 15}, {band: "b"}],
+    [{n: 0}, {band: "gap"}],
+    [{n: 20}, {band: "gap"}],
+  ],
+}
+
+{
+  name: "ranges: reversed brackets `]a..b[` act as the complement of (a..b)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["]1..5[", "'outside'"],
+        ["", "'inside'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, {r: "outside"}],
+    [{n: 1}, {r: "outside"}, "question: `]1..5[` is undocumented; it acts as the complement of (1..5) and includes the bounds, while the ISO reading would be the open interval (1..5)"],
+    [{n: 3}, {r: "inside"}, "question: `]1..5[` is undocumented; under the ISO reading 3 lies inside the open interval and would match the first rule"],
+    [{n: 5}, {r: "outside"}, "question: `]1..5[` is undocumented; it acts as the complement of (1..5) and includes the bounds, while the ISO reading would be the open interval (1..5)"],
+    [{n: 6}, {r: "outside"}],
+    [{n: null}, {r: "inside"}],
+  ],
+}
+
+{
+  name: "ranges: degenerate and reversed intervals in a table",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["[5..5]", "'point'"],
+        ["(5..5)", "'empty open'"],
+        ["[9..1]", "'reversed'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5}, [{r: "point"}, {r: "any"}]],
+    [{n: 5.00}, [{r: "point"}, {r: "any"}]],
+    [{n: 3}, [{r: "any"}]],
+    [{n: 9}, [{r: "any"}]],
+  ],
+}
+
+// --- Negative and decimal bounds ------------------------------------------------------------
+
+{
+  name: "ranges: negative bounds",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["temp"], outputs: ["state"], rules: [
+        ["< -40", "'extreme cold'"],
+        ["[-40..-10)", "'freezing'"],
+        ["[-10..0]", "'cold'"],
+        ["(0..25]", "'mild'"],
+        ["> 25", "'hot'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{temp: -41}, {state: "extreme cold"}],
+    [{temp: -40}, {state: "freezing"}],
+    [{temp: -10.01}, {state: "freezing"}],
+    [{temp: -10}, {state: "cold"}],
+    [{temp: 0}, {state: "cold"}],
+    [{temp: -0}, {state: "cold"}],
+    [{temp: 0.01}, {state: "mild"}],
+    [{temp: 25}, {state: "mild"}],
+    [{temp: 25.000001}, {state: "hot"}],
+  ],
+}
+
+{
+  name: "ranges: decimal bounds compare exactly",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["ratio"], outputs: ["grade"], rules: [
+        ["[0.1..0.3)", "'A'"],
+        ["[0.3..0.45]", "'B'"],
+        ["(0.45..0.7]", "'C'"],
+        ["", "'D'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{ratio: 0.1}, {grade: "A"}],
+    [{ratio: 0.29999999999999999999}, {grade: "A"}],
+    [{ratio: 0.3}, {grade: "B"}],
+    [{ratio: 0.30}, {grade: "B"}],
+    [{ratio: 0.45}, {grade: "B"}],
+    [{ratio: 0.4500000001}, {grade: "C"}],
+    [{ratio: 0.7}, {grade: "C"}],
+    [{ratio: 0.09999}, {grade: "D"}],
+    [{ratio: 1}, {grade: "D"}],
+  ],
+}
+
+{
+  name: "ranges: computed input against decimal bands (0.1 + 0.2 is exactly 0.3)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a + b"], outputs: ["r"], rules: [
+        ["(0.3..1]", "'above'"],
+        ["[0.3..0.3]", "'exactly 0.3'"],
+        ["< 0.3", "'below'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {r: "exactly 0.3"}],
+    [{a: 0.1, b: 0.20001}, {r: "above"}],
+    [{a: 0.1, b: 0.19999}, {r: "below"}],
+    [{a: -0.1, b: 0.4}, {r: "exactly 0.3"}],
+  ],
+}
+
+{
+  name: "ranges: large and tiny magnitudes at the bounds",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["[1000000000000..9999999999999]", "'trillions'"],
+        ["(0..0.000001]", "'tiny'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1000000000000}, {r: "trillions"}],
+    [{n: 9999999999999}, {r: "trillions"}],
+    [{n: 10000000000000}, {r: "other"}],
+    [{n: 0.000001}, {r: "tiny"}],
+    [{n: 0.0000001}, {r: "tiny"}],
+    [{n: 0.0000010001}, {r: "other"}],
+  ],
+}
+
+// --- Comparison cells ----------------------------------------------------------------------
+
+{
+  name: "comparisons: descending `>=` thresholds under first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 80", "'B'"],
+        [">= 70", "'C'"],
+        [">= 60", "'D'"],
+        ["", "'F'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 100}, {grade: "A"}],
+    [{score: 90}, {grade: "A"}],
+    [{score: 89.99}, {grade: "B"}],
+    [{score: 80}, {grade: "B"}],
+    [{score: 70}, {grade: "C"}],
+    [{score: 60}, {grade: "D"}],
+    [{score: 59.9}, {grade: "F"}],
+    [{score: -5}, {grade: "F"}],
+    [{score: null}, {grade: "F"}],
+    [{}, {grade: "F"}],
+  ],
+}
+
+{
+  name: "comparisons: ascending `<` thresholds under first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["weight"], outputs: ["cost"], rules: [
+        ["< 1", "5"],
+        ["< 5", "9.5"],
+        ["< 20", "15"],
+        ["", "weight * 1.25"],
+      ]},
+    ],
+  },
+  cases: [
+    [{weight: 0}, {cost: 5}],
+    [{weight: 0.999}, {cost: 5}],
+    [{weight: 1}, {cost: 9.5}],
+    [{weight: 4.99}, {cost: 9.5}],
+    [{weight: 5}, {cost: 15}],
+    [{weight: 20}, {cost: 25}],
+    [{weight: 100}, {cost: 125}],
+  ],
+}
+
+{
+  name: "comparisons: `>` vs `>=` and `<` vs `<=` differ only at the boundary",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["op"], rules: [
+        ["> 0", "'gt0'"],
+        [">= 0", "'gte0'"],
+        ["< 0", "'lt0'"],
+        ["<= 0", "'lte0'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, [{op: "gte0"}, {op: "lte0"}]],
+    [{n: 0.0}, [{op: "gte0"}, {op: "lte0"}]],
+    [{n: -0}, [{op: "gte0"}, {op: "lte0"}]],
+    [{n: 0.0000000001}, [{op: "gt0"}, {op: "gte0"}]],
+    [{n: -0.0000000001}, [{op: "lt0"}, {op: "lte0"}]],
+  ],
+}
+
+{
+  name: "comparisons: `!=` excludes one value and matches null and other types",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["!= 0", "'nonzero'"],
+        ["", "'zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, {r: "zero"}],
+    [{n: 0.00}, {r: "zero"}],
+    [{n: 1}, {r: "nonzero"}],
+    [{n: -1}, {r: "nonzero"}],
+    [{n: null}, {r: "nonzero"}],
+    [{}, {r: "nonzero"}],
+    [{n: "0"}, {r: "nonzero"}],
+    [{n: false}, {r: "nonzero"}],
+  ],
+}
+
+{
+  name: "comparisons: two comparisons combined into one cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 0 and < 10", "'single digit'"],
+        ["< 0 or > 100", "'out of range'"],
+        [">= 10 and != 50", "'tens'"],
+        ["", "'fifty or edge'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5}, {r: "single digit"}],
+    [{n: 0}, {r: "fifty or edge"}],
+    [{n: 10}, {r: "tens"}],
+    [{n: 50}, {r: "fifty or edge"}],
+    [{n: 101}, {r: "out of range"}],
+    [{n: -1}, {r: "out of range"}],
+    [{n: 100}, {r: "tens"}],
+  ],
+}
+
+{
+  name: "comparisons: comma list of comparisons and intervals",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["< 0, [10..20], > 100", "'flagged'"],
+        ["", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: -5}, {r: "flagged"}],
+    [{n: 0}, {r: "ok"}],
+    [{n: 10}, {r: "flagged"}],
+    [{n: 20}, {r: "flagged"}],
+    [{n: 20.5}, {r: "ok"}],
+    [{n: 100}, {r: "ok"}],
+    [{n: 100.01}, {r: "flagged"}],
+  ],
+}
+
+{
+  name: "comparisons: bounds read from other input fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["value"], outputs: ["r"], rules: [
+        ["< limits.min", "'below'"],
+        ["[limits.min..limits.max]", "'within'"],
+        ["> limits.max", "'above'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{value: 5, limits: {min: 1, max: 10}}, {r: "within"}],
+    [{value: 1, limits: {min: 1, max: 10}}, {r: "within"}],
+    [{value: 0, limits: {min: 1, max: 10}}, {r: "below"}],
+    [{value: 11, limits: {min: 1, max: 10}}, {r: "above"}],
+    [{value: 5, limits: {min: 1}}, {r: "unknown"}],
+    [{value: 5}, {r: "unknown"}],
+    [{value: 5, limits: {min: 10, max: 1}}, {r: "below"}],
+  ],
+}
+
+// --- Overlapping rules ---------------------------------------------------------------------
+
+{
+  name: "overlap: nested ranges, most specific last loses under first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["[0..100]", "'wide'"],
+        ["[40..60]", "'narrow'"],
+        ["50", "'exact'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 50}, {r: "wide"}],
+    [{n: 45}, {r: "wide"}],
+    [{n: 101}, {}],
+  ],
+}
+
+{
+  name: "overlap: nested ranges, collect returns every containing band",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["[0..100]", "'wide'"],
+        ["[40..60]", "'narrow'"],
+        ["50", "'exact'"],
+        ["> 55", "'upper'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 50}, [{r: "wide"}, {r: "narrow"}, {r: "exact"}]],
+    [{n: 58}, [{r: "wide"}, {r: "narrow"}, {r: "upper"}]],
+    [{n: 70}, [{r: "wide"}, {r: "upper"}]],
+    [{n: 200}, [{r: "upper"}]],
+    [{n: -1}, []],
+  ],
+}
+
+{
+  name: "overlap: two numeric columns, each rule a rectangle",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x", "y"], outputs: ["zone"], rules: [
+        ["[0..10]", "[0..10]", "'A'"],
+        ["[5..15]", "[5..15]", "'B'"],
+        ["[0..15]", "> 10", "'C'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 2, y: 2}, [{zone: "A"}]],
+    [{x: 7, y: 7}, [{zone: "A"}, {zone: "B"}]],
+    [{x: 7, y: 12}, [{zone: "B"}, {zone: "C"}]],
+    [{x: 12, y: 2}, []],
+    [{x: 10, y: 10}, [{zone: "A"}, {zone: "B"}]],
+    [{x: 15, y: 15}, [{zone: "B"}, {zone: "C"}]],
+    [{x: 7}, []],
+  ],
+}
+
+{
+  name: "overlap: a per-column `[]` output collects every containing band",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age"], outputs: ["primary", "tags[]"], rules: [
+        ["< 13", "'child'", "'minor'"],
+        ["[13..17]", "'teen'", "'minor'"],
+        ["[16..25]", "'young'", "'student-eligible'"],
+        [">= 18", "'adult'", "'can-vote'"],
+        [">= 65", "'senior'", "'discount'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 10}, {primary: "child", tags: ["minor"]}],
+    [{age: 16}, {primary: "teen", tags: ["minor", "student-eligible"]}],
+    [{age: 18}, {primary: "young", tags: ["student-eligible", "can-vote"]}],
+    [{age: 40}, {primary: "adult", tags: ["can-vote"]}],
+    [{age: 70}, {primary: "adult", tags: ["can-vote", "discount"]}],
+  ],
+}
+
+// --- Indexed tables (8+ rules) ------------------------------------------------------------
+
+{
+  name: "indexed: point cells mixed with ranges keep first-hit order",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["[100..199]", "'1xx'"],
+        ["200", "'ok'"],
+        ["201, 202", "'created or accepted'"],
+        ["[200..299]", "'2xx'"],
+        ["301, 302, 307, 308", "'redirect'"],
+        ["404", "'not found'"],
+        ["[400..499]", "'client error'"],
+        ["[500..599]", "'server error'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: 100}, {r: "1xx"}],
+    [{code: 200}, {r: "ok"}],
+    [{code: 200.0}, {r: "ok"}],
+    [{code: 202}, {r: "created or accepted"}],
+    [{code: 204}, {r: "2xx"}],
+    [{code: 307}, {r: "redirect"}],
+    [{code: 303}, {r: "unknown"}],
+    [{code: 404}, {r: "not found"}],
+    [{code: 418}, {r: "client error"}],
+    [{code: 503}, {r: "server error"}],
+    [{code: 600}, {r: "unknown"}],
+    [{code: "200"}, {r: "unknown"}],
+    [{code: null}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "indexed: a range rule placed before a point rule still wins",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["1", "'one'"],
+        ["2", "'two'"],
+        ["3", "'three'"],
+        ["[4..6]", "'four to six'"],
+        ["5", "'five'"],
+        ["6", "'six'"],
+        ["7", "'seven'"],
+        ["> 7", "'big'"],
+        ["8", "'eight'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: "one"}],
+    [{n: 3}, {r: "three"}],
+    [{n: 5}, {r: "four to six"}],
+    [{n: 6}, {r: "four to six"}],
+    [{n: 7}, {r: "seven"}],
+    [{n: 8}, {r: "big"}],
+    [{n: 0}, {}],
+    [{n: 4.5}, {r: "four to six"}],
+  ],
+}
+
+{
+  name: "indexed: collect over points, ranges and comparisons",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["0", "'zero'"],
+        ["!= 0", "'nonzero'"],
+        ["< 0", "'negative'"],
+        ["1, 3, 5, 7, 9", "'odd digit'"],
+        ["0, 2, 4, 6, 8", "'even digit'"],
+        ["[0..9]", "'digit'"],
+        ["(9..99]", "'two digits'"],
+        ["-1", "'minus one'"],
+        ["10.5", "'ten and a half'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, [{r: "zero"}, {r: "even digit"}, {r: "digit"}]],
+    [{n: 3}, [{r: "nonzero"}, {r: "odd digit"}, {r: "digit"}]],
+    [{n: 3.0}, [{r: "nonzero"}, {r: "odd digit"}, {r: "digit"}]],
+    [{n: -1}, [{r: "nonzero"}, {r: "negative"}, {r: "minus one"}]],
+    [{n: 10.5}, [{r: "nonzero"}, {r: "two digits"}, {r: "ten and a half"}]],
+    [{n: 10.50}, [{r: "nonzero"}, {r: "two digits"}, {r: "ten and a half"}]],
+    [{n: 100}, [{r: "nonzero"}]],
+    [{n: null}, [{r: "nonzero"}]],
+    [{n: "3"}, [{r: "nonzero"}]],
+  ],
+}
+
+{
+  name: "indexed: two numeric columns, one point-indexed and one ranged",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["zone", "weight"], outputs: ["price"], rules: [
+        ["1", "< 1", "5"],
+        ["1", "[1..10)", "8"],
+        ["1", ">= 10", "12"],
+        ["2", "< 1", "6"],
+        ["2", "[1..10)", "10"],
+        ["2", ">= 10", "15"],
+        ["3, 4", "< 5", "9"],
+        ["3, 4", ">= 5", "20"],
+        ["", "", "99"],
+      ]},
+    ],
+  },
+  cases: [
+    [{zone: 1, weight: 0.5}, {price: 5}],
+    [{zone: 1, weight: 1}, {price: 8}],
+    [{zone: 1, weight: 10}, {price: 12}],
+    [{zone: 2, weight: 9.99}, {price: 10}],
+    [{zone: 2, weight: 10}, {price: 15}],
+    [{zone: 3, weight: 4.999}, {price: 9}],
+    [{zone: 4, weight: 5}, {price: 20}],
+    [{zone: 5, weight: 1}, {price: 99}],
+    [{zone: 1}, {price: 99}],
+    [{zone: "1", weight: 1}, {price: 99}],
+  ],
+}
+
+{
+  name: "indexed: decimal point cells normalise their scale",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["rate"], outputs: ["r"], rules: [
+        ["0.5", "'half'"],
+        ["0.25", "'quarter'"],
+        ["0.125", "'eighth'"],
+        ["1.0", "'one'"],
+        ["1.50", "'one and a half'"],
+        ["2", "'two'"],
+        ["2.5, 3.5", "'odd halves'"],
+        ["100.00", "'hundred'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{rate: 0.5}, {r: "half"}],
+    [{rate: 0.50}, {r: "half"}],
+    [{rate: 0.125}, {r: "eighth"}],
+    [{rate: 1}, {r: "one"}],
+    [{rate: 1.5}, {r: "one and a half"}],
+    [{rate: 2.000}, {r: "two"}],
+    [{rate: 3.5}, {r: "odd halves"}],
+    [{rate: 100}, {r: "hundred"}],
+    [{rate: 0.1250001}, {r: "other"}],
+  ],
+}
+
+{
+  name: "indexed: negative point cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["delta"], outputs: ["r"], rules: [
+        ["-3", "'m3'"],
+        ["-2", "'m2'"],
+        ["-1", "'m1'"],
+        ["0", "'zero'"],
+        ["1", "'p1'"],
+        ["2", "'p2'"],
+        ["3", "'p3'"],
+        ["< -3", "'very negative'"],
+        ["", "'very positive'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{delta: -3}, {r: "m3"}],
+    [{delta: -1.0}, {r: "m1"}],
+    [{delta: 0}, {r: "zero"}],
+    [{delta: -0}, {r: "zero"}],
+    [{delta: 2}, {r: "p2"}],
+    [{delta: -10}, {r: "very negative"}],
+    [{delta: 10}, {r: "very positive"}],
+    [{delta: -2.5}, {r: "very positive"}],
+  ],
+}
+
+// --- Numbers that arrive as strings ----------------------------------------------------------
+
+{
+  name: "strings as numbers: numeric cells do not coerce string inputs",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["5", "'eq'"],
+        ["> 1", "'gt'"],
+        ["[1..10]", "'range'"],
+        ["!= 5", "'ne'"],
+        ["'5'", "'string five'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5}, [{r: "eq"}, {r: "gt"}, {r: "range"}]],
+    [{n: "5"}, [{r: "ne"}, {r: "string five"}]],
+    [{n: "5.0"}, [{r: "ne"}]],
+    [{n: " 5"}, [{r: "ne"}]],
+    [{n: "abc"}, [{r: "ne"}]],
+  ],
+}
+
+{
+  name: "strings as numbers: number() in the input field converts before matching",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["number(n)"], outputs: ["r"], rules: [
+        ["< 0", "'negative'"],
+        ["[0..100]", "'percent'"],
+        ["> 100", "'over'"],
+        ["", "'not a number'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: "50"}, {r: "percent"}],
+    [{n: "-1.5"}, {r: "negative"}],
+    [{n: "100.0"}, {r: "percent"}],
+    [{n: "100.01"}, {r: "over"}],
+    [{n: 7}, {r: "percent"}],
+    [{n: "x"}, {r: "not a number"}],
+    [{n: null}, {r: "not a number"}],
+  ],
+}
+
+{
+  name: "strings as numbers: indexed point cells do not match numeric strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["1", "'n1'"],
+        ["2", "'n2'"],
+        ["3", "'n3'"],
+        ["4", "'n4'"],
+        ["'1'", "'s1'"],
+        ["'2'", "'s2'"],
+        ["'3'", "'s3'"],
+        ["'4'", "'s4'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: "n1"}],
+    [{n: "1"}, {r: "s1"}],
+    [{n: 4}, {r: "n4"}],
+    [{n: "4"}, {r: "s4"}],
+    [{n: "4.0"}, {r: "none"}],
+    [{n: 4.0}, {r: "n4"}],
+    [{n: true}, {r: "none"}],
+  ],
+}
+
+// --- Wrong types, null and missing against numeric cells ----------------------------------
+
+{
+  name: "types: non-numeric values fall through numeric bands to the catch-all",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["< 0", "'negative'"],
+        ["[0..10]", "'small'"],
+        ["> 10", "'large'"],
+        ["", "'not a number'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 3}, {r: "small"}],
+    [{n: null}, {r: "not a number"}],
+    [{}, {r: "not a number"}],
+    [{n: true}, {r: "not a number"}],
+    [{n: [3]}, {r: "not a number"}],
+    [{n: {v: 3}}, {r: "not a number"}],
+    [{n: "3"}, {r: "not a number"}],
+  ],
+}
+
+{
+  name: "types: a numeric band on a nested dotted field with missing parents",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["order.totals.net"], outputs: ["tier"], rules: [
+        ["[0..100)", "'small'"],
+        ["[100..1000)", "'medium'"],
+        [">= 1000", "'large'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {totals: {net: 99.99}}}, {tier: "small"}],
+    [{order: {totals: {net: 100}}}, {tier: "medium"}],
+    [{order: {totals: {net: 1000}}}, {tier: "large"}],
+    [{order: {totals: {}}}, {}],
+    [{order: {}}, {}],
+    [{}, {}],
+  ],
+}
+
+// --- Interactions with other nodes ----------------------------------------------------------
+
+{
+  name: "with nodes: bands applied to a value computed upstream",
+  graph: {
+    nodes: [
+      {expression: "bmi", passThrough: true, fields: {bmi: "round(weight / (height * height) * 10) / 10"}},
+      {table: "class", passThrough: true, inputs: ["bmi"], outputs: ["category"], rules: [
+        ["< 18.5", "'underweight'"],
+        ["[18.5..25)", "'normal'"],
+        ["[25..30)", "'overweight'"],
+        [">= 30", "'obese'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{weight: 70, height: 1.75}, {weight: 70, height: 1.75, bmi: 22.9, category: "normal"}],
+    [{weight: 50, height: 1.75}, {weight: 50, height: 1.75, bmi: 16.3, category: "underweight"}],
+    [{weight: 92, height: 1.75}, {weight: 92, height: 1.75, bmi: 30, category: "obese"}],
+    [{weight: 76.5625, height: 1.75}, {weight: 76.5625, height: 1.75, bmi: 25, category: "overweight"}],
+  ],
+}
+
+{
+  name: "with nodes: bands per element in loop mode",
+  graph: {
+    nodes: [
+      {table: "t", executionMode: "loop", inputField: "items", outputPath: "grades", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        ["[75..90)", "'B'"],
+        ["", "'C'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{score: 95}, {score: 75}, {score: 74.99}]}, {grades: [{grade: "A"}, {grade: "B"}, {grade: "C"}]}],
+    [{items: [{score: 90}, {}]}, {grades: [{grade: "A"}, {grade: "C"}]}],
+    [{items: []}, {grades: []}],
+  ],
+}
+
+{
+  name: "with nodes: tiered tax brackets feed an expression",
+  graph: {
+    nodes: [
+      {table: "bracket", passThrough: true, inputs: ["income"], outputs: ["rate", "base", "floor"], rules: [
+        ["[0..10000]", "0", "0", "0"],
+        ["(10000..40000]", "0.1", "0", "10000"],
+        ["(40000..90000]", "0.2", "3000", "40000"],
+        ["> 90000", "0.35", "13000", "90000"],
+      ]},
+      {expression: "tax", fields: {tax: "base + (income - floor) * rate"}},
+    ],
+  },
+  cases: [
+    [{income: 5000}, {tax: 0}],
+    [{income: 10000}, {tax: 0}],
+    [{income: 10001}, {tax: 0.1}],
+    [{income: 40000}, {tax: 3000}],
+    [{income: 90000}, {tax: 13000}],
+    [{income: 100000}, {tax: 16500}],
+  ],
+}

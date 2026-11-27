@@ -1,0 +1,398 @@
+expression (string);input (json 5);output (json 5);note
+# len: argument 1 is string | array
+# len (literal)
+len(null);;!error
+len(true);;!error
+len(false);;!error
+len(0);;!error
+len(-1);;!error
+len(1.5);;!error
+len(79228162514264337593543950335);;!error
+len('');;0
+len('abc');;3
+len('12.5');;4
+len('żółw');;4;bug: len counts UTF-8 bytes instead of characters
+len([]);;0
+len([1, 2]);;2
+len(['a']);;1
+len([[1]]);;1
+len({});;!error
+len({a: 1});;!error
+len(d('2024-01-01'));;20
+len([1..3]);;!error
+# len (input)
+len(x);{x: null};!error
+len(x);{x: true};!error
+len(x);{x: false};!error
+len(x);{x: 0};!error
+len(x);{x: -1};!error
+len(x);{x: 1.5};!error
+len(x);{x: 79228162514264337593543950335};!error
+len(x);{x: ''};0
+len(x);{x: 'abc'};3
+len(x);{x: '12.5'};4
+len(x);{x: 'żółw'};4;bug: len counts UTF-8 bytes instead of characters
+len(x);{x: []};0
+len(x);{x: [1, 2]};2
+len(x);{x: ['a']};1
+len(x);{x: [[1]]};1
+len(x);{x: {}};!error
+len(x);{x: {a: 1}};!error
+len(x);{};!error
+# contains: argument 1 is string | array (needle fixed to a string)
+# contains arg 1 (literal)
+contains(null, 'a');;!error
+contains(true, 'a');;!error
+contains(false, 'a');;!error
+contains(0, 'a');;!error
+contains(-1, 'a');;!error
+contains(1.5, 'a');;!error
+contains(79228162514264337593543950335, 'a');;!error
+contains('', 'a');;false
+contains('abc', 'a');;true
+contains('12.5', 'a');;false
+contains('żółw', 'a');;false
+contains([], 'a');;false
+contains([1, 2], 'a');;false
+contains(['a'], 'a');;true
+contains([[1]], 'a');;false
+contains({}, 'a');;!error
+contains({a: 1}, 'a');;!error
+contains(d('2024-01-01'), 'a');;false
+contains([1..3], 'a');;!error
+# contains arg 1 (input)
+contains(x, 'a');{x: null};!error
+contains(x, 'a');{x: true};!error
+contains(x, 'a');{x: false};!error
+contains(x, 'a');{x: 0};!error
+contains(x, 'a');{x: -1};!error
+contains(x, 'a');{x: 1.5};!error
+contains(x, 'a');{x: 79228162514264337593543950335};!error
+contains(x, 'a');{x: ''};false
+contains(x, 'a');{x: 'abc'};true
+contains(x, 'a');{x: '12.5'};false
+contains(x, 'a');{x: 'żółw'};false
+contains(x, 'a');{x: []};false
+contains(x, 'a');{x: [1, 2]};false
+contains(x, 'a');{x: ['a']};true
+contains(x, 'a');{x: [[1]]};false
+contains(x, 'a');{x: {}};!error
+contains(x, 'a');{x: {a: 1}};!error
+contains(x, 'a');{};!error
+# contains: argument 2 against an array haystack is any value
+# contains arg 2 array (literal)
+contains([0, 'abc', true, null], null);;true
+contains([0, 'abc', true, null], true);;true
+contains([0, 'abc', true, null], false);;false
+contains([0, 'abc', true, null], 0);;true
+contains([0, 'abc', true, null], -1);;false
+contains([0, 'abc', true, null], 1.5);;false
+contains([0, 'abc', true, null], 79228162514264337593543950335);;false
+contains([0, 'abc', true, null], '');;false
+contains([0, 'abc', true, null], 'abc');;true
+contains([0, 'abc', true, null], '12.5');;false
+contains([0, 'abc', true, null], 'żółw');;false
+contains([0, 'abc', true, null], []);;false
+contains([0, 'abc', true, null], [1, 2]);;false
+contains([0, 'abc', true, null], ['a']);;false
+contains([0, 'abc', true, null], [[1]]);;false
+contains([0, 'abc', true, null], {});;false
+contains([0, 'abc', true, null], {a: 1});;false
+contains([0, 'abc', true, null], d('2024-01-01'));;false
+contains([0, 'abc', true, null], [1..3]);;false
+# contains arg 2 array (input)
+contains([0, 'abc', true, null], x);{x: null};true
+contains([0, 'abc', true, null], x);{x: true};true
+contains([0, 'abc', true, null], x);{x: false};false
+contains([0, 'abc', true, null], x);{x: 0};true
+contains([0, 'abc', true, null], x);{x: -1};false
+contains([0, 'abc', true, null], x);{x: 1.5};false
+contains([0, 'abc', true, null], x);{x: 79228162514264337593543950335};false
+contains([0, 'abc', true, null], x);{x: ''};false
+contains([0, 'abc', true, null], x);{x: 'abc'};true
+contains([0, 'abc', true, null], x);{x: '12.5'};false
+contains([0, 'abc', true, null], x);{x: 'żółw'};false
+contains([0, 'abc', true, null], x);{x: []};false
+contains([0, 'abc', true, null], x);{x: [1, 2]};false
+contains([0, 'abc', true, null], x);{x: ['a']};false
+contains([0, 'abc', true, null], x);{x: [[1]]};false
+contains([0, 'abc', true, null], x);{x: {}};false
+contains([0, 'abc', true, null], x);{x: {a: 1}};false
+contains([0, 'abc', true, null], x);{};true
+# contains: argument 2 against a string haystack must be a string
+# contains arg 2 string (literal)
+contains('abc', null);;!error
+contains('abc', true);;!error
+contains('abc', false);;!error
+contains('abc', 0);;!error
+contains('abc', -1);;!error
+contains('abc', 1.5);;!error
+contains('abc', 79228162514264337593543950335);;!error
+contains('abc', '');;true
+contains('abc', 'abc');;true
+contains('abc', '12.5');;false
+contains('abc', 'żółw');;false
+contains('abc', []);;!error
+contains('abc', [1, 2]);;!error
+contains('abc', ['a']);;!error
+contains('abc', [[1]]);;!error
+contains('abc', {});;!error
+contains('abc', {a: 1});;!error
+contains('abc', d('2024-01-01'));;false
+contains('abc', [1..3]);;!error
+# contains arg 2 string (input)
+contains('abc', x);{x: null};!error
+contains('abc', x);{x: true};!error
+contains('abc', x);{x: false};!error
+contains('abc', x);{x: 0};!error
+contains('abc', x);{x: -1};!error
+contains('abc', x);{x: 1.5};!error
+contains('abc', x);{x: 79228162514264337593543950335};!error
+contains('abc', x);{x: ''};true
+contains('abc', x);{x: 'abc'};true
+contains('abc', x);{x: '12.5'};false
+contains('abc', x);{x: 'żółw'};false
+contains('abc', x);{x: []};!error
+contains('abc', x);{x: [1, 2]};!error
+contains('abc', x);{x: ['a']};!error
+contains('abc', x);{x: [[1]]};!error
+contains('abc', x);{x: {}};!error
+contains('abc', x);{x: {a: 1}};!error
+contains('abc', x);{};!error
+# contains: haystack and needle both from input
+contains(x, y);{x: 'abc', y: 'b'};true
+contains(x, y);{x: ['b'], y: 'b'};true
+contains(x, y);{x: [1, 2], y: 2};true
+contains(x, y);{x: 'abc', y: 2};!error
+contains(x, y);{x: 2, y: 2};!error
+contains(x, y);{x: null, y: null};!error
+contains(x, y);{x: [null]};true
+contains(x, y);{x: [], y: []};false
+contains(x, y);{y: 'a'};!error
+# flatten: argument 1 is array
+# flatten (literal)
+flatten(null);;!error
+flatten(true);;!error
+flatten(false);;!error
+flatten(0);;!error
+flatten(-1);;!error
+flatten(1.5);;!error
+flatten(79228162514264337593543950335);;!error
+flatten('');;!error
+flatten('abc');;!error
+flatten('12.5');;!error
+flatten('żółw');;!error
+flatten([]);;[]
+flatten([1, 2]);;[1, 2]
+flatten(['a']);;['a']
+flatten([[1]]);;[1]
+flatten({});;!error
+flatten({a: 1});;!error
+flatten(d('2024-01-01'));;!error
+flatten([1..3]);;!error
+# flatten (input)
+flatten(x);{x: null};!error
+flatten(x);{x: true};!error
+flatten(x);{x: false};!error
+flatten(x);{x: 0};!error
+flatten(x);{x: -1};!error
+flatten(x);{x: 1.5};!error
+flatten(x);{x: 79228162514264337593543950335};!error
+flatten(x);{x: ''};!error
+flatten(x);{x: 'abc'};!error
+flatten(x);{x: '12.5'};!error
+flatten(x);{x: 'żółw'};!error
+flatten(x);{x: []};[]
+flatten(x);{x: [1, 2]};[1, 2]
+flatten(x);{x: ['a']};['a']
+flatten(x);{x: [[1]]};[1]
+flatten(x);{x: {}};!error
+flatten(x);{x: {a: 1}};!error
+flatten(x);{};!error
+# flatten: element types
+flatten(x);{x: [null, [null]]};[null, null]
+flatten(x);{x: [{a: 1}, [{}]]};[{a: 1}, {}]
+flatten(x);{x: [[[1]], 'a']};[[1], 'a']
+flatten(x);{x: [[], [], []]};[]
+flatten(x);{x: [1, [2, [3]]]};[1, 2, [3]]
+# merge: argument 1 is array of arrays | array of objects
+# merge (literal)
+merge(null);;!error
+merge(true);;!error
+merge(false);;!error
+merge(0);;!error
+merge(-1);;!error
+merge(1.5);;!error
+merge(79228162514264337593543950335);;!error
+merge('');;!error
+merge('abc');;!error
+merge('12.5');;!error
+merge('żółw');;!error
+merge([]);;{};question: merge of an empty list gives an empty object although the array overload returns an array
+merge([1, 2]);;!error
+merge(['a']);;!error
+merge([[1]]);;[1]
+merge({});;!error
+merge({a: 1});;!error
+merge(d('2024-01-01'));;!error
+merge([1..3]);;!error
+# merge (input)
+merge(x);{x: null};!error
+merge(x);{x: true};!error
+merge(x);{x: false};!error
+merge(x);{x: 0};!error
+merge(x);{x: -1};!error
+merge(x);{x: 1.5};!error
+merge(x);{x: 79228162514264337593543950335};!error
+merge(x);{x: ''};!error
+merge(x);{x: 'abc'};!error
+merge(x);{x: '12.5'};!error
+merge(x);{x: 'żółw'};!error
+merge(x);{x: []};{};question: merge of an empty list gives an empty object although the array overload returns an array
+merge(x);{x: [1, 2]};!error
+merge(x);{x: ['a']};!error
+merge(x);{x: [[1]]};[1]
+merge(x);{x: {}};!error
+merge(x);{x: {a: 1}};!error
+merge(x);{};!error
+# merge: element types
+merge(x);{x: [{a: 1}, {b: 2}]};{a: 1, b: 2}
+merge(x);{x: [[1], [2, 3]]};[1, 2, 3]
+merge(x);{x: [null, {a: 1}]};{a: 1}
+merge(x);{x: [null, [1]]};[1]
+merge(x);{x: [null]};{}
+merge(x);{x: [{a: 1}, [1]]};!error
+merge(x);{x: [[1], {a: 1}]};!error
+merge(x);{x: [{a: 1}, 'x']};!error
+merge(x);{x: [1, [1]]};!error
+merge(x);{x: [true]};!error
+merge(x);{x: [[1], null, [2]]};[1, 2]
+# mergeDeep: argument 1 is array of objects
+# mergeDeep (literal)
+mergeDeep(null);;!error
+mergeDeep(true);;!error
+mergeDeep(false);;!error
+mergeDeep(0);;!error
+mergeDeep(-1);;!error
+mergeDeep(1.5);;!error
+mergeDeep(79228162514264337593543950335);;!error
+mergeDeep('');;!error
+mergeDeep('abc');;!error
+mergeDeep('12.5');;!error
+mergeDeep('żółw');;!error
+mergeDeep([]);;{}
+mergeDeep([1, 2]);;!error
+mergeDeep(['a']);;!error
+mergeDeep([[1]]);;!error
+mergeDeep({});;!error
+mergeDeep({a: 1});;!error
+mergeDeep(d('2024-01-01'));;!error
+mergeDeep([1..3]);;!error
+# mergeDeep (input)
+mergeDeep(x);{x: null};!error
+mergeDeep(x);{x: true};!error
+mergeDeep(x);{x: false};!error
+mergeDeep(x);{x: 0};!error
+mergeDeep(x);{x: -1};!error
+mergeDeep(x);{x: 1.5};!error
+mergeDeep(x);{x: 79228162514264337593543950335};!error
+mergeDeep(x);{x: ''};!error
+mergeDeep(x);{x: 'abc'};!error
+mergeDeep(x);{x: '12.5'};!error
+mergeDeep(x);{x: 'żółw'};!error
+mergeDeep(x);{x: []};{}
+mergeDeep(x);{x: [1, 2]};!error
+mergeDeep(x);{x: ['a']};!error
+mergeDeep(x);{x: [[1]]};!error
+mergeDeep(x);{x: {}};!error
+mergeDeep(x);{x: {a: 1}};!error
+mergeDeep(x);{};!error
+# mergeDeep: element types
+mergeDeep(x);{x: [{a: {b: 1}}, {a: {c: 2}}]};{a: {b: 1, c: 2}}
+mergeDeep(x);{x: [null, {a: 1}]};{a: 1}
+mergeDeep(x);{x: [null]};{}
+mergeDeep(x);{x: [[1]]};!error
+mergeDeep(x);{x: [{a: 1}, 1]};!error
+mergeDeep(x);{x: ['a']};!error
+mergeDeep(x);{x: [{a: [1]}, {a: [2]}]};{a: [1, 2]}
+mergeDeep(x);{x: [{a: 1}, {a: null}]};{a: null}
+# keys: argument 1 is object | array
+# keys (literal)
+keys(null);;!error
+keys(true);;!error
+keys(false);;!error
+keys(0);;!error
+keys(-1);;!error
+keys(1.5);;!error
+keys(79228162514264337593543950335);;!error
+keys('');;!error
+keys('abc');;!error
+keys('12.5');;!error
+keys('żółw');;!error
+keys([]);;[]
+keys([1, 2]);;[0, 1]
+keys(['a']);;[0]
+keys([[1]]);;[0]
+keys({});;[]
+keys({a: 1});;['a']
+keys(d('2024-01-01'));;!error
+keys([1..3]);;!error
+# keys (input)
+keys(x);{x: null};!error
+keys(x);{x: true};!error
+keys(x);{x: false};!error
+keys(x);{x: 0};!error
+keys(x);{x: -1};!error
+keys(x);{x: 1.5};!error
+keys(x);{x: 79228162514264337593543950335};!error
+keys(x);{x: ''};!error
+keys(x);{x: 'abc'};!error
+keys(x);{x: '12.5'};!error
+keys(x);{x: 'żółw'};!error
+keys(x);{x: []};[]
+keys(x);{x: [1, 2]};[0, 1]
+keys(x);{x: ['a']};[0]
+keys(x);{x: [[1]]};[0]
+keys(x);{x: {}};[]
+keys(x);{x: {a: 1}};['a']
+keys(x);{};!error
+# values: argument 1 is object
+# values (literal)
+values(null);;!error
+values(true);;!error
+values(false);;!error
+values(0);;!error
+values(-1);;!error
+values(1.5);;!error
+values(79228162514264337593543950335);;!error
+values('');;!error
+values('abc');;!error
+values('12.5');;!error
+values('żółw');;!error
+values([]);;!error;question: keys() accepts arrays but values() rejects them
+values([1, 2]);;!error;question: keys() accepts arrays but values() rejects them
+values(['a']);;!error;question: keys() accepts arrays but values() rejects them
+values([[1]]);;!error;question: keys() accepts arrays but values() rejects them
+values({});;[]
+values({a: 1});;[1]
+values(d('2024-01-01'));;!error
+values([1..3]);;!error
+# values (input)
+values(x);{x: null};!error
+values(x);{x: true};!error
+values(x);{x: false};!error
+values(x);{x: 0};!error
+values(x);{x: -1};!error
+values(x);{x: 1.5};!error
+values(x);{x: 79228162514264337593543950335};!error
+values(x);{x: ''};!error
+values(x);{x: 'abc'};!error
+values(x);{x: '12.5'};!error
+values(x);{x: 'żółw'};!error
+values(x);{x: []};!error;question: keys() accepts arrays but values() rejects them
+values(x);{x: [1, 2]};!error;question: keys() accepts arrays but values() rejects them
+values(x);{x: ['a']};!error;question: keys() accepts arrays but values() rejects them
+values(x);{x: [[1]]};!error;question: keys() accepts arrays but values() rejects them
+values(x);{x: {}};[]
+values(x);{x: {a: 1}};[1]
+values(x);{};!error

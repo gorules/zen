@@ -1,0 +1,698 @@
+// Realistic know-your-customer policies: document checks, individual risk scoring, sanctions and
+// PEP screening, business ownership (KYB), country profiles by reference, transaction monitoring,
+// goals and dictionaries. Each suite combines several block kinds over related entities and runs
+// valid, boundary, missing and invalid data. Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Identity documents ------------------------------------------------------------------------
+// Per-document computeds (expiry, identity kind, usability assertion) feed customer aggregates and
+// a status match. A document without an expiry never expires; a member missing `verified` reads
+// null and the assertion counts it as false.
+
+{
+  name: "kyc document checks",
+  policy: {
+    models: {
+      customer: {country: "string", documents: "document[]"},
+      document: {kind: "string(passport|idcard|license|utility)", expires: "date?", verified: "boolean", issuer: "string"},
+    },
+    blocks: [
+      {expression: "document.expired", value: "(document.expires ?? d('9999-12-31')) < d()"},
+      {expression: "document.identity", value: "document.kind != 'utility'"},
+      {assertion: "document.usable", conditions: ["document.verified", "not document.expired"]},
+      {expression: "customer.validIds", value: "count(customer.documents, #.usable and #.identity)"},
+      {expression: "customer.addressProof", value: "some(customer.documents, #.kind == 'utility' and #.usable)"},
+      {expression: "customer.foreignDocs", value: "count(customer.documents, #.issuer != customer.country)"},
+      {match: "customer.docStatus", arms: [
+        ["len(customer.documents) == 0", "'none'"],
+        ["customer.validIds > 0 and customer.addressProof", "'complete'"],
+        ["customer.validIds > 0", "'address-missing'"],
+        ["", "'id-missing'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {country: "NO", documents: [{kind: "passport", expires: "2030-01-01", verified: true, issuer: "NO"}, {kind: "utility", verified: true, issuer: "NO"}]}},
+      {customer: {country: "NO", validIds: 1, addressProof: true, foreignDocs: 0, docStatus: "complete", documents: [
+        {kind: "passport", expires: "2030-01-01", verified: true, issuer: "NO", expired: false, identity: true, usable: true},
+        {kind: "utility", verified: true, issuer: "NO", expired: false, identity: false, usable: true},
+      ]}},
+    ],
+    [
+      {customer: {country: "NO", documents: [{kind: "passport", expires: "2025-03-19", verified: true, issuer: "NO"}]}},
+      {customer: {country: "NO", validIds: 0, addressProof: false, foreignDocs: 0, docStatus: "id-missing", documents: [
+        {kind: "passport", expires: "2025-03-19", verified: true, issuer: "NO", expired: true, identity: true, usable: false},
+      ]}},
+    ],
+    // Expiry boundary: a date-only expiry is midnight, so today's date is already expired.
+    [
+      {customer: {country: "NO", documents: [{kind: "idcard", expires: "2025-03-20", verified: true, issuer: "NO"}, {kind: "license", expires: "2025-03-21", verified: true, issuer: "SE"}]}},
+      {customer: {country: "NO", validIds: 1, addressProof: false, foreignDocs: 1, docStatus: "address-missing", documents: [
+        {kind: "idcard", expires: "2025-03-20", verified: true, issuer: "NO", expired: true, identity: true, usable: false},
+        {kind: "license", expires: "2025-03-21", verified: true, issuer: "SE", expired: false, identity: true, usable: true},
+      ]}},
+    ],
+    [
+      {customer: {country: "NO", documents: [{kind: "passport", expires: "2025-03-20T10:15:31Z", verified: true, issuer: "NO"}]}},
+      {customer: {country: "NO", validIds: 1, addressProof: false, foreignDocs: 0, docStatus: "address-missing", documents: [
+        {kind: "passport", expires: "2025-03-20T10:15:31Z", verified: true, issuer: "NO", expired: false, identity: true, usable: true},
+      ]}},
+    ],
+    [{customer: {country: "SE", documents: []}}, {customer: {country: "SE", documents: [], validIds: 0, addressProof: false, foreignDocs: 0, docStatus: "none"}}],
+    [
+      {customer: {country: "DE", documents: [{kind: "passport", expires: "2031-01-01", verified: false, issuer: "DE"}, {kind: "utility", verified: true, issuer: "DE"}]}},
+      {customer: {country: "DE", validIds: 0, addressProof: true, foreignDocs: 0, docStatus: "id-missing", documents: [
+        {kind: "passport", expires: "2031-01-01", verified: false, issuer: "DE", expired: false, identity: true, usable: false},
+        {kind: "utility", verified: true, issuer: "DE", expired: false, identity: false, usable: true},
+      ]}},
+    ],
+    [
+      {customer: {country: "DE", documents: [{kind: "passport", expires: null, verified: true, issuer: "FR"}]}},
+      {customer: {country: "DE", validIds: 1, addressProof: false, foreignDocs: 1, docStatus: "address-missing", documents: [
+        {kind: "passport", expires: null, verified: true, issuer: "FR", expired: false, identity: true, usable: true},
+      ]}},
+    ],
+    [
+      {customer: {country: "NO", documents: [
+        {kind: "passport", expires: "2029-01-01", verified: true, issuer: "NO"},
+        {kind: "passport", expires: "2028-01-01", verified: true, issuer: "GB"},
+        {kind: "utility", expires: "2025-01-01", verified: true, issuer: "NO"},
+      ]}},
+      {customer: {country: "NO", validIds: 2, addressProof: false, foreignDocs: 1, docStatus: "address-missing", documents: [
+        {kind: "passport", expires: "2029-01-01", verified: true, issuer: "NO", expired: false, identity: true, usable: true},
+        {kind: "passport", expires: "2028-01-01", verified: true, issuer: "GB", expired: false, identity: true, usable: true},
+        {kind: "utility", expires: "2025-01-01", verified: true, issuer: "NO", expired: true, identity: false, usable: false},
+      ]}},
+    ],
+    [
+      {customer: {country: "NO", documents: [{kind: "passport", expires: "2030-01-01", issuer: "NO"}]}},
+      {customer: {country: "NO", validIds: 0, addressProof: false, foreignDocs: 0, docStatus: "id-missing", documents: [
+        {kind: "passport", expires: "2030-01-01", issuer: "NO", expired: false, identity: true, usable: false},
+      ]}},
+    ],
+    [{customer: {country: "NO", documents: [{kind: "selfie", verified: true, issuer: "NO"}]}}, "!error: InputValidationFailed"],
+    [{customer: {country: "NO", documents: [{kind: "passport", expires: "31/12/2030", verified: true, issuer: "NO"}]}}, "!error: InputValidationFailed"],
+    [{customer: {country: "NO", documents: [{kind: "passport", verified: "yes", issuer: "NO"}]}}, "!error: InputValidationFailed"],
+    [{customer: {country: "NO"}}, "!error: MissingRequiredInputs"],
+    [{customer: {documents: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// The natural guard `expires != null and expires < d()` is rejected by the type checker: the
+// `!= null` test does not narrow the optional date for the right operand. The workspace path
+// still evaluates it correctly.
+{
+  name: "null-guarded optional expiry",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {documents: "document[]"}, document: {expires: "date?"}},
+    blocks: [
+      {expression: "document.expired", value: "document.expires != null and document.expires < d()"},
+      {expression: "customer.anyExpired", value: "some(customer.documents, #.expired)"},
+    ],
+  },
+  cases: [
+    {
+      input: {customer: {documents: [{expires: "2020-01-01"}, {expires: null}, {}]}},
+      output: {customer: {anyExpired: true, documents: [{expires: "2020-01-01", expired: true}, {expires: null, expired: false}, {expired: false}]}},
+      note: "question: `x != null and x < d()` is a TYPE_MISMATCH error, so DecisionEngine refuses the policy; the left operand guards the right one, so narrowing looks intended",
+    },
+    [{customer: {documents: [{expires: "2030-01-01"}]}}, {customer: {anyExpired: false, documents: [{expires: "2030-01-01", expired: false}]}}],
+    [{customer: {documents: []}}, {customer: {anyExpired: false, documents: []}}],
+  ],
+}
+
+// --- Individual risk scoring ---------------------------------------------------------------------
+// Country risk from a table with list cells, occupation risk from a match, volume points from a
+// nested conditional, an optional cash share defaulted with `??`, then a tier match, a review
+// table with two scalar outputs and an onboarding assertion.
+
+{
+  name: "individual risk scoring",
+  policy: {
+    models: {
+      customer: {dob: "date", country: "string", pep: "boolean", occupation: "string(salaried|self|student|retired|cash)", monthlyVolume: "number", cashShare: "number?"},
+    },
+    blocks: [
+      {expression: "customer.age", value: "d().diff(customer.dob, 'year')"},
+      {table: "countryRisk", inputs: ["customer.country"], outputs: ["customer.countryRisk"], rules: [
+        ["'NO', 'SE', 'DK', 'FI'", "1"],
+        ["'DE', 'FR', 'NL', 'GB'", "2"],
+        ["'IR', 'KP', 'SY'", "10"],
+        ["", "5"],
+      ]},
+      {match: "customer.occupationRisk", arms: [
+        ["customer.occupation == 'cash'", "4"],
+        ["customer.occupation == 'self'", "2"],
+        ["customer.occupation == 'student'", "1"],
+        ["", "0"],
+      ]},
+      {expression: "customer.volumePoints", value: "customer.monthlyVolume > 50000 ? 15 : customer.monthlyVolume > 10000 ? 5 : 0"},
+      {expression: "customer.score", value: "customer.countryRisk * 5 + customer.occupationRisk * 5 + (customer.pep ? 30 : 0) + customer.volumePoints + ((customer.cashShare ?? 0) > 0.5 ? 10 : 0) + (customer.age < 21 ? 5 : 0)"},
+      {match: "customer.riskTier", arms: [
+        ["customer.countryRisk >= 10", "'prohibited'"],
+        ["customer.score >= 50", "'high'"],
+        ["customer.score >= 25", "'medium'"],
+        ["", "'low'"],
+      ]},
+      {table: "review", inputs: ["customer.riskTier"], outputs: ["customer.reviewMonths", "customer.edd"], rules: [
+        ["'prohibited'", "0", "true"],
+        ["'high'", "12", "true"],
+        ["'medium'", "24", "false"],
+        ["'low'", "36", "false"],
+      ]},
+      {assertion: "customer.onboard", conditions: ["customer.age >= 18", "customer.riskTier != 'prohibited'"]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {dob: "1985-06-15", country: "NO", pep: false, occupation: "salaried", monthlyVolume: 3000}},
+      {customer: {dob: "1985-06-15", country: "NO", pep: false, occupation: "salaried", monthlyVolume: 3000, age: 39, countryRisk: 1, occupationRisk: 0, volumePoints: 0, score: 5, riskTier: "low", reviewMonths: 36, edd: false, onboard: true}},
+    ],
+    [
+      {customer: {dob: "2005-01-01", country: "SE", pep: false, occupation: "student", monthlyVolume: 12000, cashShare: 0.2}},
+      {customer: {dob: "2005-01-01", country: "SE", pep: false, occupation: "student", monthlyVolume: 12000, cashShare: 0.2, age: 20, countryRisk: 1, occupationRisk: 1, volumePoints: 5, score: 20, riskTier: "low", reviewMonths: 36, edd: false, onboard: true}},
+    ],
+    [
+      {customer: {dob: "1970-03-20", country: "DE", pep: true, occupation: "self", monthlyVolume: 60000, cashShare: 0.6}},
+      {customer: {dob: "1970-03-20", country: "DE", pep: true, occupation: "self", monthlyVolume: 60000, cashShare: 0.6, age: 55, countryRisk: 2, occupationRisk: 2, volumePoints: 15, score: 75, riskTier: "high", reviewMonths: 12, edd: true, onboard: true}},
+    ],
+    [
+      {customer: {dob: "1990-01-01", country: "IR", pep: false, occupation: "salaried", monthlyVolume: 100}},
+      {customer: {dob: "1990-01-01", country: "IR", pep: false, occupation: "salaried", monthlyVolume: 100, age: 35, countryRisk: 10, occupationRisk: 0, volumePoints: 0, score: 50, riskTier: "prohibited", reviewMonths: 0, edd: true, onboard: false}},
+    ],
+    [
+      {customer: {dob: "2008-01-01", country: "NO", pep: false, occupation: "salaried", monthlyVolume: 0}},
+      {customer: {dob: "2008-01-01", country: "NO", pep: false, occupation: "salaried", monthlyVolume: 0, age: 17, countryRisk: 1, occupationRisk: 0, volumePoints: 0, score: 10, riskTier: "low", reviewMonths: 36, edd: false, onboard: false}},
+    ],
+    [
+      {customer: {dob: "1980-01-01", country: "US", pep: false, occupation: "cash", monthlyVolume: 20000, cashShare: null}},
+      {customer: {dob: "1980-01-01", country: "US", pep: false, occupation: "cash", monthlyVolume: 20000, cashShare: null, age: 45, countryRisk: 5, occupationRisk: 4, volumePoints: 5, score: 50, riskTier: "high", reviewMonths: 12, edd: true, onboard: true}},
+    ],
+    // Strict thresholds: 10000 earns no volume points and a cash share of exactly 0.5 none either.
+    [
+      {customer: {dob: "1980-01-01", country: "BR", pep: false, occupation: "salaried", monthlyVolume: 10000, cashShare: 0.5}},
+      {customer: {dob: "1980-01-01", country: "BR", pep: false, occupation: "salaried", monthlyVolume: 10000, cashShare: 0.5, age: 45, countryRisk: 5, occupationRisk: 0, volumePoints: 0, score: 25, riskTier: "medium", reviewMonths: 24, edd: false, onboard: true}},
+    ],
+    [
+      {customer: {dob: "1960-01-01", country: "FR", pep: true, occupation: "retired", monthlyVolume: 50000}},
+      {customer: {dob: "1960-01-01", country: "FR", pep: true, occupation: "retired", monthlyVolume: 50000, age: 65, countryRisk: 2, occupationRisk: 0, volumePoints: 5, score: 45, riskTier: "medium", reviewMonths: 24, edd: false, onboard: true}},
+    ],
+    // Country codes are case-sensitive: `kp` falls to the default row.
+    [
+      {customer: {dob: "1999-03-21", country: "kp", pep: false, occupation: "salaried", monthlyVolume: -5}},
+      {customer: {dob: "1999-03-21", country: "kp", pep: false, occupation: "salaried", monthlyVolume: -5, age: 25, countryRisk: 5, occupationRisk: 0, volumePoints: 0, score: 25, riskTier: "medium", reviewMonths: 24, edd: false, onboard: true}},
+    ],
+    [
+      {customer: {dob: "2004-03-21", country: "SE", pep: false, occupation: "salaried", monthlyVolume: 0}},
+      {customer: {dob: "2004-03-21", country: "SE", pep: false, occupation: "salaried", monthlyVolume: 0, age: 20, countryRisk: 1, occupationRisk: 0, volumePoints: 0, score: 10, riskTier: "low", reviewMonths: 36, edd: false, onboard: true}},
+    ],
+    [{customer: {dob: "1980-01-01", country: "NO", pep: false, occupation: "banker", monthlyVolume: 0}}, "!error: InputValidationFailed"],
+    [{customer: {dob: "1980-01-01", country: "NO", occupation: "salaried", monthlyVolume: 0}}, "!error: MissingRequiredInputs"],
+    [{customer: {dob: "1980-01-01", country: "NO", pep: false, occupation: "salaried", monthlyVolume: 0, cashShare: "high"}}, "!error: InputValidationFailed"],
+    [{customer: {dob: "1980-01-01", country: "NO", pep: null, occupation: "salaried", monthlyVolume: 0}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Sanctions and PEP screening -----------------------------------------------------------------
+// Screening hits are members: a per-hit match grades the hit (an optional date-of-birth match
+// lifts a near-certain hit to exact), a per-hit flag marks relevant ones, customer aggregates
+// count them, a first-hit table with a `[]` column collects every applicable flag, and a final
+// match routes the case.
+
+{
+  name: "sanctions and pep screening",
+  policy: {
+    models: {
+      customer: {name: "string", pep: "boolean", hits: "hit[]"},
+      hit: {list: "string(OFAC|EU|UN|PEP|MEDIA)", score: "number", dobMatch: "boolean?"},
+    },
+    blocks: [
+      {match: "hit.strength", arms: [
+        ["hit.score >= 0.95 and (hit.dobMatch ?? false)", "'exact'"],
+        ["hit.score >= 0.85", "'strong'"],
+        ["hit.score >= 0.7", "'weak'"],
+        ["", "'noise'"],
+      ]},
+      {expression: "hit.relevant", value: "hit.strength in ['exact', 'strong']"},
+      {expression: "customer.sanctionHits", value: "count(customer.hits, #.relevant and #.list in ['OFAC', 'EU', 'UN'])"},
+      {expression: "customer.pepConfirmed", value: "customer.pep or some(customer.hits, #.list == 'PEP' and #.relevant)"},
+      {expression: "customer.adverseMedia", value: "count(customer.hits, #.list == 'MEDIA' and #.strength != 'noise')"},
+      {expression: "customer.weakHits", value: "count(customer.hits, #.strength == 'weak')"},
+      {table: "flags", inputs: ["customer.sanctionHits", "customer.pepConfirmed", "customer.adverseMedia"], outputs: ["customer.flags[]"], rules: [
+        ["> 0", "", "", "'sanctions'"],
+        ["", "true", "", "'pep'"],
+        ["", "", "> 0", "'adverse-media'"],
+      ]},
+      {match: "customer.screening", arms: [
+        ["customer.sanctionHits > 0", "'blocked'"],
+        ["customer.pepConfirmed or customer.adverseMedia > 0", "'edd'"],
+        ["customer.weakHits > 0", "'review'"],
+        ["", "'clear'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {name: "Kari", pep: false, hits: []}},
+      {customer: {name: "Kari", pep: false, hits: [], sanctionHits: 0, pepConfirmed: false, adverseMedia: 0, weakHits: 0, flags: [], screening: "clear"}},
+    ],
+    [
+      {customer: {name: "Ivan", pep: false, hits: [{list: "OFAC", score: 0.97, dobMatch: true}]}},
+      {customer: {name: "Ivan", pep: false, hits: [{list: "OFAC", score: 0.97, dobMatch: true, strength: "exact", relevant: true}], sanctionHits: 1, pepConfirmed: false, adverseMedia: 0, weakHits: 0, flags: ["sanctions"], screening: "blocked"}},
+    ],
+    [
+      {customer: {name: "Ivan", pep: false, hits: [{list: "OFAC", score: 0.97, dobMatch: false}]}},
+      {customer: {name: "Ivan", pep: false, hits: [{list: "OFAC", score: 0.97, dobMatch: false, strength: "strong", relevant: true}], sanctionHits: 1, pepConfirmed: false, adverseMedia: 0, weakHits: 0, flags: ["sanctions"], screening: "blocked"}},
+    ],
+    [
+      {customer: {name: "Eva", pep: false, hits: [{list: "EU", score: 0.8}]}},
+      {customer: {name: "Eva", pep: false, hits: [{list: "EU", score: 0.8, strength: "weak", relevant: false}], sanctionHits: 0, pepConfirmed: false, adverseMedia: 0, weakHits: 1, flags: [], screening: "review"}},
+    ],
+    [
+      {customer: {name: "Per", pep: false, hits: [{list: "PEP", score: 0.9}]}},
+      {customer: {name: "Per", pep: false, hits: [{list: "PEP", score: 0.9, strength: "strong", relevant: true}], sanctionHits: 0, pepConfirmed: true, adverseMedia: 0, weakHits: 0, flags: ["pep"], screening: "edd"}},
+    ],
+    [
+      {customer: {name: "Min", pep: true, hits: []}},
+      {customer: {name: "Min", pep: true, hits: [], sanctionHits: 0, pepConfirmed: true, adverseMedia: 0, weakHits: 0, flags: ["pep"], screening: "edd"}},
+    ],
+    [
+      {customer: {name: "Ola", pep: false, hits: [{list: "MEDIA", score: 0.72}, {list: "UN", score: 0.5}]}},
+      {customer: {name: "Ola", pep: false, hits: [{list: "MEDIA", score: 0.72, strength: "weak", relevant: false}, {list: "UN", score: 0.5, strength: "noise", relevant: false}], sanctionHits: 0, pepConfirmed: false, adverseMedia: 1, weakHits: 1, flags: ["adverse-media"], screening: "edd"}},
+    ],
+    // A null date-of-birth match defaults to false: 0.95 is only strong. Every flag is collected.
+    [
+      {customer: {name: "Ana", pep: false, hits: [{list: "OFAC", score: 0.95, dobMatch: null}, {list: "PEP", score: 0.99, dobMatch: true}, {list: "MEDIA", score: 0.69}, {list: "MEDIA", score: 1}]}},
+      {customer: {name: "Ana", pep: false, hits: [
+        {list: "OFAC", score: 0.95, dobMatch: null, strength: "strong", relevant: true},
+        {list: "PEP", score: 0.99, dobMatch: true, strength: "exact", relevant: true},
+        {list: "MEDIA", score: 0.69, strength: "noise", relevant: false},
+        {list: "MEDIA", score: 1, strength: "strong", relevant: true},
+      ], sanctionHits: 1, pepConfirmed: true, adverseMedia: 1, weakHits: 0, flags: ["sanctions", "pep", "adverse-media"], screening: "blocked"}},
+    ],
+    [
+      {customer: {name: "Bo", pep: false, hits: [{list: "UN", score: 0.85}, {list: "EU", score: 0.8499}]}},
+      {customer: {name: "Bo", pep: false, hits: [{list: "UN", score: 0.85, strength: "strong", relevant: true}, {list: "EU", score: 0.8499, strength: "weak", relevant: false}], sanctionHits: 1, pepConfirmed: false, adverseMedia: 0, weakHits: 1, flags: ["sanctions"], screening: "blocked"}},
+    ],
+    [
+      {customer: {name: "Bo", pep: false, hits: [{list: "EU", score: 0.7}, {list: "PEP", score: 0.6999}]}},
+      {customer: {name: "Bo", pep: false, hits: [{list: "EU", score: 0.7, strength: "weak", relevant: false}, {list: "PEP", score: 0.6999, strength: "noise", relevant: false}], sanctionHits: 0, pepConfirmed: false, adverseMedia: 0, weakHits: 1, flags: [], screening: "review"}},
+    ],
+    [{customer: {name: "X", pep: false, hits: [{list: "INTERPOL", score: 0.99}]}}, "!error: InputValidationFailed"],
+    [{customer: {name: "X", pep: false, hits: [{list: "EU", score: "0.9"}]}}, "!error: InputValidationFailed"],
+    [{customer: {name: "X", pep: false, hits: [{list: "EU"}]}}, "!error: ExpressionFailed"],
+    [{customer: {name: "X", pep: false}}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "X", hits: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Business ownership (KYB) --------------------------------------------------------------------
+// Owners are members: per-owner UBO and pending flags, business aggregates over computed member
+// properties, a reasons table collecting across three inputs (list cell over an enum), and a
+// decision match whose arms read member computeds through closures.
+
+{
+  name: "business kyb with beneficial owners",
+  policy: {
+    models: {
+      business: {name: "string", country: "string", incorporated: "date", structure: "string(simple|layered|trust)", owners: "owner[]"},
+      owner: {name: "string", share: "number", pep: "boolean", country: "string", verified: "boolean"},
+    },
+    blocks: [
+      {expression: "owner.ubo", value: "owner.share >= 25"},
+      {expression: "owner.pending", value: "owner.ubo and not owner.verified"},
+      {expression: "business.ubos", value: "map(filter(business.owners, #.ubo), #.name)"},
+      {expression: "business.declared", value: "sum(map(business.owners, #.share))"},
+      {expression: "business.yearsActive", value: "d().diff(business.incorporated, 'year')"},
+      {expression: "business.foreignUbo", value: "some(business.owners, #.ubo and #.country != business.country)"},
+      {expression: "business.pendingUbos", value: "count(business.owners, #.pending)"},
+      {table: "reasons", inputs: ["business.declared", "business.structure", "business.yearsActive"], outputs: ["business.reasons[]"], rules: [
+        ["< 75", "", "", "'ownership-incomplete'"],
+        ["> 100", "", "", "'ownership-overstated'"],
+        ["", "'trust', 'layered'", "", "'complex-structure'"],
+        ["", "", "< 2", "'newly-incorporated'"],
+      ]},
+      {match: "business.decision", arms: [
+        ["some(business.owners, #.pep and #.ubo)", "'edd'"],
+        ["business.pendingUbos > 0", "'awaiting-documents'"],
+        ["len(business.reasons) > 0", "'manual-review'"],
+        ["", "'approved'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {business: {name: "Acme", country: "NO", incorporated: "2010-05-01", structure: "simple", owners: [
+        {name: "A", share: 60, pep: false, country: "NO", verified: true},
+        {name: "B", share: 40, pep: false, country: "NO", verified: true},
+      ]}},
+      {business: {name: "Acme", country: "NO", incorporated: "2010-05-01", structure: "simple", owners: [
+        {name: "A", share: 60, pep: false, country: "NO", verified: true, ubo: true, pending: false},
+        {name: "B", share: 40, pep: false, country: "NO", verified: true, ubo: true, pending: false},
+      ], ubos: ["A", "B"], declared: 100, yearsActive: 14, foreignUbo: false, pendingUbos: 0, reasons: [], decision: "approved"}},
+    ],
+    [
+      {business: {name: "Acme", country: "NO", incorporated: "2010-05-01", structure: "simple", owners: [
+        {name: "A", share: 60, pep: false, country: "NO", verified: true},
+        {name: "B", share: 40, pep: false, country: "NO", verified: false},
+      ]}},
+      {business: {name: "Acme", country: "NO", incorporated: "2010-05-01", structure: "simple", owners: [
+        {name: "A", share: 60, pep: false, country: "NO", verified: true, ubo: true, pending: false},
+        {name: "B", share: 40, pep: false, country: "NO", verified: false, ubo: true, pending: true},
+      ], ubos: ["A", "B"], declared: 100, yearsActive: 14, foreignUbo: false, pendingUbos: 1, reasons: [], decision: "awaiting-documents"}},
+    ],
+    [
+      {business: {name: "Fan", country: "NO", incorporated: "2015-01-01", structure: "layered", owners: [
+        {name: "A", share: 20, pep: false, country: "NO", verified: true},
+        {name: "B", share: 20, pep: false, country: "NO", verified: true},
+        {name: "C", share: 20, pep: false, country: "NO", verified: false},
+        {name: "D", share: 20, pep: false, country: "NO", verified: true},
+        {name: "E", share: 20, pep: false, country: "NO", verified: true},
+      ]}},
+      {business: {name: "Fan", country: "NO", incorporated: "2015-01-01", structure: "layered", owners: [
+        {name: "A", share: 20, pep: false, country: "NO", verified: true, ubo: false, pending: false},
+        {name: "B", share: 20, pep: false, country: "NO", verified: true, ubo: false, pending: false},
+        {name: "C", share: 20, pep: false, country: "NO", verified: false, ubo: false, pending: false},
+        {name: "D", share: 20, pep: false, country: "NO", verified: true, ubo: false, pending: false},
+        {name: "E", share: 20, pep: false, country: "NO", verified: true, ubo: false, pending: false},
+      ], ubos: [], declared: 100, yearsActive: 10, foreignUbo: false, pendingUbos: 0, reasons: ["complex-structure"], decision: "manual-review"}},
+    ],
+    [
+      {business: {name: "Tr", country: "NO", incorporated: "2024-06-01", structure: "trust", owners: [{name: "A", share: 50, pep: true, country: "SE", verified: true}]}},
+      {business: {name: "Tr", country: "NO", incorporated: "2024-06-01", structure: "trust", owners: [
+        {name: "A", share: 50, pep: true, country: "SE", verified: true, ubo: true, pending: false},
+      ], ubos: ["A"], declared: 50, yearsActive: 0, foreignUbo: true, pendingUbos: 0, reasons: ["ownership-incomplete", "complex-structure", "newly-incorporated"], decision: "edd"}},
+    ],
+    [
+      {business: {name: "Ov", country: "DE", incorporated: "2000-01-01", structure: "simple", owners: [
+        {name: "A", share: 70, pep: false, country: "DE", verified: true},
+        {name: "B", share: 40, pep: false, country: "DE", verified: true},
+      ]}},
+      {business: {name: "Ov", country: "DE", incorporated: "2000-01-01", structure: "simple", owners: [
+        {name: "A", share: 70, pep: false, country: "DE", verified: true, ubo: true, pending: false},
+        {name: "B", share: 40, pep: false, country: "DE", verified: true, ubo: true, pending: false},
+      ], ubos: ["A", "B"], declared: 110, yearsActive: 25, foreignUbo: false, pendingUbos: 0, reasons: ["ownership-overstated"], decision: "manual-review"}},
+    ],
+    [
+      {business: {name: "Shell", country: "DE", incorporated: "2000-01-01", structure: "simple", owners: []}},
+      {business: {name: "Shell", country: "DE", incorporated: "2000-01-01", structure: "simple", owners: [], ubos: [], declared: 0, yearsActive: 25, foreignUbo: false, pendingUbos: 0, reasons: ["ownership-incomplete"], decision: "manual-review"}},
+    ],
+    // A PEP below the UBO threshold does not trigger enhanced due diligence.
+    [
+      {business: {name: "Pp", country: "SE", incorporated: "2001-01-01", structure: "simple", owners: [
+        {name: "A", share: 90, pep: false, country: "SE", verified: true},
+        {name: "B", share: 10, pep: true, country: "SE", verified: false},
+      ]}},
+      {business: {name: "Pp", country: "SE", incorporated: "2001-01-01", structure: "simple", owners: [
+        {name: "A", share: 90, pep: false, country: "SE", verified: true, ubo: true, pending: false},
+        {name: "B", share: 10, pep: true, country: "SE", verified: false, ubo: false, pending: false},
+      ], ubos: ["A"], declared: 100, yearsActive: 24, foreignUbo: false, pendingUbos: 0, reasons: [], decision: "approved"}},
+    ],
+    // UBO threshold is inclusive; two full years since incorporation is not new.
+    [
+      {business: {name: "Bd", country: "NO", incorporated: "2023-03-20", structure: "simple", owners: [
+        {name: "A", share: 25, pep: false, country: "NO", verified: true},
+        {name: "B", share: 24.99, pep: false, country: "GB", verified: false},
+        {name: "C", share: 50.01, pep: false, country: "GB", verified: true},
+      ]}},
+      {business: {name: "Bd", country: "NO", incorporated: "2023-03-20", structure: "simple", owners: [
+        {name: "A", share: 25, pep: false, country: "NO", verified: true, ubo: true, pending: false},
+        {name: "B", share: 24.99, pep: false, country: "GB", verified: false, ubo: false, pending: false},
+        {name: "C", share: 50.01, pep: false, country: "GB", verified: true, ubo: true, pending: false},
+      ], ubos: ["A", "C"], declared: 100, yearsActive: 2, foreignUbo: true, pendingUbos: 0, reasons: [], decision: "approved"}},
+    ],
+    [
+      {business: {name: "New", country: "NO", incorporated: "2023-03-21", structure: "simple", owners: [{name: "A", share: 100, pep: false, country: "NO", verified: true}]}},
+      {business: {name: "New", country: "NO", incorporated: "2023-03-21", structure: "simple", owners: [
+        {name: "A", share: 100, pep: false, country: "NO", verified: true, ubo: true, pending: false},
+      ], ubos: ["A"], declared: 100, yearsActive: 1, foreignUbo: false, pendingUbos: 0, reasons: ["newly-incorporated"], decision: "manual-review"}},
+    ],
+    [{business: {name: "X", country: "NO", incorporated: "2000-01-01", structure: "partnership", owners: []}}, "!error: InputValidationFailed"],
+    [{business: {name: "X", country: "NO", incorporated: "2000-01-01", structure: "simple", owners: [{name: "A", share: "50%", pep: false, country: "NO", verified: true}]}}, "!error: InputValidationFailed"],
+    [{business: {name: "X", country: "NO", incorporated: "2000-01-01", structure: "simple", owners: [{name: "A", pep: false, country: "NO", verified: true}]}}, "!error: ExpressionFailed"],
+    [{business: {name: "X", country: "NO", incorporated: "2000-01-01", structure: "simple"}}, "!error: MissingRequiredInputs"],
+    [{business: {name: "X", country: "NO", structure: "simple", owners: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Country profiles by reference ---------------------------------------------------------------
+// Nationality and residence are references into a `country` pool; a global sets the enhanced due
+// diligence threshold. The assertion is `score >= threshold or fatfExposure`.
+
+{
+  name: "geographic risk from referenced country profiles",
+  policy: {
+    globals: {settings: {eddScore: "number"}},
+    models: {
+      customer: {name: "string", nationality: "&country", residence: "&country"},
+      country: {id: "string", risk: "number", fatf: "boolean"},
+    },
+    blocks: [
+      {expression: "customer.geoRisk", value: "max([customer.nationality.risk, customer.residence.risk])"},
+      {expression: "customer.fatfExposure", value: "customer.nationality.fatf or customer.residence.fatf"},
+      {expression: "customer.crossBorder", value: "customer.nationality.id != customer.residence.id"},
+      {expression: "customer.score", value: "customer.geoRisk * 10 + (customer.fatfExposure ? 25 : 0) + (customer.crossBorder ? 5 : 0)"},
+      {assertion: "customer.edd", conditions: [["or", "customer.score >= eddScore", 0], "customer.fatfExposure"]},
+    ],
+  },
+  cases: [
+    [
+      {eddScore: 40, customer: {name: "a", nationality: "NO", residence: "NO"}, country: [{id: "NO", risk: 1, fatf: false}, {id: "IR", risk: 9, fatf: true}, {id: "AE", risk: 4, fatf: false}]},
+      {eddScore: 40, customer: {name: "a", nationality: {id: "NO", risk: 1, fatf: false}, residence: {id: "NO", risk: 1, fatf: false}, geoRisk: 1, fatfExposure: false, crossBorder: false, score: 10, edd: false}, country: [{id: "NO", risk: 1, fatf: false}, {id: "IR", risk: 9, fatf: true}, {id: "AE", risk: 4, fatf: false}]},
+    ],
+    [
+      {eddScore: 40, customer: {name: "b", nationality: "NO", residence: "AE"}, country: [{id: "NO", risk: 1, fatf: false}, {id: "AE", risk: 4, fatf: false}]},
+      {eddScore: 40, customer: {name: "b", nationality: {id: "NO", risk: 1, fatf: false}, residence: {id: "AE", risk: 4, fatf: false}, geoRisk: 4, fatfExposure: false, crossBorder: true, score: 45, edd: true}, country: [{id: "NO", risk: 1, fatf: false}, {id: "AE", risk: 4, fatf: false}]},
+    ],
+    [
+      {eddScore: 40, customer: {name: "c", nationality: "IR", residence: "NO"}, country: [{id: "NO", risk: 1, fatf: false}, {id: "IR", risk: 9, fatf: true}]},
+      {eddScore: 40, customer: {name: "c", nationality: {id: "IR", risk: 9, fatf: true}, residence: {id: "NO", risk: 1, fatf: false}, geoRisk: 9, fatfExposure: true, crossBorder: true, score: 120, edd: true}, country: [{id: "NO", risk: 1, fatf: false}, {id: "IR", risk: 9, fatf: true}]},
+    ],
+    // FATF exposure alone triggers EDD even when the score is under the threshold.
+    [
+      {eddScore: 200, customer: {name: "d", nationality: "IR", residence: "IR"}, country: [{id: "IR", risk: 9, fatf: true}]},
+      {eddScore: 200, customer: {name: "d", nationality: {id: "IR", risk: 9, fatf: true}, residence: {id: "IR", risk: 9, fatf: true}, geoRisk: 9, fatfExposure: true, crossBorder: false, score: 115, edd: true}, country: [{id: "IR", risk: 9, fatf: true}]},
+    ],
+    [
+      {eddScore: 40, customer: {name: "e", nationality: "AE", residence: "AE"}, country: [{id: "AE", risk: 4, fatf: false}]},
+      {eddScore: 40, customer: {name: "e", nationality: {id: "AE", risk: 4, fatf: false}, residence: {id: "AE", risk: 4, fatf: false}, geoRisk: 4, fatfExposure: false, crossBorder: false, score: 40, edd: true}, country: [{id: "AE", risk: 4, fatf: false}]},
+    ],
+    [
+      {eddScore: 40.5, customer: {name: "f", nationality: "AE", residence: "AE"}, country: [{id: "AE", risk: 4.05, fatf: false}]},
+      {eddScore: 40.5, customer: {name: "f", nationality: {id: "AE", risk: 4.05, fatf: false}, residence: {id: "AE", risk: 4.05, fatf: false}, geoRisk: 4.05, fatfExposure: false, crossBorder: false, score: 40.5, edd: true}, country: [{id: "AE", risk: 4.05, fatf: false}]},
+    ],
+    [{eddScore: 40, customer: {name: "g", nationality: "XX", residence: "NO"}, country: [{id: "NO", risk: 1, fatf: false}]}, "!error: InputValidationFailed"],
+    [{eddScore: 40, customer: {name: "g", nationality: 5, residence: "NO"}, country: [{id: "NO", risk: 1, fatf: false}]}, "!error: InputValidationFailed"],
+    [{eddScore: 40, customer: {name: "g", nationality: "NO", residence: "NO"}, country: [{id: "NO", risk: "low", fatf: false}]}, "!error: InputValidationFailed"],
+    [{eddScore: 40, customer: {name: "g", nationality: "NO"}, country: [{id: "NO", risk: 1, fatf: false}]}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "g", nationality: "NO", residence: "NO"}, country: [{id: "NO", risk: 1, fatf: false}]}, "!error: MissingRequiredInputs"],
+    [{eddScore: 40, customer: {name: "g", nationality: "NO", residence: "NO"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Transaction monitoring ----------------------------------------------------------------------
+// Per-transaction recency, near-threshold cash and corridor flags; account aggregates over recent
+// inflows; a hit-policy `collect` table of alerts read by an action match.
+
+{
+  name: "transaction monitoring alerts",
+  policy: {
+    models: {
+      account: {holder: "string", declaredMonthly: "number", txns: "txn[]"},
+      txn: {amount: "number", at: "date", channel: "string(cash|wire|card)", direction: "string(in|out)", counterpartyCountry: "string?"},
+    },
+    blocks: [
+      {expression: "txn.recent", value: "d().diff(txn.at, 'day') < 30"},
+      {expression: "txn.nearThreshold", value: "txn.channel == 'cash' and txn.amount >= 9000 and txn.amount < 10000"},
+      {expression: "txn.highRiskCorridor", value: "(txn.counterpartyCountry ?? '') in ['IR', 'KP', 'SY']"},
+      {expression: "account.inflow30", value: "sum(map(filter(account.txns, #.recent and #.direction == 'in'), #.amount))"},
+      {expression: "account.structuring", value: "count(account.txns, #.recent and #.nearThreshold) >= 3"},
+      {expression: "account.volumeRatio", value: "account.declaredMonthly > 0 ? round(account.inflow30 / account.declaredMonthly, 2) : 0"},
+      {expression: "account.corridors", value: "count(account.txns, #.highRiskCorridor)"},
+      {table: "alerts", hit: "collect", inputs: ["account.structuring", "account.volumeRatio", "account.corridors"], outputs: ["account.alerts"], rules: [
+        ["true", "", "", "'structuring'"],
+        ["", "> 3", "", "'volume-spike'"],
+        ["", "", "> 0", "'high-risk-corridor'"],
+      ]},
+      {match: "account.action", arms: [
+        ["'structuring' in account.alerts or 'high-risk-corridor' in account.alerts", "'file-sar'"],
+        ["len(account.alerts) > 0", "'investigate'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {account: {holder: "a", declaredMonthly: 5000, txns: []}},
+      {account: {holder: "a", declaredMonthly: 5000, txns: [], inflow30: 0, structuring: false, volumeRatio: 0, corridors: 0, alerts: [], action: "none"}},
+    ],
+    [
+      {account: {holder: "b", declaredMonthly: 10000, txns: [
+        {amount: 9500, at: "2025-03-10", channel: "cash", direction: "in"},
+        {amount: 9500, at: "2025-03-12", channel: "cash", direction: "in"},
+        {amount: 9500, at: "2025-03-15", channel: "cash", direction: "in"},
+      ]}},
+      {account: {holder: "b", declaredMonthly: 10000, txns: [
+        {amount: 9500, at: "2025-03-10", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9500, at: "2025-03-12", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9500, at: "2025-03-15", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+      ], inflow30: 28500, structuring: true, volumeRatio: 2.85, corridors: 0, alerts: ["structuring"], action: "file-sar"}},
+    ],
+    [
+      {account: {holder: "c", declaredMonthly: 5000, txns: [
+        {amount: 9500, at: "2025-03-10", channel: "cash", direction: "in"},
+        {amount: 9500, at: "2025-03-12", channel: "cash", direction: "in"},
+        {amount: 9500, at: "2025-01-01", channel: "cash", direction: "in"},
+      ]}},
+      {account: {holder: "c", declaredMonthly: 5000, txns: [
+        {amount: 9500, at: "2025-03-10", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9500, at: "2025-03-12", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9500, at: "2025-01-01", channel: "cash", direction: "in", recent: false, nearThreshold: true, highRiskCorridor: false},
+      ], inflow30: 19000, structuring: false, volumeRatio: 3.8, corridors: 0, alerts: ["volume-spike"], action: "investigate"}},
+    ],
+    [
+      {account: {holder: "d", declaredMonthly: 1000, txns: [{amount: 50000, at: "2025-03-01", channel: "wire", direction: "out", counterpartyCountry: "IR"}]}},
+      {account: {holder: "d", declaredMonthly: 1000, txns: [
+        {amount: 50000, at: "2025-03-01", channel: "wire", direction: "out", counterpartyCountry: "IR", recent: true, nearThreshold: false, highRiskCorridor: true},
+      ], inflow30: 0, structuring: false, volumeRatio: 0, corridors: 1, alerts: ["high-risk-corridor"], action: "file-sar"}},
+    ],
+    [
+      {account: {holder: "e", declaredMonthly: 0, txns: [{amount: 100, at: "2025-03-19", channel: "card", direction: "in", counterpartyCountry: null}]}},
+      {account: {holder: "e", declaredMonthly: 0, txns: [
+        {amount: 100, at: "2025-03-19", channel: "card", direction: "in", counterpartyCountry: null, recent: true, nearThreshold: false, highRiskCorridor: false},
+      ], inflow30: 100, structuring: false, volumeRatio: 0, corridors: 0, alerts: [], action: "none"}},
+    ],
+    // Near-threshold is [9000, 10000); a ratio that rounds to exactly 3 is not a spike.
+    [
+      {account: {holder: "f", declaredMonthly: 9667, txns: [
+        {amount: 9000, at: "2025-03-18", channel: "cash", direction: "in"},
+        {amount: 9999.99, at: "2025-03-18", channel: "cash", direction: "in"},
+        {amount: 10000, at: "2025-03-18", channel: "cash", direction: "in"},
+      ]}},
+      {account: {holder: "f", declaredMonthly: 9667, txns: [
+        {amount: 9000, at: "2025-03-18", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9999.99, at: "2025-03-18", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 10000, at: "2025-03-18", channel: "cash", direction: "in", recent: true, nearThreshold: false, highRiskCorridor: false},
+      ], inflow30: 28999.99, structuring: false, volumeRatio: 3, corridors: 0, alerts: [], action: "none"}},
+    ],
+    // Exactly 30 days ago is no longer recent; one second later still is.
+    [
+      {account: {holder: "g", declaredMonthly: 100, txns: [
+        {amount: 100, at: "2025-02-18T10:15:30Z", channel: "card", direction: "in"},
+        {amount: 100, at: "2025-02-18T10:15:31Z", channel: "card", direction: "in", counterpartyCountry: "SY"},
+      ]}},
+      {account: {holder: "g", declaredMonthly: 100, txns: [
+        {amount: 100, at: "2025-02-18T10:15:30Z", channel: "card", direction: "in", recent: false, nearThreshold: false, highRiskCorridor: false},
+        {amount: 100, at: "2025-02-18T10:15:31Z", channel: "card", direction: "in", counterpartyCountry: "SY", recent: true, nearThreshold: false, highRiskCorridor: true},
+      ], inflow30: 100, structuring: false, volumeRatio: 1, corridors: 1, alerts: ["high-risk-corridor"], action: "file-sar"}},
+    ],
+    [
+      {account: {holder: "h", declaredMonthly: 1000, txns: [
+        {amount: 9100, at: "2025-03-01", channel: "cash", direction: "in"},
+        {amount: 9200, at: "2025-03-02", channel: "cash", direction: "in"},
+        {amount: 9300, at: "2025-03-03", channel: "cash", direction: "out"},
+        {amount: 50, at: "2025-03-25", channel: "card", direction: "in", counterpartyCountry: "KP"},
+      ]}},
+      {account: {holder: "h", declaredMonthly: 1000, txns: [
+        {amount: 9100, at: "2025-03-01", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9200, at: "2025-03-02", channel: "cash", direction: "in", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 9300, at: "2025-03-03", channel: "cash", direction: "out", recent: true, nearThreshold: true, highRiskCorridor: false},
+        {amount: 50, at: "2025-03-25", channel: "card", direction: "in", counterpartyCountry: "KP", recent: true, nearThreshold: false, highRiskCorridor: true},
+      ], inflow30: 18350, structuring: true, volumeRatio: 18.35, corridors: 1, alerts: ["structuring", "volume-spike", "high-risk-corridor"], action: "file-sar"}},
+    ],
+    [{account: {holder: "x", declaredMonthly: 1, txns: [{amount: 1, at: "2025-03-01", channel: "crypto", direction: "in"}]}}, "!error: InputValidationFailed"],
+    [{account: {holder: "x", declaredMonthly: 1, txns: [{amount: 1, at: "2025-03-01", channel: "cash", direction: "sideways"}]}}, "!error: InputValidationFailed"],
+    [{account: {holder: "x", declaredMonthly: 1, txns: [{at: "2025-03-01", channel: "cash", direction: "in"}]}}, "!error: ExpressionFailed"],
+    [{account: {holder: "x", txns: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Goals over a due-diligence summary ----------------------------------------------------------
+// A goal evaluates only its cone: required inputs outside it may be missing.
+
+{
+  name: "cdd summary with goals",
+  policy: {
+    models: {customer: {age: "number", pep: "boolean", sanctioned: "boolean", docsValid: "boolean", country: "string"}},
+    blocks: [
+      {assertion: "customer.identityOk", conditions: ["customer.docsValid", "customer.age >= 18"]},
+      {match: "customer.risk", arms: [
+        ["customer.sanctioned", "'prohibited'"],
+        ["customer.pep", "'high'"],
+        ["customer.country in ['NO', 'SE']", "'low'"],
+        ["", "'medium'"],
+      ]},
+      {table: "outcome", inputs: ["customer.identityOk", "customer.risk"], outputs: ["customer.outcome", "customer.reasons[]"], rules: [
+        ["false", "", "'reject'", "'identity'"],
+        ["", "'prohibited'", "'reject'", "'sanctions'"],
+        ["", "'high'", "'refer'", "'pep'"],
+        ["", "", "'accept'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 17, docsValid: true}}, goals: ["customer.identityOk"], output: {customer: {age: 17, docsValid: true, identityOk: false}}},
+    {input: {customer: {age: 40, docsValid: true}}, goals: ["customer.identityOk"], output: {customer: {age: 40, docsValid: true, identityOk: true}}},
+    {input: {customer: {sanctioned: false, pep: false, country: "SE"}}, goals: ["customer.risk"], output: {customer: {sanctioned: false, pep: false, country: "SE", risk: "low"}}},
+    {input: {customer: {sanctioned: true, pep: false, country: "US"}}, goals: ["customer.risk"], output: {customer: {sanctioned: true, pep: false, country: "US", risk: "prohibited"}}},
+    {input: {customer: {age: 30}}, goals: ["customer.risk"], output: "!error: MissingRequiredInputs"},
+    {
+      input: {customer: {age: 30, docsValid: true, sanctioned: false, pep: true, country: "NO"}},
+      goals: ["customer.outcome"],
+      output: {customer: {age: 30, docsValid: true, sanctioned: false, pep: true, country: "NO", identityOk: true, risk: "high", outcome: "refer", reasons: ["pep"]}},
+    },
+    {
+      input: {customer: {age: 16, docsValid: false, sanctioned: true, pep: true, country: "NO"}},
+      output: {customer: {age: 16, docsValid: false, sanctioned: true, pep: true, country: "NO", identityOk: false, risk: "prohibited", outcome: "reject", reasons: ["identity", "sanctions"]}},
+    },
+    {
+      input: {customer: {age: 50, docsValid: true, sanctioned: false, pep: false, country: "DE"}},
+      output: {customer: {age: 50, docsValid: true, sanctioned: false, pep: false, country: "DE", identityOk: true, risk: "medium", outcome: "accept", reasons: []}},
+    },
+    {input: {customer: {age: 50, docsValid: true, sanctioned: false, pep: false}}, output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// --- Dictionaries for country and document codes -------------------------------------------------
+// Dictionary-typed codes are validated on input and behave as plain strings in blocks.
+
+{
+  name: "kyc codes from dictionaries",
+  policy: {
+    dictionaries: {
+      isoCountry: ["NO", "SE", "DE", "IR", ["GB", "United Kingdom"]],
+      docType: [["P", "Passport"], ["ID", "National id"], ["DL", "Driving licence"]],
+    },
+    models: {applicant: {nationality: "isoCountry", residence: "isoCountry", docType: "docType", secondDoc: "docType?"}},
+    blocks: [
+      {expression: "applicant.highRisk", value: "applicant.nationality == 'IR' or applicant.residence == 'IR'"},
+      {match: "applicant.docWeight", arms: [["applicant.docType == 'P'", "3"], ["applicant.docType == 'ID'", "2"], ["", "1"]]},
+      {expression: "applicant.evidence", value: "applicant.docWeight + (applicant.secondDoc == null ? 0 : 1)"},
+      {assertion: "applicant.simplified", conditions: ["not applicant.highRisk", "applicant.evidence >= 3", "applicant.nationality == applicant.residence"]},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {nationality: "NO", residence: "NO", docType: "P"}},
+      {applicant: {nationality: "NO", residence: "NO", docType: "P", highRisk: false, docWeight: 3, evidence: 3, simplified: true}},
+    ],
+    [
+      {applicant: {nationality: "GB", residence: "SE", docType: "ID", secondDoc: "DL"}},
+      {applicant: {nationality: "GB", residence: "SE", docType: "ID", secondDoc: "DL", highRisk: false, docWeight: 2, evidence: 3, simplified: false}},
+    ],
+    [
+      {applicant: {nationality: "DE", residence: "DE", docType: "DL", secondDoc: null}},
+      {applicant: {nationality: "DE", residence: "DE", docType: "DL", secondDoc: null, highRisk: false, docWeight: 1, evidence: 1, simplified: false}},
+    ],
+    [
+      {applicant: {nationality: "IR", residence: "IR", docType: "P", secondDoc: "ID"}},
+      {applicant: {nationality: "IR", residence: "IR", docType: "P", secondDoc: "ID", highRisk: true, docWeight: 3, evidence: 4, simplified: false}},
+    ],
+    [{applicant: {nationality: "United Kingdom", residence: "NO", docType: "P"}}, "!error: InputValidationFailed"],
+    [{applicant: {nationality: "NO", residence: "NO", docType: "Passport"}}, "!error: InputValidationFailed"],
+    [{applicant: {nationality: "NO", residence: "NO", docType: "P", secondDoc: "X"}}, "!error: InputValidationFailed"],
+    [{applicant: {nationality: "no", residence: "NO", docType: "P"}}, "!error: InputValidationFailed"],
+    [{applicant: {nationality: "NO", docType: "P"}}, "!error: MissingRequiredInputs"],
+  ],
+}

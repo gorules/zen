@@ -1,0 +1,481 @@
+expression (string);input (json 5);output (json 5);note
+# The right operand of and/or is not evaluated when the left decides, so its errors are skipped
+x != null and x > 10;{x: 20};true
+x != null and x > 10;{x: 5};false
+x != null and x > 10;{x: 0};false
+x != null and x > 10;{x: null};false
+x != null and x > 10;{};false
+x != null and x > 10;{x: 'abc'};!error
+x != null and x > 10;{x: true};!error
+x == null or x > 10;{x: 20};true
+x == null or x > 10;{x: 5};false
+x == null or x > 10;{x: 0};false
+x == null or x > 10;{x: null};true
+x == null or x > 10;{};true
+x == null or x > 10;{x: 'abc'};!error
+x == null or x > 10;{x: true};!error
+type(x) == 'number' and x > 10;{x: 20};true
+type(x) == 'number' and x > 10;{x: 5};false
+type(x) == 'number' and x > 10;{x: 0};false
+type(x) == 'number' and x > 10;{x: null};false
+type(x) == 'number' and x > 10;{};false
+type(x) == 'number' and x > 10;{x: 'abc'};false
+type(x) == 'number' and x > 10;{x: true};false
+type(x) == 'string' and len(x) > 2;{x: 20};false
+type(x) == 'string' and len(x) > 2;{x: 5};false
+type(x) == 'string' and len(x) > 2;{x: 0};false
+type(x) == 'string' and len(x) > 2;{x: null};false
+type(x) == 'string' and len(x) > 2;{};false
+type(x) == 'string' and len(x) > 2;{x: 'abc'};true
+type(x) == 'string' and len(x) > 2;{x: true};false
+type(x) != 'string' or upper(x) == 'ABC';{x: 20};true
+type(x) != 'string' or upper(x) == 'ABC';{x: 5};true
+type(x) != 'string' or upper(x) == 'ABC';{x: 0};true
+type(x) != 'string' or upper(x) == 'ABC';{x: null};true
+type(x) != 'string' or upper(x) == 'ABC';{};true
+type(x) != 'string' or upper(x) == 'ABC';{x: 'abc'};true
+type(x) != 'string' or upper(x) == 'ABC';{x: true};true
+x == 0 or 10 / x > 1;{x: 20};false
+x == 0 or 10 / x > 1;{x: 5};true
+x == 0 or 10 / x > 1;{x: 0};true
+x == 0 or 10 / x > 1;{x: null};!error
+x == 0 or 10 / x > 1;{};!error
+x == 0 or 10 / x > 1;{x: 'abc'};!error
+x == 0 or 10 / x > 1;{x: true};!error
+x > 10 or x + {} > 0;{x: 20};true
+x > 10 or x + {} > 0;{x: 5};!error
+x > 10 or x + {} > 0;{x: 0};!error
+x > 10 or x + {} > 0;{x: null};!error
+x > 10 or x + {} > 0;{};!error
+x > 10 or x + {} > 0;{x: 'abc'};!error
+x > 10 or x + {} > 0;{x: true};!error
+x < 10 and x + {} > 0;{x: 20};false
+x < 10 and x + {} > 0;{x: 5};!error
+x < 10 and x + {} > 0;{x: 0};!error
+x < 10 and x + {} > 0;{x: null};!error
+x < 10 and x + {} > 0;{};!error
+x < 10 and x + {} > 0;{x: 'abc'};!error
+x < 10 and x + {} > 0;{x: true};!error
+x != null and x != 0 and 100 / x < 10;{x: 20};true
+x != null and x != 0 and 100 / x < 10;{x: 5};false
+x != null and x != 0 and 100 / x < 10;{x: 0};false
+x != null and x != 0 and 100 / x < 10;{x: null};false
+x != null and x != 0 and 100 / x < 10;{};false
+x != null and x != 0 and 100 / x < 10;{x: 'abc'};!error
+x != null and x != 0 and 100 / x < 10;{x: true};!error
+# The left operand of and/or must be a boolean even when it is null
+x and true;{x: 20};!error
+x and true;{x: 5};!error
+x and true;{x: 0};!error
+x and true;{x: null};!error
+x and true;{};!error
+x and true;{x: 'abc'};!error
+x and true;{x: true};true
+x or false;{x: 20};!error
+x or false;{x: 5};!error
+x or false;{x: 0};!error
+x or false;{x: null};!error
+x or false;{};!error
+x or false;{x: 'abc'};!error
+x or false;{x: true};true
+# A null right operand of and/or
+true and b;{b: true};true
+true and b;{b: false};false
+true and b;{b: null};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+true and b;{};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+true and b;{b: 1};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+true and b;{b: 'true'};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false and b;{b: true};false
+false and b;{b: false};false
+false and b;{b: null};false
+false and b;{};false
+false and b;{b: 1};false
+false and b;{b: 'true'};false
+true or b;{b: true};true
+true or b;{b: false};true
+true or b;{b: null};true
+true or b;{};true
+true or b;{b: 1};true
+true or b;{b: 'true'};true
+false or b;{b: true};true
+false or b;{b: false};false
+false or b;{b: null};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or b;{};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or b;{b: 1};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or b;{b: 'true'};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or (b ?? false);{b: true};true
+false or (b ?? false);{b: false};false
+false or (b ?? false);{b: null};false
+false or (b ?? false);{};false
+false or (b ?? false);{b: 1};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+false or (b ?? false);{b: 'true'};!error;bug: a non-boolean right operand is returned as is, while the same value on the left is an error
+not b;{b: true};false
+not b;{b: false};true
+not b;{b: null};!error
+not b;{};!error
+not b;{b: 1};!error
+not b;{b: 'true'};!error
+not (b ?? false);{b: true};false
+not (b ?? false);{b: false};true
+not (b ?? false);{b: null};true
+not (b ?? false);{};true
+not (b ?? false);{b: 1};!error
+not (b ?? false);{b: 'true'};!error
+b == true ? 'yes' : 'no';{b: true};'yes'
+b == true ? 'yes' : 'no';{b: false};'no'
+b == true ? 'yes' : 'no';{b: null};'no'
+b == true ? 'yes' : 'no';{};'no'
+b == true ? 'yes' : 'no';{b: 1};'no'
+b == true ? 'yes' : 'no';{b: 'true'};'no'
+b ? 'yes' : 'no';{b: true};'yes'
+b ? 'yes' : 'no';{b: false};'no'
+b ? 'yes' : 'no';{b: null};!error
+b ? 'yes' : 'no';{};!error
+b ? 'yes' : 'no';{b: 1};!error
+b ? 'yes' : 'no';{b: 'true'};!error
+b != false ? 'on' : 'off';{b: true};'on'
+b != false ? 'on' : 'off';{b: false};'off'
+b != false ? 'on' : 'off';{b: null};'on'
+b != false ? 'on' : 'off';{};'on'
+b != false ? 'on' : 'off';{b: 1};'on'
+b != false ? 'on' : 'off';{b: 'true'};'on'
+# Literal errors on the skipped side of and/or
+false and (1 + {});;false
+true or (1 + {});;true
+false and upper(1);;false
+true or len(5) > 0;;true
+false and null > 1;;false
+true or null < 1;;true
+false and null;;false
+true or null;;true
+false and x.y.z > 1;;false
+(false and 1 + {}) or true;;true
+false and (1 + {}) or false;;false
+true or (1 + {}) and false;;true
+not (false and 1 + {});;true
+true and (false or (true or 1 + {}));;true
+true and (1 + {});;!error
+false or (1 + {});;!error
+true and null > 1;;!error
+false or null < 1;;!error
+# Ternary evaluates only the chosen branch
+x == null ? 'none' : x * 2;{x: 20};40
+x == null ? 'none' : x * 2;{x: 5};10
+x == null ? 'none' : x * 2;{x: 0};0
+x == null ? 'none' : x * 2;{x: null};'none'
+x == null ? 'none' : x * 2;{};'none'
+x == null ? 'none' : x * 2;{x: 'abc'};!error
+x == null ? 'none' : x * 2;{x: true};!error
+type(x) == 'string' ? upper(x) : x;{x: 20};20
+type(x) == 'string' ? upper(x) : x;{x: 5};5
+type(x) == 'string' ? upper(x) : x;{x: 0};0
+type(x) == 'string' ? upper(x) : x;{x: null};null
+type(x) == 'string' ? upper(x) : x;{};null
+type(x) == 'string' ? upper(x) : x;{x: 'abc'};'ABC'
+type(x) == 'string' ? upper(x) : x;{x: true};true
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: 20};20
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: 5};5
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: 0};0
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: null};-1
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{};-1
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: 'abc'};3
+type(x) == 'array' ? x[0] : type(x) == 'string' ? len(x) : x ?? -1;{x: true};true
+(x ?? 0) > 10 ? 'big' : 'small';{x: 20};'big'
+(x ?? 0) > 10 ? 'big' : 'small';{x: 5};'small'
+(x ?? 0) > 10 ? 'big' : 'small';{x: 0};'small'
+(x ?? 0) > 10 ? 'big' : 'small';{x: null};'small'
+(x ?? 0) > 10 ? 'big' : 'small';{};'small'
+(x ?? 0) > 10 ? 'big' : 'small';{x: 'abc'};!error
+(x ?? 0) > 10 ? 'big' : 'small';{x: true};!error
+x == null ? null : x == 0 ? 0 : 100 / x;{x: 20};5
+x == null ? null : x == 0 ? 0 : 100 / x;{x: 5};20
+x == null ? null : x == 0 ? 0 : 100 / x;{x: 0};0
+x == null ? null : x == 0 ? 0 : 100 / x;{x: null};null
+x == null ? null : x == 0 ? 0 : 100 / x;{};null
+x == null ? null : x == 0 ? 0 : 100 / x;{x: 'abc'};!error
+x == null ? null : x == 0 ? 0 : 100 / x;{x: true};!error
+x ? 'yes' : 'no';{x: 20};!error
+x ? 'yes' : 'no';{x: 5};!error
+x ? 'yes' : 'no';{x: 0};!error
+x ? 'yes' : 'no';{x: null};!error
+x ? 'yes' : 'no';{};!error
+x ? 'yes' : 'no';{x: 'abc'};!error
+x ? 'yes' : 'no';{x: true};'yes'
+x == 5 ? 1 + {} : 'safe';{x: 20};'safe'
+x == 5 ? 1 + {} : 'safe';{x: 5};!error
+x == 5 ? 1 + {} : 'safe';{x: 0};'safe'
+x == 5 ? 1 + {} : 'safe';{x: null};'safe'
+x == 5 ? 1 + {} : 'safe';{};'safe'
+x == 5 ? 1 + {} : 'safe';{x: 'abc'};'safe'
+x == 5 ? 1 + {} : 'safe';{x: true};'safe'
+x != 5 ? 'safe' : 1 + {};{x: 20};'safe'
+x != 5 ? 'safe' : 1 + {};{x: 5};!error
+x != 5 ? 'safe' : 1 + {};{x: 0};'safe'
+x != 5 ? 'safe' : 1 + {};{x: null};'safe'
+x != 5 ? 'safe' : 1 + {};{};'safe'
+x != 5 ? 'safe' : 1 + {};{x: 'abc'};'safe'
+x != 5 ? 'safe' : 1 + {};{x: true};'safe'
+(x == null ? 0 : x) + 1;{x: 20};21
+(x == null ? 0 : x) + 1;{x: 5};6
+(x == null ? 0 : x) + 1;{x: 0};1
+(x == null ? 0 : x) + 1;{x: null};1
+(x == null ? 0 : x) + 1;{};1
+(x == null ? 0 : x) + 1;{x: 'abc'};!error
+(x == null ? 0 : x) + 1;{x: true};!error
+# Literal errors on the skipped branch of a ternary
+true ? 1 : 1 + {};;1
+false ? 1 + {} : 2;;2
+true ? null : 1 + {};;null
+false ? upper(1) : 'ok';;'ok'
+true ? 'ok' : len(null);;'ok'
+1 == 1 ? 'a' : null > 1;;'a'
+null == null ? 'a' : 1 + {};;'a'
+true ? (false ? 1 + {} : 'in') : 1 + {};;'in'
+false ? 1 : 1 + {};;!error
+true ? 1 + {} : 2;;!error
+null ? 1 : 2;;!error
+(1 / 0) ? 1 : 2;;!error
+(1 / 0) == null ? 'div0' : 'ok';;'div0'
+[] ? 1 : 2;;!error
+'' ? 1 : 2;;!error
+0 ? 1 : 2;;!error
+# ?? falls through only on null and missing, never on false, 0, empty string, empty array or empty object
+a ?? b;{a: 1, b: 2};1
+a ?? b;{a: null, b: 2};2
+a ?? b;{b: 2};2
+a ?? b;{a: false, b: 2};false
+a ?? b;{a: 0, b: 2};0
+a ?? b;{a: '', b: 2};''
+a ?? b;{a: [], b: 2};[]
+a ?? b;{a: {}, b: 2};{}
+a ?? b;{a: null, b: null};null
+a ?? b;{};null
+a ?? b ?? 3;{a: 1, b: 2};1
+a ?? b ?? 3;{a: null, b: 2};2
+a ?? b ?? 3;{b: 2};2
+a ?? b ?? 3;{a: false, b: 2};false
+a ?? b ?? 3;{a: 0, b: 2};0
+a ?? b ?? 3;{a: '', b: 2};''
+a ?? b ?? 3;{a: [], b: 2};[]
+a ?? b ?? 3;{a: {}, b: 2};{}
+a ?? b ?? 3;{a: null, b: null};3
+a ?? b ?? 3;{};3
+a ?? (1 + {});{a: 1, b: 2};1
+a ?? (1 + {});{a: null, b: 2};!error
+a ?? (1 + {});{b: 2};!error
+a ?? (1 + {});{a: false, b: 2};false
+a ?? (1 + {});{a: 0, b: 2};0
+a ?? (1 + {});{a: '', b: 2};''
+a ?? (1 + {});{a: [], b: 2};[]
+a ?? (1 + {});{a: {}, b: 2};{}
+a ?? (1 + {});{a: null, b: null};!error
+a ?? (1 + {});{};!error
+type(a ?? b);{a: 1, b: 2};'number'
+type(a ?? b);{a: null, b: 2};'number'
+type(a ?? b);{b: 2};'number'
+type(a ?? b);{a: false, b: 2};'bool'
+type(a ?? b);{a: 0, b: 2};'number'
+type(a ?? b);{a: '', b: 2};'string'
+type(a ?? b);{a: [], b: 2};'array'
+type(a ?? b);{a: {}, b: 2};'object'
+type(a ?? b);{a: null, b: null};'null'
+type(a ?? b);{};'null'
+(a ?? 0) + (b ?? 0);{a: 1, b: 2};3
+(a ?? 0) + (b ?? 0);{a: null, b: 2};2
+(a ?? 0) + (b ?? 0);{b: 2};2
+(a ?? 0) + (b ?? 0);{a: false, b: 2};!error
+(a ?? 0) + (b ?? 0);{a: 0, b: 2};2
+(a ?? 0) + (b ?? 0);{a: '', b: 2};!error
+(a ?? 0) + (b ?? 0);{a: [], b: 2};!error
+(a ?? 0) + (b ?? 0);{a: {}, b: 2};!error
+(a ?? 0) + (b ?? 0);{a: null, b: null};0
+(a ?? 0) + (b ?? 0);{};0
+[a ?? 0, b ?? 0];{a: 1, b: 2};[1, 2]
+[a ?? 0, b ?? 0];{a: null, b: 2};[0, 2]
+[a ?? 0, b ?? 0];{b: 2};[0, 2]
+[a ?? 0, b ?? 0];{a: false, b: 2};[false, 2]
+[a ?? 0, b ?? 0];{a: 0, b: 2};[0, 2]
+[a ?? 0, b ?? 0];{a: '', b: 2};['', 2]
+[a ?? 0, b ?? 0];{a: [], b: 2};[[], 2]
+[a ?? 0, b ?? 0];{a: {}, b: 2};[{}, 2]
+[a ?? 0, b ?? 0];{a: null, b: null};[0, 0]
+[a ?? 0, b ?? 0];{};[0, 0]
+# ?? binds tighter than arithmetic and comparison
+a ?? 10 + b;{a: 1, b: 2};3;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 + b;{a: null, b: 2};12;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 + b;{b: 2};12;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 + b;{a: null, b: null};!error;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 + b;{};!error;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 * 3;{a: 1, b: 2};3;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 * 3;{a: null, b: 2};30;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 * 3;{b: 2};30;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 > 5;{a: 1, b: 2};false;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 > 5;{a: null, b: 2};true;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+a ?? 10 > 5;{b: 2};true;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+b / a ?? 1;{a: 1, b: 2};2;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+b / a ?? 1;{a: null, b: 2};2;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+b / a ?? 1;{b: 2};2;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+b / a ?? 1;{a: 0, b: 2};null;question: ?? binds tighter than arithmetic and comparison (JS/C# bind it lowest), see the precedence chapter
+-a ?? 4;{a: 1, b: 2};-1
+-a ?? 4;{a: null, b: 2};!error
+-a ?? 4;{b: 2};!error
+# ?? with a container fallback feeds member access, functions and closures
+len(xs ?? []);{xs: [1, 2, 3]};3
+len(xs ?? []);{xs: []};0
+len(xs ?? []);{xs: null};0
+len(xs ?? []);{};0
+len(xs ?? []);{xs: 'ab'};2
+sum(xs ?? []);{xs: [1, 2, 3]};6
+sum(xs ?? []);{xs: []};0
+sum(xs ?? []);{xs: null};0
+sum(xs ?? []);{};0
+sum(xs ?? []);{xs: 'ab'};!error
+(xs ?? [0])[0];{xs: [1, 2, 3]};1
+(xs ?? [0])[0];{xs: []};null
+(xs ?? [0])[0];{xs: null};0
+(xs ?? [0])[0];{};0
+(xs ?? [0])[0];{xs: 'ab'};'a'
+map(xs ?? [], # * 2);{xs: [1, 2, 3]};[2, 4, 6]
+map(xs ?? [], # * 2);{xs: []};[]
+map(xs ?? [], # * 2);{xs: null};[]
+map(xs ?? [], # * 2);{};[]
+map(xs ?? [], # * 2);{xs: 'ab'};!error
+(u ?? {}).name ?? 'anon';{u: {name: 'Al'}};'Al'
+(u ?? {}).name ?? 'anon';{u: {}};'anon'
+(u ?? {}).name ?? 'anon';{u: null};'anon'
+(u ?? {}).name ?? 'anon';{};'anon'
+(u ?? {}).name ?? 'anon';{u: 'x'};'anon'
+(u ?? {}).name ?? 'anon';{u: {name: null}};'anon'
+upper(s ?? '');{s: 'ab'};'AB'
+upper(s ?? '');{s: null};''
+upper(s ?? '');{};''
+upper(s ?? '');{s: 1};!error
+# ?? inside chains that already contain null reads
+u.addr.city ?? d;{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo'
+u.addr.city ?? d;{u: {addr: {}}, d: 'X'};'X'
+u.addr.city ?? d;{u: {addr: null}, d: 'X'};'X'
+u.addr.city ?? d;{u: {}, d: 'X'};'X'
+u.addr.city ?? d;{u: null, d: 'X'};'X'
+u.addr.city ?? d;{d: 'X'};'X'
+u.addr.city ?? d;{d: null};null
+u.addr.city ?? d;{};null
+u.addr.city ?? d ?? 'none';{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo'
+u.addr.city ?? d ?? 'none';{u: {addr: {}}, d: 'X'};'X'
+u.addr.city ?? d ?? 'none';{u: {addr: null}, d: 'X'};'X'
+u.addr.city ?? d ?? 'none';{u: {}, d: 'X'};'X'
+u.addr.city ?? d ?? 'none';{u: null, d: 'X'};'X'
+u.addr.city ?? d ?? 'none';{d: 'X'};'X'
+u.addr.city ?? d ?? 'none';{d: null};'none'
+u.addr.city ?? d ?? 'none';{};'none'
+(u.addr ?? {}).city ?? 'none';{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo'
+(u.addr ?? {}).city ?? 'none';{u: {addr: {}}, d: 'X'};'none'
+(u.addr ?? {}).city ?? 'none';{u: {addr: null}, d: 'X'};'none'
+(u.addr ?? {}).city ?? 'none';{u: {}, d: 'X'};'none'
+(u.addr ?? {}).city ?? 'none';{u: null, d: 'X'};'none'
+(u.addr ?? {}).city ?? 'none';{d: 'X'};'none'
+(u.addr ?? {}).city ?? 'none';{d: null};'none'
+(u.addr ?? {}).city ?? 'none';{};'none'
+u.addr.city + '!';{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo!'
+u.addr.city + '!';{u: {addr: {}}, d: 'X'};!error
+u.addr.city + '!';{u: {addr: null}, d: 'X'};!error
+u.addr.city + '!';{u: {}, d: 'X'};!error
+u.addr.city + '!';{u: null, d: 'X'};!error
+u.addr.city + '!';{d: 'X'};!error
+u.addr.city + '!';{d: null};!error
+u.addr.city + '!';{};!error
+(u.addr.city ?? '?') + '!';{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo!'
+(u.addr.city ?? '?') + '!';{u: {addr: {}}, d: 'X'};'?!'
+(u.addr.city ?? '?') + '!';{u: {addr: null}, d: 'X'};'?!'
+(u.addr.city ?? '?') + '!';{u: {}, d: 'X'};'?!'
+(u.addr.city ?? '?') + '!';{u: null, d: 'X'};'?!'
+(u.addr.city ?? '?') + '!';{d: 'X'};'?!'
+(u.addr.city ?? '?') + '!';{d: null};'?!'
+(u.addr.city ?? '?') + '!';{};'?!'
+u.addr.city == null ? d : u.addr.city;{u: {addr: {city: 'Oslo'}}, d: 'X'};'Oslo'
+u.addr.city == null ? d : u.addr.city;{u: {addr: {}}, d: 'X'};'X'
+u.addr.city == null ? d : u.addr.city;{u: {addr: null}, d: 'X'};'X'
+u.addr.city == null ? d : u.addr.city;{u: {}, d: 'X'};'X'
+u.addr.city == null ? d : u.addr.city;{u: null, d: 'X'};'X'
+u.addr.city == null ? d : u.addr.city;{d: 'X'};'X'
+u.addr.city == null ? d : u.addr.city;{d: null};null
+u.addr.city == null ? d : u.addr.city;{};null
+# Membership with null needles and null list elements
+x in [1, 2, null];{x: 1};true
+x in [1, 2, null];{x: 3};false
+x in [1, 2, null];{x: null};true
+x in [1, 2, null];{};true
+x in [1, 2, null];{x: '1'};false
+x in [1, 2, null];{x: true};false
+x in [1, 2];{x: 1};true
+x in [1, 2];{x: 3};false
+x in [1, 2];{x: null};false
+x in [1, 2];{};false
+x in [1, 2];{x: '1'};false
+x in [1, 2];{x: true};false
+x not in [1, 2, null];{x: 1};false
+x not in [1, 2, null];{x: 3};true
+x not in [1, 2, null];{x: null};false
+x not in [1, 2, null];{};false
+x not in [1, 2, null];{x: '1'};true
+x not in [1, 2, null];{x: true};true
+x in [1..5];{x: 1};true
+x in [1..5];{x: 3};true
+x in [1..5];{x: null};!error
+x in [1..5];{};!error
+x in [1..5];{x: '1'};!error
+x in [1..5];{x: true};!error
+(x ?? 0) in [1..5];{x: 1};true
+(x ?? 0) in [1..5];{x: 3};true
+(x ?? 0) in [1..5];{x: null};false
+(x ?? 0) in [1..5];{};false
+(x ?? 0) in [1..5];{x: '1'};!error
+(x ?? 0) in [1..5];{x: true};!error
+x in ['1', true];{x: 1};false
+x in ['1', true];{x: 3};false
+x in ['1', true];{x: null};false
+x in ['1', true];{};false
+x in ['1', true];{x: '1'};true
+x in ['1', true];{x: true};true
+# Membership in a list that is null, missing or not a list
+x in list;{x: 1, list: [1, 2]};true
+x in list;{x: 1, list: []};false
+x in list;{x: null, list: [null]};true
+x in list;{x: 1, list: null};!error
+x in list;{x: 1};!error
+x in list;{x: 1, list: 'abc'};!error
+x in list;{x: 1, list: {a: 1}};!error
+x in list;{x: null, list: [1]};false
+x in (list ?? []);{x: 1, list: [1, 2]};true
+x in (list ?? []);{x: 1, list: []};false
+x in (list ?? []);{x: null, list: [null]};true
+x in (list ?? []);{x: 1, list: null};false
+x in (list ?? []);{x: 1};false
+x in (list ?? []);{x: 1, list: 'abc'};!error
+x in (list ?? []);{x: 1, list: {a: 1}};!error
+x in (list ?? []);{x: null, list: [1]};false
+list != null and x in list;{x: 1, list: [1, 2]};true
+list != null and x in list;{x: 1, list: []};false
+list != null and x in list;{x: null, list: [null]};true
+list != null and x in list;{x: 1, list: null};false
+list != null and x in list;{x: 1};false
+list != null and x in list;{x: 1, list: 'abc'};!error
+list != null and x in list;{x: 1, list: {a: 1}};!error
+list != null and x in list;{x: null, list: [1]};false
+x in [a, b];{x: 1, a: 1};true
+x in [a, b];{x: null};true
+x in [a, b];{x: null, a: 1, b: 2};false
+x in [a, b];{x: 2, b: 2};true
+x in [a, b];{x: 3, a: null};false
+# Intervals with null or missing bounds are errors
+x in [lo..hi];{x: 3, lo: 1, hi: 5};true
+x in [lo..hi];{x: 3, lo: null, hi: 5};!error
+x in [lo..hi];{x: 3, hi: 5};!error
+x in [lo..hi];{x: 3, lo: 1};!error
+x in [lo..hi];{x: null, lo: 1, hi: 5};!error
+x in [lo..hi];{x: 3, lo: '1', hi: 5};!error
+x in [lo..hi];{x: 9, lo: 1, hi: 5};false
+x in [(lo ?? 0)..(hi ?? 100)];{x: 3, lo: 1, hi: 5};true
+x in [(lo ?? 0)..(hi ?? 100)];{x: 3, lo: null, hi: 5};true
+x in [(lo ?? 0)..(hi ?? 100)];{x: 50};true
+x in [(lo ?? 0)..(hi ?? 100)];{x: 101};false
+x in [(lo ?? 0)..(hi ?? 100)];{x: null};!error

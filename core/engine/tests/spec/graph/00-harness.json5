@@ -1,0 +1,81 @@
+// The harness itself: implicit input/output nodes, chains, raw content.
+{
+  name: "an empty graph passes the input through",
+  graph: {},
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "implicit chain through one expression node",
+  graph: {
+    nodes: [{expression: "calc", fields: {total: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3}],
+    [{a: 0.1, b: 0.2}, {total: 0.3}],
+    [{a: "x", b: 1}, "!error"],
+  ],
+}
+
+{
+  name: "explicit edges and pass-through",
+  graph: {
+    nodes: [{expression: "calc", passThrough: true, fields: {total: "a * 2"}}],
+    edges: ["input -> calc -> output"],
+  },
+  cases: [
+    [{a: 2}, {a: 2, total: 4}],
+  ],
+}
+
+{
+  name: "raw JDM content",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e", sourceId: "i", targetId: "o"}],
+    },
+  },
+  cases: [[{x: true}, {x: true}]],
+}
+
+{
+  name: "custom spec adapter kinds",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {greeting: "hello {{ name }}", n: 2}}],
+  },
+  cases: [[{name: "ann"}, {greeting: "hello ann", n: 2}]],
+}
+
+{
+  name: "switch branches by handle",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["age >= 18", ""]},
+      {expression: "adult", fields: {kind: "'adult'"}},
+      {expression: "minor", fields: {kind: "'minor'"}},
+    ],
+    edges: ["input -> route", "route:0 -> adult -> output", "route:1 -> minor -> output"],
+  },
+  cases: [
+    [{age: 20}, {kind: "adult"}],
+    [{age: 3}, {kind: "minor"}],
+  ],
+}
+
+{
+  name: "sub-decision by key",
+  decisions: {
+    child: {nodes: [{expression: "double", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [[{x: 4}, {y: 8}]],
+}

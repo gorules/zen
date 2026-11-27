@@ -64,8 +64,9 @@ async fn graph_trace(documents: &[(&str, Value)], entry: &str, input: Value) -> 
             entry,
             input.into(),
             EvaluationOptions {
-                trace: true,
+                trace: zen_engine::trace::TraceFormat::Legacy,
                 max_depth: 10,
+                ..Default::default()
             },
         )
         .await
@@ -213,6 +214,7 @@ async fn decision_table_maps_rows_reads_and_evaluations() {
         matched_rows,
         evaluations,
         extras,
+        ..
     } = &table.trace
     else {
         panic!("expected decision table trace");
@@ -389,6 +391,7 @@ async fn looped_table_extracts_per_iteration_evaluations_under_output_path() {
         matched_rows,
         evaluations,
         extras,
+        ..
     } = &iterations[0].trace
     else {
         panic!("expected decision table trace");

@@ -127,6 +127,7 @@ describe('ZenEngine', () => {
     const loader = async (key: string) => fs.readFile(path.join(graphsRoot, key));
 
     const engine = new ZenEngine({ loader });
+    const now = '2025-08-19T16:55:02.078Z';
 
     const entries = await fs.readdir(graphsRoot);
     for (const entry of entries) {
@@ -136,12 +137,12 @@ describe('ZenEngine', () => {
       const fileData: Graph = JSON.parse(fileContents.toString('utf8'));
 
       for (const testCase of fileData.tests) {
-        const engineResponse = await engine.safeEvaluate(entry, testCase.input);
+        const engineResponse = await engine.safeEvaluate(entry, testCase.input, { now });
 
         const decision = await engine.safeGetDecision(entry);
         assert.ok(decision.success, 'Decision must exist');
 
-        const decisionResponse = await decision.data.safeEvaluate(testCase.input);
+        const decisionResponse = await decision.data.safeEvaluate(testCase.input, { now });
 
         assert.ok(engineResponse.success, 'Engine response must be ok');
         assert.ok(decisionResponse.success, 'Decision response must be ok');
@@ -195,6 +196,45 @@ describe('Expressions', () => {
     for (const { template, context, result } of templateCases) {
       expect(await renderTemplate(template, context)).toEqual(result);
       expect(renderTemplateSync(template, context)).toEqual(result);
+    }
+  });
+
+  it('Serialises traces in the string and reference modes on both engine versions', async () => {
+    const timeless = (value: any): any => {
+      if (Array.isArray(value)) return value.map(timeless);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== 'performance')
+            .map(([key, inner]) => [key, timeless(inner)]),
+        );
+      }
+      return value;
+    };
+
+    for (const version of [1, 2] as const) {
+      const engine = new ZenEngine({ loader, version });
+      const input = { input: 12 };
+      const plain: any = await engine.evaluate('table.json', input, { trace: 'legacy' });
+      const text: any = await engine.evaluate('table.json', input, { trace: 'string' });
+      const reference: any = await engine.evaluate('table.json', input, { trace: 'reference' });
+      const referenceText: any = await engine.evaluate('table.json', input, { trace: 'referenceString' });
+
+      expect(typeof plain.trace).toEqual('object');
+      expect(typeof text.trace).toEqual('string');
+      expect(timeless(JSON.parse(text.trace))).toEqual(timeless(plain.trace));
+      expect(typeof reference.trace).toEqual('object');
+      expect(typeof referenceText.trace).toEqual('string');
+      expect(Object.keys(JSON.parse(referenceText.trace)).sort()).toEqual(Object.keys(reference.trace).sort());
+      for (const response of [plain, text, reference, referenceText]) {
+        expect(response.result).toEqual(plain.result);
+      }
+
+      const decision = await engine.getDecision('table.json');
+      const direct: any = await decision.evaluate(input, { trace: 'string' });
+      expect(timeless(JSON.parse(direct.trace))).toEqual(timeless(plain.trace));
+
+      await expect((async () => engine.evaluate('table.json', input, { trace: 'nonsense' as any }))()).rejects.toThrow();
     }
   });
 });

@@ -1,0 +1,182 @@
+expression (string);input (json 5);output (json 5);note
+# len: string literals
+len('');;0
+len('a');;1
+len('hello');;5
+len('Hello, World!');;13
+len(' ');;1
+len('   ');;3
+len('a b c');;5
+len('ä');;1;bug: len counts UTF-8 bytes (2), docs say length of a string (characters)
+len('ß');;1;bug: len counts UTF-8 bytes (2), intended character count
+len('日本語');;3;bug: len counts UTF-8 bytes (9), intended character count
+len('😀');;1;bug: len counts UTF-8 bytes (4), intended character count
+len('\d');;2
+# len: string input rows
+len(s);{s: 'abc'};3
+len(s);{s: 'abc'};3
+len(s);{s: ''};0
+len(s);{s: ' \t\n'};3
+len(s);{s: '\r\n'};2
+len(s);{s: 'Hello'};5
+len(s);{s: 'ä'};1;bug: len counts UTF-8 bytes (2), intended character count
+len(s);{s: 'straße'};6;bug: len counts UTF-8 bytes (7), intended character count
+len(s);{s: 'e\u0301'};2;bug: len counts UTF-8 bytes (3), intended code points (combining mark counts separately)
+len(s);{s: 'é'};1;bug: len counts UTF-8 bytes (2), intended character count
+len(s);{s: '😀'};1;bug: len counts UTF-8 bytes (4), intended character count
+len(s);{s: '👍🏽'};2;bug: len counts UTF-8 bytes (8), intended code points
+len(s);{s: '\u00a0'};1;bug: len counts UTF-8 bytes (2), intended character count
+len(s);{s: null};!error
+len(s);{};!error
+len(s);{s: 5};!error
+len(s);{s: true};!error
+len(s);{s: [1, 2]};2
+len(s);{s: []};0
+len(s);{s: {a: 1}};!error
+# len: other argument kinds
+len([]);;0
+len([1, [2, 3]]);;2
+len(['ä', 'ö']);;2
+len([null]);;1
+len(null);;!error
+len(0);;!error
+len(12345);;!error
+len(false);;!error
+len({});;!error
+len({a: 1, b: 2});;!error
+len(d('2024-01-01'));;20
+len();;!error
+len('a', 'b');;!error
+len(string(12345));;5
+len(`${1.50}`);;4
+# upper: literals
+upper('hello');;'HELLO'
+upper('');;''
+upper('   ');;'   '
+upper('HeLLo 123 !?');;'HELLO 123 !?'
+upper('HELLO');;'HELLO'
+upper('ä');;'Ä'
+upper('àéîõü');;'ÀÉÎÕÜ'
+upper('ß');;'SS'
+upper('straße');;'STRASSE'
+upper('ẞ');;'ẞ'
+upper('ı');;'I'
+upper('i');;'I'
+upper('σας');;'ΣΑΣ'
+upper('ﬁ');;'FI'
+upper('😀');;'😀'
+upper('日本');;'日本'
+upper('ǳ');;'Ǳ'
+upper('\d');;'\\D'
+# upper: input rows
+upper(s);{s: 'abc'};'ABC'
+upper(s);{s: 'abc'};'ABC'
+upper(s);{s: 'Mixed Case 42'};'MIXED CASE 42'
+upper(s);{s: ''};''
+upper(s);{s: ' \t\n'};' \t\n'
+upper(s);{s: 'straße'};'STRASSE'
+upper(s);{s: 'çà va'};'ÇÀ VA'
+upper(s);{s: 'e\u0301'};'E\u0301'
+upper(s);{s: 'abc'};'ABC'
+upper(s);{s: null};!error
+upper(s);{};!error
+upper(s);{s: 1};!error
+upper(s);{s: true};!error
+upper(s);{s: ['a']};!error
+upper(s);{s: {a: 'a'}};!error
+# upper: arguments
+upper();;!error
+upper('a', 'b');;!error
+upper(null);;!error
+upper(1);;!error
+upper(1.5);;!error
+upper(true);;!error
+upper(['a']);;!error
+upper(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+upper(upper('abc'));;'ABC'
+upper(lower('ABC'));;'ABC'
+# lower: literals
+lower('HELLO');;'hello'
+lower('');;''
+lower('HeLLo 123 !?');;'hello 123 !?'
+lower('hello');;'hello'
+lower('Ä');;'ä'
+lower('ÀÉÎÕÜ');;'àéîõü'
+lower('ẞ');;'ß'
+lower('SS');;'ss'
+lower('I');;'i'
+lower('İ');;'i\u0307'
+lower('Σ');;'σ'
+lower('ΣΑΣ');;'σας'
+lower('ΟΔΟΣ ΟΔΟΣ');;'οδος οδος'
+lower('😀');;'😀'
+lower('日本');;'日本'
+lower('Ǳ');;'ǳ'
+# lower: input rows
+lower(s);{s: 'ABC'};'abc'
+lower(s);{s: 'ABC'};'abc'
+lower(s);{s: 'Hello World'};'hello world'
+lower(s);{s: ''};''
+lower(s);{s: '   '};'   '
+lower(s);{s: 'ÄÖÜ'};'äöü'
+lower(s);{s: 'İstanbul'};'i\u0307stanbul'
+lower(s);{s: 'ABC'};'abc'
+lower(s);{s: '123'};'123'
+lower(s);{s: null};!error
+lower(s);{};!error
+lower(s);{s: 123};!error
+lower(s);{s: false};!error
+lower(s);{s: ['A']};!error
+# lower: arguments and composition
+lower();;!error
+lower('A', 'B');;!error
+lower(null);;!error
+lower(0);;!error
+lower({});;!error
+lower(upper('straße'));;'strasse'
+lower(s) == lower(t);{s: 'Hello', t: 'HELLO'};true
+lower(s) == lower(t);{s: 'Hello', t: 'hellO'};true
+lower(s) == lower(t);{s: 'Hello', t: 'Hallo'};false
+lower(s) == lower(t);{s: '', t: ''};true
+lower(s) == lower(t);{s: 'ÄB', t: 'äb'};true
+lower(s) == lower(t);{s: 'straße', t: 'STRASSE'};false
+upper(s) == upper(t);{s: 'straße', t: 'STRASSE'};true
+# trim: literals
+trim('');;''
+trim('   ');;''
+trim('abc');;'abc'
+trim('  hello  ');;'hello'
+trim(' a b ');;'a b'
+trim('a  b');;'a  b'
+trim('  HELLO, WORLD!');;'HELLO, WORLD!'
+trim(' ä ');;'ä'
+# trim: whitespace classes via input
+trim(s);{s: ' abc '};'abc'
+trim(s);{s: ' abc '};'abc'
+trim(s);{s: '\t a \n'};'a'
+trim(s);{s: '\r\n a \r\n'};'a'
+trim(s);{s: '\u000ba\u000c'};'a'
+trim(s);{s: '\u00a0a\u00a0'};'a'
+trim(s);{s: '\u2003a\u3000'};'a'
+trim(s);{s: '\u2028a\u2029'};'a'
+trim(s);{s: '\u0085a\u0085'};'a'
+trim(s);{s: '\u200ba\u200b'};'\u200ba\u200b'
+trim(s);{s: '\ufeffa'};'\ufeffa';question: BOM is not Unicode White_Space so it is kept (JS trim removes it)
+trim(s);{s: ''};''
+trim(s);{s: ' \t\n\r '};''
+trim(s);{s: 'a\tb'};'a\tb'
+trim(s);{s: ' 日本 '};'日本'
+trim(s);{s: null};!error
+trim(s);{};!error
+trim(s);{s: 1};!error
+trim(s);{s: true};!error
+trim(s);{s: [' a ']};!error
+# trim: arguments and composition
+trim();;!error
+trim(' a ', 'a');;!error
+trim(null);;!error
+trim(1);;!error
+len(trim(s));{s: '  ab  '};2
+len(trim(s));{s: '    '};0
+upper(trim(s));{s: '  ab  '};'AB'
+trim(lower(s));{s: '  AB  '};'ab'

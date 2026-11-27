@@ -671,7 +671,9 @@ fn isolate_standard_test() {
         },
     ]);
 
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
 
     for TestEnv { env, cases } in tests {
         isolate.set_environment(env.into());
@@ -791,7 +793,9 @@ fn isolate_unary_tests() {
         },
     ]);
 
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
     for UnaryTestEnv {
         env,
         cases,
@@ -811,7 +815,9 @@ fn isolate_unary_tests() {
 fn isolate_does_not_mutate_environment() {
     let environment: Variable = json!({ "a": 1, "nested": { "b": 2 } }).into();
 
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
     isolate.set_environment(environment.clone());
 
     isolate.set_reference("a").unwrap();
@@ -850,7 +856,9 @@ fn isolate_does_not_mutate_environment() {
 fn assignments_do_not_leak_between_runs() {
     let environment: Variable = json!({ "a": 1 }).into();
 
-    let mut isolate = Isolate::with_environment(environment.clone());
+    let mut isolate = Isolate::with_environment(environment.clone()).with_now(
+        zen_expression::context::parse_instant("2025-03-20T10:15:30Z"),
+    );
     assert_eq!(
         isolate.run_standard("b = a + 1; b").unwrap().to_value(),
         json!(2)
@@ -888,7 +896,9 @@ mod test {
 
             let output: Value = serde_json5::from_str(output_str).unwrap();
 
-            let mut isolate = Isolate::new();
+            let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+                "2025-03-20T10:15:30Z",
+            ));
             if !input_str.is_empty() {
                 let input: Value = serde_json5::from_str(input_str).unwrap();
                 isolate.set_environment(input.into());
@@ -909,7 +919,9 @@ mod test {
 
     #[test]
     fn isolate_test_decimals() {
-        let mut isolate = Isolate::new();
+        let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+            "2025-03-20T10:15:30Z",
+        ));
         let result = isolate.run_standard("9223372036854775807").unwrap();
 
         assert_eq!(result.to_value(), Value::from(9223372036854775807i64));
@@ -948,7 +960,9 @@ mod test {
 
             let output: Value = serde_json5::from_str(output_str).unwrap();
 
-            let mut isolate = Isolate::new();
+            let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+                "2025-03-20T10:15:30Z",
+            ));
             if !input_str.is_empty() {
                 let input: Value = serde_json5::from_str(input_str).unwrap();
                 isolate.set_environment(input.into());
@@ -969,7 +983,9 @@ mod test {
 
 #[test]
 fn arithmetic_overflow_errors_instead_of_panicking() {
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
     let max = "79228162514264337593543950335";
 
     assert!(isolate.run_standard(&format!("{max} + 1")).is_err());
@@ -988,7 +1004,9 @@ fn arithmetic_overflow_errors_instead_of_panicking() {
 
 #[test]
 fn division_and_modulo_by_zero_return_null() {
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
 
     let division = isolate.run_standard("1 / 0").unwrap();
     assert_eq!(division, Variable::Null);
@@ -999,7 +1017,9 @@ fn division_and_modulo_by_zero_return_null() {
 
 #[test]
 fn assigned_closure_with_inner_assignment_scopes_nest() {
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
     isolate.set_environment(json!({}).into());
 
     let assigned = isolate
@@ -1025,7 +1045,9 @@ fn assigned_closure_with_inner_assignment_scopes_nest() {
 
 #[test]
 fn date_add_out_of_range_is_invalid_instead_of_panicking() {
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
 
     let huge_seconds = isolate
         .run_standard("d('2020-01-01').add(10000000000000000, 's').isValid()")
@@ -1040,7 +1062,9 @@ fn date_add_out_of_range_is_invalid_instead_of_panicking() {
 
 #[test]
 fn string_index_at_usize_max_returns_null() {
-    let mut isolate = Isolate::new();
+    let mut isolate = Isolate::new().with_now(zen_expression::context::parse_instant(
+        "2025-03-20T10:15:30Z",
+    ));
     isolate.set_environment(json!({ "s": "abc", "i": 18446744073709551615u64 }).into());
 
     let result = isolate.run_standard("s[i]").unwrap();

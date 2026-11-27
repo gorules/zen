@@ -1,0 +1,893 @@
+// Transform attributes on decision nodes: inputField, outputPath, passThrough and executionMode
+// "loop" in every combination, children with schemas, children whose result is an array, an
+// empty object or carries nulls, and child errors under each transform.
+//
+// The decision node evaluates `inputField` (an expression over its own input) to pick the child
+// input, runs the child once (single) or once per array item (loop), wraps the result under
+// `outputPath`, and with passThrough merges that on top of the node's own input. In loop mode
+// passThrough additionally merges every child result over its own item.
+
+// --- The sixteen combinations, single mode -------------------------------------------------------
+// One child for all combinations: `total` from a and b, `tag` constant.
+{
+  name: "single: no attributes",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3, tag: "c"}],
+    [{a: 1, b: 2, keep: true}, {total: 3, tag: "c"}],
+    [{}, {total: 0, tag: "c"}],
+    [{a: 0.1, b: 0.2, tag: "old"}, {total: 0.3, tag: "c"}],
+  ],
+}
+
+{
+  name: "single: inputField",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: {a: 1, b: 2}}, {total: 3, tag: "c"}],
+    [{sub: {a: 5}, a: 100, b: 100}, {total: 5, tag: "c"}],
+    [{sub: {}}, {total: 0, tag: "c"}],
+    [{}, {total: 0, tag: "c"}],
+    [{sub: null, a: 1}, {total: 0, tag: "c"}],
+  ],
+}
+
+{
+  name: "single: outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "res"}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {res: {total: 3, tag: "c"}}],
+    [{a: 1, b: 2, res: {old: 1}}, {res: {total: 3, tag: "c"}}],
+    [{}, {res: {total: 0, tag: "c"}}],
+  ],
+}
+
+{
+  name: "single: passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3, tag: "c"}],
+    [{a: 1, tag: "old", total: "x"}, {a: 1, total: 1, tag: "c"}],
+    [{}, {total: 0, tag: "c"}],
+    [{list: [1, 2], o: {p: 1}}, {list: [1, 2], o: {p: 1}, total: 0, tag: "c"}],
+  ],
+}
+
+{
+  name: "single: inputField and outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "res"}],
+  },
+  cases: [
+    [{sub: {a: 1, b: 2}}, {res: {total: 3, tag: "c"}}],
+    [{sub: {a: 2}, other: 1}, {res: {total: 2, tag: "c"}}],
+    [{}, {res: {total: 0, tag: "c"}}],
+  ],
+}
+
+{
+  name: "single: inputField and passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", passThrough: true}],
+  },
+  cases: [
+    [{sub: {a: 1, b: 2}}, {sub: {a: 1, b: 2}, total: 3, tag: "c"}],
+    [{sub: {a: 1}, a: 50, total: 9}, {sub: {a: 1}, a: 50, total: 1, tag: "c"}],
+    [{}, {total: 0, tag: "c"}],
+  ],
+}
+
+{
+  name: "single: outputPath and passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "res", passThrough: true}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, res: {total: 3, tag: "c"}}],
+    [{a: 1, res: {keep: true, tag: "old"}}, {a: 1, res: {keep: true, total: 1, tag: "c"}}],
+    [{a: 1, res: 7}, {a: 1, res: {total: 1, tag: "c"}}],
+    [{a: 1, res: [1, 2]}, {a: 1, res: {total: 1, tag: "c"}}],
+  ],
+}
+
+{
+  name: "single: inputField, outputPath and passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "(a ?? 0) + (b ?? 0)", tag: "'c'"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "sub", passThrough: true}],
+  },
+  cases: [
+    [{sub: {a: 1, b: 2}}, {sub: {a: 1, b: 2, total: 3, tag: "c"}}],
+    [{sub: {a: 1, tag: "old"}, x: 1}, {sub: {a: 1, total: 1, tag: "c"}, x: 1}],
+    [{x: 1}, {x: 1, sub: {total: 0, tag: "c"}}],
+    [{sub: null, x: 1}, {x: 1, sub: {total: 0, tag: "c"}}],
+  ],
+}
+
+// --- The combinations in loop mode -------------------------------------------------------------
+// Loop mode needs an array (the node input itself without inputField).
+{
+  name: "loop: no inputField loops over an array node input",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "list", inputField: "nums", executionMode: "loop", fields: {n: "$root"}},
+      {decision: "call", key: "child", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{nums: [1, 2]}, [{double: 2}, {double: 4}]],
+    [{nums: []}, []],
+    [{nums: [0.5]}, [{double: 1}]],
+  ],
+}
+
+{
+  name: "loop: an object node input without inputField is an error",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", executionMode: "loop"}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{items: [1, 2]}, "!error"],
+  ],
+}
+
+{
+  name: "loop: inputField",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, [{double: 2}, {double: 4}]],
+    [{items: []}, []],
+    [{items: [{n: -1}], other: true}, [{double: -2}]],
+    [{items: null}, "!error"],
+    [{items: "abc"}, "!error"],
+  ],
+}
+
+{
+  name: "loop: inputField and outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out.list", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, {out: {list: [{double: 2}, {double: 4}]}}],
+    [{items: []}, {out: {list: []}}],
+    [{items: [{n: 3}], out: {old: 1}}, {out: {list: [{double: 6}]}}],
+  ],
+}
+
+{
+  name: "loop: inputField and passThrough merges each result over its item",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "items", passThrough: true, executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, [{n: 1, double: 2}, {n: 2, double: 4}], "question: with passThrough and no outputPath the array result replaces the whole node input (a top-level array patch replaces the document), so the parent's other keys are lost"],
+    [{items: [], keep: 1}, [], "question: with passThrough and no outputPath the array result replaces the whole node input (a top-level array patch replaces the document), so the parent's other keys are lost"],
+  ],
+}
+
+{
+  name: "loop: inputField, outputPath and passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "items", outputPath: "items", passThrough: true, executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1, id: "a"}, {n: 2, id: "b"}], keep: 1}, {items: [{n: 1, id: "a", double: 2}, {n: 2, id: "b", double: 4}], keep: 1}],
+    [{items: [], keep: 1}, {items: [], keep: 1}],
+    [{items: [{n: 1, double: 99}]}, {items: [{n: 1, double: 2}]}],
+  ],
+}
+
+{
+  name: "loop: passThrough to a different outputPath keeps the source array",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {double: "n * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "items", outputPath: "done", passThrough: true, executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1}]}, {items: [{n: 1}], done: [{n: 1, double: 2}]}],
+    [{items: [{n: 2}, {n: 3}]}, {items: [{n: 2}, {n: 3}], done: [{n: 2, double: 4}, {n: 3, double: 6}]}],
+    [{items: []}, {items: [], done: []}],
+  ],
+}
+
+{
+  name: "loop: passThrough over scalar items replaces each item by the child result",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "'x'"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "nums", outputPath: "out", passThrough: true, executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{nums: [1, 2]}, {nums: [1, 2], out: [{v: "x"}, {v: "x"}]}],
+    [{nums: ["a"]}, {nums: ["a"], out: [{v: "x"}]}],
+    [{nums: [null]}, {nums: [null], out: [{v: "x"}]}],
+  ],
+}
+
+{
+  name: "loop: mixed item kinds",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {hasN: "n != null"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 1}, {}, {n: null}]}, {out: [{hasN: true}, {hasN: false}, {hasN: false}]}],
+    [{items: [{n: 1}, 5, "s", true]}, {out: [{hasN: true}, {hasN: false}, {hasN: false}, {hasN: false}]}, "question: scalar items reach the child as {} (edge merging drops non-objects), so n reads null instead of failing"],
+    [{items: [{n: 1}, [1]]}, "!error", "question: an array item reaches the child unchanged and a member read on an array environment fails, while scalar items are silently replaced by {}"],
+  ],
+}
+
+{
+  name: "loop: explicit single mode treats an array as one input",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {n: "len($root)"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "single"}],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {out: {n: 3}}],
+    [{items: []}, {out: {n: 0}}],
+  ],
+}
+
+// --- inputField expressions ----------------------------------------------------------------------
+{
+  name: "inputField dotted path into a nested object",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {city: "upper(city ?? 'none')"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "customer.address", outputPath: "res"}],
+  },
+  cases: [
+    [{customer: {address: {city: "oslo"}}}, {res: {city: "OSLO"}}],
+    [{customer: {address: {}}}, {res: {city: "NONE"}}],
+    [{customer: {}}, {res: {city: "NONE"}}],
+    [{}, {res: {city: "NONE"}}],
+  ],
+}
+
+{
+  name: "inputField indexing an array",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {name: "name"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "people[0]", outputPath: "first"}],
+  },
+  cases: [
+    [{people: [{name: "ann"}, {name: "bo"}]}, {first: {name: "ann"}}],
+    [{people: []}, {first: {}}],
+  ],
+}
+
+{
+  name: "inputField filtering a list for a loop",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {id: "id"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "filter(items, #.active)", outputPath: "active", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{id: 1, active: true}, {id: 2, active: false}, {id: 3, active: true}]}, {active: [{id: 1}, {id: 3}]}],
+    [{items: [{id: 1, active: false}]}, {active: []}],
+    [{items: []}, {active: []}],
+  ],
+}
+
+{
+  name: "inputField building a list for a loop",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {sq: "v * v"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "map(nums, {v: #})", outputPath: "squares", executionMode: "loop"}],
+  },
+  cases: [
+    [{nums: [1, 2, 3]}, {squares: [{sq: 1}, {sq: 4}, {sq: 9}]}],
+    [{nums: [-0.5]}, {squares: [{sq: 0.25}]}],
+    [{nums: []}, {squares: []}],
+  ],
+}
+
+{
+  name: "inputField that fails to evaluate",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "a + 1", outputPath: "out"}],
+  },
+  cases: [
+    [{a: 1}, {out: {v: 1}}],
+    [{a: "x"}, "!error"],
+  ],
+}
+
+{
+  name: "inputField with a syntax error",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "a +", outputPath: "out"}],
+  },
+  cases: [
+    [{a: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "inputField reading $nodes",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {total: "a + b"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {pair: "{a: x, b: y}"}},
+      {decision: "call", key: "child", inputField: "$nodes.prep.pair", outputPath: "out"},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 2}, {out: {total: 3}}],
+    [{x: 10, y: -10}, {out: {total: 0}}],
+  ],
+}
+
+// --- outputPath shapes -------------------------------------------------------------------------
+{
+  name: "outputPath three levels deep",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "x"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "a.b.c"}],
+  },
+  cases: [
+    [{x: 1}, {a: {b: {c: {v: 1}}}}],
+    [{x: "s"}, {a: {b: {c: {v: "s"}}}}],
+    [{}, {a: {b: {c: {}}}}],
+  ],
+}
+
+{
+  name: "outputPath with passThrough merges into an existing nested object",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "x"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "a.b", passThrough: true}],
+  },
+  cases: [
+    [{x: 1, a: {b: {old: 1}, c: 2}}, {x: 1, a: {b: {old: 1, v: 1}, c: 2}}],
+    [{x: 1, a: {c: 2}}, {x: 1, a: {b: {v: 1}, c: 2}}],
+    [{x: 1, a: 5}, {x: 1, a: {b: {v: 1}}}],
+  ],
+}
+
+{
+  name: "outputPath with an array child result",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {v: "$root"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out", passThrough: true}],
+  },
+  cases: [
+    [{xs: [1, 2]}, {xs: [1, 2], out: [{v: 1}, {v: 2}]}],
+    [{xs: [], out: [9, 9]}, {xs: [], out: []}],
+  ],
+}
+
+// --- Children returning arrays, empty objects and nulls -------------------------------------------
+{
+  name: "array child result with passThrough and no outputPath replaces the input",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {v: "$root"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{xs: [1, 2], keep: true}, [{v: 1}, {v: 2}], "question: a top-level array result replaces the passed-through input instead of being merged into it"],
+    [{xs: []}, [], "question: a top-level array result replaces the passed-through input instead of being merged into it"],
+  ],
+}
+
+{
+  name: "array child result in a loop gives an array of arrays",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "xs", executionMode: "loop", fields: {v: "$root * 10"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "groups", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{groups: [{xs: [1, 2]}, {xs: []}, {xs: [3]}]}, {out: [[{v: 10}, {v: 20}], [], [{v: 30}]]}],
+    [{groups: []}, {out: []}],
+  ],
+}
+
+{
+  name: "child returning a collect table rows merged into parent",
+  decisions: {
+    child: {nodes: [{table: "t", hit: "collect", inputs: ["n"], outputs: ["hit"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "hits", passThrough: true}],
+  },
+  cases: [
+    [{n: 20}, {n: 20, hits: [{hit: "pos"}, {hit: "big"}]}],
+    [{n: 5}, {n: 5, hits: [{hit: "pos"}]}],
+    [{n: -1, hits: [{hit: "stale"}]}, {n: -1, hits: []}],
+  ],
+}
+
+{
+  name: "child returning an empty object",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "x"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out", passThrough: true}],
+  },
+  cases: [
+    [{x: 1}, {x: 1, out: {v: 1}}],
+    [{}, {out: {}}],
+    [{out: {old: 1}}, {out: {old: 1}}],
+  ],
+}
+
+{
+  name: "child null at the top level does not delete a passed-through key",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {status: "null"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{status: "open"}, {status: "open"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a nested null from the child deletes the passed-through key",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {"info.status": "null", "info.seen": "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{info: {status: "open", id: 1}}, {info: {id: 1, seen: true}}],
+    [{info: {id: 1}}, {info: {id: 1, seen: true}}],
+    [{}, {info: {seen: true, status: null}}, "question: with no parent object to delete from, the child's nested null is materialized (same merge rule as 11-pass-through)"],
+  ],
+}
+
+{
+  name: "child null under outputPath with passThrough",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {status: "null", seen: "true"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "info", passThrough: true}],
+  },
+  cases: [
+    [{info: {status: "open"}}, {info: {status: "open", seen: true}}, "question: the child's final merge drops its top-level null before outputPath wraps it, so the parent's info.status survives while the same null nested one level deeper in the child would delete it"],
+    [{}, {info: {seen: true}}],
+  ],
+}
+
+{
+  name: "child returning nested arrays and objects",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {"r.list": "[1, [2, 3]]", "r.obj": "{k: {deep: true}}"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{}, {out: {r: {list: [1, [2, 3]], obj: {k: {deep: true}}}}}],
+    [{r: 1}, {out: {r: {list: [1, [2, 3]], obj: {k: {deep: true}}}}}],
+  ],
+}
+
+{
+  name: "passThrough replaces a parent array with the child's array",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {list: "[9]"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true}],
+  },
+  cases: [
+    [{list: [1, 2, 3]}, {list: [9]}],
+    [{list: "x"}, {list: [9]}],
+    [{}, {list: [9]}],
+  ],
+}
+
+// --- Children with schemas under transforms --------------------------------------------------------
+{
+  name: "child input schema validates the inputField selection",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", properties: {age: {type: "number"}}, required: ["age"]}},
+      {expression: "e", fields: {adult: "age >= 18"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "person", outputPath: "person", passThrough: true}],
+  },
+  cases: [
+    [{person: {age: 20}}, {person: {age: 20, adult: true}}],
+    [{person: {age: 3}, age: "ignored"}, {person: {age: 3, adult: false}, age: "ignored"}],
+    [{age: 20}, "!error"],
+    [{person: {age: "20"}}, "!error"],
+  ],
+}
+
+{
+  name: "child input schema validates each loop item",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", properties: {n: {type: "integer", minimum: 0}}, required: ["n"]}},
+      {expression: "e", fields: {half: "n / 2"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 2}, {n: 4}]}, {out: [{half: 1}, {half: 2}]}],
+    [{items: []}, {out: []}],
+    [{items: [{n: 2}, {n: -1}]}, "!error"],
+    [{items: [{n: 2}, {}]}, "!error"],
+    [{items: [{n: 1.5}]}, "!error"],
+  ],
+}
+
+{
+  name: "child input schema checks the item before passThrough merging",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", additionalProperties: false, properties: {n: {type: "number"}}}},
+      {expression: "e", fields: {ok: "true"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "items", passThrough: true, executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: 1}], extra: 1}, {items: [{n: 1, ok: true}], extra: 1}],
+    [{items: [{n: 1, m: 2}]}, "!error"],
+  ],
+}
+
+{
+  name: "child output schema checks the child result, not the wrapped one",
+  decisions: {
+    child: {nodes: [
+      {expression: "e", fields: {score: "x * 10"}},
+      {output: "out", schema: {type: "object", required: ["score"], properties: {score: {type: "number", maximum: 100}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "res", passThrough: true}],
+  },
+  cases: [
+    [{x: 5}, {x: 5, res: {score: 50}}],
+    [{x: 10}, {x: 10, res: {score: 100}}],
+    [{x: 11}, "!error"],
+  ],
+}
+
+{
+  name: "child output schema per loop item",
+  decisions: {
+    child: {nodes: [
+      {expression: "e", fields: {v: "x"}},
+      {output: "out", schema: {type: "object", properties: {v: {type: "string"}}}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{x: "a"}, {x: "b"}]}, {out: [{v: "a"}, {v: "b"}]}],
+    [{items: [{x: "a"}, {x: 1}]}, "!error"],
+    [{items: [{}]}, {out: [{}]}],
+  ],
+}
+
+{
+  name: "child input schema with an inputField resolving to null",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object"}},
+      {expression: "e", fields: {seen: "true"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub", outputPath: "out"}],
+  },
+  cases: [
+    [{sub: {}}, {out: {seen: true}}],
+    [{sub: {a: 1}}, {out: {seen: true}}],
+    [{}, "!error", "question: a missing inputField selection is validated as null, which an object schema rejects, although the child's expression nodes see it as {}"],
+  ],
+}
+
+// --- Child errors under each transform ---------------------------------------------------------------
+{
+  name: "child error with outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "a * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "out"}],
+  },
+  cases: [
+    [{a: 1}, {out: {v: 2}}],
+    [{a: "x"}, "!error"],
+    [{a: [1]}, "!error"],
+  ],
+}
+
+{
+  name: "child error with passThrough",
+  decisions: {
+    child: {nodes: [{custom: "c", kind: "fail", config: {message: "child refused"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", passThrough: true, outputPath: "out"}],
+  },
+  cases: [
+    [{}, "!error: child refused"],
+    [{a: 1}, "!error: child refused"],
+  ],
+}
+
+{
+  name: "child error with inputField",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "a * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "sub"}],
+  },
+  cases: [
+    [{sub: {a: 2}}, {v: 4}],
+    [{sub: {a: true}}, "!error"],
+    [{sub: {a: 2}, a: "x"}, {v: 4}],
+  ],
+}
+
+{
+  name: "child error on one loop item fails the whole loop",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["ok", ""]},
+        {expression: "good", fields: {r: "id"}},
+        {custom: "bad", kind: "fail", config: {message: "item rejected"}},
+      ],
+      edges: ["input -> s", "s:0 -> good -> output", "s:1 -> bad -> output"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", passThrough: true, executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{ok: true, id: 1}, {ok: true, id: 2}]}, {items: [{ok: true, id: 1}, {ok: true, id: 2}], out: [{ok: true, id: 1, r: 1}, {ok: true, id: 2, r: 2}]}],
+    [{items: [{ok: true, id: 1}, {ok: false, id: 2}]}, "!error: item rejected"],
+    [{items: [{id: 1}]}, "!error: item rejected"],
+    [{items: []}, {items: [], out: []}],
+  ],
+}
+
+{
+  name: "child error on the first loop item",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {v: "n + 1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{n: "a"}, {n: 1}]}, "!error"],
+    [{items: [{n: 1}, {n: 2}, {n: false}]}, "!error"],
+    [{items: [{n: 1}]}, {out: [{v: 2}]}],
+  ],
+}
+
+{
+  name: "missing child under a loop with no items",
+  graph: {
+    nodes: [{decision: "call", key: "nowhere", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: []}, {out: []}, "question: an empty loop never loads the child, so an unknown key goes unnoticed"],
+    [{items: [{}]}, "!error"],
+  ],
+}
+
+{
+  name: "missing child under outputPath and passThrough",
+  graph: {
+    nodes: [{decision: "call", key: "nowhere", outputPath: "out", passThrough: true}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{out: 1}, "!error"],
+  ],
+}
+
+{
+  name: "depth limit inside a loop",
+  decisions: {
+    forever: {nodes: [{decision: "again", key: "forever"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "forever", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: []}, {out: []}],
+    [{items: [{}]}, "!error"],
+  ],
+}
+
+// --- Transforms inside the child -------------------------------------------------------------------
+{
+  name: "child node with its own inputField and outputPath",
+  decisions: {
+    child: {nodes: [{expression: "e", inputField: "order", outputPath: "order", passThrough: true, fields: {total: "price * qty"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "data", outputPath: "data", passThrough: true}],
+  },
+  cases: [
+    [{data: {order: {price: 2, qty: 3}}, id: 1}, {data: {order: {price: 2, qty: 3, total: 6}}, id: 1}],
+    [{data: {order: {price: 0, qty: 3}}}, {data: {order: {price: 0, qty: 3, total: 0}}}],
+  ],
+}
+
+{
+  name: "child decision node with transforms inside a parent loop",
+  decisions: {
+    outer: {nodes: [{decision: "inner", key: "inner", inputField: "parts", outputPath: "parts", passThrough: true, executionMode: "loop"}]},
+    inner: {nodes: [{expression: "e", fields: {w: "kg * 1000"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "outer", inputField: "boxes", outputPath: "boxes", passThrough: true, executionMode: "loop"}],
+  },
+  cases: [
+    [
+      {boxes: [{id: 1, parts: [{kg: 1}, {kg: 0.5}]}, {id: 2, parts: []}]},
+      {boxes: [{id: 1, parts: [{kg: 1, w: 1000}, {kg: 0.5, w: 500}]}, {id: 2, parts: []}]},
+    ],
+    [{boxes: []}, {boxes: []}],
+  ],
+}
+
+// --- Realistic combinations ---------------------------------------------------------------------------
+{
+  name: "line pricing loop with a summary node after it",
+  decisions: {
+    line: {nodes: [
+      {table: "rate", inputs: ["category"], outputs: ["vat"], rules: [["'food'", "0.05"], ["'book'", "0"], ["", "0.2"]]},
+      {expression: "calc", fields: {net: "$nodes.input.price * $nodes.input.qty", gross: "$nodes.input.price * $nodes.input.qty * (1 + vat)"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "lines", key: "line", inputField: "lines", outputPath: "lines", passThrough: true, executionMode: "loop"},
+      {expression: "sum", passThrough: true, fields: {total: "sum(map(lines, #.gross))"}},
+    ],
+  },
+  cases: [
+    [
+      {lines: [{category: "food", price: 10, qty: 2}, {category: "tv", price: 100, qty: 1}]},
+      {lines: [{category: "food", price: 10, qty: 2, net: 20, gross: 21}, {category: "tv", price: 100, qty: 1, net: 100, gross: 120}], total: 141},
+    ],
+    [{lines: [{category: "book", price: 5, qty: 1}]}, {lines: [{category: "book", price: 5, qty: 1, net: 5, gross: 5}], total: 5}],
+    [{lines: []}, {lines: [], total: 0}],
+  ],
+}
+
+{
+  name: "applicant scoring keeps the request next to the result",
+  decisions: {
+    score: {nodes: [
+      {table: "t", inputs: ["income", "debts"], outputs: ["score"], rules: [
+        [">= 50000", "< 10000", "800"],
+        [">= 50000", "", "650"],
+        ["", "", "400"],
+      ]},
+      {output: "out", schema: {type: "object", required: ["score"]}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "scoring", key: "score", inputField: "applicant", outputPath: "applicant.risk", passThrough: true},
+      {expression: "decide", passThrough: true, fields: {approved: "applicant.risk.score >= 600"}},
+    ],
+  },
+  cases: [
+    [{applicant: {income: 60000, debts: 0}}, {applicant: {income: 60000, debts: 0, risk: {score: 800}}, approved: true}],
+    [{applicant: {income: 60000, debts: 20000}}, {applicant: {income: 60000, debts: 20000, risk: {score: 650}}, approved: true}],
+    [{applicant: {income: 1000, debts: 0}}, {applicant: {income: 1000, debts: 0, risk: {score: 400}}, approved: false}],
+  ],
+}

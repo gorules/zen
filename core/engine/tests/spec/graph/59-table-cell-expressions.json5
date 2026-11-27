@@ -1,0 +1,814 @@
+// Decision table cells as full expressions. An input cell under a column with a field is a unary
+// test where `$` is the column's value; it may be any expression that produces a boolean, so
+// closures, ternaries, function calls, date methods and arithmetic on `$` all work, and the cell
+// may read other input fields and `$nodes` next to `$`. A cell under a field-less column is a
+// standalone boolean expression. A cell that errors or produces a non-boolean does not match.
+// Chapter 06 pins the cell forms; this chapter exercises expression-heavy cells and how they
+// combine across columns, node data and the equality index.
+
+// --- Closures over input lists ------------------------------------------------------------------
+
+{
+  name: "closures: `$` is an array and cells test it with some, all, none and one",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["scores"], outputs: ["r"], rules: [
+        ["some($, # >= 90)", "'has top score'"],
+        ["all($, # >= 50)", "'all pass'"],
+        ["none($, # < 0)", "'no negatives'"],
+        ["one($, # == 0)", "'exactly one zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{scores: [95, 60, 70]}, [{r: "has top score"}, {r: "all pass"}, {r: "no negatives"}]],
+    [{scores: [10, 0, 20]}, [{r: "no negatives"}, {r: "exactly one zero"}]],
+    [{scores: [0, 0, -1]}, []],
+    [{scores: []}, [{r: "all pass"}, {r: "no negatives"}]],
+    [{scores: null}, []],
+    [{}, []],
+    [{scores: 95}, []],
+  ],
+}
+
+{
+  name: "closures: a closure over `$` compares items with another input field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["items", "limit"], outputs: ["r"], rules: [
+        ["some($, #.price > limit)", "", "'over limit'"],
+        ["len(filter($, #.qty > 0)) >= 2", "", "'several in stock'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{price: 5, qty: 1}, {price: 50, qty: 0}], limit: 20}, {r: "over limit"}],
+    [{items: [{price: 5, qty: 1}, {price: 10, qty: 3}], limit: 20}, {r: "several in stock"}],
+    [{items: [{price: 5, qty: 1}], limit: 20}, {r: "other"}],
+    [{items: [{price: 50, qty: 1}], limit: null}, {r: "other"}],
+    [{items: [], limit: 1}, {r: "other"}],
+  ],
+}
+
+{
+  name: "closures: a scalar `$` tested against a list from the input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["some(blocked, # == $)", "'blocked'"],
+        ["some(allowed, startsWith($, #))", "'allowed prefix'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "X1", blocked: ["X1", "X2"], allowed: ["X"]}, {r: "blocked"}],
+    [{code: "X3", blocked: ["X1", "X2"], allowed: ["X"]}, {r: "allowed prefix"}],
+    [{code: "Y3", blocked: ["X1"], allowed: ["X", "Z"]}, {r: "unknown"}],
+    [{code: "Y3", blocked: [], allowed: []}, {r: "unknown"}],
+    [{code: "X3"}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "closures: nested closures and aggregates in cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["orders"], outputs: ["r"], rules: [
+        ["some($, some(#.lines, #.sku == 'GIFT'))", "'has gift'"],
+        ["sum(map($, sum(map(#.lines, #.qty)))) > 10", "'bulk'"],
+        ["count($, len(#.lines) == 0) > 0", "'empty order'"],
+        ["", "'normal'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{orders: [{lines: [{sku: "A", qty: 1}]}, {lines: [{sku: "GIFT", qty: 1}]}]}, {r: "has gift"}],
+    [{orders: [{lines: [{sku: "A", qty: 6}]}, {lines: [{sku: "B", qty: 5}]}]}, {r: "bulk"}],
+    [{orders: [{lines: [{sku: "A", qty: 1}]}, {lines: []}]}, {r: "empty order"}],
+    [{orders: [{lines: [{sku: "A", qty: 1}]}]}, {r: "normal"}],
+    [{orders: []}, {r: "normal"}],
+  ],
+}
+
+{
+  name: "closures: a field-less column with closures next to a field column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier", null], outputs: ["r"], rules: [
+        ["'gold'", "some(items, #.price > 100)", "'gold with premium item'"],
+        ["'gold'", "all(items, #.price <= 100)", "'gold standard'"],
+        ["", "len(items) == 0", "'empty cart'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", items: [{price: 150}]}, {r: "gold with premium item"}],
+    [{tier: "gold", items: [{price: 50}, {price: 100}]}, {r: "gold standard"}],
+    [{tier: "gold", items: []}, {r: "gold standard"}],
+    [{tier: "silver", items: []}, {r: "empty cart"}],
+    [{tier: "silver", items: [{price: 1}]}, {r: "other"}],
+    [{tier: "gold"}, {r: "other"}],
+  ],
+}
+
+// --- Ternaries and conditionals -----------------------------------------------------------------------
+
+{
+  name: "ternaries: a ternary that yields booleans is a valid test",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount"], outputs: ["r"], rules: [
+        ["vip ? $ > 1000 : $ > 100", "'flag'"],
+        ["", "'ok'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 500, vip: true}, {r: "ok"}],
+    [{amount: 1500, vip: true}, {r: "flag"}],
+    [{amount: 500, vip: false}, {r: "flag"}],
+    [{amount: 50, vip: false}, {r: "ok"}],
+    [{amount: 500}, {r: "ok"}],
+    [{amount: 500, vip: "yes"}, {r: "ok"}],
+  ],
+}
+
+{
+  name: "ternaries: a ternary that yields a value compared afterwards",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["r"], rules: [
+        ["($ == 'b2b' ? net : gross) > 1000", "'large'"],
+        ["", "'small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "b2b", net: 1500, gross: 10}, {r: "large"}],
+    [{kind: "b2c", net: 1500, gross: 10}, {r: "small"}],
+    [{kind: "b2c", net: 10, gross: 1500}, {r: "large"}],
+    [{kind: "b2b", gross: 1500}, {r: "small"}],
+  ],
+}
+
+// A unary ternary whose branches are literal values is an equality test: `$ == (cond ? a : b)`
+// (unary chapter 07 of the expression spec). Boolean literal branches follow the same rule, so
+// `$ > 0 ? true : false` compares `$` with a boolean and never matches a number.
+{
+  name: "ternaries: a ternary with literal branches is compared with `$`",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["$ > 0 ? 'yes' : 'no'", "'string result'"],
+        ["$ > 0 ? 1 : 0", "'number result'"],
+        ["$ > 0 ? true : null", "'boolean result'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: "number result"}],
+    [{n: 0}, {r: "number result"}],
+    [{n: 5}, {r: "fallback"}, "question: bool-literal branches make the cell `$ == ($ > 0 ? true : null)`, so a positive number never matches; the standard-mode reading of the cell is true (expression spec unary 07)"],
+    [{n: -5}, {r: "fallback"}],
+    [{n: true}, {r: "fallback"}],
+    [{}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "ternaries: a ternary over another field picks the value `$` must equal",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["label"], outputs: ["r"], rules: [
+        ["n > 0 ? 'pos' : 'neg'", "'consistent'"],
+        ["", "'inconsistent'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{label: "pos", n: 5}, {r: "consistent"}],
+    [{label: "neg", n: 5}, {r: "inconsistent"}],
+    [{label: "neg", n: -1}, {r: "consistent"}],
+    [{label: "neg", n: 0}, {r: "consistent"}],
+    [{label: "pos"}, {r: "inconsistent"}],
+    [{label: null, n: 1}, {r: "inconsistent"}],
+  ],
+}
+
+{
+  name: "ternaries: nested ternaries and `??` in field-less cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null], outputs: ["r"], rules: [
+        ["(country ?? 'US') == 'US' ? age >= 21 : age >= 18", "'may drink'"],
+        ["", "'may not'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", age: 20}, {r: "may not"}],
+    [{country: "US", age: 21}, {r: "may drink"}],
+    [{country: "DE", age: 18}, {r: "may drink"}],
+    [{age: 20}, {r: "may not"}],
+    [{country: null, age: 25}, {r: "may drink"}],
+    [{country: "DE"}, {r: "may not"}],
+  ],
+}
+
+{
+  name: "ternaries: conditional output cells next to conditional input cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["qty"], outputs: ["price", "note"], rules: [
+        ["$ >= (wholesale ? 10 : 100)", "unit * $ * (wholesale ? 0.8 : 0.9)", "wholesale ? 'wholesale bulk' : 'retail bulk'"],
+        ["", "unit * qty", "'list'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{qty: 10, unit: 2, wholesale: true}, {price: 16, note: "wholesale bulk"}],
+    [{qty: 10, unit: 2, wholesale: false}, {price: 20, note: "list"}],
+    [{qty: 100, unit: 1, wholesale: false}, {price: 90, note: "retail bulk"}],
+    [{qty: 5, unit: 1, wholesale: true}, {price: 5, note: "list"}],
+  ],
+}
+
+// --- Function calls ------------------------------------------------------------------------------------
+
+{
+  name: "functions: contains on a string `$` and on an array `$`",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["contains($, 'vip')", "'contains vip'"],
+        ["contains($, needle)", "'contains needle'"],
+        ["not contains($, 'x')", "'no x'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "a vip x", needle: "a"}, [{r: "contains vip"}, {r: "contains needle"}]],
+    [{v: ["vip", "y"], needle: "y"}, [{r: "contains vip"}, {r: "contains needle"}, {r: "no x"}]],
+    [{v: "plain", needle: "z"}, [{r: "no x"}]],
+    [{v: [], needle: "z"}, [{r: "no x"}]],
+    [{v: 12, needle: "1"}, []],
+    [{v: null}, []],
+  ],
+}
+
+{
+  name: "functions: startsWith and endsWith with prefixes from other fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["file"], outputs: ["r"], rules: [
+        ["startsWith($, dir) and endsWith($, ext)", "'match'"],
+        ["startsWith($, dir)", "'in dir'"],
+        ["endsWith(lower($), lower(ext))", "'right type, case-insensitive'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{file: "/tmp/a.txt", dir: "/tmp/", ext: ".txt"}, {r: "match"}],
+    [{file: "/tmp/a.pdf", dir: "/tmp/", ext: ".txt"}, {r: "in dir"}],
+    [{file: "/home/A.TXT", dir: "/tmp/", ext: ".txt"}, {r: "right type, case-insensitive"}],
+    [{file: "/home/a.pdf", dir: "/tmp/", ext: ".txt"}, {r: "other"}],
+    [{file: "/tmp/a.txt", ext: ".txt"}, {r: "right type, case-insensitive"}],
+    [{file: null, dir: "/tmp/", ext: ".txt"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "functions: string, number and type functions on `$`",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["type($) == 'string' and len(trim($)) == 0", "'blank string'"],
+        ["type($) == 'number' and round($) == $", "'whole number'"],
+        ["type($) == 'number' and abs($) < 1", "'small magnitude'"],
+        ["type($) == 'array' and len($) > 1", "'list'"],
+        ["matches(string($), '^[0-9]+$')", "'digits'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "   "}, [{r: "blank string"}]],
+    [{v: 42}, [{r: "whole number"}, {r: "digits"}]],
+    [{v: -0.5}, [{r: "small magnitude"}]],
+    [{v: 0}, [{r: "whole number"}, {r: "small magnitude"}, {r: "digits"}]],
+    [{v: "123"}, [{r: "digits"}]],
+    [{v: [1, 2]}, [{r: "list"}]],
+    [{v: true}, []],
+  ],
+}
+
+{
+  name: "functions: keys and values over an object `$`",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["flags"], outputs: ["r"], rules: [
+        ["contains(keys($), 'admin') and $.admin == true", "'admin'"],
+        ["len(keys($)) == 0", "'no flags'"],
+        ["all(values($), # == false)", "'all off'"],
+        ["", "'mixed'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{flags: {admin: true, beta: false}}, {r: "admin"}],
+    [{flags: {admin: false}}, {r: "all off"}],
+    [{flags: {}}, {r: "no flags"}],
+    [{flags: {beta: true, x: false}}, {r: "mixed"}],
+    [{}, {r: "mixed"}],
+  ],
+}
+
+// --- Date methods ---------------------------------------------------------------------------------------
+
+{
+  name: "dates: date methods on `$` in cells",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["at"], outputs: ["r"], rules: [
+        ["d($).isBefore(d('2025-01-01'))", "'before 2025'"],
+        ["d($).year() == 2025", "'in 2025'"],
+        ["d($).weekday() >= 6", "'weekend'"],
+        ["d($).month() == 12", "'december'"],
+        ["d($).isValid() == false", "'invalid'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-12-28"}, [{r: "before 2025"}, {r: "weekend"}, {r: "december"}]],
+    [{at: "2025-03-20"}, [{r: "in 2025"}]],
+    [{at: "2025-03-22"}, [{r: "in 2025"}, {r: "weekend"}]],
+    [{at: "garbage"}, [{r: "invalid"}]],
+    [{at: null}, [{r: "invalid"}]],
+  ],
+}
+
+{
+  name: "dates: differences from now and between two fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["birth", "joined"], outputs: ["r"], rules: [
+        ["d().diff(d($), 'year') < 18", "", "'minor'"],
+        ["", "d().diff(d($), 'day') < 30", "'new member'"],
+        ["", "d($).diff(d(birth), 'year') < 18", "'joined as a minor'"],
+        ["", "", "'regular'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{birth: "2010-01-01", joined: "2020-01-01"}, {r: "minor"}],
+    [{birth: "1990-01-01", joined: "2025-03-10"}, {r: "new member"}],
+    [{birth: "1990-01-01", joined: "2000-01-01"}, {r: "joined as a minor"}],
+    [{birth: "1990-01-01", joined: "2015-01-01"}, {r: "regular"}],
+    [{birth: "2007-03-20", joined: "2015-01-01"}, {r: "joined as a minor"}],
+    [{birth: "2007-03-21", joined: "2024-01-01"}, {r: "minor"}],
+  ],
+}
+
+{
+  name: "dates: date arithmetic compared across columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["due", "paid"], outputs: ["r"], rules: [
+        ["", "d($).isAfter(d(due).add(30, 'd'))", "'very late'"],
+        ["", "d($).isAfter(d(due))", "'late'"],
+        ["", "d($).isSame(d(due), 'day')", "'on the day'"],
+        ["", "", "'early'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{due: "2025-01-01", paid: "2025-03-01"}, {r: "very late"}],
+    [{due: "2025-01-01", paid: "2025-01-31"}, {r: "late"}],
+    [{due: "2025-01-01", paid: "2025-01-01"}, {r: "on the day"}],
+    [{due: "2025-01-01", paid: "2024-12-01"}, {r: "early"}],
+    [{due: "2025-01-01"}, {r: "early"}],
+  ],
+}
+
+{
+  name: "dates: a date computed upstream compared with date methods",
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {start: "d(start)", end: "d(start).add(days, 'd')"}},
+      {table: "t", inputs: ["end"], outputs: ["r", "endDay"], rules: [
+        ["$.isAfter(start.endOf('month'))", "'crosses month'", "end.format('%Y-%m-%d')"],
+        ["", "'same month'", "end.format('%Y-%m-%d')"],
+      ]},
+    ],
+    edges: ["input -> prep", "prep -> t -> output"],
+  },
+  cases: [
+    [{start: "2025-01-25", days: 10}, {r: "crosses month", endDay: "2025-02-04"}],
+    [{start: "2025-01-01", days: 10}, {r: "same month", endDay: "2025-01-11"}],
+    [{start: "2025-02-27", days: 1}, {r: "same month", endDay: "2025-02-28"}],
+    [{start: "2024-02-28", days: 1}, {r: "same month", endDay: "2024-02-29"}],
+  ],
+}
+
+// --- Arithmetic on `$` ---------------------------------------------------------------------------------
+
+{
+  name: "arithmetic: `$` scaled, offset and compared",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["$ * 2 > 10", "'double over 10'"],
+        ["$ % 2 == 0", "'even'"],
+        ["$ + offset >= target", "'reaches target'"],
+        ["abs($ - target) <= 0.5", "'near target'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 6, offset: 0, target: 6}, [{r: "double over 10"}, {r: "even"}, {r: "reaches target"}, {r: "near target"}]],
+    [{n: 3, offset: 2, target: 5}, [{r: "reaches target"}]],
+    [{n: 4.6, offset: 0, target: 5}, [{r: "near target"}]],
+    [{n: 0, offset: 0, target: 1}, [{r: "even"}]],
+    [{n: -4, offset: 0, target: -4}, [{r: "even"}, {r: "reaches target"}, {r: "near target"}]],
+    [{n: 6}, [{r: "double over 10"}, {r: "even"}]],
+    [{n: "6", offset: 0, target: 6}, []],
+  ],
+}
+
+{
+  name: "arithmetic: exact decimals in `$` arithmetic",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a"], outputs: ["r"], rules: [
+        ["$ + b == 0.3", "'exact'"],
+        ["", "'not exact'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {r: "exact"}],
+    [{a: 0.15, b: 0.15}, {r: "exact"}],
+    [{a: 0.3, b: 0}, {r: "exact"}],
+    [{a: 0.30000001, b: 0}, {r: "not exact"}],
+    [{a: 0.1}, {r: "not exact"}],
+  ],
+}
+
+{
+  name: "arithmetic: interval shorthand cannot be combined with arithmetic, use a full comparison",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r"], rules: [
+        ["$ * 2 in [10..20]", "'double in band'"],
+        ["$ / 2 >= 1 and $ / 2 <= 2", "'half in band'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5}, {r: "double in band"}],
+    [{n: 10}, {r: "double in band"}],
+    [{n: 3}, {r: "half in band"}],
+    [{n: 11}, {r: "other"}],
+    [{n: 2}, {r: "half in band"}],
+  ],
+}
+
+{
+  name: "arithmetic: a computed field with arithmetic cells over it",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["price * qty", "discount"], outputs: ["net"], rules: [
+        ["$ > 100", "$ > 0", "price * qty * (1 - discount)"],
+        ["$ > 100", "", "price * qty"],
+        ["", "", "price * qty + 5"],
+      ]},
+    ],
+  },
+  cases: [
+    [{price: 50, qty: 3, discount: 0.1}, {net: 135}],
+    [{price: 50, qty: 3, discount: 0}, {net: 150}],
+    [{price: 50, qty: 3}, {net: 150}],
+    [{price: 10, qty: 3, discount: 0.5}, {net: 35}],
+  ],
+}
+
+// --- Field-less columns mixed with field columns -----------------------------------------------
+
+{
+  name: "mixed columns: field-less cells between two field columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["age", null, "country"], outputs: ["r"], rules: [
+        [">= 18", "income > 1000", "'US'", "'adult earner us'"],
+        [">= 18", "income > 1000", "", "'adult earner'"],
+        [">= 18", "", "'US', 'CA'", "'adult na'"],
+        ["", "student == true", "", "'student'"],
+        ["", "", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 30, income: 2000, country: "US"}, {r: "adult earner us"}],
+    [{age: 30, income: 2000, country: "DE"}, {r: "adult earner"}],
+    [{age: 30, income: 10, country: "CA"}, {r: "adult na"}],
+    [{age: 15, student: true, country: "US"}, {r: "student"}],
+    [{age: 15, country: "US"}, {r: "other"}],
+    [{age: 30, country: "US"}, {r: "adult na"}],
+  ],
+}
+
+{
+  name: "mixed columns: a field-less cell after a field column sees the leaked `$`",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a", null], outputs: ["r"], rules: [
+        ["> 0", "$ == a", "'field-less sees $ as a'"],
+        ["", "$ == null", "'no $ bound'"],
+        ["", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 5}, {r: "field-less sees $ as a"}, "question: a field-less cell has no defined `$`, yet it sees the value bound by the previous field column of the row"],
+    [{a: -5}, {r: "other"}, "question: the failed first rule bound `$` to -5, which the next rule's field-less cell still sees"],
+  ],
+}
+
+{
+  name: "mixed columns: two field-less columns and a field column on the same field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null, "score", null], outputs: ["r"], rules: [
+        ["score != null", "> 50", "score < 100", "'mid-high'"],
+        ["score != null", "<= 50", "", "'low'"],
+        ["", "", "score == null", "'unscored'"],
+        ["", "", "", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 70}, {r: "mid-high"}],
+    [{score: 100}, {r: "other"}],
+    [{score: 20}, {r: "low"}],
+    [{}, {r: "unscored"}],
+    [{score: null}, {r: "unscored"}],
+    [{score: "x"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "mixed columns: a field-less column in a collect table with a `[]` output",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount", null], outputs: ["level", "reasons[]"], rules: [
+        ["> 1000", "", "'high'", "'amount over 1000'"],
+        ["", "country != home", "'medium'", "'foreign'"],
+        ["", "len(prior ?? []) == 0", "'medium'", "'first purchase'"],
+        ["", "", "'low'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 5000, country: "DE", home: "US"}, {level: "high", reasons: ["amount over 1000", "foreign", "first purchase"]}],
+    [{amount: 10, country: "US", home: "US", prior: [1]}, {level: "low", reasons: []}],
+    [{amount: 10, country: "DE", home: "US", prior: [1]}, {level: "medium", reasons: ["foreign"]}],
+    [{amount: 10, country: "US", home: "US"}, {level: "medium", reasons: ["first purchase"]}],
+  ],
+}
+
+// --- Cells reading `$nodes` and input fields together ---------------------------------------------
+
+{
+  name: "nodes: `$` compared with an upstream node's value",
+  graph: {
+    nodes: [
+      {expression: "limits", fields: {min: "10", max: "100"}},
+      {table: "t", inputs: ["amount"], outputs: ["r"], rules: [
+        ["$ < $nodes.limits.min", "'below'"],
+        ["$ > $nodes.limits.max", "'above'"],
+        ["[$nodes.limits.min..$nodes.limits.max]", "'within'"],
+      ]},
+    ],
+    edges: ["input -> limits", "input -> t -> output", "limits -> t"],
+  },
+  cases: [
+    [{amount: 5}, {r: "below"}],
+    [{amount: 500}, {r: "above"}],
+    [{amount: 10}, {r: "within"}],
+    [{amount: 100}, {r: "within"}],
+    [{amount: null}, {}],
+  ],
+}
+
+{
+  name: "nodes: field-less cells relating `$nodes` with input fields",
+  graph: {
+    nodes: [
+      {expression: "stats", fields: {avg: "len(history) > 0 ? avg(map(history, #.amount)) : 0", n: "len(history)"}},
+      {table: "t", inputs: [null, "amount"], outputs: ["r"], rules: [
+        ["$nodes.stats.n == 0", "", "'no history'"],
+        ["", "$ > $nodes.stats.avg * 3", "'spike'"],
+        ["$nodes.stats.n > 5 and amount < $nodes.stats.avg", "", "'routine'"],
+        ["", "", "'normal'"],
+      ]},
+    ],
+    edges: ["input -> stats", "input -> t -> output", "stats -> t"],
+  },
+  cases: [
+    [{history: [], amount: 50}, {r: "no history"}],
+    [{history: [{amount: 10}, {amount: 20}], amount: 100}, {r: "spike"}],
+    [{history: [{amount: 10}, {amount: 10}, {amount: 10}, {amount: 10}, {amount: 10}, {amount: 10}], amount: 5}, {r: "routine"}],
+    [{history: [{amount: 10}, {amount: 20}], amount: 20}, {r: "normal"}],
+  ],
+}
+
+{
+  name: "nodes: a column field from `$nodes` next to a column from the input",
+  graph: {
+    nodes: [
+      {table: "risk", inputs: ["score"], outputs: ["band"], rules: [
+        ["> 700", "'low'"],
+        ["> 500", "'medium'"],
+        ["", "'high'"],
+      ]},
+      {table: "t", inputs: ["$nodes.risk.band", "amount"], outputs: ["decision", "band"], rules: [
+        ["'low'", "", "'approve'", "$nodes.risk.band"],
+        ["'medium'", "<= limit", "'approve'", "$nodes.risk.band"],
+        ["'medium'", "", "'review'", "$nodes.risk.band"],
+        ["", "", "'decline'", "$nodes.risk.band"],
+      ]},
+    ],
+    edges: ["input -> risk", "input -> t -> output", "risk -> t"],
+  },
+  cases: [
+    [{score: 800, amount: 1e6, limit: 0}, {decision: "approve", band: "low"}],
+    [{score: 600, amount: 100, limit: 500}, {decision: "approve", band: "medium"}],
+    [{score: 600, amount: 1000, limit: 500}, {decision: "review", band: "medium"}],
+    [{score: 100, amount: 1}, {decision: "decline", band: "high"}],
+    [{amount: 1}, {decision: "decline", band: "high"}],
+  ],
+}
+
+{
+  name: "nodes: cells reading `$nodes.input` after an upstream transform changed the input",
+  graph: {
+    nodes: [
+      {expression: "norm", fields: {code: "upper(code)"}},
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["$ == $nodes.input.code", "'already upper'"],
+        ["lower($) == $nodes.input.code", "'was lower'"],
+        ["", "'mixed'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "AB"}, {r: "already upper"}],
+    [{code: "ab"}, {r: "was lower"}],
+    [{code: "Ab"}, {r: "mixed"}],
+  ],
+}
+
+{
+  name: "nodes: loop-mode cells reading the item, `$nodes` and the outer input",
+  graph: {
+    nodes: [
+      {expression: "cfg", fields: {cap: "maxQty"}},
+      {table: "t", executionMode: "loop", inputField: "lines", outputPath: "flags", inputs: ["qty", null], outputs: ["f"], rules: [
+        ["$ > $nodes.cfg.cap", "", "'over cap'"],
+        ["", "contains($nodes.input.blocked, sku)", "'blocked sku'"],
+        ["", "", "'ok'"],
+      ]},
+    ],
+    edges: ["input -> cfg", "input -> t -> output", "cfg -> t"],
+  },
+  cases: [
+    [{maxQty: 10, blocked: ["B"], lines: [{sku: "A", qty: 20}, {sku: "B", qty: 1}, {sku: "C", qty: 1}]}, {flags: [{f: "over cap"}, {f: "blocked sku"}, {f: "ok"}]}],
+    [{maxQty: 10, blocked: [], lines: []}, {flags: []}],
+  ],
+}
+
+// --- `$` in output cells and the equality index -------------------------------------------------
+
+{
+  name: "index: `$` in an output cell of a small table with a range column then an equality column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount", "code"], outputs: ["seen"], rules: [
+        ["> 0", "'a'", "$"],
+        ["> 0", "'b'", "$"],
+        ["> 0", "'c'", "$"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 5, code: "a"}, {seen: "a"}, "question: `$` in an output cell is the last bound input column value (chapter 06)"],
+    [{amount: 5, code: "c"}, {seen: "c"}, "question: `$` in an output cell is the last bound input column value (chapter 06)"],
+  ],
+}
+
+{
+  name: "index: `$` in an output cell of the same table with eight rules (equality-indexed)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount", "code"], outputs: ["seen"], rules: [
+        ["> 0", "'a'", "$"],
+        ["> 0", "'b'", "$"],
+        ["> 0", "'c'", "$"],
+        ["> 0", "'d'", "$"],
+        ["> 0", "'e'", "$"],
+        ["> 0", "'f'", "$"],
+        ["> 0", "'g'", "$"],
+        ["> 0", "'h'", "$"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 5, code: "a"}, {seen: "a"}, "question: `$` in an output cell is the last bound input column value; the reference walker has no index and gives the code, but with the equality index built (DecisionEngine) the index-decided `code` column is never rebound and `$` is the amount (5)"],
+    [{amount: 5, code: "h"}, {seen: "h"}, "question: `$` in an output cell is the last bound input column value; the reference walker has no index and gives the code, but with the equality index built (DecisionEngine) the index-decided `code` column is never rebound and `$` is the amount (5)"],
+  ],
+}
+
+{
+  name: "index: expression cells in an indexed table are evaluated in rule order with the indexed ones",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["'a'", "'eq a'"],
+        ["startsWith($, 'a')", "'starts a'"],
+        ["'b'", "'eq b'"],
+        ["len($) > 3", "'long'"],
+        ["'c'", "'eq c'"],
+        ["$ in ['d', 'e']", "'d or e'"],
+        ["'abcd'", "'eq abcd'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "a"}, {r: "eq a"}],
+    [{code: "ab"}, {r: "starts a"}],
+    [{code: "abcd"}, {r: "starts a"}],
+    [{code: "bcde"}, {r: "long"}],
+    [{code: "b"}, {r: "eq b"}],
+    [{code: "e"}, {r: "d or e"}],
+    [{code: "z"}, {r: "any"}],
+    [{code: 1}, {r: "any"}],
+  ],
+}
+
+{
+  name: "index: the same indexed table under collect",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["code"], outputs: ["r"], rules: [
+        ["'a'", "'eq a'"],
+        ["startsWith($, 'a')", "'starts a'"],
+        ["'b'", "'eq b'"],
+        ["len($) > 3", "'long'"],
+        ["'c'", "'eq c'"],
+        ["$ in ['d', 'e']", "'d or e'"],
+        ["'abcd'", "'eq abcd'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "a"}, [{r: "eq a"}, {r: "starts a"}, {r: "any"}]],
+    [{code: "abcd"}, [{r: "starts a"}, {r: "long"}, {r: "eq abcd"}, {r: "any"}]],
+    [{code: "d"}, [{r: "d or e"}, {r: "any"}]],
+    [{code: null}, [{r: "any"}]],
+    [{}, [{r: "any"}]],
+  ],
+}
+
+// --- Realistic combination ---------------------------------------------------------------------
+
+{
+  name: "realistic: fraud screening with closures, dates, `$nodes` and arithmetic",
+  graph: {
+    nodes: [
+      {expression: "profile", fields: {
+        avg: "len(history) > 0 ? avg(map(history, #.amount)) : 0",
+        countries: "map(history, #.country)",
+      }},
+      {table: "t", hit: "collect", outputPath: "hits", inputs: ["amount", "country", null], outputs: ["rule", "weight"], rules: [
+        ["$nodes.profile.avg > 0 and $ > $nodes.profile.avg * 5", "", "", "'amount spike'", "40"],
+        ["", "not contains($nodes.profile.countries, $)", "len(history) > 0", "'new country'", "30"],
+        ["", "", "d(at).hour() < 6", "'night time'", "10"],
+        ["", "", "some(history, d(#.at).isSame(d(at), 'day') and #.amount == amount)", "'duplicate'", "50"],
+      ]},
+      {expression: "score", fields: {total: "sum(map(hits, #.weight))", rules: "map(hits, #.rule)"}},
+    ],
+    edges: ["input -> profile", "input -> t", "profile -> t", "t -> score -> output"],
+  },
+  cases: [
+    [{amount: 1000, country: "DE", at: "2025-03-20T03:00:00Z", history: [{amount: 100, country: "US", at: "2025-03-01T10:00:00Z"}]}, {total: 80, rules: ["amount spike", "new country", "night time"]}],
+    [{amount: 100, country: "US", at: "2025-03-01T12:00:00Z", history: [{amount: 100, country: "US", at: "2025-03-01T10:00:00Z"}]}, {total: 50, rules: ["duplicate"]}],
+    [{amount: 50, country: "US", at: "2025-03-20T12:00:00Z", history: []}, {total: 0, rules: []}],
+  ],
+}

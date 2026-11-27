@@ -1,0 +1,474 @@
+// Dates across nodes. A date built with `d(...)` is a date value: it flows into the next expression
+// node, a table cell or a loop item as a date and renders as ISO text only in the result. The clock
+// is fixed at 2025-03-20T10:15:30Z (a Thursday), time zone UTC. Weeks start on Monday; month
+// arithmetic clamps to the last day of the target month; `diff` truncates toward zero. 21-values
+// and 28-table-dates pin single-node behaviour; these suites chain the operations across nodes.
+
+// ---------------------------------------------------------------------------------------------
+// Arithmetic chains: add, sub, startOf/endOf and diff spread over several nodes.
+{
+  name: "chains: add months, end of month, then the distance in days",
+  graph: {nodes: [
+    {expression: "shift", fields: {start: "d(start)", moved: "d(start).add(n, 'month')"}},
+    {expression: "eom", passThrough: true, fields: {eom: "moved.endOf('month')"}},
+    {expression: "dist", fields: {moved: "moved", eom: "eom", days: "eom.diff(start, 'day')"}},
+  ]},
+  cases: [
+    [{start: "2024-01-31", n: 1}, {moved: "2024-02-29T00:00:00Z", eom: "2024-02-29T23:59:59Z", days: 29}],
+    [{start: "2025-01-15", n: 1}, {moved: "2025-02-15T00:00:00Z", eom: "2025-02-28T23:59:59Z", days: 44}],
+    [{start: "2024-12-31", n: 2}, {moved: "2025-02-28T00:00:00Z", eom: "2025-02-28T23:59:59Z", days: 59}],
+    [{start: "2024-03-31", n: -1}, {moved: "2024-02-29T00:00:00Z", eom: "2024-02-29T23:59:59Z", days: -30}],
+    [{start: "2025-06-10T15:00:00Z", n: 0}, {moved: "2025-06-10T15:00:00Z", eom: "2025-06-30T23:59:59Z", days: 20}],
+  ],
+}
+
+{
+  name: "chains: month clamping step by step differs from one jump",
+  graph: {nodes: [
+    {expression: "one", fields: {one: "d(s).add(1, 'month')", s: "s"}},
+    {expression: "two", fields: {stepwise: "one.add(1, 'month')", direct: "d(s).add(2, 'month')"}},
+  ]},
+  cases: [
+    [{s: "2025-01-31"}, {stepwise: "2025-03-28T00:00:00Z", direct: "2025-03-31T00:00:00Z"}],
+    [{s: "2024-01-31"}, {stepwise: "2024-03-29T00:00:00Z", direct: "2024-03-31T00:00:00Z"}],
+    [{s: "2024-08-31"}, {stepwise: "2024-10-30T00:00:00Z", direct: "2024-10-31T00:00:00Z"}],
+    [{s: "2025-03-15"}, {stepwise: "2025-05-15T00:00:00Z", direct: "2025-05-15T00:00:00Z"}],
+    [{s: "2023-12-31T08:30:00Z"}, {stepwise: "2024-02-29T08:30:00Z", direct: "2024-02-29T08:30:00Z"}],
+  ],
+}
+
+{
+  name: "chains: add then sub returns to the start except across a month clamp",
+  graph: {nodes: [
+    {expression: "fwd", passThrough: true, fields: {fwd: "d(s).add(n, unit)"}},
+    {expression: "back", fields: {back: "fwd.sub(n, unit)", same: "fwd.sub(n, unit) == d(s)"}},
+  ]},
+  cases: [
+    [{s: "2025-03-20", n: 10, unit: "d"}, {back: "2025-03-20T00:00:00Z", same: true}],
+    [{s: "2025-03-20T10:00:00Z", n: 36, unit: "h"}, {back: "2025-03-20T10:00:00Z", same: true}],
+    [{s: "2025-03-20", n: 3, unit: "w"}, {back: "2025-03-20T00:00:00Z", same: true}],
+    [{s: "2025-01-31", n: 1, unit: "month"}, {back: "2025-01-28T00:00:00Z", same: false}],
+    [{s: "2024-02-29", n: 1, unit: "year"}, {back: "2024-02-28T00:00:00Z", same: false}, "bug: adding or subtracting a year from Feb 29 gives an invalid date instead of clamping to Feb 28 as months do (expression spec)"],
+    [{s: "2025-05-31", n: 1, unit: "quarter"}, {back: "2025-05-31T00:00:00Z", same: true}],
+  ],
+}
+
+{
+  name: "chains: start and end of week, quarter and year on a date built upstream",
+  graph: {nodes: [
+    {expression: "parse", fields: {at: "d(s)"}},
+    {expression: "bounds", fields: {
+      wk: "at.startOf('week')",
+      wkEnd: "at.endOf('week')",
+      q: "at.startOf('quarter')",
+      yEnd: "at.endOf('year')",
+      dow: "at.weekday()",
+    }},
+  ]},
+  cases: [
+    [{s: "2025-03-20T10:15:30Z"}, {wk: "2025-03-17T00:00:00Z", wkEnd: "2025-03-23T23:59:59Z", q: "2025-01-01T00:00:00Z", yEnd: "2025-12-31T23:59:59Z", dow: 4}],
+    [{s: "2025-10-26"}, {wk: "2025-10-20T00:00:00Z", wkEnd: "2025-10-26T23:59:59Z", q: "2025-10-01T00:00:00Z", yEnd: "2025-12-31T23:59:59Z", dow: 7}],
+    [{s: "2024-02-29"}, {wk: "2024-02-26T00:00:00Z", wkEnd: "2024-03-03T23:59:59Z", q: "2024-01-01T00:00:00Z", yEnd: "2024-12-31T23:59:59Z", dow: 4}],
+    [{s: "2024-12-30"}, {wk: "2024-12-30T00:00:00Z", wkEnd: "2025-01-05T23:59:59Z", q: "2024-10-01T00:00:00Z", yEnd: "2024-12-31T23:59:59Z", dow: 1}],
+  ],
+}
+
+{
+  name: "chains: comparisons between two dates built upstream",
+  graph: {nodes: [
+    {expression: "parse", fields: {a: "d(a)", b: "d(b)"}},
+    {expression: "cmp", fields: {
+      before: "a.isBefore(b)",
+      after: "a.isAfter(b)",
+      sameDay: "a.isSame(b, 'day')",
+      sameMonth: "a.isSame(b, 'month')",
+      sob: "a.isSameOrBefore(b)",
+      lt: "a < b",
+    }},
+  ]},
+  cases: [
+    [{a: "2025-03-20T08:00:00Z", b: "2025-03-20T20:00:00Z"}, {before: true, after: false, sameDay: true, sameMonth: true, sob: true, lt: true}],
+    [{a: "2025-03-31", b: "2025-04-01"}, {before: true, after: false, sameDay: false, sameMonth: false, sob: true, lt: true}],
+    [{a: "2025-04-01", b: "2025-03-31"}, {before: false, after: true, sameDay: false, sameMonth: false, sob: false, lt: false}],
+    [{a: "2025-01-01", b: "2025-01-01T00:00:00Z"}, {before: false, after: false, sameDay: true, sameMonth: true, sob: true, lt: false}],
+    [{a: "2024-03-15", b: "2025-03-15"}, {before: true, after: false, sameDay: false, sameMonth: false, sob: true, lt: true}],
+  ],
+}
+
+{
+  name: "chains: a computed due date formatted at the end of the chain",
+  graph: {nodes: [
+    {expression: "due", fields: {due: "d(s).add(30, 'd')"}},
+    {expression: "fmt", fields: {
+      text: "due.format('%Y-%m-%d')",
+      long: "due.format('%A, %-d %B %Y')",
+      stamp: "due.format('%Y-%m-%dT%H:%M:%S')",
+    }},
+  ]},
+  cases: [
+    [{s: "2025-03-20"}, {text: "2025-04-19", long: "Saturday, 19 April 2025", stamp: "2025-04-19T00:00:00"}],
+    [{s: "2024-02-01"}, {text: "2024-03-02", long: "Saturday, 2 March 2024", stamp: "2024-03-02T00:00:00"}],
+    [{s: "2025-12-15T13:45:00Z"}, {text: "2026-01-14", long: "Wednesday, 14 January 2026", stamp: "2026-01-14T13:45:00"}],
+  ],
+}
+
+{
+  name: "chains: set and date parts across nodes",
+  graph: {nodes: [
+    {expression: "first", fields: {payday: "d(s).set('day', 25)"}},
+    {expression: "parts", fields: {payday: "payday", y: "payday.year()", m: "payday.month()", q: "payday.quarter()", doy: "payday.dayOfYear()", leap: "payday.isLeapYear()"}},
+  ]},
+  cases: [
+    [{s: "2025-03-20"}, {payday: "2025-03-25T00:00:00Z", y: 2025, m: 3, q: 1, doy: 84, leap: false}],
+    [{s: "2024-12-01T09:00:00Z"}, {payday: "2024-12-25T09:00:00Z", y: 2024, m: 12, q: 4, doy: 360, leap: true}],
+    [{s: "2025-07-31"}, {payday: "2025-07-25T00:00:00Z", y: 2025, m: 7, q: 3, doy: 206, leap: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The fixed clock: rules relative to now. d() is 2025-03-20T10:15:30Z everywhere in a run.
+{
+  name: "now: an age computed upstream and banded in a table",
+  graph: {nodes: [
+    {expression: "age", fields: {age: "d().diff(d(dob), 'year')"}},
+    {table: "band", passThrough: true, inputs: ["age"], outputs: ["band"], rules: [
+      ["< 18", "'minor'"],
+      ["[18..65)", "'adult'"],
+      ["", "'senior'"],
+    ]},
+  ]},
+  cases: [
+    [{dob: "2007-03-20"}, {age: 18, band: "adult"}],
+    [{dob: "2007-03-21"}, {age: 17, band: "minor"}],
+    [{dob: "1960-03-20"}, {age: 65, band: "senior"}],
+    [{dob: "1960-03-21"}, {age: 64, band: "adult"}],
+    [{dob: "2025-03-20"}, {age: 0, band: "minor"}],
+    [{dob: "2007-03-20T10:15:31Z"}, {age: 17, band: "minor"}],
+  ],
+}
+
+{
+  name: "now: days left until expiry drive a status table",
+  graph: {nodes: [
+    {expression: "left", fields: {daysLeft: "d(expires).diff(d().startOf('day'), 'd')"}},
+    {table: "status", passThrough: true, inputs: ["daysLeft"], outputs: ["status"], rules: [
+      ["< 0", "'expired'"],
+      ["[0..7]", "'expiring'"],
+      ["", "'active'"],
+    ]},
+  ]},
+  cases: [
+    [{expires: "2025-03-19"}, {daysLeft: -1, status: "expired"}],
+    [{expires: "2025-03-20"}, {daysLeft: 0, status: "expiring"}],
+    [{expires: "2025-03-20T23:59:59Z"}, {daysLeft: 0, status: "expiring"}],
+    [{expires: "2025-03-27"}, {daysLeft: 7, status: "expiring"}],
+    [{expires: "2025-03-28"}, {daysLeft: 8, status: "active"}],
+    [{expires: "2025-02-01"}, {daysLeft: -47, status: "expired"}],
+  ],
+}
+
+{
+  name: "now: windows relative to now in a collect table",
+  graph: {nodes: [
+    {table: "windows", hit: "collect", inputs: ["d(at)"], outputs: ["w"], rules: [
+      ["[d().startOf('month')..d().endOf('month')]", "'this month'"],
+      [">= d().startOf('week')", "'since monday'"],
+      ["< d().startOf('year')", "'last year or older'"],
+    ]},
+  ]},
+  cases: [
+    [{at: "2025-03-17"}, [{w: "this month"}, {w: "since monday"}]],
+    [{at: "2025-03-16T23:59:59Z"}, [{w: "this month"}]],
+    [{at: "2024-12-31T23:59:59Z"}, [{w: "last year or older"}]],
+    [{at: "2025-03-31T23:59:59Z"}, [{w: "this month"}, {w: "since monday"}]],
+    [{at: "2025-04-01"}, [{w: "since monday"}]],
+    [{at: "2025-02-15"}, []],
+  ],
+}
+
+{
+  name: "now: now in named time zones",
+  graph: {nodes: [{expression: "calc", fields: {local: "d(zone)", hour: "d(zone).hour()", same: "d(zone) == d()", day: "d(zone).format('%Y-%m-%d')"}}]},
+  cases: [
+    [{zone: "Europe/Berlin"}, {local: "2025-03-20T11:15:30+01:00", hour: 11, same: true, day: "2025-03-20"}],
+    [{zone: "America/New_York"}, {local: "2025-03-20T06:15:30-04:00", hour: 6, same: true, day: "2025-03-20"}],
+    [{zone: "Asia/Tokyo"}, {local: "2025-03-20T19:15:30+09:00", hour: 19, same: true, day: "2025-03-20"}],
+    [{zone: "Asia/Kolkata"}, {local: "2025-03-20T15:45:30+05:30", hour: 15, same: true, day: "2025-03-20"}],
+    [{zone: "Pacific/Kiritimati"}, {local: "2025-03-21T00:15:30+14:00", hour: 0, same: true, day: "2025-03-21"}],
+  ],
+}
+
+{
+  name: "now: isToday, isYesterday and isTomorrow on dates built upstream",
+  graph: {nodes: [
+    {expression: "parse", fields: {at: "d(s)"}},
+    {switch: "when", when: ["at.isYesterday()", "at.isToday()", "at.isTomorrow()", ""]},
+    {expression: "y", fields: {r: "'yesterday'"}},
+    {expression: "t", fields: {r: "'today'"}},
+    {expression: "m", fields: {r: "'tomorrow'"}},
+    {expression: "o", fields: {r: "'other'"}},
+  ],
+  edges: ["input -> parse -> when", "when:0 -> y -> output", "when:1 -> t -> output", "when:2 -> m -> output", "when:3 -> o -> output"]},
+  cases: [
+    [{s: "2025-03-19T23:59:59Z"}, {r: "yesterday"}],
+    [{s: "2025-03-20T00:00:00Z"}, {r: "today"}],
+    [{s: "2025-03-20T23:59:59Z"}, {r: "today"}],
+    [{s: "2025-03-21"}, {r: "tomorrow"}],
+    [{s: "2025-03-22"}, {r: "other"}],
+    [{s: "2025-03-20T23:30:00-05:00"}, {r: "tomorrow"}],
+    [{s: "garbage"}, {r: "other"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Time zones: offset strings are instants (rendered in UTC); `d(s, zone)` keeps the zone through
+// later nodes; `tz()` converts; comparisons are by instant.
+{
+  name: "zones: offset strings normalize to UTC and keep that through later nodes",
+  graph: {nodes: [
+    {expression: "parse", fields: {at: "d(s)"}},
+    {expression: "use", fields: {at: "at", day: "at.format('%Y-%m-%d')", hour: "at.hour()", today: "at.isToday()"}},
+  ]},
+  cases: [
+    [{s: "2025-03-20T23:30:00-05:00"}, {at: "2025-03-21T04:30:00Z", day: "2025-03-21", hour: 4, today: false}],
+    [{s: "2025-03-21T01:00:00+02:00"}, {at: "2025-03-20T23:00:00Z", day: "2025-03-20", hour: 23, today: true}],
+    [{s: "2025-03-20T00:00:00+14:00"}, {at: "2025-03-19T10:00:00Z", day: "2025-03-19", hour: 10, today: false}],
+    [{s: "2025-03-20T10:15:30Z"}, {at: "2025-03-20T10:15:30Z", day: "2025-03-20", hour: 10, today: true}],
+    [{s: "2025-03-20T05:45:00+05:45"}, {at: "2025-03-20T00:00:00Z", day: "2025-03-20", hour: 0, today: true}],
+  ],
+}
+
+{
+  name: "zones: a zoned date keeps its zone in later nodes",
+  graph: {nodes: [
+    {expression: "parse", fields: {local: "d(s, zone)"}},
+    {expression: "use", fields: {local: "local", sod: "local.startOf('day')", utc: "local.tz('UTC')", h: "local.hour()"}},
+  ]},
+  cases: [
+    [{s: "2025-03-20 08:00", zone: "Europe/Berlin"}, {local: "2025-03-20T08:00:00+01:00", sod: "2025-03-20T00:00:00+01:00", utc: "2025-03-20T07:00:00Z", h: 8}],
+    [{s: "2025-07-01 08:00", zone: "Europe/Berlin"}, {local: "2025-07-01T08:00:00+02:00", sod: "2025-07-01T00:00:00+02:00", utc: "2025-07-01T06:00:00Z", h: 8}],
+    [{s: "2025-03-20 08:00", zone: "America/New_York"}, {local: "2025-03-20T08:00:00-04:00", sod: "2025-03-20T00:00:00-04:00", utc: "2025-03-20T12:00:00Z", h: 8}],
+    [{s: "2025-03-20 08:00", zone: "Asia/Tokyo"}, {local: "2025-03-20T08:00:00+09:00", sod: "2025-03-20T00:00:00+09:00", utc: "2025-03-19T23:00:00Z", h: 8}],
+  ],
+}
+
+{
+  name: "zones: instants with different offsets compared in a table",
+  graph: {nodes: [
+    {expression: "parse", fields: {a: "d(a)", b: "d(b)"}},
+    {table: "cmp", inputs: ["a"], outputs: ["r"], rules: [
+      ["< b", "'earlier'"],
+      ["b", "'same'"],
+      ["", "'later'"],
+    ]},
+  ]},
+  cases: [
+    [{a: "2025-03-20T12:00:00+02:00", b: "2025-03-20T10:00:00Z"}, {r: "same"}],
+    [{a: "2025-03-20T12:00:00+01:00", b: "2025-03-20T12:00:00Z"}, {r: "earlier"}],
+    [{a: "2025-03-20T09:00:00-05:00", b: "2025-03-20T12:00:00Z"}, {r: "later"}],
+    [{a: "2025-03-20T00:00:00+09:00", b: "2025-03-19T15:00:00Z"}, {r: "same"}],
+  ],
+}
+
+{
+  name: "zones: the day of an instant depends on the zone it is viewed in",
+  graph: {nodes: [
+    {expression: "at", fields: {at: "d(s)"}},
+    {expression: "days", fields: {
+      utc: "at.format('%Y-%m-%d')",
+      tokyo: "at.tz('Asia/Tokyo').format('%Y-%m-%d')",
+      ny: "at.tz('America/New_York').format('%Y-%m-%d')",
+      sameInstant: "at.tz('Asia/Tokyo') == at",
+    }},
+  ]},
+  cases: [
+    [{s: "2025-03-20T02:00:00Z"}, {utc: "2025-03-20", tokyo: "2025-03-20", ny: "2025-03-19", sameInstant: true}],
+    [{s: "2025-03-20T16:00:00Z"}, {utc: "2025-03-20", tokyo: "2025-03-21", ny: "2025-03-20", sameInstant: true}],
+    [{s: "2025-03-20T12:00:00Z"}, {utc: "2025-03-20", tokyo: "2025-03-20", ny: "2025-03-20", sameInstant: true}],
+  ],
+}
+
+{
+  name: "zones: schema date-time fields with offsets compared to now",
+  graph: {nodes: [
+    {input: "request", schema: {type: "object", properties: {at: {type: "string", format: "date-time"}}}},
+    {expression: "calc", fields: {past: "d(at) < d()", hours: "d().diff(d(at), 'hour')"}},
+  ]},
+  cases: [
+    [{at: "2025-03-20T12:15:30+02:00"}, {past: false, hours: 0}],
+    [{at: "2025-03-20T05:15:30-05:00"}, {past: false, hours: 0}],
+    [{at: "2025-03-20T04:15:30-05:00"}, {past: true, hours: 1}],
+    [{at: "2025-03-19T10:15:30Z"}, {past: true, hours: 24}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates inside loops and tables.
+{
+  name: "loops: per-invoice due dates and lateness aggregated afterwards",
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {
+      due: "d(issued).add(terms, 'd')",
+      overdue: "d(issued).add(terms, 'd') < d()",
+      daysLate: "d(issued).add(terms, 'd') < d() ? d().diff(d(issued).add(terms, 'd'), 'd') : 0",
+    }},
+    {expression: "agg", passThrough: true, fields: {overdueCount: "count(lines, #.overdue)", maxLate: "max(map(lines, #.daysLate))"}},
+  ]},
+  cases: [
+    [
+      {items: [{issued: "2025-01-01", terms: 30}, {issued: "2025-03-01", terms: 30}, {issued: "2025-02-15", terms: 14}]},
+      {lines: [
+        {due: "2025-01-31T00:00:00Z", overdue: true, daysLate: 48},
+        {due: "2025-03-31T00:00:00Z", overdue: false, daysLate: 0},
+        {due: "2025-03-01T00:00:00Z", overdue: true, daysLate: 19},
+      ], overdueCount: 2, maxLate: 48},
+    ],
+    [{items: [{issued: "2025-03-20", terms: 0}]}, {lines: [{due: "2025-03-20T00:00:00Z", overdue: true, daysLate: 0}], overdueCount: 1, maxLate: 0}],
+    [{items: [{issued: "2024-02-29", terms: 365}]}, {lines: [{due: "2025-02-28T00:00:00Z", overdue: true, daysLate: 20}], overdueCount: 1, maxLate: 20}],
+  ],
+}
+
+{
+  name: "loops: a table per item buckets dates by the current month",
+  graph: {nodes: [
+    {table: "bucket", inputField: "items", outputPath: "buckets", executionMode: "loop", inputs: ["d(at)"], outputs: ["b"], rules: [
+      ["< d().startOf('month')", "'previous'"],
+      ["< d().startOf('month').add(1, 'month')", "'current'"],
+      ["", "'future'"],
+    ]},
+  ]},
+  cases: [
+    [{items: [{at: "2025-02-28T23:59:59Z"}, {at: "2025-03-01"}, {at: "2025-03-31T23:59:59Z"}, {at: "2025-04-01"}]}, {buckets: [{b: "previous"}, {b: "current"}, {b: "current"}, {b: "future"}]}],
+    [{items: []}, {buckets: []}],
+    [{items: [{at: "2025-03-01T00:00:00+01:00"}]}, {buckets: [{b: "previous"}]}],
+  ],
+}
+
+{
+  name: "loops: dates filtered and sorted by a closure after a loop",
+  graph: {nodes: [
+    {expression: "parse", inputField: "events", outputPath: "events", executionMode: "loop", fields: {name: "name", at: "d(at)"}},
+    {expression: "pick", fields: {
+      upcoming: "map(filter(events, #.at > d()), #.name)",
+      past: "count(events, #.at < d())",
+      first: "min(map(events, #.at.timestamp()))",
+    }},
+  ]},
+  cases: [
+    [{events: [{name: "a", at: "2025-03-21"}, {name: "b", at: "2025-03-19"}, {name: "c", at: "2025-12-01"}]}, {upcoming: ["a", "c"], past: 1, first: 1742342400000}],
+    [{events: [{name: "x", at: "2020-01-01"}]}, {upcoming: [], past: 1, first: 1577836800000}],
+  ],
+}
+
+{
+  name: "tables: output cells produce dates read downstream",
+  graph: {nodes: [
+    {table: "renew", passThrough: true, inputs: ["plan"], outputs: ["renewal"], rules: [
+      ["'monthly'", "d(start).add(1, 'month')"],
+      ["'yearly'", "d(start).add(1, 'year')"],
+      ["", "d(start)"],
+    ]},
+    {expression: "use", fields: {renewal: "renewal", text: "renewal.format('%Y-%m-%d')", inDays: "renewal.diff(d(start), 'd')"}},
+  ]},
+  cases: [
+    [{start: "2024-01-31", plan: "monthly"}, {renewal: "2024-02-29T00:00:00Z", text: "2024-02-29", inDays: 29}],
+    [{start: "2024-02-29", plan: "yearly"}, {renewal: "2025-02-28T00:00:00Z", text: "2025-02-28", inDays: 365}, "bug: adding or subtracting a year from Feb 29 gives an invalid date instead of clamping to Feb 28 as months do (expression spec)"],
+    [{start: "2025-03-20", plan: "trial"}, {renewal: "2025-03-20T00:00:00Z", text: "2025-03-20", inDays: 0}],
+    [{start: "2025-12-31T18:00:00Z", plan: "monthly"}, {renewal: "2026-01-31T18:00:00Z", text: "2026-01-31", inDays: 31}],
+  ],
+}
+
+{
+  name: "tables: a date computed upstream against date cells of every kind",
+  graph: {nodes: [
+    {expression: "calc", fields: {due: "d(s).add(grace, 'd')"}},
+    {table: "t", hit: "collect", inputs: ["due"], outputs: ["tag"], rules: [
+      ["< d('2025-01-01')", "'old'"],
+      ["[d('2025-03-01')..d('2025-03-31')]", "'march'"],
+      ["d('2025-03-20')", "'exact'"],
+      ["> d()", "'future'"],
+    ]},
+  ]},
+  cases: [
+    [{s: "2024-12-01", grace: 10}, [{tag: "old"}]],
+    [{s: "2025-03-10", grace: 10}, [{tag: "march"}, {tag: "exact"}]],
+    [{s: "2025-03-10", grace: 11}, [{tag: "march"}, {tag: "future"}]],
+    [{s: "2025-03-25", grace: 10}, [{tag: "future"}]],
+    [{s: "2025-03-01", grace: 0}, [{tag: "march"}]],
+  ],
+}
+
+{
+  name: "tables: a first-hit table on a date difference in months",
+  graph: {nodes: [
+    {expression: "tenure", fields: {months: "d().diff(d(since), 'month')"}},
+    {table: "level", passThrough: true, inputs: ["months"], outputs: ["level"], rules: [
+      [">= 24", "'veteran'"],
+      [">= 6", "'regular'"],
+      ["", "'new'"],
+    ]},
+  ]},
+  cases: [
+    [{since: "2023-03-20"}, {months: 24, level: "veteran"}],
+    [{since: "2023-03-21"}, {months: 23, level: "regular"}],
+    [{since: "2024-09-20"}, {months: 6, level: "regular"}],
+    [{since: "2024-09-21"}, {months: 5, level: "new"}],
+    [{since: "2025-03-20"}, {months: 0, level: "new"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dates across other boundaries: sub-decisions, switches, invalid values, numeric timestamps.
+{
+  name: "boundaries: a date passed into a sub-decision",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {t: "type(due)", next: "d(due).add(1, 'd')"}}]},
+  },
+  graph: {nodes: [
+    {expression: "make", fields: {due: "d(s).add(1, 'month')"}},
+    {decision: "call", key: "child"},
+  ]},
+  cases: [
+    [{s: "2025-01-31"}, {t: "date", next: "2025-03-01T00:00:00Z"}],
+    [{s: "2025-03-20T10:00:00Z"}, {t: "date", next: "2025-04-21T10:00:00Z"}],
+  ],
+}
+
+{
+  name: "boundaries: an invalid date propagates through later nodes",
+  graph: {nodes: [
+    {expression: "parse", fields: {at: "d(s)"}},
+    {expression: "use", fields: {valid: "at.isValid()", next: "at.add(1, 'd')", before: "at < d()"}},
+  ]},
+  cases: [
+    [{s: "2025-03-01"}, {valid: true, next: "2025-03-02T00:00:00Z", before: true}],
+    [{s: "garbage"}, {valid: false, next: "Invalid date", before: true}, "question: an invalid date orders before every valid date instead of comparing false (expression spec)"],
+    [{}, {valid: false, next: "Invalid date", before: true}, "question: an invalid date orders before every valid date instead of comparing false (expression spec)"],
+    [{s: 1700000000000}, {valid: true, next: "2023-11-15T22:13:20Z", before: true}],
+    [{s: "2025-02-30"}, {valid: false, next: "Invalid date", before: true}, "question: an invalid date orders before every valid date instead of comparing false (expression spec)"],
+  ],
+}
+
+{
+  name: "boundaries: schema date fields used directly as dates in a chain",
+  graph: {nodes: [
+    {input: "request", schema: {type: "object", properties: {start: {type: "string", format: "date"}}}},
+    {expression: "calc", fields: {end: "d(start).add(1, 'w')", wd: "d(start).weekday()", raw: "start"}},
+  ]},
+  cases: [
+    [{start: "2025-03-20"}, {end: "2025-03-27T00:00:00Z", wd: 4, raw: "2025-03-20"}],
+    [{start: "2024-02-29"}, {end: "2024-03-07T00:00:00Z", wd: 4, raw: "2024-02-29"}],
+  ],
+}
+
+{
+  name: "boundaries: legacy date() timestamps beside d() values",
+  graph: {nodes: [
+    {expression: "calc", fields: {ts: "date(s)", ms: "d(s).timestamp()", agree: "date(s) * 1000 == d(s).timestamp()", nowTs: "date('now')"}},
+  ]},
+  cases: [
+    [{s: "2025-03-20"}, {ts: 1742428800, ms: 1742428800000, agree: true, nowTs: 1742465730}],
+    [{s: "1970-01-01T00:00:00Z"}, {ts: 0, ms: 0, agree: true, nowTs: 1742465730}],
+    [{s: "2025-03-20T10:15:30+01:00"}, {ts: 1742462130, ms: 1742462130000, agree: true, nowTs: 1742465730}],
+  ],
+}

@@ -1,0 +1,266 @@
+expression (string);input (json 5);output (json 5);note
+# Explicit comparisons on $ are used as the result
+$ > 5;{$: 6};true
+$ > 5;{$: 5};false
+$ > 5;{$: -1};false
+$ > 5;{$: null};!error
+$ > 5;{};!error
+$ > 5;{$: '6'};!error
+$ == 'gold';{$: 'gold'};true
+$ == 'gold';{$: 'GOLD'};false
+$ == 'gold';{$: null};false
+$ == 'gold';{$: 1};false
+$ != 'gold';{$: 'gold'};false
+$ != 'gold';{$: 'silver'};true
+$ != 'gold';{$: null};true
+$ != 'gold';{};true
+$ == $;{$: 1};true
+$ == $;{$: null};true
+$ == $;{$: 'a'};true
+$ == $;{$: [1]};true;bug: == on arrays is always false, even for a value compared with itself
+$ != $;{$: 1};false
+$ != $;{$: null};false
+$ != $;{$: 'a'};false
+$ != $;{$: [1]};false;bug: == on arrays is always false, so != on the same array is true
+5 < $;{$: 6};true
+5 < $;{$: 5};false
+5 < $;{$: 4};false
+5 < $;{$: null};!error
+# `$ in` explicit membership
+$ in ['a', 'b'];{$: 'a'};true
+$ in ['a', 'b'];{$: 'c'};false
+$ in ['a', 'b'];{$: null};false
+$ in ['a', 'b'];{$: 1};false
+$ in ['a', 'b'];{};false
+$ not in ['a', 'b'];{$: 'a'};false
+$ not in ['a', 'b'];{$: 'c'};true
+$ not in ['a', 'b'];{$: null};true
+$ not in ['a', 'b'];{$: 1};true
+'a' in $;{$: ['a', 'b']};true
+'a' in $;{$: ['b']};false
+'a' in $;{$: []};false
+'a' in $;{$: {a: 1}};true
+'a' in $;{$: null};!error
+'a' in $;{$: 'abc'};!error
+# Functions whose result is a boolean are used as the result
+contains($, 'x');{$: 'axb'};true
+contains($, 'x');{$: 'abc'};false
+contains($, 'x');{$: 'X'};false
+contains($, 'x');{$: ''};false
+contains($, 'x');{$: null};!error
+contains($, 'x');{$: 5};!error
+contains($, 'x');{$: ['x']};true
+contains($, 'x');{$: ['xy']};false
+contains($, 2);{$: [1, 2]};true
+contains($, 2);{$: [1, 3]};false
+contains($, 2);{$: []};false
+contains($, 2);{$: [2.0]};true
+startsWith($, 'G');{$: 'Gold'};true
+startsWith($, 'G');{$: 'gold'};false
+startsWith($, 'G');{$: 'AG'};false
+startsWith($, 'G');{$: ''};false
+startsWith($, 'G');{$: 5};!error
+startsWith($, 'G');{$: null};!error
+endsWith($, '.pdf');{$: 'a.pdf'};true
+endsWith($, '.pdf');{$: 'a.PDF'};false
+endsWith($, '.pdf');{$: '.pdf'};true
+endsWith($, '.pdf');{$: 'pdf'};false
+endsWith($, '.pdf');{$: null};!error
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB123'};true
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'ab123'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: 'AB'};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: ''};false
+matches($, '^[A-Z]{2}[0-9]+$');{$: null};!error
+isNumeric($);{$: '12'};true
+isNumeric($);{$: '12.5'};true
+isNumeric($);{$: 'abc'};false
+isNumeric($);{$: 12};true
+isNumeric($);{$: null};false
+isNumeric($);{$: ''};false
+some($, # > 10);{$: [1, 15]};true
+some($, # > 10);{$: [1, 2]};false
+some($, # > 10);{$: []};false
+some($, # > 10);{$: null};!error
+some($, # > 10);{$: 15};!error
+all($, # > 0);{$: [1, 2]};true
+all($, # > 0);{$: [1, -2]};false
+all($, # > 0);{$: []};true
+all($, # > 0);{$: null};!error
+none($, # == 'x');{$: ['a', 'b']};true
+none($, # == 'x');{$: ['x']};false
+none($, # == 'x');{$: []};true
+none($, # == 'x');{$: 'x'};!error
+one($, # == 'x');{$: ['x', 'y']};true
+one($, # == 'x');{$: ['x', 'x']};false
+one($, # == 'x');{$: []};false
+one($, # == 'x');{$: null};!error
+# Functions returning values are compared with $
+lower('GOLD');{$: 'gold'};true
+lower('GOLD');{$: 'GOLD'};false
+lower('GOLD');{$: 'Gold'};false
+lower('GOLD');{$: null};false
+upper('Hello, World!');{$: 'HELLO, WORLD!'};true
+upper('Hello, World!');{$: 'Hello, World!'};false
+upper('Hello, World!');{$: null};false
+upper('Hello, World!');{$: 1};false
+abs(-5);{$: 5};true
+abs(-5);{$: -5};false
+abs(-5);{$: '5'};false
+abs(-5);{$: null};false
+max([3, 5, 8]);{$: 8};true
+max([3, 5, 8]);{$: 3};false
+max([3, 5, 8]);{$: 8.0};true
+max([3, 5, 8]);{$: null};false
+round(3.5);{$: 4};true
+round(3.5);{$: 3};false
+round(3.5);{$: 3.5};false
+round(3.5);{$: '4'};false
+len('abc');{$: 3};true
+len('abc');{$: 'abc'};false
+len('abc');{$: 2};false
+len('abc');{$: null};false
+number('12.50');{$: 12.5};true
+number('12.50');{$: '12.50'};false
+number('12.50');{$: 12};false
+number('12.50');{$: null};false
+string(12);{$: '12'};true
+string(12);{$: 12};false
+string(12);{$: '12.0'};false
+string(12);{$: null};false
+bool('true');{$: true};true
+bool('true');{$: false};false
+bool('true');{$: 'true'};false
+bool('true');{$: null};false
+# Functions of $ returning non-booleans are compared with $ itself
+lower($);{$: 'gold'};true
+lower($);{$: 'Gold'};false;question: `lower($)` is `$ == lower($)` (true only for already-lowercase $); a user may expect a type error for a non-boolean test
+lower($);{$: ''};true
+lower($);{$: 5};!error
+lower($);{$: null};!error
+len($);{$: 'abc'};false;question: `len($)` is `$ == len($)`; a non-boolean test on $ is silently a self-comparison
+len($);{$: ''};false
+len($);{$: [1]};false
+len($);{$: null};!error
+trim($);{$: 'a'};true
+trim($);{$: ' a '};false
+trim($);{$: ''};true
+trim($);{$: null};!error
+number($);{$: 5};true
+number($);{$: '5'};false
+number($);{$: true};false
+number($);{$: 'abc'};!error
+string($);{$: 'a'};true
+string($);{$: 5};false
+string($);{$: true};false
+string($);{$: null};false
+type($);{$: 'string'};true
+type($);{$: 'number'};false
+type($);{$: 5};false
+type($);{$: null};false
+# Arithmetic on $ is compared with $
+$ + 1;{$: 1};false;question: `$ + 1` is `$ == $ + 1` (never true for numbers) instead of a type error for a non-boolean test
+$ + 1;{$: 0};false
+$ + 1;{$: -1};false
+$ + 1;{$: null};!error
+$ + 1;{$: 'a'};!error
+$ * 1;{$: 5};true;question: `$ * 1` is `$ == $ * 1`, true for every number; a non-boolean test on $ is silently a self-comparison
+$ * 1;{$: 0};true
+$ * 1;{$: 0.5};true
+$ * 1;{$: null};!error
+$ * 0;{$: 0};true
+$ * 0;{$: 5};false
+$ * 0;{$: -0};true
+$ * 0;{$: 'a'};!error
+$ + 'x' == 'ax';{$: 'a'};true
+$ + 'x' == 'ax';{$: 'b'};false
+$ + 'x' == 'ax';{$: 1};!error
+$ + 'x' == 'ax';{$: null};!error
+# Functions applied to $ inside comparisons
+len($) > 2;{$: 'abc'};true
+len($) > 2;{$: 'ab'};false
+len($) > 2;{$: [1, 2, 3]};true
+len($) > 2;{$: []};false
+len($) > 2;{$: null};!error
+len($) > 2;{$: 5};!error
+lower($) == 'gold';{$: 'GOLD'};true
+lower($) == 'gold';{$: 'Gold'};true
+lower($) == 'gold';{$: 'silver'};false
+lower($) == 'gold';{$: null};!error
+lower($) == 'gold';{$: 1};!error
+upper($) in ['A', 'B'];{$: 'a'};true
+upper($) in ['A', 'B'];{$: 'c'};false
+upper($) in ['A', 'B'];{$: 'B'};true
+upper($) in ['A', 'B'];{$: null};!error
+trim($) == '';{$: '  '};true
+trim($) == '';{$: ' a '};false
+trim($) == '';{$: ''};true
+trim($) == '';{$: null};!error
+($ ?? 0) > 5;{$: null};false
+($ ?? 0) > 5;{};false
+($ ?? 0) > 5;{$: 6};true
+($ ?? 0) > 5;{$: 5};false
+$ % 2 == 0;{$: 4};true
+$ % 2 == 0;{$: 3};false
+$ % 2 == 0;{$: 0};true
+$ % 2 == 0;{$: 2.5};false
+$ % 2 == 0;{$: null};!error
+$[0:5] == 'sample';{$: 'sample_string'};true
+$[0:5] == 'sample';{$: 'sampl'};!error;question: a slice end past the string errors (same as standard mode) - clamp or error?
+$[0:5] == 'sample';{$: 'other_string'};false
+$[0:5] == 'sample';{$: null};!error
+# $ as an object
+$.a > 1;{$: {a: 2}};true
+$.a > 1;{$: {a: 1}};false
+$.a > 1;{$: {a: null}};!error
+$.a > 1;{$: {}};!error
+$.a > 1;{$: null};!error
+$.a == 1;{$: {a: 1}};true
+$.a == 1;{$: {a: 2}};false
+$.a == 1;{$: {}};false
+$.a == 1;{$: null};false
+$.a == 1;{$: 5};false
+$.tier in ['gold', 'silver'];{$: {tier: 'gold'}};true
+$.tier in ['gold', 'silver'];{$: {tier: 'bronze'}};false
+$.tier in ['gold', 'silver'];{$: {}};false
+$.tier in ['gold', 'silver'];{$: null};false
+$.a;{$: {a: 1}};false
+$.a;{$: {a: {a: 1}}};false
+$.a;{$: 1};false
+$.a;{$: null};true;question: `$.a` is `$ == $.a`; with $ null both sides are null so it matches
+{a: 1};{$: {a: 1}};true;bug: == on objects is always false; a literal object cell never matches an equal $
+{a: 1};{$: {a: 2}};false
+{a: 1};{$: null};false
+{a: 1};{$: 'a'};false
+$.a.b == 1;{$: {a: {b: 1}}};true
+$.a.b == 1;{$: {a: {b: 2}}};false
+$.a.b == 1;{$: {a: null}};false
+$.a.b == 1;{$: {}};false
+'x' in keys($);{$: {x: 1}};true
+'x' in keys($);{$: {y: 1}};false
+'x' in keys($);{$: {}};false
+'x' in keys($);{$: null};!error
+# $ as an array
+$[0] == 1;{$: [1, 2]};true
+$[0] == 1;{$: [2, 1]};false
+$[0] == 1;{$: []};false
+$[0] == 1;{$: null};false
+$[-1] == 2;{$: [1, 2]};true;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
+$[-1] == 2;{$: [2, 1]};false;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
+$[-1] == 2;{$: [2]};true;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
+$[-1] == 2;{$: []};false;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize (same as standard mode)
+len($) == 0;{$: []};true
+len($) == 0;{$: [1]};false
+len($) == 0;{$: ''};true
+len($) == 0;{$: {}};!error
+sum($) > 10;{$: [5, 6]};true
+sum($) > 10;{$: [5, 5]};false
+sum($) > 10;{$: []};false
+sum($) > 10;{$: null};!error
+filter([1, 2, 3], # > 1);{$: 2};true
+filter([1, 2, 3], # > 1);{$: 1};false
+filter([1, 2, 3], # > 1);{$: 3};true
+filter([1, 2, 3], # > 1);{$: null};false
+map(['a', 'b'], upper(#));{$: 'A'};true
+map(['a', 'b'], upper(#));{$: 'a'};false
+map(['a', 'b'], upper(#));{$: 'C'};false
+map(['a', 'b'], upper(#));{$: null};false

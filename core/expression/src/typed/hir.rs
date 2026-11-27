@@ -1,0 +1,879 @@
+use crate::functions::{DateMethod, DeprecatedFunction, InternalFunction};
+use crate::lane::date::Date;
+use crate::typed::num::Dec;
+use chrono::{DateTime, SecondsFormat};
+use chrono_tz::Tz;
+use std::fmt;
+use std::sync::Arc;
+
+pub type NodeId = u32;
+pub type DictId = u16;
+pub type ListId = u16;
+pub type ColId = u16;
+pub type FieldId = u16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Kind {
+    Num(Option<u8>),
+    Bool,
+    Code(DictId),
+    Text,
+    Date,
+    Null,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ty {
+    pub kind: Kind,
+    pub nullable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Scope {
+    Row,
+    Elem(ListId),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Lit {
+    Null,
+    Num(Dec),
+    Bool(bool),
+    Code(DictId, i32),
+    Text(String),
+    Date(Stamp),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Stamp(Option<(i64, u32, Tz)>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Host {
+    Construct,
+    Method(DateMethod),
+    Legacy(DeprecatedFunction),
+    Internal(InternalFunction),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Clock {
+    Now,
+    Coerce,
+    Strict,
+    Matches,
+    Text,
+    Declared,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Arith {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Pow,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Cmp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fold {
+    Sum,
+    Count,
+    Any,
+    All,
+    None,
+    One,
+    Min,
+    Max,
+    Avg,
+    At(u32),
+    Missing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Func {
+    StartsWith,
+    EndsWith,
+    Len,
+    Abs,
+    Floor,
+    Ceil,
+    Round(u8),
+    Trunc(u8),
+    Min,
+    Max,
+    Upper,
+    Lower,
+    Trim,
+    Contains,
+    Matches,
+    Part(u16),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Range {
+    pub lo: Dec,
+    pub lo_closed: bool,
+    pub hi: Dec,
+    pub hi_closed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Op {
+    Column(ColId),
+    Field(ListId, FieldId),
+    Parent(NodeId),
+    Const(Lit),
+    Neg(NodeId),
+    Not(NodeId),
+    Checked(NodeId),
+    Arith(Arith, NodeId, NodeId),
+    Cmp(Cmp, NodeId, NodeId),
+    And(NodeId, NodeId),
+    Or(NodeId, NodeId),
+    If(NodeId, NodeId, NodeId),
+    Coalesce(NodeId, NodeId),
+    InSet(NodeId, Vec<Lit>),
+    InRow(NodeId, ListId, u16, Option<ListId>),
+    InRange(NodeId, Range),
+    Fold {
+        fold: Fold,
+        list: ListId,
+        filter: Option<NodeId>,
+        value: Option<NodeId>,
+        empty: bool,
+    },
+    FirstMatch {
+        conds: Vec<NodeId>,
+        strict: bool,
+        blind: Vec<bool>,
+    },
+    Pick(NodeId, Vec<NodeId>),
+    Call(Func, Vec<NodeId>),
+    Classify(NodeId, DictId),
+    Str(NodeId),
+    Decode(NodeId),
+    Concat(Vec<NodeId>),
+    Host(Host, Vec<NodeId>),
+    Clock(Clock, Vec<NodeId>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Node {
+    pub op: Op,
+    pub ty: Ty,
+    pub scope: Scope,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Collect {
+    pub list: ListId,
+    pub keep: Option<NodeId>,
+    pub item: NodeId,
+    pub empty: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Shape {
+    Part(u16),
+    List(Vec<Item>),
+    Object(Vec<(Arc<str>, Shape)>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Item {
+    pub keep: Option<u16>,
+    pub shape: Shape,
+    pub splice: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Output {
+    pub name: String,
+    pub node: NodeId,
+    pub scope: Scope,
+    pub ty: Ty,
+    pub collect: Option<Collect>,
+    pub shape: Option<Arc<Shape>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ColumnDef {
+    pub path: String,
+    pub ty: Ty,
+}
+
+#[derive(Clone, Debug)]
+pub struct ListDef {
+    pub path: String,
+    pub alias: Option<String>,
+    pub fields: Vec<ColumnDef>,
+    pub parent: Option<ListId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DictKind {
+    Literals,
+    Classes,
+}
+
+#[derive(Clone, Debug)]
+pub struct Dict {
+    pub kind: DictKind,
+    pub values: Vec<Box<str>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Schema {
+    pub columns: Vec<ColumnDef>,
+    pub lists: Vec<ListDef>,
+    pub dicts: Vec<Dict>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Hir {
+    pub schema: Schema,
+    pub nodes: Vec<Node>,
+    pub outputs: Vec<Output>,
+    pub parts: Vec<Output>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsupported(pub String);
+
+impl fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unsupported: {}", self.0)
+    }
+}
+
+impl std::error::Error for Unsupported {}
+
+impl Unsupported {
+    pub fn new(what: impl Into<String>) -> Self {
+        Self(what.into())
+    }
+}
+
+impl Ty {
+    pub const fn new(kind: Kind, nullable: bool) -> Self {
+        Self { kind, nullable }
+    }
+
+    pub const fn num(scale: Option<u8>) -> Self {
+        Self::new(Kind::Num(scale), false)
+    }
+
+    pub const fn boolean() -> Self {
+        Self::new(Kind::Bool, false)
+    }
+}
+
+impl Dict {
+    pub fn code(&self, value: &str) -> Option<i32> {
+        self.values
+            .iter()
+            .position(|v| v.as_ref() == value)
+            .and_then(|i| i32::try_from(i).ok())
+    }
+
+    pub fn text(&self, code: i32) -> Option<&str> {
+        usize::try_from(code)
+            .ok()
+            .and_then(|i| self.values.get(i))
+            .map(|v| v.as_ref())
+    }
+}
+
+impl Schema {
+    pub fn column(&self, path: &str) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|c| c.path == path)
+            .and_then(|i| ColId::try_from(i).ok())
+    }
+
+    pub fn list(&self, path: &str) -> Option<ListId> {
+        self.lists
+            .iter()
+            .position(|l| l.parent.is_none() && l.path == path)
+            .and_then(|i| ListId::try_from(i).ok())
+    }
+
+    pub fn field(&self, list: ListId, name: &str) -> Option<FieldId> {
+        self.lists
+            .get(list as usize)?
+            .fields
+            .iter()
+            .position(|f| f.path == name)
+            .and_then(|i| FieldId::try_from(i).ok())
+    }
+
+    pub fn nested(&self, parent: ListId, name: &str) -> Option<ListId> {
+        self.lists
+            .iter()
+            .position(|l| l.parent == Some(parent) && l.path == name)
+            .and_then(|i| ListId::try_from(i).ok())
+    }
+
+    pub fn owner(&self, scope: Scope) -> Option<Scope> {
+        match scope {
+            Scope::Row => None,
+            Scope::Elem(l) => Some(
+                self.lists
+                    .get(l as usize)?
+                    .parent
+                    .map_or(Scope::Row, Scope::Elem),
+            ),
+        }
+    }
+
+    pub fn depth(&self, scope: Scope) -> u32 {
+        let mut depth = 0;
+        let mut at = scope;
+        while let Some(up) = self.owner(at) {
+            depth += 1;
+            at = up;
+        }
+        depth
+    }
+
+    pub fn within(&self, inner: Scope, outer: Scope) -> bool {
+        let mut at = Some(inner);
+        while let Some(scope) = at {
+            if scope == outer {
+                return true;
+            }
+            at = self.owner(scope);
+        }
+        false
+    }
+
+    pub fn chain(&self, list: ListId) -> Vec<&str> {
+        let mut chain = Vec::new();
+        let mut at = Some(list);
+        while let Some(l) = at.and_then(|l| self.lists.get(l as usize)) {
+            chain.push(l.path.as_str());
+            at = l.parent;
+        }
+        chain.reverse();
+        chain
+    }
+}
+
+impl Hir {
+    pub fn declared(&self) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| matches!(node.op, Op::Clock(Clock::Declared, _)))
+    }
+
+    pub fn shows_declared(&self) -> bool {
+        let mut carried = vec![false; self.nodes.len()];
+        for (at, node) in self.nodes.iter().enumerate() {
+            let inputs = node.op.inputs();
+            let from = |x: &NodeId| carried.get(*x as usize).copied().unwrap_or(false);
+            if !inputs.iter().any(from) {
+                carried[at] = matches!(node.op, Op::Clock(Clock::Declared, _));
+                continue;
+            }
+            carried[at] = match &node.op {
+                Op::Cmp(..)
+                | Op::InSet(..)
+                | Op::InRange(..)
+                | Op::Clock(Clock::Matches, _)
+                | Op::Host(Host::Method(_), _) => false,
+                Op::Checked(_) | Op::Parent(_) | Op::Clock(Clock::Strict, _) => true,
+                Op::Coalesce(..) | Op::Pick(..) => true,
+                Op::If(c, ..) if !from(c) => true,
+                _ => return true,
+            };
+        }
+        let shown = |x: NodeId| carried.get(x as usize).copied().unwrap_or(false);
+        self.outputs.iter().chain(&self.parts).any(|out| {
+            shown(out.node)
+                || out
+                    .collect
+                    .is_some_and(|c| shown(c.item) || c.keep.is_some_and(shown))
+        })
+    }
+}
+
+impl Op {
+    pub fn inputs(&self) -> Vec<NodeId> {
+        match self {
+            Op::Column(_) | Op::Field(..) | Op::Const(_) => Vec::new(),
+            Op::Parent(a)
+            | Op::Neg(a)
+            | Op::Not(a)
+            | Op::Checked(a)
+            | Op::InSet(a, _)
+            | Op::InRow(a, ..)
+            | Op::InRange(a, _)
+            | Op::Classify(a, _)
+            | Op::Str(a)
+            | Op::Decode(a) => vec![*a],
+            Op::Arith(_, a, b)
+            | Op::Cmp(_, a, b)
+            | Op::And(a, b)
+            | Op::Or(a, b)
+            | Op::Coalesce(a, b) => vec![*a, *b],
+            Op::If(c, t, e) => vec![*c, *t, *e],
+            Op::Fold { filter, value, .. } => filter.iter().chain(value.iter()).copied().collect(),
+            Op::FirstMatch { conds, .. } => conds.clone(),
+            Op::Pick(sel, arms) => std::iter::once(*sel).chain(arms.iter().copied()).collect(),
+            Op::Call(_, args) | Op::Concat(args) | Op::Host(_, args) | Op::Clock(_, args) => {
+                args.clone()
+            }
+        }
+    }
+
+    pub fn remap(&self, f: impl Fn(NodeId) -> NodeId) -> Op {
+        match self {
+            Op::Column(_) | Op::Field(..) | Op::Const(_) => self.clone(),
+            Op::Parent(a) => Op::Parent(f(*a)),
+            Op::Neg(a) => Op::Neg(f(*a)),
+            Op::Not(a) => Op::Not(f(*a)),
+            Op::Checked(a) => Op::Checked(f(*a)),
+            Op::Classify(a, d) => Op::Classify(f(*a), *d),
+            Op::Str(a) => Op::Str(f(*a)),
+            Op::Decode(a) => Op::Decode(f(*a)),
+            Op::Concat(args) => Op::Concat(args.iter().map(|a| f(*a)).collect()),
+            Op::Arith(op, a, b) => Op::Arith(*op, f(*a), f(*b)),
+            Op::Cmp(op, a, b) => Op::Cmp(*op, f(*a), f(*b)),
+            Op::And(a, b) => Op::And(f(*a), f(*b)),
+            Op::Or(a, b) => Op::Or(f(*a), f(*b)),
+            Op::If(c, t, e) => Op::If(f(*c), f(*t), f(*e)),
+            Op::Coalesce(a, b) => Op::Coalesce(f(*a), f(*b)),
+            Op::InSet(a, set) => Op::InSet(f(*a), set.clone()),
+            Op::InRow(a, list, field, of) => Op::InRow(f(*a), *list, *field, *of),
+            Op::InRange(a, r) => Op::InRange(f(*a), *r),
+            Op::Fold {
+                fold,
+                list,
+                filter,
+                value,
+                empty,
+            } => Op::Fold {
+                fold: *fold,
+                list: *list,
+                filter: filter.map(&f),
+                value: value.map(&f),
+                empty: *empty,
+            },
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => Op::FirstMatch {
+                conds: conds.iter().map(|c| f(*c)).collect(),
+                strict: *strict,
+                blind: blind.clone(),
+            },
+            Op::Pick(sel, arms) => Op::Pick(f(*sel), arms.iter().map(|a| f(*a)).collect()),
+            Op::Call(func, args) => Op::Call(*func, args.iter().map(|a| f(*a)).collect()),
+            Op::Host(host, args) => Op::Host(*host, args.iter().map(|a| f(*a)).collect()),
+            Op::Clock(clock, args) => Op::Clock(*clock, args.iter().map(|a| f(*a)).collect()),
+        }
+    }
+}
+
+impl Fold {
+    pub fn quantifier(self) -> bool {
+        matches!(self, Fold::Any | Fold::All | Fold::None | Fold::One)
+    }
+}
+
+impl Func {
+    pub fn text(self) -> bool {
+        matches!(
+            self,
+            Func::StartsWith
+                | Func::EndsWith
+                | Func::Len
+                | Func::Upper
+                | Func::Lower
+                | Func::Trim
+                | Func::Contains
+                | Func::Matches
+                | Func::Part(_)
+        )
+    }
+
+    pub fn mapping(self) -> bool {
+        matches!(self, Func::Upper | Func::Lower | Func::Trim)
+    }
+}
+
+impl Stamp {
+    pub(crate) fn of(date: Date) -> Self {
+        Self(
+            date.0
+                .map(|at| (at.timestamp(), at.timestamp_subsec_nanos(), at.timezone())),
+        )
+    }
+
+    pub(crate) fn date(self) -> Date {
+        Date(self.0.and_then(|(secs, nanos, zone)| {
+            DateTime::from_timestamp(secs, nanos).map(|at| at.with_timezone(&zone))
+        }))
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl fmt::Display for Stamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.date().0 {
+            Some(at) => write!(f, "{}", at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            None => write!(f, "Invalid date"),
+        }
+    }
+}
+
+impl Hir {
+    pub fn node(&self, id: NodeId) -> &Node {
+        &self.nodes[id as usize]
+    }
+
+    pub(crate) fn pruned(mut self) -> Hir {
+        let mut live = vec![false; self.nodes.len()];
+        for o in self.outputs.iter().chain(&self.parts) {
+            live[o.node as usize] = true;
+            if let Some(c) = o.collect {
+                live[c.item as usize] = true;
+                if let Some(k) = c.keep {
+                    live[k as usize] = true;
+                }
+            }
+        }
+        for id in (0..self.nodes.len()).rev() {
+            if live[id] {
+                for input in self.nodes[id].op.inputs() {
+                    live[input as usize] = true;
+                }
+            }
+        }
+        let mut remap = vec![0 as NodeId; self.nodes.len()];
+        let mut kept = Vec::with_capacity(self.nodes.len());
+        for (id, node) in std::mem::take(&mut self.nodes).into_iter().enumerate() {
+            if live[id] {
+                remap[id] = kept.len() as NodeId;
+                kept.push(Node {
+                    op: node.op.remap(|x| remap[x as usize]),
+                    ty: node.ty,
+                    scope: node.scope,
+                });
+            }
+        }
+        self.nodes = kept;
+        for o in self.outputs.iter_mut().chain(self.parts.iter_mut()) {
+            o.node = remap[o.node as usize];
+            if let Some(c) = &mut o.collect {
+                c.item = remap[c.item as usize];
+                c.keep = c.keep.map(|k| remap[k as usize]);
+            }
+        }
+        self
+    }
+
+    pub fn dict(&self, id: DictId) -> &Dict {
+        &self.schema.dicts[id as usize]
+    }
+
+    pub fn output(&self, name: &str) -> Option<usize> {
+        self.outputs.iter().position(|o| o.name == name)
+    }
+
+    pub fn composed(&self) -> bool {
+        self.outputs.iter().any(|o| o.shape.is_some())
+    }
+
+    pub(crate) fn expanded(&self) -> Hir {
+        let mut outputs = self.outputs.clone();
+        outputs.extend(self.parts.iter().cloned());
+        Hir {
+            schema: self.schema.clone(),
+            nodes: self.nodes.clone(),
+            outputs,
+            parts: Vec::new(),
+        }
+    }
+}
+
+impl Shape {
+    pub fn parts(&self, out: &mut Vec<u16>) {
+        match self {
+            Shape::Part(p) => out.push(*p),
+            Shape::List(items) => {
+                for item in items {
+                    out.extend(item.keep);
+                    item.shape.parts(out);
+                }
+            }
+            Shape::Object(members) => {
+                for (_, member) in members {
+                    member.parts(out);
+                }
+            }
+        }
+    }
+
+    fn render(&self) -> String {
+        match self {
+            Shape::Part(p) => format!("part {p}"),
+            Shape::List(items) => format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(|item| format!(
+                        "{}{}{}",
+                        item.keep.map_or(String::new(), |k| format!("if part {k} ")),
+                        if item.splice { "..." } else { "" },
+                        item.shape.render()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Shape::Object(members) => format!(
+                "{{{}}}",
+                members
+                    .iter()
+                    .map(|(key, member)| format!("{key}: {}", member.render()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Kind::Num(Some(s)) => write!(f, "num/{s}"),
+            Kind::Num(None) => write!(f, "num/*"),
+            Kind::Bool => write!(f, "bool"),
+            Kind::Code(d) => write!(f, "code#{d}"),
+            Kind::Text => write!(f, "text"),
+            Kind::Date => write!(f, "date"),
+            Kind::Null => write!(f, "null"),
+        }
+    }
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.nullable {
+            true => write!(f, "{}?", self.kind),
+            false => write!(f, "{}", self.kind),
+        }
+    }
+}
+
+impl fmt::Display for Scope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Scope::Row => write!(f, "row"),
+            Scope::Elem(l) => write!(f, "elem{l}"),
+        }
+    }
+}
+
+impl fmt::Display for Lit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Lit::Null => write!(f, "null"),
+            Lit::Num(d) => write!(f, "{d}"),
+            Lit::Bool(b) => write!(f, "{b}"),
+            Lit::Code(d, c) => write!(f, "code#{d}:{c}"),
+            Lit::Text(t) => write!(f, "{t:?}"),
+            Lit::Date(d) => write!(f, "date {d}"),
+        }
+    }
+}
+
+impl Hir {
+    fn body(&self, op: &Op) -> String {
+        let ids = |xs: &[NodeId]| {
+            xs.iter()
+                .map(|x| format!("%{x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match op {
+            Op::Column(c) => format!(
+                "column {}",
+                self.schema
+                    .columns
+                    .get(*c as usize)
+                    .map_or("?", |c| c.path.as_str())
+            ),
+            Op::Field(l, x) => {
+                format!(
+                    "field {l}.{}",
+                    self.schema
+                        .lists
+                        .get(*l as usize)
+                        .and_then(|l| l.fields.get(*x as usize))
+                        .map_or("?", |c| c.path.as_str())
+                )
+            }
+            Op::Parent(a) => format!("parent %{a}"),
+            Op::Const(l) => format!("const {l}"),
+            Op::Neg(a) => format!("neg %{a}"),
+            Op::Not(a) => format!("not %{a}"),
+            Op::Checked(a) => format!("checked %{a}"),
+            Op::Classify(a, d) => format!("classify %{a} dict {d}"),
+            Op::Str(a) => format!("string %{a}"),
+            Op::Decode(a) => format!("decode %{a}"),
+            Op::Concat(args) => format!("concat [{}]", ids(args)),
+            Op::Arith(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
+            Op::Cmp(op, a, b) => format!("{op:?} %{a}, %{b}").to_lowercase(),
+            Op::And(a, b) => format!("and %{a}, %{b}"),
+            Op::Or(a, b) => format!("or %{a}, %{b}"),
+            Op::If(c, t, e) => format!("if %{c} then %{t} else %{e}"),
+            Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
+            Op::InRow(a, list, field, of) => {
+                format!("inrow %{a} list {list} field {field} of {of:?}")
+            }
+            Op::InSet(a, set) => format!(
+                "inset %{a} [{}]",
+                set.iter()
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Op::InRange(a, r) => format!(
+                "inrange %{a} {}{}..{}{}",
+                if r.lo_closed { "[" } else { "(" },
+                r.lo,
+                r.hi,
+                if r.hi_closed { "]" } else { ")" }
+            ),
+            Op::Fold {
+                fold,
+                list,
+                filter,
+                value,
+                empty,
+            } => format!(
+                "fold {fold:?}{} list {list} filter {} value {}",
+                if *empty { " empty" } else { "" },
+                filter.map_or("-".to_string(), |x| format!("%{x}")),
+                value.map_or("-".to_string(), |x| format!("%{x}"))
+            )
+            .to_lowercase(),
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => format!(
+                "firstmatch{}{} [{}]",
+                if *strict { " strict" } else { "" },
+                match blind.contains(&true) {
+                    true => format!(
+                        " blind {:?}",
+                        blind
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, b)| **b)
+                            .map(|(at, _)| at)
+                            .collect::<Vec<_>>()
+                    ),
+                    false => String::new(),
+                },
+                ids(conds)
+            ),
+            Op::Pick(sel, arms) => format!("pick %{sel} [{}]", ids(arms)),
+            Op::Call(func, args) => format!("call {func:?}({})", ids(args)).to_lowercase(),
+            Op::Host(host, args) => format!("host {host:?}({})", ids(args)).to_lowercase(),
+            Op::Clock(clock, args) => format!("clock {clock:?}({})", ids(args)).to_lowercase(),
+        }
+    }
+}
+
+impl fmt::Display for Hir {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, c) in self.schema.columns.iter().enumerate() {
+            writeln!(f, "column {i} {} : {}", c.path, c.ty)?;
+        }
+        for (l, list) in self.schema.lists.iter().enumerate() {
+            match list.parent {
+                Some(p) => writeln!(f, "list {l} {} in {p}", list.path)?,
+                None => writeln!(
+                    f,
+                    "list {l} {} as {}",
+                    list.path,
+                    list.alias.as_deref().unwrap_or("-")
+                )?,
+            }
+            for (i, c) in list.fields.iter().enumerate() {
+                writeln!(f, "  field {i} {} : {}", c.path, c.ty)?;
+            }
+        }
+        for (d, dict) in self.schema.dicts.iter().enumerate() {
+            writeln!(f, "dict {d} {:?} {:?}", dict.kind, dict.values)?;
+        }
+        for (i, node) in self.nodes.iter().enumerate() {
+            writeln!(
+                f,
+                "%{i} = {} : {} @{}",
+                self.body(&node.op),
+                node.ty,
+                node.scope
+            )?;
+        }
+        for (i, o) in self.outputs.iter().enumerate() {
+            if let Some(shape) = &o.shape {
+                writeln!(f, "out {i} {:?} = {}", o.name, shape.render())?;
+                continue;
+            }
+            match o.collect {
+                Some(c) => writeln!(
+                    f,
+                    "out {i} {:?} = collect list {} keep {}{} %{} : {} @{}",
+                    o.name,
+                    c.list,
+                    c.keep.map_or("-".to_string(), |k| format!("%{k}")),
+                    if c.empty { " empty" } else { "" },
+                    o.node,
+                    o.ty,
+                    o.scope
+                )?,
+                None => writeln!(
+                    f,
+                    "out {i} {:?} = %{} : {} @{}",
+                    o.name, o.node, o.ty, o.scope
+                )?,
+            }
+        }
+        for (i, o) in self.parts.iter().enumerate() {
+            match o.collect {
+                Some(c) => writeln!(
+                    f,
+                    "part {i} = collect list {} keep {}{} %{} : {} @{}",
+                    c.list,
+                    c.keep.map_or("-".to_string(), |k| format!("%{k}")),
+                    if c.empty { " empty" } else { "" },
+                    o.node,
+                    o.ty,
+                    o.scope
+                )?,
+                None => writeln!(f, "part {i} = %{} : {} @{}", o.node, o.ty, o.scope)?,
+            }
+        }
+        Ok(())
+    }
+}

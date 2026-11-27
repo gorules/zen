@@ -40,6 +40,7 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
 pub struct ZenEngineResponse {
     pub performance: String,
     pub result: Value,
+    #[napi(ts_type = "ZenEngineResponseTrace | null")]
     pub trace: Option<HashMap<Arc<str>, ZenEngineTrace>>,
 }
 
@@ -101,13 +102,13 @@ impl ZenEngineHandlerRequest {
         self.node.clone()
     }
 
-    #[napi(getter)]
-    pub fn input(&self) -> Value {
-        self.input.clone()
+    #[napi(getter, ts_return_type = "any")]
+    pub fn input(&self) -> crate::convert::JsonValue {
+        crate::convert::JsonValue(self.input.clone())
     }
 
     #[napi(ts_return_type = "unknown")]
-    pub fn get_field(&self, path: String) -> napi::Result<Value> {
+    pub fn get_field(&self, path: String) -> napi::Result<crate::convert::JsonValue> {
         let node_config = &self.node.config;
 
         let selected_value: Value = node_config
@@ -116,17 +117,17 @@ impl ZenEngineHandlerRequest {
             .flatten()
             .context("Failed to find JSON path")?;
         let Value::String(template) = selected_value else {
-            return Ok(selected_value);
+            return Ok(crate::convert::JsonValue(selected_value));
         };
 
         let template_value = zen_tmpl::render(template.as_str(), Variable::from(&self.input))
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-        Ok(template_value.to_value())
+        Ok(crate::convert::JsonValue(template_value.to_value()))
     }
 
     #[napi(ts_return_type = "unknown")]
-    pub fn get_field_raw(&self, path: String) -> napi::Result<Value> {
+    pub fn get_field_raw(&self, path: String) -> napi::Result<crate::convert::JsonValue> {
         let node_config = &self.node.config;
 
         let selected_value: Value = node_config
@@ -135,6 +136,6 @@ impl ZenEngineHandlerRequest {
             .flatten()
             .context("Failed to find JSON path")?;
 
-        Ok(selected_value.clone())
+        Ok(crate::convert::JsonValue(selected_value.clone()))
     }
 }

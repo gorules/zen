@@ -1,18 +1,18 @@
 use crate::decision::Decision;
-use crate::decision_graph::graph::{DecisionGraphResponse, EvaluationTrace};
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::error::ContentKindError;
 use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::{DecisionContent, GraphContent};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::policy::runtime::{CompiledEntry, CompiledSet};
+use crate::trace::TraceFormat;
 use crate::{CompileFailure, EvaluationError};
 use arc_swap::ArcSwapOption;
 use serde_json::Value;
 use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
-use strum::{EnumString, IntoStaticStr};
 use zen_expression::variable::Variable;
 
 /// Structure used for generating and evaluating JDM decisions
@@ -22,6 +22,8 @@ pub struct DecisionEngine {
     adapter: DynamicCustomNode,
     http_handler: DynamicHttpHandler,
     compiled: Arc<ArcSwapOption<CompiledSet>>,
+    caches: Arc<crate::compiled::engine::Caches>,
+    engine: crate::compiled::Engine,
 }
 
 impl Debug for DecisionEngine {
@@ -34,37 +36,48 @@ impl Debug for DecisionEngine {
     }
 }
 
+/// Options for one evaluation.
+///
+/// `now`, `timezone` and `seed` pin the evaluation context of the compiled engine:
+/// `d()`, `rand()` and the date helpers in expressions, and `Date`, `Math.random` and local time
+/// in function nodes read them instead of the host clock, zone and
+/// random source. Each one left `None` is resolved lazily: `now` from the host clock once per
+/// evaluation (once per batch), `timezone` from the host zone and `seed` at random on the first
+/// draw. In a batch, row `i` draws from its own stream seeded with
+/// `zen_engine::context::row_seed(seed, i)`, so it replays alone with that seed.
+///
+/// The interpreted engine (`compiled: false`) ignores these three fields and keeps using the host
+/// clock, the host zone and an unseeded random source.
+///
+/// Outbound HTTP from function nodes is not captured by the context, so replaying a graph that
+/// makes such calls is not guaranteed to reproduce its result.
 #[derive(Debug, Clone, Copy)]
 pub struct EvaluationOptions {
-    pub trace: bool,
+    pub trace: TraceFormat,
     pub max_depth: u8,
+    /// Instant the evaluation runs at.
+    pub now: Option<zen_expression::context::Instant>,
+    /// IANA time zone for local dates, e.g. `Europe/Berlin`.
+    pub timezone: Option<zen_expression::context::Timezone>,
+    /// Seed of the random streams.
+    pub seed: Option<u64>,
 }
 
 impl Default for EvaluationOptions {
     fn default() -> Self {
         Self {
-            trace: false,
+            trace: TraceFormat::Off,
             max_depth: 10,
+            now: None,
+            timezone: None,
+            seed: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct EvaluationSerializedOptions {
-    pub trace: EvaluationTraceKind,
-    pub max_depth: u8,
-}
+pub type EvaluationSerializedOptions = EvaluationOptions;
 
-impl Default for EvaluationSerializedOptions {
-    fn default() -> Self {
-        Self {
-            trace: EvaluationTraceKind::None,
-            max_depth: 10,
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
 #[strum(serialize_all = "camelCase")]
 pub enum EvaluationTraceKind {
     #[default]
@@ -79,16 +92,30 @@ impl EvaluationTraceKind {
     pub fn serialize_trace(&self, trace: &Variable) -> Value {
         match self {
             EvaluationTraceKind::None => Value::Null,
-            EvaluationTraceKind::Default => serde_json::to_value(&trace).unwrap_or_default(),
+            EvaluationTraceKind::Default => serde_json::to_value(trace).unwrap_or_default(),
             EvaluationTraceKind::String => {
-                Value::String(serde_json::to_string(&trace).unwrap_or_default())
+                Value::String(serde_json::to_string(trace).unwrap_or_default())
             }
             EvaluationTraceKind::Reference => {
-                serde_json::to_value(&trace.serialize_ref()).unwrap_or_default()
+                serde_json::to_value(trace.serialize_ref()).unwrap_or_default()
             }
             EvaluationTraceKind::ReferenceString => {
                 Value::String(serde_json::to_string(&trace.serialize_ref()).unwrap_or_default())
             }
+        }
+    }
+
+    pub fn text(&self) -> bool {
+        matches!(self, Self::String | Self::ReferenceString)
+    }
+}
+
+impl EvaluationOptions {
+    pub(crate) fn pinned(&self) -> zen_expression::context::Pinned {
+        zen_expression::context::Pinned {
+            now: self.now,
+            timezone: self.timezone,
+            seed: self.seed,
         }
     }
 }
@@ -100,6 +127,8 @@ impl Default for DecisionEngine {
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
+            caches: Default::default(),
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 }
@@ -111,24 +140,29 @@ impl DecisionEngine {
             adapter,
             http_handler: None,
             compiled: Arc::new(ArcSwapOption::empty()),
+            caches: Default::default(),
+            engine: crate::compiled::Engine::Interpreted,
         }
     }
 
     pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
         self.adapter = adapter;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
     pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
         self.loader = loader;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
     pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
         self.http_handler = http_handler;
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
@@ -139,6 +173,7 @@ impl DecisionEngine {
     {
         self.loader = Arc::new(ClosureLoader::new(loader));
         self.compiled = Arc::new(ArcSwapOption::empty());
+        self.caches = Default::default();
         self
     }
 
@@ -148,6 +183,9 @@ impl DecisionEngine {
         };
 
         let set = CompiledSet::build_sync(&self.loader, &keys);
+        if self.engine.compiled() {
+            self.caches.compile(&self.loader, &keys);
+        }
 
         let failures = set.failures().to_vec();
         self.compiled.store(Some(Arc::new(set)));
@@ -185,17 +223,19 @@ impl DecisionEngine {
         K: AsRef<str>,
     {
         let key_str = key.as_ref();
+        if self.engine.compiled() {
+            return self
+                .caches
+                .evaluate_pinned(&self.parts(), key_str, context, options)
+                .await?;
+        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
-                        .evaluate_entry(key_str, context, options.trace)
-                        .map(|r| DecisionGraphResponse {
-                            performance: format!("{:.1?}", r.duration),
-                            result: r.output,
-                            trace: r.trace.map(EvaluationTrace::Policy),
-                        })
-                        .map_err(|e| Box::new(EvaluationError::Policy(e))),
+                        .evaluate_entry(key_str, context, options.trace.is_on(), options.now)
+                        .map(DecisionGraphResponse::from)
+                        .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
                     CompiledEntry::Graph(graph) => {
                         self.decision_from_graph(graph)
                             .evaluate_with_opts(context, options)
@@ -233,30 +273,27 @@ impl DecisionEngine {
         K: AsRef<str>,
     {
         let key_str = key.as_ref();
+        if self.engine.compiled() {
+            return self
+                .caches
+                .evaluate_serialized_pinned(&self.parts(), key_str, context, options)
+                .await;
+        }
         if let Some(set) = self.compiled.load_full() {
             if let Some(entry) = set.get(key_str) {
                 match entry {
                     CompiledEntry::Policy(artifact) => {
-                        let trace_mode = options.trace;
-                        let trace = options.trace != EvaluationTraceKind::None;
-                        return match artifact.evaluate_entry(key_str, context, trace) {
-                            Ok(r) => {
-                                let response = DecisionGraphResponse {
-                                    performance: format!("{:.1?}", r.duration),
-                                    result: r.output,
-                                    trace: r.trace.map(EvaluationTrace::Policy),
-                                };
-                                Ok(response
-                                    .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                                    .unwrap_or_default())
-                            }
-                            Err(e) => {
-                                let err = EvaluationError::Policy(e);
-                                Err(err
-                                    .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                                    .unwrap_or_default())
-                            }
-                        };
+                        return DecisionGraphResponse::serialized(
+                            artifact
+                                .evaluate_entry(
+                                    key_str,
+                                    context,
+                                    options.trace.is_on(),
+                                    options.now,
+                                )
+                                .map(DecisionGraphResponse::from)
+                                .map_err(|e| Box::new(EvaluationError::Policy(e.into()))),
+                        );
                     }
                     CompiledEntry::Graph(graph) => {
                         return self
@@ -278,29 +315,63 @@ impl DecisionEngine {
                 let decision = self.decision_from_graph_arc(content);
                 decision.evaluate_serialized(context, options).await
             }
-            DecisionContent::Policy(_) => {
-                let inner_opts = EvaluationOptions {
-                    trace: options.trace != EvaluationTraceKind::None,
-                    max_depth: options.max_depth,
-                };
-                let trace_mode = options.trace;
-                let response = crate::policy::runtime::evaluate_policy(
+            DecisionContent::Policy(_) => DecisionGraphResponse::serialized(
+                crate::policy::runtime::evaluate_policy(
                     &self.loader,
                     key_str,
                     content,
                     context,
-                    inner_opts,
+                    options,
                 )
-                .await;
-                match response {
-                    Ok(ok) => Ok(ok
-                        .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                        .unwrap_or_default()),
-                    Err(err) => Err(err
-                        .serialize_with_mode(serde_json::value::Serializer, trace_mode)
-                        .unwrap_or_default()),
-                }
-            }
+                .await,
+            ),
+        }
+    }
+
+    pub async fn evaluate_batch<K>(
+        &self,
+        key: K,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>>
+    where
+        K: AsRef<str>,
+    {
+        self.caches
+            .evaluate_batch_pinned(&self.parts(), key.as_ref(), contexts, options)
+            .await
+    }
+
+    pub fn with_version(mut self, version: crate::EngineVersion) -> Self {
+        self.engine = version.into();
+        self
+    }
+
+    pub fn set_version(&mut self, version: crate::EngineVersion) {
+        self.engine = version.into();
+    }
+
+    pub fn version(&self) -> crate::EngineVersion {
+        self.engine.version()
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Interpreted;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn compiled_engine(mut self) -> Self {
+        self.engine = crate::compiled::Engine::Compiled;
+        self
+    }
+
+    fn parts(&self) -> crate::compiled::engine::Parts<'_> {
+        crate::compiled::engine::Parts {
+            loader: &self.loader,
+            adapter: &self.adapter,
+            http_handler: &self.http_handler,
         }
     }
 
@@ -325,6 +396,7 @@ impl DecisionEngine {
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
             .with_http_handler(self.http_handler.clone())
+            .with_engine(self.engine)
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation

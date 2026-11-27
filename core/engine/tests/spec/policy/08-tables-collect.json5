@@ -1,0 +1,563 @@
+// Collecting decision tables. An output column collects when its field ends in `[]`, or
+// when the table's hit policy is `collect` (then every column collects and a `[]` suffix
+// is redundant). A collecting column gathers the values of its non-empty cells over ALL
+// matched rows, in row order, into an array; with no match it is written as `[]`. Columns
+// collect independently, so arrays from one table can differ in length. Scalar columns in
+// the same table keep first-hit semantics (first matched row with a non-empty cell, else
+// null).
+
+// ---------------------------------------------------------------------------
+// Hit policy `collect`.
+// ---------------------------------------------------------------------------
+{
+  name: "collect gathers every matching row in order",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{table: "tags", hit: "collect", inputs: ["customer.age"], outputs: ["customer.tags"], rules: [
+      [">= 65", "'senior'"],
+      [">= 18", "'adult'"],
+      ["", "'person'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, tags: ["senior", "adult", "person"]}}],
+    [{customer: {age: 65}}, {customer: {age: 65, tags: ["senior", "adult", "person"]}}],
+    [{customer: {age: 30}}, {customer: {age: 30, tags: ["adult", "person"]}}],
+    [{customer: {age: 5}}, {customer: {age: 5, tags: ["person"]}}],
+  ],
+}
+
+{
+  name: "collect with no match writes an empty array",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{table: "tags", hit: "collect", inputs: ["customer.age"], outputs: ["customer.tags"], rules: [
+      [">= 65", "'senior'"],
+      ["< 18", "'minor'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, tags: ["senior"]}}],
+    [{customer: {age: 10}}, {customer: {age: 10, tags: ["minor"]}}],
+    [{customer: {age: 30}}, {customer: {age: 30, tags: []}}],
+  ],
+}
+
+{
+  name: "collect table without rules writes empty arrays",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{table: "tags", hit: "collect", inputs: ["customer.age"], outputs: ["customer.a", "customer.b"], rules: []}],
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, a: [], b: []}}],
+    [{customer: {age: 100}}, {customer: {age: 100, a: [], b: []}}],
+  ],
+}
+
+{
+  name: "collect keeps duplicate values",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["x.n"], outputs: ["x.out"], rules: [
+      ["> 0", "'pos'"],
+      ["> 10", "'pos'"],
+      ["> 100", "'pos'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 500}}, {x: {n: 500, out: ["pos", "pos", "pos"]}}],
+    [{x: {n: 50}}, {x: {n: 50, out: ["pos", "pos"]}}],
+    [{x: {n: 0}}, {x: {n: 0, out: []}}],
+  ],
+}
+
+{
+  name: "collect with several output columns: each column gathers its own non-empty cells",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["order.amount"], outputs: ["order.labels", "order.codes"], rules: [
+      [">= 100", "'big'", "1"],
+      [">= 10", "'mid'", ""],
+      ["", "", "3"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 200}}, {order: {amount: 200, labels: ["big", "mid"], codes: [1, 3]}}],
+    [{order: {amount: 50}}, {order: {amount: 50, labels: ["mid"], codes: [3]}}],
+    [{order: {amount: 5}}, {order: {amount: 5, labels: [], codes: [3]}}],
+  ],
+}
+
+{
+  name: "`[]` suffix under hit policy collect is redundant",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["order.amount"], outputs: ["order.a[]", "order.b"], rules: [
+      ["> 0", "1", "'x'"],
+      ["> 5", "2", "'y'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 10}}, {order: {amount: 10, a: [1, 2], b: ["x", "y"]}}],
+    [{order: {amount: 1}}, {order: {amount: 1, a: [1], b: ["x"]}}],
+    [{order: {amount: 0}}, {order: {amount: 0, a: [], b: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Collected value types.
+// ---------------------------------------------------------------------------
+{
+  name: "collected values of mixed types",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["x.n"], outputs: ["x.out"], rules: [
+      ["> 0", "1"],
+      ["> 0", "'two'"],
+      ["> 0", "true"],
+      ["> 0", "{k: 4}"],
+      ["> 0", "[5, 6]"],
+      ["> 0", "null"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1}}, {x: {n: 1, out: [1, "two", true, {k: 4}, [5, 6], null]}}],
+    [{x: {n: 0}}, {x: {n: 0, out: []}}],
+  ],
+}
+
+{
+  name: "collected cells computed from inputs",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["order.qty"], outputs: ["order.fees"], rules: [
+      ["> 0", "order.amount * 0.01"],
+      ["> 10", "order.qty * 0.5"],
+      ["> 100", "order.amount + order.qty"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1000, qty: 200}}, {order: {amount: 1000, qty: 200, fees: [10, 100, 1200]}}],
+    [{order: {amount: 0.3, qty: 11}}, {order: {amount: 0.3, qty: 11, fees: [0.003, 5.5]}}],
+    [{order: {amount: 100, qty: 1}}, {order: {amount: 100, qty: 1, fees: [1]}}],
+  ],
+}
+
+{
+  name: "collect builds an array of objects",
+  policy: {
+    models: {applicant: {income: "number", debt: "number"}},
+    blocks: [{table: "reasons", hit: "collect", inputs: ["applicant.income", "applicant.debt"], outputs: ["applicant.reasons"], rules: [
+      ["< 20000", "", "{code: 'LOW_INCOME', weight: 3}"],
+      ["", "> 50000", "{code: 'HIGH_DEBT', weight: 2}"],
+      ["", "> applicant.income", "{code: 'DEBT_OVER_INCOME', weight: 5}"],
+    ]}],
+  },
+  cases: [
+    [
+      {applicant: {income: 10000, debt: 60000}},
+      {applicant: {income: 10000, debt: 60000, reasons: [{code: "LOW_INCOME", weight: 3}, {code: "HIGH_DEBT", weight: 2}, {code: "DEBT_OVER_INCOME", weight: 5}]}},
+    ],
+    [{applicant: {income: 90000, debt: 1000}}, {applicant: {income: 90000, debt: 1000, reasons: []}}],
+    [
+      {applicant: {income: 30000, debt: 40000}},
+      {applicant: {income: 30000, debt: 40000, reasons: [{code: "DEBT_OVER_INCOME", weight: 5}]}},
+    ],
+  ],
+}
+
+{
+  name: "collect table without input columns: every row matches",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: [], outputs: ["x.all"], rules: [["x.n"], ["x.n * 2"], ["'c'"]]}],
+  },
+  cases: [
+    [{x: {n: 1}}, {x: {n: 1, all: [1, 2, "c"]}}],
+    [{x: {n: 0}}, {x: {n: 0, all: [0, 0, "c"]}}],
+    [{x: {n: -2.5}}, {x: {n: -2.5, all: [-2.5, -5, "c"]}}],
+  ],
+}
+
+{
+  name: "collect over string list cells and two inputs",
+  policy: {
+    models: {item: {category: "string", price: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["item.category", "item.price"], outputs: ["item.labels"], rules: [
+      ["'food', 'drink'", "", "'consumable'"],
+      ["'drink'", "", "'liquid'"],
+      ["", "> 100", "'expensive'"],
+      ["", "[0..1]", "'cheap'"],
+      ["'tool'", "> 100", "'pro tool'"],
+    ]}],
+  },
+  cases: [
+    [{item: {category: "drink", price: 1}}, {item: {category: "drink", price: 1, labels: ["consumable", "liquid", "cheap"]}}],
+    [{item: {category: "food", price: 50}}, {item: {category: "food", price: 50, labels: ["consumable"]}}],
+    [{item: {category: "tool", price: 500}}, {item: {category: "tool", price: 500, labels: ["expensive", "pro tool"]}}],
+    [{item: {category: "toy", price: 0}}, {item: {category: "toy", price: 0, labels: ["cheap"]}}],
+    [{item: {category: "", price: 50}}, {item: {category: "", price: 50, labels: []}}],
+  ],
+}
+
+{
+  name: "collect with boolean and enum inputs",
+  policy: {
+    models: {user: {verified: "boolean", plan: "string(free|pro|team)"}},
+    blocks: [{table: "t", inputs: ["user.verified", "user.plan"], outputs: ["user.features[]"], rules: [
+      ["", "", "'basic'"],
+      ["true", "", "'export'"],
+      ["", "'pro', 'team'", "'api'"],
+      ["true", "'team'", "'sso'"],
+    ]}],
+  },
+  cases: [
+    [{user: {verified: false, plan: "free"}}, {user: {verified: false, plan: "free", features: ["basic"]}}],
+    [{user: {verified: true, plan: "free"}}, {user: {verified: true, plan: "free", features: ["basic", "export"]}}],
+    [{user: {verified: false, plan: "pro"}}, {user: {verified: false, plan: "pro", features: ["basic", "api"]}}],
+    [{user: {verified: true, plan: "team"}}, {user: {verified: true, plan: "team", features: ["basic", "export", "api", "sso"]}}],
+    [{user: {verified: true, plan: "enterprise"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Per-column collect `[]` in a first-hit table: mixed collect and first columns.
+// ---------------------------------------------------------------------------
+{
+  name: "`tags[]` collects while scalar columns take the first hit",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.tags[]", "order.tier"], rules: [
+      [">= 100", "'big'", "'gold'"],
+      [">= 10", "'mid'", "'silver'"],
+      ["< 0", "'neg'", "'none'"],
+      ["", "'any'", "'bronze'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 200}}, {order: {amount: 200, tags: ["big", "mid", "any"], tier: "gold"}}],
+    [{order: {amount: 50}}, {order: {amount: 50, tags: ["mid", "any"], tier: "silver"}}],
+    [{order: {amount: 5}}, {order: {amount: 5, tags: ["any"], tier: "bronze"}}],
+    [{order: {amount: -5}}, {order: {amount: -5, tags: ["neg", "any"], tier: "none"}}],
+  ],
+}
+
+{
+  name: "mixed table with no match: collect column is empty, scalar column is null",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.tags[]", "order.first"], rules: [
+      [">= 100", "'big'", "1"],
+      [">= 10", "'mid'", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 100}}, {order: {amount: 100, tags: ["big", "mid"], first: 1}}],
+    [{order: {amount: 10}}, {order: {amount: 10, tags: ["mid"], first: 2}}],
+    [{order: {amount: 9}}, {order: {amount: 9, tags: [], first: null}}],
+  ],
+}
+
+{
+  name: "scalar column falls through empty cells while collect gathers everything",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.flags[]", "order.rate"], rules: [
+      ["> 1000", "'review'", ""],
+      ["> 100", "", "0.1"],
+      ["> 0", "'small-ok'", "0.2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 5000}}, {order: {amount: 5000, flags: ["review", "small-ok"], rate: 0.1}}],
+    [{order: {amount: 500}}, {order: {amount: 500, flags: ["small-ok"], rate: 0.1}}],
+    [{order: {amount: 5}}, {order: {amount: 5, flags: ["small-ok"], rate: 0.2}}],
+    [{order: {amount: 0}}, {order: {amount: 0, flags: [], rate: null}}],
+  ],
+}
+
+{
+  name: "several collect columns and several scalar columns",
+  policy: {
+    models: {claim: {amount: "number", type: "string(auto|home|life)"}},
+    blocks: [{table: "t", inputs: ["claim.type", "claim.amount"], outputs: ["claim.checks[]", "claim.handler", "claim.docs[]", "claim.priority"], rules: [
+      ["", "> 10000", "'fraud'", "'senior'", "'invoice'", "1"],
+      ["'auto'", "", "'police report'", "'motor'", "'photos'", ""],
+      ["'home'", "", "", "'property'", "'deed'", ""],
+      ["", "", "'identity'", "'general'", "", "3"],
+    ]}],
+  },
+  cases: [
+    [
+      {claim: {type: "auto", amount: 20000}},
+      {claim: {type: "auto", amount: 20000, checks: ["fraud", "police report", "identity"], handler: "senior", docs: ["invoice", "photos"], priority: 1}},
+    ],
+    [
+      {claim: {type: "auto", amount: 500}},
+      {claim: {type: "auto", amount: 500, checks: ["police report", "identity"], handler: "motor", docs: ["photos"], priority: 3}},
+    ],
+    [
+      {claim: {type: "home", amount: 500}},
+      {claim: {type: "home", amount: 500, checks: ["identity"], handler: "property", docs: ["deed"], priority: 3}},
+    ],
+    [
+      {claim: {type: "life", amount: 500}},
+      {claim: {type: "life", amount: 500, checks: ["identity"], handler: "general", docs: [], priority: 3}},
+    ],
+  ],
+}
+
+{
+  name: "collect column on a nested path",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.meta.notes[]", "order.meta.level"], rules: [
+      ["> 10", "'a'", "2"],
+      ["> 0", "'b'", "1"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 11}}, {order: {amount: 11, meta: {notes: ["a", "b"], level: 2}}}],
+    [{order: {amount: 1}}, {order: {amount: 1, meta: {notes: ["b"], level: 1}}}],
+    [{order: {amount: 0}}, {order: {amount: 0, meta: {notes: [], level: null}}}],
+  ],
+}
+
+{
+  name: "whitespace before the `[]` marker is ignored",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.tags []", " order.tier "], rules: [
+      ["> 10", "'a'", "1"],
+      ["> 0", "'b'", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 11}}, {order: {amount: 11, tags: ["a", "b"], tier: 1}}],
+    [{order: {amount: 0}}, {order: {amount: 0, tags: [], tier: null}}],
+  ],
+}
+
+{
+  name: "a misplaced `[]` marker drops the column",
+  diagnostics: ["INVALID_WRITE_PATH"],
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.items[].tag", "order.tier"], rules: [
+      ["> 10", "'a'", "1"],
+      ["", "'b'", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 11}}, {order: {amount: 11, tier: 1}}],
+    [{order: {amount: 0}}, {order: {amount: 0, tier: 2}}],
+  ],
+}
+
+{
+  name: "a bare `[]` output field drops the column",
+  diagnostics: ["INVALID_WRITE_PATH"],
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["[]", "order.tier"], rules: [
+      ["> 10", "'a'", "1"],
+      ["", "'b'", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 11}}, {order: {amount: 11, tier: 1}}],
+    [{order: {amount: 0}}, {order: {amount: 0, tier: 2}}],
+  ],
+}
+
+{
+  name: "two collect columns on the same field merge row by row",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.tags[]", "x.tags[]"], rules: [
+      ["> 0", "'a1'", "'b1'"],
+      ["> 1", "'a2'", "'b2'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 5}}, {x: {n: 5, tags: ["a1", "b1", "a2", "b2"]}}, "question: both columns write `x.tags`; values interleave row by row in one array, where a duplicate-writer error might be expected"],
+    [{x: {n: 1}}, {x: {n: 1, tags: ["a1", "b1"]}}],
+    [{x: {n: 0}}, {x: {n: 0, tags: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Laziness and errors: collecting evaluates every row.
+// ---------------------------------------------------------------------------
+{
+  name: "a failing cell in a later matched row fails a collect table",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["x.n"], outputs: ["x.out"], rules: [
+      ["> 0", "'ok'"],
+      ["> 10", "x.s * 2"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 5, s: "a"}}, {x: {n: 5, s: "a", out: ["ok"]}}],
+    [{x: {n: 50, s: "a"}}, "!error: ExpressionFailed"],
+    [{x: {n: 0, s: "a"}}, {x: {n: 0, s: "a", out: []}}],
+  ],
+}
+
+{
+  name: "a failing input cell anywhere fails a table with a collect column",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", inputs: [null], outputs: ["x.tags[]", "x.first"], rules: [
+      ["x.n > 0", "'pos'", "1"],
+      ["x.s * 2 > 0", "'bad'", "2"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1, s: "a"}}, "!error: ExpressionFailed"],
+    [{x: {n: 0, s: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a failing cell in an unmatched row is not evaluated",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.tags[]"], rules: [
+      ["> 0", "'pos'"],
+      ["< 0", "x.s * 2"],
+      ["", "'any'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1, s: "a"}}, {x: {n: 1, s: "a", tags: ["pos", "any"]}}],
+    [{x: {n: 0, s: "a"}}, {x: {n: 0, s: "a", tags: ["any"]}}],
+    [{x: {n: -1, s: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Null and missing inputs.
+// ---------------------------------------------------------------------------
+{
+  name: "optional input in a collect table",
+  policy: {
+    models: {x: {s: "string?"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["x.s"], outputs: ["x.out"], rules: [
+      ["'a'", "1"],
+      ["null", "2"],
+      ["", "3"],
+    ]}],
+  },
+  cases: [
+    [{x: {s: "a"}}, {x: {s: "a", out: [1, 3]}}],
+    [{x: {s: "b"}}, {x: {s: "b", out: [3]}}],
+    [{x: {s: null}}, {x: {s: null, out: [2, 3]}}],
+    [{x: {}}, {x: {out: [2, 3]}}],
+  ],
+}
+
+{
+  name: "required input missing in a collect table",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: ["x.n"], outputs: ["x.out"], rules: [["> 0", "1"], ["", "2"]]}],
+  },
+  cases: [
+    [{x: {n: 1}}, {x: {n: 1, out: [1, 2]}}],
+    [{x: {}}, "!error: MissingRequiredInputs"],
+    [{x: {n: "1"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Interactions: downstream blocks, per-instance collect, goals.
+// ---------------------------------------------------------------------------
+{
+  name: "downstream blocks read the collected array",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {table: "flags", inputs: ["customer.age", "customer.income"], outputs: ["customer.flags[]"], rules: [
+        ["< 18", "", "'minor'"],
+        ["", "< 1000", "'low income'"],
+        ["> 90", "", "'elderly'"],
+      ]},
+      {expression: "customer.flagCount", value: "len(customer.flags)"},
+      {assertion: "customer.clean", conditions: ["len(customer.flags) == 0"]},
+      {match: "customer.route", arms: [
+        ["'minor' in customer.flags", "'guardian'"],
+        ["customer.flagCount > 0", "'manual'"],
+        ["", "'auto'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, income: 5000}}, {customer: {age: 30, income: 5000, flags: [], flagCount: 0, clean: true, route: "auto"}}],
+    [{customer: {age: 16, income: 0}}, {customer: {age: 16, income: 0, flags: ["minor", "low income"], flagCount: 2, clean: false, route: "guardian"}}],
+    [{customer: {age: 95, income: 5000}}, {customer: {age: 95, income: 5000, flags: ["elderly"], flagCount: 1, clean: false, route: "manual"}}],
+  ],
+}
+
+{
+  name: "per-instance collect over a relationship",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {table: "t", inputs: ["company.revenue", "company.country"], outputs: ["company.warnings[]", "company.score"], rules: [
+        ["< 1000", "", "'small'", "1"],
+        ["", "'XX'", "'sanctioned'", "0"],
+        ["", "", "", "5"],
+      ]},
+      {expression: "customer.warningCount", value: "sum(map(customer.companies, len(#.warnings)))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, country: "XX"}, {revenue: 5000, country: "DE"}]}},
+      {customer: {warningCount: 2, companies: [{revenue: 10, country: "XX", warnings: ["small", "sanctioned"], score: 1}, {revenue: 5000, country: "DE", warnings: [], score: 5}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {warningCount: 0, companies: []}}],
+  ],
+}
+
+{
+  name: "collect table reading global scope",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    globals: {rules: {limit: "number"}},
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", hit: "collect", inputs: [null], outputs: ["order.alerts"], rules: [
+      ["order.amount > rules.limit", "'over limit'"],
+      ["order.amount > rules.limit * 2", "'way over limit'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 300}, rules: {limit: 100}}, {order: {amount: 300, alerts: ["over limit", "way over limit"]}, rules: {limit: 100}}],
+    [{order: {amount: 150}, rules: {limit: 100}}, {order: {amount: 150, alerts: ["over limit"]}, rules: {limit: 100}}],
+    [{order: {amount: 50}, rules: {limit: 100}}, {order: {amount: 50, alerts: []}, rules: {limit: 100}}],
+  ],
+}
+
+{
+  name: "goals on a mixed table",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.tags[]", "order.tier"], rules: [
+      ["> 10", "'a'", "1"],
+      ["", "'b'", "2"],
+    ]}],
+  },
+  cases: [
+    {input: {order: {amount: 11}}, goals: ["order.tags"], output: {order: {amount: 11, tags: ["a", "b"], tier: 1}}},
+    {input: {order: {amount: 1}}, goals: ["order.tier"], output: {order: {amount: 1, tags: ["b"], tier: 2}}},
+  ],
+}

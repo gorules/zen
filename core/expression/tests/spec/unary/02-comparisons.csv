@@ -1,0 +1,197 @@
+expression (string);input (json 5);output (json 5);note
+# Comparison shorthand: `op x` means `$ op x`
+> 5;{$: 6};true
+> 5;{$: 5};false
+> 5;{$: 5.0000000001};true
+> 5;{$: 4};false
+> 5;{$: -10};false
+> 5;{$: '6'};!error
+> 5;{$: null};!error
+> 5;{};!error
+> 5;;!error
+> 5;{$: true};!error
+> 5;{$: [6]};!error
+>= 5;{$: 5};true
+>= 5;{$: 5.00};true
+>= 5;{$: 4.99};false
+>= 5;{$: 100};true
+>= 5;{$: null};!error
+>= 5;{$: '5'};!error
+< 5;{$: 4};true
+< 5;{$: 5};false
+< 5;{$: -5};true
+< 5;{$: 4.9999999999};true
+< 5;{$: null};!error
+< 5;{$: 'a'};!error
+<= 5;{$: 5};true
+<= 5;{$: 5.1};false
+<= 5;{$: -100};true
+<= 5;{$: 0};true
+<= 5;{};!error
+<= 5;{$: false};!error
+> -5;{$: -4};true
+> -5;{$: -5};false
+> -5;{$: -6};false
+> -5;{$: 0};true
+> - 5;{$: -4};true
+> - 5;{$: -6};false
+> 0.5;{$: 0.51};true
+> 0.5;{$: 0.5};false
+> 0.5;{$: 0.49};false
+> 0.5;{$: 1};true
+>5;{$: 6};true
+>5;{$: 5};false
+>5;{$: 4};false
+>5;{$: null};!error
+# Equality shorthand agrees with the bare literal
+== 5;{$: 5};true
+== 5;{$: 5.0};true
+== 5;{$: 6};false
+== 5;{$: '5'};false
+== 5;{$: null};false
+== 5;{};false
+== 5;{$: true};false
+== 'gold';{$: 'gold'};true
+== 'gold';{$: 'Gold'};false
+== 'gold';{$: null};false
+== 'gold';{$: 1};false
+== true;{$: true};true
+== true;{$: false};false
+== true;{$: 1};false
+== true;{$: 'true'};false
+== true;{$: null};false
+== null;{$: null};true
+== null;{};true
+== null;{$: 0};false
+== null;{$: ''};false
+== null;{$: false};false
+# Inequality shorthand
+!= 3;{$: 3};false
+!= 3;{$: 3.0};false
+!= 3;{$: 4};true
+!= 3;{$: '3'};true
+!= 3;{$: null};true
+!= 3;{};true
+!= 3;{$: true};true
+!= 'gold';{$: 'gold'};false
+!= 'gold';{$: 'silver'};true
+!= 'gold';{$: 'GOLD'};true
+!= 'gold';{$: null};true
+!= 'gold';{};true
+!= null;{$: null};false
+!= null;{};false
+!= null;{$: 0};true
+!= null;{$: ''};true
+!= null;{$: false};true
+!= null;{$: []};true
+# Strings have no ordering (consistent with standard mode)
+< 'b';{$: 'a'};!error;question: strings have no ordering; is lexicographic comparison intended?
+< 'b';{$: 'c'};!error;question: strings have no ordering; is lexicographic comparison intended?
+< 'b';{$: 1};!error
+< 'b';{$: null};!error
+>= 'a';{$: 'a'};!error;question: strings have no ordering even when equal
+>= 'a';{$: 'b'};!error;question: strings have no ordering; is lexicographic comparison intended?
+>= 'a';{$: null};!error
+>= 'a';{};!error
+# Comparison against other input fields
+> limit;{$: 5, limit: 3};true
+> limit;{$: 3, limit: 3};false
+> limit;{$: 2, limit: 3};false
+> limit;{$: 5};!error
+> limit;{$: 5, limit: null};!error
+> limit;{$: 5, limit: '3'};!error
+> limit;{$: null, limit: 3};!error
+<= limit * 2;{$: 6, limit: 3};true
+<= limit * 2;{$: 7, limit: 3};false
+<= limit * 2;{$: -1, limit: 3};true
+<= limit * 2;{$: 6};!error
+<= limit * 2;{$: 6, limit: 3.5};true
+== other;{$: 'a', other: 'a'};true
+== other;{$: 'a', other: 'b'};false
+== other;{$: 'a'};false
+== other;{$: null};true
+== other;{};true
+== other;{$: 1, other: 1.0};true
+!= other;{$: 'a', other: 'a'};false
+!= other;{$: 'a', other: 'b'};true
+!= other;{$: 'a'};true
+!= other;{};false
+> a.b;{$: 5, a: {b: 4}};true
+> a.b;{$: 4, a: {b: 4}};false
+> a.b;{$: 5, a: {}};!error
+> a.b;{$: 5, a: null};!error
+> a.b;{$: 5};!error
+# Right-hand side is a full expression
+>= 5 + 2;{$: 7};true
+>= 5 + 2;{$: 6};false
+>= 5 + 2;{$: 8};true
+>= 5 + 2;{$: null};!error
+< 5 * 3;{$: 15};false
+< 5 * 3;{$: 14};true
+< 5 * 3;{$: 16};false
+< 5 * 3;{$: '14'};!error
+!= 10 - 3;{$: 7};false
+!= 10 - 3;{$: 3};true
+!= 10 - 3;{$: 10};true
+!= 10 - 3;{$: null};true
+> max([1, 5, 3]);{$: 6};true
+> max([1, 5, 3]);{$: 5};false
+> max([1, 5, 3]);{$: 3};false
+> max([1, 5, 3]);{$: null};!error
+== upper('gold');{$: 'GOLD'};true
+== upper('gold');{$: 'gold'};false
+== upper('gold');{$: null};false
+== upper('gold');{$: 1};false
+>= 5 ?? 1;{$: 5};true
+>= 5 ?? 1;{$: 1};false
+>= 5 ?? 1;{$: null};!error
+>= 5 ?? 1;{};!error
+> (x ?? 0);{$: 1};true
+> (x ?? 0);{$: 0};false
+> (x ?? 0);{$: 1, x: 2};false
+> (x ?? 0);{$: 3, x: 2};true
+== -$;{$: 0};true
+== -$;{$: 1};false
+== -$;{$: -1};false
+== -$;{$: null};!error
+# `in` / `not in` shorthand
+in [1, 2, 3];{$: 2};true
+in [1, 2, 3];{$: 4};false
+in [1, 2, 3];{$: 2.0};true
+in [1, 2, 3];{$: '2'};false
+in [1, 2, 3];{$: null};false
+in [1, 2, 3];{};false
+in [1, 2, 3];{$: true};false
+not in [1, 2, 3];{$: 2};false
+not in [1, 2, 3];{$: 4};true
+not in [1, 2, 3];{$: '2'};true
+not in [1, 2, 3];{$: null};true
+not in [1, 2, 3];{};true
+in ['a', 'b'];{$: 'a'};true
+in ['a', 'b'];{$: 'A'};false
+in ['a', 'b'];{$: 'c'};false
+in ['a', 'b'];{$: null};false
+in ['a', 'b'];{$: 1};false
+in [1..5];{$: 3};true
+in [1..5];{$: 5};true
+in [1..5];{$: 6};false
+in [1..5];{$: null};!error
+in [1..5];{$: '3'};!error
+not in [1..5];{$: 3};false
+not in [1..5];{$: 0};true
+not in [1..5];{$: 5.5};true
+not in [1..5];{$: null};!error
+in allowed;{$: 'a', allowed: ['a', 'b']};true
+in allowed;{$: 'c', allowed: ['a', 'b']};false
+in allowed;{$: 'a', allowed: []};false
+in allowed;{$: 'a'};!error
+in allowed;{$: 'a', allowed: 'abc'};!error
+in {a: 1, b: 2};{$: 'a'};true
+in {a: 1, b: 2};{$: 'c'};false
+in {a: 1, b: 2};{$: 'A'};false
+in {a: 1, b: 2};{$: 1};!error
+in {a: 1, b: 2};{$: null};!error
+in 'abc';{$: 'a'};!error
+in 'abc';{$: 'x'};!error
+in 'abc';{$: null};!error
+in 'abc';{$: 1};!error

@@ -577,7 +577,7 @@ async fn reported_example_is_answered_by_the_covering_rows() {
             policy_path: Arc::from("p"),
             input: example.clone().into(),
             goals: Vec::new(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         })
         .expect("evaluate");
     let output: Value = result.output.into();
@@ -1707,7 +1707,7 @@ async fn date_findings_agree_with_the_runtime() {
             policy_path: Arc::from("p"),
             input: example.clone().into(),
             goals: Vec::new(),
-            trace: false,
+            trace: zen_engine::trace::TraceFormat::Off,
         })
         .expect("evaluate");
     let output: Value = result.output.into();
@@ -1867,7 +1867,7 @@ async fn outputs_for(content: Value, inputs: &[Value]) -> (Vec<Value>, Vec<Value
                 policy_path: Arc::from("p"),
                 input: input.clone().into(),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             })
             .expect("evaluate");
         let output: Value = result.output.into();
@@ -2519,7 +2519,7 @@ fn fuzz_run(base: &Table, content: &Value, inputs: &[Value]) -> (Vec<Value>, Vec
                 policy_path: Arc::from("p"),
                 input: input.clone().into(),
                 goals: Vec::new(),
-                trace: false,
+                trace: zen_engine::trace::TraceFormat::Off,
             }) {
                 Ok(result) => {
                     let output: Value = result.output.into();

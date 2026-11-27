@@ -1,0 +1,795 @@
+// Relationship properties: an entity property whose type names another entity. Array
+// relationships (`company[]`) make every block keyed on the target entity run once per member,
+// writing into that member. Single relationships (`creditReport`) nest one object. Computed
+// properties stay undeclared in the data model (declared properties are inputs, see the last
+// section).
+
+// Per-member expression blocks: one evaluation per array member, written into the member.
+{
+  name: "per-member expression writes into every member",
+  policy: {
+    models: {customer: {name: "string", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {customer: {name: "a", companies: [{revenue: 50}, {revenue: 200}]}},
+      {customer: {name: "a", companies: [{revenue: 50, big: false}, {revenue: 200, big: true}]}},
+    ],
+    [{customer: {name: "b", companies: [{revenue: 101}]}}, {customer: {name: "b", companies: [{revenue: 101, big: true}]}}],
+    [{customer: {name: "c", companies: []}}, {customer: {name: "c", companies: []}}],
+    [
+      {customer: {name: "d", companies: [{revenue: 100}, {revenue: 100.5}, {revenue: -1}, {revenue: 0}]}},
+      {customer: {name: "d", companies: [{revenue: 100, big: false}, {revenue: 100.5, big: true}, {revenue: -1, big: false}, {revenue: 0, big: false}]}},
+    ],
+  ],
+}
+
+// Per-member blocks keep the member's other fields, declared or not.
+{
+  name: "per-member write keeps unknown member fields",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.double", value: "company.revenue * 2"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1, extra: "x", nested: {a: 1}}]}},
+      {customer: {companies: [{revenue: 1, extra: "x", nested: {a: 1}, double: 2}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 2.5, tags: []}, {revenue: 0}]}},
+      {customer: {companies: [{revenue: 2.5, tags: [], double: 5}, {revenue: 0, double: 0}]}},
+    ],
+  ],
+}
+
+// Several per-member blocks chain inside one member.
+{
+  name: "per-member blocks chain within a member",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.margin", value: "company.revenue - company.cost"},
+      {expression: "company.profitable", value: "company.margin > 0"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, cost: 4}, {revenue: 3, cost: 5}]}},
+      {customer: {companies: [{revenue: 10, cost: 4, margin: 6, profitable: true}, {revenue: 3, cost: 5, margin: -2, profitable: false}]}},
+    ],
+    [{customer: {companies: [{revenue: 1, cost: 1}]}}, {customer: {companies: [{revenue: 1, cost: 1, margin: 0, profitable: false}]}}],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// Per-member match: the arm is chosen per member.
+{
+  name: "per-member match picks an arm per member",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{match: "company.tier", arms: [["company.revenue >= 100", "'gold'"], ["company.revenue >= 10", "'silver'"], ["", "'basic'"]]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 300}, {revenue: 50}]}},
+      {customer: {companies: [{revenue: 1, tier: "basic"}, {revenue: 300, tier: "gold"}, {revenue: 50, tier: "silver"}]}},
+    ],
+    [{customer: {companies: [{revenue: 100}]}}, {customer: {companies: [{revenue: 100, tier: "gold"}]}}],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// Per-member decision table: one table evaluation per member.
+{
+  name: "per-member table writes per member",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {table: "t", inputs: ["company.revenue", "company.country"], outputs: ["company.flag"], rules: [
+        ["> 10", "'US'", "'us-hi'"],
+        ["> 10", "", "'hi'"],
+        ["", "", "'lo'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1, country: "US"}, {revenue: 300, country: "US"}, {revenue: 50, country: "DE"}]}},
+      {customer: {companies: [{revenue: 1, country: "US", flag: "lo"}, {revenue: 300, country: "US", flag: "us-hi"}, {revenue: 50, country: "DE", flag: "hi"}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+    [{customer: {companies: [{revenue: 11, country: "FR"}]}}, {customer: {companies: [{revenue: 11, country: "FR", flag: "hi"}]}}],
+  ],
+}
+
+// Aggregates over raw member fields: sum/count/filter/map on the relationship array.
+{
+  name: "aggregates over member input fields",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", name: "string"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "customer.count", value: "len(customer.companies)"},
+      {expression: "customer.names", value: "map(customer.companies, #.name)"},
+      {expression: "customer.bigNames", value: "map(filter(customer.companies, #.revenue > 100), #.name)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50, name: "a"}, {revenue: 200, name: "b"}]}},
+      {customer: {companies: [{revenue: 50, name: "a"}, {revenue: 200, name: "b"}], total: 250, count: 2, names: ["a", "b"], bigNames: ["b"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0, count: 0, names: [], bigNames: []}}],
+    [
+      {customer: {companies: [{revenue: 0.1, name: "x"}, {revenue: 0.2, name: "y"}, {revenue: 101, name: "z"}]}},
+      {customer: {companies: [{revenue: 0.1, name: "x"}, {revenue: 0.2, name: "y"}, {revenue: 101, name: "z"}], total: 101.3, count: 3, names: ["x", "y", "z"], bigNames: ["z"]}},
+    ],
+  ],
+}
+
+// Closures with a named alias over relationship members.
+{
+  name: "aliased closures over members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies as c, c.revenue))"},
+      {expression: "customer.anyBig", value: "some(customer.companies as c, c.revenue > 100)"},
+      {expression: "customer.allPositive", value: "all(customer.companies as c, c.revenue > 0)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 200}]}},
+      {customer: {companies: [{revenue: 50}, {revenue: 200}], total: 250, anyBig: true, allPositive: true}},
+    ],
+    [{customer: {companies: [{revenue: -1}]}}, {customer: {companies: [{revenue: -1}], total: -1, anyBig: false, allPositive: false}}],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0, anyBig: false, allPositive: true}}],
+  ],
+}
+
+// Aggregates over computed member properties: the per-member blocks run before the parent reads them.
+{
+  name: "aggregates over computed member properties",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", name: "string"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "company.fee", value: "company.revenue * 0.1"},
+      {expression: "customer.bigCount", value: "count(customer.companies, #.big)"},
+      {expression: "customer.fees", value: "sum(map(customer.companies, #.fee))"},
+      {expression: "customer.bigNames", value: "map(filter(customer.companies, #.big), #.name)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50, name: "a"}, {revenue: 200, name: "b"}]}},
+      {customer: {
+        companies: [{revenue: 50, name: "a", big: false, fee: 5}, {revenue: 200, name: "b", big: true, fee: 20}],
+        bigCount: 1, fees: 25, bigNames: ["b"],
+      }},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], bigCount: 0, fees: 0, bigNames: []}}],
+    [
+      {customer: {companies: [{revenue: 1000, name: "x"}, {revenue: 101, name: "y"}]}},
+      {customer: {
+        companies: [{revenue: 1000, name: "x", big: true, fee: 100}, {revenue: 101, name: "y", big: true, fee: 10.1}],
+        bigCount: 2, fees: 110.1, bigNames: ["x", "y"],
+      }},
+    ],
+  ],
+}
+
+// A table on the parent reads an aggregate of computed member properties.
+{
+  name: "parent table reads aggregated member computeds",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {match: "company.risk", arms: [["company.revenue < 100", "'high'"], ["", "'low'"]]},
+      {expression: "customer.highRisk", value: "count(customer.companies, #.risk == 'high')"},
+      {table: "t", inputs: ["customer.highRisk"], outputs: ["customer.decision"], rules: [
+        ["0", "'approve'"],
+        ["1", "'review'"],
+        ["", "'decline'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 500}, {revenue: 300}]}},
+      {customer: {companies: [{revenue: 500, risk: "low"}, {revenue: 300, risk: "low"}], highRisk: 0, decision: "approve"}},
+    ],
+    [
+      {customer: {companies: [{revenue: 5}, {revenue: 300}]}},
+      {customer: {companies: [{revenue: 5, risk: "high"}, {revenue: 300, risk: "low"}], highRisk: 1, decision: "review"}},
+    ],
+    [
+      {customer: {companies: [{revenue: 5}, {revenue: 3}]}},
+      {customer: {companies: [{revenue: 5, risk: "high"}, {revenue: 3, risk: "high"}], highRisk: 2, decision: "decline"}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], highRisk: 0, decision: "approve"}}],
+  ],
+}
+
+// Aggregates that have no neutral element on an empty array.
+{
+  name: "max, min and avg over members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.maxRevenue", value: "max(map(customer.companies, #.revenue))"},
+      {expression: "customer.minRevenue", value: "min(map(customer.companies, #.revenue))"},
+      {expression: "customer.avgRevenue", value: "avg(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 200}, {revenue: 20}]}},
+      {customer: {companies: [{revenue: 50}, {revenue: 200}, {revenue: 20}], maxRevenue: 200, minRevenue: 20, avgRevenue: 90}},
+    ],
+    [
+      {customer: {companies: [{revenue: 7}]}},
+      {customer: {companies: [{revenue: 7}], maxRevenue: 7, minRevenue: 7, avgRevenue: 7}},
+    ],
+  ],
+}
+
+// Members read properties of the owning entity (parent scope).
+{
+  name: "member reads a parent input property",
+  policy: {
+    models: {customer: {rate: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.fee", value: "company.revenue * customer.rate"}],
+  },
+  cases: [
+    [
+      {customer: {rate: 2, companies: [{revenue: 3}, {revenue: 4}]}},
+      {customer: {rate: 2, companies: [{revenue: 3, fee: 6}, {revenue: 4, fee: 8}]}},
+    ],
+    [{customer: {rate: 0.5, companies: [{revenue: 3}]}}, {customer: {rate: 0.5, companies: [{revenue: 3, fee: 1.5}]}}],
+    [{customer: {rate: 2, companies: []}}, {customer: {rate: 2, companies: []}}],
+  ],
+}
+
+// Members read a computed parent property, which itself aggregates over the members.
+{
+  name: "member share of a parent aggregate",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "company.share", value: "company.revenue / customer.total"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 3}]}},
+      {customer: {companies: [{revenue: 1, share: 0.25}, {revenue: 3, share: 0.75}], total: 4}},
+    ],
+    [{customer: {companies: [{revenue: 5}]}}, {customer: {companies: [{revenue: 5, share: 1}], total: 5}}],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0}}],
+  ],
+}
+
+// A parent computed property read by members and by another parent computed.
+{
+  name: "parent computed feeds members and parent",
+  policy: {
+    models: {customer: {age: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.factor", value: "customer.age > 30 ? 2 : 1"},
+      {expression: "company.score", value: "company.revenue * customer.factor"},
+      {expression: "customer.score", value: "sum(map(customer.companies, #.score))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {age: 40, companies: [{revenue: 1}, {revenue: 2}]}},
+      {customer: {age: 40, factor: 2, companies: [{revenue: 1, score: 2}, {revenue: 2, score: 4}], score: 6}},
+    ],
+    [
+      {customer: {age: 20, companies: [{revenue: 1}, {revenue: 2}]}},
+      {customer: {age: 20, factor: 1, companies: [{revenue: 1, score: 1}, {revenue: 2, score: 2}], score: 3}},
+    ],
+    [{customer: {age: 20, companies: []}}, {customer: {age: 20, factor: 1, companies: [], score: 0}}],
+  ],
+}
+
+// Indexing into the relationship array reads members and their computed properties.
+{
+  name: "index access into members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.firstBig", value: "customer.companies[0].big"},
+      {expression: "customer.lastRevenue", value: "customer.companies[1].revenue"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 300}]}},
+      {customer: {companies: [{revenue: 1, big: false}, {revenue: 300, big: true}], firstBig: false, lastRevenue: 300}},
+    ],
+    [
+      {customer: {companies: [{revenue: 300}]}},
+      {customer: {companies: [{revenue: 300, big: true}], firstBig: true, lastRevenue: null}},
+    ],
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], firstBig: null, lastRevenue: null}},
+    ],
+  ],
+}
+
+// A computed property holding members (filtered list), then a read through it to a member computed.
+{
+  name: "computed member lists keep member computeds",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", name: "string"}},
+    blocks: [
+      {expression: "company.fee", value: "company.revenue / 10"},
+      {expression: "customer.profitable", value: "filter(customer.companies, #.revenue > 0)"},
+      {expression: "customer.best", value: "customer.profitable[0]"},
+      {expression: "customer.bestFee", value: "customer.best.fee"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: -5, name: "a"}, {revenue: 20, name: "b"}]}},
+      {customer: {
+        companies: [{revenue: -5, name: "a", fee: -0.5}, {revenue: 20, name: "b", fee: 2}],
+        profitable: [{revenue: 20, name: "b", fee: 2}],
+        best: {revenue: 20, name: "b", fee: 2},
+        bestFee: 2,
+      }},
+    ],
+    [
+      {customer: {companies: [{revenue: -5, name: "a"}]}},
+      {customer: {companies: [{revenue: -5, name: "a", fee: -0.5}], profitable: [], best: null, bestFee: null}},
+    ],
+  ],
+}
+
+// Mapping members into new objects.
+{
+  name: "map members into summaries",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", name: "string"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.summaries", value: "map(customer.companies as c, {label: c.name, big: c.big})"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1, name: "a"}, {revenue: 300, name: "b"}]}},
+      {customer: {
+        companies: [{revenue: 1, name: "a", big: false}, {revenue: 300, name: "b", big: true}],
+        summaries: [{label: "a", big: false}, {label: "b", big: true}],
+      }},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], summaries: []}}],
+  ],
+}
+
+// Single relationships: one nested object, computed properties on it, read from the parent.
+{
+  name: "single relationship computed and read by parent",
+  policy: {
+    models: {customer: {report: "creditReport"}, creditReport: {score: "number", debt: "number"}},
+    blocks: [
+      {expression: "creditReport.good", value: "creditReport.score > 700"},
+      {expression: "customer.ok", value: "customer.report.good and customer.report.debt < 1000"},
+    ],
+  },
+  cases: [
+    [{customer: {report: {score: 800, debt: 10}}}, {customer: {report: {score: 800, debt: 10, good: true}, ok: true}}],
+    [{customer: {report: {score: 600, debt: 10}}}, {customer: {report: {score: 600, debt: 10, good: false}, ok: false}}],
+    [{customer: {report: {score: 701, debt: 1000}}}, {customer: {report: {score: 701, debt: 1000, good: true}, ok: false}}],
+  ],
+}
+
+// A single-relationship computed reads the parent.
+{
+  name: "single relationship member reads parent",
+  policy: {
+    models: {customer: {income: "number", report: "creditReport"}, creditReport: {debt: "number"}},
+    blocks: [{expression: "creditReport.ratio", value: "creditReport.debt / customer.income"}],
+  },
+  cases: [
+    [{customer: {income: 100, report: {debt: 25}}}, {customer: {income: 100, report: {debt: 25, ratio: 0.25}}}],
+    [{customer: {income: 8, report: {debt: 2}}}, {customer: {income: 8, report: {debt: 2, ratio: 0.25}}}],
+  ],
+}
+
+// Single relationship absent: reads that need it are missing required inputs.
+{
+  name: "single relationship missing",
+  policy: {
+    models: {customer: {name: "string", report: "creditReport"}, creditReport: {score: "number"}},
+    blocks: [{expression: "creditReport.good", value: "creditReport.score > 700"}],
+  },
+  cases: [
+    [{customer: {name: "a", report: {score: 900}}}, {customer: {name: "a", report: {score: 900, good: true}}}],
+    [{customer: {name: "a"}}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "a", report: {}}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Optional relationships: null and missing read as null, `??` supplies defaults.
+{
+  name: "optional relationships with defaults",
+  policy: {
+    models: {
+      customer: {name: "string", companies: "company[]?", report: "creditReport?"},
+      company: {revenue: "number"},
+      creditReport: {score: "number"},
+    },
+    blocks: [
+      {expression: "customer.n", value: "len(customer.companies ?? [])"},
+      {expression: "customer.s", value: "customer.report.score ?? 0"},
+    ],
+  },
+  cases: [
+    [{customer: {name: "x", companies: null, report: null}}, {customer: {name: "x", companies: null, report: null, n: 0, s: 0}}],
+    [{customer: {name: "x"}}, {customer: {name: "x", n: 0, s: 0}}],
+    [
+      {customer: {name: "x", companies: [{revenue: 1}], report: {score: 3}}},
+      {customer: {name: "x", companies: [{revenue: 1}], report: {score: 3}, n: 1, s: 3}},
+    ],
+  ],
+}
+
+// Optional array relationship with a per-member block: absent arrays run no members.
+{
+  name: "optional array relationship with per-member block",
+  policy: {
+    models: {customer: {name: "string", companies: "company[]?"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.bigCount", value: "count(customer.companies ?? [], #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {name: "x", companies: [{revenue: 200}]}},
+      {customer: {name: "x", companies: [{revenue: 200, big: true}], bigCount: 1}},
+    ],
+    [{customer: {name: "x", companies: []}}, {customer: {name: "x", companies: [], bigCount: 0}}],
+    [{customer: {name: "x", companies: null}}, {customer: {name: "x", companies: null, bigCount: 0}}],
+    [{customer: {name: "x"}}, {customer: {name: "x", bigCount: 0}}],
+  ],
+}
+
+// Required array relationship absent: missing required input.
+{
+  name: "required array relationship missing",
+  policy: {
+    models: {customer: {name: "string", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [{customer: {name: "a", companies: [{revenue: 1}]}}, {customer: {name: "a", companies: [{revenue: 1}], total: 1}}],
+    [{customer: {name: "a"}}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "a", companies: []}}, {customer: {name: "a", companies: [], total: 0}}],
+  ],
+}
+
+// Input validation of relationship values.
+{
+  name: "relationship values are validated",
+  policy: {
+    models: {customer: {companies: "company[]", report: "creditReport?"}, company: {revenue: "number"}, creditReport: {score: "number"}},
+    blocks: [{expression: "customer.count", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: "bad"}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [1]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{revenue: "1"}]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: {revenue: 1}}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [], report: [1]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [], report: "r"}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [], report: {score: true}}}, "!error: InputValidationFailed"],
+    [{customer: {companies: [{revenue: 1, other: "free"}]}}, {customer: {companies: [{revenue: 1, other: "free"}], count: 1}}],
+  ],
+}
+
+// Null array items pass validation and are counted, but are not members to evaluate.
+{
+  name: "null items in a relationship array",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.n", value: "len(customer.companies)"},
+      {expression: "customer.real", value: "count(customer.companies, # != null)"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [null, {revenue: 2}]}}, {customer: {companies: [null, {revenue: 2}], n: 2, real: 1}}],
+    [{customer: {companies: [null]}}, {customer: {companies: [null], n: 1, real: 0}}],
+  ],
+}
+
+// A per-member block over an array containing a null item.
+{
+  name: "per-member block over a null item",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 200}]}}, {customer: {companies: [{revenue: 200, big: true}]}}],
+    [
+      {customer: {companies: [null, {revenue: 200}]}},
+      "!error: ExpressionFailed",
+      "question: validation accepts null items in a relationship array, but the per-member block still runs for the null item and fails on `null > 100`; skipping null members looks intended",
+    ],
+  ],
+}
+
+// Members missing a declared field: the member's own read sees null.
+{
+  name: "member missing a field with a default",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.safe", value: "(company.revenue ?? 0) + 1"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue ?? 0))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 5}, {}]}},
+      {customer: {companies: [{revenue: 5, safe: 6}, {safe: 1}], total: 5}},
+    ],
+    [
+      {customer: {companies: [{revenue: null}, {revenue: 2}]}},
+      {customer: {companies: [{revenue: null, safe: 1}, {revenue: 2, safe: 3}], total: 2}},
+    ],
+    [{customer: {companies: [{}, {}]}}, {customer: {companies: [{safe: 1}, {safe: 1}], total: 0}}],
+  ],
+}
+
+// Members missing a field without a default: comparing null fails the evaluation.
+{
+  name: "member missing a field without a default",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 50}, {revenue: 500}]}}, {customer: {companies: [{revenue: 50, big: false}, {revenue: 500, big: true}]}}],
+    [{customer: {companies: [{revenue: 50}, {}]}}, "!error: ExpressionFailed"],
+    [{customer: {companies: [{revenue: null}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// A missing member field read through an aggregate that tolerates nulls.
+{
+  name: "aggregate over members missing fields",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {name: "string", revenue: "number"}},
+    blocks: [
+      {expression: "customer.names", value: "map(customer.companies, #.name)"},
+      {expression: "customer.withRevenue", value: "count(customer.companies, #.revenue != null)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{name: "a", revenue: 1}, {name: "b"}]}},
+      {customer: {companies: [{name: "a", revenue: 1}, {name: "b"}], names: ["a", "b"], withRevenue: 1}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1}, {}]}},
+      {customer: {companies: [{revenue: 1}, {}], names: [null, null], withRevenue: 1}},
+    ],
+  ],
+}
+
+// Two levels of array relationships, aggregated bottom-up through the middle entity.
+{
+  name: "nested relationships aggregate bottom-up",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [
+      {expression: "company.payroll", value: "sum(map(company.employees, #.salary))"},
+      {expression: "customer.payroll", value: "sum(map(customer.companies, #.payroll))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}]}, {employees: []}]}},
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}], payroll: 25}, {employees: [], payroll: 0}], payroll: 25}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], payroll: 0}}],
+    [
+      {customer: {companies: [{employees: [{salary: 1}]}, {employees: [{salary: 2}, {salary: 3}]}]}},
+      {customer: {companies: [{employees: [{salary: 1}], payroll: 1}, {employees: [{salary: 2}, {salary: 3}], payroll: 5}], payroll: 6}},
+    ],
+  ],
+}
+
+// Nested relationships flattened from the top.
+{
+  name: "nested relationships read from the root",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [
+      {expression: "customer.headcount", value: "sum(map(customer.companies, len(#.employees)))"},
+      {expression: "customer.salaries", value: "flatMap(customer.companies, map(#.employees, #.salary))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}]}, {employees: [{salary: 1}]}]}},
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}]}, {employees: [{salary: 1}]}], headcount: 3, salaries: [5, 20, 1]}},
+    ],
+    [{customer: {companies: [{employees: []}]}}, {customer: {companies: [{employees: []}], headcount: 0, salaries: []}}],
+  ],
+}
+
+// Per-member blocks on the second level (employee inside company inside customer).
+{
+  name: "per-member block two levels deep",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [{expression: "employee.high", value: "employee.salary > 10"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}]}, {employees: []}]}},
+      {customer: {companies: [{employees: [{salary: 5, high: false}, {salary: 20, high: true}]}, {employees: []}]}},
+      "bug: the required-input check looks for employee.salary at company.employees.salary, not under customer.companies[].employees[], and fails with MissingRequiredInputs although every employee has a salary",
+    ],
+    [
+      {customer: {companies: [{employees: [{salary: 11}]}]}},
+      {customer: {companies: [{employees: [{salary: 11, high: true}]}]}},
+      "bug: two-level per-member blocks fail the required-input check (MissingRequiredInputs employee.salary)",
+    ],
+  ],
+}
+
+// Second-level computed aggregated into the middle level.
+{
+  name: "second-level computed aggregated by middle level",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "employee[]"}, employee: {salary: "number"}},
+    blocks: [
+      {expression: "employee.high", value: "employee.salary > 10"},
+      {expression: "company.highCount", value: "count(company.employees, #.high)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{employees: [{salary: 5}, {salary: 20}]}, {employees: []}]}},
+      {customer: {companies: [
+        {employees: [{salary: 5, high: false}, {salary: 20, high: true}], highCount: 1},
+        {employees: [], highCount: 0},
+      ]}},
+      "bug: MissingRequiredInputs employee.salary for a two-level relationship (see per-member block two levels deep)",
+    ],
+    {
+      input: {customer: {companies: [{employees: [{salary: 30}]}]}},
+      goals: ["company.highCount"],
+      output: {customer: {companies: [{employees: [{salary: 30, high: true}], highCount: 1}]}},
+      note: "bug: goals do not avoid the two-level MissingRequiredInputs failure",
+    },
+  ],
+}
+
+// Single relationship nested inside a single relationship.
+{
+  name: "nested single relationships",
+  policy: {
+    models: {customer: {report: "creditReport"}, creditReport: {bureau: "bureau"}, bureau: {name: "string", weight: "number"}},
+    blocks: [{expression: "customer.bureauWeight", value: "customer.report.bureau.weight * 2"}],
+  },
+  cases: [
+    [
+      {customer: {report: {bureau: {name: "x", weight: 3}}}},
+      {customer: {report: {bureau: {name: "x", weight: 3}}, bureauWeight: 6}},
+    ],
+    [
+      {customer: {report: {bureau: {name: "y", weight: 0.5}}}},
+      {customer: {report: {bureau: {name: "y", weight: 0.5}}, bureauWeight: 1}},
+    ],
+    [{customer: {report: {bureau: {name: "y", weight: "1"}}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Single relationship inside an array relationship: per-member reads one level down.
+{
+  name: "single relationship inside array members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {address: "address"}, address: {country: "string"}},
+    blocks: [
+      {expression: "company.domestic", value: "company.address.country == 'US'"},
+      {expression: "customer.foreign", value: "count(customer.companies, not #.domestic)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{address: {country: "US"}}, {address: {country: "DE"}}]}},
+      {customer: {companies: [{address: {country: "US"}, domestic: true}, {address: {country: "DE"}, domestic: false}], foreign: 1}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], foreign: 0}}],
+  ],
+}
+
+// Two relationship properties targeting different entities, each iterated on its own.
+{
+  name: "two array relationships on one entity",
+  policy: {
+    models: {customer: {companies: "company[]", loans: "loan[]"}, company: {revenue: "number"}, loan: {amount: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "loan.large", value: "loan.amount > 1000"},
+      {expression: "customer.exposure", value: "sum(map(customer.loans, #.amount)) - sum(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}], loans: [{amount: 5000}, {amount: 10}]}},
+      {customer: {
+        companies: [{revenue: 200, big: true}],
+        loans: [{amount: 5000, large: true}, {amount: 10, large: false}],
+        exposure: 4810,
+      }},
+    ],
+    [
+      {customer: {companies: [], loans: []}},
+      {customer: {companies: [], loans: [], exposure: 0}},
+    ],
+  ],
+}
+
+// Goals on a per-member property evaluate only the member chain.
+{
+  name: "goal on a per-member property",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    {
+      input: {customer: {companies: [{revenue: 1}, {revenue: 200}]}},
+      goals: ["company.big"],
+      output: {customer: {companies: [{revenue: 1, big: false}, {revenue: 200, big: true}]}},
+    },
+    {
+      input: {customer: {companies: [{revenue: 1}, {revenue: 200}]}},
+      goals: ["customer.total"],
+      output: {customer: {companies: [{revenue: 1}, {revenue: 200}], total: 201}},
+    },
+  ],
+}
+
+// Declared properties are inputs: a block writing one is an InputOverride diagnostic and is
+// dropped from evaluation, both on members and on the root.
+{
+  name: "declaring a computed member property drops its block",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", big: "boolean?"}},
+    blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 300}]}},
+      {customer: {companies: [{revenue: 1}, {revenue: 300}]}},
+      "question: writing a declared property is an InputOverride error diagnostic; evaluation silently drops the block instead of refusing the policy",
+    ],
+    [
+      {customer: {companies: [{revenue: 1, big: true}]}},
+      {customer: {companies: [{revenue: 1, big: true}]}},
+      "question: the declared value passes through untouched since the writing block is dropped",
+    ],
+  ],
+}

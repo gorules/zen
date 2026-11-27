@@ -1,0 +1,971 @@
+// Laziness and terminal writes: which computed properties appear in the output.
+//
+// Without goals the evaluation demands every terminal write (a computed property no other block
+// reads); with goals it demands the goals. A demanded block first demands everything its
+// expressions read, so intermediates read by a demanded block appear in the output. Only two reads
+// are demanded on selection: match arm values (only the taken arm's value) and table output cells
+// (only the matched rows' outputs). Arm conditions, table input cells, assertion conditions and
+// the operands of `and`, `?:` and `??` are demanded eagerly.
+//
+// Known defect pinned here in depth: a read of one nested computed leaf (`a.t.x`) hides every
+// other computed write under the same computed object (`a.t.y`, `a.t.u.z`, ...): they are no
+// longer terminal and nothing demands them, so they vanish from the output (also seen in
+// 26-realistic-billing and 31-goals-advanced). Its boundaries: flat siblings are fine, a read of the
+// whole object is fine, a reader under the same object is fine, a read through a member closure
+// is fine; everything else that names a leaf below a computed object hides that object's other
+// leaves, whatever block kind writes them and wherever the reader sits.
+
+// ---------------------------------------------------------------------------------------------
+// Terminal writes without goals: every block whose property nobody reads runs.
+
+{
+  name: "every flat terminal write appears",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.x", value: "a.v + 1"},
+      {expression: "a.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, x: 1, y: 2, n: 11}}],
+    [{a: {v: -1}}, {a: {v: -1, x: 0, y: 1, n: 10}}],
+    [{a: {v: 0.5}}, {a: {v: 0.5, x: 1.5, y: 2.5, n: 11.5}}],
+  ],
+}
+
+{
+  name: "terminal writes of every block kind appear",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.e", value: "a.v * 2"},
+      {match: "a.m", arms: [["a.v > 0", "'pos'"], ["", "'non'"]]},
+      {table: "dt", inputs: ["a.v"], outputs: ["a.t1", "a.t2"], rules: [["> 0", "1", "2"], ["", "3", "4"]]},
+      {table: "ct", hit: "collect", inputs: ["a.v"], outputs: ["a.c"], rules: [[">= 0", "'a'"], ["> 1", "'b'"]]},
+      {assertion: "a.ok", conditions: ["a.v >= 0"]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, e: 0, m: "non", t1: 3, t2: 4, c: ["a"], ok: true}}],
+    [{a: {v: 2}}, {a: {v: 2, e: 4, m: "pos", t1: 1, t2: 2, c: ["a", "b"], ok: true}}],
+    [{a: {v: -1}}, {a: {v: -1, e: -2, m: "non", t1: 3, t2: 4, c: [], ok: false}}],
+  ],
+}
+
+{
+  name: "intermediates read by a terminal write appear with it",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.s1", value: "a.v + 1"},
+      {expression: "a.s2", value: "a.s1 * 2"},
+      {expression: "a.s3", value: "a.s2 - a.s1"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, s1: 1, s2: 2, s3: 1}}],
+    [{a: {v: 4}}, {a: {v: 4, s1: 5, s2: 10, s3: 5}}],
+  ],
+}
+
+{
+  name: "a terminal write with a literal value needs no input",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "version", value: "'v1'"},
+      {expression: "a.next", value: "a.v + 1"},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, next: 2}, version: "v1"}],
+    [{a: {}}, "!error: MissingRequiredInputs"],
+    {input: {}, goals: ["version"], output: {version: "v1"}},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Demand on selection: match arm values and table output cells. An intermediate read only by an
+// untaken arm or an unmatched row is never demanded and is absent from the output.
+
+{
+  name: "an intermediate read only by an untaken arm is absent",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.hi", value: "a.v * 10"},
+      {expression: "a.lo", value: "a.v - 1"},
+      {match: "a.out", arms: [["a.v > 5", "a.hi"], ["", "a.lo"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, lo: 0, out: 0}}],
+    [{a: {v: 9}}, {a: {v: 9, hi: 90, out: 90}}],
+    [{a: {v: 5}}, {a: {v: 5, lo: 4, out: 4}}],
+    {input: {a: {v: 1}}, goals: ["a.out"], output: {a: {v: 1, lo: 0, out: 0}}},
+  ],
+}
+
+{
+  name: "a chain behind an untaken arm is absent as a whole",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.base", value: "a.v * 2"},
+      {expression: "a.hi", value: "a.base + 1"},
+      {match: "a.out", arms: [["a.v > 5", "a.hi"], ["", "0"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, out: 0}}],
+    [{a: {v: 6}}, {a: {v: 6, base: 12, hi: 13, out: 13}}],
+  ],
+}
+
+{
+  name: "an intermediate read by an untaken arm and by a terminal write appears",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.hi", value: "a.v * 10"},
+      {match: "a.out", arms: [["a.v > 5", "a.hi"], ["", "0"]]},
+      {expression: "a.copy", value: "a.hi"},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, hi: 10, out: 0, copy: 10}}],
+    [{a: {v: 7}}, {a: {v: 7, hi: 70, out: 70, copy: 70}}],
+  ],
+}
+
+{
+  name: "a goal on an intermediate read only by an arm demands it directly",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.hi", value: "a.v * 10"},
+      {match: "a.out", arms: [["a.v > 5", "a.hi"], ["", "0"]]},
+    ],
+  },
+  cases: [
+    {input: {a: {v: 1}}, goals: ["a.hi"], output: {a: {v: 1, hi: 10}}},
+    {input: {a: {v: 1}}, goals: ["a.hi", "a.out"], output: {a: {v: 1, hi: 10, out: 0}}},
+    {input: {a: {v: 1}}, goals: ["a.out"], output: {a: {v: 1, out: 0}}},
+    {input: {a: {v: 1}}, output: {a: {v: 1, out: 0}}},
+  ],
+}
+
+{
+  name: "a failing intermediate behind an untaken arm does not fail the evaluation",
+  policy: {
+    models: {a: {v: "number", s: "string"}},
+    blocks: [
+      {expression: "a.parsed", value: "string(number(a.s))"},
+      {match: "a.out", arms: [["a.v > 5", "a.parsed"], ["", "'ok'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1, s: "x"}}, {a: {v: 1, s: "x", out: "ok"}}],
+    [{a: {v: 9, s: "x"}}, "!error: ExpressionFailed"],
+    [{a: {v: 9, s: "4"}}, {a: {v: 9, s: "4", parsed: "4", out: "4"}}],
+    [{a: {v: 1}}, "!error: MissingRequiredInputs", "question: the required-input check is static over every arm (as in chapter 14), so a.s is required although the arm reading it is not taken"],
+  ],
+}
+
+{
+  name: "an intermediate read only by an unmatched first-hit row is absent",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.hiMsg", value: "'high ' + string(a.v)"},
+      {expression: "a.loMsg", value: "'low ' + string(a.v)"},
+      {table: "dt", inputs: ["a.v"], outputs: ["a.msg"], rules: [["> 10", "a.hiMsg"], ["", "a.loMsg"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, loMsg: "low 1", msg: "low 1"}}],
+    [{a: {v: 11}}, {a: {v: 11, hiMsg: "high 11", msg: "high 11"}}],
+    [{a: {v: 10}}, {a: {v: 10, loMsg: "low 10", msg: "low 10"}}],
+  ],
+}
+
+{
+  name: "a collect table demands the outputs of every matched row",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.x", value: "'x'"},
+      {expression: "a.y", value: "'y'"},
+      {table: "dt", hit: "collect", inputs: ["a.v"], outputs: ["a.out"], rules: [["> 0", "a.x"], ["> 5", "a.y"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1}}, {a: {v: 1, x: "x", out: ["x"]}}],
+    [{a: {v: 6}}, {a: {v: 6, x: "x", y: "y", out: ["x", "y"]}}],
+    [{a: {v: 0}}, {a: {v: 0, out: []}}],
+  ],
+}
+
+{
+  name: "a root arm reading member computed values demands them only when taken",
+  policy: {
+    models: {o: {items: "item[]", v: "number"}, item: {w: "number"}},
+    blocks: [
+      {expression: "item.d", value: "item.w * 2"},
+      {match: "o.out", arms: [["o.v > 5", "sum(map(o.items, #.d))"], ["", "0"]]},
+    ],
+  },
+  cases: [
+    [{o: {v: 1, items: [{w: 1}, {w: 2}]}}, {o: {v: 1, items: [{w: 1}, {w: 2}], out: 0}}],
+    [{o: {v: 9, items: [{w: 1}, {w: 2}]}}, {o: {v: 9, items: [{w: 1, d: 2}, {w: 2, d: 4}], out: 6}}],
+    [{o: {v: 9, items: []}}, {o: {v: 9, items: [], out: 0}}],
+  ],
+}
+
+// Per-member arms: the intermediate is one block for all members, so it runs for every member as
+// soon as one member takes the arm that reads it.
+
+{
+  name: "per-member arm intermediates run for all members once any member needs them",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "item.hi", value: "item.v * 10"},
+      {expression: "item.lo", value: "item.v - 1"},
+      {match: "item.out", arms: [["item.v > 5", "item.hi"], ["", "item.lo"]]},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 1}, {v: 2}]}}, {o: {items: [{v: 1, lo: 0, out: 0}, {v: 2, lo: 1, out: 1}]}}],
+    [{o: {items: [{v: 7}]}}, {o: {items: [{v: 7, hi: 70, out: 70}]}}],
+    [
+      {o: {items: [{v: 1}, {v: 9}]}},
+      {o: {items: [{v: 1, hi: 10, lo: 0, out: 0}, {v: 9, hi: 90, lo: 8, out: 90}]}},
+      "question: member 0 takes the lo arm yet carries hi (and member 1 carries lo); per-member arm laziness is decided for the whole block, unlike the root-level case where the unread intermediate is absent",
+    ],
+    [{o: {items: []}}, {o: {items: []}}],
+  ],
+}
+
+{
+  name: "per-member table rows demand outputs for all members once any member matches",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "item.hi", value: "item.v * 10"},
+      {expression: "item.lo", value: "item.v - 1"},
+      {table: "dt", inputs: ["item.v"], outputs: ["item.out"], rules: [["> 5", "item.hi"], ["", "item.lo"]]},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 1}, {v: 2}]}}, {o: {items: [{v: 1, lo: 0, out: 0}, {v: 2, lo: 1, out: 1}]}}],
+    [
+      {o: {items: [{v: 1}, {v: 9}]}},
+      {o: {items: [{v: 1, hi: 10, lo: 0, out: 0}, {v: 9, hi: 90, lo: 8, out: 90}]}},
+      "question: as with per-member arms, the unmatched row's intermediate runs for every member once one member matches that row",
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Eager reads: conditions, table inputs, assertion conditions and expression operands. Every
+// computed property they read is demanded before the block runs, even when evaluation would
+// short-circuit past it.
+
+{
+  name: "later arm conditions are demanded after an earlier arm matched",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.p", value: "a.v > 0"},
+      {expression: "a.q", value: "a.v > 5"},
+      {match: "a.n", arms: [["a.p", "'p'"], ["a.q", "'q'"], ["", "'none'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, p: false, q: false, n: "none"}}],
+    [{a: {v: 3}}, {a: {v: 3, p: true, q: false, n: "p"}}],
+    [{a: {v: 9}}, {a: {v: 9, p: true, q: true, n: "p"}}],
+  ],
+}
+
+{
+  name: "every table input and condition cell is demanded",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.lim", value: "10"},
+      {expression: "a.w", value: "a.v * 2"},
+      {table: "dt", inputs: ["a.v", "a.w"], outputs: ["a.n"], rules: [["> a.lim", "", "'hi'"], ["", "> 0", "'pos'"], ["", "", "'none'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, lim: 10, w: 0, n: "none"}}],
+    [{a: {v: 30}}, {a: {v: 30, lim: 10, w: 60, n: "hi"}}],
+    [{a: {v: 1}}, {a: {v: 1, lim: 10, w: 2, n: "pos"}}],
+  ],
+}
+
+{
+  name: "every assertion condition is demanded",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.p", value: "a.v > 0"},
+      {expression: "a.q", value: "a.v > 5"},
+      {assertion: "a.ok", conditions: ["a.p", "a.q"]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, p: false, q: false, ok: false}}],
+    [{a: {v: 3}}, {a: {v: 3, p: true, q: false, ok: false}}],
+    [{a: {v: 6}}, {a: {v: 6, p: true, q: true, ok: true}}],
+  ],
+}
+
+{
+  name: "operands of and, ternary and ?? are demanded",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.p", value: "a.v > 0"},
+      {expression: "a.q", value: "a.v > 5"},
+      {expression: "a.r", value: "a.v + 1"},
+      {expression: "a.s", value: "a.v + 2"},
+      {expression: "a.both", value: "a.p and a.q"},
+      {expression: "a.pick", value: "a.v > 0 ? a.r : a.s"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, p: false, q: false, r: 1, s: 2, both: false, pick: 2}}],
+    [{a: {v: 3}}, {a: {v: 3, p: true, q: false, r: 4, s: 5, both: false, pick: 4}}],
+  ],
+}
+
+{
+  name: "a failing eager read fails the evaluation even when short-circuited",
+  policy: {
+    models: {a: {v: "number", s: "string"}},
+    blocks: [
+      {expression: "a.parsed", value: "number(a.s)"},
+      {expression: "a.out", value: "a.v < 5 ? 0 : a.parsed"},
+    ],
+  },
+  cases: [
+    [{a: {v: 1, s: "x"}}, "!error: ExpressionFailed", "question: the ternary never evaluates a.parsed for v < 5, but the block's reads are demanded first, so the failing intermediate fails the evaluation; arm values are lazy, expression branches are not"],
+    [{a: {v: 1, s: "3"}}, {a: {v: 1, s: "3", parsed: 3, out: 0}}],
+    [{a: {v: 9, s: "3"}}, {a: {v: 9, s: "3", parsed: 3, out: 3}}],
+    [{a: {v: 9, s: "x"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "the right operand of ?? is demanded even when the left is present",
+  policy: {
+    models: {a: {v: "number?", s: "string"}},
+    blocks: [
+      {expression: "a.fallback", value: "number(a.s)"},
+      {expression: "a.out", value: "a.v ?? a.fallback"},
+    ],
+  },
+  cases: [
+    [{a: {v: 1, s: "x"}}, "!error: ExpressionFailed", "question: a.v is present so the fallback is never used, but its block is demanded first and fails"],
+    [{a: {v: 1, s: "2"}}, {a: {v: 1, s: "2", fallback: 2, out: 1}}],
+    [{a: {s: "2"}}, {a: {s: "2", fallback: 2, out: 2}}],
+  ],
+}
+
+{
+  name: "a failing later arm condition fails the evaluation after an earlier arm matched",
+  policy: {
+    models: {a: {v: "number", s: "string"}},
+    blocks: [
+      {expression: "a.big", value: "number(a.s) > 0"},
+      {match: "a.out", arms: [["a.v < 5", "'small'"], ["a.big", "'big'"], ["", "'d'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 1, s: "x"}}, "!error: ExpressionFailed", "question: the first arm matches, yet the read of the second arm's condition is demanded and fails (chapter 31 notes the same eager demand of later conditions)"],
+    [{a: {v: 1, s: "1"}}, {a: {v: 1, s: "1", big: true, out: "small"}}],
+    [{a: {v: 9, s: "0"}}, {a: {v: 9, s: "0", big: false, out: "d"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Goals: only the goal cones run; the output is the input plus those writes.
+
+{
+  name: "goals select nested leaves and their parents",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    {input: {a: {v: 0}}, goals: ["a.n"], output: {a: {v: 0, t: {x: 1}, n: 11}}},
+    {input: {a: {v: 0}}, goals: ["a.t.y"], output: {a: {v: 0, t: {y: 2}}}},
+    {input: {a: {v: 0}}, goals: ["a.t"], output: {a: {v: 0, t: {x: 1, y: 2}}}},
+    {input: {a: {v: 0}}, goals: ["a.n", "a.t"], output: {a: {v: 0, t: {x: 1, y: 2}, n: 11}}},
+    {input: {a: {v: 0}}, goals: ["a.n", "a.t.y"], output: {a: {v: 0, t: {x: 1, y: 2}, n: 11}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The nested-sibling defect. In each suite the expected output holds every terminal write.
+
+{
+  name: "nested siblings under an entity: one leaf read hides the other",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 11}}, "bug: a.n reads a.t.x, which hides the terminal write a.t.y; it never runs"],
+    [{a: {v: 5}}, {a: {v: 5, t: {x: 6, y: 7}, n: 16}}, "bug: a.n reads a.t.x, which hides the terminal write a.t.y; it never runs"],
+    [{a: {v: -1.5}}, {a: {v: -1.5, t: {x: -0.5, y: 0.5}, n: 9.5}}, "bug: a.n reads a.t.x, which hides the terminal write a.t.y; it never runs"],
+  ],
+}
+
+{
+  name: "nested siblings at the top level",
+  policy: {
+    globals: {env: {v: "number"}},
+    blocks: [
+      {expression: "t.x", value: "v + 1"},
+      {expression: "t.y", value: "v + 2"},
+      {expression: "n", value: "t.x + 10"},
+    ],
+  },
+  cases: [
+    [{v: 0}, {v: 0, t: {x: 1, y: 2}, n: 11}, "bug: n reads t.x, which hides the top-level terminal write t.y"],
+    [{v: 3}, {v: 3, t: {x: 4, y: 5}, n: 14}, "bug: n reads t.x, which hides the top-level terminal write t.y"],
+  ],
+}
+
+{
+  name: "every write under the read object is hidden, at any depth",
+  policy: {
+    blocks: [
+      {expression: "r.a.b.c.x", value: "1"},
+      {expression: "r.a.b.c.y", value: "2"},
+      {expression: "r.a.b.z", value: "3"},
+      {expression: "r.a.w", value: "4"},
+      {expression: "r.k", value: "5"},
+      {expression: "s.m", value: "6"},
+      {expression: "n", value: "r.a.b.c.x"},
+    ],
+  },
+  cases: [
+    [{}, {r: {a: {b: {c: {x: 1, y: 2}, z: 3}, w: 4}, k: 5}, s: {m: 6}, n: 1}, "bug: n reads r.a.b.c.x, which hides every other write under r (c.y, b.z, a.w, r.k); s.m under another object survives"],
+    [{other: 1}, {other: 1, r: {a: {b: {c: {x: 1, y: 2}, z: 3}, w: 4}, k: 5}, s: {m: 6}, n: 1}, "bug: n reads r.a.b.c.x, which hides every other write under r (c.y, b.z, a.w, r.k); s.m under another object survives"],
+  ],
+}
+
+{
+  name: "a deep read hides cousins under the shared computed ancestor",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.u.x", value: "a.v + 1"},
+      {expression: "a.t.u.y", value: "a.v + 2"},
+      {expression: "a.t.z", value: "a.v + 3"},
+      {expression: "a.s.q", value: "a.v + 4"},
+      {expression: "a.n", value: "a.t.u.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {u: {x: 1, y: 2}, z: 3}, s: {q: 4}, n: 11}}, "bug: a.n reads a.t.u.x, which hides a.t.u.y and the cousin a.t.z; a.s.q under another object survives"],
+    [{a: {v: 10}}, {a: {v: 10, t: {u: {x: 11, y: 12}, z: 13}, s: {q: 14}, n: 21}}, "bug: a.n reads a.t.u.x, which hides a.t.u.y and the cousin a.t.z; a.s.q under another object survives"],
+  ],
+}
+
+{
+  name: "the hidden sibling may itself read the leaf that is read",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.t.x + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 3}, n: 11}}, "bug: a.t.y reads a.t.x and is terminal, but a.n's read of a.t.x hides it"],
+    [{a: {v: 2}}, {a: {v: 2, t: {x: 3, y: 5}, n: 13}}, "bug: a.t.y reads a.t.x and is terminal, but a.n's read of a.t.x hides it"],
+  ],
+}
+
+{
+  name: "the hidden sibling is written by a match block",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {match: "a.t.y", arms: [["a.v > 0", "'pos'"], ["", "'non'"]]},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: "non"}, n: 11}}, "bug: the match write a.t.y is hidden by the read of a.t.x"],
+    [{a: {v: 1}}, {a: {v: 1, t: {x: 2, y: "pos"}, n: 12}}, "bug: the match write a.t.y is hidden by the read of a.t.x"],
+  ],
+}
+
+{
+  name: "the hidden sibling is written by a collect table",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {table: "dt", hit: "collect", inputs: ["a.v"], outputs: ["a.t.list"], rules: [["> -1", "'a'"], ["", "'b'"]]},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, list: ["a", "b"]}, n: 11}}, "bug: the collect table write a.t.list is hidden by the read of a.t.x"],
+    [{a: {v: -5}}, {a: {v: -5, t: {x: -4, list: ["b"]}, n: 6}}, "bug: the collect table write a.t.list is hidden by the read of a.t.x"],
+  ],
+}
+
+{
+  name: "hidden assertion and table siblings",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {assertion: "a.t.ok", conditions: ["a.v >= 0"]},
+      {table: "dt", inputs: ["a.v"], outputs: ["a.t.band"], rules: [["> 0", "'p'"], ["", "'z'"]]},
+      {expression: "a.n", value: "a.t.x"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, ok: true, band: "z"}, n: 1}}, "bug: the assertion a.t.ok and the table write a.t.band are hidden by the read of a.t.x"],
+    [{a: {v: 3}}, {a: {v: 3, t: {x: 4, ok: true, band: "p"}, n: 4}}, "bug: the assertion a.t.ok and the table write a.t.band are hidden by the read of a.t.x"],
+  ],
+}
+
+{
+  name: "a table writing both leaves is not affected",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["a.v"], outputs: ["a.t.x", "a.t.y"], rules: [["> 0", "1", "2"], ["", "3", "4"]]},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 3, y: 4}, n: 13}}],
+    [{a: {v: 1}}, {a: {v: 1, t: {x: 1, y: 2}, n: 11}}],
+  ],
+}
+
+// The reader's block kind and expression shape do not matter.
+
+{
+  name: "the reader is a table input",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {table: "dt", inputs: ["a.t.x"], outputs: ["a.n"], rules: [["> 1", "'big'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: "small"}}, "bug: the table input a.t.x hides the terminal write a.t.y"],
+    [{a: {v: 3}}, {a: {v: 3, t: {x: 4, y: 5}, n: "big"}}, "bug: the table input a.t.x hides the terminal write a.t.y"],
+  ],
+}
+
+{
+  name: "the reader is an assertion condition",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {assertion: "a.ok", conditions: ["a.t.x > 0"]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, ok: true}}, "bug: the assertion's read of a.t.x hides the terminal write a.t.y"],
+    [{a: {v: -3}}, {a: {v: -3, t: {x: -2, y: -1}, ok: false}}, "bug: the assertion's read of a.t.x hides the terminal write a.t.y"],
+  ],
+}
+
+{
+  name: "the reader is a closure, a template or an index access",
+  policy: {
+    models: {a: {v: "number"}, b: {v: "number"}, c: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "map([1, 2], # + a.t.x)"},
+      {expression: "b.t.x", value: "b.v + 1"},
+      {expression: "b.t.y", value: "b.v + 2"},
+      {expression: "b.n", value: "`x=${b.t.x}`"},
+      {expression: "c.t.x", value: "c.v + 1"},
+      {expression: "c.t.y", value: "c.v + 2"},
+      {expression: "c.n", value: "c.t['x']"},
+    ],
+  },
+  cases: [
+    [
+      {a: {v: 0}, b: {v: 0}, c: {v: 0}},
+      {a: {v: 0, t: {x: 1, y: 2}, n: [2, 3]}, b: {v: 0, t: {x: 1, y: 2}, n: "x=1"}, c: {v: 0, t: {x: 1, y: 2}, n: 1}},
+      "bug: a closure, a template string and an index access each hide the unread sibling t.y",
+    ],
+  ],
+}
+
+{
+  name: "both leaves read by arm values: only the taken one runs, which is not the defect",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {match: "a.n", arms: [["a.v > 5", "a.t.y"], ["", "a.t.x"]]},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1}, n: 1}}],
+    [{a: {v: 9}}, {a: {v: 9, t: {y: 11}, n: 11}}],
+  ],
+}
+
+{
+  name: "the reader is on another entity",
+  policy: {
+    models: {a: {v: "number"}, b: {w: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "b.n", value: "a.t.x + b.w"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}, b: {w: 1}}, {a: {v: 0, t: {x: 1, y: 2}}, b: {w: 1, n: 2}}, "bug: b.n reads a.t.x, which hides a.t.y"],
+    [{a: {v: 1}, b: {w: 1}}, {a: {v: 1, t: {x: 2, y: 3}}, b: {w: 1, n: 3}}, "bug: b.n reads a.t.x, which hides a.t.y"],
+  ],
+}
+
+{
+  name: "the reader sits in an importing policy",
+  policies: {
+    lib: {
+      models: {a: {v: "number"}},
+      blocks: [
+        {expression: "a.t.x", value: "a.v + 1"},
+        {expression: "a.t.y", value: "a.v + 2"},
+      ],
+    },
+  },
+  policy: {
+    imports: ["lib"],
+    models: {a: {v: "number"}},
+    blocks: [{expression: "a.n", value: "a.t.x + 10"}],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 11}}, "bug: the importer's read of a.t.x hides the imported terminal write a.t.y"],
+    [{a: {v: 2}}, {a: {v: 2, t: {x: 3, y: 4}, n: 13}}, "bug: the importer's read of a.t.x hides the imported terminal write a.t.y"],
+  ],
+}
+
+{
+  name: "the reader sits in an imported policy",
+  policies: {
+    lib: {
+      models: {a: {v: "number"}},
+      blocks: [{expression: "a.n", value: "a.t.x + 10"}],
+    },
+  },
+  policy: {
+    imports: ["lib"],
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 11}}, "bug: the imported block's read of a.t.x hides the importer's terminal write a.t.y"],
+  ],
+}
+
+{
+  name: "per-member nested siblings with a per-member reader",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "item.t.x", value: "item.v + 1"},
+      {expression: "item.t.y", value: "item.v + 2"},
+      {expression: "item.n", value: "item.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 0}, {v: 1}]}}, {o: {items: [{v: 0, t: {x: 1, y: 2}, n: 11}, {v: 1, t: {x: 2, y: 3}, n: 12}]}}, "bug: item.n reads item.t.x, which hides item.t.y on every member"],
+    [{o: {items: []}}, {o: {items: []}}],
+  ],
+}
+
+{
+  name: "root nested siblings read from a member block",
+  policy: {
+    models: {o: {items: "item[]", v: "number"}, item: {w: "number"}},
+    blocks: [
+      {expression: "o.t.x", value: "o.v + 1"},
+      {expression: "o.t.y", value: "o.v + 2"},
+      {expression: "item.n", value: "item.w + o.t.x"},
+    ],
+  },
+  cases: [
+    [{o: {v: 0, items: [{w: 1}]}}, {o: {v: 0, items: [{w: 1, n: 2}], t: {x: 1, y: 2}}}, "bug: the member block's read of o.t.x hides o.t.y"],
+    [{o: {v: 0, items: []}}, {o: {v: 0, items: [], t: {x: 1, y: 2}}}, "bug: the member block's read of o.t.x hides o.t.y even with no members"],
+  ],
+}
+
+{
+  name: "a chain of readers keeps its own path and drops the hidden ones",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+      {expression: "a.m", value: "a.n + 1"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 11, m: 12}}, "bug: a.t.y is hidden by a.n's read of a.t.x; the chain a.n -> a.m itself runs"],
+  ],
+}
+
+{
+  name: "a reader nested under a second object hides siblings in both objects",
+  policy: {
+    blocks: [
+      {expression: "r.x", value: "1"},
+      {expression: "r.y", value: "2"},
+      {expression: "s.n", value: "r.x"},
+      {expression: "s.m", value: "3"},
+      {expression: "q", value: "s.n"},
+    ],
+  },
+  cases: [
+    [{}, {r: {x: 1, y: 2}, s: {n: 1, m: 3}, q: 1}, "bug: q reads s.n, hiding s.m; s.n reads r.x, hiding r.y"],
+  ],
+}
+
+{
+  name: "two readers hide everything they do not read",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.t.z", value: "a.v + 3"},
+      {expression: "a.n", value: "a.t.x + 10"},
+      {expression: "a.m", value: "a.t.y + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2, z: 3}, n: 11, m: 12}}, "bug: a.t.x and a.t.y are read, so they run; the unread a.t.z is hidden"],
+  ],
+}
+
+// The defect has consequences beyond the missing keys: a hidden sibling's runtime error never
+// surfaces, while its required inputs are still checked.
+
+{
+  name: "a hidden sibling's error does not surface, its inputs are still required",
+  policy: {
+    models: {a: {v: "number"}, b: {s: "string"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "number(b.s)"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}, b: {s: "zz"}}, "!error: ExpressionFailed", "bug: a.t.y is a terminal write and number('zz') fails; because a.t.y is hidden by the read of a.t.x it never runs and the evaluation succeeds"],
+    [{a: {v: 0}, b: {s: "5"}}, {a: {v: 0, t: {x: 1, y: 5}, n: 11}, b: {s: "5"}}, "bug: a.t.y is hidden by the read of a.t.x"],
+    [{a: {v: 0}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// Where the defect does not reach: flat siblings, whole-object reads, readers under the same
+// object, member reads through a closure or an index from the root, and goals naming the leaf.
+
+{
+  name: "a read of the whole computed object demands every leaf",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: {x: 1, y: 2}}}],
+    [{a: {v: 7}}, {a: {v: 7, t: {x: 8, y: 9}, n: {x: 8, y: 9}}}],
+  ],
+}
+
+{
+  name: "a read of an intermediate object demands its leaves but hides its cousins",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.u.x", value: "a.v + 1"},
+      {expression: "a.t.u.y", value: "a.v + 2"},
+      {expression: "a.t.z", value: "a.v + 3"},
+      {expression: "a.n", value: "a.t.u"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {u: {x: 1, y: 2}, z: 3}, n: {x: 1, y: 2}}}, "bug: a.n reads a.t.u, which hides the cousin a.t.z"],
+  ],
+}
+
+{
+  name: "a reader under the same computed object does not hide its siblings",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.t.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2, n: 11}}}],
+    [{a: {v: 4}}, {a: {v: 4, t: {x: 5, y: 6, n: 15}}}],
+  ],
+}
+
+{
+  name: "siblings under an entity of a different name are not hidden",
+  policy: {
+    models: {a: {v: "number"}, b: {w: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "b.t.y", value: "b.w + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}, b: {w: 1}}, {a: {v: 0, t: {x: 1}, n: 11}, b: {w: 1, t: {y: 3}}}],
+  ],
+}
+
+{
+  name: "a root read of member leaves through a closure or index does not hide",
+  policy: {
+    models: {o: {items: "item[]"}, item: {w: "number"}},
+    blocks: [
+      {expression: "item.t.x", value: "item.w * 2"},
+      {expression: "item.t.y", value: "item.w * 3"},
+      {expression: "o.sum", value: "sum(map(o.items, #.t.x))"},
+      {expression: "o.first", value: "o.items[0].t.x ?? 0"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{w: 1}, {w: 2}]}}, {o: {items: [{w: 1, t: {x: 2, y: 3}}, {w: 2, t: {x: 4, y: 6}}], sum: 6, first: 2}}],
+    [{o: {items: []}}, {o: {items: [], sum: 0, first: 0}}],
+  ],
+}
+
+{
+  name: "a reader of every leaf leaves nothing to hide but an unread third",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + a.t.y"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 3}}],
+    [{a: {v: 1}}, {a: {v: 1, t: {x: 2, y: 3}, n: 5}}],
+  ],
+}
+
+{
+  name: "a hidden sibling read elsewhere is demanded through that reader",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+      {expression: "a.u.k", value: "a.t.y"},
+    ],
+  },
+  cases: [
+    [{a: {v: 0}}, {a: {v: 0, t: {x: 1, y: 2}, n: 11, u: {k: 2}}}],
+  ],
+}
+
+{
+  name: "goals naming the hidden leaf bring it back",
+  policy: {
+    models: {a: {v: "number"}},
+    blocks: [
+      {expression: "a.t.x", value: "a.v + 1"},
+      {expression: "a.t.y", value: "a.v + 2"},
+      {expression: "a.n", value: "a.t.x + 10"},
+    ],
+  },
+  cases: [
+    {input: {a: {v: 1}}, goals: ["a.n", "a.t.y"], output: {a: {v: 1, t: {x: 2, y: 3}, n: 12}}},
+    {input: {a: {v: 1}}, goals: ["a.n", "a.t"], output: {a: {v: 1, t: {x: 2, y: 3}, n: 12}}},
+    {input: {a: {v: 1}}, output: {a: {v: 1, t: {x: 2, y: 3}, n: 12}}, note: "bug: without goals a.t.y is hidden by the read of a.t.x"},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic shape: a pricing summary object read by one consumer, with sibling figures that
+// only the caller reads.
+
+{
+  name: "a quote summary whose figures only the caller reads",
+  policy: {
+    models: {quote: {lines: "qline[]", country: "string(DE|FR)"}, qline: {qty: "number", price: "number"}},
+    blocks: [
+      {expression: "qline.total", value: "qline.qty * qline.price"},
+      {expression: "quote.summary.net", value: "sum(map(quote.lines, #.total))"},
+      {expression: "quote.summary.count", value: "len(quote.lines)"},
+      {match: "quote.summary.vatRate", arms: [["quote.country == 'DE'", "0.19"], ["", "0.2"]]},
+      {expression: "quote.approval", value: "quote.summary.net > 1000 ? 'manager' : 'auto'"},
+    ],
+  },
+  cases: [
+    [
+      {quote: {country: "DE", lines: [{qty: 2, price: 100}]}},
+      {quote: {country: "DE", lines: [{qty: 2, price: 100, total: 200}], summary: {net: 200, count: 1, vatRate: 0.19}, approval: "auto"}},
+      "bug: quote.approval reads quote.summary.net, which hides the terminal writes quote.summary.count and quote.summary.vatRate",
+    ],
+    [
+      {quote: {country: "FR", lines: [{qty: 3, price: 500}, {qty: 1, price: 1}]}},
+      {quote: {country: "FR", lines: [{qty: 3, price: 500, total: 1500}, {qty: 1, price: 1, total: 1}], summary: {net: 1501, count: 2, vatRate: 0.2}, approval: "manager"}},
+      "bug: quote.approval reads quote.summary.net, which hides the terminal writes quote.summary.count and quote.summary.vatRate",
+    ],
+    {
+      input: {quote: {country: "FR", lines: []}},
+      goals: ["quote.approval", "quote.summary"],
+      output: {quote: {country: "FR", lines: [], summary: {net: 0, count: 0, vatRate: 0.2}, approval: "auto"}},
+    },
+  ],
+}

@@ -1,0 +1,218 @@
+expression (string);input (json 5);output (json 5);note
+# Integers
+0;;0
+1;;1
+42;;42
+123456789;;123456789
+-1;;-1
+-42;;-42
++1;;1
++1.5;;1.5
+-+1;;-1
+- 5;;-5
+--5;;5
+-(-5);;5
+type(0);;'number'
+type(-1);;'number'
+type(1.5);;'number'
+type(1e3);;'number'
+# Leading zeros are decimal, not octal
+007;;7
+00;;0
+0010;;10
+string(007);;'7'
+string(00);;'0'
+01.50;;1.5
+string(01.50);;'1.50'
+# Decimals and preserved scale
+0.5;;0.5
+3.14;;3.14
+-3.14;;-3.14
+0.1;;0.1
+1.0;;1
+1.50;;1.5
+string(1.0);;'1.0'
+string(1.50);;'1.50'
+string(1.500);;'1.500'
+string(0.0);;'0.0'
+string(0.000);;'0.000'
+string(100);;'100'
+string(100.00);;'100.00'
+string(-2.50);;'-2.50'
+0.1 + 0.2 == 0.3;;true
+1.0 == 1;;true
+1.50 == 1.5;;true
+0.0 == 0;;true
+# A dot must be followed or preceded by digits
+.5;;!error
+-.5;;!error
+1.;;1;question: a trailing dot is accepted as `1`
+string(1.);;'1';question: a trailing dot is accepted and drops the dot
+1.2.3;;!error
+1..2;;!error
+1. 5;;!error
+# Negative zero
+-0;;0
+-0 == 0;;true
+-0.0 == 0;;true
+string(-0);;'-0';question: unary minus on a zero literal keeps a negative sign in the string form
+string(-0.0);;'-0.0';question: unary minus on a zero literal keeps a negative sign in the string form
+string(0 * -1);;'0'
+# Underscore digit separators
+1_000;;1000
+1_000_000;;1000000
+string(1_000);;'1000'
+1_000.5;;1000.5
+1_000.000_1;;1000.0001
+string(1_000.50);;'1000.50'
+-1_000;;-1000
+1_0;;10
+1__0;;10;question: consecutive separators are accepted
+1_;;1;question: a trailing separator is accepted
+1_.5;;1.5;question: a separator before the dot is accepted
+1._5;;1.5;question: a separator right after the dot is accepted
+_1;{};null
+_1;{_1: 7};7
+_1_000;{_1_000: 3};3
+1e1_0;;!error
+1_0e1_0;;!error
+1_0e2;;1000
+# Scientific notation
+1e3;;1000
+1e0;;1
+1e1;;10
+1e+2;;100
+1e-0;;1
+1e+0;;1
+1e-1;;0.1
+1e-3;;0.001
+2.5e2;;250
+2.5e-3;;0.0025
+1.5e1;;15
+-1e2;;-100
+-1e-2;;-0.01
+0e5;;0
+0e-5;;0
+0.0e0;;0
+1e0005;;100000
+1e-0005;;0.00001
+1.e3;;1000;question: a trailing dot before the exponent is accepted
+12.345e1;;123.45
+12.345e-1;;1.2345
+123e-2;;1.23
+string(1e3);;'1000'
+string(1.5e1);;'15'
+string(1e-3);;'0.001'
+string(2.50e1);;'25.0'
+string(1.0e0);;'1.0'
+1e3 == 1000;;true
+1e-3 == 0.001;;true
+1e3 + 1;;1001
+2 * 1e2;;200
+[1e2, 2e-1];;[100, 0.2]
+{a: 1e2};;{a: 100}
+1E3;;!error;question: uppercase E exponent is rejected by the lexer
+1E-3;;!error;question: uppercase E exponent is rejected by the lexer
+1e;;!error
+1e+;;!error
+1e-;;!error
+1e2e3;;!error
+1e2.5;;!error
+e3;{};null
+e3;{e3: 4};4
+1 e3;;!error
+1e 3;;!error
+# Exponent extremes
+1e27;;1000000000000000000000000000
+1e28;;10000000000000000000000000000
+-1e28;;-10000000000000000000000000000
+1e29;;!error
+1e100;;!error
+1e1000;;!error
+1e-27;;0.000000000000000000000000001
+1e-28;;0.0000000000000000000000000001
+-1e-28;;-0.0000000000000000000000000001
+1e-29;;!error;question: a literal below the smallest Decimal step errors instead of rounding to 0
+1e-100;;!error;question: a literal below the smallest Decimal step errors instead of rounding to 0
+1.5e-28;;!error;question: a literal needing scale 29 errors instead of rounding
+7.9228162514264337593543950335e28;;79228162514264337593543950335
+7.9228162514264337593543950336e28;;!error
+# Decimal range (96-bit mantissa, max 79228162514264337593543950335)
+79228162514264337593543950335;;79228162514264337593543950335
+-79228162514264337593543950335;;-79228162514264337593543950335
+79228162514264337593543950334 + 1;;79228162514264337593543950335
+string(79228162514264337593543950335);;'79228162514264337593543950335'
+79228162514264337593543950336;;!error
+-79228162514264337593543950336;;!error
+100000000000000000000000000000;;!error
+999999999999999999999999999999;;!error
+1_000_000_000_000_000_000_000_000_000;;1000000000000000000000000000
+# Significant digits and scale limits (scale at most 28)
+0.0000000000000000000000000001;;0.0000000000000000000000000001
+0.00000000000000000000000000001;;!error;question: a literal with scale 29 errors instead of rounding
+0.1234567890123456789012345678;;0.1234567890123456789012345678
+string(0.1234567890123456789012345678);;'0.1234567890123456789012345678'
+0.12345678901234567890123456789;;!error;question: 29 fractional digits error instead of rounding to 28
+1.0000000000000000000000000001;;1.0000000000000000000000000001
+string(1.0000000000000000000000000001);;'1.0000000000000000000000000001'
+1.00000000000000000000000000001;;!error;question: 30 significant digits error instead of rounding
+123456789012345678901234567.8;;123456789012345678901234567.8
+1234567890123456789012345678.9;;1234567890123456789012345678.9
+12345678901234567890123456789.1;;!error;question: an in-range integer part with a fraction beyond precision errors instead of rounding
+7922816251426433759354395033.5;;7922816251426433759354395033.5
+3.1415926535897932384626433832;;3.1415926535897932384626433832
+string(3.1415926535897932384626433832);;'3.1415926535897932384626433832'
+0.1000000000000000000000000000;;0.1
+string(0.1000000000000000000000000000);;'0.1000000000000000000000000000'
+# i64 boundaries are ordinary decimals
+9223372036854775807;;9223372036854775807
+9223372036854775808;;9223372036854775808
+-9223372036854775808;;-9223372036854775808
+-9223372036854775809;;-9223372036854775809
+18446744073709551615;;18446744073709551615
+18446744073709551616;;18446744073709551616
+9223372036854775807 + 1;;9223372036854775808
+string(9223372036854775808);;'9223372036854775808'
+9007199254740993;;9007199254740993
+string(9007199254740993);;'9007199254740993'
+# i128 boundaries exceed the Decimal range
+170141183460469231731687303715884105727;;!error
+-170141183460469231731687303715884105728;;!error
+# Non-decimal bases and special names are not number syntax
+0x10;;!error
+0b1;;!error
+0o7;;!error
+1a;;!error
+Infinity;{};null
+NaN;{};null
+Infinity;{Infinity: 1};1
+# Numbers read from the input
+x;{x: 0};0
+x;{x: -0.5};-0.5
+x;{x: 1.50};1.5
+x;{x: 79228162514264337593543950335};79228162514264337593543950335
+x;{x: 0.0000000000000000000000000001};0.0000000000000000000000000001
+x;{x: null};null
+x;{};null
+string(x);{x: 1.50};'1.50'
+string(x);{x: 100};'100'
+string(x);{x: -0.001};'-0.001'
+string(x);{x: 0.0000000000000000000000000001};'0.0000000000000000000000000001'
+string(x);{x: 12345678901234567890};'12345678901234567890'
+x + 1_000;{x: 1};1001
+x + 1_000;{x: 0.5};1000.5
+x + 1_000;{x: -1000};0
+x + 1_000;{x: null};!error
+x + 1_000;{};!error
+x + 1_000;{x: 'a'};!error
+x * 1e2;{x: 1.5};150
+x * 1e2;{x: 0};0
+x * 1e2;{x: -0.01};-1
+x * 1e2;{x: null};!error
+x * 1e2;{x: true};!error
+x == 1e3;{x: 1000};true
+x == 1e3;{x: 1000.0};true
+x == 1e3;{x: 999};false
+x == 1e3;{x: '1000'};false
+x == 1e3;{x: null};false
+x == 1e3;{};false

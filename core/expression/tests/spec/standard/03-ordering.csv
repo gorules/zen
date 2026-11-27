@@ -1,0 +1,141 @@
+expression (string);input (json 5);output (json 5);note
+# Ordering: numbers by exact value
+1 < 2;;true
+2 < 1;;false
+1 < 1;;false
+1 <= 1;;true
+1 > 1;;false
+1 >= 1;;true
+2 > 1;;true
+1 >= 2;;false
+1 < 1.0;;false
+1 <= 1.00;;true
+1.0 >= 1;;true
+-0 < 0;;false
+-0 <= 0;;true
+0 >= -0;;true
+-1 < 0;;true
+-1 > -2;;true
+-1.5 < -1.4;;true
+0.1 + 0.2 <= 0.3;;true
+0.1 + 0.2 >= 0.3;;true
+0.3 < 0.3000000000000000000000000001;;true
+0.0000000000000000000000000001 > 0;;true
+-0.0000000000000000000000000001 < 0;;true
+79228162514264337593543950335 > 79228162514264337593543950334;;true
+-79228162514264337593543950335 < 79228162514264337593543950335;;true
+1e3 > 999.999;;true
+1 / 3 < 0.3333333333333333333333333334;;true
+2 ^ 10 >= 1024;;true
+10 % 3 < 2;;true
+# Ordering: operands of other types are errors
+'a' < 'b';;!error;question: strings have no ordering; is lexicographic comparison intended?
+'b' > 'a';;!error;question: strings have no ordering; is lexicographic comparison intended?
+'a' <= 'a';;!error;question: strings have no ordering even when equal
+'' < 'a';;!error;question: strings have no ordering; is lexicographic comparison intended?
+'10' < '9';;!error;question: numeric-looking strings have no ordering
+'1' < 2;;!error
+1 < '2';;!error
+null < 1;;!error
+1 < null;;!error
+null <= null;;!error
+null >= 0;;!error
+true < false;;!error
+false <= true;;!error
+true > 0;;!error
+[1] < [2];;!error
+[] <= [];;!error
+{} < {};;!error
+{a: 1} >= {a: 1};;!error
+1 < [2];;!error
+# Ordering: comparisons do not chain
+1 < 2 < 3;;!error
+3 > 2 > 1;;!error
+1 < 2 == true;;true
+1 == 1 == true;;true
+1 == 1 == 1;;false
+(1 < 2) == (2 < 3);;true
+1 < 2 and 2 < 3;;true
+# Ordering: arithmetic binds tighter than comparison
+1 + 2 > 2;;true
+1 + 2 < 2 * 2;;true
+10 - 5 >= 5;;true
+2 * 3 <= 6;;true
+2 ^ 3 > 7;;true
+-1 < -1 + 1;;true
+# Ordering: dates
+d('2024-01-01') < d('2024-01-02');;true
+d('2024-01-02') < d('2024-01-01');;false
+d('2024-01-01') <= d('2024-01-01');;true
+d('2024-01-01') < d('2024-01-01');;false
+d('2024-01-01') >= d('2024-01-01T00:00:00Z');;true
+d('2024-01-01T00:00:01Z') > d('2024-01-01');;true
+d('2023-12-31T23:59:59Z') < d('2024-01-01');;true
+d('1970-01-01') < d('2100-01-01');;true
+d('2024-01-01') < '2024-01-02';;true
+'2024-01-01' < d('2024-01-02');;true
+d('2024-01-01') < 5;;!error
+d('2024-01-01') > null;;!error
+d('2024-01-01') < d('garbage');;false;question: an invalid date orders before every valid date instead of erroring
+d('garbage') < d('2024-01-01');;true;question: an invalid date orders before every valid date instead of erroring
+d('garbage') == d('garbage');;true;question: two invalid dates are equal to each other
+# Ordering: variable operands
+a < b;{a: 1, b: 2};true
+a < b;{a: 2, b: 1};false
+a < b;{a: 1, b: 1.0};false
+a < b;{a: -0.5, b: 0};true
+a < b;{a: 1};!error
+a < b;{};!error
+a < b;{a: 1, b: '2'};!error
+a < b;{a: 'a', b: 'b'};!error;question: strings have no ordering; is lexicographic comparison intended?
+a <= b;{a: 1, b: 1};true
+a <= b;{a: 1.00, b: 1};true
+a <= b;{a: 2, b: 1};false
+a <= b;{a: null, b: 1};!error
+a <= b;{a: true, b: true};!error
+a > b;{a: 3, b: 2};true
+a > b;{a: 2, b: 3};false
+a > b;{a: 79228162514264337593543950335, b: 0};true
+a > b;{a: 0.0000000000000000000000000001, b: 0};true
+a > b;{b: 1};!error
+a >= b;{a: 2, b: 2};true
+a >= b;{a: 1, b: 2};false
+a >= b;{a: -1, b: -1.0};true
+a >= b;{a: [1], b: 1};!error
+x > 18;{x: 21};true
+x > 18;{x: 18};false
+x > 18;{x: 18.0000000001};true
+x > 18;{x: null};!error
+x > 18;{};!error
+x > 18;{x: '21'};!error
+x >= 18;{x: 18};true
+x >= 18;{x: 17.99};false
+x >= 18;{x: -18};false
+x >= 18;{x: false};!error
+x < 0.5;{x: 0.49};true
+x < 0.5;{x: 0.5};false
+x < 0.5;{x: 0.50};false
+x < 0.5;{x: -1};true
+x < 0.5;{x: {}};!error
+x <= 100;{x: 100};true
+x <= 100;{x: 100.0000000000000000000000001};false
+x <= 100;{x: -100};true
+x <= 100;{x: []};!error
+x.y > 1;{x: {y: 2}};true
+x.y > 1;{x: {y: 1}};false
+x.y > 1;{x: {}};!error
+x.y > 1;{x: null};!error
+x.y > 1;{};!error
+d(x) < d('2024-06-01');{x: '2024-01-01'};true
+d(x) < d('2024-06-01');{x: '2024-06-01'};false
+d(x) < d('2024-06-01');{x: '2025-01-01'};false
+d(x) < d('2024-06-01');{x: '2024-05-31T23:59:59Z'};true
+d(x) < d(y);{x: '2024-01-01', y: '2024-01-02'};true
+d(x) < d(y);{x: '2024-01-02', y: '2024-01-01'};false
+d(x) >= d(y);{x: '2024-01-01', y: '2024-01-01'};true
+d(x) >= d(y);{x: '2023-01-01', y: '2024-01-01'};false
+x < y;{x: 1, y: 2};true
+x < y;{x: 'a', y: 'b'};!error;question: strings have no ordering; is lexicographic comparison intended?
+x < y;{x: 1, y: null};!error
+x < y;{x: true, y: 1};!error
+x < y;{x: 5, y: -5};false

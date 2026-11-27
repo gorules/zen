@@ -1,0 +1,672 @@
+// Realistic commerce policies: cart promotions with per-item two-output tables and coupons,
+// shipping by billable weight with surcharges collected in two `[]` columns and a referenced
+// zone, sales tax by referenced jurisdiction and product tax codes, loyalty points and tier
+// progression against globals, and checkout fraud scoring with collected signals and points.
+// Each suite combines several block kinds over related entities and runs valid, boundary,
+// missing and invalid data. Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Cart promotions ---------------------------------------------------------------------------
+// A per-item first-hit table with two outputs (sale items take no promotion first, apparel
+// three-for, books 5%), a coupon match whose arm values are expressions over the non-sale
+// remainder, a tier discount on what is left, and totals.
+
+{
+  name: "cart promotions, coupons and member tiers",
+  policy: {
+    models: {
+      cart: {memberTier: "string(none|silver|gold)", couponCode: "string?", items: "item[]"},
+      item: {sku: "string", category: "string(electronics|apparel|grocery|books)", unitPrice: "number", qty: "number", onSale: "boolean"},
+    },
+    blocks: [
+      {expression: "item.lineTotal", value: "item.unitPrice * item.qty"},
+      {table: "promo", inputs: ["item.onSale", "item.category", "item.qty"], outputs: ["item.promoPct", "item.promoLabel"], rules: [
+        ["true", "", "", "0", "'sale-item'"],
+        ["", "'apparel'", ">= 3", "0.2", "'3-for-apparel'"],
+        ["", "'books'", "", "0.05", "'books'"],
+        ["", "", "", "0", "'none'"],
+      ]},
+      {expression: "item.promoAmount", value: "round(item.lineTotal * item.promoPct, 2)"},
+      {expression: "cart.subtotal", value: "sum(map(cart.items, #.lineTotal))"},
+      {expression: "cart.promoTotal", value: "sum(map(cart.items, #.promoAmount))"},
+      {expression: "cart.couponBase", value: "sum(map(filter(cart.items, not #.onSale), #.lineTotal - #.promoAmount))"},
+      {match: "cart.couponDiscount", arms: [
+        ["cart.couponCode == 'SAVE10' and cart.couponBase >= 50", "round(cart.couponBase * 0.1, 2)"],
+        ["cart.couponCode == 'FLAT5'", "min([5, cart.couponBase])"],
+        ["", "0"],
+      ]},
+      {match: "cart.tierPct", arms: [
+        ["cart.memberTier == 'gold'", "0.05"],
+        ["cart.memberTier == 'silver'", "0.02"],
+        ["", "0"],
+      ]},
+      {expression: "cart.tierDiscount", value: "round((cart.subtotal - cart.promoTotal - cart.couponDiscount) * cart.tierPct, 2)"},
+      {expression: "cart.total", value: "cart.subtotal - cart.promoTotal - cart.couponDiscount - cart.tierDiscount"},
+      {expression: "cart.savings", value: "cart.promoTotal + cart.couponDiscount + cart.tierDiscount"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {memberTier: "none", items: [{sku: "A", category: "electronics", unitPrice: 100, qty: 1, onSale: false}]}},
+      {cart: {memberTier: "none", items: [
+        {sku: "A", category: "electronics", unitPrice: 100, qty: 1, onSale: false, lineTotal: 100, promoPct: 0, promoLabel: "none", promoAmount: 0},
+      ], subtotal: 100, promoTotal: 0, couponBase: 100, couponDiscount: 0, tierPct: 0, tierDiscount: 0, total: 100, savings: 0}},
+    ],
+    // Every discount stacks: apparel three-for, books, SAVE10 on the remainder, then gold.
+    [
+      {cart: {memberTier: "gold", couponCode: "SAVE10", items: [
+        {sku: "T", category: "apparel", unitPrice: 20, qty: 3, onSale: false},
+        {sku: "B", category: "books", unitPrice: 15, qty: 2, onSale: false},
+      ]}},
+      {cart: {memberTier: "gold", couponCode: "SAVE10", items: [
+        {sku: "T", category: "apparel", unitPrice: 20, qty: 3, onSale: false, lineTotal: 60, promoPct: 0.2, promoLabel: "3-for-apparel", promoAmount: 12},
+        {sku: "B", category: "books", unitPrice: 15, qty: 2, onSale: false, lineTotal: 30, promoPct: 0.05, promoLabel: "books", promoAmount: 1.5},
+      ], subtotal: 90, promoTotal: 13.5, couponBase: 76.5, couponDiscount: 7.65, tierPct: 0.05, tierDiscount: 3.44, total: 65.41, savings: 24.59}},
+    ],
+    // SAVE10 needs a coupon base of 50: 49.90 earns nothing.
+    [
+      {cart: {memberTier: "silver", couponCode: "SAVE10", items: [{sku: "G", category: "grocery", unitPrice: 4.99, qty: 10, onSale: false}]}},
+      {cart: {memberTier: "silver", couponCode: "SAVE10", items: [
+        {sku: "G", category: "grocery", unitPrice: 4.99, qty: 10, onSale: false, lineTotal: 49.9, promoPct: 0, promoLabel: "none", promoAmount: 0},
+      ], subtotal: 49.9, promoTotal: 0, couponBase: 49.9, couponDiscount: 0, tierPct: 0.02, tierDiscount: 1, total: 48.9, savings: 1}},
+    ],
+    // Sale items are excluded from the coupon base.
+    [
+      {cart: {memberTier: "none", couponCode: "FLAT5", items: [
+        {sku: "TV", category: "electronics", unitPrice: 200, qty: 1, onSale: true},
+        {sku: "G", category: "grocery", unitPrice: 10, qty: 2, onSale: false},
+      ]}},
+      {cart: {memberTier: "none", couponCode: "FLAT5", items: [
+        {sku: "TV", category: "electronics", unitPrice: 200, qty: 1, onSale: true, lineTotal: 200, promoPct: 0, promoLabel: "sale-item", promoAmount: 0},
+        {sku: "G", category: "grocery", unitPrice: 10, qty: 2, onSale: false, lineTotal: 20, promoPct: 0, promoLabel: "none", promoAmount: 0},
+      ], subtotal: 220, promoTotal: 0, couponBase: 20, couponDiscount: 5, tierPct: 0, tierDiscount: 0, total: 215, savings: 5}},
+    ],
+    // FLAT5 never exceeds the coupon base: the cart drops to zero.
+    [
+      {cart: {memberTier: "gold", couponCode: "FLAT5", items: [{sku: "B", category: "books", unitPrice: 3, qty: 1, onSale: false}]}},
+      {cart: {memberTier: "gold", couponCode: "FLAT5", items: [
+        {sku: "B", category: "books", unitPrice: 3, qty: 1, onSale: false, lineTotal: 3, promoPct: 0.05, promoLabel: "books", promoAmount: 0.15},
+      ], subtotal: 3, promoTotal: 0.15, couponBase: 2.85, couponDiscount: 2.85, tierPct: 0.05, tierDiscount: 0, total: 0, savings: 3}},
+    ],
+    // Two apparel items are no three-for; three on sale take the sale row first. A coupon base
+    // of exactly 50 qualifies.
+    [
+      {cart: {memberTier: "silver", couponCode: "SAVE10", items: [
+        {sku: "J", category: "apparel", unitPrice: 25, qty: 2, onSale: false},
+        {sku: "S", category: "apparel", unitPrice: 10, qty: 3, onSale: true},
+      ]}},
+      {cart: {memberTier: "silver", couponCode: "SAVE10", items: [
+        {sku: "J", category: "apparel", unitPrice: 25, qty: 2, onSale: false, lineTotal: 50, promoPct: 0, promoLabel: "none", promoAmount: 0},
+        {sku: "S", category: "apparel", unitPrice: 10, qty: 3, onSale: true, lineTotal: 30, promoPct: 0, promoLabel: "sale-item", promoAmount: 0},
+      ], subtotal: 80, promoTotal: 0, couponBase: 50, couponDiscount: 5, tierPct: 0.02, tierDiscount: 1.5, total: 73.5, savings: 6.5}},
+    ],
+    [
+      {cart: {memberTier: "gold", couponCode: "SAVE10", items: []}},
+      {cart: {memberTier: "gold", couponCode: "SAVE10", items: [], subtotal: 0, promoTotal: 0, couponBase: 0, couponDiscount: 0, tierPct: 0.05, tierDiscount: 0, total: 0, savings: 0}},
+    ],
+    // Coupon codes are case-sensitive.
+    [
+      {cart: {memberTier: "none", couponCode: "save10", items: [{sku: "A", category: "electronics", unitPrice: 50, qty: 1, onSale: false}]}},
+      {cart: {memberTier: "none", couponCode: "save10", items: [
+        {sku: "A", category: "electronics", unitPrice: 50, qty: 1, onSale: false, lineTotal: 50, promoPct: 0, promoLabel: "none", promoAmount: 0},
+      ], subtotal: 50, promoTotal: 0, couponBase: 50, couponDiscount: 0, tierPct: 0, tierDiscount: 0, total: 50, savings: 0}},
+    ],
+    [
+      {cart: {memberTier: "none", couponCode: null, items: [{sku: "A", category: "apparel", unitPrice: 9.99, qty: 4, onSale: false}]}},
+      {cart: {memberTier: "none", couponCode: null, items: [
+        {sku: "A", category: "apparel", unitPrice: 9.99, qty: 4, onSale: false, lineTotal: 39.96, promoPct: 0.2, promoLabel: "3-for-apparel", promoAmount: 7.99},
+      ], subtotal: 39.96, promoTotal: 7.99, couponBase: 31.97, couponDiscount: 0, tierPct: 0, tierDiscount: 0, total: 31.97, savings: 7.99}},
+    ],
+    {
+      input: {cart: {items: [{sku: "A", category: "books", unitPrice: 10, qty: 1, onSale: false}]}},
+      goals: ["cart.couponBase"],
+      output: {cart: {items: [{sku: "A", category: "books", unitPrice: 10, qty: 1, onSale: false, lineTotal: 10, promoPct: 0.05, promoLabel: "books", promoAmount: 0.5}], couponBase: 9.5}},
+    },
+    [{cart: {memberTier: "none", items: [{sku: "A", category: "toys", unitPrice: 1, qty: 1, onSale: false}]}}, "!error: InputValidationFailed"],
+    [{cart: {memberTier: "platinum", items: []}}, "!error: InputValidationFailed"],
+    [{cart: {memberTier: "none", items: [{sku: "A", category: "books", unitPrice: 1, onSale: false}]}}, "!error: ExpressionFailed"],
+    [{cart: {items: []}}, "!error: MissingRequiredInputs"],
+    // An item without `onSale` reads null: the sale row does not match it, but `not null` in the
+    // coupon base filter is an error.
+    [{cart: {memberTier: "none", items: [{sku: "A", category: "books", unitPrice: 10, qty: 1}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Shipping ----------------------------------------------------------------------------------
+// Per-item billable weight is the larger of actual and volumetric weight (cm³ / 5000) times the
+// quantity. Surcharges and their fees are collected in two `[]` columns of one first-hit table
+// whose third input reads the referenced zone; express multiplies the cost; free shipping is a
+// match; the shippability assertion is `not hazmat or (not remote and not express)`.
+
+{
+  name: "shipping by billable weight with surcharges",
+  policy: {
+    models: {
+      shipment: {destination: "&zone", express: "boolean", cartTotal: "number", items: "parcel[]"},
+      zone: {id: "string", baseRate: "number", perKg: "number", remote: "boolean"},
+      parcel: {weightKg: "number", lengthCm: "number", widthCm: "number", heightCm: "number", qty: "number", hazmat: "boolean"},
+    },
+    blocks: [
+      {expression: "parcel.volumetric", value: "round(parcel.lengthCm * parcel.widthCm * parcel.heightCm / 5000, 2)"},
+      {expression: "parcel.billable", value: "max([parcel.weightKg, parcel.volumetric]) * parcel.qty"},
+      {expression: "shipment.weight", value: "sum(map(shipment.items, #.billable))"},
+      {expression: "shipment.hazmat", value: "some(shipment.items, #.hazmat)"},
+      {expression: "shipment.oversize", value: "some(shipment.items, max([#.lengthCm, #.widthCm, #.heightCm]) > 120)"},
+      {table: "surcharges", inputs: ["shipment.hazmat", "shipment.oversize", "shipment.destination.remote"], outputs: ["shipment.surcharges[]", "shipment.fees[]"], rules: [
+        ["true", "", "", "'hazmat'", "25"],
+        ["", "true", "", "'oversize'", "15"],
+        ["", "", "true", "'remote'", "10"],
+      ]},
+      {expression: "shipment.base", value: "round(shipment.destination.baseRate + shipment.destination.perKg * shipment.weight, 2)"},
+      {expression: "shipment.cost", value: "round((shipment.base + sum(shipment.fees)) * (shipment.express ? 1.5 : 1), 2)"},
+      {match: "shipment.freeShipping", arms: [
+        ["shipment.hazmat or shipment.oversize", "false"],
+        ["shipment.cartTotal >= 100 and not shipment.express", "true"],
+        ["", "false"],
+      ]},
+      {expression: "shipment.charge", value: "shipment.freeShipping ? 0 : shipment.cost"},
+      {assertion: "shipment.shippable", conditions: [
+        ["or", "not shipment.hazmat", 0],
+        ["and", "not shipment.destination.remote", 1],
+        ["and", "not shipment.express", 1],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {shipment: {destination: "DOM", express: false, cartTotal: 50, items: [{weightKg: 2, lengthCm: 30, widthCm: 20, heightCm: 10, qty: 1, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}, {id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: false, cartTotal: 50, items: [
+        {weightKg: 2, lengthCm: 30, widthCm: 20, heightCm: 10, qty: 1, hazmat: false, volumetric: 1.2, billable: 2},
+      ], weight: 2, hazmat: false, oversize: false, surcharges: [], fees: [], base: 7, cost: 7, freeShipping: false, charge: 7, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}, {id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+    ],
+    // A light but bulky box bills by volume; the cart total earns free shipping.
+    [
+      {shipment: {destination: "DOM", express: false, cartTotal: 150, items: [{weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, qty: 2, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: false, cartTotal: 150, items: [
+        {weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, qty: 2, hazmat: false, volumetric: 12, billable: 24},
+      ], weight: 24, hazmat: false, oversize: false, surcharges: [], fees: [], base: 29, cost: 29, freeShipping: true, charge: 0, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    [
+      {shipment: {destination: "DOM", express: true, cartTotal: 200, items: [{weightKg: 3, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: true, cartTotal: 200, items: [
+        {weightKg: 3, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: false, volumetric: 0.2, billable: 3},
+      ], weight: 3, hazmat: false, oversize: false, surcharges: [], fees: [], base: 8, cost: 12, freeShipping: false, charge: 12, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    // Hazardous goods to an island: two surcharges and not shippable.
+    [
+      {shipment: {destination: "ISL", express: false, cartTotal: 500, items: [{weightKg: 4, lengthCm: 20, widthCm: 20, heightCm: 20, qty: 1, hazmat: true}]}, zone: [{id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+      {shipment: {destination: {id: "ISL", baseRate: 12, perKg: 2.5, remote: true}, express: false, cartTotal: 500, items: [
+        {weightKg: 4, lengthCm: 20, widthCm: 20, heightCm: 20, qty: 1, hazmat: true, volumetric: 1.6, billable: 4},
+      ], weight: 4, hazmat: true, oversize: false, surcharges: ["hazmat", "remote"], fees: [25, 10], base: 22, cost: 57, freeShipping: false, charge: 57, shippable: false}, zone: [{id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+    ],
+    [
+      {shipment: {destination: "DOM", express: false, cartTotal: 300, items: [{weightKg: 10, lengthCm: 121, widthCm: 10, heightCm: 10, qty: 1, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: false, cartTotal: 300, items: [
+        {weightKg: 10, lengthCm: 121, widthCm: 10, heightCm: 10, qty: 1, hazmat: false, volumetric: 2.42, billable: 10},
+      ], weight: 10, hazmat: false, oversize: true, surcharges: ["oversize"], fees: [15], base: 15, cost: 30, freeShipping: false, charge: 30, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    // 120 cm is not oversize; a cart total of exactly 100 ships free.
+    [
+      {shipment: {destination: "DOM", express: false, cartTotal: 100, items: [{weightKg: 1, lengthCm: 120, widthCm: 10, heightCm: 10, qty: 1, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: false, cartTotal: 100, items: [
+        {weightKg: 1, lengthCm: 120, widthCm: 10, heightCm: 10, qty: 1, hazmat: false, volumetric: 2.4, billable: 2.4},
+      ], weight: 2.4, hazmat: false, oversize: false, surcharges: [], fees: [], base: 7.4, cost: 7.4, freeShipping: true, charge: 0, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    [
+      {shipment: {destination: "ISL", express: true, cartTotal: 20, items: [{weightKg: 1, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 3, hazmat: false}]}, zone: [{id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+      {shipment: {destination: {id: "ISL", baseRate: 12, perKg: 2.5, remote: true}, express: true, cartTotal: 20, items: [
+        {weightKg: 1, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 3, hazmat: false, volumetric: 0.2, billable: 3},
+      ], weight: 3, hazmat: false, oversize: false, surcharges: ["remote"], fees: [10], base: 19.5, cost: 44.25, freeShipping: false, charge: 44.25, shippable: true}, zone: [{id: "ISL", baseRate: 12, perKg: 2.5, remote: true}]},
+    ],
+    // Hazardous goods ship domestically, but not by express.
+    [
+      {shipment: {destination: "DOM", express: true, cartTotal: 10, items: [{weightKg: 1, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: true}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: true, cartTotal: 10, items: [
+        {weightKg: 1, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: true, volumetric: 0.2, billable: 1},
+      ], weight: 1, hazmat: true, oversize: false, surcharges: ["hazmat"], fees: [25], base: 6, cost: 46.5, freeShipping: false, charge: 46.5, shippable: false}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    [
+      {shipment: {destination: "DOM", express: false, cartTotal: 0, items: []}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+      {shipment: {destination: {id: "DOM", baseRate: 5, perKg: 1, remote: false}, express: false, cartTotal: 0, items: [], weight: 0, hazmat: false, oversize: false, surcharges: [], fees: [], base: 5, cost: 5, freeShipping: false, charge: 5, shippable: true}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]},
+    ],
+    {
+      input: {shipment: {items: [{weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, qty: 1, hazmat: false}]}},
+      goals: ["shipment.weight"],
+      output: {shipment: {items: [{weightKg: 1, lengthCm: 50, widthCm: 40, heightCm: 30, qty: 1, hazmat: false, volumetric: 12, billable: 12}], weight: 12}},
+    },
+    [{shipment: {destination: "MARS", express: false, cartTotal: 0, items: []}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]}, "!error: InputValidationFailed"],
+    [{shipment: {destination: "DOM", cartTotal: 0, items: []}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]}, "!error: MissingRequiredInputs"],
+    [{shipment: {destination: "DOM", express: false, cartTotal: 0, items: [{lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: false}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]}, "!error: ExpressionFailed"],
+    [{shipment: {destination: "DOM", express: false, cartTotal: 0, items: [{weightKg: 1, lengthCm: 10, widthCm: 10, heightCm: 10, qty: 1, hazmat: "no"}]}, zone: [{id: "DOM", baseRate: 5, perKg: 1, remote: false}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Sales tax ---------------------------------------------------------------------------------
+// The ship-to jurisdiction is a reference; per-line blocks read it through the root. Clothing
+// under an optional per-jurisdiction threshold is exempt; a per-line table maps tax codes to a
+// taxable share; tax rounds per line; shipping is taxed only where the jurisdiction says so;
+// an exemption certificate zeroes everything.
+
+{
+  name: "sales tax by referenced jurisdiction",
+  policy: {
+    models: {
+      order: {shipTo: "&jurisdiction", shippingFee: "number", exemptCertificate: "boolean", lines: "line[]"},
+      jurisdiction: {id: "string", stateRate: "number", localRate: "number", taxesShipping: "boolean", clothingExemptUnder: "number?"},
+      line: {taxCode: "string(general|clothing|food|digital|service)", amount: "number"},
+    },
+    blocks: [
+      {expression: "line.clothingExempt", value: "line.taxCode == 'clothing' and line.amount < (order.shipTo.clothingExemptUnder ?? 0)"},
+      {table: "taxable", inputs: ["line.taxCode", "line.clothingExempt"], outputs: ["line.taxablePct"], rules: [
+        ["'food', 'service'", "", "0"],
+        ["", "true", "0"],
+        ["'digital'", "", "0.5"],
+        ["", "", "1"],
+      ]},
+      {expression: "line.tax", value: "order.exemptCertificate ? 0 : round(line.amount * line.taxablePct * (order.shipTo.stateRate + order.shipTo.localRate), 2)"},
+      {expression: "order.itemsTotal", value: "sum(map(order.lines, #.amount))"},
+      {expression: "order.shippingTax", value: "(order.exemptCertificate or not order.shipTo.taxesShipping) ? 0 : round(order.shippingFee * (order.shipTo.stateRate + order.shipTo.localRate), 2)"},
+      {expression: "order.taxTotal", value: "sum(map(order.lines, #.tax)) + order.shippingTax"},
+      {expression: "order.grandTotal", value: "order.itemsTotal + order.shippingFee + order.taxTotal"},
+      {expression: "order.effectiveRate", value: "order.itemsTotal > 0 ? round(order.taxTotal / order.itemsTotal, 4) : 0"},
+    ],
+  },
+  cases: [
+    [
+      {order: {shipTo: "NY", shippingFee: 10, exemptCertificate: false, lines: [{taxCode: "general", amount: 100}, {taxCode: "clothing", amount: 50}, {taxCode: "clothing", amount: 200}, {taxCode: "food", amount: 30}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, {id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+      {order: {shipTo: {id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, shippingFee: 10, exemptCertificate: false, lines: [
+        {taxCode: "general", amount: 100, clothingExempt: false, taxablePct: 1, tax: 8.5},
+        {taxCode: "clothing", amount: 50, clothingExempt: true, taxablePct: 0, tax: 0},
+        {taxCode: "clothing", amount: 200, clothingExempt: false, taxablePct: 1, tax: 17},
+        {taxCode: "food", amount: 30, clothingExempt: false, taxablePct: 0, tax: 0},
+      ], itemsTotal: 380, shippingTax: 0.85, taxTotal: 26.35, grandTotal: 416.35, effectiveRate: 0.0693}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, {id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+    ],
+    // No clothing threshold: clothing is always taxed; digital goods are half taxable; shipping
+    // is untaxed.
+    [
+      {order: {shipTo: "CA", shippingFee: 10, exemptCertificate: false, lines: [{taxCode: "clothing", amount: 50}, {taxCode: "digital", amount: 20}, {taxCode: "service", amount: 100}]}, jurisdiction: [{id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+      {order: {shipTo: {id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}, shippingFee: 10, exemptCertificate: false, lines: [
+        {taxCode: "clothing", amount: 50, clothingExempt: false, taxablePct: 1, tax: 4.25},
+        {taxCode: "digital", amount: 20, clothingExempt: false, taxablePct: 0.5, tax: 0.85},
+        {taxCode: "service", amount: 100, clothingExempt: false, taxablePct: 0, tax: 0},
+      ], itemsTotal: 170, shippingTax: 0, taxTotal: 5.1, grandTotal: 185.1, effectiveRate: 0.03}, jurisdiction: [{id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+    ],
+    [
+      {order: {shipTo: "NY", shippingFee: 20, exemptCertificate: true, lines: [{taxCode: "general", amount: 1000}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+      {order: {shipTo: {id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, shippingFee: 20, exemptCertificate: true, lines: [
+        {taxCode: "general", amount: 1000, clothingExempt: false, taxablePct: 1, tax: 0},
+      ], itemsTotal: 1000, shippingTax: 0, taxTotal: 0, grandTotal: 1020, effectiveRate: 0}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+    ],
+    [
+      {order: {shipTo: "OR", shippingFee: 5, exemptCertificate: false, lines: [{taxCode: "general", amount: 99.99}]}, jurisdiction: [{id: "OR", stateRate: 0, localRate: 0, taxesShipping: true, clothingExemptUnder: null}]},
+      {order: {shipTo: {id: "OR", stateRate: 0, localRate: 0, taxesShipping: true, clothingExemptUnder: null}, shippingFee: 5, exemptCertificate: false, lines: [
+        {taxCode: "general", amount: 99.99, clothingExempt: false, taxablePct: 1, tax: 0},
+      ], itemsTotal: 99.99, shippingTax: 0, taxTotal: 0, grandTotal: 104.99, effectiveRate: 0}, jurisdiction: [{id: "OR", stateRate: 0, localRate: 0, taxesShipping: true, clothingExemptUnder: null}]},
+    ],
+    // The clothing threshold is exclusive.
+    [
+      {order: {shipTo: "NY", shippingFee: 0, exemptCertificate: false, lines: [{taxCode: "clothing", amount: 110}, {taxCode: "clothing", amount: 109.99}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+      {order: {shipTo: {id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, shippingFee: 0, exemptCertificate: false, lines: [
+        {taxCode: "clothing", amount: 110, clothingExempt: false, taxablePct: 1, tax: 9.35},
+        {taxCode: "clothing", amount: 109.99, clothingExempt: true, taxablePct: 0, tax: 0},
+      ], itemsTotal: 219.99, shippingTax: 0, taxTotal: 9.35, grandTotal: 229.34, effectiveRate: 0.0425}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+    ],
+    [
+      {order: {shipTo: "NY", shippingFee: 7.5, exemptCertificate: false, lines: []}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+      {order: {shipTo: {id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, shippingFee: 7.5, exemptCertificate: false, lines: [], itemsTotal: 0, shippingTax: 0.64, taxTotal: 0.64, grandTotal: 8.14, effectiveRate: 0}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+    ],
+    // Rounding per line loses a cent against rounding the total.
+    [
+      {order: {shipTo: "NY", shippingFee: 0, exemptCertificate: false, lines: [{taxCode: "general", amount: 0.99}, {taxCode: "general", amount: 0.99}, {taxCode: "general", amount: 0.99}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+      {order: {shipTo: {id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}, shippingFee: 0, exemptCertificate: false, lines: [
+        {taxCode: "general", amount: 0.99, clothingExempt: false, taxablePct: 1, tax: 0.08},
+        {taxCode: "general", amount: 0.99, clothingExempt: false, taxablePct: 1, tax: 0.08},
+        {taxCode: "general", amount: 0.99, clothingExempt: false, taxablePct: 1, tax: 0.08},
+      ], itemsTotal: 2.97, shippingTax: 0, taxTotal: 0.24, grandTotal: 3.21, effectiveRate: 0.0808}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true, clothingExemptUnder: 110}]},
+    ],
+    // A refund line (negative amount) reduces tax.
+    [
+      {order: {shipTo: "CA", shippingFee: 0, exemptCertificate: false, lines: [{taxCode: "general", amount: 100}, {taxCode: "general", amount: -40}]}, jurisdiction: [{id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+      {order: {shipTo: {id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}, shippingFee: 0, exemptCertificate: false, lines: [
+        {taxCode: "general", amount: 100, clothingExempt: false, taxablePct: 1, tax: 8.5},
+        {taxCode: "general", amount: -40, clothingExempt: false, taxablePct: 1, tax: -3.4},
+      ], itemsTotal: 60, shippingTax: 0, taxTotal: 5.1, grandTotal: 65.1, effectiveRate: 0.085}, jurisdiction: [{id: "CA", stateRate: 0.0725, localRate: 0.0125, taxesShipping: false}]},
+    ],
+    {
+      input: {order: {lines: [{taxCode: "general", amount: 5}, {taxCode: "food", amount: 7}]}},
+      goals: ["order.itemsTotal"],
+      output: {order: {lines: [{taxCode: "general", amount: 5}, {taxCode: "food", amount: 7}], itemsTotal: 12}},
+    },
+    [{order: {shipTo: "TX", shippingFee: 0, exemptCertificate: false, lines: []}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true}]}, "!error: InputValidationFailed"],
+    [{order: {shipTo: "NY", shippingFee: 0, exemptCertificate: false, lines: [{taxCode: "alcohol", amount: 1}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true}]}, "!error: InputValidationFailed"],
+    [{order: {shipTo: "NY", exemptCertificate: false, lines: []}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true}]}, "!error: MissingRequiredInputs"],
+    [{order: {shipTo: "NY", shippingFee: 0, exemptCertificate: false, lines: [{taxCode: "general"}]}, jurisdiction: [{id: "NY", stateRate: 0.04, localRate: 0.045, taxesShipping: true}]}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Loyalty -----------------------------------------------------------------------------------
+// Orders within twelve months count. Per-order points use a multiplier match (returns earn
+// nothing, app orders double) and `floor`; yearly spend sets the next tier through a table;
+// the tier change match lets long-standing members keep their tier for a grace year.
+
+{
+  name: "loyalty points and tier progression",
+  policy: {
+    globals: {loyalty: {pointsPerUnit: "number"}},
+    models: {
+      customer: {tier: "string(bronze|silver|gold)", pointsBalance: "number", joined: "date", orders: "order[]"},
+      order: {placed: "date", amount: "number", returned: "boolean", channel: "string(web|app|store)"},
+    },
+    blocks: [
+      {expression: "order.recent", value: "d().diff(order.placed, 'month') < 12"},
+      {match: "order.multiplier", arms: [
+        ["order.returned", "0"],
+        ["order.channel == 'app'", "2"],
+        ["", "1"],
+      ]},
+      {expression: "order.points", value: "floor(order.amount * pointsPerUnit * order.multiplier)"},
+      {expression: "customer.yearSpend", value: "sum(map(filter(customer.orders, #.recent and not #.returned), #.amount))"},
+      {expression: "customer.earned", value: "sum(map(filter(customer.orders, #.recent), #.points))"},
+      {expression: "customer.newBalance", value: "customer.pointsBalance + customer.earned"},
+      {table: "nextTier", inputs: ["customer.yearSpend"], outputs: ["customer.nextTier"], rules: [
+        [">= 5000", "'gold'"],
+        [">= 1000", "'silver'"],
+        ["", "'bronze'"],
+      ]},
+      {expression: "customer.tenureYears", value: "d().diff(customer.joined, 'year')"},
+      {match: "customer.tierChange", arms: [
+        ["customer.nextTier == customer.tier", "'keep'"],
+        ["customer.nextTier == 'gold' or (customer.nextTier == 'silver' and customer.tier == 'bronze')", "'upgrade'"],
+        ["customer.tenureYears >= 5", "'grace'"],
+        ["", "'downgrade'"],
+      ]},
+      {expression: "customer.vouchers", value: "floor(customer.newBalance / 1000)"},
+    ],
+  },
+  cases: [
+    [
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 200, joined: "2022-01-01", orders: [
+        {placed: "2025-01-10", amount: 300, returned: false, channel: "web"},
+        {placed: "2024-12-01", amount: 800, returned: false, channel: "app"},
+      ]}},
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 200, joined: "2022-01-01", orders: [
+        {placed: "2025-01-10", amount: 300, returned: false, channel: "web", recent: true, multiplier: 1, points: 300},
+        {placed: "2024-12-01", amount: 800, returned: false, channel: "app", recent: true, multiplier: 2, points: 1600},
+      ], yearSpend: 1100, earned: 1900, newBalance: 2100, nextTier: "silver", tenureYears: 3, tierChange: "upgrade", vouchers: 2}},
+    ],
+    // Gold falling to silver keeps gold for a grace year after five years of membership...
+    [
+      {pointsPerUnit: 1, customer: {tier: "gold", pointsBalance: 0, joined: "2010-01-01", orders: [{placed: "2024-06-01", amount: 2000, returned: false, channel: "store"}]}},
+      {pointsPerUnit: 1, customer: {tier: "gold", pointsBalance: 0, joined: "2010-01-01", orders: [
+        {placed: "2024-06-01", amount: 2000, returned: false, channel: "store", recent: true, multiplier: 1, points: 2000},
+      ], yearSpend: 2000, earned: 2000, newBalance: 2000, nextTier: "silver", tenureYears: 15, tierChange: "grace", vouchers: 2}},
+    ],
+    // ...but is downgraded with less tenure.
+    [
+      {pointsPerUnit: 1, customer: {tier: "gold", pointsBalance: 0, joined: "2023-01-01", orders: [{placed: "2024-06-01", amount: 2000, returned: false, channel: "store"}]}},
+      {pointsPerUnit: 1, customer: {tier: "gold", pointsBalance: 0, joined: "2023-01-01", orders: [
+        {placed: "2024-06-01", amount: 2000, returned: false, channel: "store", recent: true, multiplier: 1, points: 2000},
+      ], yearSpend: 2000, earned: 2000, newBalance: 2000, nextTier: "silver", tenureYears: 2, tierChange: "downgrade", vouchers: 2}},
+    ],
+    // A returned app order earns nothing and does not count as spend; points are floored.
+    [
+      {pointsPerUnit: 1, customer: {tier: "silver", pointsBalance: 50, joined: "2020-06-01", orders: [
+        {placed: "2025-02-01", amount: 1500, returned: true, channel: "app"},
+        {placed: "2025-03-01", amount: 999.99, returned: false, channel: "web"},
+      ]}},
+      {pointsPerUnit: 1, customer: {tier: "silver", pointsBalance: 50, joined: "2020-06-01", orders: [
+        {placed: "2025-02-01", amount: 1500, returned: true, channel: "app", recent: true, multiplier: 0, points: 0},
+        {placed: "2025-03-01", amount: 999.99, returned: false, channel: "web", recent: true, multiplier: 1, points: 999},
+      ], yearSpend: 999.99, earned: 999, newBalance: 1049, nextTier: "bronze", tenureYears: 4, tierChange: "downgrade", vouchers: 1}},
+    ],
+    // An order exactly twelve months old no longer counts.
+    [
+      {pointsPerUnit: 1, customer: {tier: "silver", pointsBalance: 0, joined: "2015-01-01", orders: [
+        {placed: "2024-03-20", amount: 5000, returned: false, channel: "web"},
+        {placed: "2024-03-21", amount: 1000, returned: false, channel: "web"},
+      ]}},
+      {pointsPerUnit: 1, customer: {tier: "silver", pointsBalance: 0, joined: "2015-01-01", orders: [
+        {placed: "2024-03-20", amount: 5000, returned: false, channel: "web", recent: false, multiplier: 1, points: 5000},
+        {placed: "2024-03-21", amount: 1000, returned: false, channel: "web", recent: true, multiplier: 1, points: 1000},
+      ], yearSpend: 1000, earned: 1000, newBalance: 1000, nextTier: "silver", tenureYears: 10, tierChange: "keep", vouchers: 1}},
+    ],
+    [
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 10, joined: "2024-01-01", orders: [
+        {placed: "2025-03-19", amount: 2500, returned: false, channel: "app"},
+        {placed: "2025-01-01", amount: 2500, returned: false, channel: "store"},
+      ]}},
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 10, joined: "2024-01-01", orders: [
+        {placed: "2025-03-19", amount: 2500, returned: false, channel: "app", recent: true, multiplier: 2, points: 5000},
+        {placed: "2025-01-01", amount: 2500, returned: false, channel: "store", recent: true, multiplier: 1, points: 2500},
+      ], yearSpend: 5000, earned: 7500, newBalance: 7510, nextTier: "gold", tenureYears: 1, tierChange: "upgrade", vouchers: 7}},
+    ],
+    [
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 999, joined: "2024-01-01", orders: []}},
+      {pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 999, joined: "2024-01-01", orders: [], yearSpend: 0, earned: 0, newBalance: 999, nextTier: "bronze", tenureYears: 1, tierChange: "keep", vouchers: 0}},
+    ],
+    [
+      {pointsPerUnit: 1.5, customer: {tier: "silver", pointsBalance: 0, joined: "2019-01-01", orders: [{placed: "2025-01-01", amount: 33.33, returned: false, channel: "web"}]}},
+      {pointsPerUnit: 1.5, customer: {tier: "silver", pointsBalance: 0, joined: "2019-01-01", orders: [
+        {placed: "2025-01-01", amount: 33.33, returned: false, channel: "web", recent: true, multiplier: 1, points: 49},
+      ], yearSpend: 33.33, earned: 49, newBalance: 49, nextTier: "bronze", tenureYears: 6, tierChange: "grace", vouchers: 0}},
+    ],
+    {
+      input: {customer: {orders: [{placed: "2025-01-01", amount: 6000, returned: false}]}},
+      goals: ["customer.nextTier"],
+      output: {customer: {orders: [{placed: "2025-01-01", amount: 6000, returned: false, recent: true}], yearSpend: 6000, nextTier: "gold"}},
+    },
+    [{pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 0, joined: "2024-01-01", orders: [{placed: "2025-01-01", amount: 1, returned: false, channel: "phone"}]}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "bronze", pointsBalance: 0, joined: "2024-01-01", orders: []}}, "!error: MissingRequiredInputs"],
+    [{pointsPerUnit: 1, customer: {tier: "diamond", pointsBalance: 0, joined: "2024-01-01", orders: []}}, "!error: InputValidationFailed"],
+    // An order without `returned`: the multiplier match falls through on null, but the spend
+    // filter's `not null` is an error.
+    [{pointsPerUnit: 1, customer: {tier: "bronze", pointsBalance: 0, joined: "2024-01-01", orders: [{placed: "2025-01-01", amount: 10, channel: "web"}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Checkout fraud scoring --------------------------------------------------------------------
+// Root signals from the checkout, a disposable email suffix test, recent declined attempts
+// (strictly within 24 hours) and prepaid cards from members, high-risk geography from a global
+// list. One first-hit table collects signal names and their points in two `[]` columns; the
+// score adds a large-amount bump; a decision match reads a global review threshold.
+
+{
+  name: "checkout fraud signals and scoring",
+  policy: {
+    globals: {risk: {highRiskCountries: "string[]", reviewThreshold: "number"}},
+    models: {
+      checkout: {amount: "number", accountAgeDays: "number", email: "string", billingCountry: "string", shippingCountry: "string", ipCountry: "string", cards: "card[]", attempts: "attempt[]"},
+      card: {bin: "string", country: "string", prepaid: "boolean"},
+      attempt: {at: "date", declined: "boolean"},
+    },
+    blocks: [
+      {expression: "checkout.countryMismatch", value: "checkout.billingCountry != checkout.shippingCountry or checkout.billingCountry != checkout.ipCountry"},
+      {expression: "checkout.disposableEmail", value: "endsWith(checkout.email, '@mailinator.com') or endsWith(checkout.email, '@tempmail.io')"},
+      {expression: "attempt.recent", value: "attempt.at > d().add(-24, 'hour')"},
+      {expression: "checkout.recentDeclines", value: "count(checkout.attempts, #.recent and #.declined)"},
+      {expression: "checkout.prepaidCards", value: "count(checkout.cards, #.prepaid)"},
+      {expression: "checkout.highRiskGeo", value: "checkout.ipCountry in highRiskCountries or checkout.shippingCountry in highRiskCountries"},
+      {table: "signals", inputs: ["checkout.countryMismatch", "checkout.disposableEmail", "checkout.recentDeclines", "checkout.prepaidCards", "checkout.highRiskGeo", "checkout.accountAgeDays"], outputs: ["checkout.signals[]", "checkout.points[]"], rules: [
+        ["true", "", "", "", "", "", "'country-mismatch'", "15"],
+        ["", "true", "", "", "", "", "'disposable-email'", "20"],
+        ["", "", ">= 3", "", "", "", "'velocity'", "30"],
+        ["", "", "", "> 0", "", "", "'prepaid'", "10"],
+        ["", "", "", "", "true", "", "'high-risk-geo'", "40"],
+        ["", "", "", "", "", "< 7", "'new-account'", "15"],
+      ]},
+      {expression: "checkout.score", value: "sum(checkout.points) + (checkout.amount > 1000 ? 10 : 0)"},
+      {match: "checkout.decision", arms: [
+        ["checkout.score >= 70", "'decline'"],
+        ["checkout.score >= reviewThreshold", "'review'"],
+        ["checkout.score > 0 and checkout.amount > 500", "'step-up'"],
+        ["", "'accept'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 120, accountAgeDays: 400, email: "kari@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [{bin: "411111", country: "NO", prepaid: false}], attempts: []}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 120, accountAgeDays: 400, email: "kari@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [{bin: "411111", country: "NO", prepaid: false}], attempts: [],
+        countryMismatch: false, disposableEmail: false, recentDeclines: 0, prepaidCards: 0, highRiskGeo: false, signals: [], points: [], score: 0, decision: "accept"}},
+    ],
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 600, accountAgeDays: 3, email: "a@example.no", billingCountry: "NO", shippingCountry: "SE", ipCountry: "NO", cards: [{bin: "411111", country: "NO", prepaid: false}], attempts: [{at: "2025-03-20T09:00:00Z", declined: true}]}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 600, accountAgeDays: 3, email: "a@example.no", billingCountry: "NO", shippingCountry: "SE", ipCountry: "NO", cards: [{bin: "411111", country: "NO", prepaid: false}], attempts: [{at: "2025-03-20T09:00:00Z", declined: true, recent: true}],
+        countryMismatch: true, disposableEmail: false, recentDeclines: 1, prepaidCards: 0, highRiskGeo: false, signals: ["country-mismatch", "new-account"], points: [15, 15], score: 30, decision: "review"}},
+    ],
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 50, accountAgeDays: 100, email: "b@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [
+        {at: "2025-03-20T08:00:00Z", declined: true},
+        {at: "2025-03-19T12:00:00Z", declined: true},
+        {at: "2025-03-19T10:15:31Z", declined: true},
+      ]}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 50, accountAgeDays: 100, email: "b@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [
+        {at: "2025-03-20T08:00:00Z", declined: true, recent: true},
+        {at: "2025-03-19T12:00:00Z", declined: true, recent: true},
+        {at: "2025-03-19T10:15:31Z", declined: true, recent: true},
+      ], countryMismatch: false, disposableEmail: false, recentDeclines: 3, prepaidCards: 0, highRiskGeo: false, signals: ["velocity"], points: [30], score: 30, decision: "review"}},
+    ],
+    // A decline exactly 24 hours ago is not recent; a clean large order is stepped up only
+    // through the amount bump.
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 2000, accountAgeDays: 30, email: "c@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [
+        {at: "2025-03-19T10:15:30Z", declined: true},
+        {at: "2025-03-20T10:00:00Z", declined: true},
+        {at: "2025-03-20T10:10:00Z", declined: false},
+      ]}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 2000, accountAgeDays: 30, email: "c@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [
+        {at: "2025-03-19T10:15:30Z", declined: true, recent: false},
+        {at: "2025-03-20T10:00:00Z", declined: true, recent: true},
+        {at: "2025-03-20T10:10:00Z", declined: false, recent: true},
+      ], countryMismatch: false, disposableEmail: false, recentDeclines: 1, prepaidCards: 0, highRiskGeo: false, signals: [], points: [], score: 10, decision: "step-up"}},
+    ],
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 80, accountAgeDays: 10, email: "x@mailinator.com", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NG", cards: [{bin: "522222", country: "NO", prepaid: true}], attempts: []}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 80, accountAgeDays: 10, email: "x@mailinator.com", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NG", cards: [{bin: "522222", country: "NO", prepaid: true}], attempts: [],
+        countryMismatch: true, disposableEmail: true, recentDeclines: 0, prepaidCards: 1, highRiskGeo: true, signals: ["country-mismatch", "disposable-email", "prepaid", "high-risk-geo"], points: [15, 20, 10, 40], score: 85, decision: "decline"}},
+    ],
+    // An amount of exactly 1000 adds nothing and seven days is no longer a new account.
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 1000, accountAgeDays: 7, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: []}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 1000, accountAgeDays: 7, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [],
+        countryMismatch: false, disposableEmail: false, recentDeclines: 0, prepaidCards: 0, highRiskGeo: false, signals: [], points: [], score: 0, decision: "accept"}},
+    ],
+    // A lower global threshold sends a single signal to review.
+    [
+      {highRiskCountries: [], reviewThreshold: 15, checkout: {amount: 100, accountAgeDays: 50, email: "d@tempmail.io.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "SE", cards: [], attempts: []}},
+      {highRiskCountries: [], reviewThreshold: 15, checkout: {amount: 100, accountAgeDays: 50, email: "d@tempmail.io.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "SE", cards: [], attempts: [],
+        countryMismatch: true, disposableEmail: false, recentDeclines: 0, prepaidCards: 0, highRiskGeo: false, signals: ["country-mismatch"], points: [15], score: 15, decision: "review"}},
+    ],
+    [
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 700, accountAgeDays: 365, email: "e@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [{bin: "1", country: "NO", prepaid: true}, {bin: "2", country: "SE", prepaid: true}], attempts: []}},
+      {highRiskCountries: ["NG", "KP"], reviewThreshold: 30, checkout: {amount: 700, accountAgeDays: 365, email: "e@example.no", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [{bin: "1", country: "NO", prepaid: true}, {bin: "2", country: "SE", prepaid: true}], attempts: [],
+        countryMismatch: false, disposableEmail: false, recentDeclines: 0, prepaidCards: 2, highRiskGeo: false, signals: ["prepaid"], points: [10], score: 10, decision: "step-up"}},
+    ],
+    {
+      input: {checkout: {attempts: [{at: "2025-03-20T10:00:00Z", declined: true}, {at: "2025-03-01", declined: true}]}},
+      goals: ["checkout.recentDeclines"],
+      output: {checkout: {attempts: [{at: "2025-03-20T10:00:00Z", declined: true, recent: true}, {at: "2025-03-01", declined: true, recent: false}], recentDeclines: 1}},
+    },
+    [{highRiskCountries: ["NG"], checkout: {amount: 1, accountAgeDays: 1, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: []}}, "!error: MissingRequiredInputs"],
+    [{highRiskCountries: ["NG"], reviewThreshold: 30, checkout: {amount: 1, accountAgeDays: 1, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: [{at: "now", declined: true}]}}, "!error: InputValidationFailed"],
+    [{highRiskCountries: "NG", reviewThreshold: 30, checkout: {amount: 1, accountAgeDays: 1, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [], attempts: []}}, "!error: InputValidationFailed"],
+    [{highRiskCountries: ["NG"], reviewThreshold: 30, checkout: {amount: 1, accountAgeDays: 1, email: "", billingCountry: "NO", shippingCountry: "NO", ipCountry: "NO", cards: [{bin: "1", country: "NO"}], attempts: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Marketplace settlement --------------------------------------------------------------------
+// Sellers are members that select their own lines from the order's line list by id. A
+// per-seller commission table reads globals in its output cells (luxury adds three points), a
+// cross-border fee applies only to sellers with lines, a hold match flags low ratings and large
+// payouts, lines whose seller is not on the order are orphans, and settlement is an assertion.
+
+{
+  name: "marketplace settlement by seller",
+  policy: {
+    globals: {market: {commissionBasic: "number", commissionPro: "number"}},
+    models: {
+      order: {buyerCountry: "string", lines: "line[]", sellers: "seller[]"},
+      line: {seller: "string", price: "number", qty: "number", category: "string(standard|luxury)"},
+      seller: {id: "string", country: "string", plan: "string(basic|pro)", rating: "number"},
+    },
+    blocks: [
+      {expression: "seller.lines", value: "count(order.lines, #.seller == seller.id)"},
+      {expression: "seller.gross", value: "sum(map(filter(order.lines, #.seller == seller.id), #.price * #.qty))"},
+      {expression: "seller.luxury", value: "some(order.lines, #.seller == seller.id and #.category == 'luxury')"},
+      {table: "commission", inputs: ["seller.plan", "seller.luxury"], outputs: ["seller.commissionRate"], rules: [
+        ["'pro'", "true", "commissionPro + 0.03"],
+        ["'pro'", "", "commissionPro"],
+        ["", "true", "commissionBasic + 0.03"],
+        ["", "", "commissionBasic"],
+      ]},
+      {expression: "seller.commission", value: "round(seller.gross * seller.commissionRate, 2)"},
+      {expression: "seller.crossBorder", value: "seller.country != order.buyerCountry"},
+      {expression: "seller.payout", value: "seller.gross - seller.commission - (seller.crossBorder and seller.lines > 0 ? 2 : 0)"},
+      {match: "seller.hold", arms: [
+        ["seller.rating < 3", "true"],
+        ["seller.payout > 5000 and seller.rating < 4", "true"],
+        ["", "false"],
+      ]},
+      {expression: "order.total", value: "sum(map(order.lines, #.price * #.qty))"},
+      {expression: "order.platformRevenue", value: "sum(map(order.sellers, #.commission))"},
+      {expression: "order.sellerIds", value: "map(order.sellers, #.id)"},
+      {expression: "order.orphanLines", value: "count(order.lines, not (#.seller in order.sellerIds))"},
+      {assertion: "order.settleable", conditions: ["order.orphanLines == 0", "none(order.sellers, #.hold)"]},
+    ],
+  },
+  cases: [
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 100, qty: 2, category: "standard"}, {seller: "s2", price: 50, qty: 1, category: "luxury"}], sellers: [{id: "s1", country: "NO", plan: "pro", rating: 4.5}, {id: "s2", country: "SE", plan: "basic", rating: 4}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 100, qty: 2, category: "standard"}, {seller: "s2", price: 50, qty: 1, category: "luxury"}], sellers: [
+        {id: "s1", country: "NO", plan: "pro", rating: 4.5, lines: 1, gross: 200, luxury: false, commissionRate: 0.07, commission: 14, crossBorder: false, payout: 186, hold: false},
+        {id: "s2", country: "SE", plan: "basic", rating: 4, lines: 1, gross: 50, luxury: true, commissionRate: 0.13, commission: 6.5, crossBorder: true, payout: 41.5, hold: false},
+      ], total: 250, platformRevenue: 20.5, sellerIds: ["s1", "s2"], orphanLines: 0, settleable: true}},
+    ],
+    // A line for a seller missing from the order, and a low-rated seller on hold.
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 10, qty: 1, category: "standard"}, {seller: "s9", price: 5, qty: 1, category: "standard"}], sellers: [{id: "s1", country: "NO", plan: "basic", rating: 2.5}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 10, qty: 1, category: "standard"}, {seller: "s9", price: 5, qty: 1, category: "standard"}], sellers: [
+        {id: "s1", country: "NO", plan: "basic", rating: 2.5, lines: 1, gross: 10, luxury: false, commissionRate: 0.1, commission: 1, crossBorder: false, payout: 9, hold: true},
+      ], total: 15, platformRevenue: 1, sellerIds: ["s1"], orphanLines: 1, settleable: false}},
+    ],
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 6000, qty: 1, category: "luxury"}], sellers: [{id: "s1", country: "DE", plan: "pro", rating: 3.9}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 6000, qty: 1, category: "luxury"}], sellers: [
+        {id: "s1", country: "DE", plan: "pro", rating: 3.9, lines: 1, gross: 6000, luxury: true, commissionRate: 0.1, commission: 600, crossBorder: true, payout: 5398, hold: true},
+      ], total: 6000, platformRevenue: 600, sellerIds: ["s1"], orphanLines: 0, settleable: false}},
+    ],
+    // A foreign seller without lines pays no cross-border fee.
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 20, qty: 3, category: "standard"}], sellers: [{id: "s1", country: "NO", plan: "basic", rating: 5}, {id: "s2", country: "SE", plan: "pro", rating: 5}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 20, qty: 3, category: "standard"}], sellers: [
+        {id: "s1", country: "NO", plan: "basic", rating: 5, lines: 1, gross: 60, luxury: false, commissionRate: 0.1, commission: 6, crossBorder: false, payout: 54, hold: false},
+        {id: "s2", country: "SE", plan: "pro", rating: 5, lines: 0, gross: 0, luxury: false, commissionRate: 0.07, commission: 0, crossBorder: true, payout: 0, hold: false},
+      ], total: 60, platformRevenue: 6, sellerIds: ["s1", "s2"], orphanLines: 0, settleable: true}},
+    ],
+    // A rating of exactly 3 is not held.
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 5000, qty: 1, category: "standard"}], sellers: [{id: "s1", country: "NO", plan: "basic", rating: 3}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 5000, qty: 1, category: "standard"}], sellers: [
+        {id: "s1", country: "NO", plan: "basic", rating: 3, lines: 1, gross: 5000, luxury: false, commissionRate: 0.1, commission: 500, crossBorder: false, payout: 4500, hold: false},
+      ], total: 5000, platformRevenue: 500, sellerIds: ["s1"], orphanLines: 0, settleable: true}},
+    ],
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 10, qty: 1, category: "standard"}, {seller: "s1", price: 20, qty: 2, category: "luxury"}], sellers: [{id: "s1", country: "NO", plan: "pro", rating: 4.2}]}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 10, qty: 1, category: "standard"}, {seller: "s1", price: 20, qty: 2, category: "luxury"}], sellers: [
+        {id: "s1", country: "NO", plan: "pro", rating: 4.2, lines: 2, gross: 50, luxury: true, commissionRate: 0.1, commission: 5, crossBorder: false, payout: 45, hold: false},
+      ], total: 50, platformRevenue: 5, sellerIds: ["s1"], orphanLines: 0, settleable: true}},
+    ],
+    [
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [], sellers: []}},
+      {commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [], sellers: [], total: 0, platformRevenue: 0, sellerIds: [], orphanLines: 0, settleable: true}},
+    ],
+    {
+      input: {order: {lines: [{seller: "a"}, {seller: "b"}, {seller: "a"}], sellers: [{id: "a"}]}},
+      goals: ["order.orphanLines"],
+      output: {order: {lines: [{seller: "a"}, {seller: "b"}, {seller: "a"}], sellers: [{id: "a"}], sellerIds: ["a"], orphanLines: 1}},
+    },
+    [{commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [], sellers: [{id: "s1", country: "NO", plan: "enterprise", rating: 5}]}}, "!error: InputValidationFailed"],
+    [{commissionBasic: 0.1, order: {buyerCountry: "NO", lines: [], sellers: []}}, "!error: MissingRequiredInputs"],
+    [{commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", qty: 1, category: "standard"}], sellers: [{id: "s1", country: "NO", plan: "basic", rating: 5}]}}, "!error: ExpressionFailed"],
+    [{commissionBasic: 0.1, commissionPro: 0.07, order: {buyerCountry: "NO", lines: [{seller: "s1", price: 1, qty: 1, category: "used"}], sellers: []}}, "!error: InputValidationFailed"],
+  ],
+}

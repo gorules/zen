@@ -1,0 +1,402 @@
+// Request goals. A request may name the properties it wants (`goals`); only the blocks those
+// goals depend on run, required inputs are checked for that cone only, and the output is the
+// input plus the writes that ran. Without goals every terminal write of the unit is a goal.
+
+// --- One goal evaluates only its cone ------------------------------------------------------
+
+{
+  name: "a single goal runs only its own block",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+      {expression: "customer.both", value: "customer.adult and customer.rich"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20, income: 5}}, goals: ["customer.adult"], output: {customer: {age: 20, income: 5, adult: true}}},
+    {input: {customer: {age: 3, income: 5000}}, goals: ["customer.adult"], output: {customer: {age: 3, income: 5000, adult: false}}},
+    {input: {customer: {age: 20, income: 5000}}, goals: ["customer.rich"], output: {customer: {age: 20, income: 5000, rich: true}}},
+    {input: {customer: {age: 20, income: 5}}, goals: ["customer.rich"], output: {customer: {age: 20, income: 5, rich: false}}},
+    {input: {customer: {age: 20, income: 5000}}, output: {customer: {age: 20, income: 5000, adult: true, rich: true, both: true}}},
+  ],
+}
+
+{
+  name: "a derived goal pulls in its dependencies but not its siblings",
+  policy: {
+    models: {customer: {age: "number", income: "number", city: "string"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+      {expression: "customer.both", value: "customer.adult and customer.rich"},
+      {expression: "customer.local", value: "customer.city == 'Oslo'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20, income: 5000, city: "Oslo"}}, goals: ["customer.both"], output: {customer: {age: 20, income: 5000, city: "Oslo", adult: true, rich: true, both: true}}},
+    {input: {customer: {age: 10, income: 5000, city: "Rome"}}, goals: ["customer.both"], output: {customer: {age: 10, income: 5000, city: "Rome", adult: false, rich: true, both: false}}},
+    {input: {customer: {age: 20, income: 5000}}, goals: ["customer.both"], output: {customer: {age: 20, income: 5000, adult: true, rich: true, both: true}}},
+    {input: {customer: {age: 20, income: 5000, city: "Oslo"}}, goals: ["customer.local"], output: {customer: {age: 20, income: 5000, city: "Oslo", local: true}}},
+    {input: {customer: {city: "Rome"}}, goals: ["customer.local"], output: {customer: {city: "Rome", local: false}}},
+  ],
+}
+
+{
+  name: "an intermediate goal does not run its dependents",
+  policy: {
+    models: {o: {qty: "number", price: "number"}},
+    blocks: [
+      {expression: "o.subtotal", value: "o.qty * o.price"},
+      {expression: "o.tax", value: "o.subtotal * 0.25"},
+      {expression: "o.total", value: "o.subtotal + o.tax"},
+    ],
+  },
+  cases: [
+    {input: {o: {qty: 2, price: 10}}, goals: ["o.subtotal"], output: {o: {qty: 2, price: 10, subtotal: 20}}},
+    {input: {o: {qty: 2, price: 10}}, goals: ["o.tax"], output: {o: {qty: 2, price: 10, subtotal: 20, tax: 5}}},
+    {input: {o: {qty: 2, price: 10}}, goals: ["o.total"], output: {o: {qty: 2, price: 10, subtotal: 20, tax: 5, total: 25}}},
+    {input: {o: {qty: 0, price: 10}}, goals: ["o.total"], output: {o: {qty: 0, price: 10, subtotal: 0, tax: 0, total: 0}}},
+    {input: {o: {qty: 3, price: 0.1}}, output: {o: {qty: 3, price: 0.1, subtotal: 0.3, tax: 0.075, total: 0.375}}},
+  ],
+}
+
+// --- Multiple goals --------------------------------------------------------------------------
+
+{
+  name: "multiple goals run the union of their cones",
+  policy: {
+    models: {customer: {age: "number", income: "number", city: "string"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+      {expression: "customer.local", value: "customer.city == 'Oslo'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20, income: 5, city: "Oslo"}}, goals: ["customer.adult", "customer.rich"], output: {customer: {age: 20, income: 5, city: "Oslo", adult: true, rich: false}}},
+    {input: {customer: {age: 20, income: 5, city: "Oslo"}}, goals: ["customer.rich", "customer.adult"], output: {customer: {age: 20, income: 5, city: "Oslo", adult: true, rich: false}}},
+    {input: {customer: {age: 20, income: 5, city: "Oslo"}}, goals: ["customer.adult", "customer.local"], output: {customer: {age: 20, income: 5, city: "Oslo", adult: true, local: true}}},
+    {input: {customer: {age: 20, income: 5, city: "Oslo"}}, goals: ["customer.adult", "customer.rich", "customer.local"], output: {customer: {age: 20, income: 5, city: "Oslo", adult: true, rich: false, local: true}}},
+    {input: {customer: {age: 20, income: 5, city: "Oslo"}}, goals: ["customer.adult", "customer.adult"], output: {customer: {age: 20, income: 5, city: "Oslo", adult: true}}},
+  ],
+}
+
+{
+  name: "overlapping goal cones share their common dependency",
+  policy: {
+    models: {o: {amount: "number"}},
+    blocks: [
+      {expression: "o.net", value: "o.amount * 0.8"},
+      {expression: "o.fee", value: "o.net * 0.1"},
+      {expression: "o.payout", value: "o.net - o.fee"},
+      {expression: "o.flag", value: "o.amount > 100"},
+    ],
+  },
+  cases: [
+    {input: {o: {amount: 100}}, goals: ["o.fee", "o.payout"], output: {o: {amount: 100, net: 80, fee: 8, payout: 72}}},
+    {input: {o: {amount: 100}}, goals: ["o.net", "o.flag"], output: {o: {amount: 100, net: 80, flag: false}}},
+    {input: {o: {amount: 0}}, goals: ["o.payout"], output: {o: {amount: 0, net: 0, fee: 0, payout: 0}}},
+    {input: {o: {amount: 1000}}, goals: ["o.flag"], output: {o: {amount: 1000, flag: true}}},
+  ],
+}
+
+// --- Goals limit the required inputs ---------------------------------------------------------
+
+{
+  name: "inputs outside the goal's cone may be missing",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, goals: ["customer.adult"], output: {customer: {age: 20, adult: true}}},
+    {input: {customer: {income: 5000}}, goals: ["customer.rich"], output: {customer: {income: 5000, rich: true}}},
+    {input: {customer: {age: 20, income: null}}, goals: ["customer.adult"], output: {customer: {age: 20, income: null, adult: true}}},
+    {input: {customer: {age: 20}}, output: "!error: MissingRequiredInputs"},
+    {input: {customer: {income: 5000}}, goals: ["customer.adult"], output: "!error: MissingRequiredInputs"},
+    {input: {customer: {}}, goals: ["customer.adult", "customer.rich"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "input validation applies to the whole input, not only the goal's cone",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.rich", value: "customer.income > 1000"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: "x", income: 5000}}, goals: ["customer.rich"], output: "!error: InputValidationFailed"},
+    {input: {customer: {age: 20, income: true}}, goals: ["customer.adult"], output: "!error: InputValidationFailed"},
+    {input: {customer: {age: 20, income: 5000}}, goals: ["customer.adult"], output: {customer: {age: 20, income: 5000, adult: true}}},
+  ],
+}
+
+{
+  name: "an error in a block outside the goal's cone does not surface",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.broken", value: "customer.name * 2"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20, name: "x"}}, goals: ["customer.adult"], output: {customer: {age: 20, name: "x", adult: true}}},
+    {input: {customer: {age: 2, name: "y"}}, goals: ["customer.adult"], output: {customer: {age: 2, name: "y", adult: false}}},
+    {input: {customer: {age: 20, name: "x"}}, goals: ["customer.broken"], output: "!error: ExpressionFailed"},
+    {input: {customer: {age: 20, name: "x"}}, output: "!error: ExpressionFailed"},
+  ],
+}
+
+// --- Goal validation -------------------------------------------------------------------------
+
+{
+  name: "unknown goals are rejected",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, goals: ["customer.nope"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: ["nope"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: [""], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: ["customer.adult", "customer.nope"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: ["customer.adult.x"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: ["Customer.Adult"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 20}}, goals: ["customer"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: "x"}}, goals: ["customer.nope"], output: "!error: GoalNotFound"},
+  ],
+}
+
+{
+  name: "a goal naming a read input property is accepted and runs nothing",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    {input: {customer: {age: 20, income: 5}}, goals: ["customer.age"], output: {customer: {age: 20, income: 5}}},
+    {input: {customer: {age: 20, income: 5}}, goals: ["customer.income"], output: "!error: GoalNotFound", note: "question: customer.age (read by a block) is an accepted goal while customer.income (declared, never read) is GoalNotFound"},
+    {input: {customer: {age: 20, income: 5}}, goals: ["customer.age", "customer.adult"], output: {customer: {age: 20, income: 5, adult: true}}},
+  ],
+}
+
+{
+  name: "a goal on a property written by a sibling outside the unit is unknown",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  policies: {
+    other: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.senior", value: "customer.age >= 65"}]},
+  },
+  cases: [
+    {input: {customer: {age: 70}}, goals: ["customer.senior"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: 70}}, goals: ["customer.adult"], output: {customer: {age: 70, adult: true}}},
+  ],
+}
+
+// --- Goals and block kinds ---------------------------------------------------------------------
+
+{
+  name: "a goal on one output of a multi-output table runs the whole table",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {table: "t", inputs: ["customer.age"], outputs: ["customer.band", "customer.rate"], rules: [["< 18", "'minor'", "0"], ["", "'adult'", "1"]]},
+      {expression: "customer.price", value: "100 * customer.rate"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 5}}, goals: ["customer.band"], output: {customer: {age: 5, band: "minor", rate: 0}}},
+    {input: {customer: {age: 30}}, goals: ["customer.rate"], output: {customer: {age: 30, band: "adult", rate: 1}}},
+    {input: {customer: {age: 30}}, goals: ["customer.price"], output: {customer: {age: 30, band: "adult", rate: 1, price: 100}}},
+    {input: {customer: {age: 5}}, output: {customer: {age: 5, band: "minor", rate: 0, price: 0}}},
+  ],
+}
+
+{
+  name: "goals on match and assertion outputs",
+  policy: {
+    models: {customer: {score: "number", age: "number"}},
+    blocks: [
+      {match: "customer.tier", arms: [["customer.score >= 700", "'prime'"], ["customer.score >= 600", "'near'"], ["", "'sub'"]]},
+      {assertion: "customer.eligible", conditions: ["customer.age >= 18", "customer.score >= 600"]},
+    ],
+  },
+  cases: [
+    {input: {customer: {score: 720, age: 30}}, goals: ["customer.tier"], output: {customer: {score: 720, age: 30, tier: "prime"}}},
+    {input: {customer: {score: 650}}, goals: ["customer.tier"], output: {customer: {score: 650, tier: "near"}}},
+    {input: {customer: {score: 500, age: 30}}, goals: ["customer.eligible"], output: {customer: {score: 500, age: 30, eligible: false}}},
+    {input: {customer: {score: 610, age: 18}}, goals: ["customer.eligible"], output: {customer: {score: 610, age: 18, eligible: true}}},
+    {input: {customer: {score: 610}}, goals: ["customer.eligible"], output: "!error: MissingRequiredInputs"},
+    {input: {customer: {score: 100, age: 1}}, goals: ["customer.eligible", "customer.tier"], output: {customer: {score: 100, age: 1, tier: "sub", eligible: false}}},
+  ],
+}
+
+{
+  name: "a goal on a match whose untaken arm reads a computed value",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.big", value: "customer.income * 2"},
+      {match: "customer.tier", arms: [["customer.age < 18", "'minor'"], ["", "customer.big > 10 ? 'gold' : 'std'"]]},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 30, income: 100}}, goals: ["customer.tier"], output: {customer: {age: 30, income: 100, big: 200, tier: "gold"}}},
+    {input: {customer: {age: 30, income: 1}}, goals: ["customer.tier"], output: {customer: {age: 30, income: 1, big: 2, tier: "std"}}},
+    {input: {customer: {age: 10, income: 100}}, goals: ["customer.tier"], output: {customer: {age: 10, income: 100, tier: "minor"}}},
+    {input: {customer: {age: 10}}, goals: ["customer.tier"], output: "!error: MissingRequiredInputs", note: "question: the arm reading customer.income is not taken, yet the required-input check is static over every arm"},
+    {input: {customer: {age: 30}}, goals: ["customer.tier"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// Without goals the roots are the terminal writes only; an intermediate read only by an
+// unmatched row is never demanded and is absent from the output.
+{
+  name: "a goal on a table whose unmatched row reads a computed value",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.adultMsg", value: "'adult'"},
+      {expression: "customer.childMsg", value: "'child'"},
+      {table: "dt", inputs: ["customer.age"], outputs: ["customer.msg"], rules: [[">= 18", "customer.adultMsg"], ["", "customer.childMsg"]]},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 30}}, goals: ["customer.msg"], output: {customer: {age: 30, adultMsg: "adult", msg: "adult"}}},
+    {input: {customer: {age: 3}}, goals: ["customer.msg"], output: {customer: {age: 3, childMsg: "child", msg: "child"}}},
+    {input: {customer: {age: 30}}, output: {customer: {age: 30, adultMsg: "adult", msg: "adult"}}},
+    {input: {customer: {age: 3}}, output: {customer: {age: 3, childMsg: "child", msg: "child"}}},
+  ],
+}
+
+// --- Goals with nested write paths -----------------------------------------------------------
+
+{
+  name: "goals on nested computed paths",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "totals.byTier.x", value: "customer.age * 2"},
+      {expression: "totals.byTier.y", value: "3"},
+      {expression: "totals.count", value: "1"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 5}}, goals: ["totals.byTier.x"], output: {customer: {age: 5}, totals: {byTier: {x: 10}}}},
+    {input: {customer: {age: 5}}, goals: ["totals.byTier.y"], output: {customer: {age: 5}, totals: {byTier: {y: 3}}}},
+    {input: {customer: {age: 5}}, goals: ["totals.byTier"], output: {customer: {age: 5}, totals: {byTier: {x: 10, y: 3}}}},
+    {input: {customer: {age: 5}}, goals: ["totals"], output: {customer: {age: 5}, totals: {byTier: {x: 10, y: 3}, count: 1}}},
+    {input: {customer: {age: 5}}, goals: ["totals.count"], output: {customer: {age: 5}, totals: {count: 1}}},
+    {input: {customer: {age: 5}}, output: {customer: {age: 5}, totals: {byTier: {x: 10, y: 3}, count: 1}}},
+  ],
+}
+
+// --- Goals with per-instance writes --------------------------------------------------------------
+
+{
+  name: "a goal on a per-instance property",
+  policy: {
+    models: {customer: {companies: "company[]", name: "string"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "company.half", value: "company.revenue / 2"},
+      {expression: "customer.bigCount", value: "count(customer.companies, #.big)"},
+      {expression: "customer.greeting", value: "'Hi ' + customer.name"},
+    ],
+  },
+  cases: [
+    {input: {customer: {name: "a", companies: [{revenue: 5}, {revenue: 500}]}}, goals: ["company.big"], output: {customer: {name: "a", companies: [{revenue: 5, big: false}, {revenue: 500, big: true}]}}},
+    {input: {customer: {name: "a", companies: [{revenue: 5}, {revenue: 500}]}}, goals: ["customer.bigCount"], output: {customer: {name: "a", bigCount: 1, companies: [{revenue: 5, big: false}, {revenue: 500, big: true}]}}},
+    {input: {customer: {name: "a", companies: []}}, goals: ["customer.bigCount"], output: {customer: {name: "a", bigCount: 0, companies: []}}},
+    {input: {customer: {companies: [{revenue: 8}]}}, goals: ["company.half"], output: {customer: {companies: [{revenue: 8, half: 4}]}}},
+    {input: {customer: {name: "b", companies: [{revenue: 8}]}}, goals: ["customer.greeting"], output: {customer: {name: "b", greeting: "Hi b", companies: [{revenue: 8}]}}},
+  ],
+}
+
+// --- Goals with globals ----------------------------------------------------------------------------
+
+{
+  name: "goals on top-level global computations",
+  policy: {
+    globals: {platform: {taxRate: "number", fee: "number"}},
+    models: {order: {amount: "number"}},
+    blocks: [
+      {expression: "order.tax", value: "order.amount * taxRate"},
+      {expression: "order.fee", value: "fee"},
+      {expression: "summary", value: "order.tax + order.fee"},
+    ],
+  },
+  cases: [
+    {input: {taxRate: 0.1, order: {amount: 50}}, goals: ["order.tax"], output: {taxRate: 0.1, order: {amount: 50, tax: 5}}},
+    {input: {fee: 2, order: {amount: 50}}, goals: ["order.fee"], output: {fee: 2, order: {amount: 50, fee: 2}}},
+    {input: {fee: 2, taxRate: 0.1, order: {amount: 50}}, goals: ["summary"], output: {fee: 2, taxRate: 0.1, order: {amount: 50, tax: 5, fee: 2}, summary: 7}},
+    {input: {fee: 2, order: {amount: 50}}, goals: ["summary"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// --- Goals across imports --------------------------------------------------------------------------
+
+{
+  name: "goals reach into imported policies",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.base + 1"}],
+  },
+  policies: {
+    base: {
+      models: {customer: {age: "number", income: "number"}},
+      blocks: [
+        {expression: "customer.base", value: "customer.age * 2"},
+        {expression: "customer.rich", value: "customer.income > 1000"},
+      ],
+    },
+  },
+  cases: [
+    {input: {customer: {age: 20}}, goals: ["customer.score"], output: {customer: {age: 20, base: 40, score: 41}}},
+    {input: {customer: {age: 20}}, goals: ["customer.base"], output: {customer: {age: 20, base: 40}}},
+    {input: {customer: {income: 2000}}, goals: ["customer.rich"], output: {customer: {income: 2000, rich: true}}},
+    {input: {customer: {age: 1, income: 1}}, output: {customer: {age: 1, income: 1, base: 2, score: 3, rich: false}}},
+    {input: {customer: {age: 1}}, output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+// --- Goals and input passthrough -----------------------------------------------------------------
+
+{
+  name: "goals keep unrelated input keys in the output",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}, {expression: "customer.x", value: "1"}],
+  },
+  cases: [
+    {input: {customer: {age: 20, extra: [1, 2]}, other: "kept"}, goals: ["customer.adult"], output: {customer: {age: 20, extra: [1, 2], adult: true}, other: "kept"}},
+    {input: {customer: {age: 20}, meta: {a: null}}, goals: ["customer.x"], output: {customer: {age: 20, x: 1}, meta: {a: null}}},
+    {input: {customer: {age: 20}}, goals: [], output: {customer: {age: 20, adult: true, x: 1}}},
+  ],
+}
+
+{
+  name: "a goal's computed value replaces a value supplied in the input",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}, {expression: "customer.x", value: "customer.age + 1"}],
+  },
+  cases: [
+    {input: {customer: {age: 20, adult: false, x: 0}}, goals: ["customer.adult"], output: {customer: {age: 20, adult: true, x: 0}}},
+    {input: {customer: {age: 20, adult: false, x: 0}}, goals: ["customer.x"], output: {customer: {age: 20, adult: false, x: 21}}},
+    {input: {customer: {age: 20, adult: false, x: 0}}, output: {customer: {age: 20, adult: true, x: 21}}},
+  ],
+}

@@ -1,0 +1,283 @@
+{
+ "nodes": [
+  {
+   "id": "in",
+   "type": "inputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Request"
+  },
+  {
+   "id": "e1",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Customer",
+   "content": {
+    "expressions": [
+     {
+      "id": "e1x0",
+      "key": "fullName",
+      "value": "firstName + ' ' + lastName"
+     },
+     {
+      "id": "e1x1",
+      "key": "older",
+      "value": "age > 40"
+     },
+     {
+      "id": "e1x2",
+      "key": "rootAge",
+      "value": "$.age"
+     },
+     {
+      "id": "e1x3",
+      "key": "orderTotal",
+      "value": "$nodes.Request.order.total"
+     }
+    ],
+    "inputField": "customer",
+    "outputPath": "customer",
+    "passThrough": true
+   }
+  },
+  {
+   "id": "e2",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Address",
+   "content": {
+    "expressions": [
+     {
+      "id": "e2x0",
+      "key": "cityUpper",
+      "value": "upper(city ?? '')"
+     },
+     {
+      "id": "e2x1",
+      "key": "zip",
+      "value": "zip"
+     }
+    ],
+    "inputField": "customer.address",
+    "passThrough": false
+   }
+  },
+  {
+   "id": "e3",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Stats",
+   "content": {
+    "expressions": [
+     {
+      "id": "e3x0",
+      "key": "count",
+      "value": "1"
+     },
+     {
+      "id": "e3x1",
+      "key": "total",
+      "value": "order.total * 2"
+     }
+    ],
+    "outputPath": "summary.stats",
+    "passThrough": true
+   }
+  },
+  {
+   "id": "e4",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Chain",
+   "content": {
+    "expressions": [
+     {
+      "id": "e4x0",
+      "key": "a",
+      "value": "total + 1"
+     },
+     {
+      "id": "e4x1",
+      "key": "b",
+      "value": "$.a * 2"
+     }
+    ],
+    "inputField": "order",
+    "outputPath": "orderCopy",
+    "passThrough": false
+   }
+  },
+  {
+   "id": "e5",
+   "type": "expressionNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Downstream",
+   "content": {
+    "expressions": [
+     {
+      "id": "e5x0",
+      "key": "seen",
+      "value": "customer.fullName"
+     },
+     {
+      "id": "e5x1",
+      "key": "cityCopy",
+      "value": "cityUpper"
+     }
+    ],
+    "passThrough": true
+   }
+  },
+  {
+   "id": "out",
+   "type": "outputNode",
+   "position": {
+    "x": 0,
+    "y": 0
+   },
+   "name": "Response"
+  }
+ ],
+ "edges": [
+  {
+   "id": "x0",
+   "sourceId": "in",
+   "targetId": "e1",
+   "type": "edge"
+  },
+  {
+   "id": "x1",
+   "sourceId": "e1",
+   "targetId": "e5",
+   "type": "edge"
+  },
+  {
+   "id": "x2",
+   "sourceId": "in",
+   "targetId": "e2",
+   "type": "edge"
+  },
+  {
+   "id": "x3",
+   "sourceId": "e2",
+   "targetId": "e5",
+   "type": "edge"
+  },
+  {
+   "id": "x4",
+   "sourceId": "in",
+   "targetId": "e3",
+   "type": "edge"
+  },
+  {
+   "id": "x5",
+   "sourceId": "e3",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x6",
+   "sourceId": "in",
+   "targetId": "e4",
+   "type": "edge"
+  },
+  {
+   "id": "x7",
+   "sourceId": "e4",
+   "targetId": "out",
+   "type": "edge"
+  },
+  {
+   "id": "x8",
+   "sourceId": "e5",
+   "targetId": "out",
+   "type": "edge"
+  }
+ ],
+ "tests": [
+  {
+   "input": {
+    "customer": {
+     "firstName": "John",
+     "lastName": "Doe",
+     "age": 30,
+     "address": {
+      "city": "Paris",
+      "zip": "75001"
+     }
+    },
+    "order": {
+     "id": "A",
+     "total": 100
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "firstName": "Ann",
+     "lastName": "Lee",
+     "age": 55
+    },
+    "order": {
+     "total": 7.5
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "firstName": "Bob"
+    },
+    "order": {}
+   }
+  },
+  {
+   "input": {
+    "customer": "text",
+    "order": {
+     "total": "x"
+    }
+   }
+  },
+  {
+   "input": {
+    "customer": null,
+    "order": null
+   }
+  },
+  {
+   "input": {
+    "customer": {
+     "age": 41,
+     "address": {
+      "city": null
+     }
+    },
+    "order": {
+     "total": -3
+    }
+   }
+  },
+  {
+   "input": {}
+  }
+ ]
+}

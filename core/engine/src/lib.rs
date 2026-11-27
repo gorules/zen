@@ -123,6 +123,13 @@
 #![allow(clippy::module_inception)]
 
 mod analysis;
+pub mod context {
+    pub use zen_expression::context::{
+        clock_reads, format_instant, instant_from_millis, parse_instant, parse_timezone, row_seed,
+        unrowed_draws, Instant, Timezone,
+    };
+}
+mod compiled;
 mod config;
 mod decision;
 mod decision_graph;
@@ -136,6 +143,19 @@ pub mod workspace;
 
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[doc(hidden)]
+pub use compiled::diagnostics;
+
+pub mod columns {
+    pub use zen_expression::lane::{
+        Column, Columns, Decimal128, Dictionary, Float64, Temporal, TimeUnit, Values,
+    };
+}
+
+pub use compiled::trace::api as trace;
+pub use compiled::{
+    ColumnarOutput, EngineVersion, OutputColumn, RecordsView, UnknownEngineVersion,
+};
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use decision_graph::{

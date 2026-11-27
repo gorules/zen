@@ -24,6 +24,7 @@ use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::model::DecisionContent;
+use zen_engine::trace::TraceFormat;
 use zen_engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
@@ -37,46 +38,83 @@ pub struct ZenEngine {
     http_handler_tsfn: Option<HttpHandlerTsfn>,
 }
 
-#[derive(Debug, Default)]
-pub struct JsEvaluationTraceKind(pub EvaluationTraceKind);
+#[derive(Debug, Default, Clone, Copy)]
+pub struct JsTraceFormat(pub TraceFormat, pub EvaluationTraceKind);
 
-impl FromNapiValue for JsEvaluationTraceKind {
+impl FromNapiValue for JsTraceFormat {
     unsafe fn from_napi_value(env: napi_env, napi_val: napi_value) -> napi::Result<Self> {
         let js_value = Unknown::from_napi_value(env, napi_val)?;
 
         match js_value.get_type()? {
-            ValueType::Undefined | ValueType::Null => Ok(JsEvaluationTraceKind::default()),
-            ValueType::Boolean => {
-                let enabled = js_value.coerce_to_bool()?;
-                let kind = match enabled {
-                    true => EvaluationTraceKind::Default,
-                    false => EvaluationTraceKind::None,
-                };
-
-                Ok(JsEvaluationTraceKind(kind))
-            }
+            ValueType::Undefined | ValueType::Null => Ok(JsTraceFormat::default()),
+            ValueType::Boolean => Ok(Self::switched(js_value.coerce_to_bool()?)),
             ValueType::String => {
-                let kind_utf8 = js_value.coerce_to_string()?.into_utf8()?;
-                let kind_str = kind_utf8.as_str()?;
-                let kind =
-                    EvaluationTraceKind::from_str(kind_str).context("invalid evaluation mode")?;
-
-                Ok(JsEvaluationTraceKind(kind))
+                let utf8 = js_value.coerce_to_string()?.into_utf8()?;
+                let text = utf8.as_str()?;
+                if let Ok(format) = TraceFormat::from_str(text) {
+                    return Ok(match format {
+                        TraceFormat::Off => Self::switched(false),
+                        format => JsTraceFormat(format, EvaluationTraceKind::Default),
+                    });
+                }
+                let kind = EvaluationTraceKind::from_str(text).context("invalid trace format")?;
+                Ok(match kind {
+                    EvaluationTraceKind::None => Self::switched(false),
+                    EvaluationTraceKind::Default => Self::switched(true),
+                    kind => JsTraceFormat(TraceFormat::Legacy, kind),
+                })
             }
             _ => Err(anyhow!("Invalid trace setting").into()),
         }
     }
 }
 
-impl ToNapiValue for JsEvaluationTraceKind {
-    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
-        match val.0 {
-            EvaluationTraceKind::None => ToNapiValue::to_napi_value(env, false),
-            EvaluationTraceKind::Default => ToNapiValue::to_napi_value(env, true),
-            _ => {
-                let mode_str: &'static str = val.0.into();
-                ToNapiValue::to_napi_value(env, mode_str)
+impl JsTraceFormat {
+    fn switched(on: bool) -> Self {
+        match on {
+            true => JsTraceFormat(TraceFormat::from(true), EvaluationTraceKind::Default),
+            false => JsTraceFormat(TraceFormat::Off, EvaluationTraceKind::None),
+        }
+    }
+
+    pub(crate) fn kind(options: &Option<ZenEvaluateOptions>) -> EvaluationTraceKind {
+        options
+            .as_ref()
+            .and_then(|options| options.trace)
+            .map(|trace| trace.1)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn failure(
+        error: &zen_engine::EvaluationError,
+        kind: EvaluationTraceKind,
+    ) -> serde_json::Value {
+        match kind {
+            EvaluationTraceKind::None | EvaluationTraceKind::Default => {
+                serde_json::to_value(error).unwrap_or_default()
             }
+            kind => error
+                .serialize_with_mode(serde_json::value::Serializer, kind)
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl ToNapiValue for JsTraceFormat {
+    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
+        match val {
+            JsTraceFormat(TraceFormat::Off, _) => ToNapiValue::to_napi_value(env, false),
+            JsTraceFormat(
+                _,
+                kind @ (EvaluationTraceKind::String
+                | EvaluationTraceKind::Reference
+                | EvaluationTraceKind::ReferenceString),
+            ) => {
+                let text: &'static str = kind.into();
+                ToNapiValue::to_napi_value(env, text)
+            }
+            JsTraceFormat(TraceFormat::V1, _) => ToNapiValue::to_napi_value(env, true),
+            JsTraceFormat(TraceFormat::Legacy, _) => ToNapiValue::to_napi_value(env, "legacy"),
         }
     }
 }
@@ -85,25 +123,77 @@ impl ToNapiValue for JsEvaluationTraceKind {
 #[napi(object)]
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
-    #[napi(ts_type = "boolean | 'string' | 'reference' | 'referenceString'")]
-    pub trace: Option<JsEvaluationTraceKind>,
+    #[napi(ts_type = "boolean | 'v1' | 'legacy' | 'string' | 'reference' | 'referenceString'")]
+    pub trace: Option<JsTraceFormat>,
+    #[napi(ts_type = "string | number")]
+    pub now: Option<Either<String, f64>>,
+    pub timezone: Option<String>,
+    #[napi(ts_type = "number | string")]
+    pub seed: Option<Either<f64, String>>,
 }
 
 impl Default for ZenEvaluateOptions {
     fn default() -> Self {
         Self {
             max_depth: Some(5),
-            trace: Some(JsEvaluationTraceKind::default()),
+            trace: Some(JsTraceFormat::default()),
+            now: None,
+            timezone: None,
+            seed: None,
         }
     }
 }
 
-impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
-    fn from(value: ZenEvaluateOptions) -> Self {
-        Self {
+const MAX_SAFE_INTEGER: f64 = 9007199254740991.0;
+
+impl TryFrom<ZenEvaluateOptions> for EvaluationSerializedOptions {
+    type Error = napi::Error;
+
+    fn try_from(value: ZenEvaluateOptions) -> Result<Self, Self::Error> {
+        use zen_engine::context::{instant_from_millis, parse_instant, parse_timezone};
+        let now = match value.now {
+            None => None,
+            Some(Either::A(text)) => Some(
+                parse_instant(&text)
+                    .ok_or_else(|| anyhow!("invalid now '{text}', expected an RFC 3339 instant"))?,
+            ),
+            Some(Either::B(ms)) if ms.is_finite() && ms.fract() == 0.0 => Some(
+                instant_from_millis(ms as i64)
+                    .ok_or_else(|| anyhow!("invalid now {ms}, out of range"))?,
+            ),
+            Some(Either::B(ms)) => {
+                return Err(anyhow!("invalid now {ms}, expected whole epoch milliseconds").into())
+            }
+        };
+        let timezone = match value.timezone {
+            None => None,
+            Some(name) => Some(
+                parse_timezone(&name)
+                    .ok_or_else(|| anyhow!("invalid timezone '{name}', expected an IANA name"))?,
+            ),
+        };
+        let seed = match value.seed {
+            None => None,
+            Some(Either::A(n)) if (0.0..=MAX_SAFE_INTEGER).contains(&n) && n.fract() == 0.0 => {
+                Some(n as u64)
+            }
+            Some(Either::A(n)) => {
+                return Err(anyhow!(
+                    "invalid seed {n}, expected a whole number from 0 to 2^53 - 1, or a string"
+                )
+                .into())
+            }
+            Some(Either::B(text)) => Some(text.parse::<u64>().map_err(|_| {
+                anyhow!("invalid seed '{text}', expected an unsigned 64-bit integer")
+            })?),
+        };
+        Ok(Self {
             max_depth: value.max_depth.unwrap_or(5),
             trace: value.trace.unwrap_or_default().0,
-        }
+            now,
+            timezone,
+            seed,
+        })
     }
 }
 
@@ -145,6 +235,9 @@ pub struct ZenEngineOptions {
     #[napi(ts_type = "(request: ZenHttpHandlerRequest) => Promise<ZenHttpHandlerResponse>")]
     pub http_handler:
         Option<Function<'static, ZenHttpHandlerRequest, Promise<ZenHttpHandlerResponse>>>,
+
+    #[napi(ts_type = "1 | 2")]
+    pub version: Option<f64>,
 }
 
 #[napi]
@@ -218,6 +311,13 @@ impl ZenEngine {
         };
 
         let mut decision_engine = DecisionEngine::new(loader, Arc::new(custom_node));
+        if let Some(version) = opts.version {
+            let whole = (version.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(&version))
+                .then_some(version as u32)
+                .ok_or_else(|| anyhow!("unknown engine version {version}, expected 1 or 2"))?;
+            decision_engine = decision_engine
+                .with_version(zen_engine::EngineVersion::try_from(whole).map_err(|e| anyhow!(e))?);
+        }
         if let Some(h) = opts.http_handler {
             let http_tsfn = h
                 .build_threadsafe_function()
@@ -251,27 +351,17 @@ impl ZenEngine {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<NodeEvalResponse> {
         let graph = self.graph.clone();
-        let result = spawn_worker(|| {
-            let serialized: EvaluationSerializedOptions = opts.unwrap_or_default().into();
-            let mode = serialized.trace;
-            let options = EvaluationOptions {
-                trace: mode != EvaluationTraceKind::None,
-                max_depth: serialized.max_depth,
-            };
-
-            async move {
-                let context = zen_engine::Variable::try_from_value(context).map_err(
-                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
-                )?;
-                graph
-                    .evaluate_with_opts(key, context, options)
-                    .await
-                    .map(|response| NodeEvalResponse::build(response, mode))
-                    .map_err(|e| {
-                        e.serialize_with_mode(serde_json::value::Serializer, mode)
-                            .unwrap_or_default()
-                    })
-            }
+        let kind = JsTraceFormat::kind(&opts);
+        let options: EvaluationOptions = opts.unwrap_or_default().try_into()?;
+        let result = spawn_worker(move || async move {
+            let context = zen_engine::Variable::try_from_value(context).map_err(
+                |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+            )?;
+            graph
+                .evaluate_with_opts(key, context, options)
+                .await
+                .map(|response| NodeEvalResponse::build(response, kind))
+                .map_err(|e| JsTraceFormat::failure(&e, kind))
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
@@ -342,19 +432,15 @@ impl ZenEngine {
         requests: Vec<EvaluateBatchRequest>,
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Vec<EvaluateBatchResult>> {
-        let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
-        let mode = options.trace;
-        let max_depth = options.max_depth;
+        let kind = JsTraceFormat::kind(&opts);
+        let options: EvaluationSerializedOptions = opts.unwrap_or_default().try_into()?;
 
         let mut handles = Vec::with_capacity(requests.len());
         for req in requests {
             let engine = self.graph.clone();
             let EvaluateBatchRequest { key, context } = req;
             handles.push(spawn_worker(move || async move {
-                let eval_opts = EvaluationOptions {
-                    trace: mode != EvaluationTraceKind::None,
-                    max_depth,
-                };
+                let eval_opts = options;
 
                 let context = zen_engine::Variable::try_from_value(context).map_err(
                     |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
@@ -362,11 +448,8 @@ impl ZenEngine {
                 engine
                     .evaluate_with_opts(key, context, eval_opts)
                     .await
-                    .map(|response| NodeEvalResponse::build(response, mode))
-                    .map_err(|e| {
-                        e.serialize_with_mode(serde_json::value::Serializer, mode)
-                            .unwrap_or_default()
-                    })
+                    .map(|response| NodeEvalResponse::build(response, kind))
+                    .map_err(|e| JsTraceFormat::failure(&e, kind))
             }));
         }
 

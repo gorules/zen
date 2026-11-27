@@ -1,7 +1,7 @@
 use crate::lane::date::Date;
 use crate::lane::Bits;
 use crate::typed::batch::Feeds;
-use crate::typed::hir::{DictId, Hir, Kind, Scope, Unsupported};
+use crate::typed::hir::{DictId, Hir, Item, Kind, Scope, Shape, Unsupported};
 use crate::typed::kernel::K;
 use crate::typed::num::Dec;
 use crate::variable::Variable;
@@ -35,6 +35,7 @@ pub struct Slot {
     pub fault: Faults,
     pub wide: Vec<(usize, Decimal)>,
     pub offsets: Option<Vec<i32>>,
+    pub values: Option<Vec<Variable>>,
     pub(crate) keep: Vec<u64>,
 }
 
@@ -50,6 +51,7 @@ pub struct Outputs {
     rows: usize,
     slots: Vec<Slot>,
     faults: Faults,
+    visible: usize,
 }
 
 impl Slot {
@@ -196,6 +198,18 @@ impl Slot {
     fn spread(&mut self, sources: &[u32]) {
         let rows = sources.len();
         let pick = |id: u32| (id != u32::MAX).then_some(id as usize);
+        if let Some(values) = self.values.take() {
+            self.values = Some(
+                sources
+                    .iter()
+                    .map(|&id| {
+                        pick(id)
+                            .and_then(|at| values.get(at).cloned())
+                            .unwrap_or(Variable::Null)
+                    })
+                    .collect(),
+            );
+        }
         let mut valid = vec![0u64; K::words(rows)];
         for (row, &id) in sources.iter().enumerate() {
             if pick(id).is_some_and(|at| Bits::get(&self.valid, at)) {
@@ -266,6 +280,7 @@ impl Slot {
     fn reset(&mut self, len: usize) {
         self.len = len;
         self.wide.clear();
+        self.values = None;
         let words = K::words(len);
         if let Some(offsets) = &mut self.offsets {
             offsets.clear();
@@ -385,14 +400,22 @@ impl Outputs {
                 fault: Faults::default(),
                 wide: Vec::new(),
                 offsets: o.collect.map(|_| Vec::new()),
+                values: None,
                 keep: Vec::new(),
             });
         }
+        let visible = slots.len();
         Ok(Self {
             rows: 0,
             slots,
             faults: Faults::default(),
+            visible,
         })
+    }
+
+    pub(crate) fn within(mut self, visible: usize) -> Self {
+        self.visible = visible.min(self.slots.len());
+        self
     }
 
     pub(crate) fn empty() -> Self {
@@ -400,6 +423,7 @@ impl Outputs {
             rows: 0,
             slots: Vec::new(),
             faults: Faults::default(),
+            visible: 0,
         }
     }
 
@@ -417,14 +441,23 @@ impl Outputs {
     }
 
     pub fn slots(&self) -> &[Slot] {
-        &self.slots
+        &self.slots[..self.visible]
     }
 
     pub fn slot(&self, at: usize) -> Option<&Slot> {
-        self.slots.get(at)
+        self.slots().get(at)
     }
 
     pub fn slot_mut(&mut self, at: usize) -> Option<&mut Slot> {
+        let visible = self.visible;
+        self.slots[..visible].get_mut(at)
+    }
+
+    pub(crate) fn total(&self) -> usize {
+        self.slots.len()
+    }
+
+    pub(crate) fn any_mut(&mut self, at: usize) -> Option<&mut Slot> {
         self.slots.get_mut(at)
     }
 
@@ -434,8 +467,8 @@ impl Outputs {
 
     pub fn spread(&mut self, rows: usize, ids: &[u32], positions: Option<&[usize]>) -> bool {
         let reps = self.rows;
-        if self
-            .slots
+        let visible = self.visible;
+        if self.slots[..visible]
             .iter()
             .any(|slot| slot.offsets.is_some() || slot.len != reps)
             || positions.is_some_and(|p| p.len() != ids.len())
@@ -461,7 +494,7 @@ impl Outputs {
         }
         self.rows = rows;
         self.faults = self.faults.spread(&sources);
-        for slot in &mut self.slots {
+        for slot in &mut self.slots[..visible] {
             slot.spread(&sources);
         }
         true
@@ -497,7 +530,248 @@ impl Outputs {
     }
 }
 
+impl Outputs {
+    pub(crate) fn compose(&mut self, hir: &Hir) {
+        let base = hir.outputs.len();
+        for (at, o) in hir.outputs.iter().enumerate() {
+            let Some(shape) = &o.shape else {
+                continue;
+            };
+            let mut parts = Vec::new();
+            shape.parts(&mut parts);
+            let rows = self.rows;
+            let mut fault = Faults::default();
+            fault.reset(rows);
+            for p in &parts {
+                if let Some(part) = self.slots.get(base + *p as usize) {
+                    if part.fault.any() {
+                        for row in part.fault.iter() {
+                            fault.set(row);
+                        }
+                    }
+                }
+            }
+            let flat = match shape.as_ref() {
+                Shape::List(items) => self.flat(hir, base, items, &fault),
+                _ => None,
+            };
+            let values: Option<Vec<Variable>> = match flat {
+                Some(_) => None,
+                None => Some(
+                    (0..rows)
+                        .map(|row| match fault.get(row) {
+                            true => Variable::Null,
+                            false => self.build(hir, base, shape, row),
+                        })
+                        .collect(),
+                ),
+            };
+            if let Some(slot) = self.slots.get_mut(at) {
+                match flat {
+                    Some((kind, data, valid, offsets)) => {
+                        slot.kind = kind;
+                        slot.len = offsets.last().map_or(0, |end| *end as usize);
+                        slot.data = data;
+                        slot.valid = valid;
+                        slot.offsets = Some(offsets);
+                    }
+                    None => {
+                        slot.len = rows;
+                        slot.valid.clear();
+                        slot.valid.resize(K::words(rows), u64::MAX);
+                        slot.values = values;
+                    }
+                }
+                if fault.any() {
+                    for row in fault.iter() {
+                        slot.fault.set(row);
+                        self.faults.set(row);
+                    }
+                }
+            }
+        }
+    }
+
+    fn kept(&self, base: usize, item: &Item, row: usize) -> bool {
+        item.keep.is_none_or(|k| {
+            self.slots
+                .get(base + k as usize)
+                .and_then(|slot| slot.boolean(row))
+                .unwrap_or(false)
+        })
+    }
+
+    fn flat(
+        &self,
+        hir: &Hir,
+        base: usize,
+        items: &[Item],
+        fault: &Faults,
+    ) -> Option<(Kind, Data, Vec<u64>, Vec<i32>)> {
+        let mut kind: Option<Kind> = None;
+        let mut parts: Vec<&Slot> = Vec::with_capacity(items.len());
+        for item in items {
+            let Shape::Part(p) = item.shape else {
+                return None;
+            };
+            let slot = self.slots.get(base + p as usize)?;
+            if item.splice != slot.offsets.is_some() || !slot.wide.is_empty() {
+                return None;
+            }
+            let family = match slot.kind {
+                Kind::Num(_) => Some(Kind::Num(None)),
+                Kind::Bool => Some(Kind::Bool),
+                Kind::Text | Kind::Code(_) => Some(Kind::Text),
+                Kind::Null => None,
+                Kind::Date => return None,
+            };
+            match (kind, family) {
+                (_, None) => {}
+                (None, found) => kind = found,
+                (Some(a), Some(b)) if a == b => {}
+                _ => return None,
+            }
+            parts.push(slot);
+        }
+        let kind = kind.unwrap_or(Kind::Num(None));
+        let mut offsets = Vec::with_capacity(self.rows + 1);
+        offsets.push(0i32);
+        let mut valid: Vec<bool> = Vec::new();
+        let (mut mant, mut scale, mut bits) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut span, mut text) = (Vec::new(), Vec::new());
+        for row in 0..self.rows {
+            if !fault.get(row) {
+                for (item, slot) in items.iter().zip(&parts) {
+                    if !self.kept(base, item, row) {
+                        continue;
+                    }
+                    let range = match &slot.offsets {
+                        Some(o) => {
+                            usize::try_from(*o.get(row)?).ok()?
+                                ..usize::try_from(*o.get(row + 1)?).ok()?
+                        }
+                        None => row..row + 1,
+                    };
+                    for e in range {
+                        let on = slot.is_valid(e);
+                        valid.push(on);
+                        match kind {
+                            Kind::Num(_) => {
+                                let d = slot.num(e).filter(|_| on);
+                                mant.push(d.map_or(0, |d| d.mant));
+                                scale.push(d.map_or(0, |d| d.scale));
+                            }
+                            Kind::Bool => bits.push(on && slot.boolean(e).unwrap_or(false)),
+                            _ => {
+                                let found = match (&slot.data, on) {
+                                    (_, false) => None,
+                                    (Data::Code(_), true) => {
+                                        slot.code(e).zip(slot.dict()).and_then(|(code, d)| {
+                                            hir.schema.dicts.get(d as usize)?.text(code)
+                                        })
+                                    }
+                                    (_, true) => slot.text(e),
+                                };
+                                let lo = u32::try_from(text.len()).ok()?;
+                                text.extend_from_slice(found.unwrap_or_default().as_bytes());
+                                span.push((lo, u32::try_from(text.len()).ok()?));
+                            }
+                        }
+                    }
+                }
+            }
+            offsets.push(i32::try_from(valid.len()).ok()?);
+        }
+        let len = valid.len();
+        let packed = |flags: &[bool]| {
+            let mut words = vec![0u64; K::words(len)];
+            flags
+                .iter()
+                .enumerate()
+                .for_each(|(at, on)| Bits::set(&mut words, at, *on));
+            words
+        };
+        let data = match kind {
+            Kind::Num(_) => Data::Num { mant, scale },
+            Kind::Bool => Data::Bool(packed(&bits)),
+            _ => Data::Text { span, data: text },
+        };
+        Some((kind, data, packed(&valid), offsets))
+    }
+
+    fn build(&self, hir: &Hir, base: usize, shape: &Shape, row: usize) -> Variable {
+        match shape {
+            Shape::Part(p) => match self.slots.get(base + *p as usize) {
+                Some(slot) => slot.value(hir, row),
+                None => Variable::Null,
+            },
+            Shape::List(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    if !self.kept(base, item, row) {
+                        continue;
+                    }
+                    let value = self.build(hir, base, &item.shape, row);
+                    match (item.splice, value) {
+                        (true, Variable::Array(inner)) => {
+                            out.extend(inner.borrow().iter().cloned())
+                        }
+                        (_, value) => out.push(value),
+                    }
+                }
+                Variable::from_array(out)
+            }
+            Shape::Object(members) => {
+                let object = Variable::empty_object();
+                if let Variable::Object(map) = &object {
+                    let mut map = map.borrow_mut();
+                    for (key, member) in members {
+                        map.insert_str(key, self.build(hir, base, member, row));
+                    }
+                }
+                object
+            }
+        }
+    }
+}
+
 impl Slot {
+    fn element(&self, hir: &Hir, at: usize) -> Variable {
+        match &self.data {
+            Data::Num { .. } => self.decimal(at).map_or(Variable::Null, Variable::Number),
+            Data::Bool(_) => self.boolean(at).map_or(Variable::Null, Variable::Bool),
+            Data::Code(_) => match (self.code(at), self.dict()) {
+                (Some(code), Some(d)) => hir
+                    .schema
+                    .dicts
+                    .get(d as usize)
+                    .and_then(|dict| dict.text(code))
+                    .map_or(Variable::Null, |t| Variable::String(t.into())),
+                _ => Variable::Null,
+            },
+            Data::Text { .. } => self
+                .text(at)
+                .map_or(Variable::Null, |t| Variable::String(t.into())),
+            Data::Date(_) => self.variable(at),
+        }
+    }
+
+    fn value(&self, hir: &Hir, row: usize) -> Variable {
+        match &self.offsets {
+            Some(offsets) => {
+                let lo = offsets.get(row).and_then(|o| usize::try_from(*o).ok());
+                let hi = offsets.get(row + 1).and_then(|o| usize::try_from(*o).ok());
+                match (lo, hi) {
+                    (Some(lo), Some(hi)) => {
+                        Variable::from_array((lo..hi).map(|at| self.element(hir, at)).collect())
+                    }
+                    _ => Variable::Null,
+                }
+            }
+            None => self.element(hir, row),
+        }
+    }
+
     fn compact(&mut self, offsets: &[i32]) {
         let len = self.len;
         let kept: Vec<usize> = (0..len).filter(|&e| Bits::get(&self.keep, e)).collect();
@@ -579,6 +853,7 @@ mod tests {
                 fault,
                 wide,
                 offsets: None,
+                values: None,
                 keep: Vec::new(),
             }
         }
@@ -618,6 +893,7 @@ mod tests {
                 rows: 3,
                 slots: vec![num, text, flag],
                 faults,
+                visible: 3,
             }
         }
     }

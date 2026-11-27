@@ -1,6 +1,6 @@
 use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Store};
 use std::rc::Rc;
-use zen_expression::typed::{Data, Hir, Outputs, Slot};
+use zen_expression::typed::{Data, Dec, Hir, Outputs, Slot};
 use zen_expression::Variable;
 
 pub(crate) struct Exports {
@@ -42,18 +42,32 @@ impl Exports {
     }
 
     pub fn leaf<'a>(&self, slot: &mut Slot, dicts: &mut [Option<Rc<Dict>>]) -> Leaf<'a> {
+        if let Some(values) = slot.values.take() {
+            return Leaf::Any(values.into());
+        }
         if let Some(offsets) = slot.offsets.take() {
-            return self.items(slot, &offsets);
+            return match self.listed(slot, offsets) {
+                Ok(leaf) => leaf,
+                Err(offsets) => self.items(slot, &offsets),
+            };
         }
         let len = slot.len;
         let dict = slot.dict();
         let array = match &slot.data {
-            Data::Num { .. } if !slot.wide.is_empty() => {
-                return Leaf::Any(
-                    (0..len)
-                        .map(|at| slot.decimal(at).map_or(Variable::Null, Variable::Number))
-                        .collect(),
-                );
+            Data::Num { mant, scale } if !slot.wide.is_empty() => {
+                let mut decimals = vec![rust_decimal::Decimal::ZERO; len];
+                for (at, decimal) in decimals.iter_mut().enumerate() {
+                    if slot.is_valid(at) {
+                        *decimal = Dec::new(mant[at], scale[at]).decimal();
+                    }
+                }
+                for (at, wide) in &slot.wide {
+                    if let Some(decimal) = decimals.get_mut(*at) {
+                        *decimal = *wide;
+                    }
+                }
+                let valid = Self::validity(std::mem::take(&mut slot.valid), len);
+                Array::parts(Store::Dec(decimals), valid, len)
             }
             Data::Num { .. } => match slot.take_num() {
                 Some((mut mant, mut scale, valid)) => {
@@ -103,6 +117,69 @@ impl Exports {
             Data::Date(_) => Array::from_values((0..len).map(|at| slot.variable(at)).collect()),
         };
         Leaf::typed(array)
+    }
+
+    fn listed<'a>(&self, slot: &Slot, offsets: Vec<i32>) -> Result<Leaf<'a>, Vec<i32>> {
+        let Some(len) = offsets.last().and_then(|end| usize::try_from(*end).ok()) else {
+            return Err(offsets);
+        };
+        if !slot.wide.is_empty() || (0..len).any(|at| !slot.is_valid(at)) {
+            return Err(offsets);
+        }
+        let child = match &slot.data {
+            Data::Num { mant, scale } if mant.len() >= len && scale.len() >= len => Store::Scaled {
+                mant: mant[..len].to_vec(),
+                scale: scale[..len].to_vec(),
+            },
+            Data::Bool(bits) => {
+                let mut bits = bits.clone();
+                bits.resize(len.div_ceil(64), 0);
+                Bits::trim(&mut bits, len);
+                Store::Bool(bits)
+            }
+            Data::Text { .. } | Data::Code(_) => {
+                let mut ends = Vec::with_capacity(len + 1);
+                let mut data = String::new();
+                ends.push(0i32);
+                for at in 0..len {
+                    let text = match &slot.data {
+                        Data::Code(_) => slot.code(at).and_then(|code| self.text(slot, code)),
+                        _ => slot.text(at),
+                    };
+                    let Some(text) = text else {
+                        return Err(offsets);
+                    };
+                    data.push_str(text);
+                    let Ok(end) = i32::try_from(data.len()) else {
+                        return Err(offsets);
+                    };
+                    ends.push(end);
+                }
+                Store::Text {
+                    offsets: ends,
+                    data,
+                }
+            }
+            _ => return Err(offsets),
+        };
+        let rows = offsets.len().saturating_sub(1);
+        Ok(Leaf::typed(Array::parts(
+            Store::List {
+                offsets,
+                child: Box::new(child),
+            },
+            None,
+            rows,
+        )))
+    }
+
+    fn text<'s>(&'s self, slot: &Slot, code: i32) -> Option<&'s str> {
+        let (offsets, data) = self.dicts.get(usize::from(slot.dict()?))?;
+        let at = usize::try_from(code).ok()?;
+        data.get(
+            usize::try_from(*offsets.get(at)?).ok()?
+                ..usize::try_from(*offsets.get(at + 1)?).ok()?,
+        )
     }
 
     fn items<'a>(&self, slot: &Slot, offsets: &[i32]) -> Leaf<'a> {

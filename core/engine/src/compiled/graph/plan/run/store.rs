@@ -1,4 +1,3 @@
-use crate::compiled::core::exec::{Dedup, Hint};
 use crate::compiled::graph::errors::SharedErrors;
 use crate::compiled::graph::plan::view::{Expr, MaskId, Node, Ref, SlotId, M};
 use crate::compiled::graph::plan::{SegPlan, Source};
@@ -6,7 +5,7 @@ use crate::compiled::leaf::{Bits, Dict, Leaf, Records};
 use crate::compiled::shred::{Listing, Normalizer};
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::lane::{Column, Columns, Values};
+use zen_expression::lane::{Column, Columns, Dictionary, Values};
 use zen_expression::typed::Outputs;
 use zen_expression::Variable;
 use zen_types::symbol::Symbol;
@@ -19,6 +18,56 @@ pub(super) struct Shaped<'a> {
     obj: Option<Rc<[u64]>>,
     fields: Vec<(Symbol, Shaped<'a>)>,
     same: Vec<Option<usize>>,
+}
+
+struct Shared<'a> {
+    column: Column<'a>,
+    coded: Option<Vec<Variable>>,
+}
+
+impl<'a> Shared<'a> {
+    fn new(column: Column<'a>, rows: usize) -> Self {
+        let coded = match column.values {
+            Values::Dict { values, .. } if Self::textual(values) && values.len() <= rows => Some(
+                (0..values.len())
+                    .map(|code| values.variable(code))
+                    .collect(),
+            ),
+            _ => None,
+        };
+        Self { column, coded }
+    }
+
+    fn textual(values: Dictionary) -> bool {
+        match values {
+            Dictionary::Text { .. } => true,
+            Dictionary::Column(column) => matches!(
+                column.values,
+                Values::Text { .. } | Values::Utf8 { .. } | Values::LargeUtf8 { .. }
+            ),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    fn variable(&self, row: usize) -> Variable {
+        match &self.coded {
+            None => self.column.variable(row),
+            Some(coded) => self.coded(coded, row),
+        }
+    }
+
+    #[inline(never)]
+    fn coded(&self, coded: &[Variable], row: usize) -> Variable {
+        if !self.column.valid(row) {
+            return Variable::Null;
+        }
+        self.column
+            .code(row)
+            .and_then(|code| coded.get(code))
+            .cloned()
+            .unwrap_or(Variable::Null)
+    }
 }
 
 pub(super) type Entries<'g> = Option<&'g [(Arc<str>, Arc<str>)]>;
@@ -37,7 +86,7 @@ pub(super) struct Group<'a> {
 }
 pub(super) struct Lowered {
     pub out: Outputs,
-    pub keyed: Option<Vec<u32>>,
+    pub keyed: Option<(Vec<u32>, usize)>,
     pub select: Option<Vec<u64>>,
     pub prefault: Option<Vec<u64>>,
 }
@@ -77,7 +126,6 @@ pub(crate) struct Store<'a> {
     pub(super) groups: Vec<Group<'a>>,
     pub(super) hints: Vec<(SlotId, Rc<[i32]>, usize)>,
     views: Vec<(SlotId, bool, Option<Shown<'a>>)>,
-    codes: Vec<(SlotId, bool, Hint)>,
     viewed: Vec<(SlotId, M, bool, Leaf<'a>)>,
     listings: std::cell::RefCell<Vec<Cached<'a>>>,
     pub(super) counts: (usize, usize),
@@ -145,7 +193,6 @@ impl<'a> Store<'a> {
             groups: Vec::new(),
             hints: Vec::new(),
             views: Vec::new(),
-            codes: Vec::new(),
             viewed: Vec::new(),
             listings: std::cell::RefCell::new(Vec::new()),
             counts: (0, 0),
@@ -168,8 +215,8 @@ impl<'a> Store<'a> {
                 }
         };
         self.masked.retain(|(slot, m, _)| kept(*slot, *m));
+        self.hints.retain(|(slot, ..)| kept(*slot, M::All));
         self.views.retain(|(slot, ..)| kept(*slot, M::All));
-        self.codes.retain(|(slot, ..)| kept(*slot, M::All));
         self.viewed.retain(|(slot, m, ..)| kept(*slot, *m));
         self.listings
             .get_mut()
@@ -258,7 +305,12 @@ impl<'a> Store<'a> {
         let at = match seg.masks.exprs[id as usize] {
             Expr::Validity(slot) => match seg.slots[slot as usize].source {
                 Source::Input(index) => {
-                    match self.input.columns.get(index).and_then(|(_, c)| c.validity) {
+                    match self
+                        .input
+                        .columns
+                        .get(index)
+                        .and_then(|(_, c)| c.resolved_validity())
+                    {
                         Some((bits, offset)) => self.push(&Bits::window(bits, offset, self.rows)),
                         None => Self::ONES,
                     }
@@ -337,15 +389,6 @@ impl<'a> Store<'a> {
         let masked = Leaf::masked(leaf, &mask);
         self.masked.push((r.slot, r.present, masked.clone()));
         masked
-    }
-
-    pub(super) fn codes(&mut self, slot: SlotId, code: bool, leaf: &Leaf<'a>) -> Hint {
-        if let Some((.., hint)) = self.codes.iter().find(|(s, c, _)| *s == slot && *c == code) {
-            return hint.clone();
-        }
-        let hint = Dedup::codes(&leaf.column(), self.rows);
-        self.codes.push((slot, code, hint.clone()));
-        hint
     }
 
     pub(super) fn viewed(
@@ -442,7 +485,7 @@ impl<'a> Store<'a> {
         let leaf = shape
             .leaf
             .as_ref()
-            .map(|(leaf, present)| (leaf.column(), present));
+            .map(|(leaf, present)| (Shared::new(leaf.column(), rows), present));
         (0..rows)
             .map(|row| {
                 if let Some((column, present)) = &leaf {

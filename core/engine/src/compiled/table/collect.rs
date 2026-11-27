@@ -180,7 +180,6 @@ impl Table {
     }
 
     pub fn first_collect<'a>(&self, runner: &mut LaneRunner, bound: &Bound) -> Collected<'a> {
-        let paths = self.split.clone().unwrap_or_default();
         let rows = bound.rows();
         let words = self.words;
         let (candidates, deferred) = self.candidates(runner, bound, false);
@@ -190,14 +189,7 @@ impl Table {
         let lists = self.collect_columns.len();
         let targeted = self.targets();
         let (targets, templates) = &targeted;
-        let literal =
-            first.batches.is_empty()
-                && self.outputs.iter().zip(targets).all(|(outputs, targets)| {
-                    match &outputs.literals {
-                        Some(literals) => !literals.iter().any(Literal::deep),
-                        None => !targets.iter().any(Option::is_some),
-                    }
-                });
+        let literal = first.batches.is_empty() && self.deep_free(targets);
         let lists_leaves: Vec<Leaf<'a>> = match literal {
             true => Self::literal_lists(&first, &candidates, words, lists, targets, templates),
             false => self
@@ -213,6 +205,147 @@ impl Table {
                 })
                 .collect(),
         };
+        self.joined(first, lists_leaves, rows)
+    }
+
+    fn deep_free(&self, targets: &[Vec<Option<usize>>]) -> bool {
+        self.outputs
+            .iter()
+            .zip(targets)
+            .all(|(outputs, targets)| match &outputs.literals {
+                Some(literals) => !literals.iter().any(Literal::deep),
+                None => !targets.iter().any(Option::is_some),
+            })
+    }
+
+    pub fn computes(&self) -> bool {
+        self.hit == Hit::Collect
+            && !self.literal_outputs()
+            && self
+                .spec
+                .as_ref()
+                .is_some_and(|spec| spec.collect && spec.rules.iter().any(|r| !r.values.is_empty()))
+    }
+
+    pub fn computed<'a>(
+        &self,
+        candidates: &[u64],
+        rows: usize,
+        cells: &[(usize, usize, Leaf<'a>)],
+    ) -> Option<Leaf<'a>> {
+        let words = self.words;
+        let mut grid: Vec<Vec<Option<&Leaf<'a>>>> = self
+            .outputs
+            .iter()
+            .map(|outputs| vec![None; outputs.paths.len()])
+            .collect();
+        for (rule, at, leaf) in cells {
+            *grid.get_mut(*rule)?.get_mut(*at)? = Some(leaf);
+        }
+        let builders: Vec<Option<Rc<super::cells::Built>>> = (0..self.outputs.len())
+            .map(|rule| self.builder(rule, None))
+            .collect();
+        let columns: Vec<Vec<Option<zen_expression::lane::Column>>> = grid
+            .iter()
+            .map(|cells| cells.iter().map(|leaf| leaf.map(Leaf::column)).collect())
+            .collect();
+        let mut coded: Vec<Vec<Vec<Option<Variable>>>> = columns
+            .iter()
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|column| match column.map(|c| c.values) {
+                        Some(zen_expression::lane::Values::Dict { values, .. }) => {
+                            vec![None; values.len()]
+                        }
+                        _ => Vec::new(),
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut values = Vec::with_capacity(rows);
+        let mut vals: Vec<Variable> = Vec::new();
+        for row in 0..rows {
+            let set = candidates.get(row * words..(row + 1) * words)?;
+            let mut items = Vec::new();
+            for rule in Bits::rows(set) {
+                let outputs = self.outputs.get(rule)?;
+                vals.clear();
+                for (column, memo) in columns.get(rule)?.iter().zip(coded.get_mut(rule)?) {
+                    vals.push(match column {
+                        None => Variable::Null,
+                        Some(column) if !memo.is_empty() => {
+                            match column.code(row).filter(|_| column.valid(row)) {
+                                Some(code) => match memo.get(code)? {
+                                    Some(value) => value.clone(),
+                                    None => {
+                                        let value = column.variable(row);
+                                        if matches!(
+                                            value,
+                                            Variable::Null
+                                                | Variable::Bool(_)
+                                                | Variable::Number(_)
+                                                | Variable::String(_)
+                                        ) {
+                                            memo[code] = Some(value.clone());
+                                        }
+                                        value
+                                    }
+                                },
+                                None => column.variable(row),
+                            }
+                        }
+                        Some(column) => column.variable(row),
+                    });
+                }
+                if vals.len() != outputs.paths.len() {
+                    return None;
+                }
+                items.push(self.built(builders[rule].as_ref(), rule, None, &vals));
+            }
+            values.push(Variable::from_array(items));
+        }
+        Some(Leaf::Any(values.into()))
+    }
+
+    pub fn assembles(&self, first: bool) -> bool {
+        match first {
+            false => self.hit == Hit::Collect && self.literal_outputs(),
+            true => {
+                self.hit == Hit::FirstCollect
+                    && self.split.is_some()
+                    && self.literal_outputs()
+                    && self.deep_free(&self.targets().0)
+            }
+        }
+    }
+
+    pub fn first_collected<'a>(&self, candidates: &[u64], rows: usize) -> Option<Collected<'a>> {
+        if !self.assembles(true) {
+            return None;
+        }
+        let (targets, templates) = self.targets();
+        let words = self.words;
+        let codes: Vec<i32> = candidates
+            .chunks_exact(words)
+            .take(rows)
+            .map(|row| {
+                row.iter()
+                    .enumerate()
+                    .find(|(_, word)| **word != 0)
+                    .map_or(-1, |(at, word)| {
+                        (at * 64 + word.trailing_zeros() as usize) as i32
+                    })
+            })
+            .collect();
+        let first = First::coded(self.outputs.len(), codes);
+        let lists = self.collect_columns.len();
+        let leaves = Self::literal_lists(&first, candidates, words, lists, &targets, &templates);
+        Some(self.joined(first, leaves, rows))
+    }
+
+    fn joined<'a>(&self, first: First, lists_leaves: Vec<Leaf<'a>>, rows: usize) -> Collected<'a> {
+        let paths = self.split.clone().unwrap_or_default();
         let collect_slots: Vec<bool> = self
             .all_paths
             .iter()
@@ -254,7 +387,11 @@ impl Table {
         }
         let (candidates, _) = self.candidates(runner, bound, false);
         self.record_hits(bound, &candidates, None, true);
-        let (codes, sets) = self.sets(&candidates, bound.rows());
+        Some(self.listed(&candidates, bound.rows()))
+    }
+
+    fn listed(&self, candidates: &[u64], rows: usize) -> (Vec<Variable>, Vec<i32>, usize) {
+        let (codes, sets) = self.sets(candidates, rows);
         let templates: Vec<Vec<Variable>> = sets
             .iter()
             .map(|set| {
@@ -284,7 +421,7 @@ impl Table {
                 )
             })
             .collect();
-        Some((values, codes, sets.len()))
+        (values, codes, sets.len())
     }
 
     fn record_names(&self) -> Option<Vec<Arc<str>>> {
@@ -382,7 +519,34 @@ impl Table {
         let rows = bound.rows();
         let (candidates, _) = self.candidates(runner, bound, false);
         self.record_hits(bound, &candidates, None, true);
-        let (codes, sets) = self.sets(&candidates, rows);
+        self.records(names, &candidates, rows)
+    }
+
+    pub fn assembled<'a>(
+        &self,
+        candidates: &[u64],
+        rows: usize,
+    ) -> Option<(Leaf<'a>, Vec<i32>, usize)> {
+        if !self.assembles(false) {
+            return None;
+        }
+        if let Some((records, codes, size)) = self
+            .record_names()
+            .and_then(|names| self.records(names, candidates, rows))
+        {
+            return Some((Leaf::Records(Rc::new(records)), codes, size));
+        }
+        let (values, codes, size) = self.listed(candidates, rows);
+        Some((Leaf::Any(values.into()), codes, size))
+    }
+
+    fn records<'a>(
+        &self,
+        names: Vec<Arc<str>>,
+        candidates: &[u64],
+        rows: usize,
+    ) -> Option<(Records<'a>, Vec<i32>, usize)> {
+        let (codes, sets) = self.sets(candidates, rows);
         let sets: Vec<Vec<usize>> = sets
             .into_iter()
             .map(|key| Bits::rows(key).collect())

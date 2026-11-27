@@ -180,6 +180,7 @@ impl Exact {
             Arith::Mul => x.checked_mul(y).map(Some).ok_or(Fault),
             Arith::Div => Ok(x.checked_div(y)),
             Arith::Rem => Ok(x.checked_rem(y)),
+            Arith::Pow if !y.fract().is_zero() => Err(Fault),
             Arith::Pow => x
                 .checked_powd(y)
                 .or_else(|| Decimal::from_f64(x.to_f64()?.powf(y.to_f64()?)))

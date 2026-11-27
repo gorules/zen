@@ -129,7 +129,7 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     pub(super) fn native(plan: &PolicyPlan, block: usize) -> Option<&Native> {
-        let plan = &plan.plans[block];
+        let plan = plan.flat(block);
         plan.native().or(plan.member.as_ref())
     }
 
@@ -137,7 +137,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         plan: &PolicyPlan,
         block: usize,
     ) -> Option<(Vec<&LaneProgram>, Vec<&Arc<str>>)> {
-        match (Self::native(plan, block), &plan.plans[block].table) {
+        match (Self::native(plan, block), &plan.flat(block).table) {
             (Some(native), _) => {
                 let key = match native {
                     Native::Expression { key, .. } => key,
@@ -169,7 +169,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             return false;
         };
         let iterated =
-            self.plan.plans[block].member.is_some() || self.plan.plans[block].table.is_some();
+            self.plan.flat(block).member.is_some() || self.plan.flat(block).table.is_some();
         let entity = &self.sheet.entities[at];
         iterated
             && keys.iter().all(|key| self.field_of(at, key).is_some())
@@ -315,6 +315,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         if !failed.contains(&true) {
             return;
         }
+        Pass::dropped("member lane failed", failed.iter().filter(|&&f| f).count());
         for (&row, &f) in parents.iter().zip(failed) {
             if f {
                 self.fall(row);
@@ -331,13 +332,14 @@ impl<'s, 'a> Pass<'s, 'a> {
     ) {
         if let Some(Some(field)) = self.field_of(at, key) {
             self.sheet.entities[at].write(field, leaf, kids);
+            self.sheet.relink(at);
         }
     }
 
     pub(super) fn member(&mut self, at: usize, block: usize, event: Event, positions: &[usize]) {
         let plan = self.plan;
         let (kids, parents) = self.kids(at, positions);
-        if let (None, Some(table)) = (Self::native(plan, block), &plan.plans[block].table) {
+        if let (None, Some(table)) = (Self::native(plan, block), &plan.flat(block).table) {
             let units = Units {
                 member: Some(at),
                 units: kids,
@@ -566,6 +568,10 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn plain(leaf: &Leaf) -> bool {
+        let leaf = match leaf {
+            Leaf::Dated(dated) => dated.dense(),
+            other => other,
+        };
         matches!(
             leaf,
             Leaf::Input(_)

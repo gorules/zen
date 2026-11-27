@@ -1,6 +1,6 @@
 use super::{
-    Array, Bits, ColumnBuilder, Dict, Input, Items, Literal, Masked, Picked, Records, Scattered,
-    Stitched, Store, Templated,
+    Array, Bits, ColumnBuilder, Dated, Dict, Input, Items, Literal, Masked, Picked, Records,
+    Scattered, Stitched, Store, Templated,
 };
 use std::cell::OnceCell;
 use std::rc::Rc;
@@ -18,21 +18,36 @@ pub(crate) enum Leaf<'a> {
     Stitched(Rc<Stitched<'a>>),
     Records(Rc<Records<'a>>),
     Templated(Rc<Templated>),
+    Dated(Rc<Dated<'a>>),
 }
 
 impl<'a> Leaf<'a> {
+    pub fn declared(&self) -> Option<Leaf<'a>> {
+        match self {
+            Leaf::Dated(dated) if dated.declared() => Some(dated.raw().clone()),
+            _ => None,
+        }
+    }
+
     pub fn items(&self) -> Option<Items<'a>> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().items();
+        }
         match self {
             Leaf::Records(records) => Some(Items::Records(records.clone())),
-            Leaf::Input(input) => Self::struct_list(input.column).then(|| Items::Input {
-                column: input.column,
-                mask: None,
-            }),
+            Leaf::Input(input) => {
+                Self::struct_list(input.column.resolved()).then(|| Items::Input {
+                    column: input.column.resolved(),
+                    mask: None,
+                })
+            }
             Leaf::Masked(masked) => match &masked.inner {
-                Leaf::Input(input) if Self::struct_list(input.column) => Some(Items::Input {
-                    column: input.column,
-                    mask: Some(masked.bits().clone()),
-                }),
+                Leaf::Input(input) if Self::struct_list(input.column.resolved()) => {
+                    Some(Items::Input {
+                        column: input.column.resolved(),
+                        mask: Some(masked.bits().clone()),
+                    })
+                }
                 Leaf::Records(records) => {
                     let valid: Vec<u64> = records
                         .valid
@@ -54,7 +69,32 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn coded(&self) -> Option<(Rc<[i32]>, usize, Option<Rc<[u64]>>)> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().coded();
+        }
+        match self {
+            Leaf::Templated(templated) => Some((
+                templated.codes.clone(),
+                templated.templates.len(),
+                Some(templated.valid.as_slice().into()),
+            )),
+            Leaf::Typed(array) => match array.store() {
+                Store::Coded { codes, dict } => Some((
+                    codes.clone(),
+                    dict.len()?,
+                    array.validity_bits().map(Rc::from),
+                )),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn records(&self) -> Option<Rc<Records<'a>>> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().records();
+        }
         match self {
             Leaf::Records(records) => Some(records.clone()),
             Leaf::Picked(picked) => {
@@ -108,8 +148,11 @@ impl<'a> Leaf<'a> {
     }
 
     fn all_valid(&self) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().all_valid();
+        }
         match self {
-            Leaf::Input(input) => input.column.validity.is_none(),
+            Leaf::Input(input) => input.column.resolved().validity.is_none(),
             Leaf::Typed(typed) => typed.valid.is_none(),
             Leaf::Any(_) => true,
             _ => false,
@@ -126,6 +169,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn coded_dict(&self) -> Option<&Rc<Dict>> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().coded_dict();
+        }
         match self {
             Leaf::Typed(typed) => match &typed.values {
                 Store::Coded { dict, .. } => Some(dict),
@@ -136,6 +182,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn scatter_parts(&self) -> Option<(&Leaf<'a>, &Rc<[usize]>)> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().scatter_parts();
+        }
         match self {
             Leaf::Scattered(scattered) if scattered.dense.get().is_none() => {
                 Some((&scattered.inner, &scattered.positions))
@@ -155,6 +204,7 @@ impl<'a> Leaf<'a> {
             (Leaf::Stitched(a), Leaf::Stitched(b)) => Rc::ptr_eq(a, b),
             (Leaf::Records(a), Leaf::Records(b)) => Rc::ptr_eq(a, b),
             (Leaf::Templated(a), Leaf::Templated(b)) => Rc::ptr_eq(a, b),
+            (Leaf::Dated(a), Leaf::Dated(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -323,11 +373,15 @@ impl<'a> Leaf<'a> {
                 .map_or(Variable::Null, |(leaf, at)| leaf.get(at)),
             Leaf::Records(records) => records.get(row),
             Leaf::Templated(templated) => templated.get(row),
+            Leaf::Dated(dated) => dated.get(row),
             _ => self.column().variable(row),
         }
     }
 
     pub fn objects(&self) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().objects();
+        }
         if let Leaf::Masked(_) | Leaf::Scattered(_) = self {
             if let Some(found) = self.plain_objects() {
                 return found;
@@ -363,6 +417,9 @@ impl<'a> Leaf<'a> {
     }
 
     fn plain_objects(&self) -> Option<bool> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().plain_objects();
+        }
         match self {
             _ if self.objectless() => Some(false),
             Leaf::Typed(_) | Leaf::Input(_) | Leaf::Any(_) => Some(self.objects()),
@@ -381,7 +438,7 @@ impl<'a> Leaf<'a> {
                 Store::Coded { dict, .. } => matches!(&**dict, Dict::Any(values) if plain(values)),
                 _ => false,
             },
-            Leaf::Input(input) => match input.column.values {
+            Leaf::Input(input) => match input.column.resolved().values {
                 Values::Any(values)
                 | Values::Dict {
                     values: Dictionary::Any(values),
@@ -398,13 +455,17 @@ impl<'a> Leaf<'a> {
             Leaf::Picked(picked) => picked.source.objectless(),
             Leaf::Stitched(stitched) => stitched.sources.iter().all(Leaf::objectless),
             Leaf::Records(_) => false,
+            Leaf::Dated(dated) => dated.dense().objectless(),
         }
     }
 
     fn scalar(&self) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().scalar();
+        }
         match self {
             Leaf::Typed(typed) => match &typed.values {
-                Store::Scaled { .. } | Store::Bool(_) | Store::Text { .. } => true,
+                Store::Scaled { .. } | Store::Bool(_) | Store::Text { .. } | Store::Dec(_) => true,
                 Store::Coded { dict, .. } => !matches!(**dict, Dict::Any(_)),
                 Store::Any(_) | Store::List { .. } => false,
             },
@@ -412,7 +473,7 @@ impl<'a> Leaf<'a> {
             Leaf::Scattered(scattered) => scattered.inner.scalar(),
             Leaf::Picked(picked) => picked.source.scalar(),
             Leaf::Stitched(stitched) => stitched.sources.iter().all(Leaf::scalar),
-            Leaf::Input(input) => match input.column.values {
+            Leaf::Input(input) => match input.column.resolved().values {
                 Values::Dict { values, .. } => {
                     !matches!(values, Dictionary::Any(_) | Dictionary::Column(_))
                 }
@@ -427,12 +488,13 @@ impl<'a> Leaf<'a> {
         match self {
             Leaf::Any(values) => Leaf::Any(positions.iter().map(|&i| values[i].clone()).collect()),
             Leaf::Typed(typed) => Leaf::typed(typed.pick(positions)),
-            Leaf::Input(input) => Leaf::typed(Array::gather(&input.column, positions)),
+            Leaf::Input(input) => Leaf::typed(Array::gather(&input.column.resolved(), positions)),
             Leaf::Masked(_) | Leaf::Scattered(_) => {
                 Leaf::typed(Array::gather(&self.column(), positions))
             }
             Leaf::Records(records) => Leaf::Records(Rc::new(records.pick(positions))),
             Leaf::Templated(templated) => templated.mapped(positions.iter().copied()),
+            Leaf::Dated(dated) => dated.dense().dense(positions),
             Leaf::Picked(picked) => {
                 let composed: Vec<usize> = positions.iter().map(|&i| picked.positions[i]).collect();
                 picked.source.dense(&composed)
@@ -455,11 +517,28 @@ impl<'a> Leaf<'a> {
         }
     }
 
+    pub fn expand_coded(&self, ids: &[u32], codes: &Rc<[i32]>) -> Leaf<'a> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().expand_coded(ids, codes);
+        }
+        match self {
+            Leaf::Typed(typed) => Leaf::typed(typed.expand_coded(ids, codes)),
+            other => other.expand(ids),
+        }
+    }
+
     pub fn expand(&self, ids: &[u32]) -> Leaf<'a> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().expand(ids);
+        }
         match self {
             Leaf::Typed(typed) => Leaf::typed(typed.expand(ids)),
             Leaf::Any(values) => Leaf::typed(Array::from_values(values.to_vec()).expand(ids)),
             Leaf::Templated(templated) => templated.mapped(ids.iter().map(|&id| id as usize)),
+            Leaf::Records(records) => {
+                let positions: Rc<[usize]> = ids.iter().map(|&id| id as usize).collect();
+                Leaf::Records(Rc::new(records.pick(&positions)))
+            }
             other => {
                 let column = other.column();
                 Leaf::typed(
@@ -493,6 +572,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn listed(&self, row: usize) -> Option<(&Records<'a>, usize)> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().listed(row);
+        }
         match self {
             Leaf::Records(records) => Some((records, row)),
             Leaf::Picked(_) | Leaf::Stitched(_) => {
@@ -504,6 +586,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn plain(&self) -> Option<(Column<'_>, u8)> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().plain();
+        }
         if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
             return None;
         }
@@ -527,6 +612,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn scalars(&self) -> Option<(Column<'_>, bool)> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().scalars();
+        }
         if matches!(self, Leaf::Any(_) | Leaf::Records(_) | Leaf::Templated(_)) {
             return None;
         }
@@ -540,6 +628,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn codes(&self, rows: usize) -> (Vec<u32>, u32) {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().codes(rows);
+        }
         type Fast<K> =
             std::collections::HashMap<K, u32, std::hash::BuildHasherDefault<ahash::AHasher>>;
         let mut numbers: Fast<(i128, u32)> = Default::default();
@@ -606,6 +697,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn words(&self, row: usize, key: &mut Vec<u64>) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().words(row, key);
+        }
         if matches!(self, Leaf::Any(_) | Leaf::Records(_)) {
             return false;
         }
@@ -658,7 +752,7 @@ impl<'a> Leaf<'a> {
 
     pub fn column(&self) -> Column<'_> {
         match self {
-            Leaf::Input(input) => input.column,
+            Leaf::Input(input) => input.column.resolved(),
             Leaf::Scattered(scattered) => scattered
                 .dense
                 .get_or_init(|| Self::spread(scattered))
@@ -681,10 +775,14 @@ impl<'a> Leaf<'a> {
             Leaf::Templated(templated) => {
                 Column::with_validity(Values::Any(templated.dense()), &templated.valid, 0)
             }
+            Leaf::Dated(dated) => dated.dense().column(),
         }
     }
 
     pub fn null(&self, row: usize) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.raw().null(row);
+        }
         match self {
             Leaf::Any(values) => values.get(row).is_none_or(|v| matches!(v, Variable::Null)),
             Leaf::Picked(_) | Leaf::Stitched(_) => {
@@ -698,7 +796,7 @@ impl<'a> Leaf<'a> {
 
     pub fn valid_at(&self, row: usize) -> bool {
         match self {
-            Leaf::Input(input) => input.column.valid(row),
+            Leaf::Input(input) => input.column.resolved().valid(row),
             Leaf::Masked(masked) => Bits::get(masked.bits(), row),
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
@@ -706,12 +804,13 @@ impl<'a> Leaf<'a> {
             Leaf::Templated(templated) => templated.template(row).is_some(),
             Leaf::Picked(_) => self.source(row).is_some_and(|(leaf, at)| leaf.valid_at(at)),
             Leaf::Stitched(_) => self.column().valid(row),
+            Leaf::Dated(dated) => dated.raw().valid_at(row),
         }
     }
 
     pub fn validity(&self, rows: usize) -> Vec<u64> {
         match self {
-            Leaf::Input(input) => Bits::present(input.column.validity, rows),
+            Leaf::Input(input) => Bits::present(input.column.resolved().validity, rows),
             Leaf::Typed(typed) => match &typed.valid {
                 Some(bits) => Bits::window(bits, 0, rows),
                 None => Bits::ones(rows),
@@ -728,14 +827,18 @@ impl<'a> Leaf<'a> {
                 ),
             },
             Leaf::Stitched(_) => Bits::present(self.column().validity, rows),
+            Leaf::Dated(dated) => dated.raw().validity(rows),
         }
     }
 
     pub fn valued(&self, rows: usize) -> Vec<u64> {
+        if let Leaf::Dated(dated) = self {
+            return dated.raw().valued(rows);
+        }
         match self {
             Leaf::Input(input) if input.rows == rows => input
                 .valued
-                .get_or_init(|| Self::column_valued(input.column, rows))
+                .get_or_init(|| Self::column_valued(input.column.resolved(), rows))
                 .clone(),
             Leaf::Any(values) => Bits::of(rows, |row| {
                 values
@@ -858,6 +961,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn truthy(&self, row: usize) -> bool {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().truthy(row);
+        }
         match self {
             Leaf::Any(values) => matches!(values.get(row), Some(Variable::Bool(true))),
             Leaf::Picked(_) | Leaf::Stitched(_) => {
@@ -880,6 +986,9 @@ impl<'a> Leaf<'a> {
     }
 
     pub fn truths(&self, rows: usize) -> Vec<u64> {
+        if let Leaf::Dated(dated) = self {
+            return dated.dense().truths(rows);
+        }
         if let Leaf::Scattered(scattered) = self {
             if scattered.dense.get().is_none() {
                 let inner = scattered.inner.truths(scattered.positions.len());
@@ -920,6 +1029,7 @@ impl<'a> Leaf<'a> {
             Leaf::Stitched(stitched) => stitched.located.len(),
             Leaf::Records(records) => records.rows,
             Leaf::Templated(templated) => templated.codes.len(),
+            Leaf::Dated(dated) => dated.raw().len(),
         }
     }
 }

@@ -3,6 +3,7 @@ pub(crate) mod blocks;
 mod columnar;
 mod entity;
 mod host;
+mod rooted;
 mod schedule;
 pub(crate) mod site;
 mod traced;
@@ -192,9 +193,12 @@ pub(crate) struct PolicyPlan {
     root: Arc<Segment>,
     special: std::sync::RwLock<Specialized<(usize, u64), Arc<LaneProgram>>>,
     safe: std::sync::OnceLock<Vec<Iteration>>,
-    dated_tables: std::sync::OnceLock<bool>,
+    quiet: std::sync::OnceLock<Vec<bool>>,
     fusions: columnar::Fusions,
     programs: Arc<Programs>,
+    rooted: Vec<Option<rooted::Rooted>>,
+    gates: Vec<Arc<str>>,
+    links: Vec<(Arc<str>, Arc<str>)>,
 }
 
 struct Rows<'a> {
@@ -277,15 +281,23 @@ impl PolicyPlan {
                     iteration,
                 }
             })
-            .collect();
+            .collect::<Vec<BlockPlan>>();
+        let (rooted, gates) = rooted::Rooted::compile(artifact, &blocks.rules, &plans);
         Self {
+            links: artifact
+                .reference_fields
+                .iter()
+                .map(|field| (field.target.clone(), field.path.clone()))
+                .collect(),
+            rooted,
+            gates,
             blocks,
             plans,
             roots,
             root,
             special: std::sync::RwLock::new(Specialized::new(Self::SPECIAL)),
             safe: std::sync::OnceLock::new(),
-            dated_tables: std::sync::OnceLock::new(),
+            quiet: std::sync::OnceLock::new(),
             fusions: columnar::Fusions::default(),
             programs: artifact.programs(),
         }

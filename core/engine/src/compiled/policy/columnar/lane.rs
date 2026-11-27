@@ -41,12 +41,26 @@ impl<'s, 'a> Pass<'s, 'a> {
                     .iter_mut()
                     .find(|e| e.active && e.path.as_ref() == key.as_str())
                 {
+                    if !entity.cached() && crate::compiled::census::Census::on() {
+                        crate::compiled::census::Census::record(
+                            "policy rows | entity materialized".into(),
+                            entity.frame.children,
+                            0,
+                        );
+                    }
                     entity.materialize();
                 }
             }
         }
         let mut failed = vec![false; positions.len()];
         if p.writes_env || p.chain || p.opaque() || p.rows {
+            if crate::compiled::census::Census::on() {
+                crate::compiled::census::Census::record(
+                    "policy rows | scope per row".into(),
+                    positions.len(),
+                    0,
+                );
+            }
             let scopes: Vec<Scope> = positions.iter().map(|&row| self.scope(row)).collect();
             let mut values = vec![Variable::Null; positions.len()];
             let context = match p.draws {
@@ -73,7 +87,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 })
                 .map(|(at, _)| at)
                 .collect();
-            stale.into_iter().for_each(|at| self.sheet.retire(at));
+            stale.into_iter().for_each(|at| self.retire(at));
         }
         let mut columns = Columns::new(self.sheet.rows);
         let mut used: Vec<Slot> = Vec::new();
@@ -111,7 +125,16 @@ impl<'s, 'a> Pass<'s, 'a> {
             })
             .collect();
         let scopes = match rows {
-            true => crate::compiled::bound::Scopes::Owned(self.scopes(positions)),
+            true => {
+                if crate::compiled::census::Census::on() {
+                    crate::compiled::census::Census::record(
+                        "policy rows | row bound per row".into(),
+                        positions.len(),
+                        0,
+                    );
+                }
+                crate::compiled::bound::Scopes::Owned(self.scopes(positions))
+            }
             false => crate::compiled::bound::Bound::blank(self.sheet.rows),
         };
         let views: Vec<(Arc<str>, Leaf<'a>)> = used

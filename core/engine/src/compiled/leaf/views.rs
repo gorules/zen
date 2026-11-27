@@ -102,3 +102,117 @@ impl Templated {
             .get_or_init(|| (0..self.codes.len()).map(|row| self.get(row)).collect())
     }
 }
+
+pub(crate) trait Dating {
+    fn convert(&self, value: &Variable) -> Option<Variable>;
+    fn single(&self) -> bool;
+    fn listed(&self) -> bool;
+    fn field(&self, name: &str) -> Option<Rc<dyn Dating>>;
+}
+
+pub(crate) struct Dated<'a> {
+    raw: Leaf<'a>,
+    len: usize,
+    dating: Rc<dyn Dating>,
+    dense: OnceCell<Leaf<'a>>,
+    marks: OnceCell<Vec<u64>>,
+    changed: OnceCell<bool>,
+}
+
+impl std::fmt::Debug for Dated<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dated")
+            .field("raw", &self.raw)
+            .field("len", &self.len)
+            .finish()
+    }
+}
+
+impl<'a> Dated<'a> {
+    pub fn leaf(raw: Leaf<'a>, len: usize, dating: Rc<dyn Dating>) -> Leaf<'a> {
+        Leaf::Dated(Rc::new(Dated {
+            raw,
+            len,
+            dating,
+            dense: OnceCell::new(),
+            marks: OnceCell::new(),
+            changed: OnceCell::new(),
+        }))
+    }
+
+    pub fn raw(&self) -> &Leaf<'a> {
+        &self.raw
+    }
+
+    pub fn dating(&self) -> &Rc<dyn Dating> {
+        &self.dating
+    }
+
+    pub fn settled(&self) -> bool {
+        self.dense.get().is_some()
+    }
+
+    pub fn get(&self, row: usize) -> Variable {
+        if let Some(dense) = self.dense.get() {
+            return dense.get(row);
+        }
+        let value = self.raw.get(row);
+        self.dating.convert(&value).unwrap_or(value)
+    }
+
+    pub fn changed(&self) -> bool {
+        *self.changed.get_or_init(|| match self.marks.get() {
+            Some(marks) => marks.iter().any(|word| *word != 0),
+            None => (0..self.len).any(|row| self.dating.convert(&self.raw.get(row)).is_some()),
+        })
+    }
+
+    pub fn declared(&self) -> bool {
+        self.dating.single()
+            && matches!(
+                crate::compiled::shred::Normalizer::class(&self.raw.column().values),
+                Some(zen_expression::typed::Class::Text)
+            )
+            && self.changed()
+    }
+
+    pub fn marks(&self) -> &[u64] {
+        self.dense();
+        self.marks.get().map_or(&[], Vec::as_slice)
+    }
+
+    pub fn dense(&self) -> &Leaf<'a> {
+        self.dense.get_or_init(|| {
+            let mut marks = vec![0u64; self.len.div_ceil(64)];
+            let mut changed = false;
+            let values: Vec<Variable> = (0..self.len)
+                .map(|row| {
+                    let value = self.raw.get(row);
+                    match self.dating.convert(&value) {
+                        Some(next) => {
+                            changed = true;
+                            Bits::on(&mut marks, row);
+                            next
+                        }
+                        None => value,
+                    }
+                })
+                .collect();
+            let _ = self.marks.set(marks);
+            if !changed {
+                return self.raw.clone();
+            }
+            let any = Leaf::Any(values.into());
+            let mut validity = self.raw.validity(self.len);
+            Bits::trim(&mut validity, self.len);
+            let valid = validity
+                .iter()
+                .map(|w| w.count_ones() as usize)
+                .sum::<usize>();
+            match valid == self.len {
+                true => any,
+                false => Leaf::masked(any, &validity.into()),
+            }
+        })
+    }
+}

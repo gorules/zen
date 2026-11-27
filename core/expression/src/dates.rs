@@ -17,9 +17,17 @@ impl DateValue {
         VmDate::parses(text)
     }
 
+    pub fn reads(text: &str) -> bool {
+        crate::lane::date::Date::remembered(text, crate::context::system_timezone()).is_valid()
+    }
+
     pub fn source_text(value: &Variable) -> Option<Variable> {
         let text = value.dynamic::<VmDate>()?.source()?;
         Some(Variable::String(text.into()))
+    }
+
+    pub fn source(value: &Variable) -> Option<&str> {
+        value.dynamic::<VmDate>()?.source()
     }
 
     pub fn is(value: &Variable) -> bool {

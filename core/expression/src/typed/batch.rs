@@ -68,6 +68,30 @@ pub(crate) struct Feed<'x> {
     pub(crate) fixed: Option<u8>,
 }
 
+pub(crate) enum OwnedData {
+    Num {
+        mant: Vec<i64>,
+        scale: Vec<u8>,
+    },
+    Bool(Vec<u64>),
+    Codes(Vec<i32>),
+    Text {
+        keys: Vec<i32>,
+        offsets: Vec<i32>,
+        data: Vec<u8>,
+    },
+}
+
+pub(crate) type Wide = (Vec<u64>, Vec<(usize, Decimal)>);
+
+pub(crate) struct Owned {
+    pub(crate) column: u16,
+    pub(crate) data: OwnedData,
+    pub(crate) valid: Vec<u64>,
+    pub(crate) fault: Vec<u64>,
+    pub(crate) wide: Option<Wide>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Lists {
     pub(crate) offsets: Vec<i32>,
@@ -87,6 +111,7 @@ pub(crate) struct Feeds<'x> {
     pub(crate) parents: Vec<Option<u16>>,
     pub(crate) now: Date,
     pub(crate) context: EvaluationContext,
+    pub(crate) eager: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -132,6 +157,10 @@ impl<'b> Batch<'b> {
 
     pub fn rows(&self) -> usize {
         self.rows
+    }
+
+    pub(crate) fn column_at(&self, at: usize) -> Option<Column<'b>> {
+        self.columns.get(at).copied()
     }
 }
 
@@ -266,6 +295,8 @@ impl<'x> Feed<'x> {
         base: usize,
         len: usize,
     ) -> Result<Self, Unsupported> {
+        let resolved = column.resolved();
+        let column = &resolved;
         let short = || Unsupported::new(format!("column {} is shorter than its rows", def.path));
         if column.len() < base + len {
             return Err(short());
@@ -473,6 +504,42 @@ impl<'x> Feed<'x> {
         Ok(feed)
     }
 
+    fn owned(owned: &'x Owned, len: usize) -> Self {
+        let full = (0..len).all(|at| Bits::get(&owned.valid, at));
+        let validity = (!full).then_some((owned.valid.as_slice(), 0));
+        let data = match &owned.data {
+            OwnedData::Num { mant, scale } => Data::Num {
+                mant: Cow::Borrowed(mant),
+                scale: Scales::Each(Cow::Borrowed(scale)),
+            },
+            OwnedData::Bool(bits) => Data::Bool {
+                bits: Cow::Borrowed(bits),
+                offset: 0,
+            },
+            OwnedData::Codes(codes) => Data::Codes(codes.clone()),
+            OwnedData::Text {
+                keys,
+                offsets,
+                data,
+            } => Data::Text(Text::Dict {
+                keys,
+                offsets,
+                data,
+            }),
+        };
+        let mut feed = Self::new(data, validity);
+        feed.faults = owned
+            .fault
+            .iter()
+            .any(|w| *w != 0)
+            .then(|| owned.fault.clone());
+        feed.wide = owned.wide.clone();
+        let faults = feed.faults.take();
+        let mut feed = feed.scan(len);
+        feed.faults = faults;
+        feed
+    }
+
     fn scan(mut self, len: usize) -> Self {
         let Data::Num {
             scale: Scales::Each(each),
@@ -649,14 +716,33 @@ impl<'x> Feeds<'x> {
         batch: &Batch<'x>,
         context: &EvaluationContext,
     ) -> Result<Self, Unsupported> {
+        Self::derived(hir, classes, batch, &[], context)
+    }
+
+    pub(crate) fn derived(
+        hir: &Hir,
+        classes: &[(Origin, u16)],
+        batch: &Batch<'x>,
+        owned: &'x [Owned],
+        context: &EvaluationContext,
+    ) -> Result<Self, Unsupported> {
         let schema = &hir.schema;
-        if batch.columns.len() != schema.columns.len() || batch.lists.len() != schema.lists.len() {
+        if batch.columns.len() + owned.len() != schema.columns.len()
+            || batch.lists.len() != schema.lists.len()
+        {
             return Err(Unsupported::new("batch does not match the program schema"));
         }
         let rows = batch.rows;
-        let mut columns = Vec::with_capacity(batch.columns.len());
+        let mut columns = Vec::with_capacity(schema.columns.len());
         for (column, def) in batch.columns.iter().zip(&schema.columns) {
             columns.push(Feed::of(column, def, 0, rows)?);
+        }
+        let eager = columns.len();
+        for (at, owned) in owned.iter().enumerate() {
+            if owned.column as usize != eager + at {
+                return Err(Unsupported::new("derived column order"));
+            }
+            columns.push(Feed::owned(owned, rows));
         }
         let mut fields = Vec::with_capacity(batch.lists.len());
         let mut lists = Vec::with_capacity(batch.lists.len());
@@ -749,6 +835,7 @@ impl<'x> Feeds<'x> {
             parents,
             now: Date(None),
             context: context.clone(),
+            eager,
         };
         for (origin, dict) in classes {
             let class = {
@@ -769,7 +856,7 @@ impl<'x> Feeds<'x> {
 
     pub(crate) fn prefaults(&self, out: &mut Outputs, select: Option<&[u64]>) {
         let mut rows: Vec<usize> = Vec::new();
-        for feed in &self.columns {
+        for feed in &self.columns[..self.eager.min(self.columns.len())] {
             if let Some(faults) = &feed.faults {
                 rows.extend((0..self.rows).filter(|&r| Bits::get(faults, r)));
             }

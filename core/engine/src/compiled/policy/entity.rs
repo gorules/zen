@@ -26,6 +26,7 @@ pub(super) struct Entity<'a> {
     pub fields: Vec<Field<'a>>,
     pub active: bool,
     pub hosted: Option<Rc<[usize]>>,
+    pub link: Option<(usize, Rc<[usize]>)>,
     cache: Option<Vec<Variable>>,
 }
 
@@ -35,13 +36,15 @@ impl<'a> Entity<'a> {
         columns: &Columns,
         entities: &[Entity],
         goals: &[Arc<str>],
+        converted: bool,
+        resolved: bool,
     ) -> Option<Vec<bool>> {
         let shredded: Vec<&Entity> = entities
             .iter()
             .filter(|entity| entity.hosted.is_some())
             .collect();
         if shredded.is_empty() {
-            return artifact.sure(columns, goals);
+            return artifact.sure(columns, goals, converted, resolved);
         }
         let parts: Vec<Vec<(&str, Column)>> = shredded
             .iter()
@@ -49,7 +52,12 @@ impl<'a> Entity<'a> {
                 entity
                     .fields
                     .iter()
-                    .map(|field| (field.name.as_ref(), field.leaf.column()))
+                    .map(|field| match &field.leaf {
+                        Leaf::Dated(dated) if !dated.settled() => {
+                            (field.name.as_ref(), dated.raw().column())
+                        }
+                        leaf => (field.name.as_ref(), leaf.column()),
+                    })
                     .collect()
             })
             .collect();
@@ -87,7 +95,7 @@ impl<'a> Entity<'a> {
                 .map_or(*column, |(_, list)| *list);
             replaced = replaced.column(path, column);
         }
-        artifact.sure(&replaced, goals)
+        artifact.sure(&replaced, goals, converted, resolved)
     }
 
     pub fn new(
@@ -134,8 +142,50 @@ impl<'a> Entity<'a> {
             fields,
             active: true,
             hosted: None,
+            link: None,
             cache: None,
         })
+    }
+
+    pub fn linked(
+        path: Arc<str>,
+        entry: usize,
+        frame: Frame,
+        fields: Vec<Field<'a>>,
+        link: Option<(usize, Rc<[usize]>)>,
+    ) -> Self {
+        Self {
+            name: Arc::from(""),
+            path,
+            owner: None,
+            entry,
+            frame,
+            fields,
+            active: true,
+            hosted: None,
+            link,
+            cache: None,
+        }
+    }
+
+    pub fn gathered(&self, index: &Rc<[usize]>) -> Vec<Field<'a>> {
+        self.fields
+            .iter()
+            .map(|field| Field {
+                name: field.name.clone(),
+                leaf: field.leaf.pick(index),
+                present: field
+                    .present
+                    .as_ref()
+                    .map(|bits| Rc::from(Bits::gather(bits, index))),
+                input: field.input,
+            })
+            .collect()
+    }
+
+    pub fn relinked(&mut self, fields: Vec<Field<'a>>) {
+        self.fields = fields;
+        self.cache = None;
     }
 
     pub fn shredded(
@@ -164,6 +214,7 @@ impl<'a> Entity<'a> {
             fields,
             active: true,
             hosted: Some(shred.hosted),
+            link: None,
             cache: None,
         }
     }
@@ -210,6 +261,15 @@ impl<'a> Entity<'a> {
             Some(bits) => Leaf::masked(field.leaf.clone(), bits),
             None => field.leaf.clone(),
         }
+    }
+
+    pub fn raw_view(&self, field: usize) -> Option<Leaf<'a>> {
+        let field = &self.fields[field];
+        let raw = field.leaf.declared()?;
+        Some(match &field.present {
+            Some(bits) => Leaf::masked(raw, bits),
+            None => raw,
+        })
     }
 
     fn object(&self, child: usize) -> Variable {

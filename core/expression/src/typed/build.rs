@@ -230,15 +230,17 @@ impl<'h> Build<'h> {
             Op::Classify(..) => Rep::Code,
             Op::Str(_) | Op::Decode(_) | Op::Concat(_) | Op::Clock(Clock::Text, _) => Rep::Text,
             Op::Clock(Clock::Matches, _) => Rep::Bool,
-            Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict, _) => Rep::Date,
+            Op::Clock(Clock::Now | Clock::Coerce | Clock::Strict | Clock::Declared, _) => Rep::Date,
             Op::Host(..) => Rep::of_kind(node.ty.kind, None),
-            Op::Call(Func::Upper | Func::Lower | Func::Trim, _) => Rep::Text,
+            Op::Call(Func::Upper | Func::Lower | Func::Trim | Func::Part(_), _) => Rep::Text,
             Op::Call(Func::Contains | Func::Matches, _) => Rep::Bool,
             Op::Not(_)
+            | Op::Checked(_)
             | Op::Cmp(..)
             | Op::And(..)
             | Op::Or(..)
             | Op::InSet(..)
+            | Op::InRow(..)
             | Op::InRange(..) => Rep::Bool,
             Op::Arith(op, a, b) => match (op, r(a), r(b)) {
                 (Arith::Add | Arith::Sub, Rep::Fix(x), Rep::Fix(y)) if x == y => Rep::Fix(x),
@@ -259,7 +261,19 @@ impl<'h> Build<'h> {
                 _ => Rep::Dyn,
             },
             Op::Fold {
-                fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg,
+                fold: Fold::Missing,
+                ..
+            } => Rep::Bool,
+            Op::Fold {
+                fold: Fold::At(_),
+                value: Some(v),
+                ..
+            } => match r(v) {
+                Rep::Code => return Err(Unsupported::new("typed: element of coded values")),
+                rep => rep,
+            },
+            Op::Fold {
+                fold: Fold::Sum | Fold::Min | Fold::Max | Fold::Avg | Fold::At(_),
                 value: None,
                 ..
             } => return Err(Unsupported::new("typed: fold without value")),
@@ -1301,6 +1315,12 @@ impl<'h> Build<'h> {
                 self.emit(Ins::Not { dst: d, a: va });
                 d
             }
+            Op::Checked(a) => {
+                let va = self.val(*a)?;
+                let d = self.fresh()?;
+                self.emit(Ins::Checked { dst: d, a: va });
+                d
+            }
             Op::Arith(op, a, b) => self.arith(*op, *a, *b, rep)?,
             Op::Cmp(op, a, b) => self.cmp(*op, *a, *b)?,
             Op::And(a, b) | Op::Or(a, b) => {
@@ -1382,6 +1402,20 @@ impl<'h> Build<'h> {
                 });
                 d
             }
+            Op::InRow(a, list, field, of) => {
+                let ra = rof(self, a);
+                let va = self.val(*a)?;
+                let d = self.fresh()?;
+                self.emit(Ins::InRow {
+                    dst: d,
+                    a: va,
+                    ra,
+                    list: *list,
+                    field: *field,
+                    of: *of,
+                });
+                d
+            }
             Op::InSet(a, set) => {
                 let ra = rof(self, a);
                 let va = self.val(*a)?;
@@ -1455,7 +1489,15 @@ impl<'h> Build<'h> {
                 }
                 d
             }
-            Op::FirstMatch { conds, strict } => match self.lookup(conds, *strict) {
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => match blind
+                .contains(&true)
+                .then_some(None)
+                .unwrap_or_else(|| self.lookup(conds, *strict))
+            {
                 Some(tab) => self.looked(tab)?,
                 None => {
                     let mut vs = Vec::with_capacity(conds.len());
@@ -1469,6 +1511,7 @@ impl<'h> Build<'h> {
                         conds: vs,
                         sel,
                         strict: *strict,
+                        blind: blind.clone(),
                     });
                     d
                 }
@@ -1533,6 +1576,13 @@ impl<'h> Build<'h> {
                             pattern,
                         }
                     }
+                    Func::Part(at) => Ins::Part {
+                        dst: self.fresh()?,
+                        a,
+                        b: self
+                            .arg(*args.get(1).ok_or_else(|| Unsupported::new("typed: call"))?)?,
+                        at: *at,
+                    },
                     f if f.mapping() => Ins::Map {
                         func: *f,
                         dst: self.fresh()?,

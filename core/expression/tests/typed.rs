@@ -370,12 +370,13 @@ impl Report {
                 continue;
             }
             tally.typed += 1;
-            let got = match &slot.offsets {
-                Some(offsets) => {
+            let got = match (&slot.values, &slot.offsets) {
+                (Some(values), _) => values[row].clone(),
+                (None, Some(offsets)) => {
                     let (lo, hi) = (offsets[row] as usize, offsets[row + 1] as usize);
                     Variable::from_array((lo..hi).map(|at| Self::output(slot, hir, at)).collect())
                 }
-                None => Self::output(slot, hir, row),
+                (None, None) => Self::output(slot, hir, row),
             };
             let rendered = conformance::Spec::guard(|| {
                 Ok(Variable::String(conformance::Spec::render(&got).into()))

@@ -279,6 +279,7 @@ impl CompiledGraph {
             .map(|row| {
                 let object = Variable::empty_object();
                 for ((_, column), (segments, nested)) in columns.columns.iter().zip(&shapes) {
+                    let column = column.resolved();
                     let value = match nested {
                         true => column.variable(row).depth_clone(usize::MAX),
                         false => column.variable(row),

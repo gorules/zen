@@ -505,6 +505,7 @@ fn rules_fault_strictly() {
             ],
             hit,
             selector: false,
+            collect: false,
         };
         let mut lowering = Lowering::new(None);
         lowering

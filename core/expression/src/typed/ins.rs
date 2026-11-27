@@ -179,6 +179,14 @@ pub(crate) enum Ins {
         ra: Rep,
         set: Vec<Lit>,
     },
+    InRow {
+        dst: R,
+        a: R,
+        ra: Rep,
+        list: u16,
+        field: u16,
+        of: Option<u16>,
+    },
     InRangeFix {
         dst: R,
         a: R,
@@ -194,6 +202,10 @@ pub(crate) enum Ins {
         range: Range,
     },
     Not {
+        dst: R,
+        a: R,
+    },
+    Checked {
         dst: R,
         a: R,
     },
@@ -229,6 +241,7 @@ pub(crate) enum Ins {
         conds: Vec<R>,
         sel: bool,
         strict: bool,
+        blind: Vec<bool>,
     },
     Lookup {
         dst: R,
@@ -262,6 +275,12 @@ pub(crate) enum Ins {
         func: Func,
         dst: R,
         a: Arg,
+    },
+    Part {
+        dst: R,
+        a: Arg,
+        b: Arg,
+        at: u16,
     },
     Str {
         dst: R,
@@ -445,7 +464,7 @@ impl Ins {
                 }
                 f(dst, true);
             }
-            Ins::EqText { dst, a, b, .. } => {
+            Ins::EqText { dst, a, b, .. } | Ins::Part { dst, a, b, .. } => {
                 a.visit(f);
                 b.visit(f);
                 f(dst, true);
@@ -492,10 +511,12 @@ impl Ins {
             | Ins::SelK { dst, c: a, .. }
             | Ins::InCode { dst, a, .. }
             | Ins::InGen { dst, a, .. }
+            | Ins::InRow { dst, a, .. }
             | Ins::InRangeFix { dst, a, .. }
             | Ins::InRangeGen { dst, a, .. }
             | Ins::Decode { dst, a, .. }
-            | Ins::Not { dst, a } => {
+            | Ins::Not { dst, a }
+            | Ins::Checked { dst, a } => {
                 f(a, false);
                 f(dst, true);
             }

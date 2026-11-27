@@ -121,6 +121,16 @@ impl<'e, 'x> Exec<'e, 'x> {
     }
 
     fn mapped(func: Func, bytes: &[u8], d: &mut Reg, i: usize) -> bool {
+        if func == Func::Trim && bytes.is_ascii() {
+            let space = |b: &u8| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r');
+            let lo = bytes.iter().position(|b| !space(b)).unwrap_or(bytes.len());
+            let hi = bytes
+                .iter()
+                .rposition(|b| !space(b))
+                .map_or(lo, |at| at + 1);
+            d.push(i, &bytes[lo..hi]);
+            return true;
+        }
         if bytes.is_ascii() && func != Func::Trim {
             let lo = d.text.len();
             d.text.extend_from_slice(bytes);
@@ -245,6 +255,33 @@ impl<'e, 'x> Exec<'e, 'x> {
                 broken
                     .into_iter()
                     .for_each(|i| Bits::set(&mut d.fault, i, true));
+            }),
+            Ins::Part { dst, a, b, at } => Self::def(regs, *dst, |d, regs| {
+                let (x, y) = (self.view(a, regs), self.view(b, regs));
+                self.faults(d, &[x, y]);
+                d.texts(n);
+                let skip = d.fault;
+                let mut broken = Vec::new();
+                let mut missing = Vec::new();
+                self.each(act, &skip, |i| {
+                    let text = x.get(start, i).map(std::str::from_utf8);
+                    let sep = y.get(start, i).map(std::str::from_utf8);
+                    match (text, sep) {
+                        (Some(Ok(text)), Some(Ok(sep))) => {
+                            match text.split(sep).nth(usize::from(*at)) {
+                                Some(part) => d.push(i, part.as_bytes()),
+                                None => missing.push(i),
+                            }
+                        }
+                        _ => broken.push(i),
+                    }
+                });
+                broken
+                    .into_iter()
+                    .for_each(|i| Bits::set(&mut d.fault, i, true));
+                missing
+                    .into_iter()
+                    .for_each(|i| Bits::set(&mut d.valid, i, false));
             }),
             Ins::Concat { dst, parts } => Self::def(regs, *dst, |d, regs| {
                 let views: Vec<TV> = parts.iter().map(|p| self.view(p, regs)).collect();

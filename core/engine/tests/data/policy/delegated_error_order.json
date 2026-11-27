@@ -1,0 +1,1310 @@
+{
+ "policy": {
+  "blocks": [
+   {
+    "id": "model:c",
+    "props": {
+     "data": {
+      "name": "c",
+      "properties": [
+       {
+        "array": false,
+        "id": "c.n1",
+        "name": "n1",
+        "optional": false,
+        "type": "number"
+       },
+       {
+        "array": false,
+        "id": "c.n2",
+        "name": "n2",
+        "optional": true,
+        "type": "number"
+       },
+       {
+        "array": false,
+        "id": "c.s1",
+        "name": "s1",
+        "optional": false,
+        "type": "string"
+       },
+       {
+        "array": false,
+        "id": "c.s2",
+        "name": "s2",
+        "optional": true,
+        "type": "string"
+       },
+       {
+        "array": false,
+        "enum": [
+         "gold",
+         "silver",
+         "bronze"
+        ],
+        "id": "c.t",
+        "name": "t",
+        "optional": true,
+        "type": "string"
+       },
+       {
+        "array": false,
+        "id": "c.b",
+        "name": "b",
+        "optional": true,
+        "type": "boolean"
+       },
+       {
+        "array": false,
+        "id": "c.d1",
+        "name": "d1",
+        "optional": false,
+        "type": "date"
+       },
+       {
+        "array": false,
+        "id": "c.d2",
+        "name": "d2",
+        "optional": true,
+        "type": "date"
+       },
+       {
+        "array": false,
+        "id": "c.r",
+        "name": "r",
+        "optional": true,
+        "target": "pool",
+        "type": "reference"
+       },
+       {
+        "array": true,
+        "id": "c.items",
+        "name": "items",
+        "optional": false,
+        "target": "item",
+        "type": "relationship"
+       }
+      ],
+      "scope": "entity"
+     }
+    },
+    "type": "dataModel"
+   },
+   {
+    "id": "model:item",
+    "props": {
+     "data": {
+      "name": "item",
+      "properties": [
+       {
+        "array": false,
+        "id": "item.x",
+        "name": "x",
+        "optional": true,
+        "type": "number"
+       },
+       {
+        "array": false,
+        "id": "item.k",
+        "name": "k",
+        "optional": false,
+        "type": "string"
+       },
+       {
+        "array": false,
+        "id": "item.at",
+        "name": "at",
+        "optional": true,
+        "type": "date"
+       }
+      ],
+      "scope": "entity"
+     }
+    },
+    "type": "dataModel"
+   },
+   {
+    "id": "model:pool",
+    "props": {
+     "data": {
+      "name": "pool",
+      "properties": [
+       {
+        "array": false,
+        "id": "pool.id",
+        "name": "id",
+        "optional": false,
+        "type": "string"
+       },
+       {
+        "array": false,
+        "id": "pool.rate",
+        "name": "rate",
+        "optional": false,
+        "type": "number"
+       },
+       {
+        "array": false,
+        "id": "pool.flag",
+        "name": "flag",
+        "optional": true,
+        "type": "boolean"
+       },
+       {
+        "array": false,
+        "id": "pool.label",
+        "name": "label",
+        "optional": true,
+        "type": "string"
+       }
+      ],
+      "scope": "entity"
+     }
+    },
+    "type": "dataModel"
+   },
+   {
+    "id": "b0",
+    "props": {
+     "data": {
+      "conditions": [
+       {
+        "depth": 0,
+        "expression": "endsWith(c.s2 ?? '', 'z')",
+        "id": "b0:0",
+        "operator": "and"
+       },
+       {
+        "depth": 0,
+        "expression": "c.d1.weekday() > 5",
+        "id": "b0:1",
+        "operator": "and"
+       }
+      ],
+      "output": "c.o1"
+     }
+    },
+    "type": "assertion"
+   },
+   {
+    "id": "b1",
+    "props": {
+     "data": {
+      "arms": [
+       {
+        "condition": "c.d1.weekday() > 5",
+        "id": "b1:0",
+        "value": "len(c.items)"
+       },
+       {
+        "condition": "c.d1.weekday() > 5",
+        "id": "b1:1",
+        "value": "c.r.rate * c.n1"
+       },
+       {
+        "condition": "",
+        "id": "b1:2",
+        "value": "(c.d2 ?? d('2024-01-01')).diff(c.d1, 'day')"
+       }
+      ],
+      "key": "c.o2"
+     }
+    },
+    "type": "match"
+   },
+   {
+    "id": "b2",
+    "props": {
+     "data": {
+      "conditions": [
+       {
+        "depth": 0,
+        "expression": "some(c.items, #.x > 3)",
+        "id": "b2:0",
+        "operator": "and"
+       }
+      ],
+      "output": "c.o3"
+     }
+    },
+    "type": "assertion"
+   },
+   {
+    "id": "t4",
+    "props": {
+     "data": {
+      "hitPolicy": "collect",
+      "inputs": [
+       {
+        "field": "c.n2",
+        "id": "i0",
+        "name": ""
+       },
+       {
+        "field": "c.n2",
+        "id": "i1",
+        "name": ""
+       }
+      ],
+      "outputs": [
+       {
+        "field": "c.o4x0",
+        "id": "o0",
+        "name": ""
+       },
+       {
+        "field": "c.o4x1",
+        "id": "o1",
+        "name": ""
+       }
+      ],
+      "rules": [
+       {
+        "_id": "r0",
+        "i0": "",
+        "i1": "<= 10",
+        "o0": "c.n1 + 1",
+        "o1": "upper(c.t)"
+       },
+       {
+        "_id": "r1",
+        "i0": "",
+        "i1": "[1..100]",
+        "o0": "2.5",
+        "o1": "c.s1"
+       },
+       {
+        "_id": "r2",
+        "i0": "!= 7",
+        "i1": "",
+        "o0": "c.n1 / 2",
+        "o1": "'a'"
+       }
+      ]
+     }
+    },
+    "type": "decisionTable"
+   },
+   {
+    "id": "t5",
+    "props": {
+     "data": {
+      "hitPolicy": "first",
+      "inputs": [
+       {
+        "field": "c.n2",
+        "id": "i0",
+        "name": ""
+       }
+      ],
+      "outputs": [
+       {
+        "field": "c.o5x0",
+        "id": "o0",
+        "name": ""
+       }
+      ],
+      "rules": [
+       {
+        "_id": "r0",
+        "i0": "> 50",
+        "o0": "c.n1 + 1"
+       },
+       {
+        "_id": "r1",
+        "i0": "< 0",
+        "o0": "0"
+       },
+       {
+        "_id": "r2",
+        "i0": "> 50",
+        "o0": "c.n1 + 1"
+       }
+      ]
+     }
+    },
+    "type": "decisionTable"
+   },
+   {
+    "id": "t6",
+    "props": {
+     "data": {
+      "hitPolicy": "first",
+      "inputs": [
+       {
+        "field": "c.b",
+        "id": "i0",
+        "name": ""
+       },
+       {
+        "field": "c.t",
+        "id": "i1",
+        "name": ""
+       }
+      ],
+      "outputs": [
+       {
+        "field": "c.o6x0",
+        "id": "o0",
+        "name": ""
+       },
+       {
+        "field": "c.o6x1",
+        "id": "o1",
+        "name": ""
+       },
+       {
+        "field": "c.o6x2",
+        "id": "o2",
+        "name": ""
+       }
+      ],
+      "rules": [
+       {
+        "_id": "r0",
+        "i0": "",
+        "i1": "'bronze'",
+        "o0": "c.n1 / 2",
+        "o1": "c.s1",
+        "o2": "c.n1 + 1"
+       },
+       {
+        "_id": "r1",
+        "i0": "false",
+        "i1": "'gold'",
+        "o0": "",
+        "o1": "c.s1",
+        "o2": ""
+       }
+      ]
+     }
+    },
+    "type": "decisionTable"
+   },
+   {
+    "id": "b6",
+    "props": {
+     "data": {
+      "arms": [
+       {
+        "condition": "item.k == 'a'",
+        "id": "b6:0",
+        "value": "item.x"
+       },
+       {
+        "condition": "",
+        "id": "b6:1",
+        "value": "0"
+       }
+      ],
+      "key": "item.m7"
+     }
+    },
+    "type": "match"
+   }
+  ],
+  "imports": []
+ },
+ "rows": [
+  {
+   "c": {
+    "d1": "2024-02-29",
+    "d2": null,
+    "items": [
+     {
+      "at": "2024-06-01",
+      "k": "b",
+      "x": 193
+     },
+     {
+      "k": "a"
+     }
+    ],
+    "n1": 1000000.0,
+    "n2": -3.5,
+    "r": "p3",
+    "s1": "Hello",
+    "s2": "fizz"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "k": "a",
+      "x": 157
+     },
+     {
+      "at": "2023-12-31T23:30:00Z",
+      "k": "b",
+      "x": 12
+     },
+     {
+      "k": "b",
+      "x": 138
+     }
+    ],
+    "n1": 109,
+    "n2": null,
+    "s1": "abc",
+    "s2": " pad ",
+    "t": "bronze"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "k": "a",
+      "x": 157
+     },
+     {
+      "at": "2023-12-31T23:30:00Z",
+      "k": "b",
+      "x": 12
+     },
+     {
+      "k": "b",
+      "x": 138
+     }
+    ],
+    "n1": 109,
+    "n2": null,
+    "s1": "abc",
+    "s2": " pad ",
+    "t": "bronze"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": false,
+    "d1": "2024-03-31 02:30",
+    "d2": null,
+    "items": [
+     {
+      "k": "a"
+     },
+     {
+      "at": "2024-02-29",
+      "k": "b",
+      "x": 76
+     }
+    ],
+    "n1": 0,
+    "n2": 0,
+    "r": "p3",
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": false,
+    "d1": "2024-03-31 02:30",
+    "d2": null,
+    "items": [
+     {
+      "k": "a"
+     },
+     {
+      "at": "2024-02-29",
+      "k": "b",
+      "x": 76
+     }
+    ],
+    "n1": 0,
+    "n2": 0,
+    "r": "p3",
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": true,
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": null,
+    "items": [
+     {
+      "k": "b"
+     },
+     {
+      "at": "2022-07-04",
+      "k": "z",
+      "x": 1000000.0
+     }
+    ],
+    "n1": 175,
+    "n2": 1000000.0,
+    "r": "p3",
+    "s1": "a-b-c",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": true,
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": null,
+    "items": [
+     {
+      "k": "b"
+     },
+     {
+      "at": "2022-07-04",
+      "k": "z",
+      "x": 1000000.0
+     }
+    ],
+    "n1": 175,
+    "n2": 1000000.0,
+    "r": "p3",
+    "s1": "a-b-c",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-02-29",
+    "d2": null,
+    "items": [
+     {
+      "at": "2024-06-01",
+      "k": "b",
+      "x": 193
+     },
+     {
+      "k": "a"
+     }
+    ],
+    "n1": 1000000.0,
+    "n2": -3.5,
+    "r": "p3",
+    "s1": "Hello",
+    "s2": "fizz"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-02-29",
+    "d2": null,
+    "items": [
+     {
+      "at": "2024-06-01",
+      "k": "b",
+      "x": 193
+     },
+     {
+      "k": "a"
+     }
+    ],
+    "n1": 1000000.0,
+    "n2": -3.5,
+    "r": "p3",
+    "s1": "Hello",
+    "s2": "fizz"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": true,
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": null,
+    "items": [
+     {
+      "k": "b"
+     },
+     {
+      "at": "2022-07-04",
+      "k": "z",
+      "x": 1000000.0
+     }
+    ],
+    "n1": 175,
+    "n2": 1000000.0,
+    "r": "p3",
+    "s1": "a-b-c",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "k": "a",
+      "x": 157
+     },
+     {
+      "at": "2023-12-31T23:30:00Z",
+      "k": "b",
+      "x": 12
+     },
+     {
+      "k": "b",
+      "x": 138
+     }
+    ],
+    "n1": 109,
+    "n2": null,
+    "s1": "abc",
+    "s2": " pad ",
+    "t": "bronze"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2025-03-20T10:15:30+05:00",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "k": "a",
+      "x": 157
+     },
+     {
+      "at": "2023-12-31T23:30:00Z",
+      "k": "b",
+      "x": 12
+     },
+     {
+      "k": "b",
+      "x": 138
+     }
+    ],
+    "n1": 109,
+    "n2": null,
+    "s1": "abc",
+    "s2": " pad ",
+    "t": "bronze"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-02-29",
+    "d2": null,
+    "items": [
+     {
+      "at": "2024-06-01",
+      "k": "b",
+      "x": 193
+     },
+     {
+      "k": "a"
+     }
+    ],
+    "n1": 1000000.0,
+    "n2": -3.5,
+    "r": "p3",
+    "s1": "Hello",
+    "s2": "fizz"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2023-12-31T23:30:00Z",
+    "d2": "2024-03-31 02:30",
+    "items": [
+     {
+      "k": "b",
+      "x": 67
+     },
+     {
+      "k": "b"
+     }
+    ],
+    "n1": 184,
+    "n2": -3.5,
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2023-12-31T23:30:00Z",
+    "d2": "2024-03-31 02:30",
+    "items": [
+     {
+      "k": "b",
+      "x": 67
+     },
+     {
+      "k": "b"
+     }
+    ],
+    "n1": 184,
+    "n2": -3.5,
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": false,
+    "d1": "2024-03-31 02:30",
+    "d2": null,
+    "items": [
+     {
+      "k": "a"
+     },
+     {
+      "at": "2024-02-29",
+      "k": "b",
+      "x": 76
+     }
+    ],
+    "n1": 0,
+    "n2": 0,
+    "r": "p3",
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "b": false,
+    "d1": "2024-03-31 02:30",
+    "d2": null,
+    "items": [
+     {
+      "k": "a"
+     },
+     {
+      "at": "2024-02-29",
+      "k": "b",
+      "x": 76
+     }
+    ],
+    "n1": 0,
+    "n2": 0,
+    "r": "p3",
+    "s1": "Hello",
+    "t": "gold"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  },
+  {
+   "c": {
+    "d1": "2024-03-31 02:30",
+    "d2": "2024-06-01",
+    "items": [
+     {
+      "at": "2025-03-20T10:15:30+05:00",
+      "k": "a"
+     }
+    ],
+    "n1": 176,
+    "n2": null,
+    "s1": "xyz",
+    "t": "silver"
+   },
+   "pool": [
+    {
+     "flag": true,
+     "id": "p1",
+     "label": "one",
+     "rate": 0.5
+    },
+    {
+     "id": "p2",
+     "rate": 2
+    },
+    {
+     "flag": false,
+     "id": "p3",
+     "rate": 1.25
+    }
+   ]
+  }
+ ]
+}

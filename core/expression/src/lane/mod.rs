@@ -6,6 +6,7 @@ mod compile;
 pub(crate) mod date;
 pub(crate) mod effect;
 mod exec;
+mod foreign;
 mod interval;
 mod kernel;
 mod key;
@@ -26,6 +27,7 @@ pub use columns::{Column, Columns, Dictionary, Values};
 pub use compile::{Hints, LaneCompiler};
 #[doc(hidden)]
 pub use exec::{Context, Executor, Fallbacks, Fault, Frame};
+pub use foreign::{Decimal128, Float64, Temporal, TimeUnit};
 #[doc(hidden)]
 pub use key::ShortKey;
 #[doc(hidden)]

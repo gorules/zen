@@ -684,11 +684,13 @@ impl Artifact {
         &self,
         columns: &zen_expression::lane::Columns,
         goals: &[Arc<str>],
+        converted: bool,
+        resolved: bool,
     ) -> Option<Vec<bool>> {
-        if !goals.is_empty() || !self.reference_fields.is_empty() {
+        if !goals.is_empty() || (!resolved && !self.reference_fields.is_empty()) {
             return None;
         }
-        let mut sure = self.input_schema.sure(columns)?;
+        let mut sure = self.input_schema.sure(columns, converted, resolved)?;
         for check in &self.requirements().checks {
             let primary = Steps::new(&check.primary, columns);
             if primary.always(columns) {

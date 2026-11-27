@@ -1,5 +1,8 @@
-use crate::functions::{DateMethod, FunctionKind, InternalFunction, MethodKind};
+use crate::functions::{
+    DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind,
+};
 use crate::lane::builtins::{Arg as Given, Builtin, Builtins, Dates, Out, RowContext};
+use crate::lane::date::helpers::date_time;
 use crate::lane::date::Date;
 use crate::lane::Bits;
 use crate::typed::exec::{Buf, Exec, Others, Reg};
@@ -21,6 +24,7 @@ impl Host {
         match self {
             Host::Construct => Builtins::of(&FunctionKind::Internal(InternalFunction::Date)),
             Host::Legacy(function) => Builtins::of(&FunctionKind::Deprecated(function)),
+            Host::Internal(function) => Builtins::of(&FunctionKind::Internal(function)),
             Host::Method(method) => Some(Builtins::method(&MethodKind::DateMethod(method))),
         }
     }
@@ -176,8 +180,44 @@ impl<'e, 'x> Exec<'e, 'x> {
                     Self::broken(d, broken);
                     return;
                 }
+                let mut skip = skip;
+                if let (
+                    Host::Legacy(DeprecatedFunction::Date),
+                    [DV::Text(text)],
+                    Rep::Dyn | Rep::Fix(0),
+                ) = (host, views.as_slice(), *rep)
+                {
+                    let mut done = [0u64; Reg::WORDS];
+                    let mut last: Option<(&[u8], i64)> = None;
+                    self.each(act, &skip, |i| {
+                        let Some(bytes) = text.get(start, i) else {
+                            return;
+                        };
+                        let stamp = match last {
+                            Some((seen, stamp)) if seen == bytes => Some(stamp),
+                            _ => std::str::from_utf8(bytes)
+                                .ok()
+                                .and_then(|s| date_time(s, &self.feeds.context).ok())
+                                .map(|dt| dt.and_utc().timestamp()),
+                        };
+                        if let Some(stamp) = stamp {
+                            d.put(i, Dec::int(stamp));
+                            done[i / 64] |= 1u64 << (i % 64);
+                            last = Some((bytes, stamp));
+                        }
+                    });
+                    for (s, d) in skip.iter_mut().zip(done) {
+                        *s |= d;
+                    }
+                }
                 if let (Host::Method(method), true) = (host, *fixed) {
                     if let Some(broken) = self.quick(*method, &views, *rep, d, act) {
+                        Self::broken(d, broken);
+                        return;
+                    }
+                }
+                if let Host::Method(method) = host {
+                    if let Some(broken) = self.kernel(*method, args, &views, *rep, d, act) {
                         Self::broken(d, broken);
                         return;
                     }
@@ -227,10 +267,44 @@ impl<'e, 'x> Exec<'e, 'x> {
                 let skip = d.fault;
                 let mut broken = Vec::new();
                 match (clock, views.as_slice()) {
+                    (Clock::Coerce, [DV::Text(text)]) => {
+                        d.stamps();
+                        Date::recalling(|recall| {
+                            self.each(act, &skip, |i| {
+                                match text.get(start, i).and_then(|bytes| recall.date(bytes, tz)) {
+                                    Some(date) if date.is_valid() => d.dates[i] = date,
+                                    _ => broken.push(i),
+                                }
+                            })
+                        });
+                    }
+                    (Clock::Declared, [DV::Text(text)]) => {
+                        d.stamps();
+                        Date::recalling(|recall| {
+                            self.each(act, &skip, |i| match text.get(start, i) {
+                                None => Bits::set(&mut d.valid, i, false),
+                                Some(bytes) => match recall.date(bytes, tz) {
+                                    Some(date) if date.is_valid() => d.dates[i] = date,
+                                    _ => broken.push(i),
+                                },
+                            })
+                        });
+                    }
                     (Clock::Coerce, [text]) => {
                         d.stamps();
                         self.each(act, &skip, |i| match text.given(start, i) {
-                            Some(Given::Str(t)) => match Date::from_text(t, tz) {
+                            Some(Given::Str(t)) => match Date::remembered(t, tz) {
+                                date if date.is_valid() => d.dates[i] = date,
+                                _ => broken.push(i),
+                            },
+                            _ => broken.push(i),
+                        });
+                    }
+                    (Clock::Declared, [text]) => {
+                        d.stamps();
+                        self.each(act, &skip, |i| match text.given(start, i) {
+                            Some(Given::Null) => Bits::set(&mut d.valid, i, false),
+                            Some(Given::Str(t)) => match Date::remembered(t, tz) {
                                 date if date.is_valid() => d.dates[i] = date,
                                 _ => broken.push(i),
                             },
@@ -320,8 +394,24 @@ impl<'e, 'x> Exec<'e, 'x> {
         match rep {
             Rep::Date => {
                 let shift = Dates::shift(&kind, &consts)?;
+                let mut last: Option<(Date, Date)> = None;
                 self.each(act, &skip, |i| match this.given(start, i) {
-                    Some(Given::Date(x)) => d.dates[i] = shift.apply(&x),
+                    Some(Given::Date(x)) => {
+                        d.dates[i] = match last {
+                            Some((seen, shifted))
+                                if seen == x
+                                    && seen.0.map(|at| at.timezone())
+                                        == x.0.map(|at| at.timezone()) =>
+                            {
+                                shifted
+                            }
+                            _ => {
+                                let shifted = shift.apply(&x);
+                                last = Some((x, shifted));
+                                shifted
+                            }
+                        }
+                    }
                     _ => broken.push(i),
                 });
             }
@@ -331,6 +421,141 @@ impl<'e, 'x> Exec<'e, 'x> {
                         Some(n) => d.keep(rep, i, N::Dec(Dec::int(n))),
                         None => Bits::set(&mut d.valid, i, false),
                     },
+                    _ => broken.push(i),
+                });
+            }
+            _ => return None,
+        }
+        Some(broken)
+    }
+
+    fn kernel(
+        &self,
+        method: DateMethod,
+        args: &[(Arg, Rep)],
+        views: &[DV],
+        rep: Rep,
+        d: &mut Reg,
+        act: Option<&[u64; Reg::WORDS]>,
+    ) -> Option<Vec<usize>> {
+        let (start, skip) = (self.start, d.fault);
+        let context = &self.feeds.context;
+        let kind = MethodKind::DateMethod(method);
+        let (this, rest) = views.split_first()?;
+        let literal = |at: usize| match args.get(at) {
+            Some((Arg::Lit(text), _)) => Some(text.as_str()),
+            _ => None,
+        };
+        let unit = |at: usize| match args.len() > at {
+            true => literal(at).and_then(Dates::unit_of).map(Some),
+            false => Some(None),
+        };
+        let alike = |a: &Date, b: &Date| {
+            a == b && a.0.map(|at| at.timezone()) == b.0.map(|at| at.timezone())
+        };
+        let mut broken = Vec::new();
+        match (method, rest, rep) {
+            (DateMethod::Diff, [other] | [other, _], Rep::Fix(_) | Rep::Dyn) => {
+                let unit = unit(2)?;
+                let mut last: Option<(Date, Date, Option<i64>)> = None;
+                self.each(act, &skip, |i| {
+                    let (Some(Given::Date(a)), Some(b)) =
+                        (this.given(start, i), other.given(start, i))
+                    else {
+                        broken.push(i);
+                        return;
+                    };
+                    let b = Dates::counterpart(b, context);
+                    let found = match &last {
+                        Some((x, y, found)) if alike(x, &a) && alike(y, &b) => *found,
+                        _ => {
+                            let found = a.diff(&b, unit);
+                            last = Some((a, b, found));
+                            found
+                        }
+                    };
+                    match found {
+                        Some(n) => d.keep(rep, i, N::of(n.into())),
+                        None => Bits::set(&mut d.valid, i, false),
+                    }
+                });
+            }
+            (
+                DateMethod::IsSame
+                | DateMethod::IsBefore
+                | DateMethod::IsAfter
+                | DateMethod::IsSameOrBefore
+                | DateMethod::IsSameOrAfter,
+                [other] | [other, _],
+                Rep::Bool,
+            ) => {
+                let unit = unit(2)?;
+                let mut last: Option<(Date, Date, bool)> = None;
+                self.each(act, &skip, |i| {
+                    let (Some(Given::Date(a)), Some(b)) =
+                        (this.given(start, i), other.given(start, i))
+                    else {
+                        broken.push(i);
+                        return;
+                    };
+                    let b = Dates::counterpart(b, context);
+                    let found = match &last {
+                        Some((x, y, found)) if alike(x, &a) && alike(y, &b) => Some(*found),
+                        _ => Dates::ordered(&kind, &a, &b, unit),
+                    };
+                    match found {
+                        Some(found) => {
+                            last = Some((a, b, found));
+                            Bits::set(&mut d.bits, i, found);
+                        }
+                        None => broken.push(i),
+                    }
+                });
+            }
+            (DateMethod::Format, [] | [_], Rep::Text) => {
+                let pattern = match rest.is_empty() {
+                    true => None,
+                    false => Some(literal(1)?),
+                };
+                let mut last: Option<(Date, String)> = None;
+                self.each(act, &skip, |i| {
+                    let Some(Given::Date(a)) = this.given(start, i) else {
+                        broken.push(i);
+                        return;
+                    };
+                    if !last.as_ref().is_some_and(|(x, _)| alike(x, &a)) {
+                        last = Some((a, a.format(pattern)));
+                    }
+                    if let Some((_, text)) = &last {
+                        d.push(i, text.as_bytes());
+                    }
+                });
+            }
+            (
+                DateMethod::IsValid
+                | DateMethod::IsYesterday
+                | DateMethod::IsToday
+                | DateMethod::IsTomorrow
+                | DateMethod::IsLeapYear,
+                [],
+                Rep::Bool,
+            ) => {
+                self.each(act, &skip, |i| {
+                    let Some(Given::Date(a)) = this.given(start, i) else {
+                        broken.push(i);
+                        return;
+                    };
+                    match Dates::truth_of(&kind, &a, context) {
+                        Some(Some(truth)) => Bits::set(&mut d.bits, i, truth),
+                        Some(None) => Bits::set(&mut d.valid, i, false),
+                        None => broken.push(i),
+                    }
+                });
+            }
+            (DateMethod::Tz, [_], Rep::Date) => {
+                let zone = Dates::zone_of(literal(1)?)?;
+                self.each(act, &skip, |i| match this.given(start, i) {
+                    Some(Given::Date(a)) => d.dates[i] = a.tz(zone),
                     _ => broken.push(i),
                 });
             }

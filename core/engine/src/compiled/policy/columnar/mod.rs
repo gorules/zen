@@ -2,10 +2,12 @@ mod blocks;
 mod by_block;
 mod evaluate;
 mod fuse;
+mod gate;
 mod host;
 mod lane;
 mod member;
 mod output;
+mod refs;
 mod sheet;
 mod table;
 mod typed;
@@ -67,6 +69,8 @@ struct Pass<'s, 'a> {
     delegated: bool,
     counts: Paths,
     listed: RefCell<Vec<Listed<'a>>>,
+    casts: RefCell<Vec<(usize, Option<Leaf<'a>>)>>,
+    present: Vec<OnceCell<Option<Rc<[bool]>>>>,
 }
 
 impl<'s, 'a> Pass<'s, 'a> {
@@ -95,10 +99,25 @@ impl<'s, 'a> Pass<'s, 'a> {
         self.fallback.fall(row);
     }
 
+    fn retire(&mut self, at: usize) {
+        if self.sheet.tied(at) {
+            Pass::dropped("linked list retired", self.sheet.rows);
+            (0..self.sheet.rows).for_each(|row| self.fall(row));
+        }
+        self.sheet.retire(at);
+    }
+
+    fn dropped(why: &str, rows: usize) {
+        if rows > 0 && crate::compiled::census::Census::on() {
+            crate::compiled::census::Census::record(format!("policy fall | {why}"), rows, 0);
+        }
+    }
+
     fn fail(&mut self, positions: &[usize], failed: &[bool]) {
         if !failed.contains(&true) {
             return;
         }
+        Pass::dropped("lane failed", failed.iter().filter(|&&f| f).count());
         for (&row, &f) in positions.iter().zip(failed) {
             if f {
                 self.fall(row);
@@ -113,6 +132,9 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn demand(&self, block: usize, row: usize) -> Demand {
+        if self.absent(block, row) {
+            return Arc::from([]);
+        }
         if let Some(demand) = self
             .member_demand(block, row)
             .or_else(|| self.table_demand(block, row))
@@ -129,7 +151,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         let Some(plan) = self.artifact.read_plans.get(owner) else {
             return Arc::from([]);
         };
-        let Some(Native::Match { ir, .. }) = self.plan.plans[block].native() else {
+        let Some(Native::Match { ir, .. }) = self.plan.flat(block).native() else {
             return Arc::from([]);
         };
         let pick = Pick::Match(MatchSelection {
@@ -156,18 +178,23 @@ impl<'s, 'a> Pass<'s, 'a> {
                     return self.member(at, block, event, positions);
                 }
                 if selected || self.sheet.entities[at].cached() {
+                    Pass::dropped("member block unsupported after selection", positions.len());
                     positions.iter().for_each(|&row| self.fall(row));
                     return;
                 }
-                self.sheet.retire(at);
+                self.retire(at);
             }
             if selected {
+                Pass::dropped(
+                    "member block without entity after selection",
+                    positions.len(),
+                );
                 positions.iter().for_each(|&row| self.fall(row));
                 return;
             }
             return self.delegate(event, positions);
         }
-        if let Some(table) = &plan.plans[block].table {
+        if let Some(table) = &plan.flat(block).table {
             let units = |rows: &[usize]| Units {
                 member: None,
                 units: rows.into(),
@@ -190,7 +217,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 }
             };
         }
-        match (event, plan.plans[block].native()) {
+        match (event, plan.flat(block).native()) {
             (
                 Event::Select(block),
                 Some(Native::Match {

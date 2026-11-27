@@ -85,17 +85,23 @@ impl<'t> TableIr<'t> {
     const FILLED: usize = 64;
 
     pub fn graph(content: &'t DecisionTableContent) -> Self {
+        let mut inputs: Vec<InputIr<'t>> = Vec::with_capacity(content.inputs.len());
+        for input in content.inputs.iter() {
+            let field = match input.field.as_deref() {
+                Some(field) if field.trim() == "$" => {
+                    Self::previous(content, &inputs, &input.id).or(Some(field))
+                }
+                field => field,
+            };
+            inputs.push(InputIr {
+                id: &input.id,
+                field,
+            });
+        }
         Self {
             profile: Profile::GRAPH,
             collect: matches!(content.hit_policy, DecisionTableHitPolicy::Collect),
-            inputs: content
-                .inputs
-                .iter()
-                .map(|input| InputIr {
-                    id: &input.id,
-                    field: input.field.as_deref(),
-                })
-                .collect(),
+            inputs,
             outputs: content
                 .outputs
                 .iter()
@@ -110,6 +116,27 @@ impl<'t> TableIr<'t> {
                 .collect(),
             rules: content.rules.iter().collect(),
         }
+    }
+
+    fn previous(
+        content: &'t DecisionTableContent,
+        before: &[InputIr<'t>],
+        id: &Arc<str>,
+    ) -> Option<&'t str> {
+        let earlier = before
+            .iter()
+            .rev()
+            .find(|input| input.field.is_some_and(|f| !f.trim().is_empty()))?;
+        let field = earlier.field?;
+        if field.trim() == "$" || field.contains("rand") {
+            return None;
+        }
+        let filled = |rule: &Rule, id: &Arc<str>| rule.get(id).is_some_and(|cell| !cell.is_empty());
+        content
+            .rules
+            .iter()
+            .all(|rule| !filled(rule, id) || filled(rule, earlier.id))
+            .then_some(field)
     }
 
     pub fn policy(ir: &'t DecisionTableIr) -> Self {
@@ -161,24 +188,93 @@ impl<'t> TableIr<'t> {
     }
 
     pub fn filled(&self) -> bool {
+        self.typable()
+            && self.written().all(|o| {
+                self.rules
+                    .iter()
+                    .all(|rule| self.cell(rule, o.id).is_some())
+            })
+    }
+
+    pub fn typable(&self) -> bool {
         self.rules.len() <= Self::FILLED
             && self.written().next().is_some()
+            && self.written().all(|o| !o.collect)
+            && self.inputs.iter().all(|input| {
+                input.field.is_some_and(|f| !f.trim().is_empty()) || !self.used(input.id)
+            })
+    }
+
+    pub fn gathers(&self) -> bool {
+        self.profile.strict()
+            && self.rules.len() <= Self::FILLED
+            && self.written().any(|o| o.collect)
             && self.written().all(|o| {
-                !o.collect
-                    && self
-                        .rules
-                        .iter()
-                        .all(|rule| self.cell(rule, o.id).is_some())
+                self.written()
+                    .all(|other| other.path != o.path || other.collect == o.collect)
             })
             && self.inputs.iter().all(|input| {
                 input.field.is_some_and(|f| !f.trim().is_empty()) || !self.used(input.id)
             })
     }
 
+    pub fn gathered(&self, computed: impl Fn(usize, usize) -> bool) -> Option<TableSpec> {
+        if !self.gathers() {
+            return None;
+        }
+        let inputs: Vec<&InputIr> = self
+            .inputs
+            .iter()
+            .filter(|input| self.used(input.id))
+            .collect();
+        let rules = self
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(at, rule)| TableRule {
+                cells: inputs
+                    .iter()
+                    .map(|input| self.cell(rule, input.id).map(str::to_string))
+                    .collect(),
+                values: self
+                    .written()
+                    .enumerate()
+                    .map(|(column, o)| {
+                        self.cell(rule, o.id)
+                            .filter(|_| computed(at, column))
+                            .map(str::to_string)
+                    })
+                    .collect(),
+            })
+            .collect();
+        Some(TableSpec {
+            inputs: inputs
+                .iter()
+                .map(|input| input.field.map(str::to_string))
+                .collect(),
+            outputs: Vec::new(),
+            rules,
+            hit: Typed::Strict,
+            selector: false,
+            collect: true,
+        })
+    }
+
     pub fn spec(&self) -> Option<TableSpec> {
         if self.collect || self.written().any(|o| o.collect) {
             return None;
         }
+        self.specified(false)
+    }
+
+    pub fn collected(&self) -> Option<TableSpec> {
+        if !(self.collect || self.written().any(|o| o.collect)) || self.profile.strict() {
+            return None;
+        }
+        self.specified(true)
+    }
+
+    fn specified(&self, collect: bool) -> Option<TableSpec> {
         let strict = self.profile.strict();
         let mut paths: Vec<&str> = Vec::new();
         for output in self.written() {
@@ -192,7 +288,7 @@ impl<'t> TableIr<'t> {
             .filter(|input| !strict || self.used(input.id))
             .collect();
         match strict {
-            true if !self.filled() => return None,
+            true if !self.typable() => return None,
             true => {}
             false => {
                 let nested = paths
@@ -224,6 +320,7 @@ impl<'t> TableIr<'t> {
                     .map(|input| self.cell(rule, input.id).map(str::to_string))
                     .collect(),
                 values: match strict {
+                    _ if collect => Vec::new(),
                     true => self
                         .written()
                         .map(|o| self.cell(rule, o.id).map(str::to_string))
@@ -246,13 +343,17 @@ impl<'t> TableIr<'t> {
                 .iter()
                 .map(|input| input.field.map(str::to_string))
                 .collect(),
-            outputs: paths.iter().map(|path| path.to_string()).collect(),
+            outputs: match collect {
+                true => Vec::new(),
+                false => paths.iter().map(|path| path.to_string()).collect(),
+            },
             rules,
             hit: match strict {
                 true => Typed::Strict,
                 false => Typed::Lenient,
             },
-            selector: !strict,
+            selector: !strict && !collect,
+            collect,
         })
     }
 }

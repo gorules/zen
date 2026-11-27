@@ -3,12 +3,14 @@ use super::{Pass, Sheet};
 use crate::compiled::census::Census;
 use crate::compiled::core::fuse::{Fused, Runs};
 use crate::compiled::core::variants::Variants;
-use crate::compiled::leaf::{Array, Bits, Leaf, Store};
+use crate::compiled::leaf::{Array, Bits, Dict, Leaf, Literal, Store};
 use crate::compiled::lowered::Exports;
 use crate::compiled::policy::blocks::Operator;
 use crate::compiled::policy::schedule::{End, Event, Segment};
 use crate::compiled::policy::{Native, PolicyPlan};
-use crate::compiled::table::TableIr;
+use crate::compiled::shred::Normalizer;
+use crate::compiled::table::Picked;
+use crate::compiled::table::{Table, TableIr};
 use crate::policy::blocks::{AssertionIr, BlockKind, DecisionTableIr, MatchIr};
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -16,6 +18,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use zen_expression::lane::{Fusion, LaneProgram};
 use zen_expression::typed::TableSpec;
+use zen_expression::Variable;
 use zen_types::path::DotPath;
 
 type Groups = ahash::HashMap<Chain, Variants<Arc<TypedGroup>>>;
@@ -25,7 +28,7 @@ type Lanes = ahash::HashMap<Vec<usize>, Option<Arc<Fused<Sink>>>>;
 pub(crate) struct Fusions {
     groups: RwLock<Lanes>,
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
-    tables: RwLock<ahash::HashMap<usize, bool>>,
+    tables: RwLock<ahash::HashMap<usize, Option<bool>>>,
     runs: Runs<Chain>,
     pub(super) typed: RwLock<Groups>,
 }
@@ -59,6 +62,7 @@ pub(super) struct Span {
 
 struct Item {
     units: Vec<Span>,
+    gate: Option<usize>,
     domain: Option<Option<usize>>,
     written: Vec<(Arc<str>, bool)>,
 }
@@ -66,6 +70,170 @@ struct Item {
 pub(super) enum Sink {
     Write(Arc<str>),
     Assert(Arc<AssertionIr>),
+    Gather(Gather),
+}
+
+pub(super) enum Cell {
+    Constant(Literal),
+    Computed,
+}
+
+pub(super) struct Gather {
+    fields: Vec<Arc<str>>,
+    scalars: Vec<bool>,
+    rules: Vec<Vec<(usize, Cell)>>,
+    computed: usize,
+}
+
+impl Gather {
+    pub fn of(ir: &DecisionTableIr, table: &Table) -> Self {
+        let profile = TableIr::policy(ir);
+        let picked = table.picked();
+        let mut fields: Vec<Arc<str>> = Vec::new();
+        let mut scalars: Vec<bool> = Vec::new();
+        let targets: Vec<usize> = profile
+            .written()
+            .map(|o| match fields.iter().position(|f| f.as_ref() == o.path) {
+                Some(at) => at,
+                None => {
+                    fields.push(Arc::from(o.path));
+                    scalars.push(!o.collect);
+                    fields.len() - 1
+                }
+            })
+            .collect();
+        let mut computed = 0;
+        let rules = profile
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(at, rule)| {
+                profile
+                    .written()
+                    .enumerate()
+                    .filter(|(_, o)| profile.cell(rule, o.id).is_some())
+                    .map(|(column, _)| {
+                        let constant = Self::literal(picked, at, column);
+                        let cell = match constant {
+                            Some(value) => Cell::Constant(value),
+                            None => {
+                                computed += 1;
+                                Cell::Computed
+                            }
+                        };
+                        (targets[column], cell)
+                    })
+                    .collect()
+            })
+            .collect();
+        Self {
+            fields,
+            scalars,
+            rules,
+            computed,
+        }
+    }
+
+    pub fn literal(picked: &[Picked], rule: usize, column: usize) -> Option<Literal> {
+        picked.get(column)?.constants.get(rule)?.clone()
+    }
+
+    fn leaves<'a>(&self, conds: &[Vec<u64>], values: &[Leaf<'a>], count: usize) -> Vec<Leaf<'a>> {
+        let mut masks = vec![0u64; count];
+        for (rule, bits) in conds.iter().enumerate() {
+            for row in Bits::rows(bits) {
+                if let Some(mask) = masks.get_mut(row) {
+                    *mask |= 1 << rule;
+                }
+            }
+        }
+        let gather = |mask: u64, row: usize| -> Vec<Vec<Variable>> {
+            let mut lists = vec![Vec::new(); self.fields.len()];
+            let mut next = 0;
+            for (rule, cells) in self.rules.iter().enumerate() {
+                let matched = mask & (1 << rule) != 0;
+                for (target, cell) in cells {
+                    let taken = matched && !(self.scalars[*target] && !lists[*target].is_empty());
+                    match cell {
+                        Cell::Constant(value) if taken => lists[*target].push(value.variable()),
+                        Cell::Constant(_) => {}
+                        Cell::Computed => {
+                            if taken {
+                                lists[*target].push(
+                                    values
+                                        .get(next)
+                                        .map_or(Variable::Null, |leaf| leaf.get(row)),
+                                );
+                            }
+                            next += 1;
+                        }
+                    }
+                }
+            }
+            lists
+        };
+        let value = |scalar: bool, list: Vec<Variable>| match scalar {
+            true => list.into_iter().next().unwrap_or(Variable::Null),
+            false => Variable::from_array(list),
+        };
+        let typed = |column: Vec<Variable>| {
+            let leaf = Leaf::Any(column.into());
+            Normalizer::cast(&leaf).unwrap_or(leaf)
+        };
+        if self.computed > 0 {
+            let mut columns: Vec<Vec<Variable>> =
+                vec![Vec::with_capacity(count); self.fields.len()];
+            for (row, mask) in masks.iter().enumerate() {
+                for ((column, list), scalar) in columns
+                    .iter_mut()
+                    .zip(gather(*mask, row))
+                    .zip(&self.scalars)
+                {
+                    column.push(value(*scalar, list));
+                }
+            }
+            return columns
+                .into_iter()
+                .zip(&self.scalars)
+                .map(|(column, scalar)| match scalar {
+                    true => typed(column),
+                    false => Leaf::Any(column.into()),
+                })
+                .collect();
+        }
+        let mut seen: ahash::HashMap<u64, i32> = ahash::HashMap::default();
+        let mut distinct: Vec<u64> = Vec::new();
+        let codes: Rc<[i32]> = masks
+            .iter()
+            .map(|mask| {
+                *seen.entry(*mask).or_insert_with(|| {
+                    distinct.push(*mask);
+                    distinct.len() as i32 - 1
+                })
+            })
+            .collect();
+        let mut dicts: Vec<Vec<Variable>> =
+            vec![Vec::with_capacity(distinct.len()); self.fields.len()];
+        for mask in &distinct {
+            for ((dict, list), scalar) in dicts.iter_mut().zip(gather(*mask, 0)).zip(&self.scalars)
+            {
+                dict.push(value(*scalar, list));
+            }
+        }
+        dicts
+            .into_iter()
+            .zip(&self.scalars)
+            .map(|(values, scalar)| match scalar {
+                true => typed(
+                    codes
+                        .iter()
+                        .map(|&code| values[code as usize].clone())
+                        .collect(),
+                ),
+                false => Leaf::typed(Array::coded(codes.clone(), Rc::new(Dict::Any(values)))),
+            })
+            .collect()
+    }
 }
 
 struct Unit<'p> {
@@ -75,7 +243,7 @@ struct Unit<'p> {
 }
 
 impl Fusions {
-    fn table(&self, block: usize, ir: &DecisionTableIr) -> bool {
+    fn table(&self, block: usize, ir: &DecisionTableIr) -> Option<bool> {
         if let Some(found) = self
             .tables
             .read()
@@ -84,11 +252,16 @@ impl Fusions {
         {
             return found;
         }
-        let fusable = Fused::<Sink>::fusable(ir);
+        let profile = TableIr::policy(ir);
+        let found = match (profile.typable(), profile.gathers()) {
+            (true, _) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+        };
         if let Ok(mut cache) = self.tables.write() {
-            cache.insert(block, fusable);
+            cache.insert(block, found);
         }
-        fusable
+        found
     }
 
     fn effects(&self, plan: &PolicyPlan, block: usize) -> Option<Arc<Effects>> {
@@ -127,8 +300,8 @@ impl Fusions {
 impl Effects {
     fn of(plan: &PolicyPlan, block: usize) -> Option<Self> {
         let (programs, _) = Pass::block(plan, block)?;
-        let rule = &plan.blocks.rules[block];
-        let iteration = plan.plans[block].iteration.clone();
+        let rule = &plan.rule(block);
+        let iteration = plan.flat(block).iteration.clone();
         if let Some((_, path, Some(owner))) = &iteration {
             if path.split('.').next() != Some(owner.as_ref()) {
                 return None;
@@ -168,12 +341,25 @@ impl Effects {
                 }
             }
         }
-        let writes = rule
+        let mut writes: Vec<Arc<str>> = rule
             .kind
             .write_sites()
             .into_iter()
             .map(|site| map(&site.path))
             .collect();
+        let linked: Vec<Arc<str>> = writes
+            .iter()
+            .flat_map(|write| {
+                plan.links.iter().filter_map(move |(target, path)| {
+                    match write.as_ref() == target.as_ref() {
+                        true => Some(path.clone()),
+                        false => DotPath::tail(write, target)
+                            .map(|rest| Arc::from(format!("{path}.{rest}"))),
+                    }
+                })
+            })
+            .collect();
+        writes.extend(linked);
         Some(Self { reads, writes })
     }
 
@@ -193,7 +379,7 @@ impl Fused<Sink> {
         let mut entries: Vec<Fusion> = Vec::new();
         let mut sinks = Vec::with_capacity(blocks.len());
         for &block in blocks {
-            if member && plan.plans[block].table.is_some() {
+            if member && plan.flat(block).table.is_some() {
                 return None;
             }
             if member && Self::siblings(plan, block) {
@@ -207,7 +393,7 @@ impl Fused<Sink> {
     }
 
     fn siblings(plan: &PolicyPlan, block: usize) -> bool {
-        let Some((_, path, _)) = &plan.plans[block].iteration else {
+        let Some((_, path, _)) = &plan.flat(block).iteration else {
             return false;
         };
         Pass::block(plan, block).is_some_and(|(programs, _)| {
@@ -229,7 +415,7 @@ impl Fused<Sink> {
     ) -> Option<(Vec<Fusion>, Vec<Sink>)> {
         let mut entries: Vec<Fusion> = Vec::new();
         let mut sinks = Vec::new();
-        if let BlockKind::DecisionTable(ir) = &plan.blocks.rules[block].kind {
+        if let BlockKind::DecisionTable(ir) = &plan.rule(block).kind {
             let (hidden, tables) = Self::table(ir, block)?;
             entries.extend(hidden);
             for entry in tables {
@@ -242,7 +428,7 @@ impl Fused<Sink> {
         }
         let native = match member {
             true => Pass::native(plan, block)?,
-            false => plan.plans[block].native()?,
+            false => plan.flat(block).native()?,
         };
         match native {
             Native::Expression { key, program } => {
@@ -382,164 +568,182 @@ impl<'s, 'a> Pass<'s, 'a> {
             last = next;
         }
         let mut seen = Some(0);
-        let mut fresh = |pass: &mut Self, rows: &mut Vec<usize>| {
-            if seen != Some(pass.fallback.fell()) {
-                rows.retain(|&row| !pass.fallback.fallen(row));
-                seen = Some(pass.fallback.fell());
-            }
-        };
-        fresh(self, rows);
+        self.prune(rows, &mut seen);
         let typed = Exports::enabled();
         for item in self.schedule(&events, rows) {
-            fresh(self, rows);
+            self.prune(rows, &mut seen);
             if rows.is_empty() {
                 break;
             }
-            let blocks: Vec<usize> = item.units.iter().map(|span| span.block).collect();
-            if let (Some(_), true) = (item.domain, typed) {
-                if let Some(entity) = self.regroup(&item, rows) {
-                    let member = entity.is_some();
-                    let plan = self.plan;
-                    let fusions = &plan.fusions;
-                    let mut at = 0;
-                    let mut laning: Option<usize> = None;
-                    while at < item.units.len() {
-                        fresh(self, rows);
+            match item.gate.and_then(|gate| self.gated(gate, rows)) {
+                Some(mut gated) => {
+                    let mut local = seen;
+                    if !gated.is_empty() {
+                        self.item(&events, &item, &mut gated, &mut local, typed);
+                    }
+                }
+                None => self.item(&events, &item, rows, &mut seen, typed),
+            }
+        }
+        self.prune(rows, &mut seen);
+        last
+    }
+
+    fn prune(&self, rows: &mut Vec<usize>, seen: &mut Option<usize>) {
+        if *seen != Some(self.fallback.fell()) {
+            rows.retain(|&row| !self.fallback.fallen(row));
+            *seen = Some(self.fallback.fell());
+        }
+    }
+
+    fn item(
+        &mut self,
+        events: &[Event],
+        item: &Item,
+        rows: &mut Vec<usize>,
+        seen: &mut Option<usize>,
+        typed: bool,
+    ) {
+        let blocks: Vec<usize> = item.units.iter().map(|span| span.block).collect();
+        if let (Some(_), true) = (item.domain, typed) {
+            if let Some(entity) = self.regroup(item, rows) {
+                let member = entity.is_some();
+                let plan = self.plan;
+                let fusions = &plan.fusions;
+                let mut at = 0;
+                let mut laning: Option<usize> = None;
+                while at < item.units.len() {
+                    self.prune(rows, seen);
+                    if rows.is_empty() {
+                        break;
+                    }
+                    let began = Census::on().then(|| (Instant::now(), rows.len()));
+                    match self.typed(&item.units[at..], entity, rows) {
+                        Typed::Ran(consumed, faulted) => {
+                            if let Some((start, count)) = began {
+                                Census::record(
+                                    "policy typed | group".into(),
+                                    count,
+                                    start.elapsed().as_nanos(),
+                                );
+                            }
+                            if let Some(from) = laning.take() {
+                                fusions
+                                    .runs
+                                    .ran(Chain::of(&blocks[from..], member), at - from);
+                            }
+                            self.counts.typed += consumed;
+                            if !faulted.is_empty() {
+                                self.retry(&events, &item.units[at..at + consumed], faulted);
+                            }
+                            at += consumed;
+                            continue;
+                        }
+                        Typed::Lane(units) => {
+                            if let Some(from) = laning.take() {
+                                fusions
+                                    .runs
+                                    .ran(Chain::of(&blocks[from..], member), at - from);
+                            }
+                            for span in &item.units[at..at + units] {
+                                for event in &events[span.start..span.start + span.len] {
+                                    self.prune(rows, seen);
+                                    if rows.is_empty() {
+                                        break;
+                                    }
+                                    self.event(*event, rows);
+                                }
+                            }
+                            self.counts.laned += units;
+                            at += units;
+                            continue;
+                        }
+                        Typed::Skipped => {}
+                    }
+                    let census =
+                        Census::on().then(|| (Census::taken(), Instant::now(), rows.len()));
+                    if laning.is_none() {
+                        let run = fusions
+                            .runs
+                            .run(&Chain::of(&blocks[at..], member))
+                            .map_or(0, |run| run.min(blocks.len() - at));
+                        if let Some(fused) = (run > 1)
+                            .then(|| fusions.get(plan, &blocks[at..at + run], member))
+                            .flatten()
+                        {
+                            self.fused(&fused, entity, rows);
+                            self.counts.laned += run;
+                            at += run;
+                            if let Some((why, start, count)) = census {
+                                Census::record(
+                                    format!("policy lane | fused | {why}"),
+                                    count,
+                                    start.elapsed().as_nanos(),
+                                );
+                            }
+                            continue;
+                        }
+                        laning = Some(at);
+                    }
+                    let span = item.units[at];
+                    for event in &events[span.start..span.start + span.len] {
+                        self.prune(rows, seen);
                         if rows.is_empty() {
                             break;
                         }
-                        let began = Census::on().then(|| (Instant::now(), rows.len()));
-                        match self.typed(&item.units[at..], entity, rows) {
-                            Typed::Ran(consumed, faulted) => {
-                                if let Some((start, count)) = began {
-                                    Census::record(
-                                        "policy typed | group".into(),
-                                        count,
-                                        start.elapsed().as_nanos(),
-                                    );
-                                }
-                                if let Some(from) = laning.take() {
-                                    fusions
-                                        .runs
-                                        .ran(Chain::of(&blocks[from..], member), at - from);
-                                }
-                                self.counts.typed += consumed;
-                                if !faulted.is_empty() {
-                                    self.retry(&events, &item.units[at..at + consumed], faulted);
-                                }
-                                at += consumed;
-                                continue;
-                            }
-                            Typed::Lane(group, path) => {
-                                if let Some(from) = laning.take() {
-                                    fusions
-                                        .runs
-                                        .ran(Chain::of(&blocks[from..], member), at - from);
-                                }
-                                let (start, count) = (Instant::now(), rows.len());
-                                for span in &item.units[at..at + group.units] {
-                                    for event in &events[span.start..span.start + span.len] {
-                                        fresh(self, rows);
-                                        if rows.is_empty() {
-                                            break;
-                                        }
-                                        self.event(*event, rows);
-                                    }
-                                }
-                                group.cost.record(path, start.elapsed(), count);
-                                self.counts.laned += group.units;
-                                at += group.units;
-                                continue;
-                            }
-                            Typed::Skipped => {}
-                        }
-                        let census =
-                            Census::on().then(|| (Census::taken(), Instant::now(), rows.len()));
-                        if laning.is_none() {
-                            let run = fusions
-                                .runs
-                                .run(&Chain::of(&blocks[at..], member))
-                                .map_or(0, |run| run.min(blocks.len() - at));
-                            if let Some(fused) = (run > 1)
-                                .then(|| fusions.get(plan, &blocks[at..at + run], member))
-                                .flatten()
-                            {
-                                self.fused(&fused, entity, rows);
-                                self.counts.laned += run;
-                                at += run;
-                                if let Some((why, start, count)) = census {
-                                    Census::record(
-                                        format!("policy lane | fused | {why}"),
-                                        count,
-                                        start.elapsed().as_nanos(),
-                                    );
-                                }
-                                continue;
-                            }
-                            laning = Some(at);
-                        }
-                        let span = item.units[at];
-                        for event in &events[span.start..span.start + span.len] {
-                            fresh(self, rows);
-                            if rows.is_empty() {
-                                break;
-                            }
-                            self.event(*event, rows);
-                        }
-                        if let Some((why, start, count)) = census {
-                            Census::record(
-                                format!("policy lane | unit | {why}"),
-                                count,
-                                start.elapsed().as_nanos(),
-                            );
-                        }
-                        self.counts.laned += 1;
-                        at += 1;
+                        self.event(*event, rows);
                     }
-                    if let (Some(from), true) = (laning, at == item.units.len()) {
-                        fusions
-                            .runs
-                            .ran(Chain::of(&blocks[from..], member), at - from);
+                    if let Some((why, start, count)) = census {
+                        Census::record(
+                            format!("policy lane | unit | {why}"),
+                            count,
+                            start.elapsed().as_nanos(),
+                        );
                     }
-                    continue;
+                    self.counts.laned += 1;
+                    at += 1;
                 }
-            }
-            self.counts.laned += item.units.len();
-            let census = Census::on().then(|| (Instant::now(), rows.len(), item.domain.is_some()));
-            let group = match (item.domain, blocks.len() > 1) {
-                (Some(domain), true) => self.regroup(&item, rows).and_then(|entity| {
-                    let fused = self
-                        .plan
-                        .fusions
-                        .get(self.plan, &blocks, domain.is_some())?;
-                    Some((fused, entity))
-                }),
-                _ => None,
-            };
-            match group {
-                Some((fused, entity)) => self.fused(&fused, entity, rows),
-                None => {
-                    for span in &item.units {
-                        for event in &events[span.start..span.start + span.len] {
-                            fresh(self, rows);
-                            if rows.is_empty() {
-                                break;
-                            }
-                            self.event(*event, rows);
-                        }
-                    }
+                if let (Some(from), true) = (laning, at == item.units.len()) {
+                    fusions
+                        .runs
+                        .ran(Chain::of(&blocks[from..], member), at - from);
                 }
-            }
-            if let Some((start, count, domain)) = census {
-                Census::record(
-                    format!("policy lane | whole item | domain {domain} typed {typed}"),
-                    count,
-                    start.elapsed().as_nanos(),
-                );
+                return;
             }
         }
-        fresh(self, rows);
-        last
+        self.counts.laned += item.units.len();
+        let census = Census::on().then(|| (Instant::now(), rows.len(), item.domain.is_some()));
+        let group = match (item.domain, blocks.len() > 1) {
+            (Some(domain), true) => self.regroup(item, rows).and_then(|entity| {
+                let fused = self
+                    .plan
+                    .fusions
+                    .get(self.plan, &blocks, domain.is_some())?;
+                Some((fused, entity))
+            }),
+            _ => None,
+        };
+        match group {
+            Some((fused, entity)) => self.fused(&fused, entity, rows),
+            None => {
+                for span in &item.units {
+                    for event in &events[span.start..span.start + span.len] {
+                        self.prune(rows, seen);
+                        if rows.is_empty() {
+                            break;
+                        }
+                        self.event(*event, rows);
+                    }
+                }
+            }
+        }
+        if let Some((start, count, domain)) = census {
+            Census::record(
+                format!("policy lane | whole item | domain {domain} typed {typed}"),
+                count,
+                start.elapsed().as_nanos(),
+            );
+        }
     }
 
     fn retry(&mut self, events: &[Event], units: &[Span], mut rows: Vec<usize>) {
@@ -557,7 +761,7 @@ impl<'s, 'a> Pass<'s, 'a> {
     fn regroup(&self, item: &Item, rows: &[usize]) -> Option<Option<usize>> {
         let mut entity = None;
         for span in &item.units {
-            let unit = self.unit(span.block, span.len, rows)?;
+            let unit = self.refused(span.block, span.len, rows).ok()?;
             if entity.is_some_and(|e| e != unit.entity) {
                 return None;
             }
@@ -597,6 +801,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                         start: at,
                         len,
                     }],
+                    gate: self.plan.gate(block),
                     domain: unit.as_ref().map(|unit| unit.entity),
                     written: unit.map(|unit| unit.writes).unwrap_or_default(),
                 });
@@ -607,10 +812,9 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn merge(&self, items: &mut [Item], entry: Span, unit: &Unit) -> bool {
-        let Some(target) = items
-            .iter()
-            .rposition(|item| item.domain == Some(unit.entity))
-        else {
+        let Some(target) = items.iter().rposition(|item| {
+            item.domain == Some(unit.entity) && item.gate == self.plan.gate(entry.block)
+        }) else {
             return false;
         };
         let effects = |block: usize| self.plan.fusions.effects(self.plan, block);
@@ -657,63 +861,92 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn unit(&self, block: usize, len: usize, rows: &[usize]) -> Option<Unit<'s>> {
+        match self.refused(block, len, rows) {
+            Ok(unit) => Some(unit),
+            Err(why) => {
+                if Census::on() {
+                    Census::record(format!("policy unit refused | {why}"), rows.len(), 0);
+                }
+                None
+            }
+        }
+    }
+
+    fn refused(&self, block: usize, len: usize, rows: &[usize]) -> Result<Unit<'s>, &'static str> {
         let plan = self.plan;
         if self.shared {
-            return None;
+            return Err("shared rows");
         }
-        let (entity, programs, writes) =
-            match (&plan.plans[block].table, &plan.blocks.rules[block].kind) {
-                (Some(table), BlockKind::DecisionTable(ir)) => {
-                    let entity = match self.owners[block] {
-                        Some(_) if Exports::enabled() => {
-                            let at = self.entity_of(block)?;
-                            self.supported(at, block, rows).then_some(Some(at))?
-                        }
-                        Some(_) => return None,
-                        None => None,
-                    };
-                    let ready = len == 2 && self.quiet(block) && plan.fusions.table(block, ir);
-                    let writes: Vec<(Arc<str>, bool)> = table
-                        .picked()
-                        .iter()
-                        .map(|o| (o.field.clone(), true))
-                        .collect();
-                    ready.then_some((entity, table.programs(), writes))?
-                }
-                (Some(_), _) => return None,
-                (None, _) => {
-                    let entity = match self.owners[block] {
-                        Some(_) => {
-                            let at = self.entity_of(block)?;
-                            self.supported(at, block, rows).then_some(Some(at))?
-                        }
-                        None => None,
-                    };
-                    let native = match entity {
-                        Some(_) => Pass::native(plan, block)?,
-                        None if plan.plans[block].iterated => return None,
-                        None => plan.plans[block].native()?,
-                    };
-                    match (native, len) {
-                        (Native::Expression { key, program }, 1) => {
-                            (entity, vec![program.as_ref()], vec![(key.clone(), true)])
-                        }
-                        (Native::Match { ir, .. }, 2) if self.quiet(block) => {
-                            (entity, Pass::programs(native), vec![(ir.key.clone(), true)])
-                        }
-                        (Native::Assertion { ir, conditions }, 1) => (
-                            entity,
-                            conditions.iter().collect(),
-                            vec![(ir.output.clone(), false)],
-                        ),
-                        _ => return None,
+        let (entity, programs, writes) = match (&plan.flat(block).table, &plan.rule(block).kind) {
+            (Some(table), BlockKind::DecisionTable(ir)) => {
+                let entity = match self.owners[block] {
+                    Some(_) if Exports::enabled() => {
+                        let at = self.entity_of(block).ok_or("member table without entity")?;
+                        self.supported(at, block, rows)
+                            .then_some(Some(at))
+                            .ok_or("member table unsupported")?
                     }
+                    Some(_) => return Err("member table untyped"),
+                    None => None,
+                };
+                if len != 2 {
+                    return Err("table split select");
                 }
-            };
+                if !self.quiet(block) {
+                    return Err("table cells read fields");
+                }
+                let readable = match plan.fusions.table(block, ir) {
+                    Some(false) if !Exports::enabled() => return Err("table not typable"),
+                    Some(readable) => readable,
+                    None => return Err("table not typable"),
+                };
+                let writes: Vec<(Arc<str>, bool)> = table
+                    .picked()
+                    .iter()
+                    .map(|o| (o.field.clone(), readable))
+                    .collect();
+                (entity, table.programs(), writes)
+            }
+            (Some(_), _) => return Err("table plan on other block"),
+            (None, _) => {
+                let entity = match self.owners[block] {
+                    Some(_) => {
+                        let at = self.entity_of(block).ok_or("member block without entity")?;
+                        self.supported(at, block, rows)
+                            .then_some(Some(at))
+                            .ok_or("member block unsupported")?
+                    }
+                    None => None,
+                };
+                let native = match entity {
+                    Some(_) => Pass::native(plan, block).ok_or("member block not native")?,
+                    None if plan.flat(block).iterated => return Err("iterated block"),
+                    None => plan.flat(block).native().ok_or("block not native")?,
+                };
+                match (native, len) {
+                    (Native::Expression { key, program }, 1) => {
+                        (entity, vec![program.as_ref()], vec![(key.clone(), true)])
+                    }
+                    (Native::Match { ir, .. }, 2) if self.quiet(block) => {
+                        (entity, Pass::programs(native), vec![(ir.key.clone(), true)])
+                    }
+                    (Native::Match { .. }, 2) => return Err("match arm values read fields"),
+                    (Native::Assertion { ir, conditions }, 1) => (
+                        entity,
+                        conditions.iter().collect(),
+                        vec![(ir.output.clone(), false)],
+                    ),
+                    _ => return Err("split select and commit"),
+                }
+            }
+        };
         let plain = programs.iter().all(|program| {
             let p = program.program();
             !(p.writes_env || p.chain || p.opaque() || p.rows)
         });
+        if !plain {
+            return Err("program needs row scope");
+        }
         let clear = entity.is_some()
             || writes.iter().all(|(key, _)| {
                 !self
@@ -722,11 +955,14 @@ impl<'s, 'a> Pass<'s, 'a> {
                     .iter()
                     .any(|e| e.active && Sheet::related(key, &e.path).is_some())
             });
-        (plain && clear).then_some(Unit {
-            entity,
-            programs,
-            writes,
-        })
+        match clear {
+            true => Ok(Unit {
+                entity,
+                programs,
+                writes,
+            }),
+            false => Err("writes into a list entity"),
+        }
     }
 
     fn conjunction(ir: &AssertionIr) -> bool {
@@ -763,7 +999,27 @@ impl<'s, 'a> Pass<'s, 'a> {
         let count = member.map_or(rows.len(), |(_, kids)| kids.len());
         let mut leaves = leaves.into_iter();
         for sink in sinks {
+            if let Sink::Gather(gather) = sink {
+                let conds: Vec<Vec<u64>> = leaves
+                    .by_ref()
+                    .take(gather.rules.len())
+                    .map(|leaf| leaf.truths(count))
+                    .collect();
+                let values: Vec<Leaf<'a>> = leaves.by_ref().take(gather.computed).collect();
+                for (key, leaf) in gather
+                    .fields
+                    .iter()
+                    .zip(gather.leaves(&conds, &values, count))
+                {
+                    match member {
+                        None => self.write(key, leaf, rows),
+                        Some((at, kids)) => self.member_write(at, key, leaf, kids),
+                    }
+                }
+                continue;
+            }
             let leaf = match sink {
+                Sink::Gather(_) => continue,
                 Sink::Write(_) => leaves.next().unwrap_or_else(|| Leaf::nulls(count)),
                 Sink::Assert(ir) if member.is_none() && Self::conjunction(ir) => {
                     let mut bits = Bits::ones(count);
@@ -787,6 +1043,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             let key = match sink {
                 Sink::Write(key) => key,
                 Sink::Assert(ir) => &ir.output,
+                Sink::Gather(_) => continue,
             };
             match member {
                 None => self.write(key, leaf, rows),

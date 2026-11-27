@@ -7,7 +7,7 @@ use crate::functions::{
 use crate::lane::builtins::{Arg as Given, Builtins, Out, RowContext};
 use crate::lane::date::Date;
 use crate::lane::effect::{Effect, Literal};
-use crate::lane::Fusion;
+use crate::lane::{Fusion, SourceInfo};
 use crate::lexer::{
     ArithmeticOperator, Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator,
 };
@@ -20,8 +20,11 @@ use crate::typed::ins::Pattern;
 use crate::typed::num::Dec;
 use crate::variable::Variable;
 use bumpalo::Bump;
+use compose::Val;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+mod compose;
 
 type Lowered = Result<NodeId, Unsupported>;
 
@@ -35,9 +38,16 @@ pub enum Class {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolved {
     Column(Class),
+    Dated,
     Keyed(Class, Arc<str>),
     Output(usize),
-    List { fields: Vec<(Arc<str>, Class)> },
+    List {
+        fields: Vec<(Arc<str>, Class)>,
+    },
+    DatedList {
+        fields: Vec<(Arc<str>, Class)>,
+        dated: Vec<Arc<str>>,
+    },
     KeyedList(Arc<str>, Vec<(Arc<str>, Class)>),
     Absent,
     Unsupported,
@@ -62,6 +72,7 @@ pub struct TableSpec {
     pub rules: Vec<TableRule>,
     pub hit: Hit,
     pub selector: bool,
+    pub collect: bool,
 }
 
 pub trait Resolve {
@@ -81,6 +92,8 @@ pub struct Lowering {
     nodes: Vec<Node>,
     index: HashMap<Node, NodeId>,
     outputs: Vec<Output>,
+    parts: Vec<Output>,
+    vals: Vec<Val>,
     names: Vec<(String, Named)>,
     absent: Vec<String>,
     literal: Option<DictId>,
@@ -91,11 +104,16 @@ pub struct Lowering {
     local: usize,
     novel: usize,
     lone: bool,
+    dated: Vec<(Option<ListId>, String)>,
+    outer: bool,
 }
 
+#[derive(Clone)]
 struct Mark {
     nodes: usize,
     outputs: usize,
+    parts: usize,
+    vals: usize,
     names: usize,
     absent: usize,
     columns: usize,
@@ -113,6 +131,9 @@ struct Ctx {
     item: Option<NodeId>,
     dollar: Option<NodeId>,
     list: Option<Seq>,
+    elem: Option<u32>,
+    home: Option<ListId>,
+    siblings: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +149,7 @@ struct Seq {
 enum Named {
     Node(NodeId),
     Seq(Seq),
+    Val(u32),
 }
 
 enum Base<'a> {
@@ -157,7 +179,8 @@ impl TableRule {
 
 impl Lowering {
     const DEPTH: u32 = 3;
-    const NATIVE_INPUTS: usize = 1;
+    const CROSSED: &'static str = "scope: two different lists";
+    pub const OUTER: char = '^';
 
     pub fn new(member: Option<(&str, &str)>) -> Self {
         let mut schema = Schema::default();
@@ -175,6 +198,8 @@ impl Lowering {
             nodes: Vec::new(),
             index: HashMap::new(),
             outputs: Vec::new(),
+            parts: Vec::new(),
+            vals: Vec::new(),
             names: Vec::new(),
             absent: Vec::new(),
             literal: None,
@@ -185,6 +210,8 @@ impl Lowering {
             local: 0,
             novel: 0,
             lone: false,
+            dated: Vec::new(),
+            outer: false,
         }
     }
 
@@ -202,10 +229,22 @@ impl Lowering {
     ) -> Result<(), Unsupported> {
         let mark = self.mark();
         self.local = self.names.len();
-        let result = entries
+        let mut result = entries
             .iter()
             .try_for_each(|entry| self.entry(entry, resolve));
+        if self.crossed(&result) {
+            self.rollback(mark.clone());
+            self.outer = true;
+            result = entries
+                .iter()
+                .try_for_each(|entry| self.entry(entry, resolve));
+            self.outer = false;
+        }
         self.settle(mark, result, resolve)
+    }
+
+    fn crossed(&self, result: &Result<(), Unsupported>) -> bool {
+        self.member.is_some() && matches!(result, Err(error) if error.0 == Self::CROSSED)
     }
 
     pub fn table(
@@ -215,7 +254,13 @@ impl Lowering {
     ) -> Result<(), Unsupported> {
         let mark = self.mark();
         self.local = self.names.len();
-        let result = self.tabled(spec, resolve);
+        let mut result = self.tabled(spec, resolve);
+        if self.crossed(&result) {
+            self.rollback(mark.clone());
+            self.outer = true;
+            result = self.tabled(spec, resolve);
+            self.outer = false;
+        }
         self.settle(mark, result, resolve)
     }
 
@@ -271,6 +316,7 @@ impl Lowering {
             schema: self.schema,
             nodes: self.nodes,
             outputs: self.outputs,
+            parts: self.parts,
         }
     }
 
@@ -278,6 +324,8 @@ impl Lowering {
         Mark {
             nodes: self.nodes.len(),
             outputs: self.outputs.len(),
+            parts: self.parts.len(),
+            vals: self.vals.len(),
             names: self.names.len(),
             absent: self.absent.len(),
             columns: self.schema.columns.len(),
@@ -293,6 +341,8 @@ impl Lowering {
         self.nodes.truncate(mark.nodes);
         self.index.retain(|_, id| (*id as usize) < mark.nodes);
         self.outputs.truncate(mark.outputs);
+        self.parts.truncate(mark.parts);
+        self.vals.truncate(mark.vals);
         self.names.truncate(mark.names);
         self.absent.truncate(mark.absent);
         self.schema.columns.truncate(mark.columns);
@@ -311,7 +361,7 @@ impl Lowering {
 
     fn prune(&mut self) {
         let mut live = vec![false; self.nodes.len()];
-        for o in &self.outputs {
+        for o in self.outputs.iter().chain(&self.parts) {
             live[o.node as usize] = true;
             if let Some(c) = o.collect {
                 live[c.item as usize] = true;
@@ -341,7 +391,7 @@ impl Lowering {
         }
         self.nodes = kept;
         self.index.clear();
-        for o in &mut self.outputs {
+        for o in self.outputs.iter_mut().chain(self.parts.iter_mut()) {
             o.node = remap[o.node as usize];
             if let Some(c) = &mut o.collect {
                 c.item = remap[c.item as usize];
@@ -358,6 +408,9 @@ impl Lowering {
                 item: None,
                 dollar: None,
                 list: None,
+                elem: None,
+                home: self.member,
+                siblings: false,
             },
             None => Ctx {
                 scope: Scope::Row,
@@ -365,6 +418,9 @@ impl Lowering {
                 item: None,
                 dollar: None,
                 list: None,
+                elem: None,
+                home: self.member,
+                siblings: false,
             },
         }
     }
@@ -372,26 +428,42 @@ impl Lowering {
     fn entry(&mut self, entry: &Fusion, r: &mut dyn Resolve) -> Result<(), Unsupported> {
         let ctx = self.ctx();
         match entry {
-            Fusion::Output { key, source } => self.parsed(
-                source,
-                false,
-                ctx,
-                r,
-                |this, ast, ctx, r| match Self::listy(ast) {
-                    true => {
-                        let seq = this.seq(ast, ctx, r)?;
-                        this.collect(key, seq, ctx.scope)
+            Fusion::Output { key, source } => {
+                self.parsed(source, false, ctx, r, |this, ast, ctx, r| {
+                    if Self::built(ast) {
+                        let val = this.value(ast, ctx, r)?;
+                        return this.emit(key, val, ctx.scope);
                     }
-                    false => match this.expr(ast, ctx, r) {
-                        Ok(id) => this.output(key, id, ctx.scope, true),
-                        Err(e) if Self::passable(ast) => match this.seq(ast, ctx, r) {
-                            Ok(seq) => this.collect(key, seq, ctx.scope),
-                            Err(_) => Err(e),
+                    let mark = this.mark();
+                    let first = match Self::listy(ast) {
+                        true => this
+                            .seq(ast, ctx, r)
+                            .and_then(|seq| this.collect(key, seq, ctx.scope)),
+                        false => match this.expr(ast, ctx, r) {
+                            Ok(id) => this.output(key, id, ctx.scope, true),
+                            Err(e) if Self::passable(ast) => match this.seq(ast, ctx, r) {
+                                Ok(seq) => this.collect(key, seq, ctx.scope),
+                                Err(_) => Err(e),
+                            },
+                            Err(e) => Err(e),
                         },
-                        Err(e) => Err(e),
-                    },
-                },
-            ),
+                    };
+                    let Err(e) = first else {
+                        return Ok(());
+                    };
+                    this.rollback(mark.clone());
+                    match this
+                        .value(ast, ctx, r)
+                        .and_then(|val| this.emit(key, val, ctx.scope))
+                    {
+                        Ok(()) => Ok(()),
+                        Err(_) => {
+                            this.rollback(mark);
+                            Err(e)
+                        }
+                    }
+                })
+            }
             Fusion::Hidden { key, source } => {
                 let id = self.parse(source, false, ctx, r)?;
                 self.output(key, id, ctx.scope, false)
@@ -403,35 +475,36 @@ impl Lowering {
     fn cell(&mut self, cell: &str, target: Ctx, r: &mut dyn Resolve) -> Lowered {
         let test = self.parse(cell, true, target, r)?;
         match target.dollar {
-            Some(dollar) if !self.settled(dollar) && !self.reaches(test, dollar) => Err(
-                Unsupported::new("table cell ignores a fallible input field"),
-            ),
+            Some(dollar) if !self.bound(test, dollar) => self.checked(dollar, test),
             _ => Ok(test),
         }
     }
 
-    fn reaches(&self, from: NodeId, to: NodeId) -> bool {
-        let mut seen = vec![false; self.nodes.len()];
-        let mut stack = vec![from];
-        while let Some(id) = stack.pop() {
-            if id == to {
-                return true;
-            }
-            if !std::mem::replace(&mut seen[id as usize], true) {
-                stack.extend(self.nodes[id as usize].op.inputs());
-            }
+    fn bound(&self, test: NodeId, on: NodeId) -> bool {
+        match &self.nodes[test as usize].op {
+            Op::Cmp(_, a, b) => *a == on || *b == on,
+            Op::InSet(a, _) | Op::InRange(a, _) => *a == on,
+            Op::Not(a) | Op::And(a, _) | Op::Or(a, _) => self.bound(*a, on),
+            _ => false,
         }
-        false
+    }
+
+    fn checked(&mut self, x: NodeId, y: NodeId) -> Lowered {
+        if self.settled(x) {
+            return Ok(y);
+        }
+        let scope = self.nodes[x as usize].scope;
+        let ok = self.add(Op::Checked(x), Ty::boolean(), scope);
+        self.logic(true, ok, y)
     }
 
     fn tabled(&mut self, spec: &TableSpec, r: &mut dyn Resolve) -> Result<(), Unsupported> {
-        if spec.rules.is_empty() || spec.outputs.is_empty() {
+        if spec.rules.is_empty() || (spec.outputs.is_empty() && !spec.collect) {
             return Err(Unsupported::new("empty table"));
         }
         let ctx = self.ctx();
         let mut targets: Vec<Option<Ctx>> = vec![None; spec.inputs.len()];
         let mut conds = Vec::with_capacity(spec.rules.len());
-        let mut folded = false;
         for rule in &spec.rules {
             let mut cond: Option<NodeId> = None;
             for (at, cell) in rule.cells.iter().enumerate() {
@@ -441,17 +514,39 @@ impl Lowering {
                 if cell.trim().is_empty() {
                     return Err(Unsupported::new("blank table cell"));
                 }
+                let lenient = spec.hit == Hit::Lenient;
                 let test = match (
                     spec.inputs.get(at).and_then(Option::as_deref),
                     targets.get(at).copied().flatten(),
                 ) {
-                    (Some(_), Some(target)) => self.cell(cell, target, r)?,
+                    (Some(_), Some(target)) => self.cell(cell, target, r),
                     (Some(field), None) => {
                         let target = self.target(field, ctx, r)?;
                         targets[at] = Some(target);
-                        self.cell(cell, target, r)?
+                        self.cell(cell, target, r)
                     }
-                    (None, _) => self.parse(cell, false, ctx, r)?,
+                    (None, _) => self.parse(cell, false, ctx, r),
+                };
+                let test = match test {
+                    Err(e) if lenient => {
+                        let target = targets.get(at).copied().flatten();
+                        match target {
+                            Some(target) if self.doomed(cell, true, target, r) => {
+                                let no = self.konst(Lit::Bool(false));
+                                match target.dollar {
+                                    Some(dollar) => self.checked(dollar, no)?,
+                                    None => no,
+                                }
+                            }
+                            None if !SourceInfo::parses(cell, false)
+                                || self.doomed(cell, false, ctx, r) =>
+                            {
+                                self.konst(Lit::Bool(false))
+                            }
+                            _ => return Err(e),
+                        }
+                    }
+                    other => other?,
                 };
                 self.require(test, |k| k == Kind::Bool, "table cell")?;
                 let test = match spec.hit {
@@ -460,7 +555,6 @@ impl Lowering {
                 };
                 if spec.hit == Hit::Lenient && self.lit(test) == Some(&Lit::Bool(false)) {
                     self.widen();
-                    folded = true;
                     cond = Some(test);
                     break;
                 }
@@ -474,11 +568,23 @@ impl Lowering {
                 None => self.konst(Lit::Bool(true)),
             });
         }
-        if folded
-            && spec.inputs.len() <= Self::NATIVE_INPUTS
-            && conds.iter().all(|c| self.lit(*c).is_some())
-        {
-            return Err(Unsupported::new("constant table"));
+        let mut dead = vec![false; spec.rules.len()];
+        if spec.hit == Hit::Lenient && !spec.collect {
+            for (at, rule) in spec.rules.iter().enumerate() {
+                for column in 0..spec.outputs.len() {
+                    let Some(source) = rule.value(column) else {
+                        continue;
+                    };
+                    let mark = self.mark();
+                    let lowered = self.parse(source, false, ctx, r).is_ok();
+                    self.rollback(mark);
+                    if !lowered && self.doomed(source, false, ctx, r) {
+                        self.widen();
+                        dead[at] = true;
+                        conds[at] = self.konst(Lit::Bool(false));
+                    }
+                }
+            }
         }
         let total = conds
             .iter()
@@ -493,21 +599,69 @@ impl Lowering {
             ),
             None => self.scoped(&conds)?,
         };
+        if spec.collect {
+            for cond in &conds {
+                self.output("", *cond, ctx.scope, true)?;
+            }
+            for (rule, cond) in spec.rules.iter().zip(&conds) {
+                for source in rule.values.iter().flatten() {
+                    let id = self.parse(source, false, ctx, r)?;
+                    let null = self.konst(Lit::Null);
+                    let (arms, ty) = self.unify(vec![id, null])?;
+                    let (scope, ids) = self.scoped(&[*cond, arms[0], arms[1]])?;
+                    let guarded = self.add(Op::If(ids[0], ids[1], ids[2]), ty, scope);
+                    self.output("", guarded, ctx.scope, true)?;
+                }
+            }
+            return Ok(());
+        }
         let sel = self.add(
             Op::FirstMatch {
-                conds,
+                conds: conds.clone(),
                 strict: spec.hit == Hit::Strict,
+                blind: Vec::new(),
             },
             Ty::num(Some(0)),
             scope,
         );
+        let unfilled = spec.hit == Hit::Strict
+            && !spec.selector
+            && spec
+                .rules
+                .iter()
+                .any(|rule| (0..spec.outputs.len()).any(|at| rule.value(at).is_none()));
         let mut picks = Vec::with_capacity(spec.outputs.len());
         for at in 0..spec.outputs.len() {
+            let blind: Vec<bool> = match unfilled {
+                true => spec
+                    .rules
+                    .iter()
+                    .map(|rule| rule.value(at).is_none())
+                    .collect(),
+                false => Vec::new(),
+            };
+            let (sel, total) = match unfilled {
+                false => (sel, total),
+                true => (
+                    self.add(
+                        Op::FirstMatch {
+                            conds: conds.clone(),
+                            strict: true,
+                            blind: blind.clone(),
+                        },
+                        Ty::num(Some(0)),
+                        scope,
+                    ),
+                    conds.iter().zip(&blind).any(|(c, blind)| {
+                        !blind && self.nodes[*c as usize].op == Op::Const(Lit::Bool(true))
+                    }),
+                ),
+            };
             let mut arms = Vec::with_capacity(spec.rules.len());
-            for rule in &spec.rules {
+            for (rule, dead) in spec.rules.iter().zip(&dead) {
                 arms.push(match rule.value(at) {
-                    Some(source) => self.parse(source, false, ctx, r)?,
-                    None => self.konst(Lit::Null),
+                    Some(source) if !dead => self.parse(source, false, ctx, r)?,
+                    _ => self.konst(Lit::Null),
                 });
             }
             picks.push(self.picked(sel, arms, total)?);
@@ -524,6 +678,51 @@ impl Lowering {
             self.output(name, pick, ctx.scope, true)?;
         }
         Ok(())
+    }
+
+    fn doomed(&mut self, source: &str, unary: bool, ctx: Ctx, r: &mut dyn Resolve) -> bool {
+        let mark = self.mark();
+        let doomed = self
+            .parsed(source, unary, ctx, r, |this, ast, ctx, r| {
+                Ok(this.fails(ast, ctx, r))
+            })
+            .unwrap_or(false);
+        self.rollback(mark);
+        doomed
+    }
+
+    fn fails(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> bool {
+        let Ast::Binary {
+            left,
+            operator,
+            right,
+        } = ast
+        else {
+            return false;
+        };
+        let (Ok(a), Ok(b)) = (self.expr(left, ctx, r), self.expr(right, ctx, r)) else {
+            return false;
+        };
+        let (a, b) = (self.kind(a), self.kind(b));
+        match operator {
+            Operator::Arithmetic(_) => a == Kind::Null || b == Kind::Null,
+            Operator::Comparison(ComparisonOperator::In | ComparisonOperator::NotIn) => {
+                b == Kind::Null
+            }
+            Operator::Comparison(
+                ComparisonOperator::GreaterThan
+                | ComparisonOperator::GreaterThanOrEqual
+                | ComparisonOperator::LessThan
+                | ComparisonOperator::LessThanOrEqual,
+            ) => !matches!(
+                (a, b),
+                (Kind::Num(_), Kind::Num(_))
+                    | (Kind::Date, Kind::Date)
+                    | (Kind::Date, Kind::Text | Kind::Code(_))
+                    | (Kind::Text | Kind::Code(_), Kind::Date)
+            ),
+            _ => false,
+        }
     }
 
     fn target(&mut self, field: &str, ctx: Ctx, r: &mut dyn Resolve) -> Result<Ctx, Unsupported> {
@@ -640,6 +839,23 @@ impl Lowering {
             self.names.push((name.to_string(), Named::Node(id)));
             return Ok(());
         }
+        let id = self.exportable(name, id, scope)?;
+        if !name.is_empty() {
+            self.names.push((name.to_string(), Named::Node(id)));
+        }
+        let ty = self.nodes[id as usize].ty;
+        self.outputs.push(Output {
+            name: name.to_string(),
+            node: id,
+            scope,
+            ty,
+            collect: None,
+            shape: None,
+        });
+        Ok(())
+    }
+
+    fn exportable(&mut self, name: &str, id: NodeId, scope: Scope) -> Lowered {
         let id = match self.kind(id) {
             Kind::Text => match self.lit(id) {
                 Some(Lit::Text(text)) => {
@@ -655,23 +871,11 @@ impl Lowering {
             }
             _ => id,
         };
-        let id = match (scope, self.nodes[id as usize].scope) {
-            (Scope::Elem(_), Scope::Row) => self.parent(id, scope)?,
-            (a, b) if a == b => id,
-            _ => return Err(Unsupported::new(format!("output {name} scope mismatch"))),
-        };
-        if !name.is_empty() {
-            self.names.push((name.to_string(), Named::Node(id)));
+        match (scope, self.nodes[id as usize].scope) {
+            (Scope::Elem(_), Scope::Row) => self.parent(id, scope),
+            (a, b) if a == b => Ok(id),
+            _ => Err(Unsupported::new(format!("output {name} scope mismatch"))),
         }
-        let ty = self.nodes[id as usize].ty;
-        self.outputs.push(Output {
-            name: name.to_string(),
-            node: id,
-            scope,
-            ty,
-            collect: None,
-        });
-        Ok(())
     }
 
     #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
@@ -701,6 +905,20 @@ impl Lowering {
     }
 
     fn collect(&mut self, name: &str, seq: Seq, scope: Scope) -> Result<(), Unsupported> {
+        let (output, named) = self.gathered(name, seq, scope)?;
+        if !name.is_empty() {
+            self.names.push((name.to_string(), Named::Seq(named)));
+        }
+        self.outputs.push(output);
+        Ok(())
+    }
+
+    fn gathered(
+        &mut self,
+        name: &str,
+        seq: Seq,
+        scope: Scope,
+    ) -> Result<(Output, Seq), Unsupported> {
         let inner = Scope::Elem(seq.list);
         if self.schema.owner(inner) != Some(scope) {
             return Err(Unsupported::new(format!(
@@ -738,17 +956,12 @@ impl Lowering {
             }
         };
         let keep = seq.keep.map(|k| self.parent(k, inner)).transpose()?;
-        if !name.is_empty() {
-            self.names.push((
-                name.to_string(),
-                Named::Seq(Seq {
-                    value: Some(item),
-                    keep,
-                    pure: true,
-                    ..seq
-                }),
-            ));
-        }
+        let named = Seq {
+            value: Some(item),
+            keep,
+            pure: true,
+            ..seq
+        };
         let ty = self.nodes[node as usize].ty;
         let collect = Collect {
             list: seq.list,
@@ -756,14 +969,15 @@ impl Lowering {
             item,
             empty: seq.empty,
         };
-        self.outputs.push(Output {
+        let output = Output {
             name: name.to_string(),
             node,
             scope: inner,
             ty,
             collect: Some(collect),
-        });
-        Ok(())
+            shape: None,
+        };
+        Ok((output, named))
     }
 
     fn add(&mut self, op: Op, ty: Ty, scope: Scope) -> NodeId {
@@ -882,7 +1096,7 @@ impl Lowering {
             ) {
                 (true, _) => scope = node.scope,
                 (false, true) => {}
-                (false, false) => return Err(Unsupported::new("scope: two different lists")),
+                (false, false) => return Err(Unsupported::new(Self::CROSSED)),
             }
         }
         let mut lifted = Vec::with_capacity(ids.len());
@@ -980,7 +1194,7 @@ impl Lowering {
             Ast::Member {
                 node,
                 property: Ast::String(segment),
-            } if !segment.contains('.') => {
+            } if !segment.is_empty() && !segment.contains('.') => {
                 let base = Self::segments(node, out)?;
                 out.push(segment);
                 Ok(base)
@@ -1016,6 +1230,9 @@ impl Lowering {
         match named {
             Named::Node(id) => Ok(id),
             Named::Seq(_) => Err(Unsupported::new(format!("list {path} used as a value"))),
+            Named::Val(_) => Err(Unsupported::new(format!(
+                "composite {path} used as a value"
+            ))),
         }
     }
 
@@ -1037,9 +1254,16 @@ impl Lowering {
 
     fn path(&mut self, ast: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
         let mut segments = Vec::new();
-        let base = Self::segments(ast, &mut segments)?;
+        let base = match Self::segments(ast, &mut segments) {
+            Ok(base) => base,
+            Err(e) => return self.computed(ast, ctx, r).map_err(|_| e),
+        };
         let rest = segments.join(".");
         match base {
+            Base::Pointer if ctx.elem.is_some() => match self.descend_elem(ctx, &segments) {
+                Some(Val::Node(id)) => Ok(id),
+                _ => Err(Unsupported::new("member of a composite element")),
+            },
             Base::Pointer => match (ctx.item, ctx.pointer, rest.is_empty()) {
                 (Some(item), _, true) => Ok(item),
                 (Some(_), _, false) => Err(Unsupported::new("member of a mapped element")),
@@ -1052,11 +1276,16 @@ impl Lowering {
             Base::Dollar if ctx.dollar.is_some() => {
                 Err(Unsupported::new("member of $ in a table cell"))
             }
-            Base::Dollar => Self::scalar(
-                self.own(&rest)
-                    .ok_or_else(|| Unsupported::new(format!("unknown $.{rest}")))?,
-                &rest,
-            ),
+            Base::Dollar => match self.reach(&rest) {
+                Some(Val::Node(id)) => Ok(id),
+                Some(Val::Seq(_)) => {
+                    Err(Unsupported::new(format!("list $.{rest} used as a value")))
+                }
+                Some(_) => Err(Unsupported::new(format!(
+                    "composite $.{rest} used as a value"
+                ))),
+                None => Err(Unsupported::new(format!("unknown $.{rest}"))),
+            },
             Base::Ident(name) => {
                 let path = match rest.is_empty() {
                     true => name.to_string(),
@@ -1071,9 +1300,10 @@ impl Lowering {
                 }
                 if let Some(list) = self.member {
                     if self.schema.lists[list as usize].alias.as_deref() == Some(name) {
-                        return match rest.is_empty() {
-                            true => Err(Unsupported::new(format!("whole element {name}"))),
-                            false => self.field(list, &rest, Some(&path), r),
+                        return match (rest.is_empty(), ctx.siblings) {
+                            (true, _) => Err(Unsupported::new(format!("whole element {name}"))),
+                            (false, true) => Err(Unsupported::new(Self::CROSSED)),
+                            (false, false) => self.field(list, &rest, Some(&path), r),
                         };
                     }
                 }
@@ -1089,6 +1319,7 @@ impl Lowering {
                 Resolved::Output(at) => match self.outputs.get(at) {
                     Some(Output {
                         collect: None,
+                        shape: None,
                         node,
                         ..
                     }) => Ok(*node),
@@ -1101,7 +1332,8 @@ impl Lowering {
         }
         if let Some(c) = self.schema.column(path) {
             let ty = self.schema.columns[c as usize].ty;
-            return Ok(self.add(Op::Column(c), ty, Scope::Row));
+            let read = self.add(Op::Column(c), ty, Scope::Row);
+            return Ok(self.declared(None, path, read, Scope::Row));
         }
         if self.absent.iter().any(|a| a == path) {
             return Ok(self.konst(Lit::Null));
@@ -1119,17 +1351,39 @@ impl Lowering {
                 });
                 Ok(self.add(Op::Column(c), class.ty(), Scope::Row))
             }
+            Resolved::Dated => {
+                let c = u16::try_from(self.schema.columns.len())
+                    .map_err(|_| Unsupported::new("too many columns"))?;
+                self.schema.columns.push(ColumnDef {
+                    path: path.to_string(),
+                    ty: Class::Text.ty(),
+                });
+                let text = self.add(Op::Column(c), Class::Text.ty(), Scope::Row);
+                self.dated.push((None, path.to_string()));
+                Ok(self.declared(None, path, text, Scope::Row))
+            }
             Resolved::Absent => {
                 self.absent.push(path.to_string());
                 Ok(self.konst(Lit::Null))
             }
             Resolved::Keyed(class, key) => self.keyed(class, &key),
-            Resolved::List { .. } | Resolved::KeyedList(..) => {
+            Resolved::List { .. } | Resolved::DatedList { .. } | Resolved::KeyedList(..) => {
                 Err(Unsupported::new(format!("list {path} used as a value")))
             }
             Resolved::Output(_) | Resolved::Unsupported => {
                 Err(Unsupported::new(format!("path {path}")))
             }
+        }
+    }
+
+    fn declared(&mut self, list: Option<ListId>, path: &str, read: NodeId, scope: Scope) -> NodeId {
+        match self.dated.iter().any(|(l, p)| *l == list && p == path) {
+            true => self.add(
+                Op::Clock(Clock::Declared, vec![read]),
+                Ty::new(Kind::Date, true),
+                scope,
+            ),
+            false => read,
         }
     }
 
@@ -1164,9 +1418,17 @@ impl Lowering {
     ) -> Lowered {
         if let Some(f) = self.schema.field(list, name) {
             let ty = self.schema.lists[list as usize].fields[f as usize].ty;
-            return Ok(self.add(Op::Field(list, f), ty, Scope::Elem(list)));
+            let read = self.add(Op::Field(list, f), ty, Scope::Elem(list));
+            return Ok(self.declared(Some(list), name, read, Scope::Elem(list)));
         }
-        let Some(path) = member else {
+        let own = match (member, self.member == Some(list)) {
+            (None, true) => self.schema.lists[list as usize]
+                .alias
+                .as_ref()
+                .map(|alias| format!("{alias}.{name}")),
+            _ => None,
+        };
+        let Some(path) = member.or(own.as_deref()) else {
             return Err(Unsupported::new(format!("unknown field {name}")));
         };
         if self.absent.iter().any(|a| a == path) {
@@ -1182,6 +1444,18 @@ impl Lowering {
                     ty: class.ty(),
                 });
                 Ok(self.add(Op::Field(list, f), class.ty(), Scope::Elem(list)))
+            }
+            Resolved::Dated => {
+                let fields = &mut self.schema.lists[list as usize].fields;
+                let f =
+                    u16::try_from(fields.len()).map_err(|_| Unsupported::new("too many fields"))?;
+                fields.push(ColumnDef {
+                    path: name.to_string(),
+                    ty: Class::Text.ty(),
+                });
+                let text = self.add(Op::Field(list, f), Class::Text.ty(), Scope::Elem(list));
+                self.dated.push((Some(list), name.to_string()));
+                Ok(self.declared(Some(list), name, text, Scope::Elem(list)))
             }
             Resolved::Absent => {
                 self.absent.push(path.to_string());
@@ -1225,7 +1499,16 @@ impl Lowering {
             Operator::Comparison(ComparisonOperator::In | ComparisonOperator::NotIn) => {
                 let a = self.expr(left, ctx, r)?;
                 let test = match right {
-                    Ast::Array(items) => self.inset(a, items, ctx, r)?,
+                    Ast::Array(items) => {
+                        let mark = self.mark();
+                        match self.inset(a, items, ctx, r) {
+                            Ok(test) => test,
+                            Err(e) => {
+                                self.rollback(mark);
+                                self.within(a, right, ctx, r).map_err(|_| e)?
+                            }
+                        }
+                    }
                     Ast::Interval {
                         left: lo,
                         right: hi,
@@ -1233,13 +1516,43 @@ impl Lowering {
                         right_bracket,
                     } => self.inrange(a, (lo, hi), (*left_bracket, *right_bracket), ctx, r)?,
                     other => {
-                        let seq = self.seq(other, ctx, r)?;
-                        self.member(a, seq)?
+                        let mark = self.mark();
+                        match self.seq(other, ctx, r).and_then(|seq| self.member(a, seq)) {
+                            Ok(test) => test,
+                            Err(e) => {
+                                self.rollback(mark);
+                                self.within(a, other, ctx, r).map_err(|_| e)?
+                            }
+                        }
                     }
                 };
                 match operator {
                     Operator::Comparison(ComparisonOperator::NotIn) => self.not(test),
                     _ => Ok(test),
+                }
+            }
+            Operator::Comparison(
+                op @ (ComparisonOperator::Equal | ComparisonOperator::NotEqual),
+            ) => {
+                let mark = self.mark();
+                let direct = self.expr(left, ctx, r).and_then(|a| {
+                    let b = self.expr(right, ctx, r)?;
+                    let op = match op {
+                        ComparisonOperator::Equal => Cmp::Eq,
+                        _ => Cmp::Ne,
+                    };
+                    self.compare(op, a, b)
+                });
+                match direct {
+                    Ok(id) => Ok(id),
+                    Err(e) => {
+                        self.rollback(mark.clone());
+                        self.unequal(op == ComparisonOperator::NotEqual, left, right, ctx, r)
+                            .map_err(|_| {
+                                self.rollback(mark);
+                                e
+                            })
+                    }
                 }
             }
             Operator::Comparison(op) => {
@@ -1292,14 +1605,22 @@ impl Lowering {
         let ty = match op {
             Arith::Add | Arith::Sub => Ty::num(sa.filter(|x| sb == Some(*x))),
             Arith::Mul => Ty::num((sa == Some(0) && sb == Some(0)).then_some(0)),
-            Arith::Div | Arith::Rem => {
-                Ty::new(Kind::Num(None), divisor.is_none_or(|d| d.is_zero()))
+            Arith::Div => Ty::new(
+                Kind::Num(None),
+                divisor.is_none_or(|d| d.is_zero() || Self::fractional(d)),
+            ),
+            Arith::Rem => Ty::new(Kind::Num(None), divisor.is_none_or(|d| d.is_zero())),
+            Arith::Pow if divisor.is_some_and(|d| !d.decimal().fract().is_zero()) => {
+                return Err(Unsupported::new("exponent must be an integer"))
             }
-            Arith::Pow if divisor.is_some_and(|d| d.scale == 0) => Ty::num(None),
-            Arith::Pow => return Err(Unsupported::new("exponent must be an integer literal")),
+            Arith::Pow => Ty::num(None),
         };
         let (scope, ids) = self.scoped(&[a, b])?;
         Ok(self.add(Op::Arith(op, ids[0], ids[1]), ty, scope))
+    }
+
+    fn fractional(d: Dec) -> bool {
+        u128::from(d.mant.unsigned_abs()) < 10u128.pow(u32::from(d.scale))
     }
 
     fn classify(&mut self, id: NodeId) -> Lowered {
@@ -1414,30 +1735,34 @@ impl Lowering {
         match &self.nodes[id as usize].op {
             Op::Column(_) | Op::Field(..) | Op::Const(_) => true,
             Op::Parent(inner) => self.settled(*inner),
-            _ => self
-                .names
-                .iter()
-                .any(|(_, named)| *named == Named::Node(id)),
+            _ => {
+                self.names
+                    .iter()
+                    .any(|(_, named)| *named == Named::Node(id))
+                    || self
+                        .parts
+                        .iter()
+                        .any(|part| part.collect.is_none() && part.node == id)
+            }
         }
     }
 
     fn mismatch(&mut self, op: Cmp, a: NodeId, b: NodeId) -> Lowered {
-        if !(self.ty(a).nullable && self.ty(b).nullable) {
-            if !(self.settled(a) && self.settled(b)) {
-                return Err(Unsupported::new(
-                    "mismatched comparison of a fallible operand",
-                ));
+        let test = match self.ty(a).nullable && self.ty(b).nullable {
+            false => self.konst(Lit::Bool(op == Cmp::Ne)),
+            true => {
+                let null = self.konst(Lit::Null);
+                let x = self.compare(Cmp::Eq, a, null)?;
+                let y = self.compare(Cmp::Eq, b, null)?;
+                let both = self.logic(true, x, y)?;
+                match op {
+                    Cmp::Eq => both,
+                    _ => self.not(both)?,
+                }
             }
-            return Ok(self.konst(Lit::Bool(op == Cmp::Ne)));
-        }
-        let null = self.konst(Lit::Null);
-        let x = self.compare(Cmp::Eq, a, null)?;
-        let y = self.compare(Cmp::Eq, b, null)?;
-        let both = self.logic(true, x, y)?;
-        match op {
-            Cmp::Eq => Ok(both),
-            _ => self.not(both),
-        }
+        };
+        let test = self.checked(b, test)?;
+        self.checked(a, test)
     }
 
     fn coerce(&mut self, id: NodeId, dict: DictId) -> Lowered {
@@ -1503,6 +1828,16 @@ impl Lowering {
                 .lit(id)
                 .cloned()
                 .ok_or_else(|| Unsupported::new("in: non-literal set item"))?;
+            let lit = match lit {
+                Lit::Code(d, c) if self.schema.dicts[d as usize].kind == DictKind::Literals => {
+                    let text = self.schema.dicts[d as usize]
+                        .text(c)
+                        .ok_or_else(|| Unsupported::new("in: unknown literal code"))?;
+                    Lit::Text(text.to_string())
+                }
+                Lit::Code(..) => return Err(Unsupported::new("in: coded set item")),
+                other => other,
+            };
             let lit = match (kind, lit) {
                 (_, Lit::Null) => Some(Lit::Null),
                 (Kind::Code(d), Lit::Text(t)) => Some(Lit::Code(d, self.code(d, &t))),
@@ -1636,6 +1971,29 @@ impl Lowering {
         ctx: Ctx,
         r: &mut dyn Resolve,
     ) -> Lowered {
+        let mark = self.mark();
+        match self.called(kind, args, ctx, r) {
+            Ok(id) => Ok(id),
+            Err(e) => {
+                self.rollback(mark.clone());
+                match self.statically(kind, args, ctx, r) {
+                    Ok(id) => Ok(id),
+                    Err(_) => {
+                        self.rollback(mark);
+                        Err(e)
+                    }
+                }
+            }
+        }
+    }
+
+    fn called(
+        &mut self,
+        kind: &FunctionKind,
+        args: &[&Ast],
+        ctx: Ctx,
+        r: &mut dyn Resolve,
+    ) -> Lowered {
         match (kind, args) {
             (
                 FunctionKind::Internal(
@@ -1673,7 +2031,8 @@ impl Lowering {
                 for item in items {
                     hits.push(self.belongs(x, item)?);
                 }
-                self.chain(false, hits)
+                let found = self.chain(false, hits)?;
+                self.checked(x, found)
             }
             (
                 FunctionKind::Closure(
@@ -1792,7 +2151,10 @@ impl Lowering {
                     }
                     Ty {
                         kind: Kind::Null, ..
-                    } => Ok(self.konst(Lit::Bool(false))),
+                    } => {
+                        let no = self.konst(Lit::Bool(false));
+                        self.checked(a, no)
+                    }
                     ty => Err(Unsupported::new(format!("bool of {ty}"))),
                 }
             }
@@ -1920,6 +2282,13 @@ impl Lowering {
                     _ => Fold::One,
                 };
                 self.fold(fold, seq, seq.keep, Some(test))
+            }
+            (
+                FunctionKind::Internal(f @ (InternalFunction::Number | InternalFunction::Type)),
+                [arg],
+            ) => {
+                let a = self.expr(arg, ctx, r)?;
+                self.convert(*f, a)
             }
             (FunctionKind::Internal(InternalFunction::Date), args) => self.construct(args, ctx, r),
             (FunctionKind::Deprecated(f), args) => self.legacy(*f, args, ctx, r),
@@ -2146,6 +2515,9 @@ impl Lowering {
             item: seq.value,
             dollar: ctx.dollar,
             list: ctx.list,
+            elem: None,
+            home: ctx.home,
+            siblings: ctx.siblings || ctx.home == Some(seq.list),
         }
     }
 
@@ -2215,6 +2587,9 @@ impl Lowering {
                 right: Ast::Array([]),
             } => {
                 let seq = self.seq(left, ctx, r)?;
+                if seq.keep.is_some() || seq.value.is_some() {
+                    return Err(Unsupported::new("?? [] after a closure"));
+                }
                 Ok(Seq { empty: true, ..seq })
             }
             other => self.source(other, ctx, r),
@@ -2275,7 +2650,7 @@ impl Lowering {
                 };
                 match self.graph {
                     true => self.keyed_list(&path, r),
-                    false => self.root_list(name, &rest, &path, r),
+                    false => self.root_list(name, &rest, &path, ctx, r),
                 }
             }
         }
@@ -2287,7 +2662,12 @@ impl Lowering {
                 if let Some(list) = self.schema.list(&key) {
                     return Ok(Self::plain(list));
                 }
-                Ok(Self::plain(self.declare(key.to_string(), fields, None)?))
+                Ok(Self::plain(self.declare(
+                    key.to_string(),
+                    fields,
+                    Vec::new(),
+                    None,
+                )?))
             }
             Resolved::Output(at) => self.produced(at, path),
             _ => Err(Unsupported::new(format!("{path} is not a list"))),
@@ -2299,21 +2679,38 @@ impl Lowering {
         name: &str,
         rest: &str,
         path: &str,
+        ctx: Ctx,
         r: &mut dyn Resolve,
     ) -> Result<Seq, Unsupported> {
         self.overlap(path)?;
+        let across = match ctx.scope {
+            Scope::Elem(list) if self.member == Some(list) && !ctx.siblings => Some(list),
+            _ => None,
+        };
         match self.named(path) {
+            Some(Named::Seq(_)) if self.outer && across.is_some() => {
+                return Err(Unsupported::new(format!(
+                    "list {path} made in the same pass"
+                )))
+            }
             Some(Named::Seq(seq)) => return Ok(seq),
-            Some(Named::Node(_)) => return Err(Unsupported::new(format!("{path} is not a list"))),
+            Some(Named::Node(_) | Named::Val(_)) => {
+                return Err(Unsupported::new(format!("{path} is not a list")))
+            }
             None => {}
         }
         if let Some(member) = self.member {
             if self.schema.lists[member as usize].alias.as_deref() == Some(name) {
-                return match rest.is_empty() {
-                    true => Err(Unsupported::new(format!("whole element {name}"))),
-                    false => Ok(Self::plain(self.nested(member, rest, r)?)),
+                return match (rest.is_empty(), ctx.siblings) {
+                    (true, _) => Err(Unsupported::new(format!("whole element {name}"))),
+                    (false, true) => Err(Unsupported::new(Self::CROSSED)),
+                    (false, false) => Ok(Self::plain(self.nested(member, rest, r)?)),
                 };
             }
+        }
+        if let (true, Some(list)) = (self.outer, across) {
+            let outer = format!("{}{path}", Self::OUTER);
+            return Ok(Self::plain(self.nested(list, &outer, r)?));
         }
         if let Some(list) = self.schema.list(path) {
             return Ok(Self::plain(list));
@@ -2322,9 +2719,18 @@ impl Lowering {
             return Err(Unsupported::new(format!("{path} is not a list")));
         }
         match r.path(path) {
-            Resolved::List { fields } => {
-                Ok(Self::plain(self.declare(path.to_string(), fields, None)?))
-            }
+            Resolved::List { fields } => Ok(Self::plain(self.declare(
+                path.to_string(),
+                fields,
+                Vec::new(),
+                None,
+            )?)),
+            Resolved::DatedList { fields, dated } => Ok(Self::plain(self.declare(
+                path.to_string(),
+                fields,
+                dated,
+                None,
+            )?)),
             _ => Err(Unsupported::new(format!("{path} is not a list"))),
         }
     }
@@ -2347,7 +2753,12 @@ impl Lowering {
         let mut chain = self.schema.chain(parent);
         chain.push(field);
         match r.nested(&chain) {
-            Resolved::List { fields } => self.declare(field.to_string(), fields, Some(parent)),
+            Resolved::List { fields } => {
+                self.declare(field.to_string(), fields, Vec::new(), Some(parent))
+            }
+            Resolved::DatedList { fields, dated } => {
+                self.declare(field.to_string(), fields, dated, Some(parent))
+            }
             _ => Err(Unsupported::new(format!("nested list {field}"))),
         }
     }
@@ -2356,17 +2767,22 @@ impl Lowering {
         &mut self,
         path: String,
         fields: Vec<(Arc<str>, Class)>,
+        dated: Vec<Arc<str>>,
         parent: Option<ListId>,
     ) -> Result<ListId, Unsupported> {
         let l = ListId::try_from(self.schema.lists.len())
             .map_err(|_| Unsupported::new("too many lists"))?;
+        let texts = dated.iter().map(|name| (name.clone(), Class::Text));
         let fields = fields
             .into_iter()
+            .chain(texts)
             .map(|(name, class)| ColumnDef {
                 path: name.to_string(),
                 ty: class.ty(),
             })
             .collect();
+        self.dated
+            .extend(dated.iter().map(|name| (Some(l), name.to_string())));
         self.schema.lists.push(ListDef {
             path,
             alias: None,
@@ -2388,15 +2804,63 @@ impl Lowering {
             .schema
             .within(self.nodes[x as usize].scope, Scope::Elem(seq.list))
         {
-            return Err(Unsupported::new("membership in the enclosing list"));
+            return self.in_row(x, seq);
         }
-        if !self.settled(x) {
-            return Err(Unsupported::new("membership of a fallible value"));
+        if let Some(found) = self.in_root(x, seq) {
+            return found;
         }
         let item = self.item(seq)?;
         let test = self.belongs(x, item)?;
         let test = self.lifted(test, seq.list)?;
-        self.fold(Fold::Any, seq, seq.keep, Some(test))
+        let found = self.fold(Fold::Any, seq, seq.keep, Some(test))?;
+        self.checked(x, found)
+    }
+
+    fn in_root(&mut self, x: NodeId, seq: Seq) -> Option<Lowered> {
+        let Scope::Elem(of) = self.nodes[x as usize].scope else {
+            return None;
+        };
+        if of == seq.list
+            || seq.keep.is_some()
+            || seq.value.is_some()
+            || self.schema.lists[seq.list as usize].parent.is_some()
+        {
+            return None;
+        }
+        let field = self.schema.field(seq.list, "")?;
+        let ty = self.schema.lists[seq.list as usize].fields[field as usize].ty;
+        match (self.kind(x), ty.kind) {
+            (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) | (Kind::Text, Kind::Text) => {}
+            _ => return None,
+        }
+        let found = self.add(
+            Op::InRow(x, seq.list, field, Some(of)),
+            Ty::boolean(),
+            Scope::Elem(of),
+        );
+        Some(self.checked(x, found))
+    }
+
+    fn in_row(&mut self, x: NodeId, seq: Seq) -> Lowered {
+        let refused = || Unsupported::new("membership in the enclosing list");
+        if seq.keep.is_some()
+            || seq.value.is_some()
+            || self.nodes[x as usize].scope != Scope::Elem(seq.list)
+        {
+            return Err(refused());
+        }
+        let field = self.schema.field(seq.list, "").ok_or_else(refused)?;
+        let ty = self.schema.lists[seq.list as usize].fields[field as usize].ty;
+        match (self.kind(x), ty.kind) {
+            (Kind::Num(_), Kind::Num(_)) | (Kind::Bool, Kind::Bool) | (Kind::Text, Kind::Text) => {}
+            _ => return Err(refused()),
+        }
+        let found = self.add(
+            Op::InRow(x, seq.list, field, None),
+            Ty::boolean(),
+            Scope::Elem(seq.list),
+        );
+        self.checked(x, found)
     }
 
     fn fold(
@@ -2589,6 +3053,55 @@ impl Lowering {
         Effect::call(kind, literals)
     }
 
+    fn convert(&mut self, function: InternalFunction, a: NodeId) -> Lowered {
+        let a = match self.kind(a) {
+            Kind::Code(_) => self.decode(a)?,
+            _ => a,
+        };
+        let Ty { kind, nullable } = self.ty(a);
+        let named = match kind {
+            _ if !self.settled(a) => None,
+            Kind::Null => Some("null"),
+            _ if nullable => None,
+            Kind::Num(_) => Some("number"),
+            Kind::Bool => Some("bool"),
+            Kind::Text | Kind::Code(_) => Some("string"),
+            Kind::Date => Some("date"),
+        };
+        let known = match kind {
+            Kind::Num(_) => Some("number"),
+            Kind::Bool => Some("bool"),
+            Kind::Text => Some("string"),
+            _ => None,
+        };
+        let ty = match function {
+            InternalFunction::Type => match (named, known) {
+                (Some(name), _) => return Ok(self.konst(Lit::Text(name.to_string()))),
+                (None, Some(name)) if self.settled(a) => {
+                    let null = self.konst(Lit::Null);
+                    let missing = self.compare(Cmp::Eq, a, null)?;
+                    let (named, none) = (
+                        self.konst(Lit::Text(name.to_string())),
+                        self.konst(Lit::Text("null".to_string())),
+                    );
+                    let (scope, ids) = self.scoped(&[missing, none, named])?;
+                    return Ok(self.add(
+                        Op::If(ids[0], ids[1], ids[2]),
+                        Ty::new(Kind::Text, false),
+                        scope,
+                    ));
+                }
+                _ => Ty::new(Kind::Text, false),
+            },
+            _ => match (kind, nullable) {
+                (Kind::Num(_), false) => return Ok(a),
+                _ => Ty::new(Kind::Num(None), false),
+            },
+        };
+        let pure = self.effect(&FunctionKind::Internal(function), &[a]) == Effect::Pure;
+        self.host(Host::Internal(function), vec![a], ty, pure)
+    }
+
     fn host(&mut self, host: Host, args: Vec<NodeId>, ty: Ty, pure: bool) -> Lowered {
         if let Some(lit) = pure.then(|| self.folded(host, &args)).flatten() {
             return Ok(self.konst(lit));
@@ -2699,7 +3212,18 @@ impl Lowering {
                     }
                     None => {
                         let (scope, ids) = self.scoped(&[date, text])?;
-                        self.add(Op::Clock(Clock::Matches, ids), Ty::boolean(), scope)
+                        let matches =
+                            self.add(Op::Clock(Clock::Matches, ids), Ty::boolean(), scope);
+                        match self.ty(date).nullable && self.ty(text).nullable {
+                            true => {
+                                let null = self.konst(Lit::Null);
+                                let x = self.compare(Cmp::Eq, date, null)?;
+                                let y = self.compare(Cmp::Eq, text, null)?;
+                                let both = self.logic(true, x, y)?;
+                                self.logic(false, both, matches)?
+                            }
+                            false => matches,
+                        }
                     }
                 };
                 match op {
@@ -2773,9 +3297,12 @@ impl Lowering {
         }
         let scope = self.nodes[a as usize].scope;
         let mut hit = self.add(Op::InSet(a, set), Ty::boolean(), scope);
-        for id in zoned {
-            let one = self.belongs(a, id)?;
+        for id in &zoned {
+            let one = self.belongs(a, *id)?;
             hit = self.logic(false, hit, one)?;
+        }
+        for id in zoned {
+            hit = self.checked(id, hit)?;
         }
         Ok(hit)
     }

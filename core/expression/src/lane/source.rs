@@ -94,6 +94,64 @@ impl SourceInfo {
         Some(out)
     }
 
+    pub fn renamed(source: &str, unary: bool, from: &str, to: &str) -> Option<String> {
+        if !source.contains(from) {
+            return Some(source.to_string());
+        }
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize(&bump, source).ok()?;
+        let parser = Parser::try_new(&tokens, &bump).ok()?;
+        let parsed = match unary {
+            true => parser.unary().parse(),
+            false => parser.standard().parse(),
+        };
+        if parsed.error().is_err() {
+            return None;
+        }
+        let uses = Cell::new(0usize);
+        let shadowed = Cell::new(false);
+        let (uses_ref, shadowed_ref) = (&uses, &shadowed);
+        parsed.root.walk(move |node| match node {
+            Node::Identifier(name) if *name == from => uses_ref.set(uses_ref.get() + 1),
+            Node::Closure {
+                alias: Some(alias), ..
+            } if *alias == from => shadowed_ref.set(true),
+            _ => {}
+        });
+        if shadowed.get() {
+            return None;
+        }
+        let tokens = tokens.iter().collect::<Vec<_>>();
+        let sites: Vec<(usize, usize)> = tokens
+            .iter()
+            .enumerate()
+            .filter(|(at, token)| {
+                token.kind == TokenKind::Literal
+                    && token.value == from
+                    && !at.checked_sub(1).is_some_and(|before| {
+                        tokens[before].kind == TokenKind::Operator(Operator::Dot)
+                    })
+            })
+            .map(|(_, token)| (token.span.0 as usize, token.span.1 as usize))
+            .collect();
+        if sites.len() != uses.get() {
+            return None;
+        }
+        let mut out = String::with_capacity(source.len() + sites.len() * to.len());
+        let mut at = 0usize;
+        for (start, end) in sites {
+            if source.get(start..end)? != from {
+                return None;
+            }
+            out.push_str(source.get(at..start)?);
+            out.push_str(to);
+            at = end;
+        }
+        out.push_str(source.get(at..)?);
+        Self::parses(&out, unary).then_some(out)
+    }
+
     pub fn scalar(source: &str) -> bool {
         if source.trim().is_empty() {
             return true;
@@ -153,6 +211,22 @@ impl SourceInfo {
         };
         source.contains("rand")
             && (Self::scan(source, false, test) || Self::scan(source, true, test))
+    }
+
+    pub fn parses(source: &str, unary: bool) -> bool {
+        let bump = Bump::new();
+        let mut lexer = Lexer::new();
+        let Ok(tokens) = lexer.tokenize(&bump, source) else {
+            return false;
+        };
+        let Ok(parser) = Parser::try_new(&tokens, &bump) else {
+            return false;
+        };
+        let parsed = match unary {
+            true => parser.unary().parse(),
+            false => parser.standard().parse(),
+        };
+        parsed.error().is_ok()
     }
 
     pub fn reads_dollar(source: &str) -> bool {

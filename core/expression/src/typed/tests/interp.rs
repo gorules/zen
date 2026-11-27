@@ -297,6 +297,7 @@ impl<'a, 'x> Interp<'a, 'x> {
                     }
                 }
             }
+            Op::Checked(a) => self.eval(*a).map(|_| V::Bool(true)),
             Op::And(a, b) => match self.eval(*a)? {
                 V::Bool(false) => Ok(V::Bool(false)),
                 V::Bool(true) => self.eval(*b),
@@ -322,6 +323,29 @@ impl<'a, 'x> Interp<'a, 'x> {
                     set.iter().any(|lit| Self::equal(&x, &Self::lit(lit))),
                 ))
             }
+            Op::InRow(a, list, field, of) => {
+                let x = self.eval(*a)?;
+                let feeds = self.feeds;
+                let l = &feeds.lists[*list as usize];
+                let row = match of {
+                    None => l.parent[self.elem[*list as usize]] as usize,
+                    Some(of) => feeds.lists[*of as usize].root[self.elem[*of as usize]] as usize,
+                };
+                if of.is_some()
+                    && [&l.null, &l.faulted]
+                        .iter()
+                        .any(|bits| bits.as_ref().is_some_and(|bits| Bits::get(bits, row)))
+                {
+                    return Err(Fault);
+                }
+                let (lo, hi) = (l.offsets[row] as usize, l.offsets[row + 1] as usize);
+                let feed = &feeds.fields[*list as usize][*field as usize];
+                let mut hit = false;
+                for j in lo..hi {
+                    hit |= Self::equal(&x, &Self::read(feed, j)?);
+                }
+                Ok(V::Bool(hit))
+            }
             Op::InRange(a, r) => match self.eval(*a)? {
                 V::Num(x) => Ok(V::Bool(Self::within(x, r))),
                 _ => Err(Fault),
@@ -333,6 +357,16 @@ impl<'a, 'x> Interp<'a, 'x> {
                 value,
                 empty,
             } => {
+                if *fold == Fold::Missing {
+                    let l = &self.feeds.lists[*list as usize];
+                    let owner = self.owner(*list);
+                    if l.faulted.as_ref().is_some_and(|f| Bits::get(f, owner)) {
+                        return Err(Fault);
+                    }
+                    return Ok(V::Bool(
+                        l.null.as_ref().is_some_and(|null| Bits::get(null, owner)),
+                    ));
+                }
                 let range = self.range(*list, *empty)?;
                 let saved = self.elem[*list as usize];
                 let mut kept = Vec::new();
@@ -350,6 +384,20 @@ impl<'a, 'x> Interp<'a, 'x> {
                         }
                     }
                     kept.push(e);
+                }
+                if let Fold::At(at) = fold {
+                    let picked = kept.get(*at as usize).copied();
+                    let out = match (picked, value) {
+                        (Some(e), Some(v)) => {
+                            self.enter(*list, e);
+                            self.eval(*v)
+                        }
+                        (None, Some(_)) => Ok(V::Null),
+                        _ => Err(Fault),
+                    };
+                    self.enter(*list, saved);
+                    result?;
+                    return out;
                 }
                 let mut values = Vec::new();
                 let mut dates = Vec::new();
@@ -416,12 +464,19 @@ impl<'a, 'x> Interp<'a, 'x> {
                             .checked_div(Decimal::from(values.len()))
                             .ok_or(Fault)?,
                     ),
+                    Fold::At(_) | Fold::Missing => return Err(Fault),
                 })
             }
-            Op::FirstMatch { conds, strict } => {
+            Op::FirstMatch {
+                conds,
+                strict,
+                blind,
+            } => {
                 for (i, c) in conds.iter().enumerate() {
+                    let sighted = !blind.get(i).copied().unwrap_or(false);
                     match (self.eval(*c), strict) {
-                        (Ok(V::Bool(true)), _) => return Ok(V::Num(Decimal::from(i))),
+                        (Ok(V::Bool(true)), _) if sighted => return Ok(V::Num(Decimal::from(i))),
+                        (Ok(V::Bool(true)), _) => {}
                         (Ok(V::Bool(false)), _) | (Ok(_), false) | (Err(_), false) => {}
                         (Ok(_), true) | (Err(_), true) => return Err(Fault),
                     }
@@ -468,6 +523,13 @@ impl<'a, 'x> Interp<'a, 'x> {
                         Ok(V::Text(Cow::Owned(text(a)?.trim().as_bytes().to_vec())))
                     }
                     (Func::Len, [V::Text(a)]) => Ok(V::Num(Decimal::from(a.len()))),
+                    (Func::Part(at), [V::Text(a), V::Text(b)]) => {
+                        let (a, b) = (text(a)?, text(b)?);
+                        Ok(match a.split(b.as_str()).nth(usize::from(*at)) {
+                            Some(part) => V::Text(Cow::Owned(part.as_bytes().to_vec())),
+                            None => V::Null,
+                        })
+                    }
                     (Func::Min | Func::Max, items) if node.ty.kind == Kind::Date => {
                         let dates = items
                             .iter()

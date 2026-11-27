@@ -2594,3 +2594,76 @@ fn member_blocks_reading_root_dates_in_any_form_match_version_one() {
         .collect();
     columns_match_version_one(&[(PATH, LIFTED_DATES)], rows);
 }
+
+const REFERENCED_FEE: &str = r#"{
+  models: {order: {shipTo: "&jurisdiction?", fee: "number"}, jurisdiction: {id: "string", stateRate: "number"}},
+  blocks: [
+    {expression: "order.shipped", value: "order.shipTo != null"},
+    {expression: "order.tax", value: "order.fee * (order.shipTo.stateRate ?? 0)"},
+  ],
+}"#;
+
+#[test]
+fn references_inside_a_struct_column_are_checked_like_version_one() {
+    let old = workspace(&[(PATH, REFERENCED_FEE)], EngineVersion::V1);
+    let new = workspace(&[(PATH, REFERENCED_FEE)], EngineVersion::V2);
+    let ship_offsets = [0i32, 2, 4, 4, 6];
+    let ship_valid = [0b1011u64];
+    let fee = [1i64, 2, 3, 4];
+    let id_offsets = [0i32, 2, 4, 6, 8, 10, 12, 14, 16];
+    let rate = [4i64, 7, 4, 7, 4, 7, 4, 7];
+    let pool_offsets = [0i32, 2, 4, 6, 8];
+    let order_fields = [
+        (
+            "shipTo",
+            Column::with_validity(
+                Values::Text {
+                    offsets: &ship_offsets,
+                    data: "XXNYCA",
+                },
+                &ship_valid,
+                0,
+            ),
+        ),
+        ("fee", Column::new(Values::I64(&fee))),
+    ];
+    let order = Column::new(Values::Struct {
+        fields: &order_fields,
+        len: 4,
+    });
+    let pool_fields = [
+        (
+            "id",
+            Column::new(Values::Text {
+                offsets: &id_offsets,
+                data: "NYCANYCANYCANYCA",
+            }),
+        ),
+        ("stateRate", Column::new(Values::I64(&rate))),
+    ];
+    let pool_item = Column::new(Values::Struct {
+        fields: &pool_fields,
+        len: 8,
+    });
+    let pool = Column::new(Values::List {
+        offsets: &pool_offsets,
+        child: Dictionary::Column(&pool_item),
+    });
+    let structured = Columns::new(4)
+        .column("order", order)
+        .column("jurisdiction", pool);
+    given_columns_match(&old, &new, &structured);
+
+    let nested_ids = [0i32, 2, 4, 6, 8];
+    let nested = Columns::new(4)
+        .column(
+            "order.shipTo.id",
+            Column::new(Values::Text {
+                offsets: &nested_ids,
+                data: "XXNYCANY",
+            }),
+        )
+        .column("order.fee", Column::new(Values::I64(&fee)))
+        .column("jurisdiction", pool);
+    given_columns_match(&old, &new, &nested);
+}

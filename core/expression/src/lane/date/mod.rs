@@ -1155,7 +1155,12 @@ mod calendar_tests {
 
     #[test]
     fn remembered_dates_equal_parsed_ones() {
-        let zones = [Tz::UTC, Tz::America__New_York, Tz::Europe__Berlin, Tz::Australia__Lord_Howe];
+        let zones = [
+            Tz::UTC,
+            Tz::America__New_York,
+            Tz::Europe__Berlin,
+            Tz::Australia__Lord_Howe,
+        ];
         let mut texts: Vec<String> = vec![
             "".into(),
             "nope".into(),
@@ -1169,19 +1174,31 @@ mod calendar_tests {
             "2024-02-29T12:00:00.123456789+13:45 and far too long to be kept".into(),
         ];
         for day in 0..40_000u32 {
-            texts.push(format!("{:04}-{:02}-{:02}", 1990 + day / 372, 1 + day / 31 % 12, 1 + day % 31));
+            texts.push(format!(
+                "{:04}-{:02}-{:02}",
+                1990 + day / 372,
+                1 + day / 31 % 12,
+                1 + day % 31
+            ));
         }
         for round in 0..2 {
             for (at, text) in texts.iter().enumerate() {
                 let tz = zones[(at + round) % zones.len()];
-                let (kept, parsed) = (super::Date::remembered(text, tz), super::Date::from_text(text, tz));
+                let (kept, parsed) = (
+                    super::Date::remembered(text, tz),
+                    super::Date::from_text(text, tz),
+                );
                 assert_eq!(kept.0, parsed.0, "{text} in {tz}");
                 assert_eq!(
                     kept.0.map(|at| at.timezone()),
                     parsed.0.map(|at| at.timezone()),
                     "{text} in {tz}"
                 );
-                assert_eq!(super::Date::remembered(text, tz).0, parsed.0, "{text} in {tz} again");
+                assert_eq!(
+                    super::Date::remembered(text, tz).0,
+                    parsed.0,
+                    "{text} in {tz} again"
+                );
             }
         }
     }
@@ -1204,8 +1221,10 @@ mod calendar_tests {
                 _ => next(4_000_000_000) as i64 - 2_000_000_000,
             };
             let (Some(a), Some(b)) = (
-                Utc.timestamp_opt(seconds, next(1_000) as u32 * 1_000_000).single(),
-                Utc.timestamp_opt(seconds + apart, next(1_000) as u32 * 1_000_000).single(),
+                Utc.timestamp_opt(seconds, next(1_000) as u32 * 1_000_000)
+                    .single(),
+                Utc.timestamp_opt(seconds + apart, next(1_000) as u32 * 1_000_000)
+                    .single(),
             ) else {
                 continue;
             };

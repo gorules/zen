@@ -222,7 +222,11 @@ impl<'t> TableIr<'t> {
         if !self.gathers() {
             return None;
         }
-        let inputs: Vec<&InputIr> = self.inputs.iter().filter(|input| self.used(input.id)).collect();
+        let inputs: Vec<&InputIr> = self
+            .inputs
+            .iter()
+            .filter(|input| self.used(input.id))
+            .collect();
         let rules = self
             .rules
             .iter()
@@ -244,7 +248,10 @@ impl<'t> TableIr<'t> {
             })
             .collect();
         Some(TableSpec {
-            inputs: inputs.iter().map(|input| input.field.map(str::to_string)).collect(),
+            inputs: inputs
+                .iter()
+                .map(|input| input.field.map(str::to_string))
+                .collect(),
             outputs: Vec::new(),
             rules,
             hit: Typed::Strict,

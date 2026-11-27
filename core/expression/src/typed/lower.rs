@@ -16,11 +16,11 @@ use crate::typed::hir::{
     Arith, Clock, Cmp, Collect, ColumnDef, Dict, DictId, DictKind, Fold, Func, Hir, Host, Kind,
     ListDef, ListId, Lit, Node, NodeId, Op, Output, Range, Schema, Scope, Stamp, Ty, Unsupported,
 };
-use compose::Val;
 use crate::typed::ins::Pattern;
 use crate::typed::num::Dec;
 use crate::variable::Variable;
 use bumpalo::Bump;
+use compose::Val;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -633,7 +633,11 @@ impl Lowering {
         let mut picks = Vec::with_capacity(spec.outputs.len());
         for at in 0..spec.outputs.len() {
             let blind: Vec<bool> = match unfilled {
-                true => spec.rules.iter().map(|rule| rule.value(at).is_none()).collect(),
+                true => spec
+                    .rules
+                    .iter()
+                    .map(|rule| rule.value(at).is_none())
+                    .collect(),
                 false => Vec::new(),
             };
             let (sel, total) = match unfilled {
@@ -1256,12 +1260,10 @@ impl Lowering {
         };
         let rest = segments.join(".");
         match base {
-            Base::Pointer if ctx.elem.is_some() => {
-                match self.descend_elem(ctx, &segments) {
-                    Some(Val::Node(id)) => Ok(id),
-                    _ => Err(Unsupported::new("member of a composite element")),
-                }
-            }
+            Base::Pointer if ctx.elem.is_some() => match self.descend_elem(ctx, &segments) {
+                Some(Val::Node(id)) => Ok(id),
+                _ => Err(Unsupported::new("member of a composite element")),
+            },
             Base::Pointer => match (ctx.item, ctx.pointer, rest.is_empty()) {
                 (Some(item), _, true) => Ok(item),
                 (Some(_), _, false) => Err(Unsupported::new("member of a mapped element")),
@@ -1276,9 +1278,9 @@ impl Lowering {
             }
             Base::Dollar => match self.reach(&rest) {
                 Some(Val::Node(id)) => Ok(id),
-                Some(Val::Seq(_)) => Err(Unsupported::new(format!(
-                    "list $.{rest} used as a value"
-                ))),
+                Some(Val::Seq(_)) => {
+                    Err(Unsupported::new(format!("list $.{rest} used as a value")))
+                }
                 Some(_) => Err(Unsupported::new(format!(
                     "composite $.{rest} used as a value"
                 ))),
@@ -2687,7 +2689,9 @@ impl Lowering {
         };
         match self.named(path) {
             Some(Named::Seq(_)) if self.outer && across.is_some() => {
-                return Err(Unsupported::new(format!("list {path} made in the same pass")))
+                return Err(Unsupported::new(format!(
+                    "list {path} made in the same pass"
+                )))
             }
             Some(Named::Seq(seq)) => return Ok(seq),
             Some(Named::Node(_) | Named::Val(_)) => {

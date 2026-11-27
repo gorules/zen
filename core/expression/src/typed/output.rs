@@ -665,9 +665,11 @@ impl Outputs {
                             _ => {
                                 let found = match (&slot.data, on) {
                                     (_, false) => None,
-                                    (Data::Code(_), true) => slot.code(e).zip(slot.dict()).and_then(
-                                        |(code, d)| hir.schema.dicts.get(d as usize)?.text(code),
-                                    ),
+                                    (Data::Code(_), true) => {
+                                        slot.code(e).zip(slot.dict()).and_then(|(code, d)| {
+                                            hir.schema.dicts.get(d as usize)?.text(code)
+                                        })
+                                    }
                                     (_, true) => slot.text(e),
                                 };
                                 let lo = u32::try_from(text.len()).ok()?;

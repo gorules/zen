@@ -155,7 +155,10 @@ impl Exports {
                     };
                     ends.push(end);
                 }
-                Store::Text { offsets: ends, data }
+                Store::Text {
+                    offsets: ends,
+                    data,
+                }
             }
             _ => return Err(offsets),
         };
@@ -174,7 +177,8 @@ impl Exports {
         let (offsets, data) = self.dicts.get(usize::from(slot.dict()?))?;
         let at = usize::try_from(code).ok()?;
         data.get(
-            usize::try_from(*offsets.get(at)?).ok()?..usize::try_from(*offsets.get(at + 1)?).ok()?,
+            usize::try_from(*offsets.get(at)?).ok()?
+                ..usize::try_from(*offsets.get(at + 1)?).ok()?,
         )
     }
 

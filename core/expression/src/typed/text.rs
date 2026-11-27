@@ -124,7 +124,10 @@ impl<'e, 'x> Exec<'e, 'x> {
         if func == Func::Trim && bytes.is_ascii() {
             let space = |b: &u8| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r');
             let lo = bytes.iter().position(|b| !space(b)).unwrap_or(bytes.len());
-            let hi = bytes.iter().rposition(|b| !space(b)).map_or(lo, |at| at + 1);
+            let hi = bytes
+                .iter()
+                .rposition(|b| !space(b))
+                .map_or(lo, |at| at + 1);
             d.push(i, &bytes[lo..hi]);
             return true;
         }

@@ -35,8 +35,7 @@ impl PolicyPlan {
     fn safe(&self, artifact: &EvalArtifact) -> &[Iteration] {
         self.safe.get_or_init(|| {
             let mut found: Vec<Iteration> = Vec::new();
-            for (name, path, owner) in self.flats().filter_map(|plan| plan.iteration.as_ref())
-            {
+            for (name, path, owner) in self.flats().filter_map(|plan| plan.iteration.as_ref()) {
                 if !found.iter().any(|(_, p, _)| p == path) {
                     found.push((name.clone(), path.clone(), owner.clone()));
                 }
@@ -48,11 +47,7 @@ impl PolicyPlan {
         })
     }
 
-    fn entities<'a>(
-        &self,
-        artifact: &EvalArtifact,
-        sheet: &Sheet<'a>,
-    ) -> Vec<Entity<'a>> {
+    fn entities<'a>(&self, artifact: &EvalArtifact, sheet: &Sheet<'a>) -> Vec<Entity<'a>> {
         self.safe(artifact)
             .iter()
             .filter_map(|(name, path, owner)| {
@@ -150,13 +145,16 @@ impl PolicyPlan {
     }
 
     fn delegating(&self) -> bool {
-        let refused =
-            |plan: &&BlockPlan| plan.native().is_none() && plan.table.is_none() && plan.member.is_none();
-        let roots = self.flats()
+        let refused = |plan: &&BlockPlan| {
+            plan.native().is_none() && plan.table.is_none() && plan.member.is_none()
+        };
+        let roots = self
+            .flats()
             .filter(refused)
             .filter(|plan| plan.iteration.is_none())
             .count();
-        let members = self.flats()
+        let members = self
+            .flats()
             .filter(refused)
             .filter_map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path))
             .map(|path| {
@@ -187,15 +185,11 @@ impl PolicyPlan {
                 return true;
             }
             if plan.member.is_none() && plan.table.is_none() {
-                return self.rule(block)
-                    .kind
-                    .write_sites()
-                    .iter()
-                    .all(|site| {
-                        site.path
-                            .strip_prefix(prefix.as_str())
-                            .is_some_and(|f| !f.is_empty())
-                    });
+                return self.rule(block).kind.write_sites().iter().all(|site| {
+                    site.path
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|f| !f.is_empty())
+                });
             }
             let Some((programs, keys)) = Pass::block(self, block) else {
                 return false;
@@ -228,7 +222,8 @@ impl PolicyPlan {
     pub(super) fn readers_safe(&self, artifact: &EvalArtifact, path: &str) -> bool {
         (0..self.blocks.rules.len()).all(|block| {
             let rule = self.rule(block);
-            if self.flat(block)
+            if self
+                .flat(block)
                 .iteration
                 .as_ref()
                 .is_some_and(|(_, own, _)| own.as_ref() == path)
@@ -399,7 +394,11 @@ impl PolicyPlan {
                 Ok((store, _)) if shared => {
                     let _ = stores[row].set(store);
                 }
-                Ok(_) if unresolved.as_ref().is_some_and(|unresolved| unresolved[row]) => {
+                Ok(_)
+                    if unresolved
+                        .as_ref()
+                        .is_some_and(|unresolved| unresolved[row]) =>
+                {
                     fallback[row] = true;
                 }
                 Ok(_) => {}
@@ -444,7 +443,8 @@ impl PolicyPlan {
                 listed: RefCell::new(Vec::new()),
                 casts: RefCell::new(Vec::new()),
                 present: self.gates.iter().map(|_| OnceCell::new()).collect(),
-                owners: self.flats()
+                owners: self
+                    .flats()
                     .map(|plan| plan.iteration.as_ref().map(|(_, path, _)| path.clone()))
                     .collect(),
             };

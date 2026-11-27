@@ -341,7 +341,11 @@ impl Normalizer {
         }
     }
 
-    fn coded_lists(column: &zen_expression::lane::Column, values: &[Variable], rows: usize) -> Seen {
+    fn coded_lists(
+        column: &zen_expression::lane::Column,
+        values: &[Variable],
+        rows: usize,
+    ) -> Seen {
         let Values::Dict { keys, .. } = column.values else {
             return Seen::Mixed;
         };
@@ -1520,7 +1524,9 @@ impl<'a> Listing<'a> {
         for (name, leaf) in listing.fields.iter_mut() {
             let Some(dating) = name
                 .split('.')
-                .try_fold(dated.dating().clone(), |dating, segment| dating.field(segment))
+                .try_fold(dated.dating().clone(), |dating, segment| {
+                    dating.field(segment)
+                })
             else {
                 continue;
             };
@@ -1561,7 +1567,12 @@ impl<'a> Listing<'a> {
         })
     }
 
-    fn coded(column: &Column<'_>, keys: &[i32], values: &[Variable], owners: usize) -> Option<Listing<'a>> {
+    fn coded(
+        column: &Column<'_>,
+        keys: &[i32],
+        values: &[Variable],
+        owners: usize,
+    ) -> Option<Listing<'a>> {
         let distinct = Self::shredded(&Column::new(Values::Any(values)), values.len())?;
         let mut offsets: Vec<i32> = Vec::with_capacity(owners + 1);
         offsets.push(0);
@@ -1573,8 +1584,16 @@ impl<'a> Listing<'a> {
             let code = keys.get(row).and_then(|key| usize::try_from(*key).ok());
             match code.filter(|_| column.valid(row)) {
                 Some(code) => {
-                    if distinct.hosted.as_ref().is_some_and(|bits| Bits::get(bits, code)) {
-                        Bits::set(hosted.get_or_insert_with(|| vec![0u64; owners.div_ceil(64)]), row, true);
+                    if distinct
+                        .hosted
+                        .as_ref()
+                        .is_some_and(|bits| Bits::get(bits, code))
+                    {
+                        Bits::set(
+                            hosted.get_or_insert_with(|| vec![0u64; owners.div_ceil(64)]),
+                            row,
+                            true,
+                        );
                     }
                     match distinct.frame.range(code) {
                         Some((a, b)) => picks.extend(a..b),
@@ -1912,10 +1931,14 @@ impl Normalizer {
 
     pub(crate) fn castable(leaf: &Leaf) -> Option<Class> {
         let (_, values) = Self::scalars(leaf)?;
-        let first = values.iter().find(|value| !matches!(value, Variable::Null))?;
+        let first = values
+            .iter()
+            .find(|value| !matches!(value, Variable::Null))?;
         let fits = |value: &Variable| match (first, value) {
             (_, Variable::Null) => true,
-            (Variable::Bool(_), Variable::Bool(_)) | (Variable::String(_), Variable::String(_)) => true,
+            (Variable::Bool(_), Variable::Bool(_)) | (Variable::String(_), Variable::String(_)) => {
+                true
+            }
             (Variable::Number(_), Variable::Number(n)) => Scaled::parts(n).is_some(),
             _ => false,
         };

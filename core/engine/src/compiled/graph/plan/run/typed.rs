@@ -105,9 +105,8 @@ impl<'a> Run<'_, 'a> {
             true if distinct && op.heavy => Some("distinct"),
             _ => None,
         };
-        let unkeyed = unkeyed.or_else(|| {
-            (keyed.is_none() && self.doomed(seg, op, positions)).then_some("doomed")
-        });
+        let unkeyed = unkeyed
+            .or_else(|| (keyed.is_none() && self.doomed(seg, op, positions)).then_some("doomed"));
         if let Some(why) = unkeyed {
             match Census::on() {
                 true => self.fell(why, seg, units, positions, local),
@@ -421,7 +420,11 @@ impl<'a> Run<'_, 'a> {
             false => {
                 let outputs = op.present.len();
                 let writes: Vec<Vec<usize>> = (0..rules)
-                    .map(|rule| (0..outputs).filter(|&index| table.writes(rule, index)).collect())
+                    .map(|rule| {
+                        (0..outputs)
+                            .filter(|&index| table.writes(rule, index))
+                            .collect()
+                    })
                     .collect();
                 let mut bits = vec![vec![0u64; count.div_ceil(64)]; outputs];
                 for (at, &code) in codes.iter().enumerate() {

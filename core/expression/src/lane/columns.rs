@@ -1,7 +1,7 @@
 use crate::context::EvaluationContext;
+use crate::lane::foreign::{Decimal128, Float, Float64, Temporal};
 use crate::lane::mask::{LaneSet, Lanes};
 use crate::lane::program::{Binding, Kind};
-use crate::lane::foreign::{Decimal128, Float, Float64, Temporal};
 use crate::lane::Bits;
 use crate::variable::Variable;
 use rust_decimal::Decimal;

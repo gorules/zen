@@ -1071,7 +1071,11 @@ fn an_object_read_by_later_entries_runs_typed() {
             ("deep", "$.o.inner.deeper.t"),
         ],
     )]);
-    typed_and_kept(graph, composite_rows(), &["/o", "/count", "/first", "/label", "/deep"]);
+    typed_and_kept(
+        graph,
+        composite_rows(),
+        &["/o", "/count", "/first", "/label", "/deep"],
+    );
 }
 
 #[test]
@@ -1179,7 +1183,11 @@ fn an_object_of_flags_counted_by_a_later_entry_runs_typed() {
     typed_and_kept(
         graph,
         composite_rows(),
-        &["/eligibility/offers", "/eligibility/count", "/eligibility/any"],
+        &[
+            "/eligibility/offers",
+            "/eligibility/count",
+            "/eligibility/any",
+        ],
     );
 }
 
@@ -1227,7 +1235,11 @@ fn member_chains_on_computed_objects_run_typed() {
             ("u", "$.o.a.zzz"),
         ],
     )]);
-    typed_and_kept(graph, composite_rows(), &["/o", "/p", "/q", "/r", "/t", "/u"]);
+    typed_and_kept(
+        graph,
+        composite_rows(),
+        &["/o", "/p", "/q", "/r", "/t", "/u"],
+    );
 }
 
 #[test]
@@ -1271,7 +1283,9 @@ fn closures_and_folds_over_an_array_literal_run_typed() {
     typed_and_kept(
         graph,
         composite_rows(),
-        &["/flags", "/count", "/doubled", "/kept", "/some", "/sum", "/in"],
+        &[
+            "/flags", "/count", "/doubled", "/kept", "/some", "/sum", "/in",
+        ],
     );
 }
 
@@ -1291,7 +1305,11 @@ fn flatten_runs_typed() {
     let mut rows = composite_rows();
     rows.push(json!({"x": 1, "y": 2, "s": "n", "flag": true, "items": null, "tags": null}));
     columns_keep_version_one(
-        chain(vec![entries("e", false, &[("a", "flatten([tags, items])")])]),
+        chain(vec![entries(
+            "e",
+            false,
+            &[("a", "flatten([tags, items])")],
+        )]),
         rows,
         &["/a"],
     );
@@ -1304,7 +1322,10 @@ fn an_array_feeds_a_later_node_like_version_1() {
             "n1",
             false,
             &[
-                ("reasons", "filter([s, 'fixed', x > 1 ? 'big' : null], # != null)"),
+                (
+                    "reasons",
+                    "filter([s, 'fixed', x > 1 ? 'big' : null], # != null)",
+                ),
                 ("summary", "[`total ${x + y}`, s]"),
                 ("n", "len($.reasons)"),
             ],
@@ -1323,7 +1344,14 @@ fn an_array_feeds_a_later_node_like_version_1() {
     let paths = columns_keep_version_one(
         graph,
         composite_rows(),
-        &["/reasons", "/summary", "/first", "/count", "/has", "/decision"],
+        &[
+            "/reasons",
+            "/summary",
+            "/first",
+            "/count",
+            "/has",
+            "/decision",
+        ],
     );
     assert!(paths.typed > 0, "{paths:?}");
 }
@@ -1437,7 +1465,11 @@ fn a_value_compared_with_a_list_runs_typed() {
         }}),
     );
     typed_like_version_one(table, rows.clone());
-    for source in ["loc != frequent", "frequent == loc", "(frequent ?? []) != n"] {
+    for source in [
+        "loc != frequent",
+        "frequent == loc",
+        "(frequent ?? []) != n",
+    ] {
         typed_like_version_one(expression(source), rows.clone());
     }
 }
@@ -1487,11 +1519,7 @@ fn a_collect_table_with_computed_outputs_runs_typed() {
     for path in [None, Some("hits"), Some("result.hits")] {
         let graph = collect_table(path, inputs.clone(), outputs.clone(), rules.clone());
         let label = graph.to_string();
-        let paths = columns_keep_version_one(
-            graph,
-            collect_rows(),
-            &["", "/hits", "/result/hits"],
-        );
+        let paths = columns_keep_version_one(graph, collect_rows(), &["", "/hits", "/result/hits"]);
         assert!(paths.typed > 0 && paths.laned == 0, "{label}: {paths:?}");
     }
 }
@@ -1535,10 +1563,7 @@ fn a_division_that_overflows_compares_like_version_1() {
 
 #[test]
 fn a_failing_inner_filter_fails_under_an_outer_filter_that_keeps_nothing() {
-    let rows = vec![
-        json!({"t": "a", "s": "q"}),
-        json!({"t": "b", "s": null}),
-    ];
+    let rows = vec![json!({"t": "a", "s": "q"}), json!({"t": "b", "s": null})];
     for source in [
         "filter(filter([t], contains(null, '10%')), false)",
         "filter(filter([t, s], upper(#) != 'Q'), false)",
@@ -1566,7 +1591,11 @@ fn a_closure_over_a_missing_list_fails_even_with_a_fallback() {
 
 #[test]
 fn an_index_beyond_any_list_fails_like_version_1() {
-    for source in ["[][79228162514264337593543950335]", "[x, 2][1e28]", "[x, 2][3]"] {
+    for source in [
+        "[][79228162514264337593543950335]",
+        "[x, 2][1e28]",
+        "[x, 2][3]",
+    ] {
         columns_match_version_one(expression(source), composite_rows());
     }
 }
@@ -1809,17 +1838,19 @@ fn text_work_on_one_column_runs_once_per_distinct_value_like_version_1() {
 
 #[test]
 fn text_cells_on_one_column_run_once_per_distinct_value_like_version_1() {
-    let graph = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
-        "hitPolicy": "first",
-        "inputs": [{"id": "i0", "field": "lower(s)"}, {"id": "i1", "field": "n"}, {"id": "i2", "field": "t"}],
-        "outputs": [{"id": "o0", "field": "out"}, {"id": "o1", "field": "label"}],
-        "rules": [
-            {"_id": "r0", "i0": "some(['acid', 'base'], contains($, #))", "i1": "> 1", "i2": "", "o0": "'r0'", "o1": "upper(s)"},
-            {"_id": "r1", "i0": "contains($, 'toxic')", "i1": "", "i2": "time($) > 600", "o0": "'r1'", "o1": "lower(s) + '?'"},
-            {"_id": "r2", "i0": "startsWith($, 'flam')", "i1": "", "i2": "", "o0": "'r2'", "o1": "'x'"},
-            {"_id": "r3", "i0": "", "i1": "", "i2": "", "o0": "'r3'", "o1": "trim(s)"}
-        ]
-    }}));
+    let graph = graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "lower(s)"}, {"id": "i1", "field": "n"}, {"id": "i2", "field": "t"}],
+            "outputs": [{"id": "o0", "field": "out"}, {"id": "o1", "field": "label"}],
+            "rules": [
+                {"_id": "r0", "i0": "some(['acid', 'base'], contains($, #))", "i1": "> 1", "i2": "", "o0": "'r0'", "o1": "upper(s)"},
+                {"_id": "r1", "i0": "contains($, 'toxic')", "i1": "", "i2": "time($) > 600", "o0": "'r1'", "o1": "lower(s) + '?'"},
+                {"_id": "r2", "i0": "startsWith($, 'flam')", "i1": "", "i2": "", "o0": "'r2'", "o1": "'x'"},
+                {"_id": "r3", "i0": "", "i1": "", "i2": "", "o0": "'r3'", "o1": "trim(s)"}
+            ]
+        }}),
+    );
     for distinct in [false, true] {
         for count in [40, 300] {
             columns_match_version_one(graph.clone(), text_rows(count, distinct));
@@ -1872,11 +1903,19 @@ fn failing_rows_of_a_deduplicated_unit_fail_like_version_1() {
         columns_match_version_one(expression(source), rows.clone());
     }
     let graph = chain(vec![
-        entries("first", true, &[("t", "upper(s) + '!'"), ("r", "(d / m) * 100")]),
+        entries(
+            "first",
+            true,
+            &[("t", "upper(s) + '!'"), ("r", "(d / m) * 100")],
+        ),
         entries(
             "second",
             false,
-            &[("u", "lower(t) + string(n + 1)"), ("w", "r * n"), ("z", "t + string(r)")],
+            &[
+                ("u", "lower(t) + string(n + 1)"),
+                ("w", "r * n"),
+                ("z", "t + string(r)"),
+            ],
         ),
     ]);
     columns_match_version_one(graph, rows);
@@ -1897,15 +1936,17 @@ fn a_date_list_with_an_item_that_fails_fails_even_when_an_earlier_item_matches()
     ] {
         columns_match_version_one(expression(source), rows.clone());
     }
-    let table = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
-        "hitPolicy": "first",
-        "inputs": [{"id": "i0", "field": "d(ds)"}],
-        "outputs": [{"id": "o0", "field": "out"}],
-        "rules": [
-            {"_id": "r0", "i0": "[d('2023-01-31'), d('2023-01-31'), d('2025-03-30 02:30', '+05:30')]", "o0": "'r0'"},
-            {"_id": "r1", "i0": "", "o0": "'r1'"}
-        ]
-    }}));
+    let table = graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "d(ds)"}],
+            "outputs": [{"id": "o0", "field": "out"}],
+            "rules": [
+                {"_id": "r0", "i0": "[d('2023-01-31'), d('2023-01-31'), d('2025-03-30 02:30', '+05:30')]", "o0": "'r0'"},
+                {"_id": "r1", "i0": "", "o0": "'r1'"}
+            ]
+        }}),
+    );
     columns_match_version_one(table, rows);
 }
 
@@ -2002,20 +2043,19 @@ fn a_batch_where_most_rows_fail_matches_version_1() {
         })
         .collect();
     columns_match_version_one(expression("n * 2 + m"), rows.clone());
-    columns_match_version_one(
-        expression("len(s) > 2 ? n / (m + 1) : m"),
-        rows.clone(),
+    columns_match_version_one(expression("len(s) > 2 ? n / (m + 1) : m"), rows.clone());
+    let table = graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [{"id": "i0", "field": "s"}],
+            "outputs": [{"id": "o0", "field": "out"}],
+            "rules": [
+                {"_id": "r0", "i0": "'k0'", "o0": "m + 1"},
+                {"_id": "r1", "i0": "'k10'", "o0": "n * 3"},
+                {"_id": "r2", "i0": "", "o0": "n * m"}
+            ]
+        }}),
     );
-    let table = graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
-        "hitPolicy": "first",
-        "inputs": [{"id": "i0", "field": "s"}],
-        "outputs": [{"id": "o0", "field": "out"}],
-        "rules": [
-            {"_id": "r0", "i0": "'k0'", "o0": "m + 1"},
-            {"_id": "r1", "i0": "'k10'", "o0": "n * 3"},
-            {"_id": "r2", "i0": "", "o0": "n * m"}
-        ]
-    }}));
     columns_match_version_one(table, rows);
 }
 
@@ -2052,11 +2092,7 @@ fn legacy_dates_of_distinct_texts_run_typed() {
             _ => json!({"t": "", "u": "2025-01-01"}),
         })
         .collect();
-    for source in [
-        "(date(t) - date(u)) / 3600",
-        "date(t) > date(u)",
-        "date(t)",
-    ] {
+    for source in ["(date(t) - date(u)) / 3600", "date(t) > date(u)", "date(t)"] {
         columns_match_version_one(expression(source), rows.clone());
     }
 }
@@ -2159,16 +2195,18 @@ fn numbers_at_the_edges_of_a_mantissa_keep_version_1_results() {
 }
 
 fn dollar_table(rules: Value) -> Value {
-    graph(json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
-        "hitPolicy": "first",
-        "inputs": [
-            {"id": "i0", "field": "level"},
-            {"id": "i1"},
-            {"id": "i2", "field": "$"}
-        ],
-        "outputs": [{"id": "o0", "field": "out"}],
-        "rules": rules
-    }}))
+    graph(
+        json!({"id": "node", "name": "node", "type": "decisionTableNode", "content": {
+            "hitPolicy": "first",
+            "inputs": [
+                {"id": "i0", "field": "level"},
+                {"id": "i1"},
+                {"id": "i2", "field": "$"}
+            ],
+            "outputs": [{"id": "o0", "field": "out"}],
+            "rules": rules
+        }}),
+    )
 }
 
 fn dollar_rows() -> Vec<Value> {
@@ -2232,7 +2270,10 @@ fn membership_in_the_list_being_iterated_runs_typed() {
         json!({"strs": ["x", null]}),
         json!({"strs": ["q"]}),
     ];
-    for source in ["filter(strs, upper(#) in strs)", "some(strs, lower(#) not in strs)"] {
+    for source in [
+        "filter(strs, upper(#) in strs)",
+        "some(strs, lower(#) not in strs)",
+    ] {
         typed_like_version_one(expression(source), texts.clone());
     }
     let mixed = vec![
@@ -2264,7 +2305,11 @@ fn membership_in_another_list_of_the_row_matches_version_one() {
     ] {
         columns_match_version_one(expression(source), rows.clone());
     }
-    let clean: Vec<Value> = rows.iter().filter(|row| !row.to_string().contains("null")).cloned().collect();
+    let clean: Vec<Value> = rows
+        .iter()
+        .filter(|row| !row.to_string().contains("null"))
+        .cloned()
+        .collect();
     let paths = columns_match_version_one(expression("filter(a, not (# in b))"), clean.clone());
     assert!(paths.typed > 0 && paths.laned == 0, "{paths:?}");
     let paths = columns_match_version_one(expression("count(n, # in m)"), clean);

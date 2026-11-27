@@ -169,7 +169,9 @@ impl InputSchema {
         let dates = self.dates();
         DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
-                DeclaredDates::rewrite_items(value, |item| dates.convert_entity(item, key, 0, texts))
+                DeclaredDates::rewrite_items(value, |item| {
+                    dates.convert_entity(item, key, 0, texts)
+                })
             } else if self.roots.contains(key) {
                 dates.convert_entity(value, key, 0, texts)
             } else {
@@ -742,11 +744,12 @@ impl Sureness<'_> {
                     || matches!(column.variable(at), Variable::Bool(_) | Variable::Null)
             }
             PropertyTypeIr::Enum(values) if Self::string(column) => {
-                column.bytes(at).is_some_and(|bytes| {
-                    values.iter().any(|v| v.as_bytes() == bytes)
-                }) || column
-                    .text(at)
-                    .is_none_or(|text| values.iter().any(|v| v.as_ref() == text))
+                column
+                    .bytes(at)
+                    .is_some_and(|bytes| values.iter().any(|v| v.as_bytes() == bytes))
+                    || column
+                        .text(at)
+                        .is_none_or(|text| values.iter().any(|v| v.as_ref() == text))
             }
             PropertyTypeIr::Enum(values) => match column.variable(at) {
                 Variable::Null => true,
@@ -765,8 +768,7 @@ impl Sureness<'_> {
                 other => zen_expression::DateValue::is(&other),
             },
             PropertyTypeIr::Reference { .. } => {
-                self.resolved
-                    && matches!(column.variable(at), Variable::String(_) | Variable::Null)
+                self.resolved && matches!(column.variable(at), Variable::String(_) | Variable::Null)
             }
         }
     }
@@ -861,19 +863,25 @@ impl Sureness<'_> {
     }
 
     fn fits(&self, kind: &PropertyTypeIr, value: &Variable, depth: usize) -> Option<bool> {
-        let named = |known: &dyn Fn(&str) -> bool| value.as_rc_str().is_some_and(|text| known(&text));
+        let named =
+            |known: &dyn Fn(&str) -> bool| value.as_rc_str().is_some_and(|text| known(&text));
         Some(match kind {
             PropertyTypeIr::String => matches!(value, Variable::String(_)),
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
-            PropertyTypeIr::Enum(values) => named(&|text| values.iter().any(|v| v.as_ref() == text)),
+            PropertyTypeIr::Enum(values) => {
+                named(&|text| values.iter().any(|v| v.as_ref() == text))
+            }
             PropertyTypeIr::Date => match value {
                 Variable::String(text) => text.is_empty() || self.date_fits(text),
                 other => zen_expression::DateValue::is(other),
             },
             PropertyTypeIr::Reference { .. } => return None,
             PropertyTypeIr::Relationship { target } => {
-                match (self.schema.entities.contains_key(target), self.schema.dictionaries.get(target)) {
+                match (
+                    self.schema.entities.contains_key(target),
+                    self.schema.dictionaries.get(target),
+                ) {
                     (false, Some(dict)) => named(&|text| dict.values().any(|v| v.as_ref() == text)),
                     _ => self.entity_fits(target, value, depth)?,
                 }
@@ -1049,8 +1057,7 @@ impl Sureness<'_> {
                 let model = self.schema.entities.get(target)?;
                 let mut bad: Option<Vec<bool>> = None;
                 for (name, field) in fields {
-                    if let Some(prop) = model.properties.iter().find(|p| p.name.as_ref() == *name)
-                    {
+                    if let Some(prop) = model.properties.iter().find(|p| p.name.as_ref() == *name) {
                         Self::merged(&mut bad, self.doubts(prop, field, len));
                     }
                 }
@@ -1118,9 +1125,11 @@ impl Sureness<'_> {
                         .collect(),
                 )
             }
-            (true, _) => {
-                Self::kept((0..len).map(|at| !self.property(prop, column, at)).collect())
-            }
+            (true, _) => Self::kept(
+                (0..len)
+                    .map(|at| !self.property(prop, column, at))
+                    .collect(),
+            ),
         }
     }
 

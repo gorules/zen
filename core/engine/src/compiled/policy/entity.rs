@@ -414,7 +414,7 @@ impl<'a> Entity<'a> {
                     leaf: Leaf::typed(builder.finish()),
                     present: Some(bits.into()),
                     input: false,
-                    };
+                };
                 self.fields[at] = merged;
             }
         }

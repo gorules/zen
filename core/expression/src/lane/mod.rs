@@ -23,11 +23,11 @@ pub use bits::Bits;
 #[doc(hidden)]
 pub use cells::{CellEnv, CellSet, Pieces};
 pub use columns::{Column, Columns, Dictionary, Values};
-pub use foreign::{Decimal128, Float64, Temporal, TimeUnit};
 #[doc(hidden)]
 pub use compile::{Hints, LaneCompiler};
 #[doc(hidden)]
 pub use exec::{Context, Executor, Fallbacks, Fault, Frame};
+pub use foreign::{Decimal128, Float64, Temporal, TimeUnit};
 #[doc(hidden)]
 pub use key::ShortKey;
 #[doc(hidden)]

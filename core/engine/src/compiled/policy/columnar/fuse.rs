@@ -159,7 +159,11 @@ impl Gather {
                         Cell::Constant(_) => {}
                         Cell::Computed => {
                             if taken {
-                                lists[*target].push(values.get(next).map_or(Variable::Null, |leaf| leaf.get(row)));
+                                lists[*target].push(
+                                    values
+                                        .get(next)
+                                        .map_or(Variable::Null, |leaf| leaf.get(row)),
+                                );
                             }
                             next += 1;
                         }
@@ -177,9 +181,14 @@ impl Gather {
             Normalizer::cast(&leaf).unwrap_or(leaf)
         };
         if self.computed > 0 {
-            let mut columns: Vec<Vec<Variable>> = vec![Vec::with_capacity(count); self.fields.len()];
+            let mut columns: Vec<Vec<Variable>> =
+                vec![Vec::with_capacity(count); self.fields.len()];
             for (row, mask) in masks.iter().enumerate() {
-                for ((column, list), scalar) in columns.iter_mut().zip(gather(*mask, row)).zip(&self.scalars) {
+                for ((column, list), scalar) in columns
+                    .iter_mut()
+                    .zip(gather(*mask, row))
+                    .zip(&self.scalars)
+                {
                     column.push(value(*scalar, list));
                 }
             }
@@ -203,9 +212,11 @@ impl Gather {
                 })
             })
             .collect();
-        let mut dicts: Vec<Vec<Variable>> = vec![Vec::with_capacity(distinct.len()); self.fields.len()];
+        let mut dicts: Vec<Vec<Variable>> =
+            vec![Vec::with_capacity(distinct.len()); self.fields.len()];
         for mask in &distinct {
-            for ((dict, list), scalar) in dicts.iter_mut().zip(gather(*mask, 0)).zip(&self.scalars) {
+            for ((dict, list), scalar) in dicts.iter_mut().zip(gather(*mask, 0)).zip(&self.scalars)
+            {
                 dict.push(value(*scalar, list));
             }
         }
@@ -213,7 +224,12 @@ impl Gather {
             .into_iter()
             .zip(&self.scalars)
             .map(|(values, scalar)| match scalar {
-                true => typed(codes.iter().map(|&code| values[code as usize].clone()).collect()),
+                true => typed(
+                    codes
+                        .iter()
+                        .map(|&code| values[code as usize].clone())
+                        .collect(),
+                ),
                 false => Leaf::typed(Array::coded(codes.clone(), Rc::new(Dict::Any(values)))),
             })
             .collect()
@@ -796,10 +812,9 @@ impl<'s, 'a> Pass<'s, 'a> {
     }
 
     fn merge(&self, items: &mut [Item], entry: Span, unit: &Unit) -> bool {
-        let Some(target) = items
-            .iter()
-            .rposition(|item| item.domain == Some(unit.entity) && item.gate == self.plan.gate(entry.block))
-        else {
+        let Some(target) = items.iter().rposition(|item| {
+            item.domain == Some(unit.entity) && item.gate == self.plan.gate(entry.block)
+        }) else {
             return false;
         };
         let effects = |block: usize| self.plan.fusions.effects(self.plan, block);
@@ -862,70 +877,69 @@ impl<'s, 'a> Pass<'s, 'a> {
         if self.shared {
             return Err("shared rows");
         }
-        let (entity, programs, writes) =
-            match (&plan.flat(block).table, &plan.rule(block).kind) {
-                (Some(table), BlockKind::DecisionTable(ir)) => {
-                    let entity = match self.owners[block] {
-                        Some(_) if Exports::enabled() => {
-                            let at = self.entity_of(block).ok_or("member table without entity")?;
-                            self.supported(at, block, rows)
-                                .then_some(Some(at))
-                                .ok_or("member table unsupported")?
-                        }
-                        Some(_) => return Err("member table untyped"),
-                        None => None,
-                    };
-                    if len != 2 {
-                        return Err("table split select");
+        let (entity, programs, writes) = match (&plan.flat(block).table, &plan.rule(block).kind) {
+            (Some(table), BlockKind::DecisionTable(ir)) => {
+                let entity = match self.owners[block] {
+                    Some(_) if Exports::enabled() => {
+                        let at = self.entity_of(block).ok_or("member table without entity")?;
+                        self.supported(at, block, rows)
+                            .then_some(Some(at))
+                            .ok_or("member table unsupported")?
                     }
-                    if !self.quiet(block) {
-                        return Err("table cells read fields");
-                    }
-                    let readable = match plan.fusions.table(block, ir) {
-                        Some(false) if !Exports::enabled() => return Err("table not typable"),
-                        Some(readable) => readable,
-                        None => return Err("table not typable"),
-                    };
-                    let writes: Vec<(Arc<str>, bool)> = table
-                        .picked()
-                        .iter()
-                        .map(|o| (o.field.clone(), readable))
-                        .collect();
-                    (entity, table.programs(), writes)
+                    Some(_) => return Err("member table untyped"),
+                    None => None,
+                };
+                if len != 2 {
+                    return Err("table split select");
                 }
-                (Some(_), _) => return Err("table plan on other block"),
-                (None, _) => {
-                    let entity = match self.owners[block] {
-                        Some(_) => {
-                            let at = self.entity_of(block).ok_or("member block without entity")?;
-                            self.supported(at, block, rows)
-                                .then_some(Some(at))
-                                .ok_or("member block unsupported")?
-                        }
-                        None => None,
-                    };
-                    let native = match entity {
-                        Some(_) => Pass::native(plan, block).ok_or("member block not native")?,
-                        None if plan.flat(block).iterated => return Err("iterated block"),
-                        None => plan.flat(block).native().ok_or("block not native")?,
-                    };
-                    match (native, len) {
-                        (Native::Expression { key, program }, 1) => {
-                            (entity, vec![program.as_ref()], vec![(key.clone(), true)])
-                        }
-                        (Native::Match { ir, .. }, 2) if self.quiet(block) => {
-                            (entity, Pass::programs(native), vec![(ir.key.clone(), true)])
-                        }
-                        (Native::Match { .. }, 2) => return Err("match arm values read fields"),
-                        (Native::Assertion { ir, conditions }, 1) => (
-                            entity,
-                            conditions.iter().collect(),
-                            vec![(ir.output.clone(), false)],
-                        ),
-                        _ => return Err("split select and commit"),
-                    }
+                if !self.quiet(block) {
+                    return Err("table cells read fields");
                 }
-            };
+                let readable = match plan.fusions.table(block, ir) {
+                    Some(false) if !Exports::enabled() => return Err("table not typable"),
+                    Some(readable) => readable,
+                    None => return Err("table not typable"),
+                };
+                let writes: Vec<(Arc<str>, bool)> = table
+                    .picked()
+                    .iter()
+                    .map(|o| (o.field.clone(), readable))
+                    .collect();
+                (entity, table.programs(), writes)
+            }
+            (Some(_), _) => return Err("table plan on other block"),
+            (None, _) => {
+                let entity = match self.owners[block] {
+                    Some(_) => {
+                        let at = self.entity_of(block).ok_or("member block without entity")?;
+                        self.supported(at, block, rows)
+                            .then_some(Some(at))
+                            .ok_or("member block unsupported")?
+                    }
+                    None => None,
+                };
+                let native = match entity {
+                    Some(_) => Pass::native(plan, block).ok_or("member block not native")?,
+                    None if plan.flat(block).iterated => return Err("iterated block"),
+                    None => plan.flat(block).native().ok_or("block not native")?,
+                };
+                match (native, len) {
+                    (Native::Expression { key, program }, 1) => {
+                        (entity, vec![program.as_ref()], vec![(key.clone(), true)])
+                    }
+                    (Native::Match { ir, .. }, 2) if self.quiet(block) => {
+                        (entity, Pass::programs(native), vec![(ir.key.clone(), true)])
+                    }
+                    (Native::Match { .. }, 2) => return Err("match arm values read fields"),
+                    (Native::Assertion { ir, conditions }, 1) => (
+                        entity,
+                        conditions.iter().collect(),
+                        vec![(ir.output.clone(), false)],
+                    ),
+                    _ => return Err("split select and commit"),
+                }
+            }
+        };
         let plain = programs.iter().all(|program| {
             let p = program.program();
             !(p.writes_env || p.chain || p.opaque() || p.rows)
@@ -992,7 +1006,11 @@ impl<'s, 'a> Pass<'s, 'a> {
                     .map(|leaf| leaf.truths(count))
                     .collect();
                 let values: Vec<Leaf<'a>> = leaves.by_ref().take(gather.computed).collect();
-                for (key, leaf) in gather.fields.iter().zip(gather.leaves(&conds, &values, count)) {
+                for (key, leaf) in gather
+                    .fields
+                    .iter()
+                    .zip(gather.leaves(&conds, &values, count))
+                {
                     match member {
                         None => self.write(key, leaf, rows),
                         Some((at, kids)) => self.member_write(at, key, leaf, kids),

@@ -452,7 +452,10 @@ fn fallible_operands_lower_with_a_check() {
             "{source}\n{hir}"
         );
     }
-    for source in ["filter(c.xs, # * 2 in c.xs)", "some(c.ts, upper(#) in c.ts)"] {
+    for source in [
+        "filter(c.xs, # * 2 in c.xs)",
+        "some(c.ts, upper(#) in c.ts)",
+    ] {
         let mut lowering = Lowering::new(None);
         let mut probe = Probe::new();
         Probe::unit(&mut lowering, &mut probe, "c.o", source)

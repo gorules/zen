@@ -427,13 +427,7 @@ impl<'s, 'a> Pass<'s, 'a> {
         Typed::Ran(group.units, faulted)
     }
 
-    fn rows(
-        &self,
-        group: &TypedGroup,
-        sources: &[Source<'a>],
-        rows: &[usize],
-        full: bool,
-    ) -> Rows {
+    fn rows(&self, group: &TypedGroup, sources: &[Source<'a>], rows: &[usize], full: bool) -> Rows {
         if !group.lists.is_empty() || rows.len() < Dedup::MIN {
             return Rows::Plain;
         }
@@ -527,7 +521,9 @@ impl<'s, 'a> Pass<'s, 'a> {
                 }
                 Source::Field(field) => Some(self.sheet.entities[entity?].view(*field)),
                 Source::RawField(field) => self.sheet.entities[entity?].raw_view(*field),
-                Source::CastField(field) => Normalizer::cast(&self.sheet.entities[entity?].view(*field)),
+                Source::CastField(field) => {
+                    Normalizer::cast(&self.sheet.entities[entity?].view(*field))
+                }
                 Source::List(..) | Source::Listed(_) | Source::Spread(_) | Source::Absent => None,
             }
         };

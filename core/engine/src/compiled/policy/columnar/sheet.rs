@@ -112,7 +112,8 @@ impl<'a> Sheet<'a> {
             let children = entity.frame.children;
             for field in entity.fields.iter_mut().filter(|field| field.input) {
                 if let Some(at) = schema.dates_at(&format!("{}.{}", entity.path, field.name)) {
-                    field.leaf = Dated::leaf(field.leaf.clone(), children, schema.dating(at, &texts));
+                    field.leaf =
+                        Dated::leaf(field.leaf.clone(), children, schema.dating(at, &texts));
                 }
             }
         }
@@ -227,7 +228,7 @@ impl<'a> Sheet<'a> {
                 Entry {
                     path,
                     leaf,
-                        present,
+                    present,
                     input: true,
                     dead: false,
                 },

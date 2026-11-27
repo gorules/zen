@@ -1024,7 +1024,9 @@ impl<'e, 'x> Exec<'e, 'x> {
                         let mut odd = [0u64; Reg::WORDS];
                         let t = &table;
                         match op {
-                            Cmp::Eq | Cmp::Ne => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m == c),
+                            Cmp::Eq | Cmp::Ne => {
+                                Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m == c)
+                            }
                             Cmp::Lt => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m < c),
                             Cmp::Le => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m <= c),
                             Cmp::Gt => Self::scaled_k(am, asc, t, fits, o, &mut odd, |m, c| m > c),
@@ -1340,8 +1342,16 @@ impl<'e, 'x> Exec<'e, 'x> {
                     let mut table = [(0i64, 0u64, 0u8); 32];
                     for (s, entry) in table.iter_mut().enumerate().take(19) {
                         if let Some((lo, hi)) = range.scaled(s as u8) {
-                            let lo = if range.lo_closed { Some(lo) } else { lo.checked_add(1) };
-                            let hi = if range.hi_closed { Some(hi) } else { hi.checked_sub(1) };
+                            let lo = if range.lo_closed {
+                                Some(lo)
+                            } else {
+                                lo.checked_add(1)
+                            };
+                            let hi = if range.hi_closed {
+                                Some(hi)
+                            } else {
+                                hi.checked_sub(1)
+                            };
                             *entry = match lo.zip(hi) {
                                 Some((l, h)) if h >= l => (l, h.wrapping_sub(l) as u64, 1),
                                 Some(_) => (0, 0, 2),
@@ -2250,7 +2260,14 @@ impl<'e, 'x> Exec<'e, 'x> {
         }
     }
 
-    fn rounded(func: Func, rep: Rep, am: &[i64], asc: &[u8], d: &mut Reg, slow: &mut [u64; Reg::WORDS]) {
+    fn rounded(
+        func: Func,
+        rep: Rep,
+        am: &[i64],
+        asc: &[u8],
+        d: &mut Reg,
+        slow: &mut [u64; Reg::WORDS],
+    ) {
         const P: [i64; 19] = Dec::POW10;
         let pow = |k: u8| P[usize::from(k.min(18))];
         match func {

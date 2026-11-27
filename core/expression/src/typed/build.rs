@@ -1579,7 +1579,8 @@ impl<'h> Build<'h> {
                     Func::Part(at) => Ins::Part {
                         dst: self.fresh()?,
                         a,
-                        b: self.arg(*args.get(1).ok_or_else(|| Unsupported::new("typed: call"))?)?,
+                        b: self
+                            .arg(*args.get(1).ok_or_else(|| Unsupported::new("typed: call"))?)?,
                         at: *at,
                     },
                     f if f.mapping() => Ins::Map {

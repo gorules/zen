@@ -745,7 +745,9 @@ impl Hir {
             Op::Or(a, b) => format!("or %{a}, %{b}"),
             Op::If(c, t, e) => format!("if %{c} then %{t} else %{e}"),
             Op::Coalesce(a, b) => format!("coalesce %{a}, %{b}"),
-            Op::InRow(a, list, field, of) => format!("inrow %{a} list {list} field {field} of {of:?}"),
+            Op::InRow(a, list, field, of) => {
+                format!("inrow %{a} list {list} field {field} of {of:?}")
+            }
             Op::InSet(a, set) => format!(
                 "inset %{a} [{}]",
                 set.iter()

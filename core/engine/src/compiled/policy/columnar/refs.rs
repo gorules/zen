@@ -56,7 +56,8 @@ impl PolicyPlan {
                 !iterated && !written
             })
         };
-        let safe = |field: &ReferenceField| !field.array || self.readers_safe(artifact, &field.path);
+        let safe =
+            |field: &ReferenceField| !field.array || self.readers_safe(artifact, &field.path);
         if Census::on() {
             let why = match (flat, fields.iter().all(free), fields.iter().all(safe)) {
                 (false, _, _) => "nested or dated",
@@ -87,9 +88,17 @@ impl PolicyPlan {
         }
     }
 
-    fn located(pool: Option<Column>, items: Option<Items>, row: usize, text: &str) -> Option<usize> {
+    fn located(
+        pool: Option<Column>,
+        items: Option<Items>,
+        row: usize,
+        text: &str,
+    ) -> Option<usize> {
         let (pool, (child, fields)) = (pool?, items?);
-        let ids = fields.iter().find(|(name, _)| *name == "id").map(|(_, c)| *c)?;
+        let ids = fields
+            .iter()
+            .find(|(name, _)| *name == "id")
+            .map(|(_, c)| *c)?;
         let (a, b) = pool.range(row)?;
         (a..b).rev().find(|&item| {
             child.valid(item)
@@ -179,12 +188,19 @@ impl PolicyPlan {
                 return refused("empty pool");
             }
             let fields = sheet.entities[pool].gathered(&index);
-            return Some(Entity::linked(path, entry, frame, fields, Some((pool, index))));
+            return Some(Entity::linked(
+                path,
+                entry,
+                frame,
+                fields,
+                Some((pool, index)),
+            ));
         }
-        if self
-            .flats()
-            .any(|plan| plan.iteration.as_ref().is_some_and(|(_, own, _)| *own == target))
-        {
+        if self.flats().any(|plan| {
+            plan.iteration
+                .as_ref()
+                .is_some_and(|(_, own, _)| *own == target)
+        }) {
             return refused("pool without entity");
         }
         let Some((child, fields)) = items else {

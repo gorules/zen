@@ -53,7 +53,9 @@ impl Lowering {
 
     fn composite(&mut self, name: &str, val: Val, scope: Scope) -> Result<(), Unsupported> {
         if scope != Scope::Row {
-            return Err(Unsupported::new(format!("composite output {name} in a list")));
+            return Err(Unsupported::new(format!(
+                "composite output {name} in a list"
+            )));
         }
         let shape = self.shaped(&val, scope)?;
         let null = self.konst(Lit::Null);
@@ -275,7 +277,9 @@ impl Lowering {
                         .map(|(_, val)| Elem::plain(val))
                         .collect(),
                 )),
-                _ => Err(Unsupported::new("values of a value that is not a static object")),
+                _ => Err(Unsupported::new(
+                    "values of a value that is not a static object",
+                )),
             },
             Ast::FunctionCall {
                 kind: FunctionKind::Internal(InternalFunction::Keys),
@@ -287,11 +291,10 @@ impl Lowering {
                         .iter()
                         .map(|(key, _)| Lit::Text(key.clone()))
                         .collect(),
-                    Val::List(elems) if elems.iter().all(|e| e.keep.is_none() && !e.splice) => {
-                        (0..elems.len())
-                            .map(|at| Lit::Num(Dec::int(at as i64)))
-                            .collect()
-                    }
+                    Val::List(elems) if elems.iter().all(|e| e.keep.is_none() && !e.splice) => (0
+                        ..elems.len())
+                        .map(|at| Lit::Num(Dec::int(at as i64)))
+                        .collect(),
                     _ => return Err(Unsupported::new("keys of a value that is not static")),
                 };
                 let mut leaves = Vec::new();
@@ -332,7 +335,9 @@ impl Lowering {
                     }
                     Ok(Val::List(out))
                 }
-                _ => Err(Unsupported::new("flatten of a value that is not a static list")),
+                _ => Err(Unsupported::new(
+                    "flatten of a value that is not a static list",
+                )),
             },
             Ast::Member { node, property } => {
                 let mut segments = Vec::new();
@@ -640,7 +645,11 @@ impl Lowering {
         Ok(y)
     }
 
-    fn both(&mut self, a: Option<NodeId>, b: Option<NodeId>) -> Result<Option<NodeId>, Unsupported> {
+    fn both(
+        &mut self,
+        a: Option<NodeId>,
+        b: Option<NodeId>,
+    ) -> Result<Option<NodeId>, Unsupported> {
         match (a, b) {
             (Some(a), Some(b)) => Ok(Some(self.logic(true, a, b)?)),
             (a, b) => Ok(a.or(b)),
@@ -768,7 +777,9 @@ impl Lowering {
             [] => return Err(Unsupported::new("call without arguments")),
         };
         let Val::List(elems) = self.value(source, ctx, r)? else {
-            return Err(Unsupported::new("fold over a value that is not a static list"));
+            return Err(Unsupported::new(
+                "fold over a value that is not a static list",
+            ));
         };
         Self::statics(&elems)?;
         let mut leaves = Vec::new();
@@ -964,7 +975,10 @@ impl Lowering {
                 }
             });
         }
-        let both = match nulls.iter().any(|n| self.lit(*n) == Some(&Lit::Bool(false))) {
+        let both = match nulls
+            .iter()
+            .any(|n| self.lit(*n) == Some(&Lit::Bool(false)))
+        {
             true => self.konst(Lit::Bool(false)),
             false => self.logic(true, nulls[0], nulls[1])?,
         };
@@ -999,9 +1013,17 @@ impl Lowering {
         ))
     }
 
-    pub(super) fn within(&mut self, x: NodeId, list: &Ast, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
+    pub(super) fn within(
+        &mut self,
+        x: NodeId,
+        list: &Ast,
+        ctx: Ctx,
+        r: &mut dyn Resolve,
+    ) -> Lowered {
         let Val::List(elems) = self.value(list, ctx, r)? else {
-            return Err(Unsupported::new("membership in a value that is not a static list"));
+            return Err(Unsupported::new(
+                "membership in a value that is not a static list",
+            ));
         };
         Self::statics(&elems)?;
         let mut leaves = Vec::new();

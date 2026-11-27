@@ -1,6 +1,8 @@
-use crate::functions::{DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind};
-use crate::lane::date::helpers::date_time;
+use crate::functions::{
+    DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind,
+};
 use crate::lane::builtins::{Arg as Given, Builtin, Builtins, Dates, Out, RowContext};
+use crate::lane::date::helpers::date_time;
 use crate::lane::date::Date;
 use crate::lane::Bits;
 use crate::typed::exec::{Buf, Exec, Others, Reg};
@@ -179,8 +181,11 @@ impl<'e, 'x> Exec<'e, 'x> {
                     return;
                 }
                 let mut skip = skip;
-                if let (Host::Legacy(DeprecatedFunction::Date), [DV::Text(text)], Rep::Dyn | Rep::Fix(0)) =
-                    (host, views.as_slice(), *rep)
+                if let (
+                    Host::Legacy(DeprecatedFunction::Date),
+                    [DV::Text(text)],
+                    Rep::Dyn | Rep::Fix(0),
+                ) = (host, views.as_slice(), *rep)
                 {
                     let mut done = [0u64; Reg::WORDS];
                     let mut last: Option<(&[u8], i64)> = None;
@@ -395,7 +400,8 @@ impl<'e, 'x> Exec<'e, 'x> {
                         d.dates[i] = match last {
                             Some((seen, shifted))
                                 if seen == x
-                                    && seen.0.map(|at| at.timezone()) == x.0.map(|at| at.timezone()) =>
+                                    && seen.0.map(|at| at.timezone())
+                                        == x.0.map(|at| at.timezone()) =>
                             {
                                 shifted
                             }

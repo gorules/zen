@@ -120,7 +120,9 @@ impl Rooted {
                 key != path
                     && !key.starts_with('$')
                     && !key.contains('[')
-                    && owned.as_deref().is_none_or(|owned| !DotPath::overlaps(key, owned))
+                    && owned
+                        .as_deref()
+                        .is_none_or(|owned| !DotPath::overlaps(key, owned))
             })
     }
 
@@ -206,7 +208,10 @@ impl Rooted {
             .iter()
             .zip(plans)
             .map(|(rule, plan)| {
-                let iteration = plan.iteration.as_ref().filter(|(_, path, _)| single(path))?;
+                let iteration = plan
+                    .iteration
+                    .as_ref()
+                    .filter(|(_, path, _)| single(path))?;
                 let (rule, plan) = Self::block(rule, iteration)?;
                 let gate = match gates.iter().position(|gate| *gate == iteration.1) {
                     Some(gate) => gate,
@@ -219,21 +224,25 @@ impl Rooted {
             })
             .collect();
         let foreign = |gate: usize, path: &str| {
-            rules.iter().zip(plans).enumerate().any(|(block, (rule, plan))| {
-                let own = rooted[block].as_ref().is_some_and(|r| r.gate == gate);
-                let listed = plan
-                    .iteration
-                    .as_ref()
-                    .is_some_and(|(_, list, _)| !own && related(list, path));
-                let writes = !own
-                    && plan.iteration.is_none()
-                    && rule
-                        .kind
-                        .write_sites()
-                        .iter()
-                        .any(|site| related(&site.path, path));
-                listed || writes
-            })
+            rules
+                .iter()
+                .zip(plans)
+                .enumerate()
+                .any(|(block, (rule, plan))| {
+                    let own = rooted[block].as_ref().is_some_and(|r| r.gate == gate);
+                    let listed = plan
+                        .iteration
+                        .as_ref()
+                        .is_some_and(|(_, list, _)| !own && related(list, path));
+                    let writes = !own
+                        && plan.iteration.is_none()
+                        && rule
+                            .kind
+                            .write_sites()
+                            .iter()
+                            .any(|site| related(&site.path, path));
+                    listed || writes
+                })
         };
         let clashing: Vec<bool> = gates
             .iter()

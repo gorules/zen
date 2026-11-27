@@ -114,7 +114,10 @@ fn goals_match(
 fn columns_match_document(document: Value, rows: Vec<Value>) -> Paths {
     let workspace = |version| {
         let mut ws = PolicyWorkspace::new().with_version(version);
-        ws.set_policy(PATH, serde_json::from_value(document.clone()).expect("policy json"));
+        ws.set_policy(
+            PATH,
+            serde_json::from_value(document.clone()).expect("policy json"),
+        );
         ws
     };
     let (old, new) = (workspace(EngineVersion::V1), workspace(EngineVersion::V2));
@@ -571,11 +574,31 @@ const CHECKED_LISTS: &str = r#"{
 
 #[test]
 fn values_a_model_refuses_inside_lists_report_what_version_one_reports() {
-    let kinds = [json!("goods"), json!("service"), json!("rental"), json!(3), Value::Null];
-    let dates = [json!("2024-02-29"), json!("soon"), json!("2023-02-30"), Value::Null, json!(""), json!(20240101)];
+    let kinds = [
+        json!("goods"),
+        json!("service"),
+        json!("rental"),
+        json!(3),
+        Value::Null,
+    ];
+    let dates = [
+        json!("2024-02-29"),
+        json!("soon"),
+        json!("2023-02-30"),
+        Value::Null,
+        json!(""),
+        json!(20240101),
+    ];
     let grades = [json!("new"), json!("used"), json!("broken"), json!(false)];
     let tags = [json!("a"), json!("b"), json!("c"), json!(1)];
-    for (bad_kind, bad_date, bad_grade, bad_tag) in [(0, 0, 0, 0), (7, 0, 0, 0), (0, 5, 0, 0), (0, 0, 9, 0), (0, 0, 0, 11), (13, 17, 19, 23)] {
+    for (bad_kind, bad_date, bad_grade, bad_tag) in [
+        (0, 0, 0, 0),
+        (7, 0, 0, 0),
+        (0, 5, 0, 0),
+        (0, 0, 9, 0),
+        (0, 0, 0, 11),
+        (13, 17, 19, 23),
+    ] {
         let odd = |every: usize, n: usize| every > 0 && n % every == every - 1;
         let pick = |pool: &[Value], bad: bool, n: usize| match bad {
             true => pool[2 + n % (pool.len() - 2)].clone(),
@@ -626,10 +649,26 @@ fn dictionary_columns_inside_lists_are_checked_like_plain_ones() {
     let old = workspace(&policies, EngineVersion::V1);
     let new = workspace(&policies, EngineVersion::V2);
     for (kind_pool, date_pool, root_pool) in [
-        (vec!["goods", "service"], vec!["2024-02-29", "2025-03-20T10:15:30Z", ""], vec!["web", "store"]),
-        (vec!["goods", "service", "rental"], vec!["2024-02-29", ""], vec!["web", "store"]),
-        (vec!["goods", "service"], vec!["2024-02-29", "soon", "2023-02-30"], vec!["web", "store"]),
-        (vec!["goods", "service"], vec!["2024-02-29"], vec!["web", "phone", "store"]),
+        (
+            vec!["goods", "service"],
+            vec!["2024-02-29", "2025-03-20T10:15:30Z", ""],
+            vec!["web", "store"],
+        ),
+        (
+            vec!["goods", "service", "rental"],
+            vec!["2024-02-29", ""],
+            vec!["web", "store"],
+        ),
+        (
+            vec!["goods", "service"],
+            vec!["2024-02-29", "soon", "2023-02-30"],
+            vec!["web", "store"],
+        ),
+        (
+            vec!["goods", "service"],
+            vec!["2024-02-29"],
+            vec!["web", "phone", "store"],
+        ),
     ] {
         let rows = 80usize;
         let mut offsets = vec![0i32];
@@ -639,10 +678,20 @@ fn dictionary_columns_inside_lists_are_checked_like_plain_ones() {
         let (date_offsets, date_data) = text(&date_pool);
         let (root_offsets, root_data) = text(&root_pool);
         let kind_keys: Vec<i32> = (0..items)
-            .map(|n| if n % 11 == 5 { -1 } else { ((n * 7 + n / 5) % kind_pool.len()) as i32 })
+            .map(|n| {
+                if n % 11 == 5 {
+                    -1
+                } else {
+                    ((n * 7 + n / 5) % kind_pool.len()) as i32
+                }
+            })
             .collect();
-        let date_keys: Vec<i32> = (0..items).map(|n| ((n * 3 + n / 7) % date_pool.len()) as i32).collect();
-        let root_keys: Vec<i32> = (0..rows).map(|i| ((i * 5 + i / 9) % root_pool.len()) as i32).collect();
+        let date_keys: Vec<i32> = (0..items)
+            .map(|n| ((n * 3 + n / 7) % date_pool.len()) as i32)
+            .collect();
+        let root_keys: Vec<i32> = (0..rows)
+            .map(|i| ((i * 5 + i / 9) % root_pool.len()) as i32)
+            .collect();
         let mut date_valid = vec![u64::MAX; items.div_ceil(64)];
         (0..items)
             .filter(|n| n % 6 == 1)
@@ -653,7 +702,10 @@ fn dictionary_columns_inside_lists_are_checked_like_plain_ones() {
                 "kind",
                 Column::new(Values::Dict {
                     keys: &kind_keys,
-                    values: Dictionary::Text { offsets: &kind_offsets, data: &kind_data },
+                    values: Dictionary::Text {
+                        offsets: &kind_offsets,
+                        data: &kind_data,
+                    },
                 }),
             ),
             (
@@ -661,7 +713,10 @@ fn dictionary_columns_inside_lists_are_checked_like_plain_ones() {
                 Column::with_validity(
                     Values::Dict {
                         keys: &date_keys,
-                        values: Dictionary::Text { offsets: &date_offsets, data: &date_data },
+                        values: Dictionary::Text {
+                            offsets: &date_offsets,
+                            data: &date_data,
+                        },
                     },
                     &date_valid,
                     0,
@@ -669,15 +724,27 @@ fn dictionary_columns_inside_lists_are_checked_like_plain_ones() {
             ),
             ("qty", Column::new(Values::I64(&qty))),
         ];
-        let item = Column::new(Values::Struct { fields: &fields, len: items });
-        let lines = Column::new(Values::List { offsets: &offsets, child: Dictionary::Column(&item) });
+        let item = Column::new(Values::Struct {
+            fields: &fields,
+            len: items,
+        });
+        let lines = Column::new(Values::List {
+            offsets: &offsets,
+            child: Dictionary::Column(&item),
+        });
         let root = Column::new(Values::Dict {
             keys: &root_keys,
-            values: Dictionary::Text { offsets: &root_offsets, data: &root_data },
+            values: Dictionary::Text {
+                offsets: &root_offsets,
+                data: &root_data,
+            },
         });
         let placed = Column::new(Values::Dict {
             keys: &date_keys[..rows],
-            values: Dictionary::Text { offsets: &date_offsets, data: &date_data },
+            values: Dictionary::Text {
+                offsets: &date_offsets,
+                data: &date_data,
+            },
         });
         let columns = Columns::new(rows)
             .column("order.kind", root)
@@ -717,7 +784,10 @@ fn declared_dates_of_objects_inside_list_items_match_version_one() {
         json!("2025-02-01"),
     ];
     for (bad, empty) in [(0, 0), (0, 5), (17, 0)] {
-        let date = |n: usize| match (bad > 0 && n % bad == bad - 1, empty > 0 && n % empty == empty - 1) {
+        let date = |n: usize| match (
+            bad > 0 && n % bad == bad - 1,
+            empty > 0 && n % empty == empty - 1,
+        ) {
             (true, _) => json!("soon"),
             (_, true) => json!(""),
             _ => dates[n % dates.len()].clone(),
@@ -773,7 +843,13 @@ fn declared_dates_in_lists_without_member_blocks_stay_dates() {
         {expression: "trip.years", value: "map(filter(trip.stops, #.at != null), #.at.year())"},
       ],
     }"#;
-    let dates = [json!("2024-02-29"), json!("2024/01/05"), json!("2025-03-20T23:30:00+05:00"), Value::Null, json!("2023")];
+    let dates = [
+        json!("2024-02-29"),
+        json!("2024/01/05"),
+        json!("2025-03-20T23:30:00+05:00"),
+        Value::Null,
+        json!("2023"),
+    ];
     let rows: Vec<Value> = (0..80)
         .map(|i| {
             let stops: Vec<Value> = (0..1 + i % 3)
@@ -935,7 +1011,9 @@ fn referenced_rows(count: usize, keys: &[Value]) -> Vec<Value> {
     (0..count)
         .map(|i| {
             let lines: Vec<Value> = (0..i % 3)
-                .map(|j| json!({"amount": 20 * (i + j) % 300, "code": (["food", "general"])[j % 2]}))
+                .map(
+                    |j| json!({"amount": 20 * (i + j) % 300, "code": (["food", "general"])[j % 2]}),
+                )
                 .collect();
             let mut order = json!({"fee": 5 + i % 7, "exempt": i % 5 == 0, "lines": lines});
             if !keys[i % keys.len()].is_null() {
@@ -955,7 +1033,14 @@ fn references_to_a_pool_resolve_by_columns_and_run_typed() {
 
 #[test]
 fn references_that_are_missing_unknown_or_not_text_match_version_one() {
-    let keys = [json!("NY"), json!("XX"), Value::Null, json!(7), json!("CA"), json!("")];
+    let keys = [
+        json!("NY"),
+        json!("XX"),
+        Value::Null,
+        json!(7),
+        json!("CA"),
+        json!(""),
+    ];
     columns_match_version_one(&[(PATH, REFERENCED)], referenced_rows(72, &keys));
     let rows: Vec<Value> = (0..24)
         .map(|i| match i % 3 {
@@ -1089,7 +1174,11 @@ const SETTLEMENT: &str = r#"{
   ],
 }"#;
 
-fn settlement_rows(count: usize, lines: impl Fn(usize) -> Option<usize>, sellers: impl Fn(usize) -> Option<usize>) -> Vec<Value> {
+fn settlement_rows(
+    count: usize,
+    lines: impl Fn(usize) -> Option<usize>,
+    sellers: impl Fn(usize) -> Option<usize>,
+) -> Vec<Value> {
     let ids = ["s1", "s2", "s3", "s4"];
     let dates = ["2024-02-29", "2025-01-15", "2023-07-01"];
     (0..count)
@@ -1144,8 +1233,14 @@ fn member_blocks_reading_lists_that_are_empty_null_or_missing_match_version_one(
     columns_match_version_one(&policies, settlement_rows(60, |_| Some(0), |i| Some(i % 3)));
     columns_match_version_one(&policies, settlement_rows(60, |i| Some(i % 4), |_| Some(0)));
     columns_match_version_one(&policies, settlement_rows(60, |i| Some(i % 4), |_| Some(1)));
-    columns_match_version_one(&policies, settlement_rows(60, |i| (i % 3 != 0).then_some(i % 4), |i| Some(1 + i % 3)));
-    columns_match_version_one(&policies, settlement_rows(60, |i| Some(1 + i % 4), |i| (i % 4 != 1).then_some(i % 3)));
+    columns_match_version_one(
+        &policies,
+        settlement_rows(60, |i| (i % 3 != 0).then_some(i % 4), |i| Some(1 + i % 3)),
+    );
+    columns_match_version_one(
+        &policies,
+        settlement_rows(60, |i| Some(1 + i % 4), |i| (i % 4 != 1).then_some(i % 3)),
+    );
     columns_match_version_one(&policies, settlement_rows(40, |_| Some(7), |_| Some(9)));
     let mut rows = settlement_rows(40, |i| Some(i % 4), |i| Some(1 + i % 3));
     rows.push(json!({"order": {"country": "DE", "lines": null, "sellers": [{"id": "s1", "country": "DE"}]}}));
@@ -1224,7 +1319,9 @@ const TENANT: &str = r#"{
 }"#;
 
 fn tenant_rows(address: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
-    let labels = ["a-b-c", "O'Neil", "12", "retail", "A1", "ok", "none", "x", "high"];
+    let labels = [
+        "a-b-c", "O'Neil", "12", "retail", "A1", "ok", "none", "x", "high",
+    ];
     let plans = ["basic", "trial", "plus", "premium"];
     (0..54)
         .map(|i| {
@@ -1261,7 +1358,10 @@ fn blocks_on_a_single_relationship_beside_a_list_match_version_one_for_every_goa
     let mut broken = tenant_rows(present);
     broken[4]["tenant"]["limit"] = Value::Null;
     broken[9]["tenant"]["loans"][0]["plan"] = json!("gold");
-    broken[11]["tenant"].as_object_mut().expect("tenant").remove("income");
+    broken[11]["tenant"]
+        .as_object_mut()
+        .expect("tenant")
+        .remove("income");
     let goal_sets: [&[&str]; 9] = [
         &[],
         &["loan.flag"],
@@ -1273,7 +1373,13 @@ fn blocks_on_a_single_relationship_beside_a_list_match_version_one_for_every_goa
         &["address.eligible", "loan.adjusted"],
         &["tenant.risk", "loan.meta.review"],
     ];
-    for rows in [tenant_rows(present), tenant_rows(sparse), tenant_rows(nulled), tenant_rows(|_| None), broken] {
+    for rows in [
+        tenant_rows(present),
+        tenant_rows(sparse),
+        tenant_rows(nulled),
+        tenant_rows(|_| None),
+        broken,
+    ] {
         let built = Built::nested(&rows)
             .or_else(|| Built::lists(&rows))
             .or_else(|| Built::new(&rows))
@@ -1331,7 +1437,10 @@ const REPORTED: &str = r#"{
   ],
 }"#;
 
-fn reported_rows(report: impl Fn(usize) -> Option<Value>, contact: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+fn reported_rows(
+    report: impl Fn(usize) -> Option<Value>,
+    contact: impl Fn(usize) -> Option<Value>,
+) -> Vec<Value> {
     let tiers = ["gold", "silver", "basic"];
     (0..48)
         .map(|i| {
@@ -1432,7 +1541,10 @@ fn single_relationships_that_are_missing_null_or_empty_match_version_one_for_eve
         reported_rows(partial, |i| Some(full_contact(i))),
         reported_rows(partial, sparse),
         reported_rows(|_| None, |_| None),
-        reported_rows(|i| (i % 2 == 0).then(|| full_report(i)), |i| (i % 3 == 0).then(|| full_contact(i))),
+        reported_rows(
+            |i| (i % 2 == 0).then(|| full_report(i)),
+            |i| (i % 3 == 0).then(|| full_contact(i)),
+        ),
     ];
     for rows in &sets {
         each_goal(REPORTED, rows, &REPORTED_GOALS);
@@ -1448,13 +1560,19 @@ fn single_relationships_holding_what_the_model_refuses_match_version_one() {
     rows[7]["customer"]["contact"]["email"] = json!(false);
     rows[9]["customer"]["limit"] = Value::Null;
     rows[11]["customer"]["report"]["score"] = Value::Null;
-    rows[13]["customer"].as_object_mut().expect("customer").remove("tier");
+    rows[13]["customer"]
+        .as_object_mut()
+        .expect("customer")
+        .remove("tier");
     each_goal(REPORTED, &rows, &REPORTED_GOALS);
 }
 
 #[test]
 fn a_relationship_given_under_its_entity_name_does_not_stand_in_for_the_related_object() {
-    let mut rows = reported_rows(|i| (i % 2 == 0).then(|| full_report(i)), |i| Some(full_contact(i)));
+    let mut rows = reported_rows(
+        |i| (i % 2 == 0).then(|| full_report(i)),
+        |i| Some(full_contact(i)),
+    );
     for (i, row) in rows.iter_mut().enumerate() {
         if i % 4 == 1 {
             row["creditReport"] = full_report(i);
@@ -1479,10 +1597,15 @@ const CONFIGURED: &str = r#"{
   ],
 }"#;
 
-fn configured_rows(cfg: impl Fn(usize) -> Option<Value>, extra: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+fn configured_rows(
+    cfg: impl Fn(usize) -> Option<Value>,
+    extra: impl Fn(usize) -> Option<Value>,
+) -> Vec<Value> {
     (0..40)
         .map(|i| {
-            let items: Vec<Value> = (0..i % 4).map(|j| json!({"v": (i * 3 + j * 5) % 23})).collect();
+            let items: Vec<Value> = (0..i % 4)
+                .map(|j| json!({"v": (i * 3 + j * 5) % 23}))
+                .collect();
             let mut row = json!({"cap": i % 5, "o": {"items": items}});
             if let Some(cfg) = cfg(i) {
                 row["cfg"] = cfg;
@@ -1528,7 +1651,12 @@ fn global_single_relationships_that_are_missing_null_or_partial_match_version_on
         2 => Some(json!({"bonus": null})),
         _ => Some(json!({"bonus": i % 3})),
     };
-    for rows in [configured_rows(cfg, extra), configured_rows(full, extra), configured_rows(cfg, |_| None), configured_rows(full, |_| None)] {
+    for rows in [
+        configured_rows(cfg, extra),
+        configured_rows(full, extra),
+        configured_rows(cfg, |_| None),
+        configured_rows(full, |_| None),
+    ] {
         each_goal(CONFIGURED, &rows, &CONFIGURED_GOALS);
     }
 }
@@ -1550,14 +1678,17 @@ fn single_relationship_blocks_the_columns_cannot_alias_match_version_one() {
         {expression: "customer.flag", value: "customer.report.above > 3"},
       ],
     }"#;
-    let rows: Vec<Value> = reported_rows(|i| (i % 5 != 0).then(|| json!({"score": i % 9, "bankrupt": i % 2 == 0})), |_| None)
-        .into_iter()
-        .enumerate()
-        .map(|(i, mut row)| {
-            row["customer"]["scores"] = json!([i % 4, 7, i % 11]);
-            row
-        })
-        .collect();
+    let rows: Vec<Value> = reported_rows(
+        |i| (i % 5 != 0).then(|| json!({"score": i % 9, "bankrupt": i % 2 == 0})),
+        |_| None,
+    )
+    .into_iter()
+    .enumerate()
+    .map(|(i, mut row)| {
+        row["customer"]["scores"] = json!([i % 4, 7, i % 11]);
+        row
+    })
+    .collect();
     let table = r#"{
       models: {customer: {tier: "string", limit: "number", report: "creditReport"}, creditReport: {score: "number", bankrupt: "boolean"}},
       blocks: [
@@ -1587,7 +1718,11 @@ const CARTED: &str = r#"{
   ],
 }"#;
 
-fn carted_rows(count: usize, items: impl Fn(usize) -> Option<Value>, pool: impl Fn(usize) -> Option<Value>) -> Vec<Value> {
+fn carted_rows(
+    count: usize,
+    items: impl Fn(usize) -> Option<Value>,
+    pool: impl Fn(usize) -> Option<Value>,
+) -> Vec<Value> {
     (0..count)
         .map(|i| {
             let mut cart = json!({});
@@ -1658,8 +1793,12 @@ fn lists_of_references_that_are_missing_null_unknown_or_repeated_match_version_o
         0 => None,
         1 => Some(Value::Null),
         2 => Some(json!([])),
-        3 => Some(json!([{"id": "p1", "price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
-        4 => Some(json!([{"price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
+        3 => Some(
+            json!([{"id": "p1", "price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}]),
+        ),
+        4 => Some(
+            json!([{"price": 2}, {"id": "p1", "price": 9}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}]),
+        ),
         5 => Some(json!([{"id": "p1"}, {"id": "p2", "price": 4}, {"id": "p3", "price": 1}])),
         _ => Some(product_pool(i)),
     };
@@ -1819,13 +1958,22 @@ fn cells_reading_already_demanded_and_other_computed_fields_match_version_one() 
     each_goal(
         DEMANDED_CELLS,
         &rows,
-        &[&[], &["household.benefit"], &["household.extra"], &["household.band", "member.band"], &["household.tier"]],
+        &[
+            &[],
+            &["household.benefit"],
+            &["household.extra"],
+            &["household.band", "member.band"],
+            &["household.tier"],
+        ],
     );
     let mut broken = rows;
     broken[3]["household"]["income"] = Value::Null;
     broken[4]["household"]["size"] = json!(3);
     broken[9]["household"]["size"] = json!(3);
-    broken[7]["household"].as_object_mut().expect("household").remove("size");
+    broken[7]["household"]
+        .as_object_mut()
+        .expect("household")
+        .remove("size");
     columns_match_version_one(&[(PATH, DEMANDED_CELLS)], broken);
 }
 
@@ -1914,13 +2062,22 @@ fn collect_tables_with_several_outputs_members_and_failures_match_version_one() 
     each_goal(
         GATHERED,
         &rows,
-        &[&[], &["account.alerts"], &["account.decision"], &["account.flagged"], &["account.notes", "account.marks"]],
+        &[
+            &[],
+            &["account.alerts"],
+            &["account.decision"],
+            &["account.flagged"],
+            &["account.notes", "account.marks"],
+        ],
     );
     let mut broken = rows;
     broken[2]["account"]["volume"] = Value::Null;
     broken[5]["account"]["kind"] = json!(4);
     broken[9]["account"]["items"][0]["price"] = json!("x");
-    broken[11]["account"].as_object_mut().expect("account").remove("structuring");
+    broken[11]["account"]
+        .as_object_mut()
+        .expect("account")
+        .remove("structuring");
     broken[13]["account"]["corridors"] = json!("many");
     columns_match_version_one(&[(PATH, GATHERED)], broken);
 }
@@ -2021,7 +2178,16 @@ fn optional_fields_given_as_null_left_out_or_wrongly_typed_match_version_one() {
     rows[6]["employer"]["bonus"] = json!("big");
     rows[9]["employer"]["employees"][0]["extra"] = json!(true);
     columns_match_version_one(&[(PATH, SPARSE_FIELDS)], rows.clone());
-    each_goal(SPARSE_FIELDS, &rows, &[&[], &["employee.rate"], &["employer.where"], &["employer.total"]]);
+    each_goal(
+        SPARSE_FIELDS,
+        &rows,
+        &[
+            &[],
+            &["employee.rate"],
+            &["employer.where"],
+            &["employer.total"],
+        ],
+    );
 }
 
 const TRANSITIVE_CELLS: &str = r#"{
@@ -2086,7 +2252,13 @@ fn cells_reading_fields_demanded_through_other_blocks_match_version_one() {
     each_goal(
         TRANSITIVE_CELLS,
         &rows,
-        &[&[], &["invoice.fee"], &["invoice.payment"], &["line.charge"], &["invoice.stage", "invoice.ok"]],
+        &[
+            &[],
+            &["invoice.fee"],
+            &["invoice.payment"],
+            &["line.charge"],
+            &["invoice.stage", "invoice.ok"],
+        ],
     );
 }
 
@@ -2138,7 +2310,14 @@ fn collect_tables_with_first_hit_outputs_match_version_one() {
     each_goal(
         MIXED_GATHER,
         &rows,
-        &[&[], &["customer.outcome"], &["customer.level", "account.tier"], &["customer.summary"], &["customer.first"], &["account.label", "customer.levelText"]],
+        &[
+            &[],
+            &["customer.outcome"],
+            &["customer.level", "account.tier"],
+            &["customer.summary"],
+            &["customer.first"],
+            &["account.label", "customer.levelText"],
+        ],
     );
 }
 
@@ -2184,7 +2363,8 @@ fn powers_with_computed_exponents_run_typed() {
 fn powers_with_fractional_missing_or_huge_exponents_match_version_one() {
     let rows: Vec<Value> = (0..80)
         .map(|i| {
-            let mut loan = json!({"amount": 10000 + 997 * i, "rate": 1 + (i % 9), "years": 5 + (i % 26)});
+            let mut loan =
+                json!({"amount": 10000 + 997 * i, "rate": 1 + (i % 9), "years": 5 + (i % 26)});
             match i % 6 {
                 0 => {}
                 1 => loan["step"] = Value::Null,
@@ -2264,7 +2444,8 @@ fn nested_member_objects_validate_like_version_one() {
         })
         .collect();
     let deps = |rows: &mut Vec<Value>, at: usize| -> Value {
-        rows[at]["employer"]["employees"][0]["dependents"] = json!([{"relation": "child", "dob": "2010-01-01"}]);
+        rows[at]["employer"]["employees"][0]["dependents"] =
+            json!([{"relation": "child", "dob": "2010-01-01"}]);
         rows[at]["employer"]["employees"][0]["dependents"][0].clone()
     };
     for (at, field, value) in [
@@ -2340,7 +2521,16 @@ fn membership_in_another_list_runs_typed() {
 fn membership_in_another_list_or_a_global_list_matches_version_one() {
     let mut rows = other_list_rows();
     columns_match_version_one(&[(PATH, OTHER_LISTS)], rows.clone());
-    each_goal(OTHER_LISTS, &rows, &[&[], &["claim.missing"], &["traveller.hazard"], &["claim.count", "claim.hazards"]]);
+    each_goal(
+        OTHER_LISTS,
+        &rows,
+        &[
+            &[],
+            &["claim.missing"],
+            &["traveller.hazard"],
+            &["claim.count", "claim.hazards"],
+        ],
+    );
     rows[3]["claim"]["received"] = Value::Null;
     rows[5]["hazardous"] = Value::Null;
     rows[7]["claim"]["received"] = json!(["police", null]);
@@ -2376,7 +2566,14 @@ fn member_blocks_reading_root_dates_run_typed() {
 
 #[test]
 fn member_blocks_reading_root_dates_in_any_form_match_version_one() {
-    let starts = ["2025-03-20", "2025-03-20T23:30:00-05:00", "2024-02-29T12:00:00Z", "2025-01-01 10:00", "2025-13-01", ""];
+    let starts = [
+        "2025-03-20",
+        "2025-03-20T23:30:00-05:00",
+        "2024-02-29T12:00:00Z",
+        "2025-01-01 10:00",
+        "2025-13-01",
+        "",
+    ];
     let rows: Vec<Value> = (0..72)
         .map(|i| {
             let travellers: Vec<Value> = (0..i % 3)

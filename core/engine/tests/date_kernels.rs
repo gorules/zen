@@ -9,7 +9,9 @@ use zen_engine::policy::{EvaluateRequest, PolicyWorkspace};
 use zen_engine::{diagnostics, EngineVersion, EvaluationOptions};
 
 const PATH: &str = "main";
-const UNITS: [&str; 8] = ["year", "quarter", "month", "week", "day", "hour", "minute", "second"];
+const UNITS: [&str; 8] = [
+    "year", "quarter", "month", "week", "day", "hour", "minute", "second",
+];
 const ZONES: [&str; 8] = [
     "UTC",
     "America/New_York",
@@ -40,17 +42,33 @@ fn policy() -> String {
         add(format!("d().diff(c.a, '{unit}')"));
         add(format!("c.b.diff(c.t, '{unit}')"));
         add(format!("c.a.diff('2024-02-29T12:00:00', '{unit}')"));
-        for method in ["isSame", "isBefore", "isAfter", "isSameOrBefore", "isSameOrAfter"] {
+        for method in [
+            "isSame",
+            "isBefore",
+            "isAfter",
+            "isSameOrBefore",
+            "isSameOrAfter",
+        ] {
             add(format!("c.a.{method}(c.b, '{unit}')"));
         }
-        add(format!("c.a.startOf('{unit}').diff(c.b.endOf('{unit}'), 'minute')"));
-        add(format!("c.a.add(3, '{unit}').diff(c.a.sub(1, '{unit}'), 'hour')"));
+        add(format!(
+            "c.a.startOf('{unit}').diff(c.b.endOf('{unit}'), 'minute')"
+        ));
+        add(format!(
+            "c.a.add(3, '{unit}').diff(c.a.sub(1, '{unit}'), 'hour')"
+        ));
     }
     add("d().add(-24, 'hour').diff(c.a, 'minute')".into());
     add("c.a.add(1, 'day').diff(c.b, 'hour')".into());
     add("c.a.diff(c.b)".into());
     add("c.a.diff(c.n)".into());
-    for method in ["isSame", "isBefore", "isAfter", "isSameOrBefore", "isSameOrAfter"] {
+    for method in [
+        "isSame",
+        "isBefore",
+        "isAfter",
+        "isSameOrBefore",
+        "isSameOrAfter",
+    ] {
         add(format!("c.a.{method}(c.b)"));
         add(format!("c.b.{method}(c.t)"));
         add(format!("d().{method}(c.a, 'day')"));
@@ -59,15 +77,40 @@ fn policy() -> String {
         add(format!("c.a.format('{pattern}')"));
     }
     add("c.b.format()".into());
-    for method in ["isValid", "isLeapYear", "isToday", "isYesterday", "isTomorrow"] {
+    for method in [
+        "isValid",
+        "isLeapYear",
+        "isToday",
+        "isYesterday",
+        "isTomorrow",
+    ] {
         add(format!("c.a.{method}()"));
         add(format!("d(c.t).{method}()"));
     }
-    for method in ["second", "minute", "hour", "day", "dayOfYear", "week", "weekday", "month", "quarter", "year", "timestamp"] {
+    for method in [
+        "second",
+        "minute",
+        "hour",
+        "day",
+        "dayOfYear",
+        "week",
+        "weekday",
+        "month",
+        "quarter",
+        "year",
+        "timestamp",
+    ] {
         add(format!("c.a.{method}() + c.b.{method}()"));
     }
-    for zone in ["America/New_York", "Asia/Kolkata", "UTC", "Australia/Lord_Howe"] {
-        add(format!("c.a.tz('{zone}').hour() * 100 + c.a.tz('{zone}').minute()"));
+    for zone in [
+        "America/New_York",
+        "Asia/Kolkata",
+        "UTC",
+        "Australia/Lord_Howe",
+    ] {
+        add(format!(
+            "c.a.tz('{zone}').hour() * 100 + c.a.tz('{zone}').minute()"
+        ));
         add(format!("c.b.tz('{zone}').format('%Y-%m-%d %H:%M')"));
         add(format!("c.a.tz('{zone}').diff(c.b, 'month')"));
     }
@@ -124,7 +167,9 @@ fn rows() -> Vec<Value> {
         }
     }
     let distinct = rows.len();
-    (0..distinct * 24).map(|at| rows[(at / 3) % distinct].clone()).collect()
+    (0..distinct * 24)
+        .map(|at| rows[(at / 3) % distinct].clone())
+        .collect()
 }
 
 #[test]
@@ -159,7 +204,10 @@ fn typed_date_methods_match_the_general_functions_in_every_zone() {
         let (typed_paths, typed) = run(true);
         let (_, general) = run(false);
         diagnostics::set_typed(true);
-        assert!(typed_paths.typed > 0 && typed_paths.hosted == 0, "{zone}: {typed_paths:?}");
+        assert!(
+            typed_paths.typed > 0 && typed_paths.hosted == 0,
+            "{zone}: {typed_paths:?}"
+        );
         for (at, (got, want)) in typed.iter().zip(&general).enumerate() {
             assert_eq!(got, want, "zone {zone} row {at}: input {}", rows[at]);
         }

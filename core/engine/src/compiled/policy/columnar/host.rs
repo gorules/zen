@@ -85,7 +85,9 @@ impl<'s, 'a> Pass<'s, 'a> {
             true => self.plan.commit(block, positions, &mut self.state),
         }
         if let Some(began) = began {
-            let why = self.plan.flat(block)
+            let why = self
+                .plan
+                .flat(block)
                 .refused()
                 .map_or_else(|| "native".to_string(), Refused::to_string);
             Census::record(

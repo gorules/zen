@@ -72,6 +72,12 @@ impl PolicyPlan {
         flat && fields.iter().all(|field| free(field) && safe(field))
     }
 
+    fn nested(columns: &Columns, path: &str) -> bool {
+        columns.columns.iter().any(|(at, _)| {
+            Sheet::related(at, path).is_some_and(|order| order != std::cmp::Ordering::Equal)
+        })
+    }
+
     fn pool_items<'a>(columns: &Columns<'a>, target: &str) -> Option<Option<Items<'a>>> {
         let Some(pool) = columns.find(target).map(|at| columns.columns[at].1) else {
             return Some(None);
@@ -243,6 +249,9 @@ impl PolicyPlan {
         let mut leaves: Vec<(Arc<str>, Leaf<'a>, Option<Rc<[u64]>>)> = Vec::new();
         let mut lists: Vec<Listed<'a>> = Vec::new();
         for field in fields {
+            if Self::nested(columns, &field.path) {
+                return refused("reference beside a composite column");
+            }
             let Some(entry) = columns.find(&field.path) else {
                 continue;
             };

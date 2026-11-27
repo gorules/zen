@@ -501,8 +501,8 @@ impl Lowering {
         };
         let mark = self.mark();
         let seq = match self.seq(list, ctx, r) {
-            Ok(seq) => Self::pure(seq)?,
-            Err(_) => {
+            Ok(seq) if path.is_empty() || seq.value.is_none() => Self::pure(seq)?,
+            _ => {
                 self.rollback(mark);
                 return Ok(None);
             }

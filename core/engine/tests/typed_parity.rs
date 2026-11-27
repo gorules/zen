@@ -2315,3 +2315,32 @@ fn membership_in_another_list_of_the_row_matches_version_one() {
     let paths = columns_match_version_one(expression("count(n, # in m)"), clean);
     assert!(paths.typed > 0 && paths.laned == 0, "{paths:?}");
 }
+
+#[test]
+fn a_field_of_an_indexed_mapped_list_reads_the_mapped_value() {
+    let rows: Vec<Value> = (0..24)
+        .map(|i| match i % 4 {
+            0 => json!({"items": []}),
+            1 => json!({"items": null}),
+            _ => json!({"items": [
+                {"code": format!("C{}", i % 5), "price": i % 7, "tags": ["a"]},
+                {"code": "Z", "price": 1, "tags": []}
+            ]}),
+        })
+        .collect();
+    for (mapped, read) in [
+        ("map(items, #.code)", "$.mapped[0].price"),
+        ("map(items, #.code)", "$.mapped[1].code"),
+        ("map(items, #.price)", "$.mapped[0].price"),
+        ("map(items ?? [], #.code)", "$.mapped[0].price"),
+        ("filter(map(items, #.code), # != 'Z')", "$.mapped[0].price"),
+        ("map(items, #.code)", "$.mapped[0]"),
+    ] {
+        let node = json!({"id": "node", "name": "node", "type": "expressionNode", "content": {"expressions": [
+            {"id": "x0", "key": "mapped", "value": mapped},
+            {"id": "x1", "key": "read", "value": read},
+            {"id": "x2", "key": "total", "value": "sum(map(items ?? [], #.price))"}
+        ]}});
+        columns_match_version_one(graph(node), rows.clone());
+    }
+}

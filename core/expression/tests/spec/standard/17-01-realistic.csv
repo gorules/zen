@@ -515,7 +515,7 @@ expression (string);input (json 5);output (json 5);note
 "first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: [{name: 'x'}, {name: 'x'}]};{first: 'x', last: 'x', n: 2, same: true}
 "first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: [{}, {name: 'z'}]};{first: null, last: 'z', n: 2, same: false}
 "first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: [1, 2]};{first: null, last: null, n: 2, same: true}
-"first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: []};!error
+"first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: []};{first: null, last: null, n: 0, same: true}
 "first = items[0]; last = items[len(items) - 1]; summary = {first: first.name, last: last.name, n: len(items), same: first.name == last.name}; summary";{items: 'ab'};{first: null, last: null, n: 2, same: true}
 # Reshaping: rename and default fields into a new object
 "src = profile ?? {}; out.fullName = (src.first ?? '') + ' ' + (src.last ?? ''); out.email = lower(src.email ?? 'none'); out.age = src.age ?? 0; out.adult = out.age >= 18; out";{profile: {first: 'Ann', last: 'Lee', email: 'A@X.IO', age: 30}};{fullName: 'Ann Lee', email: 'a@x.io', age: 30, adult: true}

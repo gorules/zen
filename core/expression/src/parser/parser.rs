@@ -1,4 +1,4 @@
-use crate::functions::{FunctionKind, MethodKind};
+use crate::functions::{CallbackSlot, ClosureFunction, FunctionKind, InternalFunction, MethodKind};
 use crate::lexer::{
     Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
     TokenKind,
@@ -109,6 +109,33 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn current_kind(&self) -> Option<&TokenKind> {
         self.current.get().map(|token| &token.kind)
+    }
+
+    fn arguments_ahead(&self) -> usize {
+        let mut depth = 0usize;
+        let mut count = 1;
+        for token in &self.tokens[self.position.get().min(self.tokens.len())..] {
+            match token.kind {
+                TokenKind::Bracket(
+                    Bracket::LeftParenthesis
+                    | Bracket::LeftSquareBracket
+                    | Bracket::LeftCurlyBracket,
+                ) => depth += 1,
+                TokenKind::Bracket(
+                    Bracket::RightParenthesis
+                    | Bracket::RightSquareBracket
+                    | Bracket::RightCurlyBracket,
+                ) => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                TokenKind::Operator(Operator::Comma) if depth == 0 => count += 1,
+                _ => {}
+            }
+        }
+        count
     }
 
     fn token_start(&self) -> u32 {
@@ -732,6 +759,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
+        if let FunctionKind::Internal(internal) = function {
+            if let Some(node) =
+                self.callback_call(internal, identifier_token.span.0, expression_parser)
+            {
+                let (node, _) = self.with_postfix(node, expression_parser);
+                return node;
+            }
+        }
+
         let function_node = match function {
             FunctionKind::Closure(_) => {
                 let mut arguments = BumpVec::new_in(&self.bump);
@@ -818,6 +854,222 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             expression_parser,
         );
         node
+    }
+
+    fn alias(&self, errors: &mut BumpVec<'arena, &'arena Node<'arena>>) -> Option<&'arena str> {
+        if !self
+            .current()
+            .is_some_and(|t| t.kind == TokenKind::Literal && t.value == "as")
+        {
+            return None;
+        }
+        self.next();
+        match self.current() {
+            Some(t) if t.kind == TokenKind::Literal => {
+                let alias = self.bump.alloc_str(t.value);
+                self.next();
+                Some(alias)
+            }
+            alias_token => {
+                errors.push(
+                    self.error(AstNodeError::Custom {
+                        message: afmt!(self, "Expected identifier after 'as'"),
+                        span: alias_token
+                            .map(|t| t.span)
+                            .unwrap_or((self.prev_token_end(), self.prev_token_end())),
+                    }),
+                );
+                None
+            }
+        }
+    }
+
+    fn callback_call<F>(
+        &self,
+        function: InternalFunction,
+        start: u32,
+        expression_parser: &F,
+    ) -> Option<&'arena Node<'arena>>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        if self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis)) {
+            return None;
+        }
+        let slots = function.callback_slots(self.arguments_ahead())?;
+        let mut errors = BumpVec::new_in(&self.bump);
+        let list = expression_parser(ParserContext::Global);
+        let alias = self.alias(&mut errors);
+        let mut extra = BumpVec::new_in(&self.bump);
+        for slot in slots {
+            if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                errors.push(error);
+                break;
+            }
+            extra.push(match slot {
+                CallbackSlot::Callback => self.closure(expression_parser, alias),
+                CallbackSlot::Parameter => expression_parser(ParserContext::Global),
+            });
+        }
+        if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+            errors.push(error);
+        }
+        let span = (start, self.prev_token_end());
+
+        let promoted = alias.is_some()
+            || extra.iter().any(|node| match node {
+                Node::Closure { body, .. } => Self::references_item(body),
+                _ => false,
+            });
+        if !errors.is_empty() || !promoted {
+            let mut arguments = BumpVec::new_in(&self.bump);
+            arguments.push(list);
+            for node in extra.iter() {
+                arguments.push(match node {
+                    Node::Closure { body, .. } if !promoted => *body,
+                    other => *other,
+                });
+            }
+            arguments.extend(errors);
+            return Some(self.node(
+                Node::FunctionCall {
+                    kind: FunctionKind::Internal(function),
+                    arguments: arguments.into_bump_slice(),
+                },
+                |_| NodeMetadata { span },
+            ));
+        }
+
+        let bodies: BumpVec<&'arena Node<'arena>> = BumpVec::from_iter_in(
+            extra.iter().map(|node| match node {
+                Node::Closure { body, .. } => *body,
+                other => *other,
+            }),
+            &self.bump,
+        );
+        Some(self.desugar(function, list, alias, &bodies, span))
+    }
+
+    fn desugar(
+        &self,
+        function: InternalFunction,
+        list: &'arena Node<'arena>,
+        alias: Option<&'arena str>,
+        extra: &[&'arena Node<'arena>],
+        span: (u32, u32),
+    ) -> &'arena Node<'arena> {
+        let make = |node: Node<'arena>| self.node(node, |_| NodeMetadata { span });
+        let call = |kind: FunctionKind, arguments: &[&'arena Node<'arena>]| {
+            make(Node::FunctionCall {
+                kind,
+                arguments: self.bump.alloc_slice_copy(arguments),
+            })
+        };
+        let closure = |body: &'arena Node<'arena>| make(Node::Closure { body, alias });
+        let filter = |list: &'arena Node<'arena>, condition: &'arena Node<'arena>| {
+            call(
+                FunctionKind::Closure(ClosureFunction::Filter),
+                &[list, closure(condition)],
+            )
+        };
+        let map = |list: &'arena Node<'arena>, body: &'arena Node<'arena>| {
+            call(
+                FunctionKind::Closure(ClosureFunction::Map),
+                &[list, closure(body)],
+            )
+        };
+        let pair = |value: &'arena Node<'arena>, key: &'arena Node<'arena>| {
+            make(Node::Array(self.bump.alloc_slice_copy(&[value, key])))
+        };
+        let target = FunctionKind::Internal(function.aggregated().unwrap_or(function));
+
+        use InternalFunction as IF;
+        match (function, extra) {
+            (IF::First | IF::Last, [condition]) => call(target, &[filter(list, condition)]),
+            (IF::First | IF::Last, [value, condition]) => {
+                call(target, &[map(filter(list, condition), value)])
+            }
+            (IF::FindIndex | IF::FindLastIndex, [condition]) => {
+                call(target, &[map(list, condition)])
+            }
+            (IF::Find | IF::FindLast, [condition]) => call(target, &[filter(list, condition)]),
+            (IF::GroupBy, [key]) => call(target, &[map(list, pair(make(Node::Pointer), key))]),
+            (IF::SortBy, [key]) => call(target, &[map(list, pair(make(Node::Pointer), key))]),
+            (IF::SortBy, [key, direction]) => call(
+                target,
+                &[map(list, pair(make(Node::Pointer), key)), direction],
+            ),
+            (IF::ArgMax | IF::ArgMin, [key]) => {
+                call(target, &[map(list, pair(make(Node::Pointer), key))])
+            }
+            (IF::ArgMax | IF::ArgMin, [value, key]) => call(target, &[map(list, pair(value, key))]),
+            (IF::ArgMax | IF::ArgMin, [value, key, condition]) => {
+                call(target, &[map(filter(list, condition), pair(value, key))])
+            }
+            (_, [value]) => call(target, &[map(list, value)]),
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, [value, parameter]) => {
+                call(target, &[map(list, value), parameter])
+            }
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, [value, parameter, condition]) => {
+                call(target, &[map(filter(list, condition), value), parameter])
+            }
+            (_, [value, condition]) => call(target, &[map(filter(list, condition), value)]),
+            _ => call(target, &[list]),
+        }
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
+    fn references_item(node: &Node) -> bool {
+        match node {
+            Node::Pointer => true,
+            Node::Closure { .. } => false,
+            Node::Null
+            | Node::Bool(_)
+            | Node::Number(_)
+            | Node::String(_)
+            | Node::Identifier(_)
+            | Node::Root => false,
+            Node::TemplateString(parts) | Node::Array(parts) => {
+                parts.iter().any(|n| Self::references_item(n))
+            }
+            Node::Object(entries) => entries
+                .iter()
+                .any(|(k, v)| Self::references_item(k) || Self::references_item(v)),
+            Node::Assignments { list, output } => {
+                list.iter()
+                    .any(|(k, v)| Self::references_item(k) || Self::references_item(v))
+                    || output.is_some_and(|o| Self::references_item(o))
+            }
+            Node::Parenthesized(inner) => Self::references_item(inner),
+            Node::Member { node, property } => {
+                Self::references_item(node) || Self::references_item(property)
+            }
+            Node::Slice { node, from, to } => {
+                Self::references_item(node)
+                    || from.is_some_and(|n| Self::references_item(n))
+                    || to.is_some_and(|n| Self::references_item(n))
+            }
+            Node::Interval { left, right, .. } | Node::Binary { left, right, .. } => {
+                Self::references_item(left) || Self::references_item(right)
+            }
+            Node::Conditional {
+                condition,
+                on_true,
+                on_false,
+            } => {
+                Self::references_item(condition)
+                    || Self::references_item(on_true)
+                    || Self::references_item(on_false)
+            }
+            Node::Unary { node, .. } => Self::references_item(node),
+            Node::FunctionCall { arguments, .. } => {
+                arguments.iter().any(|n| Self::references_item(n))
+            }
+            Node::MethodCall {
+                this, arguments, ..
+            } => Self::references_item(this) || arguments.iter().any(|n| Self::references_item(n)),
+            Node::Error { node, .. } => node.is_some_and(|n| Self::references_item(n)),
+        }
     }
 
     /// Interval node

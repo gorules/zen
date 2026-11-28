@@ -1,0 +1,80 @@
+expression (string);input (json 5);output (json 5);note
+# aggregate forms: f(list, projection[, filter]); the projection and filter see the item as # or as the name given with `as`; nulls are skipped
+sum(t, #.a);{t: [{a: 1}, {a: 2}, {a: null}, {}]};3
+sum(t, #.a, #.ok);{t: [{a: 1, ok: true}, {a: 2, ok: false}, {a: 4, ok: true}]};5
+sum(t as x, x.a, x.ok);{t: [{a: 1, ok: true}, {a: 2, ok: false}, {a: 4, ok: true}]};5
+sum(t, #.a);{t: []};0
+sum(t, #.a, false);{t: [{a: 1}]};0
+sum(t, #.a);{t: [{a: 'x'}]};!error
+sum(t, #.a);{};!error
+sum(t as x, 1);{t: [{a: 1}, {a: 2}]};2
+avg(t, #.a);{t: [{a: 1}, {a: 2}, {a: null}]};1.5
+avg(t, #.a);{t: []};null
+avg(t, #.a, #.a > 5);{t: [{a: 1}]};null
+min(t, #.a);{t: [{a: 3}, {a: null}, {a: 1}]};1
+max(t, #.a);{t: [{a: 3}, {a: null}, {a: 1}]};3
+min(t, #.a);{t: []};null
+max(t, #.a);{t: [{a: null}]};null
+max(t, d(#.at));{t: [{at: '2024-01-01'}, {at: '2024-03-01'}]};'2024-03-01T00:00:00Z'
+median(t, #.a);{t: [{a: 1}, {a: 3}, {a: null}]};2
+median(t, #.a);{t: []};null
+mode(t, #.s);{t: [{s: 'a'}, {s: 'b'}, {s: 'b'}, {s: null}]};'b'
+mode(t, #.s);{t: [{s: 'a'}, {s: 'b'}]};'b';question: ties resolve to the largest value, as in mode()
+mode(t, #.a);{t: [{a: 1}, {a: 1}, {a: 2}]};1
+mode(t, #.a);{t: []};null
+mode(t, #.a);{t: [{a: 1}, {a: 'x'}]};!error
+stddev(t, #.a);{t: [{a: 1}, {a: 3}, {a: null}]};1.414213562373
+variance(t as x, x.a, x.a > 0);{t: [{a: 1}, {a: 3}, {a: -5}]};2
+stddevPop(t, #.a);{t: [{a: 1}, {a: 3}]};1
+variancePop(t, #.a);{t: [{a: 1}, {a: 3}]};1
+skew(t, #.a);{t: [{a: 1}, {a: 2}, {a: 3}]};0
+kurtosis(t, #.a);{t: [{a: 1}, {a: 2}, {a: 3}]};-1.5
+percentile(t, #.a, 0.5);{t: [{a: 1}, {a: 2}, {a: 3}, {a: 4}]};2.5
+percentile(t as x, x.a, 0.5, x.a > 1);{t: [{a: 1}, {a: 2}, {a: 3}, {a: 4}]};3
+percentileApprox(t, #.a, 0.5);{t: [{a: 1}, {a: 2}, {a: 3}, {a: 4}]};2.5
+percentile(t, #.a, 0.5);{t: []};null
+countDistinct(t, #.m);{t: [{m: 'a'}, {m: 'b'}, {m: 'a'}, {m: null}]};2
+countDistinct(t as x, x.m, x.ok);{t: [{m: 'a', ok: true}, {m: 'b', ok: false}, {m: 'c', ok: true}]};2
+count_distinct(t, #.m);{t: [{m: 1}, {m: 1}]};1
+countDistinct(t, #.m);{t: []};0
+countDistinctApprox(t, #.m);{t: [{m: 'a'}, {m: 'b'}, {m: 'a'}]};2
+distinct(t, #.m);{t: [{m: 'b'}, {m: 'a'}, {m: 'b'}, {m: null}]};['b', 'a']
+unique(t as x, x.m, x.m != 'a');{t: [{m: 'b'}, {m: 'a'}, {m: 'c'}]};['b', 'c']
+distinct(t, #.m);{t: []};[]
+topK(t, #.m, 1);{t: [{m: 'a'}, {m: 'b'}, {m: 'b'}]};['b']
+topK(t as x, x.m, 2, x.ok);{t: [{m: 'a', ok: true}, {m: 'b', ok: false}, {m: 'b', ok: false}, {m: 'c', ok: true}]};['a', 'c']
+topK(t, #.m, 3);{t: []};[]
+# first and last with a condition, and with a projection then a condition
+first(t, #.s == 'declined');{t: [{s: 'ok', n: 1}, {s: 'declined', n: 2}, {s: 'declined', n: 3}]};{s: 'declined', n: 2}
+last(t, #.s == 'declined');{t: [{s: 'ok', n: 1}, {s: 'declined', n: 2}, {s: 'declined', n: 3}]};{s: 'declined', n: 3}
+first(t as x, x.s == 'declined');{t: [{s: 'ok'}, {s: 'declined'}]};{s: 'declined'}
+first(t, #.n, #.s == 'declined');{t: [{s: 'declined', n: null}, {s: 'declined', n: 2}]};2
+last(t as x, x.n, x.s != 'x');{t: [{s: 'a', n: 1}, {s: 'b', n: 2}, {s: 'x', n: 3}]};2
+first(t, #.s == 'none');{t: [{s: 'ok'}]};null
+last(t, #.ok);{t: []};null
+last(t, true);{t: [{ok: true}]};!error
+stddev(t, 1);{t: [{a: 1}]};!error
+first(t, #.s == 'x');{};!error
+first(t, 1);{t: [1]};!error
+first(t, #, #);{t: [1]};!error
+# argMax and argMin: the item with the largest/smallest key, or a projection of it
+argMax(t, #.amount);{t: [{id: 1, amount: 5}, {id: 2, amount: 9}, {id: 3, amount: 7}]};{id: 2, amount: 9}
+argMin(t, #.amount);{t: [{id: 1, amount: 5}, {id: 2, amount: 9}, {id: 3, amount: 7}]};{id: 1, amount: 5}
+argMax(t as x, x.id, x.amount);{t: [{id: 1, amount: 5}, {id: 2, amount: 9}, {id: 3, amount: 7}]};2
+argMax(t as x, x.id, x.ts);{t: [{id: 1, ts: '2024-01-03'}, {id: 2, ts: '2024-01-01'}]};1
+argMax(t, #.id, #.amount, #.amount < 8);{t: [{id: 1, amount: 5}, {id: 2, amount: 9}, {id: 3, amount: 7}]};3
+maxBy(t, #.id, #.amount);{t: [{id: 1, amount: 5}, {id: 2, amount: null}]};1
+minBy(t, #.amount);{t: [{amount: 2}, {amount: 1}]};{amount: 1}
+argMax(t, #.amount);{t: []};null
+argMax(t, #.id, #.amount, false);{t: [{id: 1, amount: 1}]};null
+# names: the alias is visible in nested callbacks; an inner name shadows an outer one
+some(c as card, count(card.t as x, x.s == 'declined') > 1);{c: [{t: [{s: 'declined'}, {s: 'ok'}]}, {t: [{s: 'declined'}, {s: 'declined'}]}]};true
+map(c as card, sum(card.t as x, x.a * card.k));{c: [{k: 2, t: [{a: 1}, {a: 2}]}, {k: 10, t: [{a: 3}]}]};[6, 30]
+map(c as x, sum(x.t as x, x.a));{c: [{t: [{a: 1}, {a: 2}]}, {t: []}]};[3, 0]
+map(c, sum(#.t, #.a));{c: [{t: [{a: 1}, {a: 2}]}, {t: [{a: 5}]}]};[3, 5]
+map(c as card, first(card.t as x, x.a > card.k));{c: [{k: 1, t: [{a: 1}, {a: 2}]}, {k: 5, t: [{a: 3}]}]};[{a: 2}, null]
+map(c as card, argMax(card.t as x, x.a, x.b));{c: [{t: [{a: 1, b: 2}, {a: 2, b: 1}]}]};[1]
+sum(c as card, countDistinct(card.t as x, x.m));{c: [{t: [{m: 1}, {m: 1}]}, {t: [{m: 2}, {m: 3}]}]};3
+sum(c, len(#.t));{c: [{t: [1, 2]}, {t: [3]}]};3
+sum(c as card, sum(card.t, # * 2));{c: [{t: [1, 2]}, {t: [3]}]};12
+max(c as card, max(card.t as x, x));{c: [{t: [1, 9]}, {t: [3]}]};9

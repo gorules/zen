@@ -1,0 +1,34 @@
+expression (string);input (json 5);output (json 5);note
+# clamp
+clamp(5, 1, 10);;5
+clamp(-5, 1, 10);;1
+clamp(50, 1, 10);;10
+clamp(1.5, 1.5, 1.5);;1.5
+clamp(5, 10, 1);;!error
+clamp(null, 1, 2);;!error
+clamp(5, 1);;!error
+# sqrt, ln, log, exp, sign
+sqrt(16);;4
+sqrt(0);;0
+sqrt(2) > 1.414 and sqrt(2) < 1.415;;true
+sqrt(-1);;!error
+sqrt('4');;!error
+ln(1);;0
+round(ln(10), 6);;2.302585
+ln(0);;!error
+ln(-1);;!error
+log(1000);;3
+log(0.01);;-2
+log(8, 2);;3
+round(log(10, 3), 6);;2.095903
+log(0);;!error
+log(8, 1);;!error
+log(8, 0);;!error
+exp(0);;1
+round(exp(1), 6);;2.718282
+round(ln(exp(2)), 6);;2
+exp(1000);;!error
+sign(-3.5);;-1
+sign(0);;0
+sign(0.001);;1
+sign(null);;!error

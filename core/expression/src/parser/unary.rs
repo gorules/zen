@@ -1,5 +1,6 @@
 use crate::functions::{
-    ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind,
+    ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, FunctionRegistry,
+    InternalFunction, MethodKind,
 };
 use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind};
 use crate::parser::ast::{AstNodeError, Node};
@@ -7,6 +8,7 @@ use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS}
 use crate::parser::parser::{Parser, ParserContext};
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
 use crate::parser::{NodeMetadata, ParserResult};
+use crate::variable::VariableType;
 
 #[derive(Debug)]
 pub struct Unary;
@@ -378,6 +380,15 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Values => CompareWithReference(In),
                     InternalFunction::Type => CompareWithReference(Equal),
                     InternalFunction::Date => CompareWithReference(Equal),
+                    other => {
+                        match FunctionRegistry::get_definition(&FunctionKind::Internal(*other))
+                            .map(|definition| definition.return_type())
+                        {
+                            Some(VariableType::Bool) => AsBoolean,
+                            Some(VariableType::Array(_)) => CompareWithReference(In),
+                            _ => CompareWithReference(Equal),
+                        }
+                    }
                 },
                 FunctionKind::Deprecated(d) => match d {
                     DeprecatedFunction::Date => CompareWithReference(Equal),
@@ -394,6 +405,13 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     DeprecatedFunction::WeekdayString => CompareWithReference(Equal),
                     DeprecatedFunction::StartOf => CompareWithReference(Equal),
                     DeprecatedFunction::EndOf => CompareWithReference(Equal),
+                },
+                FunctionKind::Host(_) => match FunctionRegistry::get_definition(kind)
+                    .map(|definition| definition.return_type())
+                {
+                    Some(VariableType::Bool) => AsBoolean,
+                    Some(VariableType::Array(_)) => CompareWithReference(In),
+                    _ => CompareWithReference(Equal),
                 },
                 FunctionKind::Closure(c) => match c {
                     ClosureFunction::All => AsBoolean,

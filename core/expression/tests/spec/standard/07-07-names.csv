@@ -1,0 +1,74 @@
+expression (string);input (json 5);output (json 5);note
+# join: the inverse of split; separator `,` by default; nulls skipped; numbers normalized
+join(['a', 'b', 'c']);;'a,b,c'
+join(['a', 'b'], ' - ');;'a - b'
+join([1, 1.50, true, null, 'x'], '|');;'1|1.5|true|x'
+join([d('2024-01-01')]);;'2024-01-01T00:00:00Z'
+join([]);;''
+join([null, null], ',');;''
+join(split('a,b,c', ','), ',');;'a,b,c'
+join([[1]]);;!error
+join([{a: 1}]);;!error
+join('abc');;!error
+join(null);;!error
+join(['a'], 1);;!error
+join(map(t, #.n), ' / ');{t: [{n: 'x'}, {n: null}, {n: 'y'}]};'x / y'
+# replace and replaceAll: regular expressions, $1 refers to a group
+replace('a-b-c', '-', '+');;'a+b-c'
+replaceAll('a-b-c', '-', '+');;'a+b+c'
+replaceAll('2024-01-31', '(\d+)-(\d+)-(\d+)', '$3.$2.$1');;'31.01.2024'
+replaceAll('  a  b ', '\s+', ' ');;' a b '
+replace('abc', 'x', 'y');;'abc'
+replace('', 'x', 'y');;''
+replace('abc', '(', 'y');;!error
+replace(null, 'a', 'b');;!error
+replace('abc', 'a');;!error
+replaceAll(1, 'a', 'b');;!error
+# squish and unaccent
+squish(x);{x: '  Ivan \t  Miletic\n'};'Ivan Miletic'
+squish('   ');;''
+squish('');;''
+unaccent('Miletić Müller Ærø');;'Miletic Muller AEro'
+unaccent('Straße Łódź Đorđe');;'Strasse Lodz Dorde'
+unaccent('Иван');;'Иван'
+unaccent('');;''
+unaccent(null);;!error
+squish(5);;!error
+# tokenSort and nameKey: the same key for any word order, case or punctuation
+tokenSort('Miletic, Ivan');;'ivan miletic'
+tokenSort('  ivan   MILETIC ');;'ivan miletic'
+nameKey('Miletić, Ivan');;'ivan miletic'
+nameKey('IVAN-MILETIĆ');;'ivan miletic'
+nameKey('Hauptstraße 5, 2. OG');;'2 5 hauptstrasse og'
+nameKey('!!');;''
+nameKey(x) == nameKey(y);{x: 'Đorđe Balašević', y: 'balasevic, DJORDJE'};false
+nameKey(x) == nameKey(y);{x: 'Đorđe Balašević', y: 'balasevic, DORDE'};true
+tokenSort(null);;!error
+# soundex
+soundex('Robert');;'R163'
+soundex('Rupert');;'R163'
+soundex('Ashcraft');;'A261'
+soundex('Tymczak');;'T522'
+soundex('Pfister');;'P236'
+soundex('Müller') == soundex('Muller');;true
+soundex('A');;'A000'
+soundex('123');;''
+soundex('');;''
+soundex(1);;!error
+# jaroWinkler and tokenSetSimilarity: 0 (nothing alike) to 1 (equal)
+jaroWinkler('ivan', 'ivan');;1
+jaroWinkler('', '');;1
+round(jaroWinkler('martha', 'marhta'), 4);;0.9611
+jaroWinkler('miletic', 'miletich') > 0.9;;true
+jaroWinkler('ivan', 'zorn') < 0.6;;true
+map(jaroWinkler(['ivan', 'ivana'], 'ivan'), round(#, 2));;[1, 0.96]
+jaroWinkler([], 'a');;[]
+jaroWinkler(['a', 1], 'a');;!error
+jaroWinkler('a', null);;!error
+jaroWinkler(1, 'a');;!error
+tokenSetSimilarity('Ivan Miletic', 'MILETIC ivan');;1
+tokenSetSimilarity('ivan miletic', 'ivan');;0.5
+tokenSetSimilarity('', ' , ');;1
+tokenSetSimilarity('ivan', '');;0
+tokenSetSimilarity(['a b', 'c'], 'a');;[0.5, 0]
+tokenSetSimilarity(null, 'a');;!error

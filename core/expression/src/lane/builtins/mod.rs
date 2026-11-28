@@ -4,6 +4,7 @@ pub(crate) mod dates;
 mod functions;
 mod legacy;
 mod math;
+mod registered;
 mod text;
 
 pub(crate) use dates::Dates;

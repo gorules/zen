@@ -1,0 +1,71 @@
+expression (string);input (json 5);output (json 5);note
+# take and takeLast: the first or last n items, nulls kept
+take([1, 2, 3], 2);;[1, 2]
+take([1, 2, 3], 5);;[1, 2, 3]
+take([1, null, 3], 2);;[1, null]
+take([1, 2], 0);;[]
+take([], 2);;[]
+takeLast([1, 2, 3], 2);;[2, 3]
+takeLast([1, 2, 3], 9);;[1, 2, 3]
+takeLast([1, 2, null], 1);;[null]
+take([1], -1);;!error
+take([1], 1.5);;!error
+take(null, 1);;!error
+takeLast('abc', 1);;!error
+# find and findLast: the first or last item matching a condition
+find(t, # > 1);{t: [1, 2, 3]};2
+findLast(t, # > 1);{t: [1, 2, 3]};3
+find(t as x, x.s == 'b');{t: [{s: 'a'}, {s: 'b', n: 1}, {s: 'b', n: 2}]};{s: 'b', n: 1}
+findLast(t as x, x.s == 'b');{t: [{s: 'a'}, {s: 'b', n: 1}, {s: 'b', n: 2}]};{s: 'b', n: 2}
+find(t, # > 5);{t: [1, 2]};null
+find(t, # > 5);{t: []};null
+find(t, true);{t: [1]};!error
+find(t, # > 1);{};!error
+# findIndex and findLastIndex: the position of the first or last match, -1 when none
+findIndex(t, # > 1);{t: [1, 2, 3]};1
+findLastIndex(t, # > 1);{t: [1, 2, 3]};2
+findIndex(t as x, x.s == 'b');{t: [{s: 'a'}, {s: 'b'}]};1
+findIndex(t, # > 5);{t: [1, 2]};-1
+findLastIndex(t, # > 5);{t: []};-1
+findIndex(t, # == null);{t: [1, null]};1
+findIndex(t, 1);{t: [1]};!error
+findIndex(t, #);{t: [1]};!error
+# sort: numbers, strings or dates; 'asc' (default) or 'desc'; nulls last
+sort([3, 1, 2]);;[1, 2, 3]
+sort([3, 1, 2], 'desc');;[3, 2, 1]
+sort(['b', 'a', 'C']);;['C', 'a', 'b']
+sort([2, null, 1]);;[1, 2, null]
+sort([2, null, 1], 'desc');;[2, 1, null]
+sort([d('2024-02-01'), d('2024-01-01')]);;['2024-01-01T00:00:00Z', '2024-02-01T00:00:00Z']
+sort([]);;[]
+sort([1, 'a']);;!error
+sort([[1]]);;!error
+sort([1], 'up');;!error
+sort(null);;!error
+string(sort([1.50, 1.5, 1.0])[0]);;'1.0'
+# sortBy: items ordered by a key, stable, nulls last
+sortBy(t, #.n);{t: [{n: 2, id: 'a'}, {n: 1, id: 'b'}, {n: 2, id: 'c'}]};[{n: 1, id: 'b'}, {n: 2, id: 'a'}, {n: 2, id: 'c'}]
+sortBy(t as x, x.n, 'desc');{t: [{n: 2, id: 'a'}, {n: 1, id: 'b'}, {n: 3, id: 'c'}]};[{n: 3, id: 'c'}, {n: 2, id: 'a'}, {n: 1, id: 'b'}]
+map(sortBy(t, #.n), #.id);{t: [{n: null, id: 'a'}, {n: 1, id: 'b'}]};['b', 'a']
+map(sortBy(t, #.s, 'desc'), #.s);{t: [{s: 'a'}, {s: 'c'}, {s: 'b'}]};['c', 'b', 'a']
+sortBy(t, #.n);{t: []};[]
+sortBy(t, #.n);{t: [{n: 1}, {n: 'a'}]};!error
+sortBy(t, #.n, 'sideways');{t: [{n: 1}]};!error
+sortBy(t, 'desc');{t: [1]};!error
+# isEmpty: null, '', [] and {} are empty
+isEmpty([]);;true
+isEmpty([null]);;false
+isEmpty('');;true
+isEmpty(' ');;false
+isEmpty({});;true
+isEmpty({a: 1});;false
+isEmpty(null);;true
+isEmpty(x);{};true
+isEmpty(0);;!error
+isEmpty(true);;!error
+# negative indexes count from the end
+a[-2];{a: [1, 2, 3]};2
+a[-3];{a: [1, 2, 3]};1
+a[-4];{a: [1, 2, 3]};null
+a[0 - 1];{a: [1, 2, 3]};3
+s[-2];{s: 'hello'};'l'

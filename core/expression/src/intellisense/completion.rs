@@ -215,8 +215,14 @@ impl Completions {
 
         completions.extend(
             InternalFunction::iter()
+                .filter(|f| !f.is_hidden())
                 .map(FunctionKind::Internal)
                 .chain(ClosureFunction::iter().map(FunctionKind::Closure))
+                .chain(
+                    FunctionRegistry::host_functions()
+                        .into_iter()
+                        .map(|(name, _)| FunctionKind::Host(name)),
+                )
                 .map(|fk| Self::function(fk, None)),
         );
 
@@ -249,6 +255,7 @@ impl Completions {
             FunctionKind::Internal(_) => Some(10),
             FunctionKind::Closure(_) => None,
             FunctionKind::Deprecated(_) => Some(-20),
+            FunctionKind::Host(_) => Some(5),
         });
 
         Completion {
@@ -319,6 +326,9 @@ impl Completions {
 
 fn function_info(fk: &FunctionKind) -> String {
     let s = match fk {
+        FunctionKind::Host(name) => {
+            return FunctionRegistry::host_description(name).unwrap_or_default();
+        }
         FunctionKind::Internal(i) => match i {
             InternalFunction::Len => "Returns the length of variable",
             InternalFunction::Contains => "Checks if variable contains a needle",
@@ -340,18 +350,151 @@ fn function_info(fk: &FunctionKind) -> String {
             InternalFunction::Split => {
                 "Splits a string into an array of substrings using the specified delimiter"
             }
+            InternalFunction::Join => {
+                "Joins the items into a string with a separator (`,` by default); null items are skipped"
+            }
+            InternalFunction::Replace => {
+                "Replaces the first match of a regular expression; $1 in the replacement refers to a group"
+            }
+            InternalFunction::ReplaceAll => {
+                "Replaces every match of a regular expression; $1 in the replacement refers to a group"
+            }
+            InternalFunction::Unaccent => "Removes diacritics: Miletić becomes Miletic",
+            InternalFunction::Squish => {
+                "Trims the string and collapses every run of whitespace to one space"
+            }
+            InternalFunction::TokenSort => {
+                "Lower-cases the words, drops punctuation and sorts them: the same for any word order"
+            }
+            InternalFunction::NameKey => {
+                "One key for a name: lower-cased, diacritics removed, punctuation dropped, words sorted"
+            }
+            InternalFunction::Soundex => "American Soundex code of how the text sounds (R163)",
+            InternalFunction::JaroWinkler => {
+                "Jaro-Winkler similarity from 0 to 1, favouring a shared beginning; also of each string of a list"
+            }
+            InternalFunction::TokenSetSimilarity => {
+                "Share of words two texts have in common, from 0 to 1, ignoring order, case and punctuation; also of each string of a list"
+            }
             InternalFunction::Abs => "Returns the absolute value of a number",
-            InternalFunction::Sum => "Returns the sum of all elements in the input array",
-            InternalFunction::Avg => "Calculates the average of all elements in the input array",
-            InternalFunction::Min => "Returns the smallest of the elements in the input array",
-            InternalFunction::Max => "Returns the largest of the elements in the input array",
+            InternalFunction::Sum | InternalFunction::AggregateSum => {
+                "Returns the sum of all elements in the input array; sum(items, #.amount, #.ok) adds a projection of each item, optionally filtered, skipping nulls (0 when nothing remains)"
+            }
+            InternalFunction::Avg | InternalFunction::AggregateAvg => {
+                "Calculates the average of all elements in the input array; avg(items, #.amount, #.ok) averages a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
+            InternalFunction::Min | InternalFunction::AggregateMin => {
+                "Returns the smallest of the elements in the input array; min(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
+            InternalFunction::Max | InternalFunction::AggregateMax => {
+                "Returns the largest of the elements in the input array; max(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls (null when nothing remains)"
+            }
             InternalFunction::Rand => {
                 "Generates a random number between 0 (inclusive) and max (inclusive); every call, and every item of a closure, draws anew from the evaluation's seeded stream"
             }
-            InternalFunction::Median => {
-                "Calculates the median value of all elements in the input array"
+            InternalFunction::Median | InternalFunction::AggregateMedian => {
+                "Calculates the median value of all elements in the input array; median(items, #.amount, #.ok) takes a projection of each item, optionally filtered, skipping nulls"
             }
-            InternalFunction::Mode => "Finds the mode(s) of the input array",
+            InternalFunction::Mode | InternalFunction::AggregateMode => {
+                "Finds the most common value of the input array; mode(items, #.status, #.ok) counts a projection of each item (numbers or strings), optionally filtered, skipping nulls"
+            }
+            InternalFunction::Stddev => {
+                "Sample standard deviation of the numbers, nulls skipped (null below two values); stddev(items, #.amount, #.ok) projects and filters items"
+            }
+            InternalFunction::Variance => {
+                "Sample variance of the numbers, nulls skipped (null below two values); variance(items, #.amount, #.ok) projects and filters items"
+            }
+            InternalFunction::StddevPop => {
+                "Population standard deviation of the numbers, nulls skipped (null when empty)"
+            }
+            InternalFunction::VariancePop => {
+                "Population variance of the numbers, nulls skipped (null when empty)"
+            }
+            InternalFunction::Skew => {
+                "Skewness of the numbers, nulls skipped (null below two distinct values)"
+            }
+            InternalFunction::Kurtosis => {
+                "Excess kurtosis of the numbers, nulls skipped (null below two distinct values)"
+            }
+            InternalFunction::Percentile => {
+                "The value at a fraction (0 to 1) of the sorted numbers, interpolated linearly; percentile(items, #.amount, 0.9, #.ok) projects and filters items"
+            }
+            InternalFunction::PercentileApprox => {
+                "The t-digest estimate of the value at a fraction (0 to 1) of the numbers; percentileApprox(items, #.amount, 0.9, #.ok) projects and filters items"
+            }
+            InternalFunction::CountDistinct => {
+                "Counts the distinct non-null values; countDistinct(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::CountDistinctApprox => {
+                "Estimates the number of distinct non-null values with HyperLogLog; countDistinctApprox(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::Distinct => {
+                "The distinct non-null values in first-seen order; distinct(items, #.merchant, #.ok) projects and filters items"
+            }
+            InternalFunction::TopK => {
+                "The k most frequent non-null values, most frequent first; topK(items, #.merchant, 3, #.ok) projects and filters items"
+            }
+            InternalFunction::First => {
+                "The first non-null item; first(items, #.ok) the first matching item; first(items, #.amount, #.ok) its projection"
+            }
+            InternalFunction::Last => {
+                "The last non-null item; last(items, #.ok) the last matching item; last(items, #.amount, #.ok) its projection"
+            }
+            InternalFunction::Take => "The first n items of the array",
+            InternalFunction::Md5 => "MD5 hash of a string, as lower-case hex",
+            InternalFunction::Sha256 => "SHA-256 hash of a string, as lower-case hex",
+            InternalFunction::Xxhash64 => "xxHash64 (seed 0) of a string, as 16 lower-case hex digits",
+            InternalFunction::JsonParse => "Parses a JSON string into a value",
+            InternalFunction::JsonString => "Writes a value as a JSON string",
+            InternalFunction::Entries => "The [key, value] pairs of an object",
+            InternalFunction::Zip => "Pairs the items of two arrays: [[a0, b0], [a1, b1]], as long as the shorter one",
+            InternalFunction::GroupBy => {
+                "Groups items by a key into an object of arrays: groupBy(items, #.status); null keys are skipped"
+            }
+            InternalFunction::Clamp => "Limits a number to a range: clamp(x, low, high)",
+            InternalFunction::Sqrt => "Square root of a number",
+            InternalFunction::Ln => "Natural logarithm of a positive number",
+            InternalFunction::Log => "Logarithm of a positive number, base 10 or the given base",
+            InternalFunction::Exp => "e raised to the power of a number",
+            InternalFunction::Sign => "-1, 0 or 1 for a negative, zero or positive number",
+            InternalFunction::PadStart => {
+                "Pads the start of a string to a length, with spaces or the given text"
+            }
+            InternalFunction::PadEnd => {
+                "Pads the end of a string to a length, with spaces or the given text"
+            }
+            InternalFunction::SplitPart => {
+                "The nth part (from 1; negative counts from the end) of a string split by a delimiter, null when missing"
+            }
+            InternalFunction::ExtractAll => {
+                "Every match of a regular expression, or of its first group when it has one"
+            }
+            InternalFunction::TakeLast => "The last n items of the array",
+            InternalFunction::Find => {
+                "The first item matching a condition: find(items, #.status == 'declined')"
+            }
+            InternalFunction::FindLast => {
+                "The last item matching a condition: findLast(items, #.status == 'declined')"
+            }
+            InternalFunction::FindIndex => {
+                "The position of the first item matching a condition, -1 when none"
+            }
+            InternalFunction::FindLastIndex => {
+                "The position of the last item matching a condition, -1 when none"
+            }
+            InternalFunction::Sort => {
+                "Sorts numbers, strings or dates, 'asc' (default) or 'desc'; nulls go last"
+            }
+            InternalFunction::SortBy => {
+                "Sorts items by a key: sortBy(items, #.amount, 'desc'); stable, nulls go last"
+            }
+            InternalFunction::IsEmpty => "True for null, an empty string, array or object",
+            InternalFunction::ArgMax => {
+                "The item with the largest key: argMax(items, #.amount), or a projection of it: argMax(items, #.id, #.amount, #.ok)"
+            }
+            InternalFunction::ArgMin => {
+                "The item with the smallest key: argMin(items, #.amount), or a projection of it: argMin(items, #.id, #.amount, #.ok)"
+            }
             InternalFunction::Floor => "Rounds a number down to the nearest integer",
             InternalFunction::Ceil => "Rounds a number up to the nearest integer",
             InternalFunction::Round => "Rounds a number to a specified number of decimal places",
@@ -431,6 +574,18 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             InternalFunction::Matches | InternalFunction::Extract => vec!["str", "pattern"],
             InternalFunction::FuzzyMatch => vec!["haystack", "needle"],
             InternalFunction::Split => vec!["str", "delimiter"],
+            InternalFunction::Join => vec!["arr", "separator"],
+            InternalFunction::Replace | InternalFunction::ReplaceAll => {
+                vec!["str", "pattern", "replacement"]
+            }
+            InternalFunction::Unaccent
+            | InternalFunction::Squish
+            | InternalFunction::TokenSort
+            | InternalFunction::NameKey
+            | InternalFunction::Soundex => vec!["str"],
+            InternalFunction::JaroWinkler | InternalFunction::TokenSetSimilarity => {
+                vec!["str", "other"]
+            }
             InternalFunction::Abs | InternalFunction::Floor | InternalFunction::Ceil => {
                 vec!["num"]
             }
@@ -439,7 +594,54 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             | InternalFunction::Min
             | InternalFunction::Max
             | InternalFunction::Median
-            | InternalFunction::Mode => vec!["arr"],
+            | InternalFunction::Mode
+            | InternalFunction::AggregateSum
+            | InternalFunction::AggregateAvg
+            | InternalFunction::AggregateMin
+            | InternalFunction::AggregateMax
+            | InternalFunction::AggregateMedian
+            | InternalFunction::AggregateMode
+            | InternalFunction::Stddev
+            | InternalFunction::Variance
+            | InternalFunction::StddevPop
+            | InternalFunction::VariancePop
+            | InternalFunction::Skew
+            | InternalFunction::Kurtosis
+            | InternalFunction::CountDistinct
+            | InternalFunction::CountDistinctApprox
+            | InternalFunction::Distinct
+            | InternalFunction::First
+            | InternalFunction::Last => vec!["arr"],
+            InternalFunction::Percentile | InternalFunction::PercentileApprox => {
+                vec!["arr", "fraction"]
+            }
+            InternalFunction::TopK => vec!["arr", "k"],
+            InternalFunction::Md5
+            | InternalFunction::Sha256
+            | InternalFunction::Xxhash64
+            | InternalFunction::JsonParse => vec!["str"],
+            InternalFunction::JsonString => vec!["value"],
+            InternalFunction::Entries => vec!["obj"],
+            InternalFunction::Zip => vec!["arr", "other"],
+            InternalFunction::GroupBy => vec!["pairs"],
+            InternalFunction::Clamp => vec!["num", "low", "high"],
+            InternalFunction::Sqrt
+            | InternalFunction::Ln
+            | InternalFunction::Exp
+            | InternalFunction::Sign => vec!["num"],
+            InternalFunction::Log => vec!["num", "base"],
+            InternalFunction::PadStart | InternalFunction::PadEnd => vec!["str", "length", "pad"],
+            InternalFunction::SplitPart => vec!["str", "delimiter", "part"],
+            InternalFunction::ExtractAll => vec!["str", "pattern"],
+            InternalFunction::Take | InternalFunction::TakeLast => vec!["arr", "n"],
+            InternalFunction::Find
+            | InternalFunction::FindLast
+            | InternalFunction::FindIndex
+            | InternalFunction::FindLastIndex => vec!["arr"],
+            InternalFunction::Sort => vec!["arr", "direction"],
+            InternalFunction::SortBy => vec!["pairs", "direction"],
+            InternalFunction::IsEmpty => vec!["value"],
+            InternalFunction::ArgMax | InternalFunction::ArgMin => vec!["pairs"],
             InternalFunction::Rand => vec!["max"],
             InternalFunction::Round | InternalFunction::Trunc => vec!["num", "digits"],
             InternalFunction::IsNumeric
@@ -466,13 +668,13 @@ fn function_param_names(fk: &FunctionKind) -> Vec<&'static str> {
             DeprecatedFunction::Duration => vec!["duration"],
             DeprecatedFunction::StartOf | DeprecatedFunction::EndOf => vec!["timestamp", "unit"],
         },
-        FunctionKind::Closure(_) => vec![],
+        FunctionKind::Closure(_) | FunctionKind::Host(_) => vec![],
     }
 }
 
 fn function_signature(fk: &FunctionKind) -> String {
     match fk {
-        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+        FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
             let param_names = function_param_names(fk);
             let Some(definition) = FunctionRegistry::get_definition(fk) else {
                 return String::new();
@@ -489,11 +691,18 @@ fn function_signature(fk: &FunctionKind) -> String {
                 })
                 .collect();
 
-            format!(
+            let plain = format!(
                 "({}) -> {}",
                 params.join(", "),
                 definition.return_type_str()
-            )
+            );
+            match fk {
+                FunctionKind::Internal(i) => match callback_forms(i) {
+                    Some(forms) => format!("{plain} | {forms}"),
+                    None => plain,
+                },
+                _ => plain,
+            }
         }
         FunctionKind::Closure(c) => match c {
             ClosureFunction::All
@@ -516,6 +725,48 @@ fn function_signature(fk: &FunctionKind) -> String {
             }
         },
     }
+}
+
+fn callback_forms(function: &InternalFunction) -> Option<&'static str> {
+    use InternalFunction as F;
+    Some(match function {
+        F::Sum
+        | F::Avg
+        | F::Min
+        | F::Max
+        | F::Median
+        | F::Mode
+        | F::Stddev
+        | F::Variance
+        | F::StddevPop
+        | F::VariancePop
+        | F::Skew
+        | F::Kurtosis
+        | F::CountDistinct
+        | F::CountDistinctApprox
+        | F::Distinct => {
+            "<T>(array: T[], value: Callback<T, any>, filter?: Callback<T, boolean>)"
+        }
+        F::Percentile | F::PercentileApprox => {
+            "<T>(array: T[], value: Callback<T, number>, fraction: number, filter?: Callback<T, boolean>) -> number"
+        }
+        F::TopK => {
+            "<T, U>(array: T[], value: Callback<T, U>, k: number, filter?: Callback<T, boolean>) -> U[]"
+        }
+        F::First | F::Last => {
+            "<T>(array: T[], filter: Callback<T, boolean>) -> T | <T, U>(array: T[], value: Callback<T, U>, filter: Callback<T, boolean>) -> U"
+        }
+        F::Find | F::FindLast => "<T>(array: T[], condition: Callback<T, boolean>) -> T",
+        F::FindIndex | F::FindLastIndex => {
+            "<T>(array: T[], condition: Callback<T, boolean>) -> number"
+        }
+        F::GroupBy => "<T>(array: T[], key: Callback<T, string>) -> { [key: string]: T[] }",
+        F::SortBy => "<T>(array: T[], key: Callback<T, any>, direction?: string) -> T[]",
+        F::ArgMax | F::ArgMin => {
+            "<T>(array: T[], key: Callback<T, any>) -> T | <T, U>(array: T[], value: Callback<T, U>, key: Callback<T, any>, filter?: Callback<T, boolean>) -> U"
+        }
+        _ => return None,
+    })
 }
 
 fn method_info(mk: &MethodKind) -> String {

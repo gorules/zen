@@ -1,10 +1,11 @@
 use crate::functions::defs::{
     CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
 };
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
-use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
+use strum_macros::{EnumIter, EnumString, IntoStaticStr};
 
-#[derive(Debug, PartialEq, Eq, Hash, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
 #[strum(serialize_all = "camelCase")]
 pub enum InternalFunction {
     // General
@@ -24,6 +25,25 @@ pub enum InternalFunction {
     Extract,
     FuzzyMatch,
     Split,
+    Join,
+    Replace,
+    ReplaceAll,
+    Unaccent,
+    Squish,
+    TokenSort,
+    NameKey,
+    Soundex,
+    JaroWinkler,
+    TokenSetSimilarity,
+    PadStart,
+    PadEnd,
+    SplitPart,
+    ExtractAll,
+    Md5,
+    Sha256,
+    Xxhash64,
+    JsonParse,
+    JsonString,
 
     // Math
     Abs,
@@ -38,6 +58,55 @@ pub enum InternalFunction {
     Ceil,
     Round,
     Trunc,
+    Clamp,
+    Sqrt,
+    Ln,
+    Log,
+    Exp,
+    Sign,
+    Stddev,
+    Variance,
+    StddevPop,
+    VariancePop,
+    Skew,
+    Kurtosis,
+    Percentile,
+    PercentileApprox,
+
+    // Aggregate
+    #[strum(to_string = "countDistinct", serialize = "count_distinct")]
+    CountDistinct,
+    CountDistinctApprox,
+    #[strum(to_string = "distinct", serialize = "unique")]
+    Distinct,
+    TopK,
+    First,
+    Last,
+    #[strum(to_string = "argMax", serialize = "maxBy")]
+    ArgMax,
+    #[strum(to_string = "argMin", serialize = "minBy")]
+    ArgMin,
+    Take,
+    TakeLast,
+    Find,
+    FindLast,
+    FindIndex,
+    FindLastIndex,
+    Sort,
+    SortBy,
+    IsEmpty,
+    #[strum(serialize = "@sum")]
+    AggregateSum,
+    #[strum(serialize = "@avg")]
+    AggregateAvg,
+    #[strum(serialize = "@min")]
+    AggregateMin,
+    #[strum(serialize = "@max")]
+    AggregateMax,
+    #[strum(serialize = "@median")]
+    AggregateMedian,
+    #[strum(serialize = "@mode")]
+    AggregateMode,
 
     // Type
     IsNumeric,
@@ -49,9 +118,119 @@ pub enum InternalFunction {
     // Map
     Keys,
     Values,
+    Entries,
+    Zip,
+    GroupBy,
 
     #[strum(serialize = "d")]
     Date,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CallbackSlot {
+    Callback,
+    Parameter,
+}
+
+impl InternalFunction {
+    pub fn callback_slots(&self, arguments: usize) -> Option<&'static [CallbackSlot]> {
+        use CallbackSlot::{Callback as C, Parameter as P};
+        use InternalFunction as IF;
+        Some(match (self, arguments) {
+            (
+                IF::Sum
+                | IF::Avg
+                | IF::Min
+                | IF::Max
+                | IF::Median
+                | IF::Mode
+                | IF::Stddev
+                | IF::Variance
+                | IF::StddevPop
+                | IF::VariancePop
+                | IF::Skew
+                | IF::Kurtosis
+                | IF::CountDistinct
+                | IF::CountDistinctApprox
+                | IF::Distinct
+                | IF::First
+                | IF::Last,
+                2,
+            ) => &[C],
+            (
+                IF::Sum
+                | IF::Avg
+                | IF::Min
+                | IF::Max
+                | IF::Median
+                | IF::Mode
+                | IF::Stddev
+                | IF::Variance
+                | IF::StddevPop
+                | IF::VariancePop
+                | IF::Skew
+                | IF::Kurtosis
+                | IF::CountDistinct
+                | IF::CountDistinctApprox
+                | IF::Distinct
+                | IF::First
+                | IF::Last,
+                3,
+            ) => &[C, C],
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, 3) => &[C, P],
+            (IF::Percentile | IF::PercentileApprox | IF::TopK, 4) => &[C, P, C],
+            (IF::Find | IF::FindLast | IF::FindIndex | IF::FindLastIndex, 2) => &[C],
+            (IF::SortBy | IF::GroupBy, 2) => &[C],
+            (IF::SortBy, 3) => &[C, P],
+            (IF::ArgMax | IF::ArgMin, 2) => &[C],
+            (IF::ArgMax | IF::ArgMin, 3) => &[C, C],
+            (IF::ArgMax | IF::ArgMin, 4) => &[C, C, C],
+            _ => return None,
+        })
+    }
+
+    pub fn aggregated(&self) -> Option<InternalFunction> {
+        use InternalFunction as IF;
+        Some(match self {
+            IF::Sum => IF::AggregateSum,
+            IF::Avg => IF::AggregateAvg,
+            IF::Min => IF::AggregateMin,
+            IF::Max => IF::AggregateMax,
+            IF::Median => IF::AggregateMedian,
+            IF::Mode => IF::AggregateMode,
+            _ => return None,
+        })
+    }
+
+    pub fn aggregate_of(&self) -> Option<InternalFunction> {
+        use InternalFunction as IF;
+        Some(match self {
+            IF::AggregateSum => IF::Sum,
+            IF::AggregateAvg => IF::Avg,
+            IF::AggregateMin => IF::Min,
+            IF::AggregateMax => IF::Max,
+            IF::AggregateMedian => IF::Median,
+            IF::AggregateMode => IF::Mode,
+            _ => return None,
+        })
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.aggregate_of().is_some()
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self.aggregate_of() {
+            Some(base) => base.into(),
+            None => self.into(),
+        }
+    }
+}
+
+impl Display for InternalFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
@@ -161,6 +340,58 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 },
             }),
 
+            IF::Join => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::join),
+                signatures: vec![
+                    FunctionSignature::single(VT::Any.array(), VT::String),
+                    FunctionSignature {
+                        parameters: vec![VT::Any.array(), VT::String],
+                        return_type: VT::String,
+                    },
+                ],
+            }),
+
+            IF::Replace | IF::ReplaceAll => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Replace => imp::replace,
+                    _ => imp::replace_all,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String, VT::String],
+                    return_type: VT::String,
+                },
+            }),
+
+            IF::Unaccent | IF::Squish | IF::TokenSort | IF::NameKey | IF::Soundex => {
+                Rc::new(StaticFunction {
+                    implementation: Rc::new(match value {
+                        IF::Unaccent => imp::unaccent,
+                        IF::Squish => imp::squish,
+                        IF::TokenSort => imp::token_sort,
+                        IF::NameKey => imp::name_key,
+                        _ => imp::soundex,
+                    }),
+                    signature: FunctionSignature::single(VT::String, VT::String),
+                })
+            }
+
+            IF::JaroWinkler | IF::TokenSetSimilarity => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::JaroWinkler => imp::jaro_winkler,
+                    _ => imp::token_set_similarity,
+                }),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::String],
+                        return_type: VT::Number,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::String.array(), VT::String],
+                        return_type: VT::Number.array(),
+                    },
+                ],
+            }),
+
             IF::FuzzyMatch => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::fuzzy_match),
                 signatures: vec![
@@ -259,6 +490,262 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
+            IF::Stddev
+            | IF::Variance
+            | IF::StddevPop
+            | IF::VariancePop
+            | IF::Skew
+            | IF::Kurtosis
+            | IF::AggregateAvg
+            | IF::AggregateMedian => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Stddev => imp::stddev,
+                    IF::Variance => imp::variance,
+                    IF::StddevPop => imp::stddev_pop,
+                    IF::VariancePop => imp::variance_pop,
+                    IF::Skew => imp::skew,
+                    IF::Kurtosis => imp::kurtosis,
+                    IF::AggregateAvg => imp::aggregate_avg,
+                    _ => imp::aggregate_median,
+                }),
+                signature: FunctionSignature::single(
+                    VT::Nullable(Rc::new(VT::Number)).array(),
+                    VT::Nullable(Rc::new(VT::Number)),
+                ),
+            }),
+
+            IF::Percentile | IF::PercentileApprox => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Percentile => imp::percentile,
+                    _ => imp::percentile_approx,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Nullable(Rc::new(VT::Number)).array(), VT::Number],
+                    return_type: VT::Nullable(Rc::new(VT::Number)),
+                },
+            }),
+
+            IF::AggregateSum => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::aggregate_sum),
+                signature: FunctionSignature::single(
+                    VT::Nullable(Rc::new(VT::Number)).array(),
+                    VT::Number,
+                ),
+            }),
+
+            IF::AggregateMin | IF::AggregateMax => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::AggregateMin => imp::aggregate_min,
+                    _ => imp::aggregate_max,
+                }),
+                signatures: vec![
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Number)).array(),
+                        VT::Nullable(Rc::new(VT::Number)),
+                    ),
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Date)).array(),
+                        VT::Nullable(Rc::new(VT::Date)),
+                    ),
+                ],
+            }),
+
+            IF::AggregateMode => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::aggregate_mode),
+                signatures: vec![
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::Number)).array(),
+                        VT::Nullable(Rc::new(VT::Number)),
+                    ),
+                    FunctionSignature::single(
+                        VT::Nullable(Rc::new(VT::String)).array(),
+                        VT::Nullable(Rc::new(VT::String)),
+                    ),
+                ],
+            }),
+
+            IF::CountDistinct | IF::CountDistinctApprox => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::CountDistinct => imp::count_distinct,
+                    _ => imp::count_distinct_approx,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Number),
+            }),
+
+            IF::Distinct => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::distinct),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any.array()),
+            }),
+
+            IF::TopK => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::top_k),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
+            }),
+
+            IF::First | IF::Last | IF::ArgMax | IF::ArgMin => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::First => imp::first,
+                    IF::Last => imp::last,
+                    IF::ArgMax => imp::arg_max,
+                    _ => imp::arg_min,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any),
+            }),
+
+            IF::Take | IF::TakeLast => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Take => imp::take,
+                    _ => imp::take_last,
+                }),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
+            }),
+
+            IF::Find | IF::FindLast => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Find => imp::first,
+                    _ => imp::last,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Any),
+            }),
+
+            IF::FindIndex | IF::FindLastIndex => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::FindIndex => imp::find_index,
+                    _ => imp::find_last_index,
+                }),
+                signature: FunctionSignature::single(VT::Any.array(), VT::Number),
+            }),
+
+            IF::Sort | IF::SortBy => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::Sort => imp::sort,
+                    _ => imp::sort_by,
+                }),
+                signatures: vec![
+                    FunctionSignature::single(VT::Any.array(), VT::Any.array()),
+                    FunctionSignature {
+                        parameters: vec![VT::Any.array(), VT::String],
+                        return_type: VT::Any.array(),
+                    },
+                ],
+            }),
+
+            IF::IsEmpty => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::is_empty),
+                signature: FunctionSignature::single(VT::Any, VT::Bool),
+            }),
+
+            IF::Clamp => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::clamp),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Number, VT::Number, VT::Number],
+                    return_type: VT::Number,
+                },
+            }),
+
+            IF::Sqrt | IF::Ln | IF::Exp | IF::Sign => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Sqrt => imp::sqrt,
+                    IF::Ln => imp::ln,
+                    IF::Exp => imp::exp,
+                    _ => imp::sign,
+                }),
+                signature: FunctionSignature::single(VT::Number, VT::Number),
+            }),
+
+            IF::Log => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::log),
+                signatures: vec![
+                    FunctionSignature::single(VT::Number, VT::Number),
+                    FunctionSignature {
+                        parameters: vec![VT::Number, VT::Number],
+                        return_type: VT::Number,
+                    },
+                ],
+            }),
+
+            IF::PadStart | IF::PadEnd => Rc::new(CompositeFunction {
+                implementation: Rc::new(match value {
+                    IF::PadStart => imp::pad_start,
+                    _ => imp::pad_end,
+                }),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::Number],
+                        return_type: VT::String,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::String, VT::Number, VT::String],
+                        return_type: VT::String,
+                    },
+                ],
+            }),
+
+            IF::SplitPart => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::split_part),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String, VT::Number],
+                    return_type: VT::Nullable(Rc::new(VT::String)),
+                },
+            }),
+
+            IF::ExtractAll => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::extract_all),
+                signature: FunctionSignature {
+                    parameters: vec![VT::String, VT::String],
+                    return_type: VT::String.array(),
+                },
+            }),
+
+            IF::Md5 | IF::Sha256 | IF::Xxhash64 => Rc::new(StaticFunction {
+                implementation: Rc::new(match value {
+                    IF::Md5 => imp::md5,
+                    IF::Sha256 => imp::sha256,
+                    _ => imp::xxhash64,
+                }),
+                signature: FunctionSignature::single(VT::String, VT::String),
+            }),
+
+            IF::JsonParse => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::json_parse),
+                signature: FunctionSignature::single(VT::String, VT::Any),
+            }),
+
+            IF::JsonString => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::json_string),
+                signature: FunctionSignature::single(VT::Any, VT::String),
+            }),
+
+            IF::Entries => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::entries),
+                signature: FunctionSignature::single(
+                    VT::Object(Default::default()),
+                    VT::Any.array().array(),
+                ),
+            }),
+
+            IF::Zip => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::zip),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Any.array()],
+                    return_type: VT::Any.array().array(),
+                },
+            }),
+
+            IF::GroupBy => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::group_by),
+                signature: FunctionSignature::single(
+                    VT::Any.array(),
+                    VT::Object(Default::default()),
+                ),
+            }),
+
             IF::Type => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::to_type),
                 signature: FunctionSignature::single(VT::Any, VT::String),
@@ -324,7 +811,9 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 }
 
 pub(crate) mod imp {
+    use crate::functions::aggregate;
     use crate::functions::arguments::Arguments;
+    use crate::functions::normalize;
     use crate::vm::date::DynamicVariableExt;
     use crate::vm::VmDate;
     use crate::{Variable as V, Variable};
@@ -454,6 +943,105 @@ pub(crate) mod imp {
         );
 
         Ok(V::from_array(arr))
+    }
+
+    pub fn join(args: Arguments) -> anyhow::Result<V> {
+        let array = args.array(0)?;
+        let separator = args.ostr(1)?.unwrap_or(",");
+        let items = array.borrow();
+        let mut out = String::new();
+        let mut first = true;
+        for item in items.iter() {
+            let text: std::borrow::Cow<str> = match item {
+                V::Null => continue,
+                V::String(s) => std::borrow::Cow::Borrowed(s.as_str()),
+                V::Number(n) => n.normalize().to_string().into(),
+                V::Bool(b) => b.to_string().into(),
+                V::Dynamic(d) if d.as_date().is_some() => d.to_string().into(),
+                other => return Err(anyhow!("Cannot join type {}", other.type_name())),
+            };
+            if !first {
+                out.push_str(separator);
+            }
+            first = false;
+            out.push_str(&text);
+        }
+
+        Ok(V::String(out.into()))
+    }
+
+    fn regex_replace(args: Arguments, all: bool) -> anyhow::Result<V> {
+        let a = args.str(0)?;
+        let pattern = args.str(1)?;
+        let with = args.str(2)?;
+        let regex = Regex::new(pattern).context("Invalid regular expression")?;
+        let out = match all {
+            true => regex.replace_all(a, with),
+            false => regex.replace(a, with),
+        };
+        Ok(V::String(out.as_ref().into()))
+    }
+
+    pub fn replace(args: Arguments) -> anyhow::Result<V> {
+        regex_replace(args, false)
+    }
+
+    pub fn replace_all(args: Arguments) -> anyhow::Result<V> {
+        regex_replace(args, true)
+    }
+
+    fn text_map(args: Arguments, f: fn(&str) -> String) -> anyhow::Result<V> {
+        let a = args.str(0)?;
+        Ok(V::String(f(a).into()))
+    }
+
+    pub fn unaccent(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::unaccent)
+    }
+
+    pub fn squish(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::squish)
+    }
+
+    pub fn token_sort(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::token_sort)
+    }
+
+    pub fn name_key(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::name_key)
+    }
+
+    pub fn soundex(args: Arguments) -> anyhow::Result<V> {
+        text_map(args, normalize::soundex)
+    }
+
+    fn similarity(args: Arguments, f: fn(&str, &str) -> f64) -> anyhow::Result<V> {
+        let a = args.var(0)?;
+        let b = args.str(1)?;
+        let score = |x: &str| V::Number(Decimal::from_f64(f(x, b)).unwrap_or(dec!(0)));
+        match (a, a.as_str()) {
+            (_, Some(a)) => Ok(score(a)),
+            (V::Array(items), _) => {
+                let items = items.borrow();
+                let mut out = Vec::with_capacity(items.len());
+                for v in items.iter() {
+                    out.push(score(v.as_str().context("Expected string array")?));
+                }
+                Ok(V::from_array(out))
+            }
+            _ => Err(anyhow!(
+                "Similarity not available for type {}",
+                a.type_name()
+            )),
+        }
+    }
+
+    pub fn jaro_winkler(args: Arguments) -> anyhow::Result<V> {
+        similarity(args, normalize::jaro_winkler)
+    }
+
+    pub fn token_set_similarity(args: Arguments) -> anyhow::Result<V> {
+        similarity(args, normalize::token_set_similarity)
     }
 
     pub fn flatten(args: Arguments) -> anyhow::Result<V> {
@@ -721,6 +1309,375 @@ pub(crate) mod imp {
             .context("Empty array")?;
 
         Ok(V::Number(most_common))
+    }
+
+    fn __internal_list(args: &Arguments, pos: usize) -> anyhow::Result<Vec<V>> {
+        let a = args.array(pos)?;
+        let items = a.borrow();
+        Ok(items.clone())
+    }
+
+    fn __internal_aggregate(
+        args: Arguments,
+        f: impl FnOnce(&[V]) -> anyhow::Result<V>,
+    ) -> anyhow::Result<V> {
+        let a = args.array(0)?;
+        let items = a.borrow();
+        f(&items)
+    }
+
+    pub fn stddev(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::stddev(items, true))
+    }
+
+    pub fn variance(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::variance(items, true))
+    }
+
+    pub fn stddev_pop(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::stddev(items, false))
+    }
+
+    pub fn variance_pop(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::variance(items, false))
+    }
+
+    pub fn skew(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::skew)
+    }
+
+    pub fn kurtosis(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::kurtosis)
+    }
+
+    pub fn percentile(args: Arguments) -> anyhow::Result<V> {
+        let q = args.number(1)?;
+        __internal_aggregate(args, |items| aggregate::percentile(items, q))
+    }
+
+    pub fn percentile_approx(args: Arguments) -> anyhow::Result<V> {
+        let q = args.number(1)?;
+        let items = __internal_list(&args, 0)?;
+        aggregate::percentile_approx(&items, q)
+    }
+
+    pub fn aggregate_sum(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::sum)
+    }
+
+    pub fn aggregate_avg(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::avg)
+    }
+
+    pub fn aggregate_min(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::extreme(items, false))
+    }
+
+    pub fn aggregate_max(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::extreme(items, true))
+    }
+
+    pub fn aggregate_median(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::median)
+    }
+
+    pub fn aggregate_mode(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::mode)
+    }
+
+    pub fn count_distinct(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::count_distinct(items)))
+    }
+
+    pub fn count_distinct_approx(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::count_distinct_approx(items)))
+    }
+
+    pub fn distinct(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::distinct(items)))
+    }
+
+    pub fn top_k(args: Arguments) -> anyhow::Result<V> {
+        let k = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| Ok(aggregate::top_k(items, k)))
+    }
+
+    pub fn first(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::first(items)))
+    }
+
+    pub fn last(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| Ok(aggregate::last(items)))
+    }
+
+    pub fn arg_max(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::arg_extreme(items, true))
+    }
+
+    pub fn arg_min(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::arg_extreme(items, false))
+    }
+
+    pub fn take(args: Arguments) -> anyhow::Result<V> {
+        let n = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| {
+            Ok(V::from_array(items.iter().take(n).cloned().collect()))
+        })
+    }
+
+    pub fn take_last(args: Arguments) -> anyhow::Result<V> {
+        let n = aggregate::count(args.var(1)?, 1)?;
+        __internal_aggregate(args, |items| {
+            Ok(V::from_array(
+                items[items.len().saturating_sub(n)..].to_vec(),
+            ))
+        })
+    }
+
+    pub fn find_index(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::find_index(items, false))
+    }
+
+    pub fn find_last_index(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, |items| aggregate::find_index(items, true))
+    }
+
+    fn __internal_direction(args: &Arguments, pos: usize) -> anyhow::Result<bool> {
+        match args.ostr(pos)? {
+            None | Some("asc") => Ok(false),
+            Some("desc") => Ok(true),
+            Some(other) => Err(anyhow!("Expected 'asc' or 'desc', got '{other}'")),
+        }
+    }
+
+    pub fn sort(args: Arguments) -> anyhow::Result<V> {
+        let descending = __internal_direction(&args, 1)?;
+        __internal_aggregate(args, |items| aggregate::sort(items, descending))
+    }
+
+    pub fn sort_by(args: Arguments) -> anyhow::Result<V> {
+        let descending = __internal_direction(&args, 1)?;
+        __internal_aggregate(args, |items| aggregate::sort_by(items, descending))
+    }
+
+    pub fn is_empty(args: Arguments) -> anyhow::Result<V> {
+        let a = args.var(0)?;
+        let empty = match a {
+            V::Null => true,
+            V::String(s) => s.is_empty(),
+            V::Array(items) => items.borrow().is_empty(),
+            V::Object(map) => map.borrow().is_empty(),
+            other => {
+                return Err(anyhow!(
+                    "Cannot tell whether a {} is empty",
+                    other.type_name()
+                ))
+            }
+        };
+        Ok(V::Bool(empty))
+    }
+
+    pub fn clamp(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        let low = args.number(1)?;
+        let high = args.number(2)?;
+        if low > high {
+            return Err(anyhow!(
+                "The lower bound {low} is above the upper bound {high}"
+            ));
+        }
+        Ok(V::Number(x.max(low).min(high)))
+    }
+
+    fn __internal_math(value: Option<Decimal>) -> anyhow::Result<V> {
+        value
+            .map(|v| V::Number(v.normalize()))
+            .context("Number overflow")
+    }
+
+    pub fn sqrt(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        if x.is_sign_negative() && !x.is_zero() {
+            return Err(anyhow!("Square root of a negative number"));
+        }
+        __internal_math(x.sqrt())
+    }
+
+    fn __internal_ln(x: Decimal) -> anyhow::Result<Decimal> {
+        use rust_decimal::MathematicalOps;
+        if x <= Decimal::ZERO {
+            return Err(anyhow!("Logarithm of a number that is not positive"));
+        }
+        x.checked_ln().context("Number overflow")
+    }
+
+    pub fn ln(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        __internal_math(Some(__internal_ln(x)?))
+    }
+
+    pub fn log(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        match args.onumber(1)? {
+            None => {
+                if x <= Decimal::ZERO {
+                    return Err(anyhow!("Logarithm of a number that is not positive"));
+                }
+                __internal_math(x.checked_log10())
+            }
+            Some(base) => {
+                if base <= Decimal::ZERO || base == Decimal::ONE {
+                    return Err(anyhow!("Invalid logarithm base {base}"));
+                }
+                let value = __internal_ln(x)?.checked_div(__internal_ln(base)?);
+                __internal_math(value.map(|v| v.round_dp(20)))
+            }
+        }
+    }
+
+    pub fn exp(args: Arguments) -> anyhow::Result<V> {
+        use rust_decimal::MathematicalOps;
+        let x = args.number(0)?;
+        __internal_math(x.checked_exp())
+    }
+
+    pub fn sign(args: Arguments) -> anyhow::Result<V> {
+        let x = args.number(0)?;
+        Ok(V::Number(match x {
+            x if x.is_zero() => Decimal::ZERO,
+            x if x.is_sign_negative() => Decimal::NEGATIVE_ONE,
+            _ => Decimal::ONE,
+        }))
+    }
+
+    fn __internal_pad(args: Arguments, start: bool) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let length = aggregate::count(args.var(1)?, 1)?;
+        let pad = args.ostr(2)?.unwrap_or(" ");
+        let current = text.chars().count();
+        if current >= length || pad.is_empty() {
+            return Ok(V::String(text.into()));
+        }
+        let filler: String = pad.chars().cycle().take(length - current).collect();
+        Ok(V::String(
+            match start {
+                true => format!("{filler}{text}"),
+                false => format!("{text}{filler}"),
+            }
+            .into(),
+        ))
+    }
+
+    pub fn pad_start(args: Arguments) -> anyhow::Result<V> {
+        __internal_pad(args, true)
+    }
+
+    pub fn pad_end(args: Arguments) -> anyhow::Result<V> {
+        __internal_pad(args, false)
+    }
+
+    pub fn split_part(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let delimiter = args.str(1)?;
+        let n = args.number(2)?;
+        if !n.fract().is_zero() || n.is_zero() {
+            return Err(anyhow!("Expected a part number other than 0, got {n}"));
+        }
+        let parts: Vec<&str> = match delimiter.is_empty() {
+            true => vec![text],
+            false => text.split(delimiter).collect(),
+        };
+        let index = match n.to_i64() {
+            Some(n) if n > 0 => Some(n as usize - 1),
+            Some(n) => parts.len().checked_sub(n.unsigned_abs() as usize),
+            None => None,
+        };
+        Ok(index
+            .and_then(|i| parts.get(i))
+            .map_or(V::Null, |part| V::String((*part).into())))
+    }
+
+    pub fn extract_all(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let pattern = args.str(1)?;
+        let regex = Regex::new(pattern).context("Invalid regular expression")?;
+        let grouped = regex.captures_len() > 1;
+        let out = regex
+            .captures_iter(text)
+            .filter_map(|captures| match grouped {
+                true => captures.get(1),
+                false => captures.get(0),
+            })
+            .map(|m| V::String(m.as_str().into()))
+            .collect();
+        Ok(V::from_array(out))
+    }
+
+    fn __internal_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    pub fn md5(args: Arguments) -> anyhow::Result<V> {
+        use md5::Digest;
+        let text = args.str(0)?;
+        Ok(V::String(
+            __internal_hex(&md5::Md5::digest(text.as_bytes())).into(),
+        ))
+    }
+
+    pub fn sha256(args: Arguments) -> anyhow::Result<V> {
+        use sha2::Digest;
+        let text = args.str(0)?;
+        Ok(V::String(
+            __internal_hex(&sha2::Sha256::digest(text.as_bytes())).into(),
+        ))
+    }
+
+    pub fn xxhash64(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let hash = xxhash_rust::xxh64::xxh64(text.as_bytes(), 0);
+        Ok(V::String(format!("{hash:016x}").into()))
+    }
+
+    pub fn json_parse(args: Arguments) -> anyhow::Result<V> {
+        let text = args.str(0)?;
+        let value: serde_json::Value = serde_json::from_str(text).context("Invalid JSON")?;
+        Ok(V::from(value))
+    }
+
+    pub fn json_string(args: Arguments) -> anyhow::Result<V> {
+        let value = args.var(0)?;
+        let text = serde_json::to_string(value).context("Cannot convert to JSON")?;
+        Ok(V::String(text.into()))
+    }
+
+    pub fn entries(args: Arguments) -> anyhow::Result<V> {
+        let a = args.object(0)?;
+        let obj = a.borrow();
+        let out = obj
+            .iter()
+            .map(|(key, value)| V::from_array(vec![V::String(key.clone()), value.clone()]))
+            .collect();
+        Ok(V::from_array(out))
+    }
+
+    pub fn zip(args: Arguments) -> anyhow::Result<V> {
+        let a = args.array(0)?;
+        let b = args.array(1)?;
+        let a = a.borrow();
+        let b = b.borrow();
+        let out = a
+            .iter()
+            .zip(b.iter())
+            .map(|(x, y)| V::from_array(vec![x.clone(), y.clone()]))
+            .collect();
+        Ok(V::from_array(out))
+    }
+
+    pub fn group_by(args: Arguments) -> anyhow::Result<V> {
+        __internal_aggregate(args, aggregate::group_by)
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

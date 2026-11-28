@@ -35,16 +35,17 @@ impl Ops {
         match (Date::textual(a), Date::textual(b)) {
             (Object(o), String(s)) => Ok(o.borrow().get_str(s.as_str()).cloned().unwrap_or(Null)),
             (Array(a), Number(n)) => {
-                let index = n
-                    .to_usize()
+                let a = a.borrow();
+                let index = crate::functions::aggregate::index(n, a.len())
                     .ok_or_else(|| Self::error("Fetch", "Failed to convert to usize"))?;
-                Ok(a.borrow().get(index).cloned().unwrap_or(Null))
+                Ok(index.and_then(|i| a.get(i)).cloned().unwrap_or(Null))
             }
             (String(str), Number(n)) => {
-                let index = n
-                    .to_usize()
+                let index = crate::functions::aggregate::index(n, str.len())
                     .ok_or_else(|| Self::error("Fetch", "Failed to convert to usize"))?;
-                let slice = index.checked_add(1).and_then(|end| str.get(index..end));
+                let slice = index
+                    .and_then(|index| index.checked_add(1).map(|end| (index, end)))
+                    .and_then(|(index, end)| str.get(index..end));
                 Ok(slice.map_or(Null, |s| String(s.into())))
             }
             _ => Ok(Null),

@@ -2140,6 +2140,28 @@ impl<'a> LaneCompiler<'a> {
                 operator,
             } => self.binary_node(left, *operator, right)?,
             Node::FunctionCall { kind, arguments } => match kind {
+                FunctionKind::Host(name) => {
+                    let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
+                        CompilerError::UnknownFunction {
+                            name: kind.to_string(),
+                        }
+                    })?;
+                    let min = function.required_parameters();
+                    let max = min + function.optional_parameters();
+                    if arguments.len() < min || arguments.len() > max {
+                        return Err(CompilerError::InvalidFunctionCall {
+                            name: kind.to_string(),
+                            message: "Invalid number of arguments".to_string(),
+                        });
+                    }
+                    let mut args = vec![Input::Const(
+                        self.const_id(Const::String(Arc::from(name.as_ref()))),
+                    )];
+                    for a in arguments.iter() {
+                        args.push(self.arg(a)?);
+                    }
+                    self.call(kind.clone(), args)
+                }
                 FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
                     let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
                         CompilerError::UnknownFunction {

@@ -1,0 +1,37 @@
+expression (string);input (json 5);output (json 5);note
+# hashes as lower-case hex
+md5('');;'d41d8cd98f00b204e9800998ecf8427e'
+md5('abc');;'900150983cd24fb0d6963f7d28e17f72'
+sha256('');;'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+sha256('abc');;'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+xxhash64('');;'ef46db3751d8e999'
+len(xxhash64('abc'));;16
+md5(1);;!error
+sha256(null);;!error
+xxhash64([]);;!error
+# jsonParse and jsonString
+jsonParse('{"a": [1, 2.5, null, true]}');;{a: [1, 2.5, null, true]}
+jsonParse('"x"');;'x'
+jsonParse('null');;null
+jsonParse('{a: 1}');;!error
+jsonParse(1);;!error
+jsonString({a: [1, 'x', null]});;'{"a":[1,"x",null]}'
+jsonString('x');;'"x"'
+jsonString(null);;'null'
+jsonParse(jsonString(o)) == o;{o: {a: 1}};false;question: objects compare by reference, as {a: 1} == {a: 1} does
+jsonParse(jsonString(o)).a;{o: {a: 1}};1
+# entries, zip and groupBy
+entries({a: 1});;[['a', 1]]
+len(entries({a: 1, b: 'x'}));;2
+entries({});;[]
+entries([1]);;!error
+entries(null);;!error
+zip([1, 2, 3], ['a', 'b']);;[[1, 'a'], [2, 'b']]
+zip([], [1]);;[]
+zip([1], null);;!error
+groupBy(t, #.s);{t: [{s: 'a', n: 1}, {s: 'b', n: 2}, {s: 'a', n: 3}]};{a: [{s: 'a', n: 1}, {s: 'a', n: 3}], b: [{s: 'b', n: 2}]}
+keys(groupBy(t as x, x.n % 2));{t: [{n: 1}, {n: 2}, {n: 3}]};['1', '0']
+map(values(groupBy(t, #.s)), len(#));{t: [{s: 'a'}, {s: null}, {s: 'a'}]};[2]
+groupBy(t, #.s);{t: []};{}
+groupBy(t, #.s);{t: [{s: [1]}]};!error
+groupBy(t, 'x');{t: [1]};!error
